@@ -16,8 +16,10 @@ import { getPublicErrorMessage } from '../../lib/http-errors';
 import {
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
   Row,
+  DbValue,
   createAudit,
   ensureSalesAccess,
+  ensureTeacherModuleAccess,
   insertRow,
   query,
   queryOne,
@@ -32,8 +34,9 @@ import {
 import { getDemoResourceAvailability } from './demo-resource-availability';
 import { lockDemoParticipantLeads, syncDemoLeadStatuses } from './demo-lead-status';
 import { canManageDemoParticipant, demoAttendanceManagerSql, demoFunnelRoleSql } from './demo-participant-access';
+import { resolveTeacherId } from './academy-analytics';
 
-const getDemoLesson = async (id: number) => queryOne(
+const queryDemoLessons = async (where: string, values: DbValue[]) => query(
   `SELECT demo.*,
       course.name AS course_name,
       school.name AS school_name,
@@ -66,10 +69,55 @@ const getDemoLesson = async (id: number) => queryOne(
    LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
    LEFT JOIN academy_students student ON student.id = participant.student_id
    LEFT JOIN academy_leads lead ON lead.id = student.lead_id
-   WHERE demo.id = $1
-   GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name`,
-  [id],
+   WHERE ${where}
+   GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name
+   ORDER BY demo.scheduled_at, demo.id`,
+  values,
 );
+
+const getDemoLesson = async (id: number) => (await queryDemoLessons('demo.id = $1', [id]))[0];
+
+const isTeacherDemoRequest = (req: any) => req.path.startsWith('/modules/teacher/demo-lessons');
+
+const assertOwnTeacherDemo = async (req: any, demo: Row) => {
+  const teacherId = await resolveTeacherId(Number(req.user!.id));
+  if (!teacherId || teacherId !== Number(demo.teacherId)) {
+    throw Object.assign(new Error('teacherOwnDemoOnly'), { statusCode: 403 });
+  }
+};
+
+// Teacher attendance does not grant sales access or expose participant ownership.
+const presentTeacherDemoLesson = (demo: Row) => ({
+  id: demo.id,
+  courseId: demo.courseId,
+  courseName: demo.courseName,
+  schoolId: demo.schoolId,
+  schoolName: demo.schoolName,
+  roomId: demo.roomId,
+  roomName: demo.roomName,
+  teacherId: demo.teacherId,
+  teacherName: demo.teacherName,
+  scheduledAt: demo.scheduledAt,
+  durationMinutes: demo.durationMinutes,
+  format: demo.format,
+  status: demo.status,
+  notes: demo.notes,
+  notConductedReasonCode: demo.notConductedReasonCode,
+  notConductedReasonNote: demo.notConductedReasonNote,
+  canManage: false,
+  participants: (Array.isArray(demo.participants) ? demo.participants as Row[] : [])
+    .filter((participant) => participant.status !== 'cancelled')
+    .map((participant) => ({
+      id: participant.id,
+      studentId: participant.studentId,
+      studentName: participant.studentName,
+      contactName: participant.contactName,
+      status: participant.status,
+      noShowReasonCode: participant.noShowReasonCode,
+      noShowReasonNote: participant.noShowReasonNote,
+      canManage: true,
+    })),
+});
 
 const canManageParticipant = canManageDemoParticipant;
 
@@ -234,6 +282,21 @@ const assertDemoResources = async (
 };
 
 export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router>) => {
+  router.get('/modules/teacher/demo-lessons', async (req, res) => {
+    if (!ensureTeacherModuleAccess(req, res)) return;
+    try {
+      const teacherId = await resolveTeacherId(Number(req.user!.id));
+      if (!teacherId) return res.json([]);
+      const demos = await queryDemoLessons('demo.teacher_id = $1', [teacherId]);
+      res.json(demos.map(presentTeacherDemoLesson));
+    } catch (error: any) {
+      logger.error('Failed to fetch teacher demo lessons', { error });
+      res.status(error.statusCode || 500).json({
+        error: getPublicErrorMessage(error, 'failedToLoadDemoLessons'),
+      });
+    }
+  });
+
   router.get('/demo-lessons', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     try {
@@ -699,8 +762,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
     }
   });
 
-  router.post('/demo-lessons/:id/outcome', async (req, res) => {
-    if (!ensureSalesAccess(req, res)) return;
+  router.post(['/demo-lessons/:id/outcome', '/modules/teacher/demo-lessons/:id/outcome'], async (req, res) => {
+    const teacherRequest = isTeacherDemoRequest(req);
+    if (!(teacherRequest ? ensureTeacherModuleAccess(req, res) : ensureSalesAccess(req, res))) return;
     const id = Number(req.params.id);
     const parsed = demoLessonOutcomeSchema.safeParse(req.body);
     if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
@@ -711,8 +775,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
     try {
       const current = await getDemoLesson(id);
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      if (teacherRequest) await assertOwnTeacherDemo(req, current);
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
-      if (!hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
+      if (!teacherRequest && !hasLeadershipAccess(req.user) && participants.some((item) => !canManageParticipant(req, item))) {
         return res.status(403).json({ error: 'Student mutation access required' });
       }
 
@@ -720,6 +785,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
         if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (teacherRequest) await assertOwnTeacherDemo(req, locked);
         if (locked.status !== 'scheduled') {
           throw Object.assign(new Error('demoOutcomeAlreadyFinal'), { statusCode: 409 });
         }
@@ -760,7 +826,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         return updated;
       });
       const responseDemo = await getDemoLesson(id) ?? finalized;
-      res.json(presentDemoLesson(req, responseDemo));
+      res.json(teacherRequest ? presentTeacherDemoLesson(responseDemo) : presentDemoLesson(req, responseDemo));
     } catch (error: any) {
       logger.error('Failed to finalize demo lesson', { error });
       res.status(error.statusCode || 500).json({
@@ -849,8 +915,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
     }
   });
 
-  router.post('/demo-lessons/:id/attendance', async (req, res) => {
-    if (!ensureSalesAccess(req, res)) return;
+  router.post(['/demo-lessons/:id/attendance', '/modules/teacher/demo-lessons/:id/attendance'], async (req, res) => {
+    const teacherRequest = isTeacherDemoRequest(req);
+    if (!(teacherRequest ? ensureTeacherModuleAccess(req, res) : ensureSalesAccess(req, res))) return;
     const id = Number(req.params.id);
     const parsed = demoLessonAttendanceSchema.safeParse(req.body);
     if (!Number.isSafeInteger(id) || id < 1 || !parsed.success) {
@@ -859,11 +926,12 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
     try {
       const current = await getDemoLesson(id);
       if (!current) return res.status(404).json({ error: 'resourceNotFound' });
+      if (teacherRequest) await assertOwnTeacherDemo(req, current);
       const participants = Array.isArray(current.participants) ? current.participants as Row[] : [];
       const requestedParticipantIds = new Set(
         parsed.data.participants.map((item) => item.participantId),
       );
-      if (!hasLeadershipAccess(req.user) && participants.some((item) => (
+      if (!teacherRequest && !hasLeadershipAccess(req.user) && participants.some((item) => (
         requestedParticipantIds.has(Number(item.id)) && !canManageParticipant(req, item)
       ))) {
         return res.status(403).json({ error: 'Student mutation access required' });
@@ -876,6 +944,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
         const locked = await queryOne(`SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE`, [id]);
         if (!locked) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+        if (teacherRequest) await assertOwnTeacherDemo(req, locked);
         if (locked.status === 'cancelled' || locked.status === 'not_conducted') {
           throw Object.assign(new Error('demoAttendanceNotAllowed'), { statusCode: 409 });
         }
@@ -901,8 +970,11 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
           if (!lockedParticipant) {
             throw Object.assign(new Error('demoParticipantNotFound'), { statusCode: 404 });
           }
-          if (!canManageParticipant(req, lockedParticipant)) {
+          if (!teacherRequest && !canManageParticipant(req, lockedParticipant)) {
             throw Object.assign(new Error('Student mutation access required'), { statusCode: 403 });
+          }
+          if (teacherRequest && lockedParticipant.status === 'cancelled') {
+            throw Object.assign(new Error('demoAttendanceNotAllowed'), { statusCode: 409 });
           }
           const noShowReasonCode = item.status === 'no_show'
             ? item.noShowReasonCode ?? null
@@ -922,7 +994,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
               id,
               item.participantId,
               item.status,
-              item.result ?? null,
+              teacherRequest ? lockedParticipant.result ?? null : item.result ?? null,
               noShowReasonCode,
               noShowReasonNote,
             ],
@@ -957,7 +1029,7 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
       });
       const responseDemo = await getDemoLesson(id) ?? result;
       if (!responseDemo) return res.status(404).json({ error: 'resourceNotFound' });
-      res.json(presentDemoLesson(req, responseDemo));
+      res.json(teacherRequest ? presentTeacherDemoLesson(responseDemo) : presentDemoLesson(req, responseDemo));
     } catch (error: any) {
       logger.error('Failed to update demo attendance', { error });
       res.status(error.statusCode || 500).json({

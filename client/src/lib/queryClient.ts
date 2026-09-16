@@ -47,6 +47,7 @@ export const localizeApiErrorMessage = (message: string, status: number) => {
     failedToLoadDemoTeacherOptions: i18n.t("failedToLoadDemoTeacherOptions"),
     failedToChangeDemoTeacher: i18n.t("failedToChangeDemoTeacher"),
     failedToUpdateDemoAttendance: i18n.t("failedToUpdateDemoAttendance"),
+    teacherOwnDemoOnly: i18n.t("teacherOwnDemoOnly"),
     demoRoomRequired: i18n.t("demoRoomRequired"),
     demoOnlineRoomNotAllowed: i18n.t("demoOnlineRoomNotAllowed"),
     duplicateDemoParticipants: i18n.t("duplicateDemoParticipants"),

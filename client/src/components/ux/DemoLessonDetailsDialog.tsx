@@ -53,6 +53,7 @@ import {
 import {
   demoLessonQueryKeys,
   demoLessonsApi,
+  teacherDemoLessonsApi,
   type DemoLesson,
   type DemoLessonParticipant,
 } from '@/features/demo-lessons/api';
@@ -79,6 +80,7 @@ interface DemoLessonDetailsDialogProps {
    * host has nowhere to show a lead, which turns participants back into plain text.
    */
   onOpenLead?: (leadId: number) => void;
+  context?: 'sales' | 'teacher';
 }
 
 type AttendanceStatus = 'attended' | 'no_show' | '';
@@ -94,9 +96,11 @@ export function DemoLessonDetailsDialog({
   onOpenChange,
   onChanged,
   onOpenLead,
+  context = 'sales',
 }: DemoLessonDetailsDialogProps) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
+  const attendanceApi = context === 'teacher' ? teacherDemoLessonsApi : demoLessonsApi;
   const noShowReasonLabels: Record<DemoNoShowReasonCode, string> = {
     no_contact: t('demoNoShowReasonNoContact'),
     forgot: t('demoNoShowReasonForgot'),
@@ -193,12 +197,13 @@ export function DemoLessonDetailsDialog({
       queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.availability }),
       queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.resourceAvailability }),
       queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.teacherOptions }),
+      queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.teacher }),
     ]);
     onChanged?.(updated);
   };
 
   const saveAttendance = useMutation({
-    mutationFn: () => demoLessonsApi.saveAttendance(Number(demo?.id), {
+    mutationFn: () => attendanceApi.saveAttendance(Number(demo?.id), {
       participants: Array.from(dirtyParticipantIds).flatMap((participantId) => {
         const status = attendance[participantId];
         if (!status) return [];
@@ -246,7 +251,7 @@ export function DemoLessonDetailsDialog({
   });
 
   const finalizeDemo = useMutation({
-    mutationFn: (payload: DemoLessonOutcome) => demoLessonsApi.outcome(Number(demo?.id), payload),
+    mutationFn: (payload: DemoLessonOutcome) => attendanceApi.outcome(Number(demo?.id), payload),
     onSuccess: async (updated) => {
       await invalidate(updated);
       toast({
@@ -379,7 +384,8 @@ export function DemoLessonDetailsDialog({
   const scheduledAt = new Date(demo.scheduledAt);
   const canEditAttendance = demo.status !== 'cancelled'
     && demo.status !== 'not_conducted';
-  const canManageScheduledDemo = demo.canManage !== false && demo.status === 'scheduled';
+  const canManageScheduledDemo = (context === 'teacher' || demo.canManage !== false)
+    && demo.status === 'scheduled';
   const attendanceComplete = demo.participants.every((participant) => (
     attendance[participant.id] === 'attended'
     || attendance[participant.id] === 'no_show'
@@ -567,7 +573,7 @@ export function DemoLessonDetailsDialog({
                         </div>
                       ) : null}
                     </div>
-                    {demo.status === 'scheduled'
+                    {context === 'sales' && demo.status === 'scheduled'
                       && participant.canManage !== false
                       && ['invited', 'confirmed'].includes(participant.status) ? (
                         <Button
@@ -618,24 +624,25 @@ export function DemoLessonDetailsDialog({
 
           {canManageScheduledDemo ? (
             <div className="space-y-3 rounded-xl border border-border p-4">
-              <div>
-                <p className="text-sm font-semibold">{t('demoLessonActions')}</p>
-                <p className="text-xs text-muted-foreground">{t('demoLessonActionsDescription')}</p>
-              </div>
+              <p className="text-sm font-semibold">{t('demoLessonActions')}</p>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setTeacherDraftId(String(demo.teacherId));
-                    setChangeTeacherOpen(true);
-                  }}
-                >
-                  {t('changeDemoTeacher')}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
-                  {t('rescheduleDemoLesson')}
-                </Button>
+                {context === 'sales' ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setTeacherDraftId(String(demo.teacherId));
+                        setChangeTeacherOpen(true);
+                      }}
+                    >
+                      {t('changeDemoTeacher')}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
+                      {t('rescheduleDemoLesson')}
+                    </Button>
+                  </>
+                ) : null}
                 <Button
                   type="button"
                   disabled={!canMarkConducted || finalizeDemo.isPending}
@@ -651,9 +658,11 @@ export function DemoLessonDetailsDialog({
                 >
                   {t('markDemoNotConducted')}
                 </Button>
-                <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
-                  {t('cancelDemoLesson')}
-                </Button>
+                {context === 'sales' ? (
+                  <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
+                    {t('cancelDemoLesson')}
+                  </Button>
+                ) : null}
               </div>
               {!attendanceComplete ? (
                 <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>

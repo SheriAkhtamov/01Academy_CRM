@@ -25,6 +25,8 @@ import { TeacherAnalyticsCharts } from '@/components/ux/analytics/TeacherAnalyti
 import { TeacherOverviewKpis } from '@/components/ux/analytics/TeacherOverviewKpis';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AttendanceCalendar } from '@/components/ux/AttendanceCalendar';
+import { DemoLessonDetailsDialog } from '@/components/ux/DemoLessonDetailsDialog';
+import { demoLessonQueryKeys, teacherDemoLessonsApi } from '@/features/demo-lessons/api';
 import { AttendanceLessonDialog } from '@/components/ux/teacher/AttendanceLessonDialog';
 import { TeacherGroupsSection } from '@/components/ux/teacher/TeacherGroupsSection';
 import {
@@ -34,7 +36,7 @@ import {
 import { TeacherSectionSkeleton } from '@/components/ux/teacher/TeacherSectionSkeleton';
 import { TeacherTodayPanel } from '@/components/ux/teacher/TeacherTodayPanel';
 import { AlertTriangle } from 'lucide-react';
-import { sortAttendanceLessons } from '@/lib/attendance';
+import { buildDemoAttendanceLessons, parseDemoAttendanceId, sortAttendanceLessons } from '@/lib/attendance';
 import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
 import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
@@ -292,6 +294,13 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [setStoredReportingPreset]);
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ['/api/academy/modules/teacher'],
+  });
+  const teacherDemosQuery = useQuery({
+    queryKey: demoLessonQueryKeys.teacher,
+    queryFn: teacherDemoLessonsApi.list,
+    enabled: section === 'attendance',
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const invalidate = useCallback(
@@ -551,6 +560,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [lessons, scheduleWeekKey]);
 
   const rawLessonParam = section === 'attendance' ? searchParams.get('lesson') : null;
+  const selectedDemoId = parseDemoAttendanceId(rawLessonParam);
+  const selectedDemo = teacherDemosQuery.data?.find((demo) => demo.id === selectedDemoId) ?? null;
   const parsedLessonId = rawLessonParam ? Number(rawLessonParam) : Number.NaN;
   const selectedLessonId = Number.isSafeInteger(parsedLessonId) && parsedLessonId > 0
     ? String(parsedLessonId)
@@ -561,8 +572,11 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   );
 
   const attendanceLessons = useMemo(
-    () => sortAttendanceLessons(lessons, nowMinute),
-    [lessons, nowMinute],
+    () => sortAttendanceLessons([
+      ...lessons,
+      ...buildDemoAttendanceLessons(teacherDemosQuery.data ?? [], t('demoLesson'), t('noCourse')),
+    ], nowMinute),
+    [lessons, nowMinute, teacherDemosQuery.data, t],
   );
 
   const previousIncompleteLesson = useMemo(() => {
@@ -1018,10 +1032,22 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       );
     }
 
+    if (teacherDemosQuery.isPending) return <TeacherSectionSkeleton section="attendance" />;
+    if (teacherDemosQuery.isError) {
+      return (
+        <Card className="border-destructive/40">
+          <CardContent className="space-y-4 py-14 text-center">
+            <p className="font-medium text-destructive">{t('failedToLoadDemoLessons')}</p>
+            <Button variant="outline" onClick={() => teacherDemosQuery.refetch()}>{t('retry')}</Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
     return (
       <AttendanceCalendar
         lessons={attendanceLessons}
-        selectedLessonId={selectedLessonId}
+        selectedLessonId={selectedDemoId ? `demo:${selectedDemoId}` : selectedLessonId}
         now={nowMinute}
         disabled={lessonMutationPending}
         onSelectLesson={handleLessonSelect}
@@ -1131,6 +1157,12 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             onRescheduleConfirmOpenChange={setRescheduleConfirmOpen}
             bulkConfirmStatus={bulkConfirmStatus}
             onBulkConfirmChange={setBulkConfirmStatus}
+          />
+          <DemoLessonDetailsDialog
+            context="teacher"
+            demo={selectedDemo}
+            open={Boolean(selectedDemo)}
+            onOpenChange={(open) => { if (!open) replaceParams({ lesson: null }); }}
           />
         </>
       ) : null}

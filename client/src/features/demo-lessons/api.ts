@@ -99,6 +99,17 @@ export const demoLessonQueryKeys = {
   resourceAvailability: ['/api/academy/demo-lessons/resource-availability'] as const,
   teacherOptions: ['/api/academy/demo-lessons', 'teacher-options'] as const,
   enrollment: ['/api/academy/demo-lessons', 'enrollment'] as const,
+  teacher: ['/api/academy/modules/teacher/demo-lessons'] as const,
+};
+
+export const teacherDemoLessonsApi = {
+  list: () => apiRequest('GET', '/api/academy/modules/teacher/demo-lessons') as Promise<DemoLesson[]>,
+  saveAttendance: (id: number, payload: DemoLessonAttendance) => (
+    apiRequest('POST', `/api/academy/modules/teacher/demo-lessons/${id}/attendance`, payload) as Promise<DemoLesson>
+  ),
+  outcome: (id: number, payload: DemoLessonOutcome) => (
+    apiRequest('POST', `/api/academy/modules/teacher/demo-lessons/${id}/outcome`, payload) as Promise<DemoLesson>
+  ),
 };
 
 export const demoLessonsApi = {

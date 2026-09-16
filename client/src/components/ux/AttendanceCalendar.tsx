@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { ACADEMY_TIME_ZONE, resolveLocale } from '@/lib/localeFormat';
 
 export type AttendanceCalendarLesson = {
-  id: number;
+  id: number | string;
   groupName?: string;
   topic: string;
   scheduledAt: string;
@@ -262,7 +262,7 @@ export function AttendanceCalendar({
     });
   };
 
-  const selectLesson = (lessonId: number) => {
+  const selectLesson = (lessonId: number | string) => {
     if (!disabled) onSelectLesson(String(lessonId));
   };
 
@@ -302,7 +302,7 @@ export function AttendanceCalendar({
            `aria-pressed` promised a switch that never existed. */
         aria-haspopup="dialog"
         aria-current={isSelected ? 'true' : undefined}
-        aria-label={`${time}, ${lesson.topic}. ${t(STATE_LABEL_KEYS[state])}`}
+        aria-label={`${time}, ${lesson.topic}${lesson.groupName ? `, ${lesson.groupName}` : ''}. ${t(STATE_LABEL_KEYS[state])}`}
         onClick={() => selectLesson(lesson.id)}
         className={cn(
           // Lesson chips are packed tightly into day cells, so the hover cue

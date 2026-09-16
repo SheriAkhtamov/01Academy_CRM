@@ -1989,10 +1989,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   demoNoShowOtherNoteRequired: { en: 'Add a comment for the other reason.', ru: 'Добавьте комментарий для другой причины.' },
   demoNoShowReasonOnlyForAbsence: { en: 'An absence reason can be set only for a no-show.', ru: 'Причину отсутствия можно указать только для статуса «Не пришёл».' },
   demoLessonActions: { en: 'Demo lesson actions', ru: 'Действия с демо-уроком' },
-  demoLessonActionsDescription: {
-    en: 'Record the result or move the lesson while preserving its participants and resources.',
-    ru: 'Зафиксируйте результат или перенесите занятие с сохранением участников и ресурсов.',
-  },
   markDemoConducted: { en: 'Mark as conducted', ru: 'Отметить проведённым' },
   markDemoConductedTitle: { en: 'Mark this demo as conducted?', ru: 'Отметить демо как проведённое?' },
   markDemoConductedDescription: {
@@ -2087,6 +2083,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   demoOutcomeAlreadyFinal: { en: 'The result of this demo is already final.', ru: 'Результат этого демо уже зафиксирован.' },
   demoAttendanceIncomplete: { en: 'Record attendance for every participant first.', ru: 'Сначала укажите посещение каждого участника.' },
   demoAttendanceNotAllowed: { en: 'Attendance cannot be changed for this demo result.', ru: 'Для демо с таким результатом нельзя изменить посещение.' },
+  teacherOwnDemoOnly: { en: 'You can record attendance only for your own demo lessons.', ru: 'Можно отмечать посещение только своих демо-уроков.' },
   checkingAvailability: { en: 'Checking room and teacher availability', ru: 'Проверяем кабинет и преподавателей' },
   chooseAnotherDayOrWeek: { en: 'Choose another day or move to the next week.', ru: 'Выберите другой день или перейдите на следующую неделю.' },
   clearSelection: { en: 'Clear selection', ru: 'Сбросить выбор' },

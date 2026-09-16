@@ -259,11 +259,11 @@ describe('demo lessons', () => {
     expect(routes).toContain("router.post('/demo-lessons'");
     expect(routes).toContain("router.post('/demo-lessons/resource-availability'");
     expect(routes).toContain("router.post('/demo-lessons/:id/cancel'");
-    expect(routes).toContain("router.post('/demo-lessons/:id/outcome'");
+    expect(routes).toContain("router.post(['/demo-lessons/:id/outcome'");
     expect(routes).toContain("router.post('/demo-lessons/:id/reschedule'");
     expect(routes).toContain("router.get('/demo-lessons/:id/teacher-options'");
     expect(routes).toContain("router.post('/demo-lessons/:id/teacher'");
-    expect(routes).toContain("router.post('/demo-lessons/:id/attendance'");
+    expect(routes).toContain("router.post(['/demo-lessons/:id/attendance'");
     expect(routes).toContain("router.post('/demo-lessons/:id/participants'");
     expect(routes).toContain("router.delete('/demo-lessons/:id/participants/:participantId'");
     expect(routes).toContain('ADD_ACADEMY_DEMO_PARTICIPANTS');

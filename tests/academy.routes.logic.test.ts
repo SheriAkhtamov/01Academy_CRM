@@ -890,6 +890,171 @@ describe('academy route logic boundaries', () => {
     ))).toBe(true);
   });
 
+  it.each([
+    { id: 7, module: 'teacher', modules: ['teacher'] },
+    { id: 7, module: 'administration', modules: ['administration', 'teacher'] },
+  ])('lists only the active teacher profile’s demos for $module accounts', async (actor) => {
+    mocks.actor = actor;
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) {
+        expect(values).toEqual([7]);
+        return { rows: [{ id: 4 }] };
+      }
+      if (sql.includes('FROM academy_demo_lessons demo')) {
+        expect(sql).toContain('WHERE demo.teacher_id = $1');
+        expect(values).toEqual([4]);
+        return { rows: [{ id: 23, teacher_id: 4, course_name: 'Coding', status: 'scheduled', participants: [
+          { id: 77, studentId: 155, leadId: 2640, managerId: 18, status: 'invited', studentName: 'Demo student', contactName: 'Parent' },
+          { id: 78, studentId: 156, status: 'cancelled', studentName: 'Removed student' },
+        ] }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/modules/teacher/demo-lessons');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([expect.objectContaining({ id: 23, teacherId: 4, canManage: false })]);
+    expect(response.body[0].participants).toEqual([{
+      id: 77, studentId: 155, status: 'invited', studentName: 'Demo student', contactName: 'Parent', canManage: true,
+    }]);
+  });
+
+  it('fails closed for demo lessons when a teacher profile is missing or inactive', async () => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    const response = await request(await createApp()).get('/api/academy/modules/teacher/demo-lessons');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+    expect(mocks.poolQuery).toHaveBeenCalledTimes(1);
+    expect(mocks.poolQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'active'"), [7]);
+  });
+
+  it('denies sales-only accounts access to teacher demo endpoints', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const app = await createApp();
+    expect((await request(app).get('/api/academy/modules/teacher/demo-lessons')).status).toBe(403);
+    expect((await request(app).post('/api/academy/modules/teacher/demo-lessons/23/attendance').send({ participants: [] })).status).toBe(403);
+    expect((await request(app).post('/api/academy/modules/teacher/demo-lessons/23/outcome').send({ status: 'completed' })).status).toBe(403);
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
+  it.each(['attendance', 'outcome'])('rechecks demo ownership under lock before saving teacher %s', async (action) => {
+    mocks.actor = { id: 7, module: 'administration', modules: ['administration', 'teacher'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [{ id: 23, teacher_id: 4, status: 'scheduled', participants: [{ id: 77 }] }] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 23, teacher_id: 99, status: 'scheduled' }] };
+      }
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post(`/api/academy/modules/teacher/demo-lessons/23/${action}`)
+      .send(action === 'attendance' ? { participants: [{ participantId: 77, status: 'attended' }] } : { status: 'completed' });
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('teacherOwnDemoOnly');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /^UPDATE\s/.test(String(sql).trim()))).toBe(false);
+  });
+
+  it.each(['attendance', 'outcome'])('denies another teacher’s demo %s before opening a transaction', async (action) => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [{ id: 23, teacher_id: 99, status: 'scheduled', participants: [] }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post(`/api/academy/modules/teacher/demo-lessons/23/${action}`)
+      .send(action === 'attendance' ? { participants: [{ participantId: 77, status: 'attended' }] } : { status: 'completed' });
+    expect(response.status).toBe(403);
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it.each(['attended', 'no_show'])('lets a teacher save %s for students owned by sales and preserves the sales result', async (status) => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    const participant = { id: 77, studentId: 155, status: 'invited', managerId: 18, studentName: 'Student' };
+    const demo = { id: 23, teacher_id: 4, status: 'scheduled', participants: [participant] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [{ ...demo, participants: [{ ...participant, status }] }] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) return { rows: [demo] };
+      if (sql.includes('FOR UPDATE OF participant, student')) return { rows: [{ id: 77, student_id: 155, status: 'invited', manager_id: 18, result: 'existing offer' }] };
+      if (sql.includes('UPDATE "academy_demo_lessons"')) return { rows: [demo] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post('/api/academy/modules/teacher/demo-lessons/23/attendance')
+      .send({ participants: [{ participantId: 77, status, result: 'attempted overwrite',
+        ...(status === 'no_show' ? { noShowReasonCode: 'forgot', noShowReasonNote: 'Comment' } : {}),
+      }] });
+    expect(response.status).toBe(200);
+    expect(response.body.participants[0]).toMatchObject({ studentName: 'Student', status, canManage: true });
+    expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE academy_demo_lesson_participants'),
+      [23, 77, status, 'existing offer', status === 'no_show' ? 'forgot' : null, status === 'no_show' ? 'Comment' : null]);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_ACADEMY_DEMO_ATTENDANCE' }));
+  });
+
+  it.each(['cancelled', 'not_conducted', 'participant_cancelled'])('does not let a teacher mark attendance for %s', async (state) => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    const demo = { id: 23, teacher_id: 4, status: state === 'participant_cancelled' ? 'scheduled' : state, participants: [{ id: 77 }] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [demo] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) return { rows: [demo] };
+      if (sql.includes('FOR UPDATE OF participant, student')) return { rows: [{ id: 77, status: 'cancelled' }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post('/api/academy/modules/teacher/demo-lessons/23/attendance')
+      .send({ participants: [{ participantId: 77, status: 'attended' }] });
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('demoAttendanceNotAllowed');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /^UPDATE\s/.test(String(sql).trim()))).toBe(false);
+  });
+
+  it.each([0, 1])('allows a teacher to finalize only a demo with complete attendance (pending: %s)', async (pendingCount) => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    const demo = { id: 23, teacher_id: 4, status: 'scheduled', participants: [{ id: 77, studentId: 155, managerId: 18, status: 'attended' }] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_demo_lessons demo')) return { rows: [demo] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers WHERE user_id')) return { rows: [{ id: 4 }] };
+      if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) return { rows: [demo] };
+      if (sql.includes('COUNT(*)::int AS count')) return { rows: [{ count: pendingCount }] };
+      if (sql.includes('UPDATE "academy_demo_lessons"')) return { rows: [{ ...demo, status: 'completed' }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post('/api/academy/modules/teacher/demo-lessons/23/outcome').send({ status: 'completed' });
+    expect(response.status).toBe(pendingCount ? 409 : 200);
+    expect(mocks.clientQuery).toHaveBeenCalledWith(pendingCount ? 'ROLLBACK' : 'COMMIT');
+    if (pendingCount) expect(response.body.error).toBe('demoAttendanceIncomplete');
+    else expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'FINALIZE_ACADEMY_DEMO_LESSON' }));
+  });
+
+  it('does not let a teacher use demo sales-management endpoints', async () => {
+    mocks.actor = { id: 7, module: 'teacher', modules: ['teacher'] };
+    const app = await createApp();
+    for (const action of ['teacher', 'cancel', 'reschedule', 'participants', 'attendance', 'outcome']) {
+      expect((await request(app).post(`/api/academy/demo-lessons/23/${action}`).send({})).status).toBe(403);
+    }
+    expect((await request(app).delete('/api/academy/demo-lessons/23/participants/77')).status).toBe(403);
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
   it('does not let a sales-only user mark lesson attendance', async () => {
     mocks.actor = { id: 8, module: 'sales', modules: ['sales'] };
 

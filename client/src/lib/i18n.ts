@@ -1477,10 +1477,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadSaved: { en: 'Lead saved', ru: 'Лид сохранён' },
   leadInArchive: { en: 'Archived', ru: 'В архиве' },
   stageProgress: { en: 'Stage {current} of {total}', ru: 'Этап {current} из {total}' },
-  managerTransferHint: {
-    en: 'The transfer is applied immediately after confirmation.',
-    ru: 'Передача применяется сразу после подтверждения.',
-  },
   clickToCopy: { en: 'Click to copy', ru: 'Нажмите, чтобы скопировать' },
   phoneCopied: { en: 'Phone number copied', ru: 'Номер скопирован' },
   copyFailed: { en: 'Could not copy', ru: 'Не удалось скопировать' },
@@ -1698,7 +1694,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadAdvancedAfterTrial: { en: 'Lead moved to the next sales stage', ru: 'Лид переведён на следующий этап продаж' },
   leadAdvanceAfterTrialFailed: { en: 'Could not move the lead to the next stage', ru: 'Не удалось перевести лида на следующий этап' },
   salesFunnelStageUnavailable: { en: 'This stage belongs to a different funnel.', ru: 'Этот этап относится к другой воронке.' },
-  salesFunnelCloserOnly: { en: 'Only an employee with the Closer KPI role can take this lead.', ru: 'Этого лида может взять сотрудник с KPI клозера.' },
+  salesFunnelCloserOnly: { en: 'Assign an employee who works with leads after the demo.', ru: 'Назначьте сотрудника, который работает с лидами после демо.' },
   salesFunnelHunterOnly: { en: 'Assign an employee who works with leads before the demo.', ru: 'Назначьте сотрудника, который работает с лидами до демо.' },
   salesFunnelNotAssigned: { en: 'This sales funnel is not assigned to the employee.', ru: 'Эта воронка продаж не назначена сотруднику.' },
   salesFunnelEmployeeHasLeads: { en: 'Reassign this employee’s leads before removing their funnel access.', ru: 'Перед отключением доступа к воронке переназначьте лидов этого сотрудника.' },
@@ -2764,6 +2760,13 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: '{lead} будет удалён без возможности восстановления. История лида и задачи по этому лиду тоже будут удалены.',
   },
   confirmLeadTransfer: { en: 'Transfer this lead?', ru: 'Передать этого лида?' },
+  assignLeadToMe: { en: 'Assign to me', ru: 'Присвоить себе' },
+  leadAssignedToMe: { en: 'Lead assigned to you', ru: 'Лид присвоен вам' },
+  confirmLeadClaim: { en: 'Take this lead?', ru: 'Взять этого лида в работу?' },
+  confirmLeadClaimDescription: {
+    en: 'You will be responsible for the lead and its open related tasks.',
+    ru: 'Вы станете ответственным за лида и его открытые связанные задачи.',
+  },
   confirmLeadTransferDescription: {
     en: 'The lead and open related tasks will be transferred to {manager}.',
     ru: 'Лид и открытые связанные задачи будут переданы менеджеру {manager}.',

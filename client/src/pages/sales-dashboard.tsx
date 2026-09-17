@@ -1391,6 +1391,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           : salesManagers.filter((manager) => Number(manager.id) === Number(user?.id))}
         currentUserId={user?.id}
         canClaimUnassignedLead={hasSalesModule && !isAdministrationModule}
+        canTransferLeads={isAdministrationModule}
         leadStatusName={leadStatusName}
         dateTime={dateTime}
         money={money}

@@ -46,6 +46,19 @@ export const canActorMutateLead = (actor: ActorContext, lead?: LeadAccessRecord 
   canActorViewLead(actor, lead) && Boolean(lead && (actor.isLeadership
     || leadWorkflowRole(actor, lead) !== 'closer' || Number(lead.managerId) === actor.userId));
 
+// Taking a free lead is not editing an already-owned lead. Repeat assignment
+// to oneself is harmless, but employees may never transfer or take another's lead.
+export const canActorAssignLead = (
+  actor: ActorContext,
+  lead: LeadAccessRecord | null | undefined,
+  managerId: number,
+): boolean => Boolean(lead && (actor.isLeadership || (
+  actorHasModule(actor, 'sales')
+  && managerId === actor.userId
+  && canActorViewLead(actor, lead)
+  && (lead.managerId == null || Number(lead.managerId) === actor.userId)
+)));
+
 export type DuplicateLeadRecord = LeadAccessRecord & {
   entityType?: unknown;
   isArchived?: unknown;

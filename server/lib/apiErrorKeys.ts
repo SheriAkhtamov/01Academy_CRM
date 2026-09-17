@@ -24,7 +24,7 @@ export const toApiErrorKey = (message: string) => {
     if (lower.includes('invalid credentials')) {
         return 'invalidCredentialsMessage';
     }
-    if (lower.includes('access denied') || lower.includes('forbidden')) {
+    if (lower.includes('access denied') || lower.includes('forbidden') || lower.includes('access required')) {
         return 'accessDenied';
     }
     if (lower.includes('session save failed')) {

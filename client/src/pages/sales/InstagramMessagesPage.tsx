@@ -2236,6 +2236,7 @@ export default function MessagesPage() {
         managers={leadSheetManagers}
         currentUserId={user?.id}
         canClaimUnassignedLead={hasSalesModule && !isAdministrationModule}
+        canTransferLeads={isAdministrationModule}
         leadStatusName={statusName}
         dateTime={dateTime}
         money={money}

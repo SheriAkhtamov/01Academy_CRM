@@ -57,7 +57,7 @@ import {
   actorContextFrom,
   type ActorSource,
 } from '../leads/domain/actor-context';
-import { duplicateHintForActor } from '../leads/domain/access-policy';
+import { canActorAssignLead, duplicateHintForActor } from '../leads/domain/access-policy';
 
 export const buildTemplateSourceCode = (prefix: string, suffix: string) => {
   const slug = suffix
@@ -1100,8 +1100,8 @@ export const reassignLead = async (
     if (!lockedLead) {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
-    if (!canAccessLeadRow(actor, lockedLead)) {
-      throw Object.assign(new Error('Lead access required'), { statusCode: 403 });
+    if (!canActorAssignLead(actor, lockedLead, lockedManager.id)) {
+      throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
     }
     await assertSalesFunnelAssignment(lockedLead.funnelId, lockedManager.id);
     if (Number(lockedLead.managerId) === Number(lockedManager.id)) {

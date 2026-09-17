@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { salesFunnelStages } from '../shared/sales-funnel-workflow';
 import { actorContextFrom, type ActorContext } from '../server/modules/leads/domain/actor-context';
-import { canActorMutateLead, canActorViewLead } from '../server/modules/leads/domain/access-policy';
+import { canActorAssignLead, canActorMutateLead, canActorViewLead } from '../server/modules/leads/domain/access-policy';
 import { canManageDemoParticipant } from '../server/modules/academy/demo-participant-access';
 
 const mocks = vi.hoisted(() => ({
@@ -64,6 +64,20 @@ describe('hunter/closer pipeline and permissions', () => {
     expect(canManageDemoParticipant(closer, participant)).toBe(true);
     expect(canManageDemoParticipant(employee('hunter', 9), participant)).toBe(false);
     expect(canManageDemoParticipant(employee('hunter', 9), { ...participant, managerId: null })).toBe(false);
+  });
+  it('lets closers and full-cycle employees take only free leads in assigned funnels', () => {
+    const queue = { ...lead, funnelId: 2, managerId: null };
+    for (const actor of [closer, fullCycle, fullCycle3500]) {
+      expect(canActorAssignLead(actor, queue, actor.userId)).toBe(true);
+      expect(canActorMutateLead(actor, queue)).toBe(false);
+      expect(canActorAssignLead(actor, { ...queue, managerId: 99 }, actor.userId)).toBe(false);
+      expect(canActorAssignLead(actor, { ...queue, managerId: actor.userId }, 99)).toBe(false);
+      expect(canActorAssignLead(actor, { ...queue, funnelId: 99 }, actor.userId)).toBe(false);
+    }
+    expect(canActorAssignLead(hunter, queue, hunter.userId)).toBe(false);
+    expect(canActorAssignLead(hunter, { ...queue, funnelId: 1 }, hunter.userId)).toBe(true);
+    const administration = actorContextFrom({ id: 1, module: 'administration' });
+    expect(canActorAssignLead(administration, { ...queue, managerId: 7 }, 8)).toBe(true);
   });
 });
 

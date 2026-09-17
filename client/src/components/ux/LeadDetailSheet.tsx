@@ -263,6 +263,7 @@ interface LeadDetailSheetProps {
   managers: Array<{ id: number; fullName: string }>;
   currentUserId?: number;
   canClaimUnassignedLead?: boolean;
+  canTransferLeads?: boolean;
   leadStatusName: (code: string) => string;
   dateTime: (value: string | null | undefined) => string;
   money: (value: number | string | null | undefined) => string;
@@ -357,6 +358,7 @@ export function LeadDetailSheet({
   managers,
   currentUserId,
   canClaimUnassignedLead = false,
+  canTransferLeads = false,
   leadStatusName,
   dateTime,
   money,
@@ -638,9 +640,10 @@ export function LeadDetailSheet({
 
   const assignLead = useMutation({
     mutationFn: (managerId: number) => leadsApi.assign(leadId!, { managerId }),
-    onSuccess: async () => {
+    onSuccess: async (_result, managerId) => {
       setPendingManagerId(null);
-      toast({ title: t('leadTransferred') });
+      await invalidateLeadData(queryClient, leadId);
+      toast({ title: canClaimUnassignedLead && managerId === currentUserId ? t('leadAssignedToMe') : t('leadTransferred') });
       onChanged();
       onOpenChange(false);
     },
@@ -770,7 +773,9 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
-  const waitingForCloser = lead?.funnelRole === 'closer' && !lead.managerId;
+  const waitingForCloser = lead?.funnelRole === 'closer' && !lead.managerId && !canTransferLeads;
+  const canClaimLead = canClaimUnassignedLead && Boolean(currentUserId) && Boolean(lead && !lead.managerId && !lead.isArchived);
+  const confirmingSelfClaim = canClaimLead && pendingManagerId === currentUserId;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
@@ -947,6 +952,12 @@ export function LeadDetailSheet({
               leadStatusName={(code) => funnelStatuses.find((status) => status.code === code)?.name ?? leadStatusName(code)}
               onlinePbxCall={onlinePbxCall}
               copyPhone={copyPhone}
+              assignmentAction={canClaimLead ? (
+                <Button type="button" size="sm" className="self-start" disabled={assignLead.isPending}
+                  onClick={() => { if (currentUserId) setPendingManagerId(currentUserId); }}>
+                  {t('assignLeadToMe')}
+                </Button>
+              ) : null}
               tagsEditor={(
                 <LeadTagsEditor
                   leadId={lead.id}
@@ -1219,7 +1230,7 @@ export function LeadDetailSheet({
                             />
                             <FormItem>
                               <FormLabel>{t('responsibleManager')}</FormLabel>
-                              <Select
+                              {canTransferLeads ? <Select
                                 value={lead.managerId ? String(lead.managerId) : undefined}
                                 onValueChange={(value) => {
                                   const nextManagerId = Number(value);
@@ -1241,8 +1252,11 @@ export function LeadDetailSheet({
                                     ))}
                                   </SelectGroup>
                                 </SelectContent>
-                              </Select>
-                              <p className="text-xs text-muted-foreground">{t('managerTransferHint')}</p>
+                              </Select> : (
+                                <div className="flex min-h-9 items-center text-sm">
+                                  {lead.managerName || t('notAssigned')}
+                                </div>
+                              )}
                             </FormItem>
                           </CardContent>
                         </Card>
@@ -1755,9 +1769,9 @@ export function LeadDetailSheet({
       }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('confirmLeadTransfer')}</AlertDialogTitle>
+            <AlertDialogTitle>{confirmingSelfClaim ? t('confirmLeadClaim') : t('confirmLeadTransfer')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('confirmLeadTransferDescription')
+              {confirmingSelfClaim ? t('confirmLeadClaimDescription') : t('confirmLeadTransferDescription')
                 .replace('{manager}', managers.find((manager) => manager.id === pendingManagerId)?.fullName ?? '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1770,7 +1784,7 @@ export function LeadDetailSheet({
                 if (pendingManagerId !== null) assignLead.mutate(pendingManagerId);
               }}
             >
-              {assignLead.isPending ? t('saving') : t('transferLead')}
+              {assignLead.isPending ? t('saving') : confirmingSelfClaim ? t('assignLeadToMe') : t('transferLead')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

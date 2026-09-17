@@ -27,12 +27,12 @@ export async function readKpiLeadOwnership(actor: KpiActor, leadId: number): Pro
   // A past owner sees their own KPI details, but does not retain lead access.
   if (!actor.isAdministration && lead.manager_id !== null && lead.manager_id !== actor.id) throw kpiError(new Error('accessDenied'), 403);
   if (!actor.isAdministration && lead.manager_id === null && lead.workflow_role === 'closer'
-    && lead.actor_role !== 'closer') throw kpiError(new Error('accessDenied'), 403);
+    && lead.actor_role !== 'closer' && !isFullCycleKpiRole(lead.actor_role)) throw kpiError(new Error('accessDenied'), 403);
   const inCloserQueue = !lead.is_archived && lead.workflow_role === 'closer' && lead.manager_id === null;
   return {
     hunter: lead.hunter_id ? { id: lead.hunter_id, name: lead.hunter_name ?? '' } : null,
     closer: lead.closer_id ? { id: lead.closer_id, name: lead.closer_name ?? '' } : null,
-    inCloserQueue, canClaim: inCloserQueue && lead.actor_role === 'closer', offerAt: lead.offer_at?.toISOString() ?? null,
+    inCloserQueue, canClaim: inCloserQueue && (lead.actor_role === 'closer' || isFullCycleKpiRole(lead.actor_role)), offerAt: lead.offer_at?.toISOString() ?? null,
     canRecordOffer: !lead.is_archived && !lead.offer_at && Boolean(lead.closer_id)
       && !inCloserQueue && (actor.isAdministration || lead.closer_id === actor.id),
   };
@@ -141,7 +141,7 @@ export async function claimKpiLead(actor: KpiActor, source: ActorSource, leadId:
   return withTransaction(async () => {
     const manager = await getActiveSalesManager(actor.id, true);
     const role = await queryOne('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
-    if (role?.role !== 'closer') throw kpiError(new Error('salesFunnelCloserOnly'), 403);
+    if (role?.role !== 'closer' && !isFullCycleKpiRole(role?.role)) throw kpiError(new Error('salesFunnelCloserOnly'), 403);
     const lead = await queryOne(`SELECT lead.*, funnel.workflow_role FROM academy_leads lead
       JOIN academy_sales_funnels funnel ON funnel.id = lead.funnel_id
       WHERE lead.id = $1 FOR UPDATE OF lead`, [leadId]);

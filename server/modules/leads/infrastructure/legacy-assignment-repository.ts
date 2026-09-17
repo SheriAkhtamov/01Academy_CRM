@@ -3,7 +3,7 @@ import type {
   LeadRecord,
 } from '../application/ports';
 import type { ActorContext } from '../domain/actor-context';
-import { canActorMutateLead } from '../domain/access-policy';
+import { canActorAssignLead } from '../domain/access-policy';
 import {
   applyLeadVisibilityForActor,
   createAudit,
@@ -33,8 +33,8 @@ export class LegacyLeadAssignmentRepository implements LeadAssignmentRepository 
     if (!previous) {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
-    if (!canActorMutateLead(actor, previous)) {
-      throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+    if (!canActorAssignLead(actor, previous, managerId)) {
+      throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
     }
 
     const manager = await getActiveSalesManager(managerId);

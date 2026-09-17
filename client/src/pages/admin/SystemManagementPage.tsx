@@ -154,10 +154,10 @@ function EmployeeNotificationsPage() {
     queryKey: ['/api/users'],
   });
   const employees = useMemo(() => (employeesQuery.data ?? []).filter((employee) => (
-    employee.id !== user?.id
+    (channel === 'notification' || employee.id !== user?.id)
     && employee.isActive === true
     && employee.isArchived !== true
-  )), [employeesQuery.data, user?.id]);
+  )), [channel, employeesQuery.data, user?.id]);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee])),
     [employees],
@@ -187,9 +187,11 @@ function EmployeeNotificationsPage() {
 
   const sendMutation = useMutation({
     mutationFn: sendEmployeeBroadcast,
-    onSuccess: (result) => {
+    onSuccess: (result, broadcast) => {
       if (result.channel === 'message') {
         queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
+      } else if (user && broadcast.recipientIds.includes(user.id)) {
+        queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
       }
       toast({
         title: t('employeeBroadcastSentTitle'),
@@ -432,7 +434,10 @@ function EmployeeNotificationsPage() {
               <button
                 type="button"
                 aria-pressed={channel === 'message'}
-                onClick={() => setChannel('message')}
+                onClick={() => {
+                  setChannel('message');
+                  if (user) setRecipientSelected(user.id, false);
+                }}
                 className={cn(
                   'flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors',
                   channel === 'message'

@@ -33,7 +33,7 @@ router.post('/broadcast', requireAdministration, async (req, res) => {
 
         const broadcast = input.data;
         const { channel, recipientIds, content } = broadcast;
-        if (recipientIds.includes(req.user!.id)) {
+        if (channel === 'message' && recipientIds.includes(req.user!.id)) {
             return res.status(400).json({ error: 'employeeBroadcastRecipientsUnavailable' });
         }
 

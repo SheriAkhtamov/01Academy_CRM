@@ -151,14 +151,59 @@ describe('notification route boundaries', () => {
     }));
   });
 
-  it('rejects unavailable recipients before creating any broadcast records', async () => {
+  it.each([{ recipientIds: [7] }, { recipientIds: [7, 8] }])('allows system notifications to the administrator among recipients $recipientIds', async ({ recipientIds }) => {
+    const response = await request(await createApp())
+      .post('/api/notifications/broadcast')
+      .send({
+        channel: 'notification',
+        recipientIds,
+        title: 'Schedule update',
+        content: 'Tomorrow starts at 10:00.',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ channel: 'notification', sentCount: recipientIds.length });
+    expect(mocks.createNotifications).toHaveBeenCalledWith(recipientIds.map((userId) => ({
+      userId,
+      type: 'employee_broadcast',
+      title: 'Schedule update',
+      message: 'Tomorrow starts at 10:00.',
+      isRead: false,
+    })));
+    expect(mocks.createMessages).not.toHaveBeenCalled();
+    expect(mocks.broadcast).toHaveBeenCalledWith({
+      type: 'NEW_NOTIFICATION',
+      data: { count: recipientIds.length },
+      audienceUserIds: recipientIds,
+    });
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 7,
+      action: 'BROADCAST_EMPLOYEE_NOTIFICATION',
+      newValues: [{ channel: 'notification', recipientIds }],
+    }));
+  });
+
+  it('rejects direct messages to the sender before creating any records', async () => {
+    const response = await request(await createApp())
+      .post('/api/notifications/broadcast')
+      .send({ channel: 'message', recipientIds: [7, 8], content: 'Hello' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'employeeBroadcastRecipientsUnavailable' });
+    expect(mocks.createMessages).not.toHaveBeenCalled();
+    expect(mocks.createNotifications).not.toHaveBeenCalled();
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+    expect(mocks.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each(['message', 'notification'])('rejects unavailable recipients for %s before creating any records', async (channel) => {
     mocks.getUsers.mockResolvedValue([
       { id: 8, fullName: 'Inactive Employee', isActive: false, isArchived: false },
     ]);
 
     const response = await request(await createApp())
       .post('/api/notifications/broadcast')
-      .send({ channel: 'message', recipientIds: [8], content: 'Hello' });
+      .send({ channel, recipientIds: [8], content: 'Hello', ...(channel === 'notification' ? { title: 'Update' } : {}) });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'employeeBroadcastRecipientsUnavailable' });

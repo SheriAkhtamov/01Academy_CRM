@@ -99,6 +99,15 @@ describe('sales KPI attribution and month accounting', () => {
     expect(metric(other, 'bookings').value).toBe(0);
     expect(other.payLines.find((p) => p.key === 'tier')?.amountUzs).toBe(0);
   });
+  it.each([['attended', 2], ['no_show', 1], ['invited', 1]] as const)
+    ('counts siblings under the same lead individually when the second student is %s', (status, attendees) => {
+      const data = facts({ trials: [trial(1, { leadId: 33 }), trial(2, { leadId: 33, status })] });
+      const result = calc(data);
+      expect(metric(result, 'bookings').value).toBe(2);
+      expect(metric(result, 'attendance')).toMatchObject({ numerator: attendees, denominator: 2 });
+      expect(result.payLines.find((line) => line.key === 'tier')?.quantity).toBe(attendees);
+      expect(metric(result, 'attendance').details.map((detail) => detail.id)).toEqual([1, 2]);
+    });
   it('counts explicit attendance before lesson completion, but not cancellations or future lessons', () => {
     const result = calc(facts({ trials: [trial(1, { status: 'cancelled' }), trial(2, { studentId: 1 }),
       trial(3, { lessonStatus: 'scheduled' }), trial(4, { scheduledAt: '2026-10-03T10:00:00+05:00' })] }));

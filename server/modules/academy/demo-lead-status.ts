@@ -4,10 +4,9 @@ import {
   demoAttendanceStage,
   isDemoPipelineStage,
 } from '@shared/demo-pipeline';
-import { actorContextFrom, type ActorSource } from '../leads/domain/actor-context';
-import { createAudit, query, updateRow, type Row } from './academy-core';
-import { createStageHistory, handleLeadStatusEffects } from './academy-leads';
-import { getSalesFunnelRole } from './sales-funnel-policy';
+import type { ActorSource } from '../leads/domain/actor-context';
+import { createAudit, query, type Row } from './academy-core';
+import { transitionDemoLead } from './demo-lead-transition';
 
 // Call inside the demo transaction, BEFORE locking students. Payments and lead
 // lifecycle commands also lock parents before their children.
@@ -29,7 +28,6 @@ export const syncDemoLeadStatuses = async (
   lockedLeads: Row[],
   includePendingChangedDemo = false,
 ) => {
-  const actor = actorContextFrom(source);
   for (const lead of lockedLeads) {
     if (!canAdvanceLeadFromDemo({ isArchived: lead.isArchived, statusCode: String(lead.statusCode) })) continue;
 
@@ -54,38 +52,14 @@ export const syncDemoLeadStatuses = async (
     const resultStage = latest ? demoAttendanceStage(latest.statuses, latest.status) : null;
     const resultStatus = resultStage ?? (isDemoPipelineStage(lead.statusCode) ? 'demo_invited' : null);
     if (!resultStatus) continue;
-    const funnelRole = await getSalesFunnelRole(lead.funnelId);
     const demoAttended = resultStatus === DEMO_ATTENDED_STAGE;
-    // Attendance is an analytics fact, not a funnel transition. Workflow leads
-    // move to the closer queue only through the explicit handoff action.
-    const nextStatus = funnelRole === 'closer'
-      ? String(lead.statusCode)
-      : funnelRole === 'hunter' && resultStatus === DEMO_ATTENDED_STAGE
-        ? (lead.statusCode === 'ne_prishli_na_vstrechu' ? 'demo_invited' : String(lead.statusCode))
-        : resultStatus;
-    if (lead.statusCode === nextStatus && lead.demoAttended === demoAttended) continue;
-
-    // Protected stages cannot disappear after migration. Check explicitly so a
-    // misconfigured deployment rolls back attendance instead of orphaning leads.
-    const statuses = await query(
-      `SELECT code FROM academy_lead_statuses
-       WHERE code = $1 AND is_active = true AND is_pipeline = true`,
-      [nextStatus],
-    );
-    if (statuses.length === 0) {
-      throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 409 });
-    }
-    const updated = await updateRow('academy_leads', Number(lead.id), { statusCode: nextStatus, demoAttended });
-    if (!updated) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-    if (lead.statusCode !== nextStatus) {
-      await createStageHistory(
-        Number(lead.id), String(lead.statusCode), nextStatus, actor.userId,
-        `Автоматически по посещаемости учеников на демо #${latest?.id ?? changedDemoId}`,
-      );
-      await handleLeadStatusEffects(source, updated, String(lead.statusCode));
-    }
+    const updated = await transitionDemoLead(source, lead, resultStatus, demoAttended,
+      latest?.id ?? changedDemoId,
+      `Автоматически по посещаемости учеников на демо #${latest?.id ?? changedDemoId}`);
+    if (lead.statusCode === updated.statusCode && lead.funnelId === updated.funnelId
+      && lead.demoAttended === updated.demoAttended) continue;
     await createAudit(source, 'SYNC_ACADEMY_DEMO_LEAD_STATUS', 'academy_lead', Number(lead.id),
-      { demoLessonId: changedDemoId, statusCode: nextStatus, demoAttended },
-      { statusCode: lead.statusCode, demoAttended: lead.demoAttended });
+      { demoLessonId: changedDemoId, statusCode: updated.statusCode, funnelId: updated.funnelId, demoAttended: updated.demoAttended },
+      { statusCode: lead.statusCode, funnelId: lead.funnelId, demoAttended: lead.demoAttended });
   }
 };

@@ -4320,10 +4320,9 @@ describe('academy route logic boundaries', () => {
         expect(attendanceUpdated).toBe(true);
         return { rows: [{ id: 23, statuses: ['attended'] }] };
       }
-      if (sql.includes('SELECT code FROM academy_lead_statuses')) return { rows: [{ code: 'demo_attended' }] };
-      if (sql.includes('UPDATE "academy_leads"')) {
-        expect(values).toEqual([2640, 'demo_attended', true]);
-        return { rows: [leadFixture({ id: 2640, status_code: 'demo_attended', demo_attended: true })] };
+      if (sql.includes('academy_transition_demo_lead')) {
+        expect(values).toEqual([2640, 'demo_attended', true, 23, 7, expect.stringContaining('#23')]);
+        return { rows: [leadFixture({ id: 2640, funnel_id: 3, manager_id: 7, status_code: 'demo_attended', demo_attended: true })] };
       }
       if (sql.includes('SELECT * FROM academy_demo_lessons WHERE id = $1 FOR UPDATE')) {
         return { rows: [demo] };
@@ -4377,9 +4376,8 @@ describe('academy route logic boundaries', () => {
       studentName: null,
     }));
     const sqls = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
-    expect(sqls.filter((sql) => sql.includes('UPDATE "academy_leads"'))).toHaveLength(1);
-    expect(sqls.some((sql) => sql.includes('INSERT INTO "academy_lead_stage_history"'))).toBe(true);
-    expect(sqls.findIndex((sql) => sql.includes('UPDATE "academy_leads"'))).toBeLessThan(sqls.indexOf('COMMIT'));
+    expect(sqls.filter((sql) => sql.includes('academy_transition_demo_lead'))).toHaveLength(1);
+    expect(sqls.findIndex((sql) => sql.includes('academy_transition_demo_lead'))).toBeLessThan(sqls.indexOf('COMMIT'));
     expect(sqls.findIndex((sql) => sql.includes('FOR UPDATE OF lead'))).toBeLessThan(sqls.findIndex((sql) => sql.includes('FOR UPDATE OF participant, student')));
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
@@ -4402,11 +4400,11 @@ describe('academy route logic boundaries', () => {
       ] };
       if (sql.includes('UPDATE "academy_demo_lessons"')) return { rows: [demo] };
       if (sql.includes('array_agg(participant.status')) return { rows: [{ id: 23, status: 'scheduled', statuses: ['no_show'] }] };
-      if (sql.includes('SELECT code FROM academy_lead_statuses')) {
-        return { rows: failure === 'stage' ? [] : [{ code: 'ne_prishli_na_vstrechu' }] };
+      if (sql.includes('academy_transition_demo_lead')) {
+        if (failure === 'stage') throw Object.assign(new Error('invalidLeadStatus'), { code: 'P0001' });
+        if (failure === 'history') throw new Error('History unavailable');
+        return { rows: [leadFixture({ status_code: 'ne_prishli_na_vstrechu' })] };
       }
-      if (sql.includes('UPDATE "academy_leads"')) return { rows: [leadFixture({ status_code: 'ne_prishli_na_vstrechu' })] };
-      if (sql.includes('INSERT INTO "academy_lead_stage_history"') && failure === 'history') throw new Error('History unavailable');
       return emptyResult();
     });
     const response = await request(await createApp()).post('/api/academy/demo-lessons/23/attendance')
@@ -4415,7 +4413,8 @@ describe('academy route logic boundaries', () => {
     expect(sqls.some((sql) => sql.includes('UPDATE academy_demo_lesson_participants'))).toBe(true);
     if (failure === 'none') {
       expect(response.status).toBe(200);
-      expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE "academy_leads"'), [42, 'ne_prishli_na_vstrechu', false]);
+      expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('academy_transition_demo_lead'),
+        [42, 'ne_prishli_na_vstrechu', false, 23, 1, expect.stringContaining('#23')]);
       expect(sqls).toContain('COMMIT');
     } else {
       expect(response.status).toBe(failure === 'stage' ? 409 : 500);

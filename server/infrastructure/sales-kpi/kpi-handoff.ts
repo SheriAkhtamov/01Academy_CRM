@@ -2,13 +2,11 @@ import { pool } from '../../db';
 import { kpiError, type KpiActor } from './kpi-repository';
 import { isFullCycleKpiRole, type KpiLeadOwnership } from '@shared/sales-kpi';
 import type { ActorSource } from '../../modules/leads/domain/actor-context';
-import { createAudit, insertRow, query, queryOne, updateRow, withTransaction } from '../../modules/academy/academy-core';
+import { createAudit, query, queryOne, withTransaction } from '../../modules/academy/academy-core';
+import { transitionDemoLead } from '../../modules/academy/demo-lead-transition';
 import {
-  createStageHistory,
   getActiveSalesManager,
-  handleLeadStatusEffects,
   reassignLead,
-  syncLeadManagerRelations,
 } from '../../modules/academy/academy-leads';
 
 export async function readKpiLeadOwnership(actor: KpiActor, leadId: number): Promise<KpiLeadOwnership> {
@@ -76,64 +74,17 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
       throw kpiError(new Error('accessDenied'), 403);
     }
 
-    const closerFunnel = await queryOne<{ id: number }>(
-      `SELECT id FROM academy_sales_funnels
-       WHERE workflow_role = 'closer' AND is_active = true FOR SHARE`,
-    );
-    if (!closerFunnel) throw kpiError(new Error('salesFunnelRequired'), 409);
-
-    // Freeze hunter attribution before the operational owner is released.
-    await query('SELECT academy_kpi_touch_lead($1)', [leadId]);
-    await query(
-      `INSERT INTO academy_lead_funnel_handoffs(lead_id, from_funnel_id, from_manager_id, demo_lesson_id)
-       VALUES ($1, $2, $3, NULL)
-       ON CONFLICT (lead_id) DO UPDATE SET from_funnel_id = EXCLUDED.from_funnel_id,
-         from_manager_id = EXCLUDED.from_manager_id, demo_lesson_id = NULL,
-         handed_off_at = timezone('UTC', now()), returned_at = NULL`,
-      [leadId, lead.funnelId, lead.managerId ?? null],
-    );
-
-    const retainsOwner = isFullCycleKpiRole(role?.role) && Number(lead.managerId) === actor.id;
-    const nextManagerId = retainsOwner ? actor.id : null;
-    const historyComment = retainsOwner
-      ? 'Продолжил работу с лидом после пробного'
-      : 'Передан в очередь клозеров вручную';
-    const updated = await updateRow('academy_leads', leadId, {
-      funnelId: closerFunnel.id,
-      managerId: nextManagerId,
-      statusCode: 'demo_attended',
-      firstViewedAt: null,
-      firstViewedBy: null,
-    });
-    if (!updated) throw kpiError(new Error('resourceNotFound'), 404);
-
-    await syncLeadManagerRelations(leadId, nextManagerId);
-    await insertRow('academy_lead_assignment_history', {
-      leadId,
-      fromManagerId: lead.managerId ?? null,
-      toManagerId: nextManagerId,
-      changedBy: actor.id,
-      comment: historyComment,
-    });
-    if (String(lead.statusCode) !== 'demo_attended') {
-      await createStageHistory(
-        leadId,
-        String(lead.statusCode),
-        'demo_attended',
-        actor.id,
-        historyComment,
-      );
-      await handleLeadStatusEffects(source, updated, String(lead.statusCode));
-    }
+    const updated = await transitionDemoLead(source, lead, 'demo_attended', null, null,
+      'Продолжил работу с лидом после пробного');
     await createAudit(
       source,
-      retainsOwner ? 'CONTINUE_FULL_CYCLE_LEAD' : 'QUEUE_ACADEMY_CLOSER_LEAD',
+      'CONTINUE_FULL_CYCLE_LEAD',
       'academy_lead',
       leadId,
-      { funnelId: closerFunnel.id, managerId: nextManagerId },
+      { funnelId: updated.funnelId, managerId: updated.managerId },
       { funnelId: lead.funnelId, managerId: lead.managerId },
     );
-    return { id: Number(updated.id), mode: retainsOwner ? 'continue' : 'queue' };
+    return { id: Number(updated.id), mode: 'continue' };
   });
 }
 

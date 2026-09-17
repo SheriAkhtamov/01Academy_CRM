@@ -128,7 +128,7 @@ describe('automatic lead distribution persistence', () => {
       || entry.tag === '0114_require_kpi_for_auto_lead_distribution'
     ));
     expect(entries).toHaveLength(2);
-    expect(journal.entries.slice(-2)).toMatchObject([
+    expect(entries).toMatchObject([
       { idx: 113, tag: '0113_auto_lead_distribution' },
       { idx: 114, tag: '0114_require_kpi_for_auto_lead_distribution' },
     ]);

@@ -11,7 +11,7 @@ export const demoAttendanceStage = (statuses: readonly string[], demoStatus = 's
   const active = statuses.filter((status) => status !== 'cancelled')
     .map((status) => demoStatus === 'not_conducted' && status === 'attended' ? 'invited' : status);
   if (active.includes('attended')) return DEMO_ATTENDED_STAGE;
-  if (active.length > 0 && active.every((status) => status === 'no_show')) return DEMO_NO_SHOW_STAGE;
+  if (active.includes('no_show')) return DEMO_NO_SHOW_STAGE;
   return null;
 };
 

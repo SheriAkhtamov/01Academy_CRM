@@ -1503,9 +1503,6 @@ export function LeadDetailSheet({
                               )}
                             />
                             <div className="flex flex-col items-end gap-2 md:col-span-2">
-                              <p className="text-right text-xs text-muted-foreground">
-                                {lead.statusCode === 'paid' ? t('recurringPaymentHint') : t('paymentCreatesClientHint')}
-                              </p>
                               <Button type="submit" disabled={createPayment.isPending}>
                                 <CreditCard data-icon="inline-start" />
                                 {createPayment.isPending ? t('saving') : t('confirmPayment')}

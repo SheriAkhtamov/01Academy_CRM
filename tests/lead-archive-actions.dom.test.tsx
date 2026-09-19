@@ -153,7 +153,7 @@ describe('lead sheet archive quick actions', () => {
     expect(within(dialog).getByRole('combobox').textContent).toBe('new_request');
     const user = userEvent.setup();
     await user.click(within(dialog).getByRole('combobox'));
-    expect(screen.queryByRole('option', { name: 'paid' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'paid' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: 'inactive' })).toBeNull();
     expect(screen.queryByRole('option', { name: 'not_pipeline' })).toBeNull();
     await user.click(screen.getByRole('option', { name: 'qualified' }));

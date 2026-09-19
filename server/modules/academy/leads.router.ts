@@ -332,9 +332,6 @@ router.post('/leads', async (req, res) => {
       }
 
       const statusCode = await resolveInitialLeadStatusCode(nullableText(input.statusCode));
-      if (statusCode === 'paid') {
-        throw Object.assign(new Error('paymentRequiredBeforePaid'), { statusCode: 409 });
-      }
       const managerId = await resolveLeadManagerId(req.actor!, input.managerId, funnel.workflowRole, Number(funnel.id));
       await getActiveSalesManager(managerId, true);
       await assertSalesFunnelAssignment(funnel.id, managerId);

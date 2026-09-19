@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { validateLeadStatusTransition } from '@shared/academy';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -39,11 +38,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
   );
   const availableMoveStatuses = useMemo(
     () => statuses.filter((status) => (
-      status.code !== 'paid'
-      && selectedLeads.some((lead) => lead.statusCode !== status.code)
-      && selectedLeads.every(
-        (lead) => !validateLeadStatusTransition(lead.statusCode, status.code),
-      )
+      selectedLeads.some((lead) => lead.statusCode !== status.code)
     )),
     [selectedLeads, statuses],
   );

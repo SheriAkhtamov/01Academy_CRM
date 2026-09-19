@@ -2273,6 +2273,12 @@ describe('academy route logic boundaries', () => {
       'DELETE FROM academy_lead_group_reservations WHERE lead_id = $1',
       [42],
     );
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"') && String(sql).includes('"status_code"')
+    ))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_lead_stage_history"')
+    ))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -3842,6 +3848,53 @@ describe('academy route logic boundaries', () => {
     const updateCall = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_leads"'));
     expect(String(updateCall?.[0])).toContain('"student_name"');
     expect(updateCall?.[1]).toContain(null);
+  });
+
+  it('allows a paid lead to be moved manually to another stage', async () => {
+    const existing = leadFixture({
+      status_code: 'paid',
+      funnel_id: 3,
+      funnel_role: 'closer',
+    });
+    const moved = { ...existing, status_code: 'thinking' };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('FROM academy_lead_statuses') && sql.includes('code = $1')) {
+        return { rows: [{ code: 'thinking' }] };
+      }
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('FROM academy_lead_statuses') && sql.includes('code = $1')) {
+        return { rows: [{ code: 'thinking' }] };
+      }
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+        return { rows: [existing] };
+      }
+      if (sql.includes('SELECT workflow_role') && sql.includes('academy_sales_stage_role')) {
+        return { rows: [{ workflow_role: 'closer', stage_role: 'closer' }] };
+      }
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [moved] };
+      if (sql.includes('INSERT INTO "academy_lead_stage_history"')) return { rows: [{ id: 100 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ statusCode: 'thinking' });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    const statusUpdate = mocks.clientQuery.mock.calls.find(([sql]) => (
+      String(sql).includes('UPDATE "academy_leads"') && String(sql).includes('"status_code"')
+    ));
+    expect(statusUpdate?.[1]).toContain('thinking');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_lead_stage_history"')
+    ))).toBe(true);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('validates referrers and prevents self-referral under the lead lock', async () => {

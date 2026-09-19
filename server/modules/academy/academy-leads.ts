@@ -1446,10 +1446,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
       resolvedStudent = await advanceStudentNextPaymentAt(Number(existingStudent.id), nextPaymentAt)
         ?? existingStudent;
     }
-    if (lead.statusCode !== 'paid') {
-      await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
-      await createStageHistory(lead.id, lead.statusCode, 'paid', actor.userId, 'Подтверждена оплата существующего клиента');
-    }
     return resolvedStudent;
   }
   if (!lead.enrolledGroupId) {
@@ -1518,9 +1514,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
       groupId: student.groupId,
     });
   }
-
-  await updateRow('academy_leads', lead.id, { statusCode: 'paid' });
-  await createStageHistory(lead.id, lead.statusCode, 'paid', actor.userId, 'Автоматическое создание ученика после оплаты');
 
   if (lead.referrerStudentId && Number(lead.referrerStudentId) !== Number(student.id)) {
     await insertRow('academy_referral_rewards', {

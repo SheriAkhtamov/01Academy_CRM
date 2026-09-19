@@ -1204,16 +1204,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}
           onArchiveLead={openArchiveDialog}
-          onStatusChange={async (leadId, statusCode) => {
-            if (statusCode === 'paid') {
-              // The move is rejected (the card snaps back): explain why instead
-              // of leaving the user to guess.
-              toast({ title: t('paidMoveRequiresPaymentTitle'), description: t('paidMoveRequiresPaymentDescription') });
-              openLead(leadId, 'payment');
-              return false;
-            }
-            return requestLeadStatusChange(leadId, statusCode);
-          }}
+          onStatusChange={requestLeadStatusChange}
           isPending={updateLead.isPending || assignAndMoveLead.isPending}
           showManager={isAdministrationModule}
           selectedLeadIds={pipelineBulkActions.selectedLeadIds}

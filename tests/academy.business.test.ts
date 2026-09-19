@@ -164,9 +164,9 @@ describe("01 Academy business rules", () => {
     })).toBeNull();
   });
 
-  it("keeps paid clients terminal and requires a payment to enter paid", () => {
-    expect(validateLeadStatusTransition("qualified", "paid")).toBe("paymentRequiredBeforePaid");
-    expect(validateLeadStatusTransition("paid", "thinking")).toBe("paidLeadCannotReturn");
+  it("keeps payment records independent from manually selected lead stages", () => {
+    expect(validateLeadStatusTransition("qualified", "paid")).toBeNull();
+    expect(validateLeadStatusTransition("paid", "thinking")).toBeNull();
     expect(validateLeadStatusTransition("paid", "paid")).toBeNull();
   });
 

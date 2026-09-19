@@ -287,12 +287,10 @@ export function validateLeadForStatusChange(input: {
 }
 
 export function validateLeadStatusTransition(currentStatus: string, nextStatus: string): string | null {
-  if (currentStatus === "paid" && nextStatus !== "paid") {
-    return "paidLeadCannotReturn";
-  }
-  if (currentStatus !== "paid" && nextStatus === "paid") {
-    return "paymentRequiredBeforePaid";
-  }
+  // Payments and pipeline stages are independent. Managers choose every stage
+  // explicitly; payment records remain accounting facts only.
+  void currentStatus;
+  void nextStatus;
   return null;
 }
 

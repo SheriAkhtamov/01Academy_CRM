@@ -154,9 +154,6 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
     try {
       const leadIds = [...new Set(input.data.leadIds)];
       const statusCode = input.data.statusCode;
-      if (statusCode === 'paid') {
-        return res.status(409).json({ error: 'paymentRequiredBeforePaid' });
-      }
 
       const changes = await withTransaction(async () => {
         const targetStatus = await getActiveLeadStatus(statusCode, true);

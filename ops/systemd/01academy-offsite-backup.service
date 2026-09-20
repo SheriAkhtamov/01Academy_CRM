@@ -1,0 +1,36 @@
+[Unit]
+Description=Pull and verify 01Academy CRM offsite backups
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=crmbackup
+Group=crmbackup
+Environment=HOME=/var/lib/crmbackup
+EnvironmentFile=/etc/default/01academy-offsite-backup
+ExecStart=/usr/local/sbin/01academy-offsite-backup
+UMask=0077
+TimeoutStartSec=20min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/srv/backups/01academy-crm
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const createBackupScript = join(repositoryRoot, 'scripts', 'create-production-backup.sh');
 const schedulerScript = join(repositoryRoot, 'scripts', 'run-backup-scheduler.sh');
+const offsitePullScript = join(repositoryRoot, 'scripts', 'pull-offsite-backups.sh');
 const temporaryDirectories: string[] = [];
 
 const createExecutable = (directory: string, name: string, source: string) => {
@@ -34,9 +35,32 @@ describe('production backup infrastructure', () => {
   it('keeps the scripts syntactically valid and removes the legacy JSON backup', () => {
     execFileSync('/bin/sh', ['-n', createBackupScript]);
     execFileSync('/bin/sh', ['-n', schedulerScript]);
+    execFileSync('/bin/bash', ['-n', offsitePullScript]);
 
     expect(existsSync(join(repositoryRoot, 'scripts', 'backup-database.mjs'))).toBe(false);
     expect(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')).not.toContain('db:backup');
+  });
+
+  it('keeps offsite copies pull-only and independently verified', () => {
+    const script = readFileSync(offsitePullScript, 'utf8');
+    const service = readFileSync(
+      join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup.service'),
+      'utf8',
+    );
+    const timer = readFileSync(
+      join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup.timer'),
+      'utf8',
+    );
+
+    expect(script).toContain('rsync');
+    expect(script).toContain('sha256sum');
+    expect(script).toContain('unzip -tq');
+    expect(script).toContain('pg_restore --list');
+    expect(script).toContain('RETENTION_DAYS="${RETENTION_DAYS:-90}"');
+    expect(script).not.toContain('--delete');
+    expect(service).toContain('User=crmbackup');
+    expect(service).toContain('ProtectSystem=strict');
+    expect(timer).toContain('OnCalendar=*-*-* *:25:00');
   });
 
   it('packages a verified dump and uploads, then retains exactly ten archives', () => {

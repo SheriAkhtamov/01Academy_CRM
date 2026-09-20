@@ -1,0 +1,13 @@
+[Unit]
+Description=Pull 01Academy CRM offsite backups every hour
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* *:25:00
+RandomizedDelaySec=2min
+Persistent=true
+AccuracySec=1min
+Unit=01academy-offsite-backup.service
+
+[Install]
+WantedBy=timers.target

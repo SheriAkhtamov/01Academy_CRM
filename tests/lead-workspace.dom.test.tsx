@@ -68,6 +68,8 @@ describe('lead workspace navigation and drafts', () => {
     await screen.findByRole('heading', { name: 'Test parent' });
     const tagsEditor = await screen.findByRole('combobox', { name: i18n.t('leadTags') });
     const tabList = screen.getByRole('tablist');
+    const postTrialAction = screen.getByRole('button', { name: i18n.t('advanceLeadAfterTrial') });
+    const demoAction = screen.getByRole('button', { name: i18n.t('bookDemoLesson') });
     expect(screen.queryByRole('button', { name: i18n.t('leadWorkspaceNote') })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Задача' })).toBeNull();
     expect(screen.queryByRole('button', { name: i18n.t('payment') })).toBeNull();
@@ -75,6 +77,8 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.queryByText('Участники KPI')).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Перейти к разделу' })).toBeNull();
     expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(postTrialAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(demoAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();

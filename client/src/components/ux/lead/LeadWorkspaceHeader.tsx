@@ -25,12 +25,14 @@ interface LeadWorkspaceHeaderProps {
   copyPhone: (phone: string) => void;
   tagsEditor: ReactNode;
   archiveAction: ReactNode;
+  workflowActions?: ReactNode;
   assignmentAction?: ReactNode;
 }
 
 export function LeadWorkspaceHeader({
   lead, visiblePhoneNumbers, primaryPhone, messageTarget, statuses,
-  leadStatusName, onlinePbxCall, copyPhone, tagsEditor, archiveAction, assignmentAction, actionsDisabled = false,
+  leadStatusName, onlinePbxCall, copyPhone, tagsEditor, archiveAction, workflowActions,
+  assignmentAction, actionsDisabled = false,
 }: LeadWorkspaceHeaderProps) {
   const { t } = useTranslation();
   return (
@@ -108,7 +110,7 @@ export function LeadWorkspaceHeader({
 
       {/* Quick actions — single prominent CTA + secondary outline buttons */}
       {assignmentAction}
-      <fieldset disabled={actionsDisabled} className="grid auto-cols-fr grid-flow-col gap-1 sm:flex sm:flex-wrap sm:gap-2">
+      <fieldset disabled={actionsDisabled} className="flex flex-wrap gap-2">
         {primaryPhone ? (
           <Button
             type="button"
@@ -139,6 +141,7 @@ export function LeadWorkspaceHeader({
           </Button>
         ) : null}
         {archiveAction}
+        {workflowActions}
       </fieldset>
     </SheetHeader>
   );

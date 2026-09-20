@@ -977,6 +977,39 @@ export function LeadDetailSheet({
                   onChanged={onChanged}
                 />
               )}
+              workflowActions={(
+                <>
+                  {!lead.isArchived && lead.funnelRole === 'hunter' ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={handoffLead.isPending}
+                      onClick={() => unsavedGuard.requestAction(() => handoffLead.mutate(lead.id, {
+                        onSuccess: () => {
+                          toast({ title: t('leadAdvancedAfterTrial') });
+                          onChanged();
+                          onOpenChange(false);
+                        },
+                        onError: (error) => toast({
+                          title: t('leadAdvanceAfterTrialFailed'),
+                          description: error.message,
+                          variant: 'destructive',
+                        }),
+                      }))}
+                    >
+                      {handoffLead.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                        : <ArrowRight data-icon="inline-start" />}
+                      {handoffLead.isPending ? t('saving') : t('advanceLeadAfterTrial')}
+                    </Button>
+                  ) : null}
+                  {!lead.isArchived && lead.statusCode !== 'paid' ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
+                      <CalendarPlus2 data-icon="inline-start" />
+                      {t('bookDemoLesson')}
+                    </Button>
+                  ) : null}
+                </>
+              )}
             />
 
             <fieldset disabled={waitingForCloser} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1028,40 +1061,6 @@ export function LeadDetailSheet({
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
-                  <div
-                    className="flex flex-wrap justify-end gap-2"
-                    hidden={lead.isArchived || (lead.funnelRole !== 'hunter' && lead.statusCode === 'paid')}
-                  >
-                    {!lead.isArchived && lead.funnelRole === 'hunter' ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={handoffLead.isPending}
-                        onClick={() => unsavedGuard.requestAction(() => handoffLead.mutate(lead.id, {
-                          onSuccess: () => {
-                            toast({ title: t('leadAdvancedAfterTrial') });
-                            onChanged();
-                            onOpenChange(false);
-                          },
-                          onError: (error) => toast({
-                            title: t('leadAdvanceAfterTrialFailed'),
-                            description: error.message,
-                            variant: 'destructive',
-                          }),
-                        }))}
-                      >
-                        {handoffLead.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
-                          : <ArrowRight data-icon="inline-start" />}
-                        {handoffLead.isPending ? t('saving') : t('advanceLeadAfterTrial')}
-                      </Button>
-                    ) : null}
-                    {!lead.isArchived && lead.statusCode !== 'paid' ? (
-                      <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
-                        <CalendarPlus2 data-icon="inline-start" />
-                        {t('bookDemoLesson')}
-                      </Button>
-                    ) : null}
-                  </div>
                   <Form {...leadForm}>
                     <form id="lead-details-form" onSubmit={saveDeal}>
                       <fieldset disabled={updateLead.isPending} className="flex min-w-0 flex-col gap-4">

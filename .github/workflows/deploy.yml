@@ -243,9 +243,9 @@ jobs:
           docker compose up -d --no-build postgres crm
           docker compose stop backup >/dev/null 2>&1 || true
           rm -f backups/.backup.lock
-          if ! docker compose run --rm --no-deps \
+          if ! docker compose run --rm --no-deps -T \
             --entrypoint /usr/local/bin/create-production-backup \
-            backup; then
+            backup </dev/null; then
             docker compose up -d --no-build backup || true
             exit 1
           fi

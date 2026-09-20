@@ -87,6 +87,7 @@ services:
       - BACKUP_KEEP=10
       - BACKUP_INTERVAL_SECONDS=3600
       - BACKUP_RETRY_SECONDS=300
+      - BACKUP_LOCK_WAIT_SECONDS=3600
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
     read_only: true
     tmpfs:

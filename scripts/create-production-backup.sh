@@ -12,6 +12,7 @@ PGHOST="${PGHOST:-postgres}"
 PGPORT="${PGPORT:-5432}"
 PGDATABASE="${PGDATABASE:-crm}"
 PGUSER="${PGUSER:-crm}"
+BACKUP_LOCK_WAIT_SECONDS="${BACKUP_LOCK_WAIT_SECONDS:-3600}"
 
 case "$BACKUP_KEEP" in
   ''|*[!0-9]*)
@@ -24,6 +25,13 @@ if [ "$BACKUP_KEEP" -lt 1 ]; then
   echo "BACKUP_KEEP must be at least 1" >&2
   exit 1
 fi
+
+case "$BACKUP_LOCK_WAIT_SECONDS" in
+  ''|*[!0-9]*)
+    echo "BACKUP_LOCK_WAIT_SECONDS must be a positive integer" >&2
+    exit 1
+    ;;
+esac
 
 for required_command in pg_dump pg_restore zip unzip sha256sum; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
@@ -47,6 +55,22 @@ mkdir -p "$BACKUP_DIR"
 if [ ! -w "$BACKUP_DIR" ]; then
   echo "Backup directory is not writable: $BACKUP_DIR" >&2
   exit 1
+fi
+
+# A deployment check and the hourly scheduler can briefly coexist. Serialize
+# them so two pg_dump/zip processes never compete for disk and database I/O.
+if [ "${BACKUP_LOCK_HELD:-0}" != '1' ]; then
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "Required command is unavailable: flock" >&2
+    exit 1
+  fi
+
+  export BACKUP_LOCK_HELD=1
+  exec flock \
+    --exclusive \
+    --wait "$BACKUP_LOCK_WAIT_SECONDS" \
+    "${BACKUP_DIR}/.backup.lock" \
+    "$0" "$@"
 fi
 
 created_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"

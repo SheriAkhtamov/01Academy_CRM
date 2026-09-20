@@ -88,6 +88,7 @@ printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\\n'
         BACKUP_DIR: backupDirectory,
         UPLOADS_DIR: uploadsDirectory,
         BACKUP_KEEP: '10',
+        BACKUP_LOCK_HELD: '1',
         POSTGRES_PASSWORD_FILE: passwordFile,
       },
       stdio: 'pipe',

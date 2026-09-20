@@ -240,6 +240,14 @@ jobs:
             --file "$BUILD_CONTEXT/Dockerfile.db-archive" \
             "$BUILD_CONTEXT"
           backup_started_at="$(date +%s)"
+          docker compose up -d --no-build postgres crm
+          docker compose stop backup >/dev/null 2>&1 || true
+          if ! docker compose run --rm --no-deps \
+            --entrypoint /usr/local/bin/create-production-backup \
+            backup; then
+            docker compose up -d --no-build backup || true
+            exit 1
+          fi
           docker compose up -d --no-build --remove-orphans
 
           for attempt in $(seq 1 30); do
@@ -255,21 +263,16 @@ jobs:
             sleep 2
           done
 
-          for attempt in $(seq 1 360); do
-            if [ -f backups/.last-success ]; then
-              backup_completed_at="$(stat -c %Y backups/.last-success)"
-              if [ "$backup_completed_at" -ge "$backup_started_at" ]; then
-                break
-              fi
-            fi
+          if [ ! -f backups/.last-success ]; then
+            docker compose logs --tail=120 backup
+            exit 1
+          fi
 
-            if [ "$attempt" -eq 360 ]; then
-              docker compose logs --tail=120 backup
-              exit 1
-            fi
-
-            sleep 5
-          done
+          backup_completed_at="$(stat -c %Y backups/.last-success)"
+          if [ "$backup_completed_at" -lt "$backup_started_at" ]; then
+            docker compose logs --tail=120 backup
+            exit 1
+          fi
 
           docker compose ps
           REMOTE

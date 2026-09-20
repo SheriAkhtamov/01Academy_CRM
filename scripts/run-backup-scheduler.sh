@@ -29,6 +29,23 @@ trap 'exit 0' INT TERM
 
 echo "Backup scheduler started: interval=${BACKUP_INTERVAL_SECONDS}s, retry=${BACKUP_RETRY_SECONDS}s"
 
+# Deployment creates and verifies one backup synchronously. On restarts, wait
+# only for the unused portion of the hourly interval; if the last copy is
+# already old, create a new one immediately.
+if [ -f "${BACKUP_DIR:-/backups}/.last-success" ]; then
+  now="$(date +%s)"
+  last_success="$(stat -c %Y "${BACKUP_DIR:-/backups}/.last-success")"
+  age="$((now - last_success))"
+
+  if [ "$age" -ge 0 ] && [ "$age" -lt "$BACKUP_INTERVAL_SECONDS" ]; then
+    initial_delay="$((BACKUP_INTERVAL_SECONDS - age))"
+    echo "Recent backup found; next backup starts in ${initial_delay}s"
+    sleep "$initial_delay" &
+    sleep_pid="$!"
+    wait "$sleep_pid" || exit 0
+  fi
+fi
+
 while :; do
   started_at="$(date +%s)"
 
@@ -51,4 +68,3 @@ while :; do
   sleep_pid="$!"
   wait "$sleep_pid" || exit 0
 done
-

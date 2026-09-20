@@ -25,8 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:dev": "tsx scripts/init-dev-data.ts",
-    "db:migrate": "node apply-migrations.js",
-    "db:backup": "node scripts/backup-database.mjs"
+    "db:migrate": "node apply-migrations.js"
   },
   "dependencies": {
     "@imagemagick/magick-wasm": "0.0.43",

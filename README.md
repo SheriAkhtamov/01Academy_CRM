@@ -163,11 +163,46 @@ npm run audit:security
 | `npm run build` | Production сборка |
 | `npm run start:prod` | Запуск production версии |
 | `npm run db:migrate` | Применение миграций |
-| `npm run db:backup` | Бэкап БД |
 | `npm run seed:dev` | Сидирование тестовых данных |
 | `npm test` | Запуск тестов |
 | `npm run check` | Полная проверка (TS, ESLint, architecture, encoding, i18n, a11y) |
 | `npm run audit:security` | Аудит зависимостей и секретов |
+
+## Резервные копии
+
+В production отдельный контейнер `backup` создаёт полный архив сразу после
+запуска, а затем каждый час. Готовые архивы находятся на сервере в каталоге
+`backups/`. Хранятся только 10 последних архивов; более старые архивы и их
+контрольные суммы удаляются после успешного создания новой копии.
+
+Каждый `academy-crm-backup-*.zip` содержит:
+
+- `database.dump` — согласованный PostgreSQL custom-format dump, проверенный
+  через `pg_restore`;
+- `uploads/` — загруженные в CRM файлы;
+- `manifest.json` — дата создания, размеры и SHA-256 дампа базы.
+
+Рядом создаётся файл `*.zip.sha256` для проверки целостности всего ZIP. Архив
+сначала записывается под временным именем, полностью проверяется и только после
+этого публикуется как готовая резервная копия.
+
+Проверка состояния и последние сообщения сервиса:
+
+```bash
+docker compose ps backup
+docker compose logs --tail=100 backup
+```
+
+Перед восстановлением проверьте ZIP и распакуйте его в отдельный каталог:
+
+```bash
+cd backups
+sha256sum -c academy-crm-backup-YYYYMMDDTHHMMSSZ.zip.sha256
+unzip academy-crm-backup-YYYYMMDDTHHMMSSZ.zip -d /tmp/academy-crm-restore
+```
+
+Восстановление необходимо сначала проверять в отдельной временной базе, не
+перезаписывая действующую production-базу.
 
 ## 👥 Роли пользователей
 

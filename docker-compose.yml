@@ -61,6 +61,54 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.db-archive
+    image: 01academy-crm-backup:deploy
+    container_name: crm-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "${BACKUP_UID:-1000}:${BACKUP_GID:-1000}"
+    volumes:
+      - ./backups:/backups
+      - ./uploads:/uploads:ro
+      - ./.secrets/postgres_password:/run/secrets/postgres_password:ro
+    environment:
+      - TZ=UTC
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=crm
+      - PGUSER=crm
+      - BACKUP_DIR=/backups
+      - UPLOADS_DIR=/uploads
+      - BACKUP_KEEP=10
+      - BACKUP_INTERVAL_SECONDS=3600
+      - BACKUP_RETRY_SECONDS=300
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1770,uid=${BACKUP_UID:-1000},gid=${BACKUP_GID:-1000}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "test -f /backups/.last-success && age=$$(($$(date +%s) - $$(stat -c %Y /backups/.last-success))) && [ \"$$age\" -lt 7500 ]"
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 30m
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   pgdata:
 

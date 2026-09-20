@@ -10,6 +10,24 @@ Production-сервер создаёт каждый час полный ZIP с P
 - физический сервер: все ежечасные архивы за последние 90 дней;
 - каталог физического сервера: `/srv/backups/01academy-crm/hourly`.
 
+Каталог с программой находится в `/opt/01academy-backup` и принадлежит `root`.
+Обычные Ubuntu-пользователи не могут прочитать, изменить или удалить программу,
+конфигурацию, SSH-ключ и архивы. Администратор `sheri` получает доступ только
+через `sudo`. Системная учётная запись `crmbackup` не имеет пароля, login-shell,
+`sudo` и доступа к Docker.
+
+SSH-ключ хранится в зашифрованном systemd credential, одновременно привязанном
+к установке Ubuntu и аппаратному TPM 2.0, и раскрывается службе только на время
+запуска. После проверки новый архив немедленно переходит во владение `root`.
+Служба может читать принятую историю для контроля целостности, но sticky-каталог
+и root-владение запрещают ей изменять, переименовывать и удалять ранее принятые
+файлы. Очистку 90-дневной истории выполняет отдельный локальный root-этап после
+успешной проверки.
+
+Каждый день отдельная служба без сети и без прав записи повторно проверяет все
+архивы, их права, SHA-256, структуру ZIP, манифест и читаемость PostgreSQL dump.
+Результат сохраняется в `/var/lib/crmbackup/state/vault-audit.last-success`.
+
 Перед сохранением физический сервер независимо проверяет:
 
 - внешнюю SHA-256 сумму ZIP;
@@ -29,8 +47,12 @@ Production-сервер создаёт каждый час полный ZIP с P
 ```bash
 sudo systemctl status 01academy-offsite-backup.timer
 sudo systemctl status 01academy-offsite-backup.service
+sudo systemctl status 01academy-offsite-backup-audit.timer
+sudo systemctl status 01academy-offsite-backup-audit.service
 sudo journalctl -u 01academy-offsite-backup.service -n 100 --no-pager
-sudo cat /srv/backups/01academy-crm/.last-success
+sudo journalctl -u 01academy-offsite-backup-audit.service -n 100 --no-pager
+sudo cat /var/lib/crmbackup/state/last-success
+sudo cat /var/lib/crmbackup/state/vault-audit.last-success
 sudo ls -lh /srv/backups/01academy-crm/hourly
 ```
 

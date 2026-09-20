@@ -17,6 +17,12 @@ const repositoryRoot = resolve(import.meta.dirname, '..');
 const createBackupScript = join(repositoryRoot, 'scripts', 'create-production-backup.sh');
 const schedulerScript = join(repositoryRoot, 'scripts', 'run-backup-scheduler.sh');
 const offsitePullScript = join(repositoryRoot, 'scripts', 'pull-offsite-backups.sh');
+const offsiteFinalizeScript = join(
+  repositoryRoot,
+  'scripts',
+  'finalize-offsite-backup-vault.sh',
+);
+const offsiteAuditScript = join(repositoryRoot, 'scripts', 'audit-offsite-backup-vault.sh');
 const temporaryDirectories: string[] = [];
 
 const createExecutable = (directory: string, name: string, source: string) => {
@@ -36,6 +42,8 @@ describe('production backup infrastructure', () => {
     execFileSync('/bin/sh', ['-n', createBackupScript]);
     execFileSync('/bin/sh', ['-n', schedulerScript]);
     execFileSync('/bin/bash', ['-n', offsitePullScript]);
+    execFileSync('/bin/bash', ['-n', offsiteFinalizeScript]);
+    execFileSync('/bin/bash', ['-n', offsiteAuditScript]);
 
     expect(existsSync(join(repositoryRoot, 'scripts', 'backup-database.mjs'))).toBe(false);
     expect(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')).not.toContain('db:backup');
@@ -43,6 +51,7 @@ describe('production backup infrastructure', () => {
 
   it('keeps offsite copies pull-only and independently verified', () => {
     const script = readFileSync(offsitePullScript, 'utf8');
+    const finalizer = readFileSync(offsiteFinalizeScript, 'utf8');
     const service = readFileSync(
       join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup.service'),
       'utf8',
@@ -51,16 +60,48 @@ describe('production backup infrastructure', () => {
       join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup.timer'),
       'utf8',
     );
+    const environment = readFileSync(
+      join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup.env'),
+      'utf8',
+    );
+    const auditScript = readFileSync(offsiteAuditScript, 'utf8');
+    const auditService = readFileSync(
+      join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup-audit.service'),
+      'utf8',
+    );
+    const auditTimer = readFileSync(
+      join(repositoryRoot, 'ops', 'systemd', '01academy-offsite-backup-audit.timer'),
+      'utf8',
+    );
 
     expect(script).toContain('rsync');
     expect(script).toContain('sha256sum');
     expect(script).toContain('unzip -tq');
     expect(script).toContain('pg_restore --list');
-    expect(script).toContain('RETENTION_DAYS="${RETENTION_DAYS:-90}"');
+    expect(script).toContain('--no-links');
+    expect(script).toContain('--size-only');
+    expect(script).toContain('Refusing to replace an incomplete or unsafe sealed backup');
     expect(script).not.toContain('--delete');
+    expect(script).not.toContain('Removing sealed backup');
+    expect(finalizer).toContain('RETENTION_DAYS="${RETENTION_DAYS:-90}"');
+    expect(finalizer).toContain('chown root:"$BACKUP_GROUP"');
+    expect(finalizer).toContain('chmod 1770 "$ARCHIVE_DIR"');
+    expect(finalizer).toContain('Removing sealed backup');
     expect(service).toContain('User=crmbackup');
     expect(service).toContain('ProtectSystem=strict');
+    expect(service).toContain('LoadCredentialEncrypted=ssh_key:');
+    expect(service).toContain('ExecStartPost=+');
+    expect(service).toContain('IPAddressDeny=any');
     expect(timer).toContain('OnCalendar=*-*-* *:25:00');
+    expect(environment).toContain('INCOMING_DIR=/var/lib/crmbackup/incoming');
+    expect(environment).toContain('STATE_DIR=/var/lib/crmbackup/state');
+    expect(environment).not.toContain('SSH_KEY_PATH');
+    expect(auditScript).toContain('Read-only backup vault audit completed');
+    expect(auditScript).toContain('pg_restore --list');
+    expect(auditScript).not.toContain('rm -f -- "$expired_archive"');
+    expect(auditService).toContain('PrivateNetwork=true');
+    expect(auditService).toContain('ReadOnlyPaths=/opt/01academy-backup');
+    expect(auditTimer).toContain('OnCalendar=*-*-* 02:10:00');
   });
 
   it('packages a verified dump and uploads, then retains exactly ten archives', () => {

@@ -9,7 +9,12 @@ User=crmbackup
 Group=crmbackup
 Environment=HOME=/var/lib/crmbackup
 EnvironmentFile=/etc/default/01academy-offsite-backup
-ExecStart=/usr/local/sbin/01academy-offsite-backup
+Environment=SSH_KEY_PATH=%d/ssh_key
+Environment=SSH_KNOWN_HOSTS=%d/known_hosts
+LoadCredentialEncrypted=ssh_key:/etc/credstore.encrypted/01academy-offsite-ssh-key
+LoadCredential=known_hosts:/etc/01academy-backup/known_hosts
+ExecStart=/opt/01academy-backup/bin/pull-offsite-backups
+ExecStartPost=+/opt/01academy-backup/bin/finalize-offsite-backup-vault
 UMask=0077
 TimeoutStartSec=20min
 Nice=10
@@ -17,19 +22,31 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 NoNewPrivileges=true
 PrivateDevices=true
+PrivateMounts=true
 PrivateTmp=true
 ProtectClock=true
 ProtectControlGroups=true
 ProtectHome=true
+ProtectHostname=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
+ProtectProc=invisible
 ProtectSystem=strict
-ReadWritePaths=/srv/backups/01academy-crm
+ProcSubset=pid
+ReadOnlyPaths=/opt/01academy-backup
+ReadWritePaths=/srv/backups/01academy-crm/hourly /var/lib/crmbackup/incoming /var/lib/crmbackup/state
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+IPAddressDeny=any
+IPAddressAllow=138.249.248.3
 CapabilityBoundingSet=
 
 [Install]

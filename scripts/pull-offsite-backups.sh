@@ -6,15 +6,15 @@ umask 077
 
 BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups/01academy-crm}"
 ARCHIVE_DIR="${BACKUP_ROOT}/hourly"
-INCOMING_DIR="${BACKUP_ROOT}/.incoming"
-LOCK_FILE="${BACKUP_ROOT}/.pull.lock"
-STATUS_FILE="${BACKUP_ROOT}/.last-success"
+INCOMING_DIR="${INCOMING_DIR:-/var/lib/crmbackup/incoming}"
+STATE_DIR="${STATE_DIR:-/var/lib/crmbackup/state}"
+LOCK_FILE="${STATE_DIR}/pull.lock"
+STATUS_FILE="${STATE_DIR}/last-success"
 REMOTE_USER="${REMOTE_USER:-azamtim}"
 REMOTE_PATH="${REMOTE_PATH:-/}"
 REMOTE_SSH_PORT="${REMOTE_SSH_PORT:-22}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-/var/lib/crmbackup/.ssh/id_ed25519}"
 SSH_KNOWN_HOSTS="${SSH_KNOWN_HOSTS:-/var/lib/crmbackup/.ssh/known_hosts}"
-RETENTION_DAYS="${RETENTION_DAYS:-90}"
 MAX_BACKUP_AGE_SECONDS="${MAX_BACKUP_AGE_SECONDS:-10800}"
 MIN_FREE_KIB="${MIN_FREE_KIB:-5242880}"
 
@@ -31,7 +31,6 @@ validate_unsigned_integer() {
 }
 
 validate_unsigned_integer REMOTE_SSH_PORT "$REMOTE_SSH_PORT"
-validate_unsigned_integer RETENTION_DAYS "$RETENTION_DAYS"
 validate_unsigned_integer MAX_BACKUP_AGE_SECONDS "$MAX_BACKUP_AGE_SECONDS"
 validate_unsigned_integer MIN_FREE_KIB "$MIN_FREE_KIB"
 
@@ -52,7 +51,7 @@ if [[ ! -r "$SSH_KNOWN_HOSTS" ]]; then
   exit 1
 fi
 
-mkdir -p "$ARCHIVE_DIR" "$INCOMING_DIR"
+mkdir -p "$ARCHIVE_DIR" "$INCOMING_DIR" "$STATE_DIR"
 
 if [[ "${BACKUP_PULL_LOCK_HELD:-0}" != "1" ]]; then
   export BACKUP_PULL_LOCK_HELD=1
@@ -78,11 +77,13 @@ ssh_command="ssh -p ${REMOTE_SSH_PORT} -i ${SSH_KEY_PATH} -o BatchMode=yes -o Id
 
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Pulling new CRM backups"
 rsync \
-  --archive \
+  --recursive \
+  --times \
+  --size-only \
+  --no-links \
   --ignore-existing \
   --prune-empty-dirs \
   --timeout=180 \
-  --chmod=F600,D700 \
   --compare-dest="$ARCHIVE_DIR" \
   --include='/academy-crm-backup-*.zip' \
   --include='/academy-crm-backup-*.zip.sha256' \
@@ -97,6 +98,28 @@ imported_count=0
 for staged_archive in "${run_dir}"/academy-crm-backup-*.zip; do
   archive_name="$(basename "$staged_archive")"
   staged_checksum="${staged_archive}.sha256"
+  sealed_archive="${ARCHIVE_DIR}/${archive_name}"
+  sealed_checksum="${sealed_archive}.sha256"
+
+  if [[ -f "$sealed_archive" && -f "$sealed_checksum" ]]; then
+    echo "Already sealed locally, ignoring duplicate transfer: $archive_name"
+    continue
+  fi
+
+  if [[ -e "$sealed_archive" || -L "$sealed_archive" || -e "$sealed_checksum" || -L "$sealed_checksum" ]]; then
+    echo "Refusing to replace an incomplete or unsafe sealed backup: $archive_name" >&2
+    exit 1
+  fi
+
+  if [[ -L "$staged_archive" || ! -f "$staged_archive" ]]; then
+    echo "Refusing non-regular archive: $archive_name" >&2
+    exit 1
+  fi
+
+  if [[ -L "$staged_checksum" ]]; then
+    echo "Refusing symbolic-link checksum for $archive_name" >&2
+    exit 1
+  fi
 
   if [[ ! -f "$staged_checksum" ]]; then
     echo "Skipping archive whose checksum has not been published yet: $archive_name"
@@ -152,25 +175,15 @@ for staged_archive in "${run_dir}"/academy-crm-backup-*.zip; do
   pg_restore --list "$dump_file" >/dev/null
   rm -f "$dump_file"
 
-  mv -n "$staged_archive" "${ARCHIVE_DIR}/${archive_name}"
-  mv -n "$staged_checksum" "${ARCHIVE_DIR}/${archive_name}.sha256"
-  chmod 0600 "${ARCHIVE_DIR}/${archive_name}" "${ARCHIVE_DIR}/${archive_name}.sha256"
+  mv "$staged_archive" "$sealed_archive"
+  mv "$staged_checksum" "$sealed_checksum"
+  # A privileged, local-only ExecStartPost step immediately changes these
+  # files to root ownership. Group read access remains so future integrity
+  # checks can compare already accepted archives without granting deletion.
+  chmod 0640 "$sealed_archive" "$sealed_checksum"
   imported_count=$((imported_count + 1))
   echo "Verified and stored: $archive_name"
 done
-
-while IFS= read -r -d '' expired_archive; do
-  case "$expired_archive" in
-    "${ARCHIVE_DIR}"/academy-crm-backup-*.zip)
-      echo "Removing offsite backup older than ${RETENTION_DAYS} days: $(basename "$expired_archive")"
-      rm -f "$expired_archive" "${expired_archive}.sha256"
-      ;;
-    *)
-      echo "Refusing to remove unexpected path: $expired_archive" >&2
-      exit 1
-      ;;
-  esac
-done < <(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'academy-crm-backup-*.zip' -mtime "+${RETENTION_DAYS}" -print0)
 
 latest_archive="$(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'academy-crm-backup-*.zip' -printf '%f\n' | sort | tail -n 1)"
 if [[ -z "$latest_archive" ]]; then

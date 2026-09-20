@@ -1,0 +1,12 @@
+[Unit]
+Description=Audit all 01Academy CRM offsite backups daily
+
+[Timer]
+OnCalendar=*-*-* 02:10:00
+RandomizedDelaySec=15min
+Persistent=true
+AccuracySec=1min
+Unit=01academy-offsite-backup-audit.service
+
+[Install]
+WantedBy=timers.target

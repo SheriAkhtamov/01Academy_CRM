@@ -122,7 +122,7 @@ describe('sales KPI HTTP access and version selection', () => {
     const app = appFor();
     expect((await request(app).post(`${path}/leads/10/claim`).send({ closerId: 999 })).status).toBe(200);
     expect(mocks.claim).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
-    expect((await request(app).post(`${path}/leads/10/handoff`).send({ closerId: 999 })).status).toBe(200);
-    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
+    expect((await request(app).post(`${path}/leads/10/handoff`).send({ targetFunnelId: 2 })).status).toBe(200);
+    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10, 2);
   });
 });

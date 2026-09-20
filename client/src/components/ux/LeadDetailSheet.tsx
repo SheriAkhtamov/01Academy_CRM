@@ -2,7 +2,7 @@ import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
 import { LeadVersionNotice } from '@/components/ux/lead/LeadVersionNotice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { Link } from 'wouter';
 import { z } from 'zod';
@@ -22,8 +22,10 @@ import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
+import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
+import type { SalesFunnel } from '@/features/sales-funnels/api';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
 import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccountsEditor';
 import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
@@ -110,6 +112,7 @@ import type { TelephonyCallStatus } from '@/lib/telephony';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 interface LeadDetails {
   id: number;
+  funnelId: number;
   funnelRole?: SalesFunnelRole | null;
   contactName: string;
   courseId?: number | null;
@@ -367,7 +370,7 @@ export function LeadDetailSheet({
 }: LeadDetailSheetProps) {
   const { t, language } = useTranslation();
   const onlinePbxCall = useOnlinePbxCall();
-  const handoffLead = useHandoffKpiLead();
+  const transferFunnel = useHandoffKpiLead();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
@@ -376,6 +379,7 @@ export function LeadDetailSheet({
   const [createStudentOpen, setCreateStudentOpen] = useState(false);
   const [demoEnrollmentOpen, setDemoEnrollmentOpen] = useState(false);
   const [createDemoOpen, setCreateDemoOpen] = useState(false);
+  const [funnelTransferOpen, setFunnelTransferOpen] = useState(false);
   const [demoCreationStudentIds, setDemoCreationStudentIds] = useState<number[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
@@ -391,6 +395,10 @@ export function LeadDetailSheet({
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
+  const salesFunnelsQuery = useQuery<SalesFunnel[]>({
+    queryKey: ['/api/academy/sales-funnels'],
+    enabled: open,
+  });
   const funnelStatuses = useMemo(() => salesFunnelStages(statuses, leadQuery.data?.funnelRole)
     .map((status) => leadQuery.data?.funnelRole === 'closer' && status.code === 'demo_attended'
       ? { ...status, name: t('closerQueueStage') } : status), [statuses, leadQuery.data?.funnelRole, t]);
@@ -451,6 +459,7 @@ export function LeadDetailSheet({
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
     setSocialAccountsDirty(false);
+    setFunnelTransferOpen(false);
     setFocusTarget(null);
     setInvalidField(null);
     setRemovePhoneIndex(null);
@@ -542,6 +551,7 @@ export function LeadDetailSheet({
       setPendingPaymentClaim(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
+      setFunnelTransferOpen(false);
       setDemoCreationStudentIds([]);
       setTagDropdownOpen(false);
       setSocialAccountsDirty(false);
@@ -817,6 +827,25 @@ export function LeadDetailSheet({
     if (!target) scrollRef.current?.scrollTo({ top: 0 });
   };
   const goToStudents = () => navigateTo('deal', 'students');
+  const sendLeadToFunnel = (target: SalesFunnel) => {
+    if (!lead) return;
+    unsavedGuard.requestAction(() => transferFunnel.mutate({
+      leadId: lead.id,
+      targetFunnelId: target.id,
+    }, {
+      onSuccess: () => {
+        setFunnelTransferOpen(false);
+        toast({ title: t('leadSentToFunnel').replace('{name}', target.name) });
+        onChanged();
+        onOpenChange(false);
+      },
+      onError: (error) => toast({
+        title: t('leadSendToFunnelFailed'),
+        description: error.message,
+        variant: 'destructive',
+      }),
+    }));
+  };
 
   useEffect(() => {
     if (!open || !lead?.id || !focusTarget) return;
@@ -983,23 +1012,11 @@ export function LeadDetailSheet({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={handoffLead.isPending}
-                      onClick={() => unsavedGuard.requestAction(() => handoffLead.mutate(lead.id, {
-                        onSuccess: () => {
-                          toast({ title: t('leadAdvancedAfterTrial') });
-                          onChanged();
-                          onOpenChange(false);
-                        },
-                        onError: (error) => toast({
-                          title: t('leadAdvanceAfterTrialFailed'),
-                          description: error.message,
-                          variant: 'destructive',
-                        }),
-                      }))}
+                      disabled={transferFunnel.isPending}
+                      onClick={() => setFunnelTransferOpen(true)}
                     >
-                      {handoffLead.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
-                        : <ArrowRight data-icon="inline-start" />}
-                      {handoffLead.isPending ? t('saving') : t('advanceLeadAfterTrial')}
+                      <ArrowRight data-icon="inline-start" />
+                      {t('sendToAnotherFunnel')}
                     </Button>
                   ) : null}
                   {!lead.isArchived && lead.statusCode !== 'paid' ? (
@@ -1729,6 +1746,19 @@ export function LeadDetailSheet({
           </>
         )}
       </SheetContent>
+      {lead ? (
+        <LeadFunnelTransferDialog
+          open={funnelTransferOpen}
+          currentFunnelId={lead.funnelId}
+          funnels={salesFunnelsQuery.data ?? []}
+          isLoading={salesFunnelsQuery.isLoading}
+          isError={salesFunnelsQuery.isError}
+          isPending={transferFunnel.isPending}
+          onOpenChange={setFunnelTransferOpen}
+          onRetry={() => void salesFunnelsQuery.refetch()}
+          onConfirm={sendLeadToFunnel}
+        />
+      ) : null}
       <AlertDialog open={removePhoneIndex !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setRemovePhoneIndex(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>

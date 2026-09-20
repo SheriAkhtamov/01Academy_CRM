@@ -8,6 +8,7 @@ import {
   getActiveSalesManager,
   reassignLead,
 } from '../../modules/academy/academy-leads';
+import { assertSalesFunnelAssignment } from '../../modules/academy/sales-funnel-policy';
 
 export async function readKpiLeadOwnership(actor: KpiActor, leadId: number): Promise<KpiLeadOwnership> {
   const { rows: [lead] } = await pool.query<{
@@ -57,7 +58,12 @@ export async function recordKpiOffer(actor: KpiActor, source: ActorSource, leadI
   });
 }
 
-export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadId: number) {
+export async function handoffKpiLead(
+  actor: KpiActor,
+  source: ActorSource,
+  leadId: number,
+  targetFunnelId?: number,
+) {
   return withTransaction(async () => {
     const role = await queryOne<{ role: string | null }>('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
     if (!actor.isAdministration && role?.role !== 'hunter' && !isFullCycleKpiRole(role?.role)) {
@@ -72,6 +78,45 @@ export async function handoffKpiLead(actor: KpiActor, source: ActorSource, leadI
     if (lead.isArchived || lead.workflowRole !== 'hunter'
       || (!actor.isAdministration && Number(lead.managerId) !== actor.id)) {
       throw kpiError(new Error('accessDenied'), 403);
+    }
+
+    const targetFunnel = targetFunnelId
+      ? await queryOne<{ id: number; workflowRole: string | null }>(
+        `SELECT id, workflow_role
+         FROM academy_sales_funnels
+         WHERE id = $1 AND is_active = true
+         FOR SHARE`,
+        [targetFunnelId],
+      )
+      : null;
+    if (targetFunnelId && !targetFunnel) throw kpiError(new Error('salesFunnelRequired'));
+    if (targetFunnel && Number(targetFunnel.id) === Number(lead.funnelId)) {
+      throw kpiError(new Error('invalidData'), 409);
+    }
+    if (targetFunnel?.workflowRole === 'hunter') {
+      throw kpiError(new Error('salesFunnelStageUnavailable'), 409);
+    }
+
+    if (targetFunnel && targetFunnel.workflowRole === null) {
+      if (lead.managerId) await assertSalesFunnelAssignment(targetFunnel.id, Number(lead.managerId));
+      const updated = await queryOne(
+        `UPDATE academy_leads
+         SET funnel_id = $2, first_viewed_at = NULL, first_viewed_by = NULL,
+             updated_at = timezone('UTC', now())
+         WHERE id = $1
+         RETURNING *`,
+        [leadId, targetFunnel.id],
+      );
+      if (!updated) throw kpiError(new Error('resourceNotFound'), 404);
+      await createAudit(
+        source,
+        'TRANSFER_LEAD_FUNNEL',
+        'academy_lead',
+        leadId,
+        { funnelId: Number(targetFunnel.id), managerId: updated.managerId },
+        { funnelId: lead.funnelId, managerId: lead.managerId },
+      );
+      return { id: Number(updated.id), mode: 'transfer', funnelId: Number(targetFunnel.id) };
     }
 
     const updated = await transitionDemoLead(source, lead, 'demo_attended', null, null,

@@ -11,7 +11,7 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
 }));
 
 const initialLead = {
-  id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelRole: 'hunter' as const, sourceId: 1,
+  id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelId: 1, funnelRole: 'hunter' as const, sourceId: 1,
   managerId: 1, managerName: 'Manager', language: 'ru', expectedPaymentUzs: 100_000,
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
@@ -45,7 +45,13 @@ beforeEach(() => {
   });
   HTMLElement.prototype.scrollTo = vi.fn();
   HTMLElement.prototype.scrollIntoView = vi.fn();
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, queryFn: async () => [] } } });
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, queryFn: async () => [], staleTime: Infinity } } });
+  queryClient.setQueryData(['/api/academy/sales-funnels'], [
+    { id: 1, name: 'Main funnel', isActive: true, workflowRole: 'hunter' },
+    { id: 2, name: 'Closer funnel', isActive: true, workflowRole: 'closer' },
+    { id: 3, name: 'Secondary funnel', isActive: true, workflowRole: null },
+    { id: 4, name: 'Inactive funnel', isActive: false, workflowRole: null },
+  ]);
 });
 afterEach(() => { cleanup(); queryClient.clear(); vi.restoreAllMocks(); });
 
@@ -68,7 +74,7 @@ describe('lead workspace navigation and drafts', () => {
     await screen.findByRole('heading', { name: 'Test parent' });
     const tagsEditor = await screen.findByRole('combobox', { name: i18n.t('leadTags') });
     const tabList = screen.getByRole('tablist');
-    const postTrialAction = screen.getByRole('button', { name: i18n.t('advanceLeadAfterTrial') });
+    const funnelAction = screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') });
     const demoAction = screen.getByRole('button', { name: i18n.t('bookDemoLesson') });
     expect(screen.queryByRole('button', { name: i18n.t('leadWorkspaceNote') })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Задача' })).toBeNull();
@@ -77,27 +83,35 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.queryByText('Участники KPI')).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Перейти к разделу' })).toBeNull();
     expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(postTrialAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(funnelAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(demoAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) })).toBeTruthy();
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) })).toBeTruthy();
   });
 
-  it('replaces the demo attendance block with one direct post-trial action', async () => {
+  it('opens a funnel picker and sends the lead only after explicit confirmation', async () => {
     const { user, onOpenChange } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
 
     expect(screen.queryByRole('heading', { name: i18n.t('demoLesson') })).toBeNull();
     expect(screen.queryByText(i18n.t('demoParticipantAttended'))).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: i18n.t('advanceLeadAfterTrial') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') }));
+    const dialog = screen.getByRole('dialog', { name: i18n.t('sendLeadToFunnelTitle') });
+    expect(within(dialog).queryByRole('radio', { name: 'Main funnel' })).toBeNull();
+    expect(within(dialog).queryByRole('radio', { name: 'Inactive funnel' })).toBeNull();
+    const send = within(dialog).getByRole('button', { name: i18n.t('send') });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Closer funnel' }));
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    await user.click(send);
     await waitFor(() => expect(requests).toContainEqual({
       url: '/api/academy/sales-kpi/leads/15/handoff',
       method: 'POST',
-      body: {},
+      body: { targetFunnelId: 2 },
     }));
-    expect(screen.queryByRole('alertdialog')).toBeNull();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 

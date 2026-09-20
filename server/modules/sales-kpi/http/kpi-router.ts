@@ -66,7 +66,8 @@ export function createSalesKpiRouter() {
     res.json(await readKpiLeadOwnership(actor(req), idSchema.parse(req.params.id)));
   }));
   router.post('/sales-kpi/leads/:id/handoff', endpoint(async (req, res) => {
-    res.json(await handoffKpiLead(actor(req), req, idSchema.parse(req.params.id)));
+    const input = z.object({ targetFunnelId: idSchema.optional() }).passthrough().parse(req.body);
+    res.json(await handoffKpiLead(actor(req), req, idSchema.parse(req.params.id), input.targetFunnelId));
   }));
   router.post('/sales-kpi/leads/:id/claim', endpoint(async (req, res) => {
     res.json(await claimKpiLead(actor(req), req, idSchema.parse(req.params.id)));

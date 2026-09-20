@@ -13,7 +13,9 @@ export const getKpiOverview = (month: string, managerId: number | null): Promise
   return apiRequest('GET', `${root}/overview?${params}`);
 };
 export const getKpiLeadOwnership = (leadId: number): Promise<KpiLeadOwnership> => apiRequest('GET', `${root}/leads/${leadId}`);
-export const handoffKpiLead = (leadId: number) => apiRequest('POST', `${root}/leads/${leadId}/handoff`, {});
+export const handoffKpiLead = ({ leadId, targetFunnelId }: { leadId: number; targetFunnelId: number }) => (
+  apiRequest('POST', `${root}/leads/${leadId}/handoff`, { targetFunnelId })
+);
 export const claimKpiLead = (leadId: number) => apiRequest('POST', `${root}/leads/${leadId}/claim`, {});
 export const recordKpiOffer = (leadId: number) => apiRequest('POST', `${root}/leads/${leadId}/offer`, {});
 export const reviewKpiPayment = (paymentId: number, input: KpiSaleReview) => apiRequest('PATCH', `${root}/payments/${paymentId}`, input);

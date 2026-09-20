@@ -2,7 +2,10 @@
 
 set -eu
 
-umask 077
+# The backup process shares the deployment group so operators can verify and
+# restore archives without running the container as root. No access is granted
+# to users outside that group.
+umask 027
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 UPLOADS_DIR="${UPLOADS_DIR:-/uploads}"

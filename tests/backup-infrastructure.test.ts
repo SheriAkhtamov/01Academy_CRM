@@ -117,6 +117,7 @@ printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\\n'
     expect(compose).toContain('BACKUP_INTERVAL_SECONDS=3600');
     expect(compose).toContain('BACKUP_KEEP=10');
     expect(compose).toContain('./uploads:/uploads:ro');
+    expect(compose).toContain('user: "1000:${BACKUP_GID:-1000}"');
     expect(compose).toContain('read_only: true');
     expect(dockerfile).toContain('FROM postgres:17-alpine@sha256:');
   });

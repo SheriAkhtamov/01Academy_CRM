@@ -104,6 +104,7 @@ jobs:
 
           mkdir -p config uploads logs backups .secrets
           chmod 750 config
+          chmod 770 backups
           chmod 700 .secrets
 
           python3 <<'PY'
@@ -220,11 +221,10 @@ jobs:
 
           password_path.write_text(password + "\n", encoding="utf-8")
           os.chmod(config_path, 0o640)
-          os.chmod(password_path, 0o600)
+          os.chmod(password_path, 0o640)
           PY
 
           export APP_CONFIG_GID="$(id -g)"
-          export BACKUP_UID="$(id -u)"
           export BACKUP_GID="$(id -g)"
           BUILD_CONTEXT="$(mktemp -d /tmp/01academy-crm-build.XXXXXX)"
           cleanup_build_context() {
@@ -242,6 +242,7 @@ jobs:
           backup_started_at="$(date +%s)"
           docker compose up -d --no-build postgres crm
           docker compose stop backup >/dev/null 2>&1 || true
+          rm -f backups/.backup.lock
           if ! docker compose run --rm --no-deps \
             --entrypoint /usr/local/bin/create-production-backup \
             backup; then

@@ -71,7 +71,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    user: "${BACKUP_UID:-1000}:${BACKUP_GID:-1000}"
+    # The CRM image writes uploads as the standard Node user (UID 1000).
+    # Matching that UID lets the backup read private attachments without
+    # broadening their host permissions or running this container as root.
+    user: "1000:${BACKUP_GID:-1000}"
     volumes:
       - ./backups:/backups
       - ./uploads:/uploads:ro
@@ -91,7 +94,7 @@ services:
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,mode=1770,uid=${BACKUP_UID:-1000},gid=${BACKUP_GID:-1000}
+      - /tmp:rw,noexec,nosuid,nodev,mode=1770,uid=1000,gid=${BACKUP_GID:-1000}
     cap_drop:
       - ALL
     security_opt:

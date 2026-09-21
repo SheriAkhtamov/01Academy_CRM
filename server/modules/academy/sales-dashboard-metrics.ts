@@ -9,6 +9,7 @@ import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
 import { buildSalesDemoAttendanceStats } from './sales-demo-students';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const SUCCESSFUL_CALL_MIN_TALK_SECONDS = 3 * 60;
 const reportingManagerSql = `COALESCE((SELECT CASE WHEN academy_kpi_employee_role($3) = 'closer'
   THEN tracked.closer_id ELSE tracked.hunter_id END FROM academy_sales_kpi_leads tracked
   WHERE tracked.lead_id = lead.id), lead.manager_id)`;
@@ -87,7 +88,7 @@ const buildSalesDashboardPeriodMetrics = async (
            CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
          ) AS lead_id,
          COUNT(*)::int AS attempts,
-         BOOL_OR(phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0) AS was_reached
+         BOOL_OR(phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}) AS was_reached
        FROM telephony_calls phone_call
        JOIN visible_leads lead
          ON lead.id = COALESCE(
@@ -350,7 +351,7 @@ const buildSalesDashboardDailySeries = async (
          )
        WHERE phone_call.started_at >= $1
          AND phone_call.started_at < $2
-         AND (phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0)
+         AND phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}
          ${managerFilter}`,
       values,
     ),

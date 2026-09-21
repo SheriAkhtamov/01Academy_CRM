@@ -59,7 +59,10 @@ describe('sales dashboard operational metrics', () => {
   });
 
   it('distinguishes conversations, repeat attempts, qualification, and demo bookings', () => {
-    expect(metrics).toContain('phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0');
+    expect(metrics).toContain('const SUCCESSFUL_CALL_MIN_TALK_SECONDS = 3 * 60;');
+    expect(metrics).toContain('BOOL_OR(phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS})');
+    expect(metrics).toContain('AND phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}');
+    expect(metrics).not.toContain('phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0');
     expect(metrics).toContain('calls.attempts BETWEEN 2 AND 5');
     expect(metrics).toContain("status.code = 'qualified'");
     expect(metrics).toContain('reached_status.sort_order >= quality_stage.sort_order');

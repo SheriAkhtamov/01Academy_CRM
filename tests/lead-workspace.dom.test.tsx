@@ -11,7 +11,8 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
 }));
 
 const initialLead = {
-  id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelId: 1, funnelRole: 'hunter' as const, sourceId: 1,
+  id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelId: 1,
+  funnelRole: 'hunter' as 'hunter' | 'closer' | null, sourceId: 1,
   managerId: 1, managerName: 'Manager', sourceName: 'Website', language: 'ru', expectedPaymentUzs: 100_000,
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
@@ -116,6 +117,23 @@ describe('lead workspace navigation and drafts', () => {
       body: { targetFunnelId: 2 },
     }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it.each([
+    { name: 'a regular funnel', funnelId: 3, funnelRole: null },
+    { name: 'the closer funnel', funnelId: 2, funnelRole: 'closer' as const },
+  ])('shows the funnel transfer action in $name', async ({ funnelId, funnelRole }) => {
+    lead = { ...lead, funnelId, funnelRole };
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+
+    const action = screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') });
+    await user.click(action);
+
+    const dialog = screen.getByRole('dialog', { name: i18n.t('sendLeadToFunnelTitle') });
+    const currentFunnel = funnelId === 2 ? 'Closer funnel' : 'Secondary funnel';
+    expect(within(dialog).queryByRole('radio', { name: currentFunnel })).toBeNull();
+    expect(within(dialog).getByRole('radio', { name: 'Main funnel' })).toBeTruthy();
   });
 
   it('keeps note and task drafts across tabs', async () => {

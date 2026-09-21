@@ -1008,7 +1008,7 @@ export function LeadDetailSheet({
               )}
               workflowActions={(
                 <>
-                  {!lead.isArchived && lead.funnelRole === 'hunter' ? (
+                  {!lead.isArchived ? (
                     <Button
                       type="button"
                       size="sm"

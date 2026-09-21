@@ -16,12 +16,14 @@ const mocks = vi.hoisted(() => ({
   withTransaction: vi.fn(),
   transitionDemoLead: vi.fn(),
   assertSalesFunnelAssignment: vi.fn(),
+  assertSalesFunnelStage: vi.fn(),
 }));
 vi.mock('../server/modules/academy/academy-core', () => mocks);
 vi.mock('../server/modules/academy/academy-leads', () => mocks);
 vi.mock('../server/modules/academy/demo-lead-transition', () => mocks);
 vi.mock('../server/modules/academy/sales-funnel-policy', () => ({
   assertSalesFunnelAssignment: mocks.assertSalesFunnelAssignment,
+  assertSalesFunnelStage: mocks.assertSalesFunnelStage,
 }));
 import { handoffKpiLead } from '../server/infrastructure/sales-kpi/kpi-handoff';
 
@@ -131,10 +133,39 @@ describe('manual continuation keeps the existing owner', () => {
       .resolves.toEqual({ id: 10, mode: 'transfer', funnelId: 3 });
 
     expect(mocks.assertSalesFunnelAssignment).toHaveBeenCalledWith(3, 7);
+    expect(mocks.assertSalesFunnelStage).toHaveBeenCalledWith(3, 'demo_invited');
     expect(mocks.queryOne).toHaveBeenLastCalledWith(expect.stringContaining('UPDATE academy_leads'), [10, 3]);
     expect(mocks.transitionDemoLead).not.toHaveBeenCalled();
     expect(mocks.createAudit).toHaveBeenCalledWith(hunter, 'TRANSFER_LEAD_FUNNEL', 'academy_lead', 10,
       { funnelId: 3, managerId: 7 }, { funnelId: 1, managerId: 7 });
+  });
+
+  it('moves an owned lead from a regular funnel to another funnel', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'hunter' })
+      .mockResolvedValueOnce({ ...lead, funnelId: 3, workflowRole: null })
+      .mockResolvedValueOnce({ id: 4, workflowRole: null })
+      .mockResolvedValueOnce({ ...lead, funnelId: 4 });
+
+    await expect(handoffKpiLead({ id: 7, isAdministration: false }, hunter, 10, 4))
+      .resolves.toEqual({ id: 10, mode: 'transfer', funnelId: 4 });
+
+    expect(mocks.assertSalesFunnelAssignment).toHaveBeenCalledWith(4, 7);
+    expect(mocks.assertSalesFunnelStage).toHaveBeenCalledWith(4, 'demo_invited');
+    expect(mocks.transitionDemoLead).not.toHaveBeenCalled();
+  });
+
+  it('moves a closer-owned lead from the closer funnel to a regular funnel', async () => {
+    mocks.queryOne.mockResolvedValueOnce({ role: 'closer' })
+      .mockResolvedValueOnce({ ...lead, funnelId: 2, managerId: 8, statusCode: 'demo_attended', workflowRole: 'closer' })
+      .mockResolvedValueOnce({ id: 3, workflowRole: null })
+      .mockResolvedValueOnce({ ...lead, funnelId: 3, managerId: 8 });
+
+    await expect(handoffKpiLead({ id: 8, isAdministration: false }, closer, 10, 3))
+      .resolves.toEqual({ id: 10, mode: 'transfer', funnelId: 3 });
+
+    expect(mocks.assertSalesFunnelAssignment).toHaveBeenCalledWith(3, 8);
+    expect(mocks.assertSalesFunnelStage).toHaveBeenCalledWith(3, 'demo_attended');
+    expect(mocks.transitionDemoLead).not.toHaveBeenCalled();
   });
 
   it('rejects a closer and a hunter who does not own the lead', async () => {

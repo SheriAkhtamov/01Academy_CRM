@@ -8,7 +8,7 @@ import {
   getActiveSalesManager,
   reassignLead,
 } from '../../modules/academy/academy-leads';
-import { assertSalesFunnelAssignment } from '../../modules/academy/sales-funnel-policy';
+import { assertSalesFunnelAssignment, assertSalesFunnelStage } from '../../modules/academy/sales-funnel-policy';
 
 export async function readKpiLeadOwnership(actor: KpiActor, leadId: number): Promise<KpiLeadOwnership> {
   const { rows: [lead] } = await pool.query<{
@@ -66,17 +66,16 @@ export async function handoffKpiLead(
 ) {
   return withTransaction(async () => {
     const role = await queryOne<{ role: string | null }>('SELECT academy_kpi_employee_role($1) AS role', [actor.id]);
-    if (!actor.isAdministration && role?.role !== 'hunter' && !isFullCycleKpiRole(role?.role)) {
+    if (!targetFunnelId && !actor.isAdministration
+      && role?.role !== 'hunter' && !isFullCycleKpiRole(role?.role)) {
       throw kpiError(new Error('salesFunnelHunterOnly'), 403);
     }
-
     const lead = await queryOne(`SELECT lead.*, funnel.workflow_role
       FROM academy_leads lead
       JOIN academy_sales_funnels funnel ON funnel.id = lead.funnel_id
       WHERE lead.id = $1 FOR UPDATE OF lead`, [leadId]);
     if (!lead) throw kpiError(new Error('resourceNotFound'), 404);
-    if (lead.isArchived || lead.workflowRole !== 'hunter'
-      || (!actor.isAdministration && Number(lead.managerId) !== actor.id)) {
+    if (lead.isArchived || (!actor.isAdministration && Number(lead.managerId) !== actor.id)) {
       throw kpiError(new Error('accessDenied'), 403);
     }
 
@@ -93,12 +92,28 @@ export async function handoffKpiLead(
     if (targetFunnel && Number(targetFunnel.id) === Number(lead.funnelId)) {
       throw kpiError(new Error('invalidData'), 409);
     }
-    if (targetFunnel?.workflowRole === 'hunter') {
-      throw kpiError(new Error('salesFunnelStageUnavailable'), 409);
+    const continuesToCloser = lead.workflowRole === 'hunter'
+      && (!targetFunnel || targetFunnel.workflowRole === 'closer');
+    if (continuesToCloser) {
+      if (!actor.isAdministration && role?.role !== 'hunter' && !isFullCycleKpiRole(role?.role)) {
+        throw kpiError(new Error('salesFunnelHunterOnly'), 403);
+      }
+      const updated = await transitionDemoLead(source, lead, 'demo_attended', null, null,
+        'Продолжил работу с лидом после пробного');
+      await createAudit(
+        source,
+        'CONTINUE_FULL_CYCLE_LEAD',
+        'academy_lead',
+        leadId,
+        { funnelId: updated.funnelId, managerId: updated.managerId },
+        { funnelId: lead.funnelId, managerId: lead.managerId },
+      );
+      return { id: Number(updated.id), mode: 'continue' };
     }
 
-    if (targetFunnel && targetFunnel.workflowRole === null) {
+    if (targetFunnel) {
       if (lead.managerId) await assertSalesFunnelAssignment(targetFunnel.id, Number(lead.managerId));
+      await assertSalesFunnelStage(targetFunnel.id, String(lead.statusCode));
       const updated = await queryOne(
         `UPDATE academy_leads
          SET funnel_id = $2, first_viewed_at = NULL, first_viewed_by = NULL,
@@ -118,18 +133,7 @@ export async function handoffKpiLead(
       );
       return { id: Number(updated.id), mode: 'transfer', funnelId: Number(targetFunnel.id) };
     }
-
-    const updated = await transitionDemoLead(source, lead, 'demo_attended', null, null,
-      'Продолжил работу с лидом после пробного');
-    await createAudit(
-      source,
-      'CONTINUE_FULL_CYCLE_LEAD',
-      'academy_lead',
-      leadId,
-      { funnelId: updated.funnelId, managerId: updated.managerId },
-      { funnelId: lead.funnelId, managerId: lead.managerId },
-    );
-    return { id: Number(updated.id), mode: 'continue' };
+    throw kpiError(new Error('salesFunnelRequired'));
   });
 }
 

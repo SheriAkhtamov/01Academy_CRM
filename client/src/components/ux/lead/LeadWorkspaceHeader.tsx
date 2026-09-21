@@ -54,6 +54,11 @@ export function LeadWorkspaceHeader({
               <Badge variant="outline">{t('leadInArchive')}</Badge>
             ) : null}
           </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
+            <span aria-hidden="true">·</span>
+            <span>{lead.sourceName || t('unknownSource')}</span>
+          </div>
           <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
           {/* Phone chips dial via tel:; the trailing button copies the number */}
@@ -92,13 +97,6 @@ export function LeadWorkspaceHeader({
           <fieldset disabled={actionsDisabled} className="min-w-0">
             {tagsEditor}
           </fieldset>
-
-          {/* Quiet single-line meta */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
-            <span aria-hidden="true">·</span>
-            <span>{lead.sourceName || t('unknownSource')}</span>
-          </div>
         </div>
       </div>
 

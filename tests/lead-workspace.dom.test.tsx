@@ -12,7 +12,7 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
 
 const initialLead = {
   id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelId: 1, funnelRole: 'hunter' as const, sourceId: 1,
-  managerId: 1, managerName: 'Manager', language: 'ru', expectedPaymentUzs: 100_000,
+  managerId: 1, managerName: 'Manager', sourceName: 'Website', language: 'ru', expectedPaymentUzs: 100_000,
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
   students: [{ id: 50, studentName: 'Test student', status: 'studying' }],
@@ -71,7 +71,8 @@ function renderSheet() {
 describe('lead workspace navigation and drafts', () => {
   it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {
     renderSheet();
-    await screen.findByRole('heading', { name: 'Test parent' });
+    const leadName = await screen.findByRole('heading', { name: 'Test parent' });
+    const managerMeta = screen.getByText(`${i18n.t('manager')}: Manager`);
     const tagsEditor = await screen.findByRole('combobox', { name: i18n.t('leadTags') });
     const tabList = screen.getByRole('tablist');
     const funnelAction = screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') });
@@ -82,6 +83,8 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.queryByText('Следующий шаг')).toBeNull();
     expect(screen.queryByText('Участники KPI')).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Перейти к разделу' })).toBeNull();
+    expect(leadName.compareDocumentPosition(managerMeta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(managerMeta.compareDocumentPosition(tagsEditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tagsEditor.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(funnelAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(demoAction.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

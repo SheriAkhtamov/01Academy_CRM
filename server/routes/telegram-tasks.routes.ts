@@ -5,6 +5,8 @@ import { authService } from '../services/auth';
 import { createBoardRouter } from './board.routes';
 import { bindTelegramTaskEmployee, getTelegramTaskIdentity, TelegramBindingDenied, telegramTaskAccess } from '../services/telegram-tasks';
 import { secureEqual, signTaskToken, validateTelegramInitData, verifyTaskToken, type TaskToken } from '../services/telegram-tasks-crypto';
+import { enqueueTelegramTaskAgentMessage } from '../services/telegram-task-agent';
+import { t } from '../lib/i18n';
 
 const messages = {
   ru: {
@@ -27,6 +29,8 @@ export function registerTelegramTaskRoutes(app: Express) {
   const config = appConfig.integrations?.telegramTasks;
   const botToken = config?.botToken?.trim();
   const webhookSecret = config?.webhookSecret?.trim();
+  const agentApiKey = config?.openRouterApiKey?.trim();
+  const agentModel = config?.agentModel?.trim();
   const enabled = Boolean(botToken && webhookSecret);
   const botId = botToken?.split(':')[0] ?? '';
   const signingSecret = `${appConfig.session.secret}:telegram-tasks:${botToken ?? ''}`;
@@ -80,6 +84,44 @@ export function registerTelegramTaskRoutes(app: Express) {
         identity = await getTelegramTaskIdentity(botId, String(sender.id));
       }
       if (!identity) return void reply(text.register, keyboard);
+      const rawText = typeof message.text === 'string' ? message.text.trim() : '';
+      const isStart = /^\/start(?:@\w+)?(?:\s|$)/i.test(rawText);
+      const hasVoice = typeof message.voice?.file_id === 'string' && message.voice.file_id.length > 0;
+      const isAgentInput = hasVoice || (rawText.length > 0 && !isStart);
+      if (isAgentInput) {
+        if (!agentApiKey) {
+          return void reply(t('telegramAgentUnavailable', sender.language_code === 'en' ? 'en' : 'ru'), {
+            inline_keyboard: [[{ text: text.open, web_app: { url: appUrl } }]],
+          });
+        }
+        const updateId = req.body?.update_id;
+        if (!Number.isSafeInteger(updateId) || updateId < 0) {
+          return void reply(t('telegramAgentUnavailable', sender.language_code === 'en' ? 'en' : 'ru'), {
+            inline_keyboard: [[{ text: text.open, web_app: { url: appUrl } }]],
+          });
+        }
+        res.json({ ok: true });
+        enqueueTelegramTaskAgentMessage({
+          botId,
+          botToken: botToken!,
+          apiKey: agentApiKey,
+          model: agentModel,
+          appUrl,
+          updateId,
+          telegramUserId: String(sender.id),
+          chatId: sender.id,
+          language: sender.language_code === 'en' ? 'en' : 'ru',
+          actor: identity.user,
+          ...(hasVoice ? {
+            voice: {
+              fileId: message.voice.file_id,
+              fileSize: Number.isSafeInteger(message.voice.file_size) ? message.voice.file_size : undefined,
+              duration: Number.isSafeInteger(message.voice.duration) ? message.voice.duration : undefined,
+            },
+          } : { text: rawText }),
+        });
+        return;
+      }
       reply(text.welcome.replace('{name}', identity.user.fullName), {
         inline_keyboard: [[{ text: text.open, web_app: { url: appUrl } }]],
       });

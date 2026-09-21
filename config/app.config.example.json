@@ -41,7 +41,9 @@
     "telegramTasks": {
       "botToken": "",
       "webhookSecret": "",
-      "botUsername": ""
+      "botUsername": "",
+      "openRouterApiKey": "",
+      "agentModel": "google/gemini-3.1-flash-lite"
     },
     "website": {
       "webhookSecret": "",

@@ -13,6 +13,37 @@ const translations = {
     telegramReminderTimezone: { en: 'Time: {timezone}.', ru: 'Время: {timezone}.' },
     telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n#{id} {title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n#{id} {title}\nСрок: {deadline} ({timezone}).' },
     telegramReminderOpen: { en: 'Open tasks', ru: 'Открыть задачи' },
+    telegramAgentCreated: {
+        en: '✅ Task created\n{title}\nAssignee: {assignee}\nDeadline: {deadline}',
+        ru: '✅ Задача создана\n{title}\nИсполнитель: {assignee}\nСрок: {deadline}',
+    },
+    telegramAgentNoDeadline: { en: 'no deadline', ru: 'без срока' },
+    telegramAgentNeedTitle: { en: 'What exactly needs to be done?', ru: 'Что именно нужно сделать?' },
+    telegramAgentNeedAssignee: {
+        en: 'Who should this task be assigned to? Send the employee’s exact name.',
+        ru: 'Для кого создать задачу? Напишите точное имя сотрудника.',
+    },
+    telegramAgentNeedDeadline: {
+        en: 'What deadline should I set? For example: “tomorrow by 6 PM”.',
+        ru: 'Какой срок поставить? Например: «завтра до 18:00».',
+    },
+    telegramAgentNeedCommand: {
+        en: 'Tell me the task in a voice message or text. For example: “Create a task for Khonzoda to prepare the report by tomorrow at 6 PM”.',
+        ru: 'Продиктуйте или напишите задачу. Например: «Создай для Хонзоды задачу подготовить отчёт до завтра, 18:00».',
+    },
+    telegramAgentCancelled: { en: 'Task creation cancelled.', ru: 'Создание задачи отменено.' },
+    telegramAgentUnavailable: {
+        en: 'I couldn’t process the message right now. Please try again later.',
+        ru: 'Сейчас не удалось обработать сообщение. Попробуйте позже.',
+    },
+    telegramAgentTooLong: {
+        en: 'The voice message is too long. Please keep it under 2 minutes.',
+        ru: 'Голосовое сообщение слишком длинное. Запишите его короче 2 минут.',
+    },
+    telegramAgentRateLimited: {
+        en: 'There have been too many requests. Please try again a little later.',
+        ru: 'Слишком много запросов. Попробуйте немного позже.',
+    },
     tooManyLoginAttempts: {
         en: 'Too many login attempts. Please try again later.',
         ru: 'Слишком много попыток входа. Попробуйте позже.',

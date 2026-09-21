@@ -19,6 +19,31 @@ created, renamed or given new CRM permissions by registration.
    webhook without discarding queued updates. It never prints credentials.
 5. In Telegram, open the bot, press Start, share your own phone, then Open tasks.
 
+## Voice task agent
+
+The private bot accepts voice messages and typed task commands from a verified
+employee. Configure `integrations.telegramTasks.openRouterApiKey` in the
+untracked `config/app.config.json`. The optional `agentModel` defaults to
+`google/gemini-3.1-flash-lite`.
+
+- A command can include a title, description, assignee, deadline and priority.
+  When no assignee is named, the verified sender is used. A deadline is
+  optional; a date without a time is interpreted as 18:00 in Asia/Tashkent.
+- The model receives the active employee directory so it can resolve a spoken
+  name, but the server accepts only an ID from that live directory. Missing or
+  ambiguous titles, names and dates are clarified in the same private chat.
+- `/cancel` discards the pending draft. Structured drafts expire after 15
+  minutes and are kept only in process memory; a restart safely discards them.
+- Telegram update IDs become deterministic task request keys, so a retried
+  webhook cannot create a second task. Each verified employee is limited to 20
+  agent requests per hour. Voice messages are limited to two minutes and 10 MB.
+- Audio is sent directly to the configured multimodal model with OpenRouter
+  zero-retention and data-collection-denial routing requested for every call.
+  Audio and transcripts are not written to CRM storage or application logs.
+- The bot responds immediately to Telegram and completes AI work in the
+  background. A successful task appears on the same shared board and emits the
+  same realtime event as creation from the CRM UI.
+
 The app is served at `/miniapp/tasks`, with a separate Vite entry point, mobile
 bottom navigation (My tasks / Assigned by me / Archive), task dialogs, photo
 previews and existing 50 MB attachment rules. Changes are the same records as

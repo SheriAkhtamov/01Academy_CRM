@@ -42,6 +42,8 @@ interface AppConfig {
       botToken?: string;
       webhookSecret?: string;
       botUsername?: string;
+      openRouterApiKey?: string;
+      agentModel?: string;
     };
     website?: {
       webhookSecret?: string;
@@ -178,6 +180,15 @@ const validateConfig = (config: AppConfig) => {
     }
     if (config.server.environment === 'production' && new URL(config.server.appUrl).protocol !== 'https:') {
       throw new Error('Telegram Tasks requires an HTTPS application URL');
+    }
+  }
+  if (telegram?.openRouterApiKey?.trim()) {
+    if (!/^sk-or-v1-[A-Za-z0-9_-]{20,}$/.test(telegram.openRouterApiKey.trim())) {
+      throw new Error('integrations.telegramTasks.openRouterApiKey must be a valid OpenRouter API key');
+    }
+    const model = telegram.agentModel?.trim();
+    if (model && !/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(model)) {
+      throw new Error('integrations.telegramTasks.agentModel must be an OpenRouter model slug');
     }
   }
   if (!config.database?.url) {

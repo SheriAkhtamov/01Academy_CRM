@@ -17,6 +17,7 @@ interface PageHeaderProps {
   subtitle?: string;
   breadcrumbs?: Array<{ label: string; href?: string }>;
   titleAccessory?: React.ReactNode;
+  titleActions?: React.ReactNode;
   actions?: React.ReactNode;
 }
 
@@ -25,6 +26,7 @@ export function PageHeader({
   subtitle,
   breadcrumbs = [],
   titleAccessory,
+  titleActions,
   actions,
 }: PageHeaderProps) {
   const { t } = useTranslation();
@@ -44,7 +46,7 @@ export function PageHeader({
       initial="hidden"
       animate="visible"
     >
-      <div className="min-w-0 space-y-1">
+      <div className={`min-w-0 space-y-1${titleActions ? ' w-full' : ''}`}>
         <motion.div variants={fadeInDown}>
         <Breadcrumb>
           <BreadcrumbList>
@@ -68,6 +70,7 @@ export function PageHeader({
         <motion.div variants={fadeInUp} className="flex flex-wrap items-center gap-2">
           <h1 className="break-words text-2xl font-bold tracking-tight text-foreground">{title}</h1>
           {titleAccessory}
+          {titleActions && <div className="ml-auto shrink-0">{titleActions}</div>}
         </motion.div>
         {subtitle && (
           <motion.p variants={fadeInUp} className="max-w-3xl text-sm text-muted-foreground">

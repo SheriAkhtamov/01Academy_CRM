@@ -443,14 +443,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               .replace('{total}', String(totalCount))}
           </Badge>
         ) : undefined}
+        titleActions={(
+          <Button onClick={() => setIntegrationCatalogOpen(true)}>
+            <Plus data-icon="inline-start" />
+            {t('add')}
+          </Button>
+        )}
       />
-
-      <div className="mb-4 flex justify-end">
-        <Button onClick={() => setIntegrationCatalogOpen(true)}>
-          <Plus data-icon="inline-start" />
-          {t('add')}
-        </Button>
-      </div>
 
       <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
         {integrations.isError ? (

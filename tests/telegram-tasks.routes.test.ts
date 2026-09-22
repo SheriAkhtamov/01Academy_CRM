@@ -54,7 +54,7 @@ describe('Telegram bot and isolated task API', () => {
     expect(mock.agent).toHaveBeenCalledWith(expect.objectContaining({
       updateId: 123,
       telegramUserId: '654321',
-      actor: user,
+      actor: { id: 7, fullName: 'Employee Name', canViewTeamTasks: false },
       voice: { fileId: 'voice-file', fileSize: 2048, duration: 12 },
     }));
   });
@@ -65,8 +65,18 @@ describe('Telegram bot and isolated task API', () => {
     expect(mock.agent).toHaveBeenCalledWith(expect.objectContaining({
       updateId: 123,
       telegramUserId: '654321',
-      actor: user,
+      actor: { id: 7, fullName: 'Employee Name', canViewTeamTasks: false },
       text: 'Создай задачу подготовить отчёт',
+    }));
+  });
+  it('derives team-task privilege from the verified administration module', async () => {
+    mock.identity.mockResolvedValue({
+      user: { ...user, modules: ['teacher', 'administration'] },
+      binding,
+    });
+    await webhook({ ...message, text: 'Покажи сводку по задачам сотрудников' });
+    expect(mock.agent).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { id: 7, fullName: 'Employee Name', canViewTeamTasks: true },
     }));
   });
   it.each([

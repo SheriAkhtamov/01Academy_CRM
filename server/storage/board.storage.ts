@@ -156,6 +156,63 @@ class BoardStorage {
             .limit(Math.max(1, Math.min(limit, 100)));
     }
 
+    async getOpenTaskTeamSummaryRows(employeeLimit: number, taskLimit: number) {
+        const safeEmployeeLimit = Math.max(1, Math.min(employeeLimit, 50));
+        const safeTaskLimit = Math.max(1, Math.min(taskLimit, 10));
+        const result = await db.execute(sql`
+            WITH task_rows AS (
+                SELECT
+                    ${boardTasks.id} AS "id",
+                    ${boardTasks.title} AS "title",
+                    ${boardTasks.status} AS "status",
+                    ${boardTasks.priority} AS "priority",
+                    ${boardTasks.dueAt} AS "dueAt",
+                    ${users.id} AS "employeeId",
+                    ${users.fullName} AS "employeeName",
+                    COUNT(*) OVER (PARTITION BY ${users.id})::int AS "employeeTaskCount",
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ${users.id}
+                        ORDER BY ${boardTasks.dueAt} ASC NULLS LAST, ${boardTasks.id} ASC
+                    )::int AS "taskRank"
+                FROM ${boardTasks}
+                INNER JOIN ${users} ON ${users.id} = ${boardTasks.assigneeId}
+                WHERE ${boardTasks.status} <> 'accepted'
+                  AND ${users.isActive} IS TRUE
+                  AND ${users.isArchived} IS FALSE
+            ), employee_ranked AS (
+                SELECT
+                    task_rows.*,
+                    DENSE_RANK() OVER (
+                        ORDER BY "employeeTaskCount" DESC, "employeeName" ASC, "employeeId" ASC
+                    )::int AS "employeeRank"
+                FROM task_rows
+            ), totals AS (
+                SELECT
+                    COUNT(*)::int AS "totalTaskCount",
+                    COUNT(DISTINCT "employeeId")::int AS "employeeCount"
+                FROM task_rows
+            )
+            SELECT employee_ranked.*, totals."totalTaskCount", totals."employeeCount"
+            FROM employee_ranked
+            CROSS JOIN totals
+            WHERE employee_ranked."employeeRank" <= ${safeEmployeeLimit}
+              AND employee_ranked."taskRank" <= ${safeTaskLimit}
+            ORDER BY employee_ranked."employeeRank", employee_ranked."taskRank"
+        `);
+        return result.rows.map((row: any) => ({
+            id: Number(row.id),
+            title: String(row.title),
+            status: String(row.status),
+            priority: String(row.priority),
+            dueAt: row.dueAt ? new Date(row.dueAt) : null,
+            employeeId: Number(row.employeeId),
+            employeeName: String(row.employeeName),
+            employeeTaskCount: Number(row.employeeTaskCount),
+            totalTaskCount: Number(row.totalTaskCount),
+            employeeCount: Number(row.employeeCount),
+        }));
+    }
+
     private async getTaskCounts(taskIds: number[]) {
         const map = new Map<number, { commentCount: number; attachmentCount: number; checklistTotal: number; checklistDone: number }>();
         if (taskIds.length === 0) return map;

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   employees: vi.fn(),
   ownTasks: vi.fn(),
+  employeeTasks: vi.fn(),
+  teamSummary: vi.fn(),
   createTaskAsActor: vi.fn(),
   publish: vi.fn(),
   fetch: vi.fn(),
@@ -13,6 +15,8 @@ vi.mock('../server/services/telegram-task-agent-data', () => ({
   telegramTaskAgentData: {
     getAssignableEmployees: mocks.employees,
     getOwnOpenTasks: mocks.ownTasks,
+    getEmployeeOpenTasks: mocks.employeeTasks,
+    getTeamTaskSummary: mocks.teamSummary,
     createTaskAsActor: mocks.createTaskAsActor,
   },
 }));
@@ -26,12 +30,8 @@ import {
 const actor = {
   id: 7,
   fullName: 'Шерзод Ахтамов',
-  email: 'sherzod@example.test',
-  password: 'not-used',
-  module: 'administration',
-  isActive: true,
-  isArchived: false,
-} as any;
+  canViewTeamTasks: false,
+};
 const employees = [
   { id: 7, fullName: 'Шерзод Ахтамов' },
   { id: 9, fullName: 'Хонзода Каримова' },
@@ -101,6 +101,8 @@ beforeEach(() => {
   resetTelegramTaskAgentMemoryForTests();
   mocks.employees.mockResolvedValue(employees);
   mocks.ownTasks.mockResolvedValue([]);
+  mocks.employeeTasks.mockResolvedValue([]);
+  mocks.teamSummary.mockResolvedValue(null);
   mocks.createTaskAsActor.mockResolvedValue({ id: 81, boardId: 3, title: 'Подготовить отчёт' });
 });
 
@@ -250,6 +252,154 @@ describe('Telegram task agent', () => {
     expect(transport.sentMessages.at(-1).text).toContain('Позвонить клиенту — 22 сент. 2026 г., 18:00');
     expect(transport.sentMessages.at(-1).text).toContain('Подготовить договор — без срока');
     expect(JSON.stringify(transport.openRouterBodies[0])).not.toContain('Позвонить');
+  });
+
+  it('lets a verified administration employee request a team task summary', async () => {
+    mocks.teamSummary.mockResolvedValue({
+      totalTaskCount: 7,
+      employeeCount: 2,
+      employees: [{
+        id: 9,
+        fullName: 'Хонзода Каримова',
+        taskCount: 4,
+        tasks: [{
+          id: 21,
+          title: 'Позвонить клиенту',
+          status: 'in_progress',
+          priority: 'normal',
+          dueAt: new Date('2026-09-22T13:00:00.000Z'),
+        }],
+      }],
+    });
+    const transport = installFetch([decision({
+      action: 'team_summary',
+      title: null,
+      description: null,
+      assigneeRequested: false,
+      assigneeId: null,
+      assigneeQuery: null,
+      deadlineRequested: false,
+      dueAt: null,
+      priority: null,
+    })]);
+    const adminActor = { ...actor, canViewTeamTasks: true };
+
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(),
+      actor: adminActor,
+      text: 'Сделай сводку, у каких сотрудников сколько осталось задач',
+    }, { fetchImpl: mocks.fetch, now: () => now });
+
+    expect(mocks.teamSummary).toHaveBeenCalledWith(adminActor);
+    expect(mocks.ownTasks).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).text).toContain('Текущих задач: 7');
+    expect(transport.sentMessages.at(-1).text).toContain('Хонзода Каримова — 4');
+    expect(transport.sentMessages.at(-1).text).toContain('[В работе]');
+    expect(JSON.stringify(transport.openRouterBodies[0])).not.toContain('Позвонить клиенту');
+  });
+
+  it('lets administration inspect one employee but never broadens a regular employee request', async () => {
+    mocks.employeeTasks.mockResolvedValue([
+      { id: 22, title: 'Подготовить договор', status: 'todo', priority: 'normal', dueAt: null },
+    ]);
+    mocks.ownTasks.mockResolvedValue([
+      { id: 23, title: 'Собственная задача', status: 'todo', priority: 'normal', dueAt: null },
+    ]);
+    const targetDecision = decision({
+      action: 'employee_tasks',
+      title: null,
+      description: null,
+      deadlineRequested: false,
+      dueAt: null,
+      priority: null,
+    });
+    const adminTransport = installFetch([targetDecision]);
+    const adminActor = { ...actor, canViewTeamTasks: true };
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(30),
+      actor: adminActor,
+      text: 'Какие задачи остались у Хонзоды?',
+    }, { fetchImpl: mocks.fetch, now: () => now });
+
+    expect(mocks.employeeTasks).toHaveBeenCalledWith(adminActor, 9);
+    expect(adminTransport.sentMessages.at(-1).text).toContain('Текущие задачи: Хонзода Каримова');
+    expect(adminTransport.sentMessages.at(-1).text).toContain('Подготовить договор');
+    expect(adminTransport.sentMessages.at(-1).text).toContain('[К выполнению]');
+
+    const regularTransport = installFetch([targetDecision]);
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(31),
+      text: 'Какие задачи остались у Хонзоды?',
+    }, { fetchImpl: mocks.fetch, now: () => now });
+
+    expect(mocks.employeeTasks).toHaveBeenCalledOnce();
+    expect(mocks.ownTasks).toHaveBeenCalledWith(7);
+    expect(regularTransport.sentMessages.at(-1).text).toContain('Собственная задача');
+    expect(regularTransport.sentMessages.at(-1).text).not.toContain('Подготовить договор');
+  });
+
+  it('keeps the requested employee-list intent while asking administration for an exact name', async () => {
+    const transport = installFetch([
+      decision({
+        action: 'employee_tasks',
+        title: null,
+        description: null,
+        assigneeId: null,
+        assigneeQuery: 'Хонзода или Хонзодахон',
+        deadlineRequested: false,
+        dueAt: null,
+        priority: null,
+        clarification: 'assignee',
+      }),
+      decision({
+        action: 'employee_tasks',
+        title: null,
+        description: null,
+        assigneeId: 9,
+        assigneeQuery: 'Хонзода Каримова',
+        deadlineRequested: false,
+        dueAt: null,
+        priority: null,
+      }),
+    ]);
+    const adminActor = { ...actor, canViewTeamTasks: true };
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(40), actor: adminActor, text: 'Покажи задачи Хонзоды',
+    }, { fetchImpl: mocks.fetch, now: () => now });
+    expect(transport.sentMessages.at(-1).text).toContain('Чьи задачи показать');
+
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(41), actor: adminActor, text: 'Хонзода Каримова',
+    }, { fetchImpl: mocks.fetch, now: () => new Date(now.getTime() + 60_000) });
+    expect(transport.openRouterBodies[1].messages[0].content)
+      .toContain('Pending request to identify an employee whose tasks should be listed: true');
+    expect(mocks.employeeTasks).toHaveBeenCalledWith(adminActor, 9);
+  });
+
+  it('downgrades a forged team-summary decision for a regular employee to their own tasks', async () => {
+    mocks.ownTasks.mockResolvedValue([
+      { id: 24, title: 'Только моя задача', status: 'todo', priority: 'normal', dueAt: null },
+    ]);
+    const transport = installFetch([decision({
+      action: 'team_summary',
+      title: null,
+      description: null,
+      assigneeRequested: false,
+      assigneeId: null,
+      assigneeQuery: null,
+      deadlineRequested: false,
+      dueAt: null,
+      priority: null,
+    })]);
+
+    await processTelegramTaskAgentMessage({ ...baseMessage(), text: 'Покажи задачи всех сотрудников' }, {
+      fetchImpl: mocks.fetch,
+      now: () => now,
+    });
+
+    expect(mocks.teamSummary).not.toHaveBeenCalled();
+    expect(mocks.ownTasks).toHaveBeenCalledWith(7);
+    expect(transport.sentMessages.at(-1).text).toContain('Только моя задача');
   });
 
   it('serves the /tasks command for the verified employee without an AI call', async () => {

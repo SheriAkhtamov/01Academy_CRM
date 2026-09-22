@@ -36,6 +36,13 @@ Configure `integrations.telegramTasks.openRouterApiKey` in the untracked
   or send `/tasks` for a deterministic answer without an AI call. The server
   returns titles and deadlines for that verified employee only; asking for
   another employee's list never broadens the query.
+- Employees with a currently assigned `administration` module may ask for one
+  active employee's current tasks or a team summary with exact task counts and
+  a bounded task preview per employee. The privilege is derived by the server
+  from the verified CRM profile and rechecked before every cross-employee read;
+  the model cannot grant it. Since CRM users do not currently have a universal
+  branch field, the team scope matches the existing administration task board:
+  all active employees in this CRM installation.
 - The model receives the active employee directory so it can resolve a spoken
   name, limited to employee ID and display name. It never receives database
   access, SQL tools, existing task contents or data from other CRM modules. The

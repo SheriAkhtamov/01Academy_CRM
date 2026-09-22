@@ -61,6 +61,55 @@ const translations = {
         en: 'There are more tasks. Open the app for the full list.',
         ru: 'Есть и другие задачи. Откройте приложение, чтобы посмотреть весь список.',
     },
+    telegramAgentNeedTaskEmployee: {
+        en: 'Whose tasks should I show? Send the employee’s exact name.',
+        ru: 'Чьи задачи показать? Напишите точное имя сотрудника.',
+    },
+    telegramAgentEmployeeTaskListTitle: {
+        en: '📋 Current tasks for {employee}',
+        ru: '📋 Текущие задачи: {employee}',
+    },
+    telegramAgentEmployeeTaskListEmpty: {
+        en: '{employee} has no current tasks.',
+        ru: 'У сотрудника {employee} сейчас нет активных задач.',
+    },
+    telegramAgentEmployeeTaskListLine: {
+        en: '{index}. #{id} {title} [{status}] — {deadline}',
+        ru: '{index}. #{id} {title} [{status}] — {deadline}',
+    },
+    telegramAgentTeamSummaryTitle: {
+        en: '📊 Team task summary',
+        ru: '📊 Сводка по задачам сотрудников',
+    },
+    telegramAgentTeamSummaryTotals: {
+        en: 'Current tasks: {tasks}. Employees with tasks: {employees}.',
+        ru: 'Текущих задач: {tasks}. Сотрудников с задачами: {employees}.',
+    },
+    telegramAgentTeamSummaryEmployee: {
+        en: '{employee} — {count}',
+        ru: '{employee} — {count}',
+    },
+    telegramAgentTeamSummaryTask: {
+        en: '  • #{id} {title} [{status}] — {deadline}',
+        ru: '  • #{id} {title} [{status}] — {deadline}',
+    },
+    telegramAgentTeamSummaryMoreTasks: {
+        en: '  • …and {count} more',
+        ru: '  • …и ещё {count}',
+    },
+    telegramAgentTeamSummaryMoreEmployees: {
+        en: 'There are more employees with tasks. Open the app for the full list.',
+        ru: 'Есть и другие сотрудники с задачами. Откройте приложение, чтобы посмотреть весь список.',
+    },
+    telegramAgentTeamSummaryEmpty: {
+        en: 'There are no current tasks assigned to active employees.',
+        ru: 'У активных сотрудников сейчас нет текущих задач.',
+    },
+    telegramAgentTaskStatusBacklog: { en: 'Backlog', ru: 'Бэклог' },
+    telegramAgentTaskStatusTodo: { en: 'To do', ru: 'К выполнению' },
+    telegramAgentTaskStatusInProgress: { en: 'In progress', ru: 'В работе' },
+    telegramAgentTaskStatusDone: { en: 'Awaiting acceptance', ru: 'Ожидает приёмки' },
+    telegramAgentTaskStatusUnknown: { en: 'Current', ru: 'Текущая' },
     tooManyLoginAttempts: {
         en: 'Too many login attempts. Please try again later.',
         ru: 'Слишком много попыток входа. Попробуйте позже.',

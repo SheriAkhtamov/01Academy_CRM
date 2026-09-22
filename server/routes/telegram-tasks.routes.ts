@@ -7,6 +7,7 @@ import { bindTelegramTaskEmployee, getTelegramTaskIdentity, TelegramBindingDenie
 import { secureEqual, signTaskToken, validateTelegramInitData, verifyTaskToken, type TaskToken } from '../services/telegram-tasks-crypto';
 import { enqueueTelegramTaskAgentMessage } from '../services/telegram-task-agent';
 import { t } from '../lib/i18n';
+import { hasLeadershipAccess } from '@shared/academy';
 
 const messages = {
   ru: {
@@ -111,7 +112,11 @@ export function registerTelegramTaskRoutes(app: Express) {
           telegramUserId: String(sender.id),
           chatId: sender.id,
           language: sender.language_code === 'en' ? 'en' : 'ru',
-          actor: identity.user,
+          actor: {
+            id: identity.user.id,
+            fullName: identity.user.fullName,
+            canViewTeamTasks: hasLeadershipAccess(identity.user),
+          },
           ...(hasVoice ? {
             voice: {
               fileId: message.voice.file_id,

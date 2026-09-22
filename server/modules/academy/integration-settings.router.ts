@@ -62,8 +62,11 @@ const currentIntegrationSettings = (provider: z.infer<typeof settingsProvider>) 
     };
   }
   if (provider === 'website') return {
-    domains: [...new Set((integrations?.website?.allowedFormOrigins ?? [])
-      .map(normalizeWebsiteIntegrationDomain).filter(Boolean))],
+    domains: [...new Set([
+      ...(integrations?.website?.allowedFormOrigins ?? [])
+        .map(normalizeWebsiteIntegrationDomain).filter((domain): domain is string => Boolean(domain)),
+      ...Object.keys(integrations?.website?.apiTokens ?? {}),
+    ])],
     tokenConfiguredDomains: Object.keys(integrations?.website?.apiTokens ?? {}),
   };
   if (provider === 'instagram') {

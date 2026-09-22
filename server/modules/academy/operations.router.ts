@@ -580,6 +580,7 @@ router.get('/integrations/status', async (req, res) => {
       .filter((domain): domain is string => Boolean(domain));
     const websiteDomains = [...new Set([
       ...configuredWebsiteDomains,
+      ...Object.keys(integ.website?.apiTokens ?? {}),
       ...websiteLogs.map((log) => log.siteDomain),
     ])].sort((left, right) => left.localeCompare(right));
     const websiteProviders = websiteDomains.map((siteDomain) => {

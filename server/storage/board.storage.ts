@@ -57,6 +57,14 @@ class BoardStorage {
         return first;
     }
 
+    async getActiveTaskAssignees() {
+        return db
+            .select({ id: users.id, fullName: users.fullName })
+            .from(users)
+            .where(and(eq(users.isActive, true), eq(users.isArchived, false)))
+            .orderBy(asc(users.fullName), asc(users.id));
+    }
+
     async getLeadReference(id: number) {
         const [lead] = await db
             .select({
@@ -128,6 +136,24 @@ class BoardStorage {
             lead: r.lead?.id ? r.lead : null,
             ...(counts.get(r.id) ?? { commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 }),
         }));
+    }
+
+    async getOpenAssignedTasks(assigneeId: number, limit: number) {
+        return db
+            .select({
+                id: boardTasks.id,
+                title: boardTasks.title,
+                status: boardTasks.status,
+                priority: boardTasks.priority,
+                dueAt: boardTasks.dueAt,
+            })
+            .from(boardTasks)
+            .where(and(
+                eq(boardTasks.assigneeId, assigneeId),
+                ne(boardTasks.status, 'accepted'),
+            ))
+            .orderBy(sql`${boardTasks.dueAt} asc nulls last`, asc(boardTasks.id))
+            .limit(Math.max(1, Math.min(limit, 100)));
     }
 
     private async getTaskCounts(taskIds: number[]) {

@@ -1,23 +1,20 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  users: vi.fn(),
-  getDefaultBoard: vi.fn(),
-  getMaxPosition: vi.fn(),
-  createTaskWithActivity: vi.fn(),
+  employees: vi.fn(),
+  ownTasks: vi.fn(),
+  createTaskAsActor: vi.fn(),
   publish: vi.fn(),
   fetch: vi.fn(),
 }));
 
-vi.mock('../server/services/telegram-tasks', () => ({
-  telegramTaskAccess: { getAssignableUsers: mocks.users },
-}));
-vi.mock('../server/storage', () => ({
-  storage: { board: {
-    getDefaultBoard: mocks.getDefaultBoard,
-    getMaxPosition: mocks.getMaxPosition,
-    createTaskWithActivity: mocks.createTaskWithActivity,
-  } },
+vi.mock('../server/services/telegram-task-agent-data', () => ({
+  telegramTaskAgentData: {
+    getAssignableEmployees: mocks.employees,
+    getOwnOpenTasks: mocks.ownTasks,
+    createTaskAsActor: mocks.createTaskAsActor,
+  },
 }));
 vi.mock('../server/realtime/realtime-hub', () => ({ publishRealtimeEvent: mocks.publish }));
 
@@ -36,8 +33,8 @@ const actor = {
   isArchived: false,
 } as any;
 const employees = [
-  { id: 7, fullName: 'Шерзод Ахтамов', position: 'Директор', module: 'administration' },
-  { id: 9, fullName: 'Хонзода Каримова', position: 'Менеджер', module: 'sales' },
+  { id: 7, fullName: 'Шерзод Ахтамов' },
+  { id: 9, fullName: 'Хонзода Каримова' },
 ];
 const now = new Date('2026-09-22T05:00:00.000Z');
 
@@ -102,10 +99,9 @@ const installFetch = (decisions: unknown[]) => {
 beforeEach(() => {
   vi.clearAllMocks();
   resetTelegramTaskAgentMemoryForTests();
-  mocks.users.mockResolvedValue(employees);
-  mocks.getDefaultBoard.mockResolvedValue({ id: 3 });
-  mocks.getMaxPosition.mockResolvedValue(4);
-  mocks.createTaskWithActivity.mockResolvedValue({ id: 81, boardId: 3, title: 'Подготовить отчёт' });
+  mocks.employees.mockResolvedValue(employees);
+  mocks.ownTasks.mockResolvedValue([]);
+  mocks.createTaskAsActor.mockResolvedValue({ id: 81, boardId: 3, title: 'Подготовить отчёт' });
 });
 
 describe('Telegram task agent', () => {
@@ -113,7 +109,7 @@ describe('Telegram task agent', () => {
     const transport = installFetch([decision()]);
     await processTelegramTaskAgentMessage({
       ...baseMessage(),
-      voice: { fileId: 'voice-file', fileSize: 1024, duration: 15 },
+      voice: { fileId: 'voice-file', fileSize: 1024, duration: 300 },
     }, { fetchImpl: mocks.fetch, now: () => now });
 
     expect(transport.openRouterBodies).toHaveLength(1);
@@ -125,15 +121,15 @@ describe('Telegram task agent', () => {
     expect(transport.openRouterBodies[0].messages[1].content[1]).toMatchObject({
       type: 'input_audio', input_audio: { format: 'ogg' },
     });
-    expect(mocks.createTaskWithActivity).toHaveBeenCalledWith(expect.objectContaining({
-      boardId: 3,
+    expect(mocks.createTaskAsActor).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: 7,
       title: 'Подготовить отчёт',
       assigneeId: 9,
       dueAt: new Date('2026-09-23T13:00:00.000Z'),
-      position: 5,
-      creatorId: 7,
-    }), expect.objectContaining({ type: 'created', actorId: 7 }), expect.stringMatching(/^[a-f0-9-]{36}$/));
+      requestKey: expect.stringMatching(/^[a-f0-9-]{36}$/),
+    }));
     expect(mocks.publish).toHaveBeenCalledWith({ type: 'BOARD_TASK_CREATED', data: { id: 81, boardId: 3 } });
+    expect(transport.sentMessages.at(-1).text).toContain('Постановщик: Шерзод Ахтамов');
     expect(transport.sentMessages.at(-1).text).toContain('Хонзода Каримова');
     expect(transport.sentMessages.at(-1).reply_markup.inline_keyboard[0][0].web_app.url)
       .toBe('https://crm.example.test/miniapp/tasks');
@@ -148,14 +144,14 @@ describe('Telegram task agent', () => {
       fetchImpl: mocks.fetch,
       now: () => now,
     });
-    expect(mocks.createTaskWithActivity).not.toHaveBeenCalled();
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
     expect(transport.sentMessages.at(-1).text).toContain('Что именно');
 
     await processTelegramTaskAgentMessage({ ...baseMessage(11), text: 'Подготовить отчёт' }, {
       fetchImpl: mocks.fetch,
       now: () => new Date(now.getTime() + 60_000),
     });
-    expect(mocks.createTaskWithActivity).toHaveBeenCalledOnce();
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
     expect(transport.openRouterBodies[1].messages[0].content).toContain('"assigneeId":9');
   });
 
@@ -171,11 +167,11 @@ describe('Telegram task agent', () => {
       fetchImpl: mocks.fetch,
       now: () => now,
     });
-    expect(mocks.createTaskWithActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ assigneeId: 7, dueAt: null }),
-      expect.anything(),
-      expect.any(String),
-    );
+    expect(mocks.createTaskAsActor).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: 7,
+      assigneeId: 7,
+      dueAt: null,
+    }));
   });
 
   it('asks for an exact employee instead of accepting a hallucinated assignee id', async () => {
@@ -184,7 +180,7 @@ describe('Telegram task agent', () => {
       fetchImpl: mocks.fetch,
       now: () => now,
     });
-    expect(mocks.createTaskWithActivity).not.toHaveBeenCalled();
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
     expect(transport.sentMessages.at(-1).text).toContain('точное имя');
   });
 
@@ -192,11 +188,64 @@ describe('Telegram task agent', () => {
     const transport = installFetch([]);
     await processTelegramTaskAgentMessage({
       ...baseMessage(),
-      voice: { fileId: 'large-file', fileSize: 1024, duration: 121 },
+      voice: { fileId: 'large-file', fileSize: 1024, duration: 301 },
     }, { fetchImpl: mocks.fetch, now: () => now });
     expect(transport.openRouterBodies).toHaveLength(0);
     expect(mocks.fetch.mock.calls.some(([url]) => String(url).endsWith('/getFile'))).toBe(false);
-    expect(mocks.createTaskWithActivity).not.toHaveBeenCalled();
-    expect(transport.sentMessages.at(-1).text).toContain('короче 2 минут');
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).text).toContain('короче 5 минут');
+  });
+
+  it('lists only the verified employee own open tasks without sending task data to the model', async () => {
+    mocks.ownTasks.mockResolvedValue([
+      { id: 21, title: 'Позвонить\nклиенту', status: 'todo', priority: 'normal', dueAt: new Date('2026-09-22T13:00:00.000Z') },
+      { id: 22, title: 'Подготовить договор', status: 'in_progress', priority: 'urgent', dueAt: null },
+    ]);
+    const transport = installFetch([decision({
+      action: 'list',
+      title: null,
+      description: null,
+      assigneeRequested: false,
+      assigneeId: null,
+      assigneeQuery: null,
+      deadlineRequested: false,
+      dueAt: null,
+      priority: null,
+    })]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(), text: 'Какие задачи сейчас стоят у Хонзоды?' }, {
+      fetchImpl: mocks.fetch,
+      now: () => now,
+    });
+
+    expect(mocks.ownTasks).toHaveBeenCalledWith(7);
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).text).toContain('Ваши текущие задачи');
+    expect(transport.sentMessages.at(-1).text).toContain('Позвонить клиенту — 22 сент. 2026 г., 18:00');
+    expect(transport.sentMessages.at(-1).text).toContain('Подготовить договор — без срока');
+    expect(JSON.stringify(transport.openRouterBodies[0])).not.toContain('Позвонить');
+  });
+
+  it('serves the /tasks command for the verified employee without an AI call', async () => {
+    mocks.ownTasks.mockResolvedValue([
+      { id: 23, title: 'Проверить расписание', status: 'done', priority: 'normal', dueAt: null },
+    ]);
+    const transport = installFetch([]);
+
+    await processTelegramTaskAgentMessage({ ...baseMessage(), text: '/tasks' }, {
+      fetchImpl: mocks.fetch,
+      now: () => now,
+    });
+
+    expect(mocks.ownTasks).toHaveBeenCalledWith(7);
+    expect(mocks.employees).not.toHaveBeenCalled();
+    expect(transport.openRouterBodies).toHaveLength(0);
+    expect(transport.sentMessages.at(-1).text).toContain('Проверить расписание — без срока');
+  });
+
+  it('has no direct database or general storage dependency in the model-facing service', () => {
+    const source = readFileSync(new URL('../server/services/telegram-task-agent.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/from ['"]\.\.\/(?:db|storage)(?:\/|['"])/);
+    expect(source).toContain("from './telegram-task-agent-data'");
+    expect(source).not.toContain('creatorId');
   });
 });

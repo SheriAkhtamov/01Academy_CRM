@@ -14,8 +14,8 @@ const translations = {
     telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n#{id} {title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n#{id} {title}\nСрок: {deadline} ({timezone}).' },
     telegramReminderOpen: { en: 'Open tasks', ru: 'Открыть задачи' },
     telegramAgentCreated: {
-        en: '✅ Task created\n{title}\nAssignee: {assignee}\nDeadline: {deadline}',
-        ru: '✅ Задача создана\n{title}\nИсполнитель: {assignee}\nСрок: {deadline}',
+        en: '✅ Task created\n{title}\nCreator: {creator}\nAssignee: {assignee}\nDeadline: {deadline}',
+        ru: '✅ Задача создана\n{title}\nПостановщик: {creator}\nИсполнитель: {assignee}\nСрок: {deadline}',
     },
     telegramAgentNoDeadline: { en: 'no deadline', ru: 'без срока' },
     telegramAgentNeedTitle: { en: 'What exactly needs to be done?', ru: 'Что именно нужно сделать?' },
@@ -28,8 +28,8 @@ const translations = {
         ru: 'Какой срок поставить? Например: «завтра до 18:00».',
     },
     telegramAgentNeedCommand: {
-        en: 'Tell me the task in a voice message or text. For example: “Create a task for Khonzoda to prepare the report by tomorrow at 6 PM”.',
-        ru: 'Продиктуйте или напишите задачу. Например: «Создай для Хонзоды задачу подготовить отчёт до завтра, 18:00».',
+        en: 'Tell me the task in a voice message or text. For example: “Create a task for Khonzoda to prepare the report by tomorrow at 6 PM”. To see your current tasks, send /tasks.',
+        ru: 'Продиктуйте или напишите задачу. Например: «Создай для Хонзоды задачу подготовить отчёт до завтра, 18:00». Чтобы увидеть свои текущие задачи, отправьте /tasks.',
     },
     telegramAgentCancelled: { en: 'Task creation cancelled.', ru: 'Создание задачи отменено.' },
     telegramAgentUnavailable: {
@@ -37,12 +37,25 @@ const translations = {
         ru: 'Сейчас не удалось обработать сообщение. Попробуйте позже.',
     },
     telegramAgentTooLong: {
-        en: 'The voice message is too long. Please keep it under 2 minutes.',
-        ru: 'Голосовое сообщение слишком длинное. Запишите его короче 2 минут.',
+        en: 'The voice message is too long. Please keep it under 5 minutes.',
+        ru: 'Голосовое сообщение слишком длинное. Запишите его короче 5 минут.',
     },
     telegramAgentRateLimited: {
         en: 'There have been too many requests. Please try again a little later.',
         ru: 'Слишком много запросов. Попробуйте немного позже.',
+    },
+    telegramAgentTaskListTitle: { en: '📋 Your current tasks', ru: '📋 Ваши текущие задачи' },
+    telegramAgentTaskListEmpty: {
+        en: 'You have no current tasks.',
+        ru: 'У вас сейчас нет активных задач.',
+    },
+    telegramAgentTaskListLine: {
+        en: '{index}. #{id} {title} — {deadline}',
+        ru: '{index}. #{id} {title} — {deadline}',
+    },
+    telegramAgentTaskListMore: {
+        en: 'There are more tasks. Open the app for the full list.',
+        ru: 'Есть и другие задачи. Откройте приложение, чтобы посмотреть весь список.',
     },
     tooManyLoginAttempts: {
         en: 'Too many login attempts. Please try again later.',

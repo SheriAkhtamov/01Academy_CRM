@@ -29,14 +29,23 @@ untracked `config/app.config.json`. The optional `agentModel` defaults to
 - A command can include a title, description, assignee, deadline and priority.
   When no assignee is named, the verified sender is used. A deadline is
   optional; a date without a time is interpreted as 18:00 in Asia/Tashkent.
+- Employees can ask which current, not-yet-accepted tasks are assigned to them,
+  or send `/tasks` for a deterministic answer without an AI call. The server
+  returns titles and deadlines for that verified employee only; asking for
+  another employee's list never broadens the query.
 - The model receives the active employee directory so it can resolve a spoken
-  name, but the server accepts only an ID from that live directory. Missing or
+  name, limited to employee ID and display name. It never receives database
+  access, SQL tools, existing task contents or data from other CRM modules. The
+  server accepts only an assignee ID from that live directory. Missing or
   ambiguous titles, names and dates are clarified in the same private chat.
+- The task creator is always taken from the verified Telegram binding. The AI
+  response has no creator field, so a command cannot impersonate another
+  employee; assigning the new task to somebody else remains supported.
 - `/cancel` discards the pending draft. Structured drafts expire after 15
   minutes and are kept only in process memory; a restart safely discards them.
 - Telegram update IDs become deterministic task request keys, so a retried
   webhook cannot create a second task. Each verified employee is limited to 20
-  agent requests per hour. Voice messages are limited to two minutes and 10 MB.
+  agent requests per hour. Voice messages are limited to five minutes and 10 MB.
 - Audio is sent directly to the configured multimodal model with OpenRouter
   zero-retention and data-collection-denial routing requested for every call.
   Audio and transcripts are not written to CRM storage or application logs.

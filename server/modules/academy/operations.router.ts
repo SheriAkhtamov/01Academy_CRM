@@ -586,7 +586,7 @@ router.get('/integrations/status', async (req, res) => {
       const lastLog = websiteLogs.find((log) => log.siteDomain === siteDomain) ?? null;
       return {
         provider: websiteIntegrationProvider(siteDomain),
-        connected: configuredWebsiteDomains.includes(siteDomain),
+        connected: Boolean(integ.website?.apiTokens?.[siteDomain]),
         requiresReconnect: false,
         accountId: null,
         accountUsername: null,

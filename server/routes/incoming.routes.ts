@@ -2,10 +2,9 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
-import { appConfig, isDevelopmentEnvironment } from '../config';
+import { appConfig } from '../config';
 import { logger } from '../lib/logger';
 import { inboundWebhookLimiter, websiteLeadLimiter } from '../middleware/rateLimiter';
-import { isAllowedWebsiteLeadFormOrigin } from '../middleware/security.middleware';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import {
   processInstagramWebhook,
@@ -18,10 +17,8 @@ import {
   verifyMetaLeadWebhookSignature,
 } from '../services/meta-lead-ads';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
-import {
-  normalizeWebsiteIntegrationDomain,
-  websiteIntegrationProvider,
-} from '../services/website-integrations';
+import { websiteIntegrationProvider } from '../services/website-integrations';
+import { authenticateWebsiteLeadToken } from '../services/website-lead-tokens';
 
 const router = Router();
 
@@ -148,32 +145,6 @@ router.get('/instagram/data-deletion/status/:confirmationCode', (req, res) => {
     status: 'received',
   });
 });
-
-// The public landing is allowed only from explicitly configured origins. Other
-// clients must authenticate with the server-side webhook secret.
-const verifyWebsiteLeadRequest = (req: any, res: any): boolean => {
-  if (isAllowedWebsiteLeadFormOrigin(req.get('origin'))) return true;
-
-  const configured = appConfig.integrations?.website?.webhookSecret?.trim();
-  if (!configured) {
-    if (isDevelopmentEnvironment) return true;
-    res.status(503).json({ error: 'integrationNotConfigured' });
-    return false;
-  }
-  const provided = req.get('x-webhook-secret')?.trim();
-  if (provided) {
-    const expectedBuffer = Buffer.from(configured);
-    const actualBuffer = Buffer.from(provided);
-    if (
-      actualBuffer.length === expectedBuffer.length
-      && crypto.timingSafeEqual(actualBuffer, expectedBuffer)
-    ) {
-      return true;
-    }
-  }
-  res.status(401).json({ error: 'Invalid or missing webhook secret' });
-  return false;
-};
 
 type QueryExecutor = {
   query: (text: string, values?: any[]) => Promise<{ rows: any[] }>;
@@ -357,7 +328,8 @@ const findIncomingDuplicate = async (
 };
 
 router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
-  if (!verifyWebsiteLeadRequest(req, res)) return;
+  const siteDomain = authenticateWebsiteLeadToken(req.get('authorization'));
+  if (!siteDomain) return res.status(401).json({ error: 'Invalid or missing website token' });
   try {
     const body = req.body ?? {};
     if (nullableText(body.website, 255)) return res.status(202).json({ ok: true });
@@ -370,10 +342,8 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const pageUrl = nullableText(body.pageUrl ?? body.page, 2000);
     const language = nullableText(body.locale ?? body.language, 20) ?? 'ru';
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
-    const siteDomain = normalizeWebsiteIntegrationDomain(req.get('origin'))
-      ?? normalizeWebsiteIntegrationDomain(pageUrl);
-    const integrationProvider = siteDomain ? websiteIntegrationProvider(siteDomain) : null;
-    const integrationPayload = siteDomain ? { ...body, siteDomain } : body;
+    const integrationProvider = websiteIntegrationProvider(siteDomain);
+    const integrationPayload = { ...body, siteDomain };
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
     if (!phone && !messenger) return res.status(400).json({ error: 'contactRequired' });
@@ -393,11 +363,11 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
       if (duplicate) return { duplicate: camelize(duplicate), lead: null };
 
       const sourceId = await ensureIncomingSourceId(client, {
-        code: integrationProvider ?? 'website',
-        name: siteDomain ?? 'Сайт',
+        code: integrationProvider,
+        name: siteDomain,
         channel: 'website',
       });
-      const funnelId = await resolveLeadFunnelId(client, integrationProvider ?? undefined);
+      const funnelId = await resolveLeadFunnelId(client, integrationProvider);
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
@@ -416,11 +386,11 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     });
 
     if (result.duplicate) {
-      await logIntegration(integrationProvider ?? 'website', 'inbound', 'duplicate', integrationPayload);
+      await logIntegration(integrationProvider, 'inbound', 'duplicate', integrationPayload);
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
     }
 
-    await logIntegration(integrationProvider ?? 'website', 'inbound', 'received', integrationPayload);
+    await logIntegration(integrationProvider, 'inbound', 'received', integrationPayload);
     publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: result.lead.id } });
     return res.status(201).json(result.lead);
   } catch (error) {

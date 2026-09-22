@@ -10,6 +10,7 @@ import {
 } from '../../services/integration-settings';
 import { OnlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { normalizeWebsiteIntegrationDomain } from '../../services/website-integrations';
+import { createWebsiteLeadToken, hashWebsiteLeadToken } from '../../services/website-lead-tokens';
 import { ensureAdministrationModuleAccess } from './academy-core';
 
 const router = Router();
@@ -63,7 +64,7 @@ const currentIntegrationSettings = (provider: z.infer<typeof settingsProvider>) 
   if (provider === 'website') return {
     domains: [...new Set((integrations?.website?.allowedFormOrigins ?? [])
       .map(normalizeWebsiteIntegrationDomain).filter(Boolean))],
-    endpoint: new URL('/api/incoming/website-lead', appConfig.server.appUrl).href,
+    tokenConfiguredDomains: Object.keys(integrations?.website?.apiTokens ?? {}),
   };
   if (provider === 'instagram') {
     const settings = integrations?.instagram;
@@ -105,6 +106,36 @@ router.get('/integrations/settings/:provider', (req, res) => {
   const provider = settingsProvider.safeParse(req.params.provider);
   if (!provider.success) return res.status(404).json({ error: 'integrationNotFound' });
   return res.json(currentIntegrationSettings(provider.data));
+});
+
+router.post('/integrations/website-token', async (req, res) => {
+  if (!ensureAdministrationModuleAccess(req, res)) return;
+  const parsed = z.object({ domain: z.string().trim().min(4).max(100) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'integrationInvalidDomain' });
+  const domain = normalizeWebsiteIntegrationDomain(parsed.data.domain);
+  if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {
+    return res.status(400).json({ error: 'integrationInvalidDomain' });
+  }
+
+  const token = createWebsiteLeadToken();
+  const website = appConfig.integrations?.website;
+  const origins = new Set(website?.allowedFormOrigins ?? []);
+  origins.add(`https://${domain}`);
+  origins.add(`https://www.${domain}`);
+  const apiTokens = {
+    ...website?.apiTokens,
+    [domain]: { hash: hashWebsiteLeadToken(token), createdAt: new Date().toISOString() },
+  };
+  try {
+    await saveIntegrationSettings('website', { allowedFormOrigins: [...origins], apiTokens });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ domain, token });
+  } catch (error) {
+    if (error instanceof IntegrationSettingsValidationError) {
+      return res.status(400).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'integrationSaveFailed' });
+  }
 });
 
 router.put('/integrations/settings/:provider', async (req, res) => {

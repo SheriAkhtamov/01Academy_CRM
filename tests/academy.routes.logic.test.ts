@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,10 +43,15 @@ vi.mock('../server/storage', () => ({
 vi.mock('../server/config', () => ({
   appConfig: {
     server: { appUrl: 'https://crm.test', environment: 'test' },
+    session: { secret: 'website-token-test-session-secret' },
     integrations: {
       website: {
         webhookSecret: 'website-secret',
         allowedFormOrigins: ['https://01academy.pro', 'https://www.01academy.uz'],
+        apiTokens: {
+          '01academy.pro': { hash: '05f83beb894a79d6442dd4123f59fdeda75ce4e797c4754502ac44e0cdde2c7c', createdAt: '2026-09-23T00:00:00.000Z' },
+          '01academy.uz': { hash: '15d86a1afbe54def91f3413be91921ebf3f7907b2dd83631bed6aa97c331501e', createdAt: '2026-09-23T00:00:00.000Z' },
+        },
       },
       telegramTasks: {
         botToken: '12345:test-only-token-that-is-long-enough',
@@ -64,6 +70,7 @@ vi.mock('../server/config', () => ({
       },
     },
   },
+  validateConfig: vi.fn(),
 }));
 vi.mock('../server/lib/logger', () => ({
   logger: { error: mocks.loggerError, warn: vi.fn(), info: vi.fn() },
@@ -293,6 +300,27 @@ describe('academy route logic boundaries', () => {
     expect(meta.body).not.toHaveProperty('marketingAccessToken');
     expect(meta.body).not.toHaveProperty('leadAccessToken');
     expect(meta.body).not.toHaveProperty('webhookAppSecret');
+  });
+
+  it('issues and rotates a per-site token without returning its hash in settings', async () => {
+    const app = await createApp();
+    const domain = 'token-test.example';
+    const first = await request(app).post('/api/academy/integrations/website-token').send({ domain });
+    expect(first.status).toBe(200);
+    expect(first.body.token).toMatch(/^wsl_[A-Za-z0-9_-]{43}$/);
+
+    const settings = await request(app).get('/api/academy/integrations/settings/website');
+    expect(settings.body.tokenConfiguredDomains).toContain(domain);
+    expect(JSON.stringify(settings.body)).not.toContain(first.body.token);
+    expect(JSON.stringify(settings.body)).not.toContain(crypto.createHash('sha256').update(first.body.token).digest('hex'));
+
+    const second = await request(app).post('/api/academy/integrations/website-token').send({ domain });
+    expect(second.status).toBe(200);
+    expect(second.body.token).not.toBe(first.body.token);
+    const { appConfig } = await import('../server/config');
+    expect(appConfig.integrations!.website!.apiTokens![domain].hash)
+      .toBe(crypto.createHash('sha256').update(second.body.token).digest('hex'));
+    expect(JSON.stringify(mocks.poolQuery.mock.calls)).not.toContain(first.body.token);
   });
 
   it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {

@@ -48,6 +48,7 @@ export interface AppConfig {
     website?: {
       webhookSecret?: string;
       allowedFormOrigins?: string[];
+      apiTokens?: Record<string, { hash: string; createdAt: string }>;
     };
     instagram?: {
       appId?: string;
@@ -304,6 +305,22 @@ export const validateConfig = (config: AppConfig) => {
   const instagram = config.integrations?.instagram;
   const metaAds = config.integrations?.metaAds;
   validateAllowedFormOrigins(config.integrations?.website?.allowedFormOrigins);
+  const websiteTokens = config.integrations?.website?.apiTokens;
+  if (websiteTokens !== undefined) {
+    if (!websiteTokens || typeof websiteTokens !== 'object' || Array.isArray(websiteTokens)) {
+      throw new Error('integrations.website.apiTokens must be an object');
+    }
+    for (const [domain, credential] of Object.entries(websiteTokens)) {
+      if (
+        !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)
+        || !credential
+        || !/^[a-f0-9]{64}$/.test(credential.hash)
+        || !Number.isFinite(Date.parse(credential.createdAt))
+      ) {
+        throw new Error('integrations.website.apiTokens contains an invalid credential');
+      }
+    }
+  }
   if (config.server.environment === 'production') {
     validateHttpsIntegrationUrl(
       'integrations.instagram.graphApiUrl',

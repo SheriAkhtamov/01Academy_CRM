@@ -486,7 +486,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           const statusText = integration.requiresReconnect
             ? t('integrationStatusReconnectRequired')
             : integration.connected
-              ? t('integrationStatusConnected')
+              ? integration.siteDomain ? t('integrationWebsiteTokenConfigured') : t('integrationStatusConnected')
               : t('integrationStatusNotConfigured');
           const lastLogTime = formatLogTime(integration.lastLog?.createdAt ?? integration.lastLog?.updatedAt, language);
           const Icon = integration.siteDomain || integration.provider === 'website'

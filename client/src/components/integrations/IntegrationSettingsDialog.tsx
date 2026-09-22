@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { getIntegrationSettings, saveIntegrationSettings, type IntegrationType, type SafeIntegrationSettings } from '@/features/integrations/api';
+import { getIntegrationSettings, issueWebsiteToken, saveIntegrationSettings, type IntegrationType, type SafeIntegrationSettings } from '@/features/integrations/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { queryClient } from '@/lib/queryClient';
@@ -72,6 +73,9 @@ export function IntegrationSettingsDialog({
     instagram: t('integrationInstagramSteps'), meta: t('integrationMetaSteps'), onlinepbx: t('integrationPbxSteps'),
   };
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [issuedToken, setIssuedToken] = useState('');
+  const [issuedDomain, setIssuedDomain] = useState('');
+  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const settings = useQuery<SafeIntegrationSettings>({
     queryKey: ['/api/academy/integrations/settings', provider],
     queryFn: () => getIntegrationSettings(provider!),
@@ -79,6 +83,8 @@ export function IntegrationSettingsDialog({
   });
   useEffect(() => {
     if (!provider || !settings.data) return;
+    setIssuedToken('');
+    setIssuedDomain('');
     setDraft(Object.fromEntries(fields[provider].map((field) => [
       field.name,
       field.secret ? '' : field.name === 'domain' && provider === 'website'
@@ -100,9 +106,29 @@ export function IntegrationSettingsDialog({
     }),
   });
 
+  const issueToken = useMutation({
+    mutationFn: () => issueWebsiteToken(draft.domain ?? ''),
+    onSuccess: async ({ domain, token }) => {
+      setIssuedDomain(domain);
+      setIssuedToken(token);
+      setDraft((current) => ({ ...current, domain }));
+      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
+      toast({ title: t('integrationWebsiteTokenIssued') });
+    },
+    onError: (error: Error) => toast({
+      title: t('integrationSaveFailed'), description: error.message, variant: 'destructive',
+    }),
+  });
+
   if (!provider) return null;
   const safe = settings.data;
+  const websiteDomain = (draft.domain ?? '').trim().toLowerCase().replace(/^https:\/\//, '').replace(/^www\./, '');
+  const tokenConfiguredDomains = Array.isArray(safe?.tokenConfiguredDomains) ? safe.tokenConfiguredDomains : [];
+  const websiteTokenConfigured = provider === 'website' && (
+    tokenConfiguredDomains.includes(websiteDomain) || issuedDomain === websiteDomain
+  );
   return (
+    <>
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
@@ -112,7 +138,12 @@ export function IntegrationSettingsDialog({
         {settings.isLoading ? <Skeleton className="h-48 w-full" /> : settings.isError ? (
           <Button variant="outline" onClick={() => settings.refetch()}>{t('retry')}</Button>
         ) : (
-          <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} className="space-y-4">
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            if (provider === 'website') {
+              if (!websiteTokenConfigured) issueToken.mutate();
+            } else save.mutate();
+          }} className="space-y-4">
             {fields[provider].map((field) => (
               <div key={field.name} className="space-y-1.5">
                 <Label htmlFor={`integration-${field.name}`}>{field.label}</Label>
@@ -123,18 +154,27 @@ export function IntegrationSettingsDialog({
                   step={field.name === 'usdToUzsRate' ? 'any' : undefined}
                   autoComplete="off"
                   value={draft[field.name] ?? ''}
-                  onChange={(event) => setDraft((current) => ({ ...current, [field.name]: event.target.value }))}
+                  onChange={(event) => {
+                    if (provider === 'website' && field.name === 'domain') {
+                      setIssuedToken('');
+                      setIssuedDomain('');
+                    }
+                    setDraft((current) => ({ ...current, [field.name]: event.target.value }));
+                  }}
                   placeholder={field.secret && safe?.[`${field.name}Configured`] ? t('integrationKeepSecret') : undefined}
                   required={field.required || (field.secret && requiredSecrets.has(field.name)
                     && !safe?.[`${field.name}Configured`])}
                 />
               </div>
             ))}
-            {provider === 'website' && safe?.endpoint ? (
+            {provider === 'website' && issuedToken ? (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <p className="font-medium">{t('integrationWebsiteEndpoint')}</p>
-                <p className="break-all select-all">{safe.endpoint}</p>
-                <p className="text-muted-foreground">{t('integrationWebsiteFields')}</p>
+                <Label htmlFor="integration-website-issued-token">{t('integrationWebsiteToken')}</Label>
+                <Input id="integration-website-issued-token" readOnly value={issuedToken} className="font-mono" />
+                <Button type="button" variant="outline" onClick={async () => {
+                  await navigator.clipboard.writeText(issuedToken);
+                  toast({ title: t('integrationWebsiteTokenCopied') });
+                }}>{t('integrationWebsiteCopyToken')}</Button>
               </div>
             ) : null}
             {provider === 'instagram' && safe ? (
@@ -160,14 +200,33 @@ export function IntegrationSettingsDialog({
                   {t('loginWithInstagram')}
                 </Button>
               ) : null}
-              <Button type="submit" disabled={save.isPending}>
-                {save.isPending && <Loader2 className="animate-spin" data-icon="inline-start" />}
-                {t('save')}
-              </Button>
+              {provider === 'website' && websiteTokenConfigured ? (
+                <Button type="button" variant="outline" disabled={issueToken.isPending} onClick={() => setRotateConfirmOpen(true)}>
+                  {t('integrationWebsiteRotateToken')}
+                </Button>
+              ) : (
+                <Button type="submit" disabled={save.isPending || issueToken.isPending}>
+                  {(save.isPending || issueToken.isPending) && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                  {provider === 'website' ? t('integrationWebsiteCreateToken') : t('save')}
+                </Button>
+              )}
             </DialogFooter>
           </form>
         )}
       </DialogContent>
     </Dialog>
+    <AlertDialog open={rotateConfirmOpen} onOpenChange={setRotateConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('integrationWebsiteRotateTitle')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('integrationWebsiteRotateDescription')}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => issueToken.mutate()}>{t('integrationWebsiteRotateToken')}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

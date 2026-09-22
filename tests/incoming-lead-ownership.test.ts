@@ -19,8 +19,11 @@ vi.mock('../server/config', () => ({
   appConfig: {
     integrations: {
       website: {
-        webhookSecret: 'test-webhook-secret',
         allowedFormOrigins: ['https://01academy.pro', 'https://www.01academy.pro'],
+        apiTokens: {
+          '01academy.pro': { hash: '05f83beb894a79d6442dd4123f59fdeda75ce4e797c4754502ac44e0cdde2c7c', createdAt: '2026-09-23T00:00:00.000Z' },
+          '01academy.uz': { hash: '15d86a1afbe54def91f3413be91921ebf3f7907b2dd83631bed6aa97c331501e', createdAt: '2026-09-23T00:00:00.000Z' },
+        },
       },
     },
     server: { appUrl: 'http://localhost:5001' },
@@ -85,7 +88,7 @@ describe('external lead ownership', () => {
     const app = createApp();
     const response = await request(app)
       .post('/api/incoming/website-lead')
-      .set('x-webhook-secret', 'test-webhook-secret')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
       .send({
         contactName: 'Website Client',
         phone: '+998 90 444 55 66',
@@ -120,10 +123,11 @@ describe('external lead ownership', () => {
     expect(mocks.broadcast).not.toHaveBeenCalled();
   });
 
-  it('accepts the configured public form origin and stores a Telegram contact', async () => {
+  it('accepts a site token and stores a Telegram contact', async () => {
     const response = await request(createApp())
       .post('/api/incoming/website-lead')
       .set('origin', 'https://01academy.pro')
+      .set('authorization', 'Bearer wsl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
       .send({
         name: 'Telegram Client',
         company: 'Acme',
@@ -170,20 +174,44 @@ describe('external lead ownership', () => {
     }));
   });
 
-  it('does not let an unconfigured browser origin bypass the webhook secret', async () => {
+  it('does not let any browser origin bypass the site token', async () => {
     const response = await request(createApp())
       .post('/api/incoming/website-lead')
-      .set('origin', 'https://attacker.example')
+      .set('origin', 'https://01academy.pro')
       .send({ name: 'Attacker', contact: '+998901112233' });
 
     expect(response.status).toBe(401);
     expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
+  it('rejects the retired shared webhook secret', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('x-webhook-secret', 'test-webhook-secret')
+      .send({ name: 'Unsigned', contact: '+998901112233' });
+
+    expect(response.status).toBe(401);
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
+  });
+
+  it('attributes the lead to the token even when the page claims another site', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .set('origin', 'https://01academy.pro')
+      .send({ name: 'Token owner', contact: '+998901112233', pageUrl: 'https://01academy.pro' });
+
+    expect(response.status).toBe(201);
+    const sourceInsertCall = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_sources'));
+    expect(sourceInsertCall?.[1]).toEqual(['website:01academy.uz', '01academy.uz', 'website']);
+  });
+
   it('silently accepts a filled honeypot without creating a lead', async () => {
     const response = await request(createApp())
       .post('/api/incoming/website-lead')
       .set('origin', 'https://01academy.pro')
+      .set('authorization', 'Bearer wsl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
       .send({
         name: 'Bot',
         contact: '+998901112233',

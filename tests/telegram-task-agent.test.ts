@@ -155,8 +155,8 @@ describe('Telegram task agent', () => {
     expect(transport.openRouterBodies[1].messages[0].content).toContain('"assigneeId":9');
   });
 
-  it('defaults the assignee to the current employee and allows an omitted deadline', async () => {
-    installFetch([decision({
+  it('accepts ordinary text, defaults the assignee to the sender and allows an omitted deadline', async () => {
+    const transport = installFetch([decision({
       assigneeRequested: false,
       assigneeId: null,
       assigneeQuery: null,
@@ -172,6 +172,33 @@ describe('Telegram task agent', () => {
       assigneeId: 7,
       dueAt: null,
     }));
+    expect(transport.openRouterBodies[0].messages[1].content).toContain('Создай задачу подготовить отчёт');
+    expect(JSON.stringify(transport.openRouterBodies[0])).not.toContain('input_audio');
+  });
+
+  it('returns a fixed task-only response instead of chatting about other topics', async () => {
+    const transport = installFetch([decision({
+      action: 'out_of_scope',
+      title: null,
+      description: null,
+      assigneeRequested: false,
+      assigneeId: null,
+      assigneeQuery: null,
+      deadlineRequested: false,
+      dueAt: null,
+      priority: null,
+      clarification: 'none',
+    })]);
+
+    await processTelegramTaskAgentMessage({ ...baseMessage(), text: 'Расскажи анекдот' }, {
+      fetchImpl: mocks.fetch,
+      now: () => now,
+    });
+
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(mocks.ownTasks).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).text)
+      .toBe('Я работаю только с задачами: могу создать задачу или показать ваши текущие задачи.');
   });
 
   it('asks for an exact employee instead of accepting a hallucinated assignee id', async () => {

@@ -58,6 +58,17 @@ describe('Telegram bot and isolated task API', () => {
       voice: { fileId: 'voice-file', fileSize: 2048, duration: 12 },
     }));
   });
+  it('dispatches ordinary text from a verified private chat to the task agent', async () => {
+    const response = await webhook({ ...message, text: 'Создай задачу подготовить отчёт' });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+    expect(mock.agent).toHaveBeenCalledWith(expect.objectContaining({
+      updateId: 123,
+      telegramUserId: '654321',
+      actor: user,
+      text: 'Создай задачу подготовить отчёт',
+    }));
+  });
   it.each([
     { contact: { user_id: 999, phone_number: '+998901234567' } },
     { contact: { phone_number: '+998901234567' } },

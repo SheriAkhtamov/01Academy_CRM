@@ -31,6 +31,10 @@ const translations = {
         en: 'Tell me the task in a voice message or text. For example: “Create a task for Khonzoda to prepare the report by tomorrow at 6 PM”. To see your current tasks, send /tasks.',
         ru: 'Продиктуйте или напишите задачу. Например: «Создай для Хонзоды задачу подготовить отчёт до завтра, 18:00». Чтобы увидеть свои текущие задачи, отправьте /tasks.',
     },
+    telegramAgentTaskOnly: {
+        en: 'I only work with tasks: I can create a task or show your current tasks.',
+        ru: 'Я работаю только с задачами: могу создать задачу или показать ваши текущие задачи.',
+    },
     telegramAgentCancelled: { en: 'Task creation cancelled.', ru: 'Создание задачи отменено.' },
     telegramAgentUnavailable: {
         en: 'I couldn’t process the message right now. Please try again later.',

@@ -19,11 +19,14 @@ created, renamed or given new CRM permissions by registration.
    webhook without discarding queued updates. It never prints credentials.
 5. In Telegram, open the bot, press Start, share your own phone, then Open tasks.
 
-## Voice task agent
+## Task agent
 
-The private bot accepts voice messages and typed task commands from a verified
-employee. Configure `integrations.telegramTasks.openRouterApiKey` in the
-untracked `config/app.config.json`. The optional `agentModel` defaults to
+The private bot accepts both voice messages and ordinary text from verified
+employees. Its scope is limited to creating tasks and listing the verified
+employee's own current tasks. Every other topic receives a fixed server-side
+task-only response; the model cannot return free-form conversation text.
+Configure `integrations.telegramTasks.openRouterApiKey` in the untracked
+`config/app.config.json`. The optional `agentModel` defaults to
 `google/gemini-3.1-flash-lite`.
 
 - A command can include a title, description, assignee, deadline and priority.

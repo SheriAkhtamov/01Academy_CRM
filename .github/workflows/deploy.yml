@@ -209,11 +209,6 @@ jobs:
                   },
               }
 
-          website_config = config.setdefault("integrations", {}).setdefault("website", {})
-          website_config["allowedFormOrigins"] = [
-              "https://01academy.pro",
-              "https://www.01academy.pro",
-          ]
           config_path.write_text(
               json.dumps(config, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8",

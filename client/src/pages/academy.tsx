@@ -38,7 +38,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
-import { MetaIntegrationDialog } from '@/components/marketing/MetaIntegrationDialog';
+import { IntegrationSettingsDialog } from '@/components/integrations/IntegrationSettingsDialog';
+import type { IntegrationType } from '@/features/integrations/api';
 import type { MetaIntegrationState } from '@/features/marketing/meta-api';
 import {
   AlertCircle,
@@ -193,7 +194,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     username?: string | null;
   } | null>(null);
   const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
-  const [metaDetailsOpen, setMetaDetailsOpen] = useState(false);
+  const [integrationCatalogOpen, setIntegrationCatalogOpen] = useState(false);
+  const [settingsProvider, setSettingsProvider] = useState<IntegrationType | null>(null);
+  const [settingsSiteDomain, setSettingsSiteDomain] = useState<string | null>(null);
   const [onlinePbxRoutingDraft, setOnlinePbxRoutingDraft] =
     useState<OnlinePbxRoutingDraft>(emptyOnlinePbxDraft);
   const [newManagerId, setNewManagerId] = useState('');
@@ -334,9 +337,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   const onlinePbxIntegration = integrations.data?.find(
     (integration) => integration.provider === 'onlinepbx',
   );
-  const metaIntegration = integrations.data?.find(
-    (integration) => integration.provider === 'meta',
-  );
+  const openIntegrationSettings = (provider: IntegrationType, siteDomain?: string | null) => {
+    setIntegrationCatalogOpen(false);
+    setSettingsSiteDomain(siteDomain ?? null);
+    setSettingsProvider(provider);
+  };
   const assignedManagerIds = useMemo(
     () => new Set(onlinePbxRoutingDraft.assignments.map((assignment) => assignment.managerId)),
     [onlinePbxRoutingDraft.assignments],
@@ -440,6 +445,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         ) : undefined}
       />
 
+      <div className="mb-4 flex justify-end">
+        <Button onClick={() => setIntegrationCatalogOpen(true)}>
+          <Plus data-icon="inline-start" />
+          {t('add')}
+        </Button>
+      </div>
+
       <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
         {integrations.isError ? (
           <div className="flex flex-col items-start gap-3">
@@ -491,7 +503,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
 
           return (
             <Card
-              key={integration.provider}
+              key={`${integration.provider}:${integration.accountId ?? integration.siteDomain ?? ''}`}
               className={integration.connected ? 'border-emerald-200 bg-emerald-50/40' : ''}
             >
               <CardHeader>
@@ -553,12 +565,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         disabled={!integration.connected}
                       >
                         <Settings2 data-icon="inline-start" />
-                        {t('settings')}
-                      </Button>
-                    ) : integration.provider === 'meta' ? (
-                      <Button variant="outline" onClick={() => setMetaDetailsOpen(true)}>
-                        <Settings2 data-icon="inline-start" />
-                        {t('metaConnection')}
+                        {t('integrationCallRouting')}
                       </Button>
                     ) : integration.provider === 'telegram_tasks' && integration.externalUrl ? (
                       <Button asChild variant="outline">
@@ -568,13 +575,23 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         </a>
                       </Button>
                     ) : null}
+                    <Button
+                      variant="outline"
+                      onClick={() => openIntegrationSettings(
+                        integration.siteDomain ? 'website' : integration.provider as IntegrationType,
+                        integration.siteDomain,
+                      )}
+                    >
+                      <Settings2 data-icon="inline-start" />
+                      {t('integrationConfigure')}
+                    </Button>
                     <Badge variant={integration.connected ? 'success' : 'warning'}>
                       {integration.connected ? (
                         <CheckCircle2 className="h-3.5 w-3.5" />
                       ) : (
                         <AlertCircle className="h-3.5 w-3.5" />
                       )}
-                      {integration.connected ? t('active') : t('integrationNeedsAttention')}
+                      {integration.connected ? t('integrationConfigured') : t('integrationNeedsAttention')}
                     </Badge>
                   </div>
                 </div>
@@ -584,10 +601,35 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         })}
       </div>
 
-      <MetaIntegrationDialog
-        open={metaDetailsOpen}
-        onOpenChange={setMetaDetailsOpen}
-        integration={metaIntegration?.details}
+      <Dialog open={integrationCatalogOpen} onOpenChange={setIntegrationCatalogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('integrationCatalogTitle')}</DialogTitle>
+            <DialogDescription>{t('integrationCatalogDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {([
+              ['telegram_tasks', Send], ['instagram', Camera], ['meta', RadioTower],
+              ['website', Globe2], ['onlinepbx', PhoneCall],
+            ] as const).map(([provider, Icon]) => (
+              <Button
+                key={provider}
+                variant="outline"
+                className="h-auto justify-start gap-3 px-4 py-3 text-left"
+                onClick={() => openIntegrationSettings(provider)}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span>{integrationCopy({ provider }, t).title}</span>
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <IntegrationSettingsDialog
+        provider={settingsProvider}
+        siteDomain={settingsSiteDomain}
+        onOpenChange={(open) => { if (!open) setSettingsProvider(null); }}
+        onInstagramConnect={() => startInstagramConnection.mutate()}
       />
 
       <Dialog open={onlinePbxSettingsOpen} onOpenChange={onlinePbxGuard.handleOpenChange}>

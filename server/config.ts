@@ -3,7 +3,7 @@ import path from 'path';
 
 type AppEnvironment = 'development' | 'production' | 'test';
 
-interface AppConfig {
+export interface AppConfig {
   database: {
     provider: string;
     url: string;
@@ -157,6 +157,7 @@ const readConfigFile = (): AppConfig => {
 
   return {
     ...config,
+    integrations: config.integrations ?? {},
     database: databaseUrlOverride
       ? { ...config.database, url: databaseUrlOverride }
       : config.database,
@@ -171,7 +172,7 @@ const readConfigFile = (): AppConfig => {
   };
 };
 
-const validateConfig = (config: AppConfig) => {
+export const validateConfig = (config: AppConfig) => {
   const telegram = config.integrations?.telegramTasks;
   if (telegram?.botToken?.trim() || telegram?.webhookSecret?.trim()) {
     if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(telegram.botToken?.trim() ?? '')

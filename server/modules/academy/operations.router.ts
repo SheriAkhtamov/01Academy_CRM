@@ -24,6 +24,7 @@ import { runAutomations } from '../../services/automations';
 import { getMetaLeadAdsIntegrationConfig } from '../../services/meta-lead-ads';
 import { getMetaMarketingIntegrationConfig } from '../../services/meta-marketing';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
+import integrationSettingsRouter from './integration-settings.router';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { isLeadIntegrationProvider } from '../../services/lead-funnels';
 import {
@@ -481,11 +482,8 @@ router.get('/integrations/status', async (req, res) => {
       `SELECT id, username, last_error
        FROM instagram_accounts
        WHERE status = 'connected'
-       ORDER BY updated_at DESC, id DESC
-       LIMIT 1`,
+       ORDER BY updated_at DESC, id DESC`,
     );
-    const instagramAccount = instagramAccounts[0] ?? null;
-    const instagramRequiresReconnect = instagramAccount?.lastError === 'instagramReauthorizationRequired';
     const integ = appConfig.integrations ?? {};
     const websiteLogs = await query<{
       provider: string;
@@ -495,7 +493,6 @@ router.get('/integrations/status', async (req, res) => {
       updatedAt: string | null;
       createdAt: string | null;
       siteDomain: string;
-      hasSuccessfulInbound: boolean;
     }>(
       `WITH website_events AS (
          SELECT logs.id,
@@ -535,10 +532,6 @@ router.get('/integrations/status', async (req, res) => {
          WHERE logs.provider = 'website' OR logs.provider LIKE 'website:%'
        ), ranked_website_events AS (
          SELECT website_events.*,
-                BOOL_OR(
-                  direction = 'inbound'
-                  AND status IN ('received', 'duplicate')
-                ) OVER (PARTITION BY site_domain) AS has_successful_inbound,
                 ROW_NUMBER() OVER (
                   PARTITION BY site_domain
                   ORDER BY created_at DESC, id DESC
@@ -552,8 +545,7 @@ router.get('/integrations/status', async (req, res) => {
               error_message,
               updated_at,
               created_at,
-              site_domain,
-              has_successful_inbound
+              site_domain
        FROM ranked_website_events
        WHERE event_rank = 1
        ORDER BY site_domain`,
@@ -594,8 +586,7 @@ router.get('/integrations/status', async (req, res) => {
       const lastLog = websiteLogs.find((log) => log.siteDomain === siteDomain) ?? null;
       return {
         provider: websiteIntegrationProvider(siteDomain),
-        connected: configuredWebsiteDomains.includes(siteDomain)
-          || lastLog?.hasSuccessfulInbound === true,
+        connected: configuredWebsiteDomains.includes(siteDomain),
         requiresReconnect: false,
         accountId: null,
         accountUsername: null,
@@ -605,16 +596,17 @@ router.get('/integrations/status', async (req, res) => {
       };
     });
     const providers = [
-      {
+      ...(instagramAccounts.length ? instagramAccounts : [null]).map((instagramAccount) => ({
         provider: 'instagram',
-        connected: Boolean(instagramAccount) && !instagramRequiresReconnect,
-        requiresReconnect: instagramRequiresReconnect,
+        connected: Boolean(instagramAccount)
+          && instagramAccount?.lastError !== 'instagramReauthorizationRequired',
+        requiresReconnect: instagramAccount?.lastError === 'instagramReauthorizationRequired',
         accountId: instagramAccount?.id ?? null,
         accountUsername: instagramAccount?.username ?? null,
         siteDomain: null,
         details: null,
         lastLog: null,
-      },
+      })),
       ...websiteProviders,
       {
         provider: 'meta',
@@ -633,7 +625,7 @@ router.get('/integrations/status', async (req, res) => {
       },
       {
         provider: 'onlinepbx',
-        connected: onlinePbxClient.isConfigured(),
+        connected: onlinePbxClient.isConfigured() && Boolean(integ.onlinePbx?.webhookSecret?.trim()),
         requiresReconnect: false,
         accountId: null,
         accountUsername: onlinePbxClient.getDomain() || null,
@@ -693,6 +685,8 @@ router.get('/integrations/status', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch integrations status' });
   }
 });
+
+router.use(integrationSettingsRouter);
 
 router.post('/integrations/:provider/test', async (req, res) => {
   if (!ensureAdministrationModuleAccess(req, res)) return;

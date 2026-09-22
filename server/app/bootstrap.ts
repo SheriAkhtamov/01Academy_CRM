@@ -15,6 +15,7 @@ import { createSessionMiddleware } from '../infrastructure/session';
 import { attachWebSocketGateway } from '../realtime/websocket-gateway';
 import { createHttpApp } from './http-app';
 import { registerTelegramTaskRoutes } from '../routes/telegram-tasks.routes';
+import { loadIntegrationSettings } from '../services/integration-settings';
 
 export type ApplicationRuntime = {
   server: Server;
@@ -24,6 +25,7 @@ export type ApplicationRuntime = {
 export const startApplication = async (): Promise<ApplicationRuntime> => {
   log('Checking database connection...');
   await assertDatabaseConnection();
+  await loadIntegrationSettings();
   log('Database connection successful');
 
   const app = createHttpApp();

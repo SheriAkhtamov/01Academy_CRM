@@ -141,9 +141,18 @@ export class OnlinePbxClient {
   private authenticationPromise: Promise<OnlinePbxSession> | null = null;
 
   constructor(
-    private readonly config: OnlinePbxConfig = appConfig.integrations?.onlinePbx ?? {},
+    private readonly configured: OnlinePbxConfig | undefined = undefined,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
+
+  private get config(): OnlinePbxConfig {
+    return this.configured ?? appConfig.integrations?.onlinePbx ?? {};
+  }
+
+  resetAuthentication() {
+    this.session = null;
+    this.authenticationPromise = null;
+  }
 
   isConfigured() {
     const domain = cleanDomain(this.config.domain);

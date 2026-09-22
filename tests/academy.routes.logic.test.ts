@@ -215,14 +215,17 @@ describe('academy route logic boundaries', () => {
     expect(mocks.poolQuery.mock.calls.some(([sql]) => sql.includes('WITH attended_demos'))).toBe(false);
   });
 
-  it('returns the connected Instagram account identity needed by the disconnect action', async () => {
+  it('returns every connected Instagram account identity needed by the disconnect actions', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_integration_logs')) return emptyResult();
       if (sql.includes('FROM instagram_accounts')) {
         expect(sql).toContain("WHERE status = 'connected'");
         expect(sql).toContain('ORDER BY updated_at DESC, id DESC');
-        expect(sql).toContain('LIMIT 1');
-        return { rows: [{ id: 17, username: '01academy_uz' }] };
+        expect(sql).not.toContain('LIMIT 1');
+        return { rows: [
+          { id: 17, username: '01academy_uz' },
+          { id: 12, username: '01academy_pro' },
+        ] };
       }
       return emptyResult();
     });
@@ -236,7 +239,14 @@ describe('academy route logic boundaries', () => {
       accountId: 17,
       accountUsername: '01academy_uz',
     }));
+    expect(response.body).toContainEqual(expect.objectContaining({
+      provider: 'instagram',
+      connected: true,
+      accountId: 12,
+      accountUsername: '01academy_pro',
+    }));
     expect(response.body.map((entry: { provider: string }) => entry.provider)).toEqual([
+      'instagram',
       'instagram',
       'website:01academy.pro',
       'website:01academy.uz',
@@ -267,6 +277,22 @@ describe('academy route logic boundaries', () => {
     }));
     expect(JSON.stringify(response.body)).not.toContain('test-only-token');
     expect(JSON.stringify(response.body)).not.toContain('test-webhook-secret');
+  });
+
+  it('reports configured integration credentials without returning their values', async () => {
+    const app = await createApp();
+    const telegram = await request(app).get('/api/academy/integrations/settings/telegram_tasks');
+    expect(telegram.status).toBe(200);
+    expect(telegram.body.botTokenConfigured).toBe(true);
+    expect(telegram.body).not.toHaveProperty('botToken');
+    expect(telegram.body).not.toHaveProperty('webhookSecret');
+
+    const meta = await request(app).get('/api/academy/integrations/settings/meta');
+    expect(meta.status).toBe(200);
+    expect(meta.body.marketingAccessTokenConfigured).toBe(true);
+    expect(meta.body).not.toHaveProperty('marketingAccessToken');
+    expect(meta.body).not.toHaveProperty('leadAccessToken');
+    expect(meta.body).not.toHaveProperty('webhookAppSecret');
   });
 
   it('shows full own and unassigned lead cards to sales while excluding other managers', async () => {

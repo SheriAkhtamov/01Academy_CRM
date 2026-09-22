@@ -120,4 +120,25 @@ describe('HTTP security middleware', () => {
     expect(unrelatedApiRequest.status).toBe(403);
     expect(unrelatedApiRequest.headers['access-control-allow-origin']).toBeUndefined();
   });
+
+  it('accepts a newly configured website origin without restarting the server', async () => {
+    const { appConfig } = await import('../server/config');
+    const origins = appConfig.integrations!.website!.allowedFormOrigins!;
+    const app = createApp();
+    const before = await request(app)
+      .post('/api/incoming/website-lead')
+      .set('origin', 'https://new-academy.example');
+    expect(before.status).toBe(403);
+
+    origins.push('https://new-academy.example');
+    try {
+      const after = await request(app)
+        .post('/api/incoming/website-lead')
+        .set('origin', 'https://new-academy.example');
+      expect(after.status).toBe(200);
+      expect(after.headers['access-control-allow-origin']).toBe('https://new-academy.example');
+    } finally {
+      origins.pop();
+    }
+  });
 });

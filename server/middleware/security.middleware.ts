@@ -21,11 +21,6 @@ const normalizeOrigin = (value: string | undefined): string | null => {
 };
 
 const configuredOrigin = normalizeOrigin(appConfig.server.appUrl);
-const websiteLeadFormOrigins = new Set(
-  (appConfig.integrations?.website?.allowedFormOrigins ?? [])
-    .map((origin) => normalizeOrigin(origin))
-    .filter((origin): origin is string => Boolean(origin)),
-);
 const allowedOrigins = new Set(
   [
     configuredOrigin,
@@ -49,7 +44,8 @@ export const isAllowedRequestOrigin = (origin: string | undefined): boolean => {
 
 export const isAllowedWebsiteLeadFormOrigin = (origin: string | undefined): boolean => {
   const normalized = normalizeOrigin(origin);
-  return Boolean(normalized && websiteLeadFormOrigins.has(normalized));
+  return Boolean(normalized && (appConfig.integrations?.website?.allowedFormOrigins ?? [])
+    .some((allowed) => normalizeOrigin(allowed) === normalized));
 };
 
 const isWebsiteLeadFormRequest = (req: Request) => (

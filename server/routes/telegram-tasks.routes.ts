@@ -27,24 +27,32 @@ const messages = {
 };
 
 export function registerTelegramTaskRoutes(app: Express) {
-  const config = appConfig.integrations?.telegramTasks;
-  const botToken = config?.botToken?.trim();
-  const webhookSecret = config?.webhookSecret?.trim();
-  const agentApiKey = config?.openRouterApiKey?.trim();
-  const agentModel = config?.agentModel?.trim();
-  const enabled = Boolean(botToken && webhookSecret);
-  const botId = botToken?.split(':')[0] ?? '';
-  const signingSecret = `${appConfig.session.secret}:telegram-tasks:${botToken ?? ''}`;
+  const getBot = () => {
+    const config = appConfig.integrations?.telegramTasks;
+    const botToken = config?.botToken?.trim();
+    const webhookSecret = config?.webhookSecret?.trim();
+    return {
+      botToken,
+      webhookSecret,
+      agentApiKey: config?.openRouterApiKey?.trim(),
+      agentModel: config?.agentModel?.trim(),
+      enabled: Boolean(botToken && webhookSecret),
+      botId: botToken?.split(':')[0] ?? '',
+      signingSecret: `${appConfig.session.secret}:telegram-tasks:${botToken ?? ''}`,
+    };
+  };
   const appUrl = new URL('/miniapp/tasks', appConfig.server.appUrl).href;
   const mini = Router();
   const board = createBoardRouter((_req, _res, next) => next());
   const issueToken = (identity: NonNullable<Awaited<ReturnType<typeof getTelegramTaskIdentity>>>) => {
+    const { botId, signingSecret } = getBot();
     const iat = Math.floor(Date.now() / 1000);
     const payload: TaskToken = { scope: 'telegram-tasks', botId, telegramUserId: identity.binding.telegram_user_id,
       userId: identity.user.id, verificationId: identity.binding.verification_id, iat, exp: iat + 43200 };
     return signTaskToken(payload, signingSecret);
   };
   const authorize: RequestHandler = async (req, res, next) => {
+    const { botId, signingSecret } = getBot();
     let payload: TaskToken;
     try {
       payload = verifyTaskToken(req.header('Authorization')?.replace(/^Bearer /, ''), signingSecret, 'telegram-tasks');
@@ -64,6 +72,7 @@ export function registerTelegramTaskRoutes(app: Express) {
   };
 
   app.post('/api/incoming/telegram-tasks', async (req, res) => {
+    const { enabled, webhookSecret, botId, botToken, agentApiKey, agentModel } = getBot();
     if (!enabled) return void res.sendStatus(503);
     if (!secureEqual(req.header('X-Telegram-Bot-Api-Secret-Token') ?? '', webhookSecret!)) return void res.sendStatus(403);
     const message = req.body?.message;
@@ -137,8 +146,9 @@ export function registerTelegramTaskRoutes(app: Express) {
     }
   });
 
-  mini.use((_req, res, next) => enabled ? next() : res.status(503).json({ error: 'miniTasksUnavailable' }));
+  mini.use((_req, res, next) => getBot().enabled ? next() : res.status(503).json({ error: 'miniTasksUnavailable' }));
   mini.post('/auth', rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: true, legacyHeaders: false }), async (req, res) => {
+    const { botToken, botId } = getBot();
     let telegramUserId: string;
     try {
       telegramUserId = validateTelegramInitData(req.body?.initData, botToken!);
@@ -160,6 +170,7 @@ export function registerTelegramTaskRoutes(app: Express) {
     } catch { res.status(503).json({ error: 'miniTasksUnavailable' }); }
   });
   mini.post('/attachments/:id/link', authorize, async (req, res) => {
+    const { signingSecret } = getBot();
     try {
       const id = Number(req.params.id);
       if (!Number.isSafeInteger(id) || id <= 0) return void res.sendStatus(400);
@@ -174,6 +185,7 @@ export function registerTelegramTaskRoutes(app: Express) {
     } catch { res.status(503).json({ error: 'miniTasksUnavailable' }); }
   });
   mini.get('/files/:id', async (req, res, next) => {
+    const { botId, signingSecret } = getBot();
     let payload: TaskToken;
     try {
       payload = verifyTaskToken(req.query.ticket, signingSecret, 'telegram-task-file');

@@ -813,6 +813,13 @@
       "when": 1789920000012,
       "tag": "0115_demo_attendance_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1789920000013,
+      "tag": "0116_integration_settings",
+      "breakpoints": true
     }
   ]
 }

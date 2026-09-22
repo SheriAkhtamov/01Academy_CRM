@@ -59,11 +59,11 @@ export function LeadStudentsCard({
 
   return (
     <>
-      <Card ref={cardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden shadow-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <CardHeader className="flex flex-col items-start justify-between gap-3 space-y-0 sm:flex-row">
+      <Card ref={cardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-teal-200/80 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-teal-900/70">
+        <CardHeader className="flex flex-col items-start justify-between gap-3 space-y-0 border-b border-teal-100 bg-teal-50/80 sm:flex-row dark:border-teal-900/60 dark:bg-teal-950/30">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
-              <GraduationCap className="size-4 text-muted-foreground" aria-hidden="true" />
+              <GraduationCap className="size-4 text-teal-700 dark:text-teal-300" aria-hidden="true" />
               {t('students')}
               <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
             </CardTitle>

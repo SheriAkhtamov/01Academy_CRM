@@ -103,12 +103,19 @@ no new bot, credentials, webhook or paid broadcasts are needed.
 - Within the final hour before the deadline, send a one-time reminder per
   task/deadline/recipient. Late-created tasks get the remaining-time reminder;
   a changed deadline uses a new key. No deadline means daily digest only.
-- A plain-text message includes task titles and deadlines, never descriptions,
-  lead cards or attachments; its inline button opens `/miniapp/tasks`.
+- When the assigned employee moves a delegated task to `in_progress` or `done`,
+  the bot sends the creator a private message after the status change succeeds.
+  Moving a task on someone else's behalf, self-assigned work, and a repeated
+  selection of the current status do not send this message. Delivery happens
+  outside the request, so a Telegram outage does not block changing the task.
+  Progress messages are best effort; a failed Telegram request is logged.
+- Scheduled reminders include task titles and deadlines; progress messages
+  include the task title and assignee. Neither includes descriptions, lead cards,
+  attachments or internal task IDs. Each has a button opening `/miniapp/tasks`.
 - Before each recipient's messages, recheck the same live employee/phone
   identity as Mini App auth. Unbound, inactive, archived or ambiguous identities
   receive nothing; reassigned tasks no longer remind the old assignee.
-- Durable unique claims plus a per-bot PostgreSQL lock prevent repeated ticks,
+- Scheduled reminders use durable unique claims plus a per-bot PostgreSQL lock to prevent repeated ticks,
   restarts and concurrent instances from sending the same reminder twice.
   Telegram has no sendMessage idempotency key: an ambiguous network timeout or
   interrupted claimed attempt is not retried, to avoid double notifications.

@@ -11,8 +11,16 @@ const translations = {
     telegramReminderUndated: { en: 'no deadline', ru: 'без срока' },
     telegramReminderMore: { en: '{count} more tasks. Open the app for the full list.', ru: 'Ещё задач: {count}. Полный список — в приложении.' },
     telegramReminderTimezone: { en: 'Time: {timezone}.', ru: 'Время: {timezone}.' },
-    telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n#{id} {title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n#{id} {title}\nСрок: {deadline} ({timezone}).' },
+    telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n{title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n{title}\nСрок: {deadline} ({timezone}).' },
     telegramReminderOpen: { en: 'Open tasks', ru: 'Открыть задачи' },
+    telegramTaskProgressStarted: {
+        en: '▶️ Task in progress\n{title}\nAssignee: {assignee}',
+        ru: '▶️ Задача в работе\n{title}\nИсполнитель: {assignee}',
+    },
+    telegramTaskProgressDone: {
+        en: '✅ Task marked done\n{title}\nAssignee: {assignee}',
+        ru: '✅ Задача отмечена выполненной\n{title}\nИсполнитель: {assignee}',
+    },
     telegramAgentCreated: {
         en: '✅ Task created\n{title}\nCreator: {creator}\nAssignee: {assignee}\nDeadline: {deadline}',
         ru: '✅ Задача создана\n{title}\nПостановщик: {creator}\nИсполнитель: {assignee}\nСрок: {deadline}',

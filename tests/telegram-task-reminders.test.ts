@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(), release: vi.fn(), connect: vi.fn(), identity: vi.fn(), fetch: vi.fn(), warn: vi.fn(),
   config: { production: true, token: '12345:test-only', secret: 'test-only' },
 }));
-vi.mock('../server/db', () => ({ pool: { connect: mocks.connect } }));
+vi.mock('../server/db', () => ({ pool: { connect: mocks.connect, query: mocks.query } }));
 vi.mock('../server/config', () => ({
   get isProductionEnvironment() { return mocks.config.production; },
   appConfig: { server: { appUrl: 'https://crm.example.test' }, integrations: { telegramTasks: {
@@ -16,7 +16,7 @@ vi.mock('../server/config', () => ({
 vi.mock('../server/services/telegram-tasks', () => ({ getTelegramTaskIdentity: mocks.identity }));
 vi.mock('../server/lib/logger', () => ({ logger: { warn: mocks.warn } }));
 vi.mock('node:timers/promises', () => ({ setTimeout: async () => {} }));
-import { processTelegramTaskReminders, sendTelegramTaskReminder } from '../server/services/telegram-task-reminders';
+import { notifyTelegramTaskProgress, processTelegramTaskReminders, sendTelegramTaskReminder } from '../server/services/telegram-task-reminders';
 
 const zone = 'Asia/Tashkent';
 const morning = new Date('2026-09-04T04:00:00Z');
@@ -53,6 +53,9 @@ beforeEach(() => {
       expect(sql).toContain("assignee_id = $1 AND status IN ('backlog', 'todo', 'in_progress')");
       return { rows: tasks };
     }
+    if (sql.includes('SELECT telegram_user_id, verification_id FROM telegram_task_bindings')) {
+      return { rows: args[1] === 7 ? [{ telegram_user_id: '700', verification_id: 'version-1' }] : [] };
+    }
     if (sql.includes('INSERT INTO telegram_task_reminders')) {
       expect(sql).toContain('ON CONFLICT (binding_id, kind, event_key)');
       const key = args.slice(0, 3).join('|');
@@ -74,11 +77,11 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('Telegram reminder schedule and message', () => {
   it('uses the academy day rather than UTC and catches up only during the 09:00 hour', () => {
-    const entries = [task(1, '2026-09-03T19:30:00Z'), task(2, '2026-09-04T18:59:00Z'), task(3, '2026-09-04T19:00:00Z'), task(4, null)];
+    const entries = [task(1, '2026-09-03T19:30:00Z', 'Просроченная'), task(2, '2026-09-04T18:59:00Z', 'Сегодня'), task(3, '2026-09-04T19:00:00Z', 'Завтра'), task(4, null)];
     const [daily] = planTelegramTaskReminders(entries, morning, zone);
     expect(daily.eventKey).toBe('2026-09-04');
     expect(daily.text).toContain('На сегодня: 1. Просрочено: 1. Без срока: 1.');
-    expect(daily.text).toContain('#1'); expect(daily.text).toContain('#2'); expect(daily.text).not.toContain('#3');
+    expect(daily.text).toContain('Просроченная'); expect(daily.text).toContain('Сегодня'); expect(daily.text).not.toContain('Завтра');
     expect(planTelegramTaskReminders(entries, new Date('2026-09-04T03:59:00Z'), zone)).toEqual([]);
     expect(planTelegramTaskReminders(entries, new Date('2026-09-04T04:59:00Z'), zone)[0].kind).toBe('daily');
     expect(planTelegramTaskReminders(entries, new Date('2026-09-04T05:00:00Z'), zone)).toEqual([]);
@@ -181,6 +184,35 @@ describe('Telegram reminder delivery', () => {
     expect((await sendTelegramTaskReminder('test-only', '700', 'text', 'https://crm.example.test/miniapp/tasks')).status).toBe('uncertain');
     mocks.fetch.mockResolvedValueOnce({ json: async () => { throw new Error('invalid JSON'); } });
     expect((await sendTelegramTaskReminder('test-only', '700', 'text', 'https://crm.example.test/miniapp/tasks')).status).toBe('uncertain');
+  });
+});
+
+describe('Delegated task progress notification', () => {
+  const event = { title: 'Подготовить\nдокументы', creatorId: 7, assigneeId: 8, actorId: 8, actorName: 'Алина', status: 'in_progress' as const };
+
+  it('sends a plain private message to the verified creator when work starts or completes', async () => {
+    expect(await notifyTelegramTaskProgress(event)).toBe(true);
+    const started = JSON.parse(mocks.fetch.mock.calls[0][1].body);
+    expect(started.chat_id).toBe('700');
+    expect(started.text).toContain('Задача в работе\nПодготовить документы\nИсполнитель: Алина');
+    expect(started.parse_mode).toBeUndefined();
+    expect(started.reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://crm.example.test/miniapp/tasks');
+    expect(await notifyTelegramTaskProgress({ ...event, status: 'done' })).toBe(true);
+    expect(JSON.parse(mocks.fetch.mock.calls[1][1].body).text).toContain('Задача отмечена выполненной');
+  });
+
+  it('does not send for self-assigned tasks, another actor or an invalid binding', async () => {
+    expect(await notifyTelegramTaskProgress({ ...event, creatorId: 8 })).toBe(false);
+    expect(await notifyTelegramTaskProgress({ ...event, actorId: 1 })).toBe(false);
+    mocks.identity.mockResolvedValue(null);
+    expect(await notifyTelegramTaskProgress(event)).toBe(false);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not use copied bot settings outside production', async () => {
+    mocks.config.production = false;
+    expect(await notifyTelegramTaskProgress(event)).toBe(false);
+    expect(mocks.query).not.toHaveBeenCalled();
   });
 });
 

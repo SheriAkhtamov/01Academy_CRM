@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mock = vi.hoisted(() => ({ identity: vi.fn(), bind: vi.fn(), users: vi.fn(), canDownload: vi.fn(), tasks: vi.fn(), detail: vi.fn(), task: vi.fn(), agent: vi.fn() }));
 vi.mock('../server/config', () => ({ isProductionEnvironment: false, isDevelopmentEnvironment: false, appConfig: { session: { secret: 'test-session-secret' }, server: { appUrl: 'https://crm.example.test' }, integrations: { telegramTasks: { botToken: '12345:test-only-token', webhookSecret: 'test-webhook-secret', openRouterApiKey: ['sk', 'or', 'v1-test-only-not-a-real-key'].join('-') } } } }));
+vi.mock('../server/services/telegram-task-reminders', () => ({ notifyTelegramTaskProgress: vi.fn() }));
 vi.mock('../server/services/telegram-tasks', () => ({ getTelegramTaskIdentity: mock.identity, bindTelegramTaskEmployee: mock.bind, TelegramBindingDenied: class extends Error {}, telegramTaskAccess: { getAssignableUsers: mock.users, canDownload: mock.canDownload } }));
 vi.mock('../server/services/telegram-task-agent', () => ({ enqueueTelegramTaskAgentMessage: mock.agent }));
 vi.mock('../server/storage', () => ({ storage: { board: { getDefaultBoard: async () => ({ id: 1 }), getBoard: async () => ({ id: 1 }), getTasks: mock.tasks, getTaskDetail: mock.detail, getTask: mock.task } } }));

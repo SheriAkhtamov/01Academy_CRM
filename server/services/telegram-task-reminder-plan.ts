@@ -40,7 +40,7 @@ export const planTelegramTaskReminders = (
       const withoutDeadline = relevant.filter((task) => !task.due_at).length;
       const dueToday = relevant.length - overdue - withoutDeadline;
       const lines = relevant.slice(0, 8).map((task) =>
-        `• #${task.id} ${title(task.title)} — ${task.due_at ? dateLabel(task.due_at, timeZone, language) : t('telegramReminderUndated', language)}`);
+        `• ${title(task.title)} — ${task.due_at ? dateLabel(task.due_at, timeZone, language) : t('telegramReminderUndated', language)}`);
       reminders.push({ kind: 'daily', eventKey: today, text: [
         t('telegramReminderTitle', language),
         t('telegramReminderCounts', language, { today: String(dueToday), overdue: String(overdue), undated: String(withoutDeadline) }),
@@ -57,7 +57,7 @@ export const planTelegramTaskReminders = (
     reminders.push({
       kind: 'due_soon', eventKey: `${task.id}:${task.due_at.toISOString()}`,
       text: t('telegramReminderDueSoon', language, {
-        minutes: String(Math.ceil(remaining / 60_000)), id: String(task.id), title: title(task.title),
+        minutes: String(Math.ceil(remaining / 60_000)), title: title(task.title),
         deadline: dateLabel(task.due_at, timeZone, language), timezone: timeZone,
       }),
     });

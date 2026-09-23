@@ -3,6 +3,9 @@ import session from "express-session";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const progressNotify = vi.hoisted(() => vi.fn());
+vi.mock('../server/services/telegram-task-reminders', () => ({ notifyTelegramTaskProgress: progressNotify }));
+
 const mockStorage = {
   getUser: vi.fn(),
   board: {
@@ -83,6 +86,7 @@ describe("board routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    progressNotify.mockResolvedValue(true);
     usersById = new Map([
       [staffUser.id, staffUser],
       [adminUser.id, adminUser],
@@ -222,6 +226,41 @@ describe("board routes", () => {
     expect(mockStorage.board.createTask).toHaveBeenCalledWith(expect.objectContaining({
       color: "violet",
     }));
+  });
+
+  it.each([
+    ['in_progress', 'todo'],
+    ['done', 'in_progress'],
+  ])('notifies the creator when the assignee moves a delegated task to %s', async (status, from) => {
+    const task = { id: 100, boardId: 1, title: 'Delegated task', creatorId: 7, assigneeId: 8, status: from };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockResolvedValue({ ...task, status });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 8 });
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status })).status).toBe(200);
+    await vi.waitFor(() => expect(progressNotify).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Delegated task', creatorId: 7, assigneeId: 8, actorId: 8, actorName: 'Assignee User', status,
+    })));
+  });
+
+  it('skips progress messages for unchanged status, self-assigned work and changes by another actor', async () => {
+    const task = { id: 100, boardId: 1, title: 'Delegated task', creatorId: 7, assigneeId: 8, status: 'in_progress' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...await mockStorage.board.getTask(), ...updates }));
+    const assignee = request.agent(await createApp());
+    await assignee.post('/test/session').send({ userId: 8 });
+    expect((await assignee.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect(progressNotify).not.toHaveBeenCalled();
+
+    mockStorage.board.getTask.mockResolvedValue({ ...task, status: 'todo', creatorId: 8 });
+    expect((await assignee.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect(progressNotify).not.toHaveBeenCalled();
+
+    mockStorage.board.getTask.mockResolvedValue({ ...task, status: 'todo' });
+    const creator = request.agent(await createApp());
+    await creator.post('/test/session').send({ userId: 7 });
+    expect((await creator.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect(progressNotify).not.toHaveBeenCalled();
   });
 
   it("rejects arbitrary task colours on creation and update", async () => {

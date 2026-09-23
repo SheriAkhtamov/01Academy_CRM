@@ -17,6 +17,7 @@ import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { notifyTelegramTaskProgress } from '../services/telegram-task-reminders';
 
 export function createBoardRouter(authorize: RequestHandler) {
 const router = Router();
@@ -523,6 +524,18 @@ router.patch('/tasks/:id/status', async (req, res) => {
 
         broadcastTask('BOARD_TASK_UPDATED', updated);
         res.json(updated);
+        if (task.status !== status && (status === 'in_progress' || status === 'done')
+            && updated.creatorId && updated.assigneeId && updated.creatorId !== updated.assigneeId
+            && req.user!.id === updated.assigneeId) {
+            void notifyTelegramTaskProgress({
+                title: updated.title,
+                creatorId: updated.creatorId,
+                assigneeId: updated.assigneeId,
+                actorId: req.user!.id,
+                actorName: req.user!.fullName,
+                status,
+            }).catch(() => logger.warn('Telegram task progress notification failed'));
+        }
     } catch (error: any) {
         logger.error('Failed to change task status', { error, taskId: req.params.id });
         return sendHttpError(res, error, 'Failed to change status');

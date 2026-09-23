@@ -8,6 +8,17 @@ import { planTelegramTaskReminders, type ReminderTask } from './telegram-task-re
 
 type Delivery = { status: 'sent' | 'deferred' | 'failed' | 'uncertain'; code: number | null; retrySeconds: number | null };
 
+export type TelegramTaskProgress = {
+  title: string;
+  creatorId: number | null;
+  assigneeId: number | null;
+  actorId: number;
+  actorName: string;
+  status: 'in_progress' | 'done';
+};
+
+const messageLine = (value: string, limit: number) => Array.from(value.replace(/[\r\n\t]/g, ' ').trim()).slice(0, limit).join('');
+
 export async function sendTelegramTaskReminder(botToken: string, chatId: string, text: string, appUrl: string): Promise<Delivery> {
   try {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -30,6 +41,31 @@ export async function sendTelegramTaskReminder(botToken: string, chatId: string,
     // digest still covers unfinished work. Never log raw URLs/errors/tokens.
     return { status: 'uncertain', code: null, retrySeconds: null };
   }
+}
+
+export async function notifyTelegramTaskProgress(event: TelegramTaskProgress): Promise<boolean> {
+  if (!event.creatorId || !event.assigneeId || event.creatorId === event.assigneeId || event.actorId !== event.assigneeId) return false;
+  const config = appConfig.integrations?.telegramTasks;
+  const token = config?.botToken?.trim();
+  if (!isProductionEnvironment || !token || !config?.webhookSecret?.trim()) return false;
+  const appUrl = new URL('/miniapp/tasks', appConfig.server.appUrl).href;
+  if (!appUrl.startsWith('https://')) return false;
+  const botId = token.split(':')[0];
+  const { rows } = await pool.query<{ telegram_user_id: string; verification_id: string }>(
+    'SELECT telegram_user_id, verification_id FROM telegram_task_bindings WHERE bot_id = $1 AND user_id = $2',
+    [botId, event.creatorId],
+  );
+  const binding = rows[0];
+  if (!binding) return false;
+  const identity = await getTelegramTaskIdentity(botId, binding.telegram_user_id);
+  if (!identity || identity.user.id !== event.creatorId || identity.binding.verification_id !== binding.verification_id) return false;
+  const key = event.status === 'done' ? 'telegramTaskProgressDone' : 'telegramTaskProgressStarted';
+  const text = t(key, { title: messageLine(event.title, 220), assignee: messageLine(event.actorName, 100) });
+  const delivery = await sendTelegramTaskReminder(token, binding.telegram_user_id, text, appUrl);
+  if (delivery.status !== 'sent') {
+    logger.warn('Telegram task progress notification not confirmed', { status: delivery.status, errorCode: delivery.code });
+  }
+  return delivery.status === 'sent';
 }
 
 export async function processTelegramTaskReminders(timeZone: string, now = new Date()): Promise<number> {

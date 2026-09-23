@@ -362,6 +362,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
             <SheetContent data-mini-task-sheet={tasksOnly || undefined} className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
                 {isError ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                        <SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle>
+                        <SheetDescription className="sr-only">{t('taskDetails')}</SheetDescription>
                         <p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p>
                         <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
                             {t('retry')}
@@ -369,6 +371,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                     </div>
                 ) : isLoading || !task ? (
                     <div className="flex h-full items-center justify-center">
+                        <SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle>
+                        <SheetDescription className="sr-only">{t('taskDetails')}</SheetDescription>
                         <Loader2 className="size-6 animate-spin text-muted-foreground" />
                     </div>
                 ) : (

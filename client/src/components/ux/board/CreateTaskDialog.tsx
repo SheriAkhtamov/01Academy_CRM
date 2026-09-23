@@ -37,6 +37,7 @@ import { PRIORITY_ORDER, type BoardPriority, type BoardTaskColor, type UserMini 
 interface CreateTaskDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    onCreated?: () => void;
     users: UserMini[];
     currentUser: UserMini | null;
     canAssignUsers: boolean;
@@ -51,7 +52,7 @@ const dueInputToInstant = (value: string): string | null => {
     return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
 };
 
-export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAssignUsers }: CreateTaskDialogProps) {
+export function CreateTaskDialog({ open, onOpenChange, onCreated, users, currentUser, canAssignUsers }: CreateTaskDialogProps) {
     const { t } = useTranslation();
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -127,6 +128,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
             toast({ title: t('taskCreated') });
             reset();
             onOpenChange(false);
+            onCreated?.();
         },
         onError: (error: Error & { status?: number }) => {
             hapticNotify('error');
@@ -189,8 +191,6 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                         />
                     </div>
 
-                    <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
-
                     <div className="space-y-1.5">
                         <Label htmlFor="create-task-description" className="text-xs text-muted-foreground">{t('description')}</Label>
                         <Textarea
@@ -250,6 +250,7 @@ export function CreateTaskDialog({ open, onOpenChange, users, currentUser, canAs
                         <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
                         <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
                     </div>
+                    <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
                     </fieldset>
                     <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
                     {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskCreateRetryHint') : t('taskAttachmentPartialFailure')}</p> : null}

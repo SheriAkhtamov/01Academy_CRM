@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
@@ -18,7 +18,7 @@ vi.mock('../client/src/features/board/telegram', () => ({
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 7, fullName: 'Employee', module: 'teacher' }, isLoading: false }) }));
 vi.mock('../client/src/components/ux/board/TaskDetailSheet', () => ({ TaskDetailSheet: (props: unknown) => { mocks.detail(props); return null; } }));
 vi.mock('../client/src/components/ux/board/CreateTaskDialog', () => ({ CreateTaskDialog: (props: unknown) => { mocks.create(props); return null; } }));
-const task = { id: 1, title: 'My assigned task', status: 'todo', priority: 'normal', color: null, creator: { id: 8, fullName: 'Creator' }, assignee: { id: 7, fullName: 'Employee' }, lead: null, commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 };
+const task = { id: 1, title: 'My assigned task', status: 'todo', priority: 'normal', color: null, creator: { id: 8, fullName: 'Creator' }, assignee: { id: 7, fullName: 'Employee' }, lead: null, dueAt: null, acceptedAt: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 };
 let client: QueryClient;
 beforeEach(() => {
   vi.clearAllMocks(); i18n.setLanguage('en');
@@ -47,10 +47,29 @@ describe('Mobile tasks interface', () => {
     expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 1, tasksOnly: true }));
     const create = screen.getByRole('button', { name: 'Create task' }); await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(create); expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, canAssignUsers: true }));
+    const onCreated = (mocks.create.mock.lastCall?.[0] as { onCreated: () => void }).onCreated;
+    act(() => onCreated());
+    expect(screen.getByRole('heading', { name: 'Assigned by me' })).toBeTruthy();
   });
   it('filters by text and offers a clear empty state', async () => {
     setup(); await screen.findByText('My assigned task');
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'unmatched' } });
-    await screen.findByText('No tasks here yet'); expect(screen.queryByText('My assigned task')).toBeNull();
+    await screen.findByText('Nothing found'); expect(screen.queryByText('My assigned task')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await screen.findByText('My assigned task');
+  });
+  it('puts overdue tasks first and filters ready work without losing the task dialogs', async () => {
+    const late = { ...task, id: 4, title: 'Late task', dueAt: '2025-01-01T10:00:00.000Z', priority: 'urgent' };
+    const complete = { ...task, id: 5, title: 'Completed task', status: 'done' };
+    mocks.board.mockResolvedValue({ tasks: [task, complete, late] });
+    setup(); await screen.findByText('Late task');
+    expect(screen.getByRole('heading', { name: /Overdue tasks/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Overdue tasks/ }));
+    expect(screen.getByText('Late task')).toBeTruthy();
+    expect(screen.queryByText('My assigned task')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Done/ }));
+    expect(screen.getByText('Completed task')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Assigned by me' }));
+    expect(screen.getByText('All tasks')).toBeTruthy();
   });
 });

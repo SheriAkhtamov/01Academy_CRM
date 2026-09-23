@@ -20,14 +20,12 @@ export function TaskColorPicker({ value, onChange, disabled = false }: TaskColor
     const { t } = useTranslation();
     const generatedId = useId();
     const fieldId = `task-color-${generatedId.replace(/:/g, '')}`;
-    const hintId = `${fieldId}-hint`;
     const selectedLabel = value ? t(TASK_COLOR_META[value].labelKey) : t('taskColorNone');
 
     return (
         <fieldset
             disabled={disabled}
             aria-label={t('taskColorLabel')}
-            aria-describedby={hintId}
             className="space-y-2"
         >
             <legend className="text-xs text-muted-foreground">
@@ -78,7 +76,6 @@ export function TaskColorPicker({ value, onChange, disabled = false }: TaskColor
                     );
                 })}
             </div>
-            <p id={hintId} className="text-[11px] text-muted-foreground">{t('taskColorHint')}</p>
         </fieldset>
     );
 }

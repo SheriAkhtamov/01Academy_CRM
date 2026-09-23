@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
@@ -58,18 +58,29 @@ describe('Mobile tasks interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     await screen.findByText('My assigned task');
   });
-  it('puts overdue tasks first and filters ready work without losing the task dialogs', async () => {
+  it('puts overdue tasks first while filtering by the existing stage names', async () => {
     const late = { ...task, id: 4, title: 'Late task', dueAt: '2025-01-01T10:00:00.000Z', priority: 'urgent' };
     const complete = { ...task, id: 5, title: 'Completed task', status: 'done' };
     mocks.board.mockResolvedValue({ tasks: [task, complete, late] });
     setup(); await screen.findByText('Late task');
     expect(screen.getByRole('heading', { name: /Overdue tasks/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Overdue tasks/ }));
+    const filters = within(screen.getByRole('group', { name: 'Quick filters' }));
+    fireEvent.click(filters.getByRole('button', { name: /To do/ }));
     expect(screen.getByText('Late task')).toBeTruthy();
-    expect(screen.queryByText('My assigned task')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Done/ }));
+    expect(screen.getByText('My assigned task')).toBeTruthy();
+    expect(screen.queryByText('Completed task')).toBeNull();
+    fireEvent.click(filters.getByRole('button', { name: /Done/ }));
     expect(screen.getByText('Completed task')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Assigned by me' }));
-    expect(screen.getByText('All tasks')).toBeTruthy();
+    expect(screen.getByText('All statuses')).toBeTruthy();
+  });
+  it('keeps the Russian stage and section names', async () => {
+    i18n.setLanguage('ru');
+    mocks.board.mockResolvedValue({ tasks: [{ ...task, status: 'done' }] });
+    setup(); await screen.findByText('My assigned task');
+    expect(screen.getByRole('button', { name: 'Порученные' })).toBeTruthy();
+    expect(screen.getAllByText('Выполнено').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Готово')).toBeNull();
+    expect(screen.queryByText('Ждут приёмки')).toBeNull();
   });
 });

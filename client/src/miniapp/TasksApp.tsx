@@ -11,11 +11,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { boardRequest } from '@/features/board/transport';
 import { hapticImpact, hapticSelect, miniRequest, telegramApp } from '@/features/board/telegram';
 import { boardQueryKeys } from '@/features/board/api';
-import { BOARD_COLUMNS, formatBoardDateTime, isOverdue, type BoardTasksResponse, type TaskSummary, type UserMini } from '@/lib/boardTypes';
+import { BOARD_COLUMNS, formatBoardDateTime, isOverdue, type BoardStatus, type BoardTasksResponse, type TaskSummary, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
 
 type TaskTab = 'mine' | 'assigned' | 'archive';
-type QuickFilter = 'all' | 'overdue' | 'today' | 'done';
+type QuickFilter = 'all' | Exclude<BoardStatus, 'accepted'>;
 type TaskGroup = 'review' | 'overdue' | 'today' | 'other' | 'done';
 
 const PULL_THRESHOLD = 72;
@@ -88,17 +88,12 @@ export function TasksApp() {
   const owned = (tasks.data?.tasks ?? []).filter((task) => tab === 'mine' ? task.assignee?.id === user.id
     : tab === 'assigned' ? task.creator?.id === user.id : task.creator?.id === user.id || task.assignee?.id === user.id);
   const active = tab === 'archive' ? owned : owned.filter((task) => task.status !== 'accepted');
-  const groupCounts = {
-    overdue: active.filter((task) => taskGroup(task, tab) === 'overdue').length,
-    today: active.filter((task) => taskGroup(task, tab) === 'today').length,
-    done: active.filter((task) => task.status === 'done').length,
-  };
-  const visible = active.filter((task) => (filter === 'all' || taskGroup(task, tab) === filter || (filter === 'done' && taskGroup(task, tab) === 'review'))
+  const visible = active.filter((task) => (filter === 'all' || task.status === filter)
     && (!deferredSearch || `${task.title} ${task.description ?? ''} ${task.assignee?.fullName ?? ''} ${task.creator?.fullName ?? ''}`.toLocaleLowerCase().includes(deferredSearch)));
   const heading = tab === 'mine' ? t('myTasks') : tab === 'assigned' ? t('miniTasksAssigned') : t('taskArchive');
   const sections = tab === 'assigned'
-    ? [{ group: 'review', label: t('miniTasksReadyForReview') }, { group: 'overdue', label: t('taskStateOverdue') }, { group: 'today', label: t('today') }, { group: 'other', label: t('miniTasksOther') }]
-    : [{ group: 'overdue', label: t('taskStateOverdue') }, { group: 'today', label: t('today') }, { group: 'other', label: t('miniTasksOther') }, { group: 'done', label: t('miniTasksDone') }];
+    ? [{ group: 'review', label: t('taskDone') }, { group: 'overdue', label: t('taskStateOverdue') }, { group: 'today', label: t('today') }, { group: 'other', label: t('miniTasksOther') }]
+    : [{ group: 'overdue', label: t('taskStateOverdue') }, { group: 'today', label: t('today') }, { group: 'other', label: t('miniTasksOther') }, { group: 'done', label: t('taskDone') }];
   const filteredSections = sections.map((section) => ({ ...section, tasks: visible.filter((task) => taskGroup(task, tab) === section.group).sort(sortTasks) }))
     .filter((section) => section.tasks.length > 0);
   const statusLabel = (value: string) => {
@@ -166,10 +161,8 @@ export function TasksApp() {
       <div className="mini-search"><Search className="pointer-events-none absolute left-3 top-3 size-5 text-muted-foreground" /><Input className="h-11 pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>
       {tab !== 'archive' ? <div className="mini-filters" role="group" aria-label={t('miniTasksFilters')}>
         {([
-          ['all', t('miniTasksAll'), active.length],
-          ['overdue', t('taskStateOverdue'), groupCounts.overdue],
-          ['today', t('today'), groupCounts.today],
-          ['done', tab === 'assigned' ? t('miniTasksReadyForReview') : t('miniTasksDone'), groupCounts.done],
+          ['all', t('allStatuses'), active.length],
+          ...BOARD_COLUMNS.map((column) => [column.status, t(column.labelKey), active.filter((task) => task.status === column.status).length] as [QuickFilter, string, number]),
         ] as [QuickFilter, string, number][]).map(([value, label, count]) => <button key={value} type="button" className="mini-filter" aria-pressed={filter === value} onClick={() => { hapticSelect(); setFilter(value); }}>
           <span>{label}</span><span className="mini-filter-count">{count}</span>
         </button>)}

@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, Loader2, Plus, RefreshCw, Search, Send, UserRound } from 'lucide-react';
+import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +13,7 @@ import { hapticImpact, hapticSelect, miniRequest, telegramApp } from '@/features
 import { boardQueryKeys } from '@/features/board/api';
 import { BOARD_COLUMNS, formatBoardDateTime, isOverdue, type BoardStatus, type BoardTasksResponse, type TaskSummary, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
+import { academyDateInputValue, academyToday } from '@/lib/localeFormat';
 
 type TaskTab = 'mine' | 'assigned' | 'archive';
 type QuickFilter = 'all' | Exclude<BoardStatus, 'accepted'>;
@@ -23,7 +24,7 @@ const PRIORITY_RANK = { urgent: 0, normal: 1, low: 2 } as const;
 
 function isDueToday(task: TaskSummary): boolean {
   if (!task.dueAt || task.status === 'done' || task.status === 'accepted' || isOverdue(task)) return false;
-  return new Date(task.dueAt).toDateString() === new Date().toDateString();
+  return academyDateInputValue(task.dueAt) === academyToday();
 }
 
 function taskGroup(task: TaskSummary, tab: TaskTab): TaskGroup {
@@ -149,6 +150,11 @@ export function TasksApp() {
           : task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('miniTasksNoDeadline')}</span>
         <span className="mini-task-person"><UserRound className="size-4 shrink-0" />{personLabel}: {person?.fullName ?? t('unassigned')}</span>
       </span>
+      {task.checklistTotal || task.commentCount || task.attachmentCount ? <span className="mini-task-stats">
+        {task.checklistTotal ? <span aria-label={`${t('checklistLabel')}: ${task.checklistDone}/${task.checklistTotal}`}><ListChecks className="size-3.5" />{task.checklistDone}/{task.checklistTotal}</span> : null}
+        {task.commentCount ? <span aria-label={`${t('commentsLabel')}: ${task.commentCount}`}><MessageCircle className="size-3.5" />{task.commentCount}</span> : null}
+        {task.attachmentCount ? <span aria-label={`${t('attachmentsLabel')}: ${task.attachmentCount}`}><Paperclip className="size-3.5" />{task.attachmentCount}</span> : null}
+      </span> : null}
       <ArrowUpRight className="mini-task-arrow size-4" aria-hidden="true" />
     </button>;
   };
@@ -184,7 +190,7 @@ export function TasksApp() {
       </button>
       <button type="button" aria-label={t('taskArchive')} aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => changeTab('archive')}><Archive className="size-5" /><span>{t('taskArchive')}</span></button>
     </div></nav>
-    <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={() => changeTab('assigned')} users={users.data ?? []} currentUser={user} canAssignUsers />
+    <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={() => changeTab('assigned')} users={users.data ?? []} currentUser={user} canAssignUsers miniMode />
     <TaskDetailSheet open={taskId !== null} taskId={taskId} onOpenChange={(open) => { if (!open) setTaskId(null); }} users={users.data ?? []} tasksOnly />
   </div>;
 }

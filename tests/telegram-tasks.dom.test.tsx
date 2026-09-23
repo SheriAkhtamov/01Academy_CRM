@@ -46,7 +46,7 @@ describe('Mobile tasks interface', () => {
     setup(); fireEvent.click(await screen.findByText('My assigned task'));
     expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 1, tasksOnly: true }));
     const create = screen.getByRole('button', { name: 'Create task' }); await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(create); expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, canAssignUsers: true }));
+    fireEvent.click(create); expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, canAssignUsers: true, miniMode: true }));
     const onCreated = (mocks.create.mock.lastCall?.[0] as { onCreated: () => void }).onCreated;
     act(() => onCreated());
     expect(screen.getByRole('heading', { name: 'Assigned by me' })).toBeTruthy();

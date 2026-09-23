@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, Loader2 } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -22,8 +22,7 @@ import {
 import { boardRequest as apiRequest } from '@/features/board/transport';
 import { hapticNotify } from '@/features/board/telegram';
 import { boardQueryKeys } from '@/features/board/api';
-import { academyInstant, academyToday } from '@/lib/localeFormat';
-import type { TranslationKey } from '@/lib/i18n';
+import { academyDateInputValue, academyInstant, academyMinutesOfDay, academyToday } from '@/lib/localeFormat';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TaskColorPicker } from './TaskColorPicker';
@@ -33,6 +32,7 @@ import { attachmentErrorKey } from '@/lib/attachments';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
     AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PRIORITY_ORDER, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
+import { cn } from '@/lib/utils';
 
 interface CreateTaskDialogProps {
     open: boolean;
@@ -41,6 +41,7 @@ interface CreateTaskDialogProps {
     users: UserMini[];
     currentUser: UserMini | null;
     canAssignUsers: boolean;
+    miniMode?: boolean;
 }
 
 const UNASSIGNED = 'unassigned';
@@ -52,7 +53,15 @@ const dueInputToInstant = (value: string): string | null => {
     return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
 };
 
-export function CreateTaskDialog({ open, onOpenChange, onCreated, users, currentUser, canAssignUsers }: CreateTaskDialogProps) {
+const quickTodayDue = (): string | null => {
+    const minutes = Math.max(18 * 60, Math.ceil((academyMinutesOfDay(new Date()) + 30) / 30) * 30);
+    if (minutes >= 24 * 60) return null;
+    return `${academyToday()}T${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+};
+
+const quickTomorrowDue = () => `${academyDateInputValue(Date.now() + 24 * 60 * 60 * 1000)}T18:00`;
+
+export function CreateTaskDialog({ open, onOpenChange, onCreated, users, currentUser, canAssignUsers, miniMode = false }: CreateTaskDialogProps) {
     const { t } = useTranslation();
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -77,6 +86,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
     const [percent, setPercent] = useState(0);
     const [attempted, setAttempted] = useState(false);
     const [confirmClose, setConfirmClose] = useState(false);
+    const [optionalOpen, setOptionalOpen] = useState(false);
     const createdTaskId = useRef<number | null>(null);
     const requestKey = useRef<string>();
     const submitting = useRef(false);
@@ -88,6 +98,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
         setColor(null);
         setAssigneeId(defaultAssigneeId);
         setDueAt('');
+        setOptionalOpen(false);
         setFiles([]); setUploaded([]); setActiveFile(null); setAttempted(false);
         createdTaskId.current = null; requestKey.current = undefined;
     };
@@ -152,10 +163,12 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             toast({ title: t('titleRequired'), variant: 'destructive' });
             return;
         }
-        if (!attempted && dueAt && dueAt.slice(0, 10) < academyToday()) {
-            toast({ title: t('taskDueDateInPast' as TranslationKey), variant: 'destructive' });
+        const dueInstant = dueAt ? dueInputToInstant(dueAt) : null;
+        if (!attempted && dueAt && (!dueInstant || new Date(dueInstant).getTime() <= Date.now())) {
+            toast({ title: t('taskDueDateInPast'), variant: 'destructive' });
             return;
         }
+        if (miniMode && files.length) setOptionalOpen(true);
         submitting.current = true; setAttempted(true); mutation.mutate();
     };
 
@@ -163,10 +176,48 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
         // Never drop the draft while the create request is still in flight —
         // Esc/overlay clicks would otherwise close the dialog mid-submit.
         if (!next && mutation.isPending) return;
-        if (!next && (title || description || files.length || attempted)) { setConfirmClose(true); return; }
+        if (!next && (title || description || files.length || color || priority !== 'normal' || assigneeId !== defaultAssigneeId || dueAt || attempted)) { setConfirmClose(true); return; }
         if (!next) reset();
         onOpenChange(next);
     };
+
+    const todayDue = miniMode ? quickTodayDue() : null;
+    const tomorrowDue = miniMode ? quickTomorrowDue() : '';
+    const descriptionField = <div className="space-y-1.5">
+        <Label htmlFor="create-task-description" className="text-xs text-muted-foreground">{t('description')}</Label>
+        <Textarea
+            id="create-task-description"
+            disabled={attempted || mutation.isPending}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={t('taskDescriptionPlaceholder')}
+            rows={3}
+            onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) handleSubmit(); }}
+        />
+    </div>;
+    const priorityField = <div className="space-y-1.5">
+        <Label htmlFor="create-task-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
+        <Select value={priority} onValueChange={(value) => setPriority(value as BoardPriority)} disabled={attempted || mutation.isPending}>
+            <SelectTrigger id="create-task-priority"><SelectValue /></SelectTrigger>
+            <SelectContent>{PRIORITY_ORDER.map((value) => <SelectItem key={value} value={value}>{t(value === 'urgent' ? 'priorityUrgent' : value === 'normal' ? 'priorityNormal' : 'priorityLow')}</SelectItem>)}</SelectContent>
+        </Select>
+    </div>;
+    const assigneeField = <div className="space-y-1.5">
+        <Label htmlFor="create-task-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
+        {canAssignUsers ? <Select value={assigneeId} onValueChange={setAssigneeId} disabled={attempted || mutation.isPending}>
+            <SelectTrigger id="create-task-assignee"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>{assignableUsers.map((person) => <SelectItem key={person.id} value={String(person.id)}>{person.fullName}</SelectItem>)}</SelectContent>
+        </Select> : <Input id="create-task-assignee" value={currentUser?.fullName ?? ''} disabled />}
+    </div>;
+    const dueField = <div className="space-y-1.5">
+        <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
+        {miniMode ? <div className="flex flex-wrap gap-2" role="group" aria-label={t('dueDateLabel')}>
+            <Button type="button" size="sm" variant="outline" disabled={!todayDue || attempted || mutation.isPending} aria-pressed={Boolean(todayDue && dueAt === todayDue)} className={cn('rounded-full', todayDue && dueAt === todayDue && 'border-primary bg-primary/10 text-primary')} onClick={() => { if (todayDue) setDueAt(todayDue); }}>{t('today')}</Button>
+            <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={dueAt === tomorrowDue} className={cn('rounded-full', dueAt === tomorrowDue && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt(tomorrowDue)}>{t('adminTomorrow')}</Button>
+            <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={!dueAt} className={cn('rounded-full', !dueAt && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt('')}>{t('noDueDate')}</Button>
+        </div> : null}
+        <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+    </div>;
 
     return (
         <><Dialog open={open} onOpenChange={handleOpenChange}>
@@ -191,68 +242,27 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                         />
                     </div>
 
-                    <div className="space-y-1.5">
-                        <Label htmlFor="create-task-description" className="text-xs text-muted-foreground">{t('description')}</Label>
-                        <Textarea
-                            id="create-task-description"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            placeholder={t('taskDescriptionPlaceholder')}
-                            rows={3}
-                            // Enter inserts a newline here, so keep the modifier shortcut
-                            // as the way to submit without leaving the description.
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
-                            }}
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label htmlFor="create-task-priority" className="text-xs text-muted-foreground">{t('priorityLabel')}</Label>
-                            <Select value={priority} onValueChange={(v) => setPriority(v as BoardPriority)} disabled={attempted || mutation.isPending}>
-                                <SelectTrigger id="create-task-priority">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {PRIORITY_ORDER.map((p) => (
-                                        <SelectItem key={p} value={p}>
-                                            {t(p === 'urgent' ? 'priorityUrgent' : p === 'normal' ? 'priorityNormal' : 'priorityLow')}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="create-task-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
-                            {canAssignUsers ? (
-                                <Select value={assigneeId} onValueChange={setAssigneeId} disabled={attempted || mutation.isPending}>
-                                    <SelectTrigger id="create-task-assignee">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
-                                        {assignableUsers.map((u) => (
-                                            <SelectItem key={u.id} value={String(u.id)}>
-                                                {u.fullName}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            ) : (
-                                <Input id="create-task-assignee" value={currentUser?.fullName ?? ''} disabled />
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                        <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
-                    </div>
-                    <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
+                    {miniMode ? <>
+                        {assigneeField}
+                        {dueField}
+                        {priorityField}
+                    </> : <>
+                        {descriptionField}
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{priorityField}{assigneeField}</div>
+                        {dueField}
+                        <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
+                    </>}
                     </fieldset>
-                    <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
+                    {miniMode ? <div className="space-y-3">
+                        <Button type="button" variant="outline" className="w-full justify-between" aria-expanded={optionalOpen} aria-controls="mini-task-optional-fields" disabled={mutation.isPending} onClick={() => setOptionalOpen((value) => !value)}>
+                            {t('miniTaskOptionalFields')}<ChevronDown className={cn('size-4 transition-transform', optionalOpen && 'rotate-180')} />
+                        </Button>
+                        {optionalOpen ? <div id="mini-task-optional-fields" className="space-y-4 rounded-lg border border-border p-3">
+                            {descriptionField}
+                            <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
+                            <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
+                        </div> : null}
+                    </div> : <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />}
                     {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskCreateRetryHint') : t('taskAttachmentPartialFailure')}</p> : null}
                     </div>
 

@@ -47,6 +47,8 @@
 .mini-task-meta { display: grid; gap: .3rem; min-width: 0; color: var(--muted-foreground); font-size: .78rem; }
 .mini-task-date, .mini-task-person { display: flex; align-items: center; gap: .4rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-task-date-overdue { color: #b91c1c; font-weight: 650; }
+.mini-task-stats { display: flex; flex-wrap: wrap; gap: .75rem; color: var(--muted-foreground); font-size: .74rem; }
+.mini-task-stats span { display: inline-flex; align-items: center; gap: .25rem; }
 .mini-task-arrow { position: absolute; top: .9rem; right: .9rem; color: var(--muted-foreground); }
 .mini-center { display: flex; min-height: 45dvh; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 2rem; text-align: center; }
 .mini-empty { min-height: 37dvh; }

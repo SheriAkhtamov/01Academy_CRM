@@ -421,13 +421,23 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                         <div className="min-h-0 flex-1 overflow-y-auto">
                             {/* Status actions */}
-                            <div className="flex flex-wrap items-center gap-2 border-b border-border p-5">
+                            <div className={cn('flex flex-wrap items-center gap-2 border-b border-border p-5', tasksOnly && 'p-4')}>
+                                {tasksOnly && canManage && (task.status === 'backlog' || task.status === 'todo' || task.status === 'in_progress') ? (
+                                    <Button
+                                        className="w-full"
+                                        onClick={() => statusMutation.mutate(task.status === 'in_progress' ? 'done' : 'in_progress')}
+                                        disabled={statusMutation.isPending}
+                                    >
+                                        <CheckCircle2 className="size-4" />
+                                        {task.status === 'in_progress' ? t('miniTaskMarkDone') : t('miniTaskStartWork')}
+                                    </Button>
+                                ) : null}
                                 <Select
                                     value={WORKING_STATUSES.includes(task.status) ? task.status : ''}
                                     onValueChange={(v) => statusMutation.mutate(v as BoardStatus)}
-                                    disabled={task.status === 'accepted' || statusMutation.isPending}
+                                    disabled={!canManage || task.status === 'accepted' || statusMutation.isPending}
                                 >
-                                    <SelectTrigger aria-label={t('status')} className="h-9 w-44"><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
+                                    <SelectTrigger aria-label={t('status')} className={cn('h-9 w-44', tasksOnly && 'w-full')}><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
                                     <SelectContent>
                                         {WORKING_STATUSES.map((s) => (
                                             <SelectItem key={s} value={s}>{columnLabel(s, t)}</SelectItem>
@@ -435,10 +445,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </SelectContent>
                                 </Select>
 
-                                {task.status === 'done' ? (
+                                {task.status === 'done' && (!tasksOnly || canAcceptReopen) ? (
                                     <Button
                                         size="sm"
-                                        className="gap-1.5"
+                                        className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
                                         onClick={() => statusMutation.mutate('accepted')}
                                         disabled={!canAcceptReopen || statusMutation.isPending}
                                         title={!canAcceptReopen ? t('onlyCreatorCanAcceptHint') : undefined}
@@ -447,11 +457,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </Button>
                                 ) : null}
 
-                                {task.status === 'accepted' ? (
+                                {task.status === 'accepted' && (!tasksOnly || canAcceptReopen) ? (
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        className="gap-1.5"
+                                        className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
                                         onClick={() => statusMutation.mutate('in_progress')}
                                         disabled={!canAcceptReopen || statusMutation.isPending}
                                         title={!canAcceptReopen ? t('onlyCreatorCanAcceptHint') : undefined}
@@ -460,7 +470,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </Button>
                                 ) : null}
 
-                                {!canAcceptReopen && (task.status === 'done' || task.status === 'accepted') ? (
+                                {!tasksOnly && !canAcceptReopen && (task.status === 'done' || task.status === 'accepted') ? (
                                     <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Lock className="size-3" />{t('onlyCreatorCanAcceptHint')}</span>
                                 ) : null}
                             </div>
@@ -511,7 +521,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         {task.description ? (
                                             <p className="whitespace-pre-wrap text-sm text-foreground/90">{task.description}</p>
                                         ) : null}
-                                        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                        <div className={cn('grid grid-cols-2 gap-x-4 gap-y-3 text-sm', tasksOnly && 'grid-cols-1')}>
                                             <MetaRow label={t('creatorLabel')}><UserChip user={task.creator} /></MetaRow>
                                             <MetaRow label={t('assigneeLabel')}><UserChip user={task.assignee} /></MetaRow>
                                             <MetaRow label={t('dueDateLabel')}>
@@ -520,7 +530,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             <MetaRow label={t('priorityLabel')}>
                                                 {priorityMeta ? <span className="text-foreground">{t(priorityMeta.labelKey)}</span> : null}
                                             </MetaRow>
-                                            <MetaRow label={t('taskColorLabel')}>
+                                            {(!tasksOnly || task.color) ? <MetaRow label={t('taskColorLabel')}>
                                                 {task.color ? (
                                                     <span className="flex items-center gap-2 text-foreground">
                                                         <span className={cn('size-3 rounded-full', TASK_COLOR_META[task.color].swatch)} aria-hidden="true" />
@@ -529,7 +539,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 ) : (
                                                     <span className="text-foreground">{t('taskColorNone')}</span>
                                                 )}
-                                            </MetaRow>
+                                            </MetaRow> : null}
                                         </div>
                                     </>
                                 )}
@@ -537,11 +547,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                             {/* Tabs */}
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
-                                <TabsList className="grid h-auto w-full grid-cols-4 gap-1">
-                                    <TabsTrigger value="comments" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
-                                    <TabsTrigger value="checklist" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
-                                    <TabsTrigger value="attachments" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
-                                    <TabsTrigger value="activity" className="min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm">{t('activityTab')}</TabsTrigger>
+                                <TabsList className={cn('grid h-auto w-full grid-cols-4 gap-1', tasksOnly && 'flex justify-start overflow-x-auto')}>
+                                    <TabsTrigger value="comments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
+                                    <TabsTrigger value="checklist" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
+                                    <TabsTrigger value="attachments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
+                                    <TabsTrigger value="activity" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('activityTab')}</TabsTrigger>
                                 </TabsList>
 
                                 {/* Comments */}

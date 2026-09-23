@@ -92,6 +92,22 @@ describe('task creation with attachments', () => {
   });
 });
 
+describe('miniapp task creation', () => {
+  it('keeps extra fields behind a toggle and submits the chosen deadline', async () => {
+    const user = userEvent.setup();
+    render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[employee]} currentUser={employee} canAssignUsers miniMode />));
+    expect(screen.queryByRole('textbox', { name: 'Description' })).toBeNull();
+    await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Prepare lessons');
+    await user.click(screen.getByRole('button', { name: 'Tomorrow' }));
+    await user.click(screen.getByRole('button', { name: 'Description, files and colour' }));
+    await user.type(screen.getByRole('textbox', { name: 'Description' }), 'For the new group');
+    await user.click(screen.getByRole('button', { name: 'Create task' }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({
+      title: 'Prepare lessons', description: 'For the new group', dueAt: expect.any(String),
+    })));
+  });
+});
+
 describe('task acceptance UI', () => {
   it.each([{ id: 7, admin: false, enabled: true }, { id: 8, admin: false, enabled: false }, { id: 8, admin: true, enabled: false }])(
     'creator-only acceptance for $id with admin=$admin', ({ id, admin, enabled }) => {
@@ -107,6 +123,21 @@ describe('task acceptance UI', () => {
       expect(accept.disabled).toBe(!enabled);
     },
   );
+});
+
+describe('miniapp task progress', () => {
+  it('offers the next action and sends its status change', async () => {
+    const task: TaskDetail = { id: 100, boardId: 1, title: 'Task', description: null, status: 'todo', priority: 'normal', color: null,
+      position: 0, creatorId: 7, assigneeId: 7, creator: employee, assignee: employee, leadId: null, lead: null,
+      dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
+      comments: [], checklist: [], attachments: [], activity: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    client.setQueryData(['/api/board/tasks/100'], task);
+    mocks.api.mockResolvedValue(task);
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={vi.fn()} users={[employee]} tasksOnly />, client));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Start this task' }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/board/tasks/100/status', { status: 'in_progress' }));
+  });
 });
 
 describe('task drafts and pending submissions', () => {

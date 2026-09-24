@@ -1517,10 +1517,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   leadTagsLoadFailed: { en: 'Tag options are unavailable', ru: 'Не удалось загрузить варианты тегов' },
   leadTasks: { en: 'Lead tasks', ru: 'Задачи по лиду' },
-  leadTasksBoardHint: {
-    en: 'Tasks created here are placed on the shared Task board and stay linked to this lead.',
-    ru: 'Задачи, созданные здесь, появляются на общей Доске задач и сохраняют связь с этим лидом.',
-  },
   leadSearchMinCharacters: {
     en: 'Enter at least two characters of a name, phone number, or messenger.',
     ru: 'Введите минимум два символа имени, номера телефона или мессенджера.',

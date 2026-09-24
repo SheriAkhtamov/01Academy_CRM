@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
-import { Link } from 'wouter';
 import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateLeadData, useLeadDetailsQuery } from '@/features/leads/queries';
@@ -93,7 +92,6 @@ import {
   CreditCard,
   CalendarClock,
   CalendarPlus2,
-  ExternalLink,
   History,
   Loader2,
   MessageSquare,
@@ -1585,18 +1583,6 @@ export function LeadDetailSheet({
 
                 <TabsContent value="tasks" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/70 dark:bg-amber-950/30">
-                      <div>
-                        <p className="text-sm font-medium">{t('leadTasks')}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{t('leadTasksBoardHint')}</p>
-                      </div>
-                      <Button asChild type="button" variant="outline" size="sm" className="shrink-0 bg-background">
-                        <Link href="/tasks">
-                          <ExternalLink data-icon="inline-start" />
-                          {t('taskBoard')}
-                        </Link>
-                      </Button>
-                    </div>
                     <Card className="overflow-hidden border-amber-200/80 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200 dark:border-amber-900/70 dark:focus-within:border-amber-700 dark:focus-within:ring-amber-900">
                       <CardHeader className="border-b border-amber-100 bg-amber-50/80 pb-3 dark:border-amber-900/60 dark:bg-amber-950/30">
                         <CardTitle className="flex items-center gap-2 text-base">

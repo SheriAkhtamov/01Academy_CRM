@@ -218,6 +218,7 @@ export const academyLeadTags = pgTable("academy_lead_tags", {
 
 export const academyLeadStatuses = pgTable("academy_lead_statuses", {
   id: serial("id").primaryKey(),
+  funnelId: integer("funnel_id"),
   code: varchar("code", { length: 80 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   color: varchar("color", { length: 40 }).notNull(),

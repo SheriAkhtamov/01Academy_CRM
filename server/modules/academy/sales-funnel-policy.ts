@@ -37,11 +37,13 @@ export const assertSalesFunnelAssignment = async (funnelId: unknown, managerId: 
 
 export const assertSalesFunnelStage = async (funnelId: unknown, statusCode: string) => {
   if (!funnelId || statusCode === 'not_now') return;
-  const result = await queryOne<{ workflowRole: SalesFunnelRole | null; stageRole: SalesFunnelRole | null }>(
-    `SELECT workflow_role, academy_sales_stage_role($2) AS stage_role
+  const result = await queryOne<{ workflowRole: SalesFunnelRole | null; stageRole: SalesFunnelRole | null; stageFunnelId: number | null }>(
+    `SELECT workflow_role, academy_sales_stage_role($2) AS stage_role,
+            (SELECT funnel_id FROM academy_lead_statuses WHERE code = $2) AS stage_funnel_id
      FROM academy_sales_funnels WHERE id = $1`, [Number(funnelId), statusCode],
   );
-  if (result?.workflowRole && result.workflowRole !== result.stageRole) {
+  if ((result?.stageFunnelId && Number(result.stageFunnelId) !== Number(funnelId))
+    || (result?.workflowRole && result.workflowRole !== result.stageRole)) {
     throw Object.assign(new Error('salesFunnelStageUnavailable'), { statusCode: 409 });
   }
 };

@@ -190,6 +190,7 @@ interface PipelineStatus {
   name: string;
   color: string;
   sortOrder: number;
+  funnelId?: number | null;
   isPipeline?: boolean;
   isActive?: boolean;
 }
@@ -630,10 +631,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : Number(overviewManagerId);
 
   const activePipelineStatuses = useMemo(
-    (): PipelineStatus[] => salesFunnelStages<PipelineStatus>(data?.statuses ?? [], selectedSalesFunnel?.workflowRole)
+    (): PipelineStatus[] => salesFunnelStages<PipelineStatus>(data?.statuses ?? [], selectedSalesFunnel?.workflowRole, selectedSalesFunnel?.id)
       .map((status) => selectedSalesFunnel?.workflowRole === 'closer' && status.code === 'demo_attended'
         ? { ...status, name: t('closerQueueStage') } : status),
-    [data?.statuses, selectedSalesFunnel?.workflowRole, t],
+    [data?.statuses, selectedSalesFunnel?.id, selectedSalesFunnel?.workflowRole, t],
   );
 
   const activePipelineCodes = useMemo(

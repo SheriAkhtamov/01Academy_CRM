@@ -164,15 +164,25 @@ registerSimpleCrud('courses', 'academy_courses', [
 });
 
 registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
-  'name', 'color', 'sortOrder', 'isPipeline', 'isActive',
+  'name', 'color', 'sortOrder', 'isPipeline', 'isActive', 'funnelId',
 ], {
   orderBy: 'sort_order, id',
   requireAdministration: true,
   beforeCreate: async ({ values }) => {
+    if (!values.funnelId || !await queryOne(
+      `SELECT id FROM academy_sales_funnels WHERE id = $1`,
+      [values.funnelId],
+    )) {
+      throw Object.assign(new Error('pipelineStageFunnelRequired'), { statusCode: 400 });
+    }
     values.code = await createPipelineStatusCode(String(values.name ?? ''));
     values.isSystem = false;
   },
   beforeUpdate: async ({ values, row }) => {
+    if (values.funnelId !== undefined && Number(values.funnelId) !== Number(row.funnelId)) {
+      throw Object.assign(new Error('salesFunnelStageUnavailable'), { statusCode: 409 });
+    }
+    delete values.funnelId;
     if (isDemoPipelineStage(row.code)
       && (values.isActive === false || values.isPipeline === false)) {
       throw Object.assign(new Error('demoPipelineStageProtected'), { statusCode: 409 });

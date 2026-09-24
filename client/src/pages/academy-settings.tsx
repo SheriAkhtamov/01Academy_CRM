@@ -69,6 +69,7 @@ import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
 import { SalesFunnelsPanel } from '@/features/sales-funnels/SalesFunnelsPanel';
+import type { SalesFunnel } from '@/features/sales-funnels/api';
 import { LeadDistributionPanel } from '@/features/lead-distribution/LeadDistributionPanel';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import {
@@ -77,6 +78,7 @@ import {
 } from '@/components/ux/WeekScheduleEditor';
 import { validateLeadStatusTransition } from '@shared/academy';
 import { isDemoPipelineStage } from '@shared/demo-pipeline';
+import { stagesForSalesFunnel } from '@shared/sales-funnel-workflow';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,
@@ -90,6 +92,7 @@ import {
   ArrowRightLeft,
   BookOpen,
   Building2,
+  ChevronRight,
   DoorOpen,
   Edit3,
   GitBranch,
@@ -133,6 +136,7 @@ interface PipelineStatus {
   id: number;
   code: string;
   name: string;
+  funnelId?: number | null;
   color: string;
   sortOrder: number;
   isPipeline: boolean;
@@ -261,6 +265,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [selectedStageFunnelId, setSelectedStageFunnelId] = useState<number | null>(null);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
@@ -286,6 +291,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
+  });
+  const salesFunnels = useQuery<SalesFunnel[]>({
+    queryKey: ['/api/academy/sales-funnels'],
+    enabled: isSalesSettingsMode,
   });
 
   useEffect(() => {
@@ -596,7 +605,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     mutationFn: (values: StatusValues) => {
       return editingStatus
         ? apiRequest('PATCH', `/api/academy/pipeline-statuses/${editingStatus.id}`, values)
-        : apiRequest('POST', '/api/academy/pipeline-statuses', values);
+        : apiRequest('POST', '/api/academy/pipeline-statuses', { ...values, funnelId: selectedStageFunnelId });
     },
     onSuccess: () => {
       toast({ title: editingStatus ? t('pipelineStageUpdated') : t('pipelineStageCreated') });
@@ -661,7 +670,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         return;
       }
 
-      const defaultTarget = [...(configuration.data?.statuses ?? [])]
+      const defaultTarget = stagesForSalesFunnel(configuration.data?.statuses ?? [], selectedStageFunnel?.workflowRole, selectedStageFunnel?.id)
         .filter((item) => item.id !== status.id && item.isActive !== false)
         .filter((item) => !validateLeadStatusTransition(status.code, item.code))
         .sort((left, right) => left.sortOrder - right.sortOrder)[0];
@@ -702,17 +711,16 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const updateStatusOrder = useMutation({
     mutationFn: async ({ status, direction }: { status: PipelineStatus; direction: -1 | 1 }) => {
-      const statuses = [...(configuration.data?.statuses ?? [])].sort(
+      const allStatuses = [...(configuration.data?.statuses ?? [])].sort(
         (left, right) => left.sortOrder - right.sortOrder,
       );
-      const index = statuses.findIndex((item) => item.id === status.id);
-      const neighbor = statuses[index + direction];
+      const index = funnelStatuses.findIndex((item) => item.id === status.id);
+      const neighbor = funnelStatuses[index + direction];
       if (!neighbor) return;
-      const orderedStatusIds = statuses.map((item) => item.id);
-      [orderedStatusIds[index], orderedStatusIds[index + direction]] = [
-        orderedStatusIds[index + direction],
-        orderedStatusIds[index],
-      ];
+      const orderedStatusIds = allStatuses.map((item) => item.id);
+      const fromIndex = orderedStatusIds.indexOf(status.id);
+      const toIndex = orderedStatusIds.indexOf(neighbor.id);
+      [orderedStatusIds[fromIndex], orderedStatusIds[toIndex]] = [orderedStatusIds[toIndex], orderedStatusIds[fromIndex]];
       await apiRequest('PUT', '/api/academy/pipeline-statuses/reorder', { orderedStatusIds });
     },
     onSuccess: () => {
@@ -814,6 +822,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   };
 
   const openStatus = (status?: PipelineStatus) => {
+    if (!selectedStageFunnelId) return;
     setEditingStatus(status ?? null);
     statusForm.reset(status ? {
       name: status.name,
@@ -824,7 +833,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     } : {
       name: '',
       color: '#2563eb',
-      sortOrder: ((configuration.data?.statuses.length ?? 0) + 1) * 10,
+      sortOrder: (Math.max(0, ...funnelStatuses.map((item) => item.sortOrder)) + 10),
       isPipeline: true,
       isActive: true,
     });
@@ -838,12 +847,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     () => [...(configuration.data?.statuses ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
     [configuration.data?.statuses],
   );
+  const selectedStageFunnel = salesFunnels.data?.find((funnel) => funnel.id === selectedStageFunnelId);
+  const funnelStatuses = useMemo(
+    () => selectedStageFunnel
+      ? stagesForSalesFunnel(statuses, selectedStageFunnel.workflowRole, selectedStageFunnel.id)
+      : [],
+    [selectedStageFunnel, statuses],
+  );
   const availableTransferStatuses = useMemo(
     () => pipelineDeleteTarget
-      ? statuses.filter((status) => status.id !== pipelineDeleteTarget.status.id && status.isActive !== false)
+      ? funnelStatuses.filter((status) => status.id !== pipelineDeleteTarget.status.id && status.isActive !== false)
         .filter((status) => !validateLeadStatusTransition(pipelineDeleteTarget.status.code, status.code))
       : [],
-    [pipelineDeleteTarget, statuses],
+    [pipelineDeleteTarget, funnelStatuses],
   );
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
@@ -1491,17 +1507,58 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
         <TabsContent value="pipeline" className="mt-0">
           <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle>{t('pipelineStages')}</CardTitle>
-                <CardDescription>{t('pipelineStagesDescription')}</CardDescription>
-              </div>
-              <Button onClick={() => openStatus()}>
-                <Plus data-icon="inline-start" />{t('addPipelineStage')}
-              </Button>
+            <CardHeader>
+              <CardTitle>{t('pipelineStages')}</CardTitle>
+              <CardDescription>{t('pipelineSelectFunnel')}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              {statuses.map((status, index) => (
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              {(salesFunnels.data ?? []).map((funnel) => (
+                <button
+                  key={funnel.id}
+                  type="button"
+                  className="flex min-h-20 items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setSelectedStageFunnelId(funnel.id)}
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><GitBranch className="size-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{funnel.name}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {t('pipelineFunnelStageCount').replace('{count}', String(stagesForSalesFunnel(statuses, funnel.workflowRole, funnel.id).length))}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
+              {salesFunnels.isLoading ? <Skeleton className="h-20" /> : null}
+              {!salesFunnels.isLoading && salesFunnels.data?.length === 0 ? (
+                <EmptyTableState title={t('noSalesFunnels')} description={t('noSalesFunnelsDescription')} />
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="lead-merge" className="mt-0">
+          <LeadMergePanel />
+        </TabsContent>
+
+        <TabsContent value="kpi" className="mt-0">
+          <KpiSettingsPanel />
+        </TabsContent>
+
+      </Tabs>
+      </ModulePageBody>
+
+      <Dialog open={Boolean(selectedStageFunnel)} onOpenChange={(open) => { if (!open) setSelectedStageFunnelId(null); }}>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <DialogTitle>{selectedStageFunnel?.name}</DialogTitle>
+            <DialogDescription>{t('pipelineStagesDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-6 py-4">
+            <Button onClick={() => openStatus()}>
+              <Plus data-icon="inline-start" />{t('addPipelineStage')}
+            </Button>
+            {funnelStatuses.map((status, index) => (
                 <div key={status.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 md:flex-row md:items-center">
                   <div className="flex items-center gap-2">
                     <Button
@@ -1516,7 +1573,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index === statuses.length - 1 || updateStatusOrder.isPending}
+                      disabled={index === funnelStatuses.length - 1 || updateStatusOrder.isPending}
                       onClick={() => updateStatusOrder.mutate({ status, direction: 1 })}
                     >
                       <ArrowDown />
@@ -1554,25 +1611,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     </Button>
                   </div>
                 </div>
-              ))}
-              {statuses.length === 0 ? (
+            ))}
+              {funnelStatuses.length === 0 ? (
                 <EmptyTableState title={t('noPipelineStages')} description={t('noPipelineStagesDescription')} />
               ) : null}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="lead-merge" className="mt-0">
-          <LeadMergePanel />
-        </TabsContent>
-
-        <TabsContent value="kpi" className="mt-0">
-          <KpiSettingsPanel />
-        </TabsContent>
-
-      </Tabs>
-      </ModulePageBody>
-
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">

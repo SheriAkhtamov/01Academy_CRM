@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { salesFunnelStages } from '../shared/sales-funnel-workflow';
+import { salesFunnelStages, stagesForSalesFunnel } from '../shared/sales-funnel-workflow';
 import { actorContextFrom, type ActorContext } from '../server/modules/leads/domain/actor-context';
 import { canActorAssignLead, canActorMutateLead, canActorViewLead } from '../server/modules/leads/domain/access-policy';
 import { canManageDemoParticipant } from '../server/modules/academy/demo-participant-access';
@@ -49,6 +49,20 @@ describe('hunter/closer pipeline and permissions', () => {
       { code: 'custom_before', sortOrder: 40 }, { code: 'custom_after', sortOrder: 60 }];
     expect(salesFunnelStages(stages, 'closer').map((stage) => stage.code)).toEqual(['demo_attended', 'paid', 'custom_after']);
     expect(salesFunnelStages(stages, 'hunter').map((stage) => stage.code)).toEqual(['custom_before', 'ne_prishli_na_vstrechu', 'new_request']);
+  });
+  it('keeps custom stages in their selected funnel and shows hidden stages in settings', () => {
+    const stages = [
+      { code: 'new_request', sortOrder: 10, isPipeline: true },
+      { code: 'demo_attended', sortOrder: 90, isPipeline: true },
+      { code: 'hunter_custom', sortOrder: 150, funnelId: 1, isPipeline: true },
+      { code: 'b2b_custom', sortOrder: 160, funnelId: 2, isPipeline: false },
+    ];
+    expect(salesFunnelStages(stages, 'hunter', 1).map((stage) => stage.code))
+      .toEqual(['new_request', 'hunter_custom']);
+    expect(salesFunnelStages(stages, 'closer', 3).map((stage) => stage.code))
+      .toEqual(['demo_attended']);
+    expect(stagesForSalesFunnel(stages, null, 2).map((stage) => stage.code))
+      .toEqual(['new_request', 'demo_attended', 'b2b_custom']);
   });
   it('exposes the queue only to closers and requires claiming before mutations', () => {
     const queue = { ...lead, funnelId: 2, managerId: null };

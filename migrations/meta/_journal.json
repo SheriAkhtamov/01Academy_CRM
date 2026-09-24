@@ -820,6 +820,13 @@
       "when": 1789920000013,
       "tag": "0116_integration_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1789920000014,
+      "tag": "0117_scope_pipeline_stages_to_funnels",
+      "breakpoints": true
     }
   ]
 }

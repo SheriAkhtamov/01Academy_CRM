@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { isDemoPipelineStage } from '@shared/demo-pipeline';
+import { assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -952,6 +953,9 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
       if (target.isPipeline !== true) {
         throw Object.assign(new Error('targetPipelineStageRequired'), { statusCode: 400 });
       }
+      if (source.funnelId && target.funnelId && Number(source.funnelId) !== Number(target.funnelId)) {
+        throw Object.assign(new Error('salesFunnelStageUnavailable'), { statusCode: 409 });
+      }
       const transitionError = validateLeadStatusTransition(String(source.code), String(target.code));
       if (transitionError) {
         throw Object.assign(new Error(transitionError), { statusCode: 409 });
@@ -968,6 +972,7 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
       const leadIds = leads.map((lead) => Number(lead.id));
 
       for (const lead of leads) {
+        await assertSalesFunnelStage(lead.funnelId, String(target.code));
         const validationError = validateLeadForStatusChange({
           nextStatus: String(target.code),
           studentName: lead.studentName,

@@ -222,7 +222,11 @@ jobs:
           export APP_CONFIG_GID="$(id -g)"
           export BACKUP_GID="$(id -g)"
           BUILD_CONTEXT="$(mktemp -d /tmp/01academy-crm-build.XXXXXX)"
+          asset_image_container=""
           cleanup_build_context() {
+            if [ -n "$asset_image_container" ]; then
+              docker rm -f "$asset_image_container" >/dev/null 2>&1 || true
+            fi
             rm -rf "$BUILD_CONTEXT"
           }
           trap cleanup_build_context EXIT
@@ -234,6 +238,21 @@ jobs:
           docker build --pull --tag 01academy-crm-backup:deploy \
             --file "$BUILD_CONTEXT/Dockerfile.db-archive" \
             "$BUILD_CONTEXT"
+
+          # Keep hashed bundles from recent deployments available to tabs that
+          # have stayed open while a new CRM image was deployed.
+          mkdir -p static-assets
+          if [ -z "$(find static-assets -type f -print -quit)" ] \
+            && docker container inspect crm-pro >/dev/null 2>&1; then
+            docker cp crm-pro:/app/dist/public/assets/. static-assets/
+            find static-assets -type f -exec touch {} +
+          fi
+          asset_image_container="$(docker create 01academy-crm:deploy)"
+          docker cp "$asset_image_container:/app/dist/public/assets/." static-assets/
+          docker rm "$asset_image_container" >/dev/null
+          asset_image_container=""
+          find static-assets -type f -mmin +2880 -delete
+
           backup_started_at="$(date +%s)"
           docker compose up -d --no-build postgres crm
           docker compose stop backup >/dev/null 2>&1 || true

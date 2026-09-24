@@ -5,6 +5,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useTranslation } from '@/hooks/useTranslation';
 import { AlertCircle, Home, RotateCcw } from 'lucide-react';
 
+const isModuleLoadError = (error: Error) => /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|failed to load module script|chunkloaderror/i.test(error.message);
+
 type BoundaryState = {
   error: Error | null;
   resetKey: string;
@@ -84,11 +86,13 @@ export function AppErrorBoundary({
             <AlertDescription className="flex flex-col items-start gap-3">
               <span>{import.meta.env.DEV && error.message ? error.message : t('failedToLoadData')}</span>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={reset}>
-                  <RotateCcw data-icon="inline-start" />
-                  {t('retry')}
-                </Button>
-                {giveUpInPlace ? (
+                {!isModuleLoadError(error) ? (
+                  <Button type="button" variant="outline" size="sm" onClick={reset}>
+                    <RotateCcw data-icon="inline-start" />
+                    {t('retry')}
+                  </Button>
+                ) : null}
+                {giveUpInPlace || isModuleLoadError(error) ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => window.location.reload()}>
                     {t('reloadPage')}
                   </Button>

@@ -103,8 +103,7 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
-export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "..", "dist", "public");
+export function serveStatic(app: Express, distPath = path.resolve(__dirname, "..", "dist", "public")) {
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
@@ -112,10 +111,19 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
 
-  // fall through to index.html if the file doesn't exist
+  // A missing hashed bundle is not a page route. Returning HTML for it makes
+  // a stale tab try to import the SPA document as JavaScript.
+  app.use('/assets', (_req, res) => res.status(404).end());
+
+  // Fall through to index.html only for client-side routes.
   app.use("*", (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.resolve(distPath, req.originalUrl.split('?')[0].startsWith('/miniapp/') ? 'miniapp.html' : 'index.html'));
   });
 }

@@ -34,6 +34,7 @@ services:
       - ./config:/app/config:ro
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+      - ./static-assets:/app/dist/public/assets:ro
     environment:
       - NODE_ENV=production
       - TZ=UTC

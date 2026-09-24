@@ -28,4 +28,20 @@ describe('administration lead filters', () => {
       funnel: 'all',
     })).toBe(true);
   });
+
+  it('searches names and formatted phone numbers within the selected filters', () => {
+    const matchingLead = lead({
+      contactName: 'Елена Каримова',
+      studentName: 'Дамир',
+      phone: '+998 (90) 123-45-67',
+    });
+    const filters = { manager: '11', status: 'new_request', funnel: '7' };
+
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, search: '  ЕЛЕНА ' })).toBe(true);
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, search: 'дамир' })).toBe(true);
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, search: '99890123' })).toBe(true);
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, search: '+998 (90) 123' })).toBe(true);
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, search: 'другой' })).toBe(false);
+    expect(matchesAdminLeadFilters(matchingLead, { ...filters, manager: '12', search: 'дамир' })).toBe(false);
+  });
 });

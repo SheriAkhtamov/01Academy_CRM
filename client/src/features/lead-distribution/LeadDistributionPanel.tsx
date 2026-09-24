@@ -1,6 +1,17 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Shuffle, UsersRound } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +27,7 @@ import { leadDistributionApi, leadDistributionQueryKey } from './api';
 export function LeadDistributionPanel() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [pendingEnabled, setPendingEnabled] = useState<boolean | null>(null);
   const settings = useQuery({
     queryKey: leadDistributionQueryKey,
     queryFn: leadDistributionApi.get,
@@ -24,6 +36,7 @@ export function LeadDistributionPanel() {
     mutationFn: leadDistributionApi.update,
     onSuccess: async (result) => {
       queryClient.setQueryData(leadDistributionQueryKey, result);
+      setPendingEnabled(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: salesQueryKeys.module }),
         queryClient.invalidateQueries({ queryKey: leadQueryKeys.all }),
@@ -69,6 +82,12 @@ export function LeadDistributionPanel() {
   const switchDescriptionId = 'auto-lead-distribution-description';
 
   return (
+    <AlertDialog
+      open={pendingEnabled !== null}
+      onOpenChange={(open) => {
+        if (!open && !update.isPending) setPendingEnabled(null);
+      }}
+    >
     <Card>
       <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1.5">
@@ -97,7 +116,7 @@ export function LeadDistributionPanel() {
             checked={data.enabled}
             disabled={update.isPending || (!data.enabled && cannotEnable)}
             aria-describedby={switchDescriptionId}
-            onCheckedChange={(enabled) => update.mutate(enabled)}
+            onCheckedChange={setPendingEnabled}
           />
         </div>
       </CardHeader>
@@ -139,5 +158,35 @@ export function LeadDistributionPanel() {
         </div>
       </CardContent>
     </Card>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {pendingEnabled
+              ? t('autoLeadDistributionEnableConfirmTitle')
+              : t('autoLeadDistributionDisableConfirmTitle')}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingEnabled
+              ? t('autoLeadDistributionEnableConfirmDescription').replace('{count}', String(data.unassignedNewLeadCount))
+              : t('autoLeadDistributionDisableConfirmDescription')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={update.isPending}>{t('cancel')}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={update.isPending}
+            onClick={(event) => {
+              event.preventDefault();
+              if (pendingEnabled !== null) update.mutate(pendingEnabled);
+            }}
+          >
+            {update.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            {pendingEnabled
+              ? t('autoLeadDistributionEnableAction')
+              : t('autoLeadDistributionDisableAction')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

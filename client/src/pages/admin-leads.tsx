@@ -21,8 +21,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -52,12 +53,20 @@ export interface AdminLead {
 
 export const matchesAdminLeadFilters = (
   lead: AdminLead,
-  filters: { manager: string; status: string; funnel: string },
-) => (
-  (filters.manager === 'all' || String(lead.managerId ?? 'unassigned') === filters.manager)
-  && (filters.status === 'all' || lead.statusCode === filters.status)
-  && (filters.funnel === 'all' || String(lead.funnelId) === filters.funnel)
-);
+  filters: { manager: string; status: string; funnel: string; search?: string },
+) => {
+  const search = filters.search?.trim().toLocaleLowerCase() ?? '';
+  const phoneSearch = /^[+()\d\s.-]+$/.test(search) ? search.replace(/\D/g, '') : '';
+  const matchesSearch = !search
+    || lead.contactName.toLocaleLowerCase().includes(search)
+    || (lead.studentName?.toLocaleLowerCase().includes(search) ?? false)
+    || (Boolean(phoneSearch) && (lead.phone?.replace(/\D/g, '').includes(phoneSearch) ?? false));
+
+  return matchesSearch
+    && (filters.manager === 'all' || String(lead.managerId ?? 'unassigned') === filters.manager)
+    && (filters.status === 'all' || lead.statusCode === filters.status)
+    && (filters.funnel === 'all' || String(lead.funnelId) === filters.funnel);
+};
 
 interface SalesManager {
   id: number;
@@ -79,6 +88,7 @@ export function LeadAssignmentContent() {
   const [managerFilter, setManagerFilter] = useStickyState('leads.admin.managerFilter', 'all');
   const [statusFilter, setStatusFilter] = useStickyState('leads.admin.statusFilter', 'all');
   const [funnelFilter, setFunnelFilter] = useStickyState('leads.admin.funnelFilter', 'all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(() => new Set());
   const [bulkManagerId, setBulkManagerId] = useState('');
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false);
@@ -111,8 +121,9 @@ export function LeadAssignmentContent() {
       manager: managerFilter,
       status: statusFilter,
       funnel: funnelFilter,
+      search: searchQuery,
     })),
-    [funnelFilter, leadsQuery.data, managerFilter, statusFilter],
+    [funnelFilter, leadsQuery.data, managerFilter, searchQuery, statusFilter],
   );
 
   const managerLeadCounts = useMemo(() => {
@@ -388,9 +399,16 @@ export function LeadAssignmentContent() {
         <Card>
           <CardHeader>
             <CardTitle>{t('leadFilters')}</CardTitle>
-            <CardDescription>{t('leadAssignmentSubtitle')}</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Input
+              type="search"
+              className="md:col-span-3"
+              aria-label={t('leadAssignmentSearchPlaceholder')}
+              placeholder={t('leadAssignmentSearchPlaceholder')}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
             <Select value={managerFilter} onValueChange={setManagerFilter}>
               <SelectTrigger aria-label={t('responsibleManager')}>
                 <SelectValue />
@@ -493,7 +511,7 @@ export function LeadAssignmentContent() {
                       <h3 className="font-medium text-foreground">{t('noLeadsFound')}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{t('adjustFilters')}</p>
                     </div>
-                    {(managerFilter !== 'all' || statusFilter !== 'all' || funnelFilter !== 'all') ? (
+                    {(managerFilter !== 'all' || statusFilter !== 'all' || funnelFilter !== 'all' || searchQuery.trim()) ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -502,6 +520,7 @@ export function LeadAssignmentContent() {
                           setManagerFilter('all');
                           setStatusFilter('all');
                           setFunnelFilter('all');
+                          setSearchQuery('');
                         }}
                       >
                         {t('resetFilters')}

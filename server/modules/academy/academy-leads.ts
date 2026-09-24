@@ -1522,8 +1522,8 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
       referrerStudentId: Number(lead.referrerStudentId),
       referredLeadId: lead.id,
       referredStudentId: student.id,
-      rewardType: 'discount',
-      rewardValue: '15%',
+      rewardType: 'referral',
+      rewardValue: '1',
       status: 'pending' });
   }
 
@@ -1646,7 +1646,7 @@ export const ensureFreeMonthBenefit = async (source: ActorSource, options: {
       method: 'transfer',
       paidAt: new Date(),
       period: 'referral_bonus',
-      discount: 'referral_15',
+      discount: 'none',
       status: 'paid',
       paidUntil: referrer.coverageEnd,
       comment: 'Бесплатный месяц по реферальной программе',
@@ -1666,9 +1666,8 @@ export const ensureFreeMonthBenefit = async (source: ActorSource, options: {
 };
 
 // A reward row records that one referred student qualified. Benefits are a
-// separate one-time ledger: milestone 1 is pending until the referrer's next
-// payment, milestone 3 is consumed by one free-month payment, and milestone 5
-// remains a pending AI Ambassador training entitlement.
+// separate one-time ledger: milestone 3 is consumed by one free-month payment,
+// and milestone 5 remains a pending AI Ambassador training entitlement.
 export const applyReferralRewards = async (source: ActorSource, studentId: number, leadId: number | null, paymentId: number) => {
   const actor = actorContextFrom(source);
   const lead = leadId
@@ -1707,16 +1706,6 @@ export const applyReferralRewards = async (source: ActorSource, studentId: numbe
   const sourceReferralRewardId = Number(newlyApplied[0].id);
   const milestoneBenefit = resolveReferralMilestone(paidReferrals);
 
-  if (milestoneBenefit === 'next_payment_discount_15') {
-    await ensureReferralBenefit({
-      studentId: referrerId,
-      benefitType: 'next_payment_discount_15',
-      milestone: 1,
-      sourceReferralCount: paidReferrals,
-      sourceReferralRewardId,
-      sourcePaymentId: paymentId,
-    });
-  }
   if (milestoneBenefit === 'free_month') {
     await ensureFreeMonthBenefit(actor, {
       referrerId,
@@ -1772,7 +1761,7 @@ export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, pr
       status: 'pending',
       dueAt: addDays(now, 3),
       period: 'month_1',
-      discount: lead.offerDiscount || 'none',
+      discount: 'none',
       comment: 'Ожидаемая оплата после записи на курс' });
   }
 

@@ -39,7 +39,6 @@ import {
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
@@ -116,9 +115,7 @@ import {
 import {
   advanceStudentNextPaymentAt,
   applyReferralRewards,
-  consumeReferralBenefit,
   createStudentFromLead,
-  ensureReferralBenefit,
   getActiveSalesManager,
   handleLeadStatusEffects,
   recalculateStudentMetrics,
@@ -156,15 +153,11 @@ router.post('/payments', async (req, res) => {
     }
     const paymentType = nullableText(req.body.type) ?? 'full';
     const paymentMethod = nullableText(req.body.method) ?? 'transfer';
-    const paymentDiscount = nullableText(req.body.discount) ?? 'none';
     if (!PAYMENT_TYPES.includes(paymentType as typeof PAYMENT_TYPES[number])) {
       return res.status(400).json({ error: 'Invalid payment type' });
     }
     if (!PAYMENT_METHODS.includes(paymentMethod as typeof PAYMENT_METHODS[number])) {
       return res.status(400).json({ error: 'Invalid payment method' });
-    }
-    if (!PAYMENT_DISCOUNTS.includes(paymentDiscount as typeof PAYMENT_DISCOUNTS[number])) {
-      return res.status(400).json({ error: 'Invalid payment discount' });
     }
 
     const requestedPaidAt = parseOptionalDate(req.body.paidAt, 'paidAt');
@@ -318,83 +311,6 @@ router.post('/payments', async (req, res) => {
         }
       }
 
-      const referralLead = lead ?? (paymentLeadId
-        ? await queryOne(
-          `SELECT id, referrer_student_id
-           FROM academy_leads
-           WHERE id = $1`,
-          [paymentLeadId],
-        )
-        : null);
-      let effectivePaymentDiscount = req.body.discount === undefined && pendingPayment?.discount
-        ? String(pendingPayment.discount)
-        : paymentDiscount;
-      if (!PAYMENT_DISCOUNTS.includes(effectivePaymentDiscount as typeof PAYMENT_DISCOUNTS[number])) {
-        throw Object.assign(new Error('Invalid payment discount'), { statusCode: 400 });
-      }
-
-      let firstReferralPaymentEligible = false;
-      let pendingDiscountBenefit: Row | undefined;
-      if (status === 'paid') {
-        const referrerId = referralLead?.referrerStudentId
-          ? Number(referralLead.referrerStudentId)
-          : null;
-        if (referrerId && referrerId !== Number(resolvedStudentId)) {
-          const validReferrer = await queryOne(
-            `SELECT id FROM academy_students WHERE id = $1 FOR SHARE`,
-            [referrerId],
-          );
-          if (validReferrer) {
-            const previousPaidPayment = await queryOne(
-              `SELECT id
-               FROM academy_payments
-               WHERE status = 'paid'
-                 AND ($3::int IS NULL OR id <> $3)
-                 AND (
-                   ($1::int IS NOT NULL AND lead_id = $1)
-                   OR ($2::int IS NOT NULL AND student_id = $2)
-                 )
-               LIMIT 1`,
-              [paymentLeadId, resolvedStudentId, pendingPayment?.id ?? null],
-            );
-            firstReferralPaymentEligible = !previousPaidPayment;
-          }
-        }
-
-        if (firstReferralPaymentEligible) {
-          if (effectivePaymentDiscount === 'none') {
-            effectivePaymentDiscount = 'referral_15';
-          }
-        } else if (
-          resolvedStudentId
-          && (effectivePaymentDiscount === 'none' || effectivePaymentDiscount === 'referral_15')
-        ) {
-          pendingDiscountBenefit = await queryOne(
-            `SELECT *
-             FROM academy_referral_benefits
-             WHERE student_id = $1
-               AND benefit_type = 'next_payment_discount_15'
-               AND status = 'pending'
-             LIMIT 1
-             FOR UPDATE`,
-            [resolvedStudentId],
-          );
-          if (pendingDiscountBenefit && effectivePaymentDiscount === 'none') {
-            effectivePaymentDiscount = 'referral_15';
-          }
-        }
-
-        if (
-          effectivePaymentDiscount === 'referral_15'
-          && !firstReferralPaymentEligible
-          && !pendingDiscountBenefit
-        ) {
-          throw Object.assign(new Error('referralDiscountNotAvailable'), { statusCode: 409 });
-        }
-      } else if (effectivePaymentDiscount === 'referral_15') {
-        throw Object.assign(new Error('referralDiscountRequiresPaidPayment'), { statusCode: 409 });
-      }
-
       const paymentValues = {
         leadId: paymentLeadId,
         studentId: resolvedStudentId,
@@ -404,7 +320,7 @@ router.post('/payments', async (req, res) => {
         method: paymentMethod,
         paidAt,
         period: paymentPeriod,
-        discount: effectivePaymentDiscount,
+        discount: 'none',
         status,
         dueAt: requestedDueAt,
         paidUntil,
@@ -416,10 +332,6 @@ router.post('/payments', async (req, res) => {
         ? await updateRow('academy_payments', Number(pendingPayment.id), paymentValues)
         : await insertRow('academy_payments', paymentValues);
       if (!payment) throw Object.assign(new Error('Failed to save payment'), { statusCode: 500 });
-
-      if (pendingDiscountBenefit) {
-        await consumeReferralBenefit(Number(pendingDiscountBenefit.id), Number(payment.id));
-      }
 
       if (pendingPayment) {
         await query(
@@ -438,16 +350,6 @@ router.post('/payments', async (req, res) => {
       }
       const paidStudentId = student?.id ?? studentId;
       if (status === 'paid' && paidStudentId) {
-        if (firstReferralPaymentEligible) {
-          await ensureReferralBenefit({
-            studentId: Number(paidStudentId),
-            benefitType: 'referred_first_payment_discount_15',
-            status: effectivePaymentDiscount === 'referral_15' ? 'consumed' : 'superseded',
-            sourcePaymentId: Number(payment.id),
-            consumedByPaymentId: Number(payment.id),
-            consumedAt: new Date(),
-          });
-        }
         await advanceStudentNextPaymentAt(
           Number(paidStudentId),
           payment.paidUntil ?? paidUntil,

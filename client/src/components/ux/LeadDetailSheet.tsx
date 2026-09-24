@@ -256,6 +256,7 @@ interface LeadDetailSheetProps {
   statuses: Array<{
     code: string;
     name: string;
+    funnelId?: number | null;
     isActive?: boolean;
     isPipeline?: boolean;
     color?: string;
@@ -299,7 +300,6 @@ const paymentSchema = z.object({
   amountUzs: z.string().refine((value) => Number(value) > 0, 'fillRequiredFields'),
   method: z.string().min(1, 'fillRequiredFields'),
   type: z.string().min(1, 'fillRequiredFields'),
-  discount: z.string().min(1, 'fillRequiredFields'),
   paidUntil: z.string(),
   comment: z.string(),
 });
@@ -398,9 +398,9 @@ export function LeadDetailSheet({
     queryKey: ['/api/academy/sales-funnels'],
     enabled: open,
   });
-  const funnelStatuses = useMemo(() => salesFunnelStages(statuses, leadQuery.data?.funnelRole)
+  const funnelStatuses = useMemo(() => salesFunnelStages(statuses, leadQuery.data?.funnelRole, leadQuery.data?.funnelId)
     .map((status) => leadQuery.data?.funnelRole === 'closer' && status.code === 'demo_attended'
-      ? { ...status, name: t('closerQueueStage') } : status), [statuses, leadQuery.data?.funnelRole, t]);
+      ? { ...status, name: t('closerQueueStage') } : status), [statuses, leadQuery.data?.funnelId, leadQuery.data?.funnelRole, t]);
 
   const leadForm = useForm<LeadFormValues>({
     resolver: zodResolver(leadSchema),
@@ -419,7 +419,6 @@ export function LeadDetailSheet({
       amountUzs: '',
       method: 'transfer',
       type: 'full',
-      discount: 'none',
       paidUntil: '',
       comment: '',
     },
@@ -527,7 +526,6 @@ export function LeadDetailSheet({
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
           method: 'transfer',
           type: 'full',
-          discount: 'none',
           paidUntil: nextPaymentDate(lead.payments),
           comment: '',
         });
@@ -685,7 +683,6 @@ export function LeadDetailSheet({
         amountUzs: Number(values.amountUzs),
         method: values.method,
         type: values.type,
-        discount: values.discount,
         paidUntil: values.type === 'prepayment' ? undefined : values.paidUntil || undefined,
         comment: values.comment,
         status: 'paid',
@@ -700,7 +697,6 @@ export function LeadDetailSheet({
         amountUzs: String(refreshedLead?.expectedPaymentUzs ?? refreshedLead?.offerPriceUzs ?? ''),
         method: 'transfer',
         type: 'full',
-        discount: 'none',
         paidUntil: nextPaymentDate(refreshedLead?.payments),
         comment: '',
       });
@@ -1460,7 +1456,7 @@ export function LeadDetailSheet({
                               control={paymentForm.control}
                               name="type"
                               render={({ field }) => (
-                                <FormItem>
+                                <FormItem className="md:col-span-2">
                                   <FormLabel>{t('paymentType')}</FormLabel>
                                   <Select value={field.value} onValueChange={(type) => {
                                     const amountWasUnchanged = !paymentForm.getFieldState('amountUzs').isDirty;
@@ -1475,28 +1471,6 @@ export function LeadDetailSheet({
                                         {PAYMENT_TYPES.map((type) => (
                                           <SelectItem key={type} value={type}>
                                             {t(paymentTypeTranslationKeys[type])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="discount"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('discount')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_DISCOUNTS.map((discount) => (
-                                          <SelectItem key={discount} value={discount}>
-                                            {t(paymentDiscountTranslationKeys[discount])}
                                           </SelectItem>
                                         ))}
                                       </SelectGroup>

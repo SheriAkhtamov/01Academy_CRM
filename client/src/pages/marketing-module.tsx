@@ -266,7 +266,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     return Array.from(map.values())
       .map((r: any) => ({
         ...r,
-        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : r.paid >= 1 ? t('referralLevelCashbackPercent') : '-',
+        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : '-',
       }))
       .sort((a: any, b: any) => b.referred - a.referred);
   }, [referrals, students, t]);

@@ -15,6 +15,7 @@ import {
   hasFinanceAccess,
   hasLeadershipAccess,
   normalizeMoney,
+  resolveReferralLevel,
   resolveReferralMilestone,
   resolveStudentRiskFlags,
   suggestAgeGroup,
@@ -196,8 +197,11 @@ describe("01 Academy business rules", () => {
     expect(buildReferralCode("Timur Aliyev", 7, 2026)).toBe("TIMURALI72026");
   });
 
-  it("grants referral benefits only when a milestone is first reached", () => {
-    expect(resolveReferralMilestone(1)).toBe("next_payment_discount_15");
+  it("keeps referral rewards at the free-month and ambassador milestones", () => {
+    expect(resolveReferralLevel(1)).toBe("none");
+    expect(resolveReferralLevel(3)).toBe("free_month");
+    expect(resolveReferralLevel(5)).toBe("ai_ambassador");
+    expect(resolveReferralMilestone(1)).toBeNull();
     expect(resolveReferralMilestone(2)).toBeNull();
     expect(resolveReferralMilestone(3)).toBe("free_month");
     expect(resolveReferralMilestone(4)).toBeNull();

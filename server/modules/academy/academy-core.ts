@@ -32,7 +32,6 @@ import {
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
@@ -791,7 +790,6 @@ export const academyConstants = () => ({
   paymentStatuses: PAYMENT_STATUSES,
   paymentTypes: PAYMENT_TYPES,
   paymentMethods: PAYMENT_METHODS,
-  paymentDiscounts: PAYMENT_DISCOUNTS,
   finalProjectStatuses: FINAL_PROJECT_STATUSES,
   referralTiers: REFERRAL_TIERS,
 });

@@ -2588,39 +2588,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
-  it('rejects a manually selected referral discount when no benefit is available', async () => {
-    mocks.clientQuery.mockImplementation(async (sql: string) => {
-      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
-      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
-        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
-      }
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .post('/api/academy/payments')
-      .send({
-        studentId: 5,
-        amountUzs: 100_000,
-        discount: 'referral_15',
-      });
-
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('referralDiscountNotAvailable');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('FROM academy_referral_benefits')
-      && String(sql).includes("benefit_type = 'next_payment_discount_15'")
-      && String(sql).includes("status = 'pending'")
-      && String(sql).includes('FOR UPDATE')
-    ))).toBe(true);
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('INSERT INTO "academy_payments"')
-    ))).toBe(false);
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
-    expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
-  });
-
-  it('automatically applies and atomically consumes a pending referral discount benefit', async () => {
+  it('ignores requested discounts and leaves old referral discount benefits unused', async () => {
     let insertedDiscount: unknown;
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -2673,31 +2641,48 @@ describe('academy route logic boundaries', () => {
 
     const response = await request(await createApp())
       .post('/api/academy/payments')
-      .send({ studentId: 5, amountUzs: 100_000 });
+      .send({ studentId: 5, amountUzs: 100_000, discount: 'referral_15' });
 
     expect(response.status).toBe(201);
-    expect(insertedDiscount).toBe('referral_15');
-    expect(response.body.payment.discount).toBe('referral_15');
-    expect(mocks.clientQuery).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE academy_referral_benefits'),
-      [77, 'consumed', 100],
-    );
+    expect(insertedDiscount).toBe('none');
+    expect(response.body.payment.discount).toBe('none');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('FROM academy_referral_benefits')
+      || String(sql).includes('UPDATE academy_referral_benefits')
+    ))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
 
-    const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
-    const beginIndex = statements.indexOf('BEGIN');
-    const benefitLockIndex = statements.findIndex((sql) => (
-      sql.includes('FROM academy_referral_benefits') && sql.includes('FOR UPDATE')
-    ));
-    const paymentInsertIndex = statements.findIndex((sql) => sql.includes('INSERT INTO "academy_payments"'));
-    const benefitConsumeIndex = statements.findIndex((sql) => sql.includes('UPDATE academy_referral_benefits'));
-    const commitIndex = statements.indexOf('COMMIT');
+  it('records a first referral without granting a discount benefit', async () => {
+    let insertedDiscount: unknown;
 
-    expect(beginIndex).toBeGreaterThanOrEqual(0);
-    expect(benefitLockIndex).toBeGreaterThan(beginIndex);
-    expect(paymentInsertIndex).toBeGreaterThan(benefitLockIndex);
-    expect(benefitConsumeIndex).toBeGreaterThan(paymentInsertIndex);
-    expect(commitIndex).toBeGreaterThan(benefitConsumeIndex);
-    expect(mocks.clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        insertedDiscount = readInsertValue(sql, values, 'discount');
+        return { rows: [{ id: 100, student_id: 5, lead_id: 42, paid_until: readInsertValue(sql, values, 'paid_until') }] };
+      }
+      if (sql.includes('SELECT id, referrer_student_id FROM academy_leads WHERE id = $1')) {
+        return { rows: [{ id: 42, referrer_student_id: 7 }] };
+      }
+      if (sql.includes('UPDATE academy_referral_rewards')) return { rows: [{ id: 77 }] };
+      if (sql.includes('COUNT(DISTINCT referred_student_id)::text AS count')) return { rows: [{ count: '1' }] };
+      if (sql.includes('UPDATE "academy_students"')) return { rows: [{ id: 7, referral_level: 'none' }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({ studentId: 5, amountUzs: 100_000 });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(insertedDiscount).toBe('none');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('INSERT INTO "academy_referral_benefits"')
+    ))).toBe(false);
   });
 
   it('does not grant the same referral reward on a later payment', async () => {

@@ -493,7 +493,9 @@ export function StudentDetailSheet({
               <div className="mt-3 space-y-2">
                 {referrals.map((reward: any) => (
                   <div key={reward.id} className="rounded-lg border border-border p-3 text-sm">
-                    {t('referralBonus')} {reward.rewardValue || reward.amountUzs || t('noData')}
+                    {reward.rewardType === 'referral'
+                      ? t('referredStudent')
+                      : <>{t('referralBonus')} {reward.rewardValue || reward.amountUzs || t('noData')}</>}
                   </div>
                 ))}
               </div>

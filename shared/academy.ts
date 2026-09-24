@@ -139,11 +139,10 @@ export const FINAL_PROJECT_STATUSES = [
   { code: "presented", translationKey: "finalProjectStatusPresented", color: "#16a34a" },
 ] as const;
 
-// Referral tier thresholds from TZ 5.1: 1 → 15% discount, 3 → free month, 5+ → AI Ambassador.
+// Referral tier thresholds: 3 → free month, 5+ → AI Ambassador.
 export const REFERRAL_TIERS = [
   { minReferrals: 5, level: "ai_ambassador", rewardKey: "freeTrainingAiAmbassador" },
   { minReferrals: 3, level: "free_month", rewardKey: "freeMonth" },
-  { minReferrals: 1, level: "discount_15", rewardKey: "referralDiscount15" },
 ] as const;
 
 export const REFERRAL_BENEFIT_TYPES = [
@@ -394,8 +393,7 @@ export function resolveReferralLevel(paidReferralsCount: number): string {
 /** One-time benefits are granted only when a referral milestone is first reached. */
 export function resolveReferralMilestone(
   paidReferralsCount: number,
-): Extract<ReferralBenefitType, "next_payment_discount_15" | "free_month" | "ai_ambassador_free_training"> | null {
-  if (paidReferralsCount === 1) return "next_payment_discount_15";
+): Extract<ReferralBenefitType, "free_month" | "ai_ambassador_free_training"> | null {
   if (paidReferralsCount === 3) return "free_month";
   if (paidReferralsCount === 5) return "ai_ambassador_free_training";
   return null;

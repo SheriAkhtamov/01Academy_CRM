@@ -656,7 +656,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const preparePipelineStatusDelete = useMutation({
     mutationFn: async (status: PipelineStatus) => {
       if (status.isSystem || isDemoPipelineStage(status.code)) {
-        throw new Error(t('systemPipelineStageCannotBeDeleted'));
+        throw new Error(t(isDemoPipelineStage(status.code)
+          ? 'demoPipelineStageProtected' : 'systemPipelineStageCannotBeDeleted'));
       }
       const usage = await apiRequest('GET', `/api/academy/pipeline-statuses/${status.id}/usage`);
       return {
@@ -1559,8 +1560,41 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <Plus data-icon="inline-start" />{t('addPipelineStage')}
             </Button>
             {funnelStatuses.map((status, index) => (
-                <div key={status.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 md:flex-row md:items-center">
-                  <div className="flex items-center gap-2">
+              <div key={status.id} className="rounded-xl border border-border p-3 sm:p-4">
+                <div className="flex items-start gap-3">
+                  <span className="mt-2 size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-medium text-foreground">{status.name}</p>
+                    {status.isSystem || isDemoPipelineStage(status.code) ? (
+                      <Badge variant="secondary" className="mt-1">{t('requiredPipelineStage')}</Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openStatus(status)}>
+                      <Edit3 />
+                      <span className="sr-only">{t('edit')}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={preparePipelineStatusDelete.isPending || status.isSystem || isDemoPipelineStage(status.code)}
+                      onClick={() => preparePipelineStatusDelete.mutate(status)}
+                    >
+                      <Trash2 />
+                      <span className="sr-only">{t('delete')}</span>
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={status.isPipeline ? 'default' : 'secondary'}>
+                      {status.isPipeline ? t('shownInPipeline') : t('hiddenFromPipeline')}
+                    </Badge>
+                    <Badge variant={status.isActive ? 'outline' : 'secondary'}>
+                      {status.isActive ? t('active') : t('inactive')}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1580,41 +1614,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       <span className="sr-only">{t('moveDown')}</span>
                     </Button>
                   </div>
-                  <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">{status.name}</p>
-                    {isDemoPipelineStage(status.code) ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{t('demoPipelineStageProtected')}</p>
-                    ) : status.isSystem ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{t('systemPipelineStageCannotBeDeleted')}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={status.isPipeline ? 'default' : 'secondary'}>
-                      {status.isPipeline ? t('shownInPipeline') : t('hiddenFromPipeline')}
-                    </Badge>
-                    <Badge variant={status.isActive ? 'outline' : 'secondary'}>
-                      {status.isActive ? t('active') : t('inactive')}
-                    </Badge>
-                    <Button variant="ghost" size="icon" onClick={() => openStatus(status)}>
-                      <Edit3 />
-                      <span className="sr-only">{t('edit')}</span>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={preparePipelineStatusDelete.isPending || status.isSystem || isDemoPipelineStage(status.code)}
-                      onClick={() => preparePipelineStatusDelete.mutate(status)}
-                    >
-                      <Trash2 />
-                      <span className="sr-only">{t('delete')}</span>
-                    </Button>
-                  </div>
                 </div>
+              </div>
             ))}
-              {funnelStatuses.length === 0 ? (
-                <EmptyTableState title={t('noPipelineStages')} description={t('noPipelineStagesDescription')} />
-              ) : null}
+            {funnelStatuses.length === 0 ? (
+              <EmptyTableState title={t('noPipelineStages')} description={t('noPipelineStagesDescription')} />
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
@@ -2016,7 +2021,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
-            <DialogDescription>{t('pipelineStageFormDescription')}</DialogDescription>
+            <DialogDescription>
+              {selectedStageFunnel?.name ? `${selectedStageFunnel.name} · ` : ''}{t('pipelineStageFormDescription')}
+            </DialogDescription>
           </DialogHeader>
           <Form {...statusForm}>
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
@@ -2059,7 +2066,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               )} />
               {isDemoPipelineStage(editingStatus?.code) ? (
                 <Alert className="md:col-span-2">
-                  <AlertDescription>{t('demoPipelineStageProtected')}</AlertDescription>
+                  <AlertDescription>{t('requiredPipelineStage')}</AlertDescription>
                 </Alert>
               ) : null}
               </div>

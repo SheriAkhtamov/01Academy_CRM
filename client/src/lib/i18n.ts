@@ -1849,6 +1849,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   pipelineSelectFunnel: { en: 'Select a funnel to manage its stages', ru: 'Выберите воронку, чтобы управлять её этапами' },
   pipelineFunnelStageCount: { en: '{count} stages', ru: 'Этапов: {count}' },
   pipelineStageFunnelRequired: { en: 'Select a funnel for this stage.', ru: 'Выберите воронку для этого этапа.' },
+  requiredPipelineStage: { en: 'Required stage', ru: 'Обязательный этап' },
   resourceDeleted: { en: 'Deleted successfully', ru: 'Объект удалён' },
   resourceInUse: { en: 'This item is already used by other records. Archive it instead.', ru: 'Этот объект уже используется в других записях. Вместо удаления отключите его.' },
   resourceNotDeleted: { en: 'Could not delete', ru: 'Не удалось удалить' },

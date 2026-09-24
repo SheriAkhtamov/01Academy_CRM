@@ -34,7 +34,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
                 <Toaster />
                 <AppErrorBoundary>
                   {children}
-                  <TelephonyOverlay />
+                  <AppErrorBoundary variant="widget">
+                    <TelephonyOverlay />
+                  </AppErrorBoundary>
                 </AppErrorBoundary>
               </TooltipProvider>
             </TelephonyProvider>

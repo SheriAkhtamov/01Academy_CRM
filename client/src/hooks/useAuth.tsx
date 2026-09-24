@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getSessionUser,
@@ -110,6 +110,27 @@ export function AuthProvider({ children, api = defaultAuthApi }: { children: Rea
 
   const session = sessionQuery.data ?? anonymousSession;
   const user = getSessionUser(session);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const recheckAfterIdle = () => {
+      if (document.visibilityState !== 'visible') return;
+      const lastCheck = queryClient.getQueryState(AUTH_SESSION_QUERY_KEY)?.dataUpdatedAt ?? 0;
+      if (Date.now() - lastCheck < 5 * 60_000) return;
+      if (queryClient.isFetching({ queryKey: AUTH_SESSION_QUERY_KEY })) return;
+      void queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
+    };
+
+    document.addEventListener('visibilitychange', recheckAfterIdle);
+    window.addEventListener('focus', recheckAfterIdle);
+    window.addEventListener('online', recheckAfterIdle);
+    return () => {
+      document.removeEventListener('visibilitychange', recheckAfterIdle);
+      window.removeEventListener('focus', recheckAfterIdle);
+      window.removeEventListener('online', recheckAfterIdle);
+    };
+  }, [queryClient, user]);
 
   return (
     <AuthContext.Provider

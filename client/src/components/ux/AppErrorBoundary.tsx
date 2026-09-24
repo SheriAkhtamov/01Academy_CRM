@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useTranslation } from '@/hooks/useTranslation';
 import { AlertCircle, Home, RotateCcw } from 'lucide-react';
+import { reportClientCrash, reserveCrashReload } from '@/lib/clientCrash';
 
 const isModuleLoadError = (error: Error) => /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|failed to load module script|chunkloaderror/i.test(error.message);
 
@@ -18,6 +19,8 @@ class ErrorBoundaryRoot extends React.Component<{
   children: React.ReactNode;
   resetKey: string;
   fallback: (error: Error, reset: () => void, giveUpInPlace: boolean) => React.ReactNode;
+  autoRecover: boolean;
+  boundary: 'root' | 'page' | 'widget';
 }, BoundaryState> {
   state: BoundaryState = {
     error: null,
@@ -40,6 +43,8 @@ class ErrorBoundaryRoot extends React.Component<{
     // Always log: production crashes used to be invisible because this only
     // reported in DEV. Console output is the least teams can inspect remotely.
     console.error('[AppErrorBoundary]', error, errorInfo);
+    reportClientCrash(error, 'react-boundary', errorInfo.componentStack, this.props.boundary);
+    if (this.props.autoRecover && reserveCrashReload()) window.location.reload();
   }
 
   reset = () => this.setState((current) => ({ error: null, attempts: current.attempts + 1 }));
@@ -63,7 +68,7 @@ export function AppErrorBoundary({
 }: {
   children: React.ReactNode;
   /** `root` replaces the whole shell; `page` sits inside the layout so the header/sidebar survive a page crash. */
-  variant?: 'root' | 'page';
+  variant?: 'root' | 'page' | 'widget';
   /** Changing this value clears a caught error — pass the route so navigation recovers. */
   resetKey?: string;
 }) {
@@ -78,7 +83,27 @@ export function AppErrorBoundary({
   return (
     <ErrorBoundaryRoot
       resetKey={resetKey ?? location}
-      fallback={(error, reset, giveUpInPlace) => (
+      autoRecover={variant === 'root'}
+      boundary={variant}
+      fallback={(error, reset, giveUpInPlace) => variant === 'widget' ? (
+        <div className="fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))]">
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>{t('telephonyConnectionError')}</AlertTitle>
+            <AlertDescription className="mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={isModuleLoadError(error) ? () => window.location.reload() : reset}
+              >
+                <RotateCcw data-icon="inline-start" />
+                {isModuleLoadError(error) ? t('reloadPage') : t('retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : (
         <div className={wrapperClassName}>
           <Alert variant="destructive">
             <AlertCircle />

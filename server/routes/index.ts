@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import academyRoutes from '../modules/academy';
 import authRoutes from './auth.routes';
+import clientErrorsRoutes from './client-errors.routes';
 import boardRoutes from './board.routes';
 import financeRoutes from './finance.routes';
 import incomingRoutes from './incoming.routes';
@@ -16,6 +17,7 @@ import userRoutes from './user.routes';
  */
 export const registerApiRoutes = (app: Express): void => {
   app.use('/api/auth', authRoutes);
+  app.use('/api/client-errors', clientErrorsRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/messages', messageRoutes);
   app.use('/api/notifications', notificationsRoutes);

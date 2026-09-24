@@ -70,6 +70,17 @@ describe('mounted authentication flow', () => {
     expect(queryClient.getQueryData(['/api/academy/leads'])).toBeUndefined();
     expect(queryClient.getQueryData(AUTH_SESSION_QUERY_KEY)).toEqual({ kind: 'anonymous' });
   });
+  it('rechecks an expired session when the user returns after a long idle period', async () => {
+    current = session; setup(); await screen.findByText('Private workspace');
+    const afterIdle = Date.now() + 6 * 60_000;
+    vi.spyOn(Date, 'now').mockReturnValue(afterIdle);
+    current = { kind: 'anonymous' };
+
+    fireEvent.focus(window);
+
+    await waitFor(() => expect(document.querySelector('input[name=login]')).not.toBeNull());
+    expect(screen.queryByText('Private workspace')).toBeNull();
+  });
   it('logs out without leaving the mounted authenticated route behind', async () => {
     current = session; setup(); await screen.findByText('Private workspace');
     fireEvent.click(screen.getByText('Logout'));

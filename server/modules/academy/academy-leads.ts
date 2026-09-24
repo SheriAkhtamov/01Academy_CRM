@@ -1411,11 +1411,13 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
   if (sourcePayment?.leadId && Number(sourcePayment.leadId) !== Number(leadId)) {
     throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
   }
-  const nextPaymentAt = sourcePayment?.paidUntil
-    ? new Date(sourcePayment.paidUntil)
-    : sourcePayment?.paidAt
-      ? addDays(new Date(sourcePayment.paidAt), 30)
-      : addDays(new Date(), 30);
+  const nextPaymentAt = sourcePayment?.type === 'prepayment'
+    ? null
+    : sourcePayment?.paidUntil
+      ? new Date(sourcePayment.paidUntil)
+      : sourcePayment?.paidAt
+        ? addDays(new Date(sourcePayment.paidAt), 30)
+        : addDays(new Date(), 30);
 
   const existingStudents = sourcePayment?.studentId
     ? await query(

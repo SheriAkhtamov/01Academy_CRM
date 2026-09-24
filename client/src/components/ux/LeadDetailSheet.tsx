@@ -321,6 +321,7 @@ const paymentMethodTranslationKeys = {
 
 const paymentTypeTranslationKeys = {
   full: 'paymentTypeFull',
+  prepayment: 'paymentTypePrepayment',
   installment_1_2: 'paymentTypeInstallmentOne',
   installment_2_2: 'paymentTypeInstallmentTwo',
 } as const satisfies Record<(typeof PAYMENT_TYPES)[number], TranslationKey>;
@@ -425,6 +426,7 @@ export function LeadDetailSheet({
       comment: '',
     },
   });
+  const isPrepayment = paymentForm.watch('type') === 'prepayment';
   const taskForm = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
     defaultValues: { title: '', deadlineAt: '', description: '' },
@@ -686,7 +688,7 @@ export function LeadDetailSheet({
         method: values.method,
         type: values.type,
         discount: values.discount,
-        paidUntil: values.paidUntil || undefined,
+        paidUntil: values.type === 'prepayment' ? undefined : values.paidUntil || undefined,
         comment: values.comment,
         status: 'paid',
         assignToSelf,
@@ -1365,19 +1367,10 @@ export function LeadDetailSheet({
                       </div>
                     </div>
 
-                    {lead.statusCode === 'paid' ? (
-                      <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                        <span className="text-foreground/80">{t('recurringPaymentHint')}</span>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{t('leadSheetPaymentFormHint')}</p>
-                    )}
                     {(lead.students ?? []).length === 0 ? (
                       <div className="flex flex-col items-center rounded-xl border border-dashed border-teal-200 bg-teal-50/40 px-6 py-8 text-center dark:border-teal-900/70 dark:bg-teal-950/20">
                         <GraduationCap className="mb-3 size-8 text-teal-700 dark:text-teal-300" aria-hidden="true" />
                         <p className="font-medium">{t('studentRequiredForPayment')}</p>
-                        <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('studentRequiredForPaymentHint')}</p>
                         <Button type="button" variant="outline" className="mt-4" onClick={goToStudents}>
                           {t('goToStudents')}
                           <ArrowRight data-icon="inline-end" />
@@ -1421,7 +1414,7 @@ export function LeadDetailSheet({
                               name="amountUzs"
                               render={({ field, fieldState }) => (
                                 <FormItem>
-                                  <FormLabel>{t('amount')}</FormLabel>
+                                  <FormLabel>{isPrepayment ? t('prepaymentAmount') : t('amount')}</FormLabel>
                                   <FormControl>
                                     <CurrencyInput
                                       value={field.value}
@@ -1433,17 +1426,19 @@ export function LeadDetailSheet({
                                 </FormItem>
                               )}
                             />
-                            <FormField
-                              control={paymentForm.control}
-                              name="paidUntil"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('paidUntil')}</FormLabel>
-                                  <FormControl><Input {...field} type="date" /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
+                            {!isPrepayment && (
+                              <FormField
+                                control={paymentForm.control}
+                                name="paidUntil"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{t('paidUntil')}</FormLabel>
+                                    <FormControl><Input {...field} type="date" /></FormControl>
+                                    <LocalizedFormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            )}
                             <FormField
                               control={paymentForm.control}
                               name="method"
@@ -1469,7 +1464,13 @@ export function LeadDetailSheet({
                               render={({ field }) => (
                                 <FormItem>
                                   <FormLabel>{t('paymentType')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
+                                  <Select value={field.value} onValueChange={(type) => {
+                                    const amountWasUnchanged = !paymentForm.getFieldState('amountUzs').isDirty;
+                                    field.onChange(type);
+                                    if (type === 'prepayment' && amountWasUnchanged) {
+                                      paymentForm.setValue('amountUzs', '', { shouldDirty: true });
+                                    }
+                                  }}>
                                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                                     <SelectContent>
                                       <SelectGroup>

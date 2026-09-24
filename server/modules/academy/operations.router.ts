@@ -168,12 +168,16 @@ router.post('/payments', async (req, res) => {
     }
 
     const requestedPaidAt = parseOptionalDate(req.body.paidAt, 'paidAt');
-    const requestedPaidUntil = parseOptionalDate(req.body.paidUntil, 'paidUntil');
+    const requestedPaidUntil = paymentType === 'prepayment'
+      ? null
+      : parseOptionalDate(req.body.paidUntil, 'paidUntil');
     const requestedDueAt = parseOptionalDate(req.body.dueAt, 'dueAt');
     const paymentPeriod = nullableText(req.body.period) ?? 'month_1';
     const paidAt = status === 'paid' ? requestedPaidAt ?? new Date() : requestedPaidAt;
-    const paidUntil = requestedPaidUntil
-      ?? (status === 'paid' && paidAt instanceof Date ? addDays(paidAt, 30) : null);
+    const paidUntil = paymentType === 'prepayment'
+      ? null
+      : requestedPaidUntil
+        ?? (status === 'paid' && paidAt instanceof Date ? addDays(paidAt, 30) : null);
     if (
       paidAt instanceof Date
       && paidUntil instanceof Date

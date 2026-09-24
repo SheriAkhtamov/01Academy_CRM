@@ -848,10 +848,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   },
   studentStatusTrial: { en: 'Trial student', ru: 'Пробный ученик' },
   studentRequiredForPayment: { en: 'A student is needed to record a payment', ru: 'Для оплаты нужен ученик' },
-  studentRequiredForPaymentHint: {
-    en: 'Payments are recorded for a specific student so education and finance data do not get mixed up. Add a student in the Deal tab.',
-    ru: 'Оплата должна относиться к конкретному ученику, чтобы учебные и финансовые данные не смешивались. Добавьте ученика на вкладке «Сделка».',
-  },
   goToStudents: { en: 'Go to students', ru: 'Перейти к ученикам' },
   studentSelectionRequired: { en: 'Select a student', ru: 'Выберите ученика' },
 
@@ -1563,10 +1559,11 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   paymentMethodTransfer: { en: 'Transfer', ru: 'Перевод' },
   paymentType: { en: 'Payment type', ru: 'Тип оплаты' },
   paymentTypeFull: { en: 'Full payment', ru: 'Полная оплата' },
+  paymentTypePrepayment: { en: 'Prepayment', ru: 'Предоплата' },
+  prepaymentAmount: { en: 'Prepayment amount, UZS', ru: 'Сумма предоплаты, сум' },
   paymentTypeInstallmentOne: { en: 'Installment 1/2', ru: 'Рассрочка 1/2' },
   paymentTypeInstallmentTwo: { en: 'Installment 2/2', ru: 'Рассрочка 2/2' },
   recordAnotherPayment: { en: 'Record another payment', ru: 'Зафиксировать следующую оплату' },
-  recurringPaymentHint: { en: 'The client stays in the database. A new payment will extend the paid period and appear in the history.', ru: 'Клиент останется в базе. Новая оплата продлит оплаченный период и появится в истории.' },
   removePhone: { en: 'Remove phone', ru: 'Удалить номер' },
   retry: { en: 'Try again', ru: 'Повторить' },
   rescheduleLesson: { en: 'Reschedule lesson', ru: 'Перенести занятие' },
@@ -1652,7 +1649,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadSheetNoContactInfo: { en: 'No contact info', ru: 'Нет контактных данных' },
   callShort: { en: 'Call', ru: 'Звонок' },
   writeShort: { en: 'Message', ru: 'Писать' },
-  leadSheetPaymentFormHint: { en: 'Confirming the first payment turns this lead into a client.', ru: 'Подтверждение первой оплаты превращает лида в клиента.' },
 
   // UX improvements — academy configuration, schools, courses and scheduling
   academyConfiguration: { en: 'Academy Structure', ru: 'Структура академии' },

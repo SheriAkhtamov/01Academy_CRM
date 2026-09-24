@@ -197,7 +197,7 @@ export const CHURN_REASON_LABELS: Record<(typeof CHURN_REASONS)[number], string>
   lost_interest: "Потеря интереса",
 };
 
-export const PAYMENT_TYPES = ["full", "installment_1_2", "installment_2_2"] as const;
+export const PAYMENT_TYPES = ["full", "prepayment", "installment_1_2", "installment_2_2"] as const;
 export const PAYMENT_METHODS = ["cash", "transfer", "card"] as const;
 export const PAYMENT_DISCOUNTS = ["promo_20", "family_15", "referral_15", "none"] as const;
 

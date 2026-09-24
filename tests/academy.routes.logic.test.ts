@@ -2077,6 +2077,54 @@ describe('academy route logic boundaries', () => {
     expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
   });
 
+  it('records the entered prepayment amount without granting a paid period', async () => {
+    let insertedAmount: unknown;
+    let insertedType: unknown;
+    let insertedPaidUntil: unknown;
+    const lead = leadFixture({ referrer_student_id: null });
+    const student = { id: 5, lead_id: 42, group_id: 3, manager_id: 1 };
+
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [lead] };
+      if (sql.includes('SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [{ id: 42 }] };
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) return { rows: [lead] };
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [student] };
+      }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 AND lead_id = $2 FOR UPDATE')) return { rows: [student] };
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        insertedAmount = readInsertValue(sql, values, 'amount_uzs');
+        insertedType = readInsertValue(sql, values, 'type');
+        insertedPaidUntil = readInsertValue(sql, values, 'paid_until');
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5, type: insertedType, paid_until: insertedPaidUntil }] };
+      }
+      if (sql.includes('SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5, type: 'prepayment', paid_until: null }] };
+      }
+      if (sql.includes('UPDATE "academy_payments"')) return { rows: [{ id: 99, lead_id: 42, student_id: 5 }] };
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({
+        leadId: 42,
+        studentId: 5,
+        type: 'prepayment',
+        amountUzs: 150_000,
+        paidUntil: '2026-12-31',
+      });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(insertedAmount).toBe(150_000);
+    expect(insertedType).toBe('prepayment');
+    expect(insertedPaidUntil).toBeNull();
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE academy_students') && String(sql).includes('SET next_payment_at')
+    ))).toBe(false);
+  });
+
   it('asks a sales manager to claim an unassigned lead before saving a payment', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.clientQuery.mockImplementation(async (sql: string) => {

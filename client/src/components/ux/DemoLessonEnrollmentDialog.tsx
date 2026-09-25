@@ -317,13 +317,13 @@ export function DemoLessonEnrollmentDialog({
                       disabled={disabled}
                       onClick={() => setSelectedDemoId(demo.id)}
                       className={cn(
-                        'grid w-full grid-cols-[6.25rem_1fr_auto] items-stretch overflow-hidden rounded-xl border bg-card text-left outline-none transition-[border-color,box-shadow,background-color] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                        'grid w-full grid-cols-1 items-stretch overflow-hidden rounded-xl border bg-card text-left outline-none transition-[border-color,box-shadow,background-color] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:grid-cols-[6.25rem_minmax(0,1fr)_auto]',
                         selected && 'border-primary bg-primary/[0.035] shadow-sm',
                         !selected && !disabled && 'border-border hover:border-primary/45 hover:shadow-sm',
                         disabled && 'cursor-not-allowed border-border/60 opacity-55',
                       )}
                     >
-                      <span className="flex flex-col justify-center border-r border-border/70 bg-muted/45 px-3 py-3">
+                      <span className="flex flex-col justify-center border-b border-border/70 bg-muted/45 px-3 py-2 sm:border-b-0 sm:border-r sm:py-3">
                         <span className="text-xs font-semibold capitalize text-foreground">
                           {dateFormatter.format(startsAt)}
                         </span>
@@ -344,7 +344,7 @@ export function DemoLessonEnrollmentDialog({
                             : [demo.schoolName, demo.roomName].filter(Boolean).join(' · ')}
                         </span>
                       </span>
-                      <span className="flex min-w-32 flex-col items-end justify-between gap-2 px-3 py-3">
+                      <span className="flex min-w-0 items-center justify-between gap-2 px-3 pb-3 sm:min-w-32 sm:flex-col sm:items-end sm:py-3">
                         {selected ? <Check className="size-4 text-primary" /> : <CalendarDays className="size-4 text-muted-foreground" />}
                         <Badge variant={state === 'available' ? 'secondary' : 'outline'} className="max-w-40 whitespace-normal text-right">
                           <UsersRound className="size-3" /> {statusLabel}

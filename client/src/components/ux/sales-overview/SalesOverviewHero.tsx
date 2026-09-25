@@ -60,7 +60,7 @@ export function SalesOverviewHero({ stats, metrics, payments, students, reportin
       </section>
     </div>
     <div className="grid grid-cols-1 gap-x-10 border-t border-border/60 lg:grid-cols-2">
-      {items.map((item) => <section key={item.title} className="grid min-w-0 grid-cols-[minmax(90px,0.65fr)_minmax(0,1.4fr)] items-center gap-5 py-6" aria-label={item.title}>
+      {items.map((item) => <section key={item.title} className="grid min-w-0 grid-cols-1 items-center gap-3 py-6 min-[420px]:grid-cols-[minmax(90px,0.65fr)_minmax(0,1.4fr)] min-[420px]:gap-5" aria-label={item.title}>
         <div className="min-w-0">
           <h2 className="text-xs font-medium text-muted-foreground">{item.title}</h2>
           <p className="mt-2 break-words text-4xl font-semibold leading-tight tracking-tight tabular-nums">{item.value}</p>

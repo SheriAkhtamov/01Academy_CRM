@@ -27,8 +27,8 @@ export function SalesOverviewFunnel({ metrics, isLoading, funnel, leadStatusName
       </div>
     </header>
     <ol className="max-h-72 space-y-4 overflow-y-auto pr-1">
-      {rows.map((row) => <li key={row.id} className="grid grid-cols-[minmax(90px,0.3fr)_minmax(0,1fr)_30px] items-center gap-4">
-        <span className="text-xs text-muted-foreground">{row.label}</span>
+      {rows.map((row) => <li key={row.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_30px] items-center gap-2 sm:grid-cols-[minmax(90px,0.3fr)_minmax(0,1fr)_30px] sm:gap-4">
+        <span className="min-w-0 break-words text-xs text-muted-foreground">{row.label}</span>
         <div className="h-3.5 overflow-hidden rounded-full bg-muted/60" aria-hidden="true"><div className="h-full rounded-full bg-primary/75" style={{ width: `${(row.value ?? 0) / max * 100}%`, ...('color' in row && row.color ? { backgroundColor: row.color } : {}) }} /></div>
         <span className="text-right text-xs font-semibold tabular-nums">{isLoading && !stages || row.value === undefined ? '—' : row.value}</span>
       </li>)}

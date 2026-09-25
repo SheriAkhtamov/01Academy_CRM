@@ -43,6 +43,15 @@ const MotionListItem = motion.li;
  */
 const rowDelay = (index: number) => Math.min(index * 0.025, 0.25);
 
+const nestedControlSelector = 'a, button, input, select, textarea, [role="button"], [role="checkbox"], [role="menuitem"], [contenteditable="true"]';
+
+const isNestedControl = (event: React.SyntheticEvent<HTMLElement>) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  const control = target.closest(nestedControlSelector);
+  return Boolean(control && control !== event.currentTarget && event.currentTarget.contains(control));
+};
+
 interface DataTableColumn<T> {
   key: string;
   header: React.ReactNode;
@@ -312,11 +321,14 @@ export function DataTable<T extends Record<string, any>>({
                 already contain their own buttons and menus, and a button may
                 not nest inside a button.
               */
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onClick={onRowClick ? (event) => {
+                if (!isNestedControl(event)) onRowClick(row);
+              } : undefined}
               tabIndex={onRowClick ? 0 : undefined}
               role={onRowClick ? 'button' : undefined}
               onKeyDown={onRowClick ? (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
+                  if (isNestedControl(event)) return;
                   event.preventDefault();
                   onRowClick(row);
                 }
@@ -442,11 +454,14 @@ export function DataTable<T extends Record<string, any>>({
                     onRowClick && 'focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary',
                     rowClassName?.(row)
                   )}
-                  onClick={() => onRowClick?.(row)}
+                  onClick={onRowClick ? (event) => {
+                    if (!isNestedControl(event)) onRowClick(row);
+                  } : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                   role={onRowClick ? 'button' : undefined}
                   onKeyDown={onRowClick ? (event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
+                      if (isNestedControl(event)) return;
                       event.preventDefault();
                       onRowClick(row);
                     }

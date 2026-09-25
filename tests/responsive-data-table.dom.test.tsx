@@ -171,6 +171,29 @@ describe('data table on a phone', () => {
     expect(onRowClick).toHaveBeenCalledWith(rows[1]);
   });
 
+  it('runs an action inside a card without also opening the row', async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    const onRestore = vi.fn();
+    setViewportWidth(375);
+    renderTable({
+      onRowClick,
+      columns: columns.map((column) => column.key === 'actions'
+        ? { ...column, render: () => <button type="button" onClick={onRestore}>Restore</button> }
+        : column),
+    });
+
+    const card = screen.getByRole('button', { name: /Zara Usmanova/ });
+    await user.click(within(card).getByRole('button', { name: 'Restore' }));
+    expect(onRestore).toHaveBeenCalledOnce();
+    expect(onRowClick).not.toHaveBeenCalled();
+
+    within(card).getByRole('button', { name: 'Restore' }).focus();
+    await user.keyboard('{Enter}');
+    expect(onRestore).toHaveBeenCalledTimes(2);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
   it('shows the empty state as itself rather than inside a table cell', () => {
     setViewportWidth(375);
     render(

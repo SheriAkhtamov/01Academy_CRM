@@ -45,7 +45,7 @@ export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange,
           ? t('openInStudents')
           : t('openInPipeline');
 
-      return <section key={tile.title} className="grid min-w-0 grid-cols-[minmax(85px,0.65fr)_minmax(0,1.4fr)] items-center gap-5 border-b border-border/40 py-6" aria-label={tile.title}>
+      return <section key={tile.title} className="grid min-w-0 grid-cols-1 items-center gap-3 border-b border-border/40 py-6 min-[420px]:grid-cols-[minmax(85px,0.65fr)_minmax(0,1.4fr)] min-[420px]:gap-5" aria-label={tile.title}>
         {isClickable ? <button type="button" className="group w-full rounded text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring" onClick={handleClick} aria-label={ariaLabel} aria-haspopup={tile.action ? 'dialog' : undefined}>{body}</button> : <div>{body}</div>}
         <div className="min-w-0">{tile.chart}</div>
       </section>;

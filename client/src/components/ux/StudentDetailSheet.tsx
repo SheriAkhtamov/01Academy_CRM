@@ -200,16 +200,16 @@ export function StudentDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <SheetHeader className="shrink-0 border-b px-4 py-3">
+        <SheetHeader className="max-h-[45dvh] shrink-0 overflow-y-auto overscroll-contain border-b px-4 py-3 sm:max-h-none">
           <div className="flex items-start gap-4">
-            <Avatar className="h-16 w-16 border-2 border-border">
+            <Avatar className="h-12 w-12 shrink-0 border-2 border-border sm:h-16 sm:w-16">
               <AvatarFallback className="bg-gradient-to-br from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] text-white text-lg">
                 {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
               <SheetTitle className="text-xl truncate">{displayName}</SheetTitle>
-              <SheetDescription className="mt-1">
+              <SheetDescription className="mt-1 break-words">
                 {currentStudent.contactName} • {currentStudent.phone}
               </SheetDescription>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -263,7 +263,7 @@ export function StudentDetailSheet({
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-4">
+          <div className="mt-5 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">{t('attendanceLabel')}</span>
@@ -283,11 +283,11 @@ export function StudentDetailSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudentDetailTab)}>
-          <TabsList className="grid grid-cols-3 h-auto mb-4">
+          <TabsList className="mb-4 flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto p-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
-                <TabsTrigger key={tab.value} value={tab.value} className="text-xs py-2 flex flex-col items-center gap-1">
+                <TabsTrigger key={tab.value} value={tab.value} className="min-h-11 shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3">
                   <Icon className="h-3.5 w-3.5" />
                   {tab.label}
                 </TabsTrigger>

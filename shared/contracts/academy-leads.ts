@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { normalizeLeadTagName } from '../lead-tags';
 import { LEAD_CHANNELS } from '../lead-channels';
+import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '../lead-preferences';
 import { positiveIdSchema } from './messages';
 
 const optionalPositiveIdInput = z.preprocess(
@@ -188,6 +189,11 @@ export const updateAcademyLeadRequestSchema = z.object({
   enrolledGroupId: optionalPositiveIdInput,
   statusCode: z.string().trim().max(80).optional(),
   comment: optionalTextInput,
+  locality: z.enum(LEAD_LOCALITIES).optional().nullable(),
+  studyDays: z.enum(LEAD_STUDY_DAYS).optional().nullable(),
+  studyTime: z.string().refine((value) => LEAD_STUDY_TIMES.includes(value)).optional().nullable(),
+  goal: optionalTextInput,
+  urgency: optionalTextInput,
 }).passthrough();
 
 export const academyLeadDtoSchema = z.object({

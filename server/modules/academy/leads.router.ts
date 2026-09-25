@@ -78,6 +78,7 @@ import {
 } from '@shared/scheduling';
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
+import { parseLeadPreferenceUpdates } from './lead-preferences';
 import {
   countUnviewedLeads,
   leadViewStateAfterManagerTransfer,
@@ -966,6 +967,8 @@ router.patch('/leads/:id', async (req, res) => {
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
+    const preferenceUpdates = parseLeadPreferenceUpdates(req.body);
+    if (!preferenceUpdates) return res.status(400).json({ error: 'invalidData' });
     const requestedComment = req.body.comment === undefined
       ? undefined
       : nullableText(req.body.comment);
@@ -1093,6 +1096,7 @@ router.patch('/leads/:id', async (req, res) => {
       managerId,
       language: nullableText(req.body.language),
       comment: requestedComment,
+      ...preferenceUpdates,
       firstContactAt: nullableDate(req.body.firstContactAt),
       firstContactChannel: nullableText(req.body.firstContactChannel),
       firstContactResult: nullableText(req.body.firstContactResult),

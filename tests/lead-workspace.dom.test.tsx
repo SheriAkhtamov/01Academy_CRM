@@ -10,10 +10,16 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
 }));
 
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.setPointerCapture = () => undefined;
+Element.prototype.releasePointerCapture = () => undefined;
+
 const initialLead = {
   id: 15, contactName: 'Test parent', statusCode: 'new_request', funnelId: 1,
   funnelRole: 'hunter' as 'hunter' | 'closer' | null, sourceId: 1,
   managerId: 1, managerName: 'Manager', sourceName: 'Website', language: 'ru', expectedPaymentUzs: 100_000,
+  locality: 'mirabad', studyDays: 'odd', studyTime: '15:00',
+  goal: 'Interested in AI', urgency: 'Ready this week',
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
   students: [{ id: 50, studentName: 'Test student', status: 'studying' }],
@@ -70,6 +76,35 @@ function renderSheet() {
 }
 
 describe('lead workspace navigation and drafts', () => {
+  it('edits study preferences and lead intent in the card and saves them together', async () => {
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+
+    const locality = screen.getByRole('combobox', { name: i18n.t('leadLocality') });
+    const days = screen.getByRole('combobox', { name: i18n.t('leadStudyDays') });
+    const time = screen.getByRole('combobox', { name: i18n.t('leadStudyTime') });
+    expect(locality.textContent).toContain(i18n.t('leadDistrictMirabad'));
+    expect(days.textContent).toContain(i18n.t('leadStudyDaysOdd'));
+    expect(time.textContent).toContain('15:00');
+
+    await user.click(locality);
+    await user.click(screen.getByRole('option', { name: i18n.t('leadDistrictRegion') }));
+    await user.click(days);
+    await user.click(screen.getByRole('option', { name: i18n.t('leadStudyDaysEven') }));
+    await user.click(time);
+    await user.click(screen.getByRole('option', { name: '16:00' }));
+    fireEvent.change(screen.getByRole('textbox', { name: i18n.t('leadGoal') }), { target: { value: 'Study AI tools' } });
+    fireEvent.change(screen.getByRole('textbox', { name: i18n.t('leadUrgency') }), { target: { value: 'Start tomorrow' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({
+      locality: 'region', studyDays: 'even', studyTime: '16:00',
+      goal: 'Study AI tools', urgency: 'Start tomorrow',
+    });
+    await screen.findByText(i18n.t('leadWorkspaceSaved'));
+  });
+
   it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {
     renderSheet();
     const leadName = await screen.findByRole('heading', { name: 'Test parent' });

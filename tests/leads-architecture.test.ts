@@ -198,5 +198,12 @@ describe('lead boundary contracts', () => {
       statusCode: 'qualified',
       legacyCompatibleField: true,
     }).success).toBe(true);
+    expect(updateAcademyLeadRequestSchema.safeParse({
+      locality: 'region', studyDays: 'even', studyTime: '20:00',
+      goal: 'Interested in AI', urgency: 'Ready this week',
+    }).success).toBe(true);
+    expect(updateAcademyLeadRequestSchema.safeParse({ locality: 'unknown' }).success).toBe(false);
+    expect(updateAcademyLeadRequestSchema.safeParse({ studyDays: 'daily' }).success).toBe(false);
+    expect(updateAcademyLeadRequestSchema.safeParse({ studyTime: '21:00' }).success).toBe(false);
   });
 });

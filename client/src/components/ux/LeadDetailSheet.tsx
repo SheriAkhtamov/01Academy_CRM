@@ -21,6 +21,7 @@ import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
+import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
@@ -102,6 +103,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
+import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '@shared/lead-preferences';
 import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
@@ -127,6 +129,11 @@ interface LeadDetails {
   managerName?: string | null;
   comment?: string | null;
   language?: string | null;
+  locality?: (typeof LEAD_LOCALITIES)[number] | null;
+  studyDays?: (typeof LEAD_STUDY_DAYS)[number] | null;
+  studyTime?: string | null;
+  goal?: string | null;
+  urgency?: string | null;
   students?: Array<{
     id: number;
     managerId?: number | null;
@@ -293,6 +300,11 @@ const leadSchema = z.object({
   sourceId: z.string().min(1, 'fillRequiredFields'),
   language: z.string(),
   expectedPaymentUzs: optionalNumberString,
+  locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
+  studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
+  studyTime: z.string().refine((value) => !value || LEAD_STUDY_TIMES.includes(value), 'invalidData'),
+  goal: z.string().trim().max(5_000, 'invalidData'),
+  urgency: z.string().trim().max(5_000, 'invalidData'),
 });
 
 const paymentSchema = z.object({
@@ -344,6 +356,11 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
   language: lead.language ?? 'ru',
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
+  locality: lead.locality ?? '',
+  studyDays: lead.studyDays ?? '',
+  studyTime: lead.studyTime ?? '',
+  goal: lead.goal ?? '',
+  urgency: lead.urgency ?? '',
 });
 
 export function LeadDetailSheet({
@@ -410,6 +427,11 @@ export function LeadDetailSheet({
       sourceId: '',
       language: 'ru',
       expectedPaymentUzs: '',
+      locality: '',
+      studyDays: '',
+      studyTime: '',
+      goal: '',
+      urgency: '',
     },
   });
   const paymentForm = useForm<PaymentFormValues>({
@@ -480,6 +502,11 @@ export function LeadDetailSheet({
       lead.sourceId ?? '',
       lead.language ?? '',
       lead.expectedPaymentUzs ?? '',
+      lead.locality ?? '',
+      lead.studyDays ?? '',
+      lead.studyTime ?? '',
+      lead.goal ?? '',
+      lead.urgency ?? '',
     ].join('|');
   }, [leadQuery.data]);
 
@@ -587,6 +614,11 @@ export function LeadDetailSheet({
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         sourceId: Number(values.sourceId),
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
+        locality: values.locality || null,
+        studyDays: values.studyDays || null,
+        studyTime: values.studyTime || null,
+        goal: values.goal || null,
+        urgency: values.urgency || null,
       });
     },
     onSuccess: async (updatedLead: LeadDetails) => {
@@ -868,7 +900,7 @@ export function LeadDetailSheet({
     if (!field) return;
     const phoneErrorIndex = Array.isArray(errors.phoneNumbers) ? errors.phoneNumbers.findIndex(Boolean) : 0;
     setInvalidField(field === 'phoneNumbers' ? `phoneNumbers.${Math.max(0, phoneErrorIndex)}` : field);
-    navigateTo('deal', field === 'sourceId' || field === 'expectedPaymentUzs' ? 'details' : 'contacts');
+    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'language' ? 'contacts' : 'details');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
     if (!updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
@@ -1072,6 +1104,11 @@ export function LeadDetailSheet({
                 { label: t('source'), value: sources.find((source) => source.id === lead.sourceId)?.name ?? '' },
                 { label: t('communicationLanguage'), value: lead.language === 'uz' ? t('uzbekLang') : lead.language === 'en' ? t('english') : t('russian') },
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
+                { label: t('leadLocality'), value: lead.locality ? t(localityKeys[lead.locality]) : '' },
+                { label: t('leadStudyDays'), value: lead.studyDays ? t(studyDaysKeys[lead.studyDays]) : '' },
+                { label: t('leadStudyTime'), value: lead.studyTime ?? '' },
+                { label: t('leadGoal'), value: lead.goal ?? '' },
+                { label: t('leadUrgency'), value: lead.urgency ?? '' },
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <Form {...leadForm}>
@@ -1197,7 +1234,6 @@ export function LeadDetailSheet({
                               <Briefcase className="size-4 text-violet-700 dark:text-violet-300" aria-hidden="true" />
                               {t('dealDetails')}
                             </CardTitle>
-                            <p className="text-sm text-muted-foreground">{t('leadWorkspaceDealHint')}</p>
                           </CardHeader>
                           <CardContent className="grid grid-cols-1 gap-4 pt-3 md:grid-cols-2">
                             <FormField
@@ -1270,6 +1306,7 @@ export function LeadDetailSheet({
                                 </div>
                               )}
                             </FormItem>
+                            <LeadPreferencesFields />
                           </CardContent>
                         </Card>
 

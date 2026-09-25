@@ -507,7 +507,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
-                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={sourceColumns}
                 data={bySource}
                 keyExtractor={(row) => String(row.sourceId)}
@@ -680,7 +680,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
-                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={referralColumns}
                 data={topReferrers}
                 keyExtractor={(row) => String(row.studentId)}
@@ -719,7 +719,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             </CardHeader>
             <CardContent>
               <DataTable
-                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={expenseColumns}
                 data={filteredExpenses}
                 keyExtractor={(row, index) => String(row.id ?? index)}

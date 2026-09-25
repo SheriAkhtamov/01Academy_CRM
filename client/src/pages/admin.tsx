@@ -1081,7 +1081,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 </div>
               ) : (
                 <DataTable
-                  className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                  className="overflow-x-auto"
                   columns={userColumns}
                   data={filteredUsers}
                   keyExtractor={(row) => `user-${row.id}`}

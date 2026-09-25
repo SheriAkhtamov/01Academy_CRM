@@ -523,7 +523,7 @@ function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 [scrollbar-gutter:stable]">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable]">
         {/*
           Default (sync) mode, not popLayout: popLayout has to absolutely
           position the leaving child and so requires every direct child of
@@ -704,7 +704,7 @@ export function KanbanBoard({
         onDragCancel={() => setActiveLeadId(null)}
         onDragEnd={handleDragEnd}
       >
-        <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2">
+        <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-2">
           <div className="flex h-full min-w-max items-stretch gap-4 px-2">
             {statuses.map((status) => (
               <KanbanColumn

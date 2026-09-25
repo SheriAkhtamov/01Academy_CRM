@@ -17,12 +17,10 @@ interface ModulePageBodyProps {
 
 /**
  * Keeps operational modules inside the available app viewport while
- * preserving natural document scrolling for dashboard/overview pages.
+ * letting ordinary content use the shell's page scroller.
  *
- * `h-full` is what lets boards and calendars inside resolve their own
- * percentage heights, but the box deliberately does not clip: if a child grows
- * past it, the rows spill into the <main> scroller rather than disappearing
- * behind a hidden edge.
+ * `h-full` lets boards and calendars resolve their percentage heights. The
+ * box does not clip, so long content reaches the shell scroller.
  */
 export function ModulePage({ children, contained = false, className }: ModulePageProps) {
   return (
@@ -42,12 +40,8 @@ export function ModulePage({ children, contained = false, className }: ModulePag
 }
 
 /**
- * The single vertical scroller for ordinary operational pages. Boards,
- * calendars and fixed tables can opt out and provide their own scroll areas.
- *
- * Opting out clips the horizontal axis only. A child that owns the scroll and
- * gets its height wrong would otherwise clip its own overflow away here, one
- * level below the nearest real scroller.
+ * Ordinary operational content flows into the shell's page scroller. Boards,
+ * calendars and fixed tables still provide bounded scroll areas where needed.
  */
 export function ModulePageBody({
   children,
@@ -58,20 +52,12 @@ export function ModulePageBody({
 }: ModulePageBodyProps) {
   if (!contained) return <>{children}</>;
 
-  const scrollable = scroll === 'auto';
   return (
     <div
-      className={cn(
-        'min-h-0 min-w-0 flex-1',
-        scrollable
-          ? 'overflow-y-auto overflow-x-clip overscroll-y-contain [scrollbar-gutter:stable] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
-          : 'overflow-x-clip',
-        className,
-      )}
+      className={cn('min-h-0 min-w-0 flex-1', className)}
       data-module-scroll={scroll}
-      role={scrollable ? 'region' : undefined}
-      aria-label={scrollable ? ariaLabel : undefined}
-      tabIndex={scrollable ? 0 : undefined}
+      role={ariaLabel ? 'group' : undefined}
+      aria-label={ariaLabel}
     >
       {children}
     </div>

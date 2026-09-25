@@ -152,7 +152,7 @@ export function ScheduleFilterPanel({
             </Button>
           </div>
 
-          <div className="-mr-2 h-auto max-h-72 min-h-0 flex-1 overflow-y-auto overscroll-contain lg:max-h-none">
+          <div className="-mr-2 h-auto max-h-72 min-h-0 flex-1 overflow-y-auto lg:max-h-none">
             <div className="flex flex-col gap-1 pr-2">
               {visibleTree.map((school) => {
                 const schoolGroupIds = school.courses.flatMap((course) => (

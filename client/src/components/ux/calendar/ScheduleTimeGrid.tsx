@@ -122,7 +122,7 @@ export function ScheduleTimeGrid({
   };
 
   return (
-    <div ref={scrollRef} className="h-full overflow-auto overscroll-contain [scrollbar-gutter:stable]">
+    <div ref={scrollRef} className="h-full overflow-auto [scrollbar-gutter:stable]">
       <div style={{ minWidth: TIME_COLUMN_WIDTH + dayCount * MIN_DAY_WIDTH }}>
         <div
           className="sticky top-0 z-30 grid border-b border-border bg-card/95 backdrop-blur-sm"

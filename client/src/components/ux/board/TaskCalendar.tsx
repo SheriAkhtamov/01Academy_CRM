@@ -865,7 +865,7 @@ function UnscheduledPanel({
                     {tasks.length}
                 </span>
             </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-3 max-lg:max-h-64">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 max-lg:max-h-64">
                 {tasks.length === 0 ? (
                     <p className="px-1 py-6 text-center text-xs text-muted-foreground">
                         {t('taskUnscheduledEmpty')}

@@ -235,7 +235,7 @@ export default function CallJournalPage() {
         contained
         scroll="hidden"
         ariaLabel={t('callJournal')}
-        className="flex flex-col gap-3 overflow-y-auto [scrollbar-gutter:stable]"
+        className="flex flex-col gap-3"
       >
         <section className="grid shrink-0 grid-cols-tile gap-3" aria-label={t('callJournalSummary')}>
           <SummaryCard icon={PhoneCall} title={t('totalCalls')} value={journalQuery.data?.total ?? 0} />
@@ -309,7 +309,7 @@ export default function CallJournalPage() {
             <div
               ref={journalListRef}
               className={cn(
-                'min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity [scrollbar-gutter:stable]',
+                'min-h-0 flex-1 overflow-auto transition-opacity [scrollbar-gutter:stable]',
                 journalQuery.isPlaceholderData && 'pointer-events-none opacity-60',
               )}
               data-call-journal-scroll

@@ -45,18 +45,19 @@ describe('app shell scrolling', () => {
     }
   });
 
-  it('gives every route a vertical scroll owner in the app shell', () => {
+  it('scrolls the header and page from the same shell surface', () => {
     expect(layout).toContain('overflow-y-auto overflow-x-clip overscroll-y-contain');
     expect(layout).toContain("data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}");
-    // Only the reserved gutter may depend on the route — never the scroller.
-    expect(layout).not.toMatch(/containsOwnScrollArea\s*\n?\s*\?\s*'overflow-hidden'/);
+    expect(layout.indexOf('<main')).toBeLessThan(layout.indexOf('<Header onMenuToggle'));
+    expect(layout.indexOf('<Header onMenuToggle')).toBeLessThan(layout.indexOf('<PageTransition'));
+    expect(layout).toContain('className="min-h-0 min-w-0 max-w-full flex-1"');
   });
 
   it('lets contained module pages spill into the shell scroller instead of clipping', () => {
     expect(modulePage).toContain("? 'flex h-full min-h-0 flex-col p-4 sm:p-5 lg:p-6");
     expect(modulePage).not.toContain('flex h-full min-h-0 flex-col overflow-hidden p-4');
-    // Opting out of the page scroller must not clip the axis it opted out of.
-    expect(modulePage).toContain("          : 'overflow-x-clip',");
+    expect(modulePage).not.toContain('overflow-y-auto');
+    expect(modulePage).not.toContain('overscroll-y-contain');
   });
 
   it('keeps the task board page from clipping the columns it cannot size', () => {
@@ -87,7 +88,7 @@ describe('app shell scrolling', () => {
     const allowed = new Set([
       // Lives inside a board wrapper that already carries the floor, and clips
       // only the axis its columns scroll themselves.
-      'min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2',
+      'min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-2',
     ]);
     const offenders = tsxFiles(clientRoot).flatMap((file) => {
       const source = readFileSync(file, 'utf8');

@@ -31,9 +31,10 @@ const paginationControls = readFileSync(
 );
 
 describe('call journal navigation', () => {
-  it('keeps a dedicated keyboard-accessible scroll region for journal rows', () => {
+  it('keeps journal rows reachable by keyboard without trapping page scrolling', () => {
     expect(callJournal).toContain('data-call-journal-scroll');
-    expect(callJournal).toContain("'min-h-0 flex-1 overflow-auto overscroll-contain transition-opacity [scrollbar-gutter:stable]'");
+    expect(callJournal).toContain("'min-h-0 flex-1 overflow-auto transition-opacity [scrollbar-gutter:stable]'");
+    expect(callJournal).not.toContain('overflow-auto overscroll-contain transition-opacity');
     expect(callJournal).toContain('role="region"');
     expect(callJournal).toContain('tabIndex={0}');
   });
@@ -68,8 +69,8 @@ describe('call journal navigation', () => {
   it('uses the available viewport height for a taller journal list', () => {
     expect(callJournal).toContain('<ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">');
     // The card fills the desktop viewport but keeps its 32rem floor there, so
-    // a short screen scrolls the page instead of hiding the bottom of the list.
-    expect(callJournal).toContain('className="flex flex-col gap-3 overflow-y-auto [scrollbar-gutter:stable]"');
+    // a short screen scrolls the page instead of trapping it in a second pane.
+    expect(callJournal).toContain('className="flex flex-col gap-3"');
     expect(callJournal).toContain('className="flex min-h-[26rem] shrink-0 flex-col overflow-hidden xl:min-h-[32rem] lg:flex-1"');
   });
 

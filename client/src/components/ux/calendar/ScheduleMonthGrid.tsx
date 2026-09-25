@@ -45,7 +45,7 @@ export function ScheduleMonthGrid({
   const { t } = useTranslation();
 
   return (
-    <div className="h-full overflow-auto overscroll-contain">
+    <div className="h-full overflow-auto">
       <div className="min-w-[640px]">
         <div className="sticky top-0 z-20 grid grid-cols-7 border-b border-border bg-card/95 backdrop-blur-sm">
           {dayNames.map((dayName, index) => (

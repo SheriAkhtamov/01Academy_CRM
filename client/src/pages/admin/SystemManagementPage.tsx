@@ -358,7 +358,7 @@ function EmployeeNotificationsPage() {
                 </div>
 
                 <div
-                  className="max-h-[32rem] divide-y divide-border/60 overflow-y-auto overscroll-contain"
+                  className="max-h-[32rem] divide-y divide-border/60 overflow-y-auto"
                   role="group"
                   aria-label={t('broadcastRecipients')}
                 >

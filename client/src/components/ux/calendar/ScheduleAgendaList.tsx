@@ -54,7 +54,7 @@ export function ScheduleAgendaList({
   }
 
   return (
-    <div className="h-full overflow-auto overscroll-contain">
+    <div className="h-full overflow-auto">
       {populatedDays.map((day) => {
         const dayEvents = eventsByDate.get(dateKey(day)) ?? [];
         const today = isSameDay(day, now);

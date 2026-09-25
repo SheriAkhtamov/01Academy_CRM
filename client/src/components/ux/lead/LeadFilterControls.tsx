@@ -256,7 +256,7 @@ export function FilterMultiSelect<T extends string | number>({
             role="listbox"
             aria-multiselectable="true"
             aria-labelledby={`${id}-label`}
-            className="max-h-56 overflow-y-auto overscroll-contain"
+            className="max-h-56 overflow-y-auto"
           >
             {visibleOptions.map((option) => {
               const isSelected = selected.includes(option.id);

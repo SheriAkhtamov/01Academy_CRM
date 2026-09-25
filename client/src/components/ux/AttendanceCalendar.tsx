@@ -444,7 +444,7 @@ export function AttendanceCalendar({
         ) : null}
 
         {effectiveView === 'agenda' ? (
-          <div className="max-h-[32rem] min-h-56 divide-y divide-border/60 overflow-auto overscroll-contain">
+          <div className="max-h-[32rem] min-h-56 divide-y divide-border/60 overflow-auto">
             {calendarDays.map((day) => {
               const dayLessons = visibleLessonsFor(day.dateKey);
               if (dayLessons.length === 0) return null;

@@ -143,7 +143,7 @@ function TaskColumn({
 
             <div
                 data-task-column-scroll
-                className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 [scrollbar-gutter:stable]"
+                className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable]"
             >
                 <AnimatePresence initial={false}>
                     {tasks.map((task) => (
@@ -277,7 +277,7 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                     },
                 }}
             >
-                <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden overscroll-contain pb-2">
+                <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-2">
                     <div className="flex h-full min-w-max items-stretch gap-4 px-1">
                         {columns.map((col) => (
                             <TaskColumn

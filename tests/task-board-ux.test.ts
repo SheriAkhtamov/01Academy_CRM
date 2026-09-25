@@ -43,7 +43,7 @@ describe('task board interaction UX', () => {
     expect(tasksPage).toContain('flex h-full min-h-0 flex-col p-4');
     expect(tasksPage).toContain('min-h-0 w-full max-w-[1600px]');
     expect(taskBoard).toContain('data-task-column-scroll');
-    expect(taskBoard).toContain('overflow-y-auto overscroll-y-contain');
+    expect(taskBoard).toContain('overflow-y-auto p-3');
     expect(taskBoard).toContain('[scrollbar-gutter:stable]');
   });
 

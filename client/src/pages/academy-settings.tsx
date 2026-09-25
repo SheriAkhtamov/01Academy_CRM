@@ -1379,7 +1379,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
-                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={schoolColumns}
                 data={schools}
                 keyExtractor={(row) => `school-${row.id}`}
@@ -1403,7 +1403,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
-                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={roomColumns}
                 data={rooms}
                 keyExtractor={(row) => `room-${row.id}`}
@@ -1427,7 +1427,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
-                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={courseColumns}
                 data={courses}
                 keyExtractor={(row) => `course-${row.id}`}
@@ -1491,7 +1491,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
-                className="max-h-[min(70dvh,48rem)] overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={groupColumns}
                 data={displayedGroups}
                 keyExtractor={(row) => `group-${row.id}`}

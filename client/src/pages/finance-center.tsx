@@ -516,7 +516,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle><CardDescription>{copy.methodology}</CardDescription></CardHeader>
             <CardContent className="p-0">
               <DataTable
-                className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
+                className="overflow-x-auto"
                 columns={[
                   {
                     key: 'expenseDate',
@@ -618,7 +618,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
               <CardContent className="p-0">
                 <DataTable
-                  className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
+                  className="overflow-x-auto"
                   columns={[
                     {
                       key: 'employeeName',

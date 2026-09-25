@@ -213,15 +213,12 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       <div ref={pageContentRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />
-        <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
         {/*
-          <main> scrolls on every route, including the module pages that build
-          their own scroll area. On those the page fills the element exactly, so
-          `auto` shows nothing and there is still only one visible scrollbar —
-          but the moment a nested height chain collapses, the rows land in a
-          scroller instead of behind a clipped edge. Only the reserved gutter is
-          conditional: contained pages already reserve one further in.
+          The header belongs to the same scroll surface as the page. Its sticky
+          position keeps the controls visible while wheel and touch gestures
+          over the header can still move the page. Ordinary module content
+          flows into this scroller; boards and conversations keep their own
+          bounded scroll areas where their layout needs one.
 
           The page boundary sits inside the layout so a crash in one page no
           longer wipes the header, sidebar and telephony widget with it.
@@ -229,15 +226,15 @@ export default function Layout({ children }: LayoutProps) {
         <main
           ref={mainRef}
           tabIndex={-1}
-          className={`min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain outline-none ${
-            containsOwnScrollArea ? '' : '[scrollbar-gutter:stable]'
-          }`}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip overscroll-y-contain outline-none [scrollbar-gutter:stable]"
           data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}
         >
+          <Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />
+          <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
           <AppErrorBoundary variant="page">
             <PageTransition
               routeKey={location}
-              className={`min-w-0 max-w-full ${containsOwnScrollArea ? 'h-full' : ''}`}
+              className="min-h-0 min-w-0 max-w-full flex-1"
             >
               {children}
             </PageTransition>

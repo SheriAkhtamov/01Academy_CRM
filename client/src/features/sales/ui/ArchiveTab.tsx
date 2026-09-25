@@ -324,7 +324,7 @@ export function ArchiveTab({
       <CardContent className="min-h-0 flex-1 p-0">
         <DataTable
           rootClassName="flex h-full min-h-0 flex-col"
-          className="min-h-0 flex-1 overflow-auto overscroll-contain"
+          className="min-h-0 flex-1 overflow-auto"
           columns={columns}
           data={visibleLeads}
           keyExtractor={(lead: ArchivedLead) => `archived-lead-${lead.id}`}

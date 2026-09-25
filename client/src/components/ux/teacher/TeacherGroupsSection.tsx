@@ -286,12 +286,13 @@ export function TeacherGroupsSection({
               type="button"
               size="sm"
               variant={isArchiveView ? 'ghost' : 'secondary'}
-              className="min-h-11 flex-1 gap-2 sm:flex-none"
+              className="min-h-11 min-w-0 flex-1 gap-2 px-2 sm:flex-none sm:px-3"
               aria-pressed={!isArchiveView}
               onClick={() => onChangeView('active')}
             >
-              <UsersRound />
-              {t('adminActiveGroups')}
+              <UsersRound className="hidden sm:block" />
+              <span className="sm:hidden">{t('groupCurrentShort')}</span>
+              <span className="hidden sm:inline">{t('adminActiveGroups')}</span>
               <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
                 {activeGroups.length}
               </Badge>
@@ -300,12 +301,13 @@ export function TeacherGroupsSection({
               type="button"
               size="sm"
               variant={isArchiveView ? 'secondary' : 'ghost'}
-              className="min-h-11 flex-1 gap-2 sm:flex-none"
+              className="min-h-11 min-w-0 flex-1 gap-2 px-2 sm:flex-none sm:px-3"
               aria-pressed={isArchiveView}
               onClick={() => onChangeView('archive')}
             >
-              <Archive />
-              {t('groupArchiveLabel')}
+              <Archive className="hidden sm:block" />
+              <span className="sm:hidden">{t('groupArchivedShort')}</span>
+              <span className="hidden sm:inline">{t('groupArchiveLabel')}</span>
               <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
                 {archivedGroups.length}
               </Badge>

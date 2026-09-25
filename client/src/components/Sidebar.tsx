@@ -262,7 +262,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
             </div>
           </Link>
         </TooltipTrigger>
-        <TooltipContent side="right" className="hidden md:block">
+        <TooltipContent side="right" className="hidden lg:block">
           {item.name}
         </TooltipContent>
       </Tooltip>
@@ -277,7 +277,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         highlighted nav item — the one clear giveaway that this is an overlay
         rendered on the cheap.
       */}
-      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card md:bg-card/95 md:backdrop-blur-sm">
+      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card lg:bg-card/95 lg:backdrop-blur-sm">
         {/* Logo */}
         <div className="flex items-center border-b border-border/70 px-5 py-4">
           <div className="flex items-center w-full">
@@ -291,7 +291,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
             {onClose && (
               <button
                 onClick={onClose}
-                className="md:hidden ml-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="lg:hidden ml-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 aria-label={t('close')}
               >
                 <X className="w-5 h-5" />

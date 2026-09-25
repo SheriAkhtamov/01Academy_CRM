@@ -107,13 +107,22 @@ export default function Layout({ children }: LayoutProps) {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [sidebarOpen]);
 
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => {
+      if (desktop.matches) setSidebarOpen(false);
+    };
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, []);
+
   // While the mobile drawer is open the page behind it becomes inert, focus
   // starts on the drawer's first link, closing hands focus back to the burger,
   // and Tab cycles inside the drawer. Docked desktop navigation never opens
   // through this path, so a resize race leaves the page untouched.
   useEffect(() => {
     if (!sidebarOpen) return undefined;
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
       return undefined;
     }
     const page = pageContentRef.current;
@@ -168,7 +177,7 @@ export default function Layout({ children }: LayoutProps) {
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div
-            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -180,7 +189,7 @@ export default function Layout({ children }: LayoutProps) {
       </AnimatePresence>
 
       {/*
-        The drawer transform stays on Tailwind rather than framer: `md:translate-x-0`
+        The drawer transform stays on Tailwind rather than framer: `lg:translate-x-0`
         is what keeps the sidebar docked on desktop, and an inline transform from
         framer would win over that class and strand it off-screen. While closed
         the drawer is `invisible`, so its off-screen links leave the tab order
@@ -191,7 +200,7 @@ export default function Layout({ children }: LayoutProps) {
         ref={drawerRef}
         onKeyDown={handleDrawerKeyDown}
         className={`
-          fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] md:relative md:translate-x-0 md:visible md:z-auto
+          fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] lg:relative lg:translate-x-0 lg:visible lg:z-auto
           ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
         `}
         style={{

@@ -41,7 +41,7 @@ export function PageHeader({
     // apart, finishing well before the page body has finished fetching.
     <motion.div
       data-page-header
-      className="mb-6 flex min-w-0 shrink-0 flex-col gap-4 md:flex-row md:items-start md:justify-between"
+      className="mb-6 flex min-w-0 shrink-0 flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between"
       variants={staggerContainer(0.05)}
       initial="hidden"
       animate="visible"
@@ -81,7 +81,7 @@ export function PageHeader({
       {actions && (
         <motion.div
           variants={fadeInUp}
-          className="flex w-full max-w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0 md:justify-end"
+          className="flex w-full max-w-full flex-wrap items-center gap-2 2xl:w-auto 2xl:shrink-0 2xl:justify-end"
         >
           {actions}
         </motion.div>

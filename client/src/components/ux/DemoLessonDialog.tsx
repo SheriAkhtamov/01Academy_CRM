@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarPlus2,
-  CheckCircle2,
   CircleAlert,
   Clock3,
   LoaderCircle,
@@ -14,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -322,13 +320,12 @@ export function DemoLessonDialog({
       if (createDemo.isPending) return;
       demoGuard.handleOpenChange(nextOpen);
     }}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 data-icon="inline-start" />
             {t('createDemoLesson')}
           </DialogTitle>
-          <DialogDescription>{t('createDemoLessonDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
@@ -372,12 +369,9 @@ export function DemoLessonDialog({
         </div>
 
         <div className="space-y-4 rounded-xl border border-border p-4">
-          <div>
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              <Clock3 data-icon="inline-start" />{t('demoScheduleDetails')}
-            </p>
-            <p className="text-xs text-muted-foreground">{t('demoTimeZoneHint')}</p>
-          </div>
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <Clock3 data-icon="inline-start" />{t('demoScheduleDetails')}
+          </p>
           <div className="grid grid-cols-tile gap-4">
             <div className="space-y-2">
               <Label htmlFor="demo-date">{t('dateColumn')}</Label>
@@ -448,9 +442,7 @@ export function DemoLessonDialog({
                 <CircleAlert />
                 <AlertDescription>{t('demoDurationRangeHint')}</AlertDescription>
               </Alert>
-            ) : !availabilityRequest ? (
-              <p className="text-sm text-muted-foreground">{t('completeDemoScheduleForAvailability')}</p>
-            ) : resourceAvailability.isFetching ? (
+            ) : !availabilityRequest ? null : resourceAvailability.isFetching ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />{t('checkingAvailability')}
               </p>
@@ -469,12 +461,7 @@ export function DemoLessonDialog({
                 <CircleAlert />
                 <AlertDescription>{conflictMessage}</AlertDescription>
               </Alert>
-            ) : resourcesSelected ? (
-              <Alert>
-                <CheckCircle2 />
-                <AlertDescription>{t('demoResourcesAvailable')}</AlertDescription>
-              </Alert>
-            ) : (
+            ) : resourcesSelected ? null : (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <UserRoundCheck className="size-4" />{t('selectDemoResources')}
               </p>

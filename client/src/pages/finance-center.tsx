@@ -354,7 +354,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         actions={(
           <>
             {section !== 'overview' ? (
-              <Input aria-label={copy.calculationMonth} type="month" value={period} onChange={(event) => setPeriod(event.target.value || currentFinancePeriod())} className="w-[165px]" />
+              <Input aria-label={copy.calculationMonth} type="month" value={period} onChange={(event) => setPeriod(event.target.value || currentFinancePeriod())} className="w-full sm:w-[185px]" />
             ) : null}
             {section === 'expenses' ? (
               <Button onClick={() => {

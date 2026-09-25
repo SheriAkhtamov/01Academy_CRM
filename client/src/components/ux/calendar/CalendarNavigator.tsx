@@ -93,8 +93,8 @@ export function CalendarNavigator({
         </Button>
       </div>
 
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold capitalize text-foreground">{label}</p>
+      <div className="order-first w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+        <p className="break-words text-sm font-semibold capitalize text-foreground sm:truncate">{label}</p>
         {hint ? (
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">{hint}</p>
         ) : null}

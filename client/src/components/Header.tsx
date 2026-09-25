@@ -159,26 +159,26 @@ export default function Header({
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:px-4 sm:py-3 md:px-6">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 md:flex-nowrap">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:px-4 sm:py-3 lg:px-6">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 lg:flex-nowrap">
           {onMenuToggle && (
             <button
               ref={menuButtonRef}
               onClick={onMenuToggle}
-              className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+              className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
               aria-label={t('openNavigation')}
             >
               <Menu className="size-5" />
             </button>
           )}
-          <div className="order-2 min-w-0 w-full md:order-none md:flex-1">
+          <div className="order-2 min-w-0 w-full lg:order-none lg:flex-1">
             <ModuleIdentity title={title} subtitle={subtitle} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
               variant="ghost"
               size="icon"
-              className="flex md:hidden rounded-full"
+              className="flex lg:hidden rounded-full"
               onClick={() => setCommandOpen(true)}
               aria-label={t('search')}
             >
@@ -188,7 +188,7 @@ export default function Header({
             <Button
               variant="ghost"
               size="sm"
-              className="hidden items-center gap-2 rounded-full px-3 text-muted-foreground hover:bg-accent hover:text-foreground md:flex"
+              className="hidden items-center gap-2 rounded-full px-3 text-muted-foreground hover:bg-accent hover:text-foreground lg:flex"
               onClick={() => setCommandOpen(true)}
             >
               <Search className="h-4 w-4" />

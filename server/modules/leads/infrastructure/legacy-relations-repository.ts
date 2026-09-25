@@ -69,7 +69,7 @@ export class LegacyLeadRelationsRepository implements LeadRelationsRepository {
 
         tag = await queryOne(
           `INSERT INTO academy_lead_tags (name, normalized_name, created_by)
-           VALUES ($1, public.academy_normalize_lead_tag_name($1), $2)
+           VALUES ($1::text, public.academy_normalize_lead_tag_name($1), $2)
            ON CONFLICT (normalized_name) DO NOTHING
            RETURNING *`,
           [normalizedTag.name, actor.userId],

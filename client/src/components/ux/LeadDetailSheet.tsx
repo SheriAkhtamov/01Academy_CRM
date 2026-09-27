@@ -393,6 +393,7 @@ export function LeadDetailSheet({
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [pendingPaymentClaim, setPendingPaymentClaim] = useState<PaymentFormValues | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
@@ -482,6 +483,7 @@ export function LeadDetailSheet({
     setCommentDraft('');
     setPendingPaymentClaim(null);
     setTaskDialogOpen(false);
+    setPaymentDialogOpen(false);
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
     setSocialAccountsDirty(false);
@@ -587,6 +589,7 @@ export function LeadDetailSheet({
       setSocialAccountsDirty(false);
       setCommentDraft('');
       setTaskDialogOpen(false);
+      setPaymentDialogOpen(false);
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
       leadForm.reset();
       paymentForm.reset();
@@ -729,6 +732,7 @@ export function LeadDetailSheet({
       }),
     onSuccess: async () => {
       setPendingPaymentClaim(null);
+      setPaymentDialogOpen(false);
       const refreshed = await leadQuery.refetch();
       const refreshedLead = refreshed.data;
       paymentForm.reset({
@@ -1396,7 +1400,7 @@ export function LeadDetailSheet({
                       </div>
                     </div>
 
-                    {(lead.students ?? []).length === 0 ? (
+                    {(lead.students ?? []).length === 0 && (
                       <div className="flex flex-col items-center rounded-xl border border-dashed border-teal-200 bg-teal-50/40 px-6 py-8 text-center dark:border-teal-900/70 dark:bg-teal-950/20">
                         <GraduationCap className="mb-3 size-8 text-teal-700 dark:text-teal-300" aria-hidden="true" />
                         <p className="font-medium">{t('studentRequiredForPayment')}</p>
@@ -1405,135 +1409,19 @@ export function LeadDetailSheet({
                           <ArrowRight data-icon="inline-end" />
                         </Button>
                       </div>
-                    ) : (
-                    <Card className="overflow-hidden border-emerald-200/80 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 dark:border-emerald-900/70 dark:focus-within:border-emerald-700 dark:focus-within:ring-emerald-900">
-                      <CardHeader className="border-b border-emerald-100 bg-emerald-50/80 pb-3 dark:border-emerald-900/60 dark:bg-emerald-950/30">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <CreditCard className="size-4 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
-                          {lead.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment')}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                          <Form {...paymentForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit(submitPayment)}>
-                            <FormField
-                              control={paymentForm.control}
-                              name="studentId"
-                              render={({ field, fieldState }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('paymentStudent')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger aria-invalid={fieldState.invalid}><SelectValue placeholder={t('selectStudent')} /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {lead.students?.map((student) => (
-                                          <SelectItem key={student.id} value={String(student.id)}>
-                                            {student.studentName || `${t('student')} #${student.id}`}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="amountUzs"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{isPrepayment ? t('prepaymentAmount') : t('amount')}</FormLabel>
-                                  <FormControl>
-                                    <CurrencyInput
-                                      value={field.value}
-                                      onValueChange={field.onChange}
-                                      aria-invalid={fieldState.invalid}
-                                    />
-                                  </FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <LeadPaymentDateField />
-                            <FormField
-                              control={paymentForm.control}
-                              name="method"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('paymentMethod')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      {PAYMENT_METHODS.map((method) => (
-                                        <SelectItem key={method} value={method}>
-                                          {t(paymentMethodTranslationKeys[method])}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="type"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('paymentType')}</FormLabel>
-                                  <Select value={field.value} onValueChange={(type) => {
-                                    const amountWasUnchanged = !paymentForm.getFieldState('amountUzs').isDirty;
-                                    field.onChange(type);
-                                    if (type === 'prepayment' && amountWasUnchanged) {
-                                      paymentForm.setValue('amountUzs', '', { shouldDirty: true });
-                                    }
-                                  }}>
-                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {PAYMENT_TYPES.map((type) => (
-                                          <SelectItem key={type} value={type}>
-                                            {t(paymentTypeTranslationKeys[type])}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={paymentForm.control}
-                              name="comment"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('comment')}</FormLabel>
-                                  <FormControl><Textarea {...field} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex flex-col items-end gap-2 md:col-span-2">
-                              <Button type="submit" disabled={createPayment.isPending}>
-                                <CreditCard data-icon="inline-start" />
-                                {createPayment.isPending ? t('saving') : t('confirmPayment')}
-                              </Button>
-                            </div>
-                          </form>
-                          </Form>
-                      </CardContent>
-                    </Card>
                     )}
 
                     <Card className="overflow-hidden border-emerald-200/80 dark:border-emerald-900/70">
-                      <CardHeader className="border-b border-emerald-100 bg-emerald-50/80 pb-3 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                      <CardHeader className="flex flex-col items-start gap-3 border-b border-emerald-100 bg-emerald-50/80 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-900/60 dark:bg-emerald-950/30">
                         <CardTitle className="flex items-center gap-2 text-base">
                           <Wallet className="size-4 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
                           {t('paymentHistory')}
                           {paymentsCount > 0 ? <Badge variant="secondary">{paymentsCount}</Badge> : null}
                         </CardTitle>
+                        <Button type="button" size="sm" className="w-full sm:w-auto" disabled={(lead.students ?? []).length === 0} onClick={() => setPaymentDialogOpen(true)}>
+                          <CreditCard data-icon="inline-start" />
+                          {t('recordPayment')}
+                        </Button>
                       </CardHeader>
                       <CardContent className="flex flex-col gap-0 divide-y divide-border pt-3">
                         {(lead.payments ?? []).length === 0 ? (
@@ -1678,6 +1566,125 @@ export function LeadDetailSheet({
           </>
         )}
       </SheetContent>
+      {lead ? (
+        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+          <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t('recordPayment')}</DialogTitle>
+            </DialogHeader>
+            <Form {...paymentForm}>
+              <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit(submitPayment)}>
+                <FormField
+                  control={paymentForm.control}
+                  name="studentId"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>{t('paymentStudent')}</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger aria-invalid={fieldState.invalid}><SelectValue placeholder={t('selectStudent')} /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectGroup>
+                            {lead.students?.map((student) => (
+                              <SelectItem key={student.id} value={String(student.id)}>
+                                {student.studentName || `${t('student')} #${student.id}`}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentForm.control}
+                  name="amountUzs"
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel>{isPrepayment ? t('prepaymentAmount') : t('amount')}</FormLabel>
+                      <FormControl>
+                        <CurrencyInput
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          aria-invalid={fieldState.invalid}
+                        />
+                      </FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+                <LeadPaymentDateField />
+                <FormField
+                  control={paymentForm.control}
+                  name="method"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>{t('paymentMethod')}</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {PAYMENT_METHODS.map((method) => (
+                            <SelectItem key={method} value={method}>
+                              {t(paymentMethodTranslationKeys[method])}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentForm.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>{t('paymentType')}</FormLabel>
+                      <Select value={field.value} onValueChange={(type) => {
+                        const amountWasUnchanged = !paymentForm.getFieldState('amountUzs').isDirty;
+                        field.onChange(type);
+                        if (type === 'prepayment' && amountWasUnchanged) {
+                          paymentForm.setValue('amountUzs', '', { shouldDirty: true });
+                        }
+                      }}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectGroup>
+                            {PAYMENT_TYPES.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {t(paymentTypeTranslationKeys[type])}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentForm.control}
+                  name="comment"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>{t('comment')}</FormLabel>
+                      <FormControl><Textarea {...field} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter className="md:col-span-2">
+                  <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
+                  <Button type="submit" disabled={createPayment.isPending}>
+                    <CreditCard data-icon="inline-start" />
+                    {createPayment.isPending ? t('saving') : t('confirmPayment')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>

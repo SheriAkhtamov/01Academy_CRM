@@ -82,11 +82,17 @@ describe('lead workspace navigation and drafts', () => {
     await screen.findByRole('heading', { name: 'Test parent' });
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
 
-    const paymentDate = screen.getByLabelText(i18n.t('paymentDate')) as HTMLInputElement;
+    expect(screen.getAllByText(i18n.t('expectedPayment')).length).toBeGreaterThan(0);
+    expect(screen.getByText(i18n.t('totalPaidLabel'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('paymentHistory'))).toBeTruthy();
+    expect(screen.queryByLabelText(i18n.t('paymentDate'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('recordPayment') }));
+    const paymentDialog = await screen.findByRole('dialog', { name: i18n.t('recordPayment') });
+    const paymentDate = within(paymentDialog).getByLabelText(i18n.t('paymentDate')) as HTMLInputElement;
     expect(paymentDate.value).toBe(academyToday());
     expect(screen.queryByText(/Оплачено до|Период оплачен до/)).toBeNull();
     fireEvent.change(paymentDate, { target: { value: '2026-09-01' } });
-    await user.click(screen.getByRole('button', { name: i18n.t('confirmPayment') }));
+    await user.click(within(paymentDialog).getByRole('button', { name: i18n.t('confirmPayment') }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]).toMatchObject({
@@ -94,6 +100,7 @@ describe('lead workspace navigation and drafts', () => {
       body: { paidAt: academyInstant('2026-09-01').toISOString() },
     });
     expect(requests[0].body).not.toHaveProperty('paidUntil');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
   });
 
   it('edits study preferences and lead intent in the card and saves them together', async () => {

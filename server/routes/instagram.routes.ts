@@ -19,6 +19,7 @@ import {
   sendInstagramTextMessage,
   startInstagramConversationHistorySync,
 } from '../services/instagram';
+import { countUnreadInstagramMessages } from '../services/instagram-conversation-count';
 
 const router = Router();
 const messageSchema = z.object({
@@ -181,6 +182,21 @@ router.get('/conversations', async (req, res) => {
     }));
   } catch (error) {
     logger.error('Failed to list Instagram conversations', { userId: req.user?.id, error });
+    res.status(500).json({ error: 'failedToLoadData' });
+  }
+});
+
+router.get('/conversations/unread-count', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  try {
+    const count = await countUnreadInstagramMessages({
+      id: req.user!.id,
+      module: req.user!.module,
+      modules: getAssignedModules(req.user),
+    });
+    res.json({ count });
+  } catch (error) {
+    logger.error('Failed to count unread Instagram messages', { userId: req.user?.id, error });
     res.status(500).json({ error: 'failedToLoadData' });
   }
 });

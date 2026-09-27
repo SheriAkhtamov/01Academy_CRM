@@ -14,6 +14,7 @@ const mockStorage = {
     getBoard: vi.fn(),
     getLeadReference: vi.fn(),
     getTasks: vi.fn(),
+    getPendingAcceptanceCount: vi.fn(),
     getTask: vi.fn(),
     getTaskDetail: vi.fn(),
     getMaxPosition: vi.fn(),
@@ -100,6 +101,7 @@ describe("board routes", () => {
       id === 42 ? { id: 42, contactName: "Linked lead", managerId: staffUser.id } : undefined
     ));
     mockStorage.board.getTasks.mockResolvedValue([]);
+    mockStorage.board.getPendingAcceptanceCount.mockResolvedValue(2);
     mockStorage.board.getTask.mockResolvedValue({
       id: 100,
       boardId: defaultBoard.id,
@@ -162,6 +164,19 @@ describe("board routes", () => {
 
     expect(response.status).toBe(200);
     expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id, false);
+  });
+
+  it("counts only the signed-in creator's tasks awaiting acceptance on the visible board", async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+
+    await agent.post("/test/session").send({ userId: staffUser.id });
+    const response = await agent.get("/api/board/tasks/pending-acceptance/count");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ count: 2 });
+    expect(mockStorage.board.getPendingAcceptanceCount)
+      .toHaveBeenCalledWith(defaultBoard.id, staffUser.id);
   });
 
   it("lists all board tasks for administrators", async () => {

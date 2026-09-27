@@ -78,6 +78,19 @@ class BoardStorage {
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
+    async getPendingAcceptanceCount(boardId: number, creatorId: number): Promise<number> {
+        const [row] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(boardTasks)
+            .where(and(
+                eq(boardTasks.boardId, boardId),
+                eq(boardTasks.creatorId, creatorId),
+                ne(boardTasks.assigneeId, creatorId),
+                eq(boardTasks.status, 'done'),
+            ));
+        return row?.count ?? 0;
+    }
+
     async getTasks(boardId: number, visibleToUserId?: number, archived = false) {
         const visibilityWhere = and(
             eq(boardTasks.boardId, boardId),

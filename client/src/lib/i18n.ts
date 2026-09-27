@@ -980,6 +980,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: '{count} new leads',
     ru: 'Новых лидов: {count}',
   },
+  newInboxMessagesCount: {
+    en: '{count} unread inbox messages',
+    ru: 'Непрочитанных входящих сообщений: {count}',
+  },
   totalTalkTime: { en: 'Total talk time', ru: 'Общее время разговоров' },
   talkTime: { en: 'Talk time', ru: 'Время разговора' },
   callDirection: { en: 'Direction', ru: 'Направление' },
@@ -2262,6 +2266,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   priorityUrgent: { en: 'Urgent', ru: 'Срочно' },
   reopenTask: { en: 'Reopen task', ru: 'Вернуть в работу' },
   taskBoard: { en: 'Tasks', ru: 'Задачи' },
+  tasksPendingAcceptanceCount: {
+    en: '{count} completed tasks awaiting acceptance',
+    ru: 'Выполненных задач на приёмке: {count}',
+  },
   myTasks: { en: 'My tasks', ru: 'Мои задачи' },
   taskListMode: { en: 'Task list section', ru: 'Раздел списка задач' },
   activeTasks: { en: 'Active', ru: 'Активные' },

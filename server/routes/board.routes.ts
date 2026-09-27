@@ -208,6 +208,19 @@ router.get('/boards', async (_req, res) => {
 
 // --- Tasks ------------------------------------------------------------------
 
+router.get('/tasks/pending-acceptance/count', async (req, res) => {
+    try {
+        const board = await storage.board.getDefaultBoard();
+        const count = board
+            ? await storage.board.getPendingAcceptanceCount(board.id, req.user!.id)
+            : 0;
+        res.json({ count });
+    } catch (error) {
+        logger.error('Failed to count tasks pending acceptance', { error, userId: req.user?.id });
+        res.status(500).json({ error: 'Failed to count tasks pending acceptance' });
+    }
+});
+
 // List tasks for a board (defaults to the shared board when boardId is omitted).
 router.get('/tasks', async (req, res) => {
     try {

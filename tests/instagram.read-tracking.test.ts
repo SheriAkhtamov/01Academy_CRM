@@ -14,6 +14,7 @@ import {
   listInstagramConversations,
   markInstagramConversationRead,
 } from '../server/services/instagram';
+import { countUnreadInstagramMessages } from '../server/services/instagram-conversation-count';
 
 describe('Instagram per-user read tracking', () => {
   beforeEach(() => {
@@ -30,6 +31,20 @@ describe('Instagram per-user read tracking', () => {
     expect(String(sql)).toContain('conversation_read.user_id = $1');
     expect(String(sql)).toContain('unread_message.id > COALESCE(conversation_read.last_read_message_id, 0)');
     expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
+    expect(params).toEqual([7]);
+  });
+
+  it('counts unread inbox messages using the same employee cursor and visibility rules', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ count: 5 }] });
+
+    const count = await countUnreadInstagramMessages({ id: 7, module: 'sales', modules: ['sales'] });
+
+    expect(count).toBe(5);
+    const [sql, params] = mocks.poolQuery.mock.calls[0];
+    expect(String(sql)).toContain('conversation_read.user_id = $1');
+    expect(String(sql)).toContain('unread_message.id > COALESCE(conversation_read.last_read_message_id, 0)');
+    expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
+    expect(String(sql)).toContain("a.status = 'connected'");
     expect(params).toEqual([7]);
   });
 

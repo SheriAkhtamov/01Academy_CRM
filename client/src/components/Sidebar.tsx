@@ -35,6 +35,8 @@ import { DURATION, EASE, SPRING } from '@/lib/motion';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
+import { boardApi, boardQueryKeys } from '@/features/board/api';
+import { instagramInboxUnreadQueryOptions } from '@/features/sales/instagram-inbox-api';
 import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 import { useStickyState } from '@/hooks/useStickyState';
 
@@ -72,6 +74,24 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
   });
   const newLeadCount = Number(unviewedLeads.count) || 0;
   const newLeadsLabel = t('newLeadsCount').replace('{count}', String(newLeadCount));
+  const { data: inboxUnread = { count: 0 } } = useQuery({
+    ...instagramInboxUnreadQueryOptions,
+    enabled: hasSalesModule,
+  });
+  const inboxMessageCount = Number(inboxUnread.count) || 0;
+  const inboxMessagesLabel = t('newInboxMessagesCount')
+    .replace('{count}', String(inboxMessageCount));
+  const { data: pendingAcceptance = { count: 0 } } = useQuery({
+    queryKey: boardQueryKeys.pendingAcceptanceCount,
+    queryFn: boardApi.getPendingAcceptanceCount,
+    enabled: Boolean(user),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const pendingAcceptanceCount = Number(pendingAcceptance.count) || 0;
+  const pendingAcceptanceLabel = t('tasksPendingAcceptanceCount')
+    .replace('{count}', String(pendingAcceptanceCount));
   const [collapsedSections, setCollapsedSections] = useStickyState<Record<string, boolean>>(
     'sidebar-collapsed-sections',
     location.startsWith('/finance')
@@ -187,6 +207,9 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
           ...(module === 'sales' && item.id === 'pipeline'
             ? { badgeCount: newLeadCount, badgeLabel: newLeadsLabel }
             : {}),
+          ...(module === 'sales' && item.id === 'inbox'
+            ? { badgeCount: inboxMessageCount, badgeLabel: inboxMessagesLabel }
+            : {}),
         })),
       };
     };
@@ -205,6 +228,8 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
     name: t(TASKS_NAVIGATION_ITEM.labelKey),
     href: TASKS_NAVIGATION_ITEM.href,
     icon: TASKS_NAVIGATION_ITEM.icon,
+    badgeCount: pendingAcceptanceCount,
+    badgeLabel: pendingAcceptanceLabel,
   };
 
   const toggleSection = (sectionId: string) => {

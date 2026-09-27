@@ -24,7 +24,7 @@ import { getInstagramConversationAudienceUserIds } from './instagram-audience';
 import { unassignedLeadVisibleToSalesSql } from './lead-distribution-visibility';
 export { getInstagramConversationAudienceUserIds } from './instagram-audience';
 
-type InstagramUser = {
+export type InstagramUser = {
   id: number;
   module: AcademyModule;
   modules?: AcademyAccessModule[] | null;
@@ -2399,14 +2399,18 @@ export const listInstagramAccounts = async () => {
   return rows.map(camelize);
 };
 
-export const listInstagramConversations = async (user: InstagramUser) => {
-  const params: unknown[] = [user.id];
-  const ownershipFilter = hasLeadershipAccess(user)
+export const instagramConversationOwnershipFilter = (user: InstagramUser) => (
+  hasLeadershipAccess(user)
     ? ''
     : `AND (l.manager_id = $1 OR l.id IS NULL OR (${unassignedLeadVisibleToSalesSql('l')} AND EXISTS (
         SELECT 1 FROM academy_sales_funnel_users assignment
         WHERE assignment.user_id = $1 AND assignment.funnel_id = l.funnel_id
-      )))`;
+      )))`
+);
+
+export const listInstagramConversations = async (user: InstagramUser) => {
+  const params: unknown[] = [user.id];
+  const ownershipFilter = instagramConversationOwnershipFilter(user);
   const { rows } = await pool.query(
     `SELECT c.id, c.account_id, c.lead_id, c.participant_igsid, c.participant_username,
             c.participant_name, c.participant_profile_picture_url,

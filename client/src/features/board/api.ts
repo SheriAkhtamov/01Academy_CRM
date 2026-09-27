@@ -14,9 +14,13 @@ export const boardQueryKeys = {
   all: ['board-tasks'] as const,
   tasks: ['board-tasks', 'active'] as const,
   archive: ['board-tasks', 'archive'] as const,
+  pendingAcceptanceCount: ['board-tasks', 'pending-acceptance-count'] as const,
 };
 
 export const boardApi = {
+  getPendingAcceptanceCount: () => (
+    apiRequest('GET', '/api/board/tasks/pending-acceptance/count') as Promise<{ count: number }>
+  ),
   getTask: <T>(id: number) => apiRequest('GET', `/api/board/tasks/${id}`) as Promise<T>,
   listTasks: <T>(archived = false) => (
     apiRequest('GET', `/api/board/tasks${archived ? '?archived=true' : ''}`) as Promise<T>

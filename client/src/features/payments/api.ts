@@ -6,7 +6,7 @@ export type CreatePaymentInput = {
   amountUzs: number;
   method: string;
   type: string;
-  paidUntil?: string;
+  paidAt?: string;
   comment: string;
   status: 'paid';
   assignToSelf?: boolean;

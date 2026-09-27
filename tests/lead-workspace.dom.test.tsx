@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
+import { academyInstant, academyToday } from '../client/src/lib/localeFormat';
 
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
@@ -76,6 +77,25 @@ function renderSheet() {
 }
 
 describe('lead workspace navigation and drafts', () => {
+  it('records the chosen payment date without showing or sending a paid-through date', async () => {
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+
+    const paymentDate = screen.getByLabelText(i18n.t('paymentDate')) as HTMLInputElement;
+    expect(paymentDate.value).toBe(academyToday());
+    expect(screen.queryByText(/Оплачено до|Период оплачен до/)).toBeNull();
+    fireEvent.change(paymentDate, { target: { value: '2026-09-01' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('confirmPayment') }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toMatchObject({
+      url: '/api/academy/payments', method: 'POST',
+      body: { paidAt: academyInstant('2026-09-01').toISOString() },
+    });
+    expect(requests[0].body).not.toHaveProperty('paidUntil');
+  });
+
   it('edits study preferences and lead intent in the card and saves them together', async () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });

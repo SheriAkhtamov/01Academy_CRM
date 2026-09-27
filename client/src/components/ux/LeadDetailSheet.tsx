@@ -15,12 +15,14 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { TranslationKey } from '@/lib/i18n';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
-import { deadlineInputToInstant, nextPaymentDate } from '@/lib/leadScheduleInputs';
+import { deadlineInputToInstant } from '@/lib/leadScheduleInputs';
 import { cn } from '@/lib/utils';
+import { academyInstant, academyToday, formatAcademyDate } from '@/lib/localeFormat';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
+import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
 import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
@@ -91,7 +93,6 @@ import {
   ClipboardList,
   Clock3,
   CreditCard,
-  CalendarClock,
   CalendarPlus2,
   History,
   Loader2,
@@ -231,7 +232,6 @@ interface LeadDetails {
     method: string;
     type?: string | null;
     discount?: string | null;
-    paidUntil?: string | null;
     comment?: string | null;
     status: string;
     paidAt?: string | null;
@@ -312,7 +312,8 @@ const paymentSchema = z.object({
   amountUzs: z.string().refine((value) => Number(value) > 0, 'fillRequiredFields'),
   method: z.string().min(1, 'fillRequiredFields'),
   type: z.string().min(1, 'fillRequiredFields'),
-  paidUntil: z.string(),
+  paidAt: z.string().min(1, 'fillRequiredFields').regex(/^\d{4}-\d{2}-\d{2}$/, 'invalidData')
+    .refine((value) => value <= academyToday(), 'invalidData'),
   comment: z.string(),
 });
 
@@ -441,7 +442,7 @@ export function LeadDetailSheet({
       amountUzs: '',
       method: 'transfer',
       type: 'full',
-      paidUntil: '',
+      paidAt: academyToday(),
       comment: '',
     },
   });
@@ -518,7 +519,7 @@ export function LeadDetailSheet({
       lead.expectedPaymentUzs ?? '',
       lead.offerPriceUzs ?? '',
       (lead.students ?? []).map((student) => student.id).join(','),
-      (lead.payments ?? []).map((p) => `${p.id}:${p.paidUntil ?? ''}`).join(','),
+      (lead.payments ?? []).map((payment) => payment.id).join(','),
     ].join('|');
   }, [leadQuery.data]);
 
@@ -553,7 +554,7 @@ export function LeadDetailSheet({
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
           method: 'transfer',
           type: 'full',
-          paidUntil: nextPaymentDate(lead.payments),
+          paidAt: academyToday(),
           comment: '',
         });
       }
@@ -715,7 +716,7 @@ export function LeadDetailSheet({
         amountUzs: Number(values.amountUzs),
         method: values.method,
         type: values.type,
-        paidUntil: values.type === 'prepayment' ? undefined : values.paidUntil || undefined,
+        paidAt: values.paidAt === academyToday() ? undefined : academyInstant(values.paidAt).toISOString(),
         comment: values.comment,
         status: 'paid',
         assignToSelf,
@@ -729,7 +730,7 @@ export function LeadDetailSheet({
         amountUzs: String(refreshedLead?.expectedPaymentUzs ?? refreshedLead?.offerPriceUzs ?? ''),
         method: 'transfer',
         type: 'full',
-        paidUntil: nextPaymentDate(refreshedLead?.payments),
+        paidAt: academyToday(),
         comment: '',
       });
       hydratedTransientKey.current = null;
@@ -924,20 +925,8 @@ export function LeadDetailSheet({
   const totalPaidUzs = (lead?.payments ?? [])
     .filter((payment) => payment.status === 'paid')
     .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
-  const latestPaidUntil = (lead?.payments ?? []).reduce<string | null>((latest, payment) => {
-    if (!payment.paidUntil) return latest;
-    const timestamp = new Date(payment.paidUntil).getTime();
-    if (!Number.isFinite(timestamp)) return latest;
-    if (!latest || timestamp > new Date(latest).getTime()) return payment.paidUntil;
-    return latest;
-  }, null);
 
-  const dateOnly = (value: string | null | undefined) => {
-    if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US');
-  };
+  const dateOnly = (value: string | null | undefined) => formatAcademyDate(value, language) || '—';
 
   const paymentMethodLabel = (method?: string | null) => (
     method && method in paymentMethodTranslationKeys
@@ -1368,7 +1357,7 @@ export function LeadDetailSheet({
 
                 <TabsContent value="payment" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="flex items-center gap-3 rounded-xl border border-sky-200/80 bg-sky-50/70 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
                         <Banknote className="size-4 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden="true" />
                         <div className="min-w-0">
@@ -1387,13 +1376,6 @@ export function LeadDetailSheet({
                           <p className="truncate text-sm font-semibold tabular-nums">
                             {totalPaidUzs > 0 ? money(totalPaidUzs) : '—'}
                           </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 dark:border-amber-900/70 dark:bg-amber-950/30">
-                        <CalendarClock className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs text-muted-foreground">{t('paidUntil')}</p>
-                          <p className="truncate text-sm font-semibold tabular-nums">{dateOnly(latestPaidUntil)}</p>
                         </div>
                       </div>
                     </div>
@@ -1457,19 +1439,7 @@ export function LeadDetailSheet({
                                 </FormItem>
                               )}
                             />
-                            {!isPrepayment && (
-                              <FormField
-                                control={paymentForm.control}
-                                name="paidUntil"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('paidUntil')}</FormLabel>
-                                    <FormControl><Input {...field} type="date" /></FormControl>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
+                            <LeadPaymentDateField />
                             <FormField
                               control={paymentForm.control}
                               name="method"
@@ -1570,7 +1540,6 @@ export function LeadDetailSheet({
                                     ].filter(Boolean).join(' · ')}
                                   </p>
                                   {payment.studentName ? <p className="mt-0.5 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
-                                  {payment.paidUntil ? <p className="mt-0.5 text-xs text-muted-foreground">{t('paidUntil')}: {dateOnly(payment.paidUntil)}</p> : null}
                                   {payment.comment ? <p className="mt-0.5 text-xs text-muted-foreground">{payment.comment}</p> : null}
                                 </div>
                               </div>
@@ -1582,7 +1551,7 @@ export function LeadDetailSheet({
                                       ? t('paymentStatusOverdue')
                                       : t('paymentStatusPending')}
                                 </Badge>
-                                <p className="text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.createdAt)}</p>
+                                <p className="text-xs text-muted-foreground">{dateOnly(payment.paidAt || payment.createdAt)}</p>
                               </div>
                             </div>
                           ))

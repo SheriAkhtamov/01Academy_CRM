@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { paymentAttachmentsSelect } from './payment-attachments';
 import { assertSalesFunnelAssignment, assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -615,9 +616,8 @@ router.get('/leads/:id', async (req, res) => {
         [id],
       ),
       query(
-        `SELECT payment.*,
-                student.student_name,
-                student.contact_name AS student_contact_name
+        `SELECT payment.*, student.student_name,
+                student.contact_name AS student_contact_name, ${paymentAttachmentsSelect('payment')}
          FROM academy_payments payment
          LEFT JOIN academy_students student ON student.id = payment.student_id
          WHERE payment.lead_id = $1

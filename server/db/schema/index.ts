@@ -10,9 +10,9 @@ import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createSalesKpiTables } from "./sales-kpi";
+import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
 import { createLeadFunnelHandoffTable, createSalesFunnelTables } from "./sales-funnels";
 export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
-
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull(),
@@ -649,7 +649,7 @@ export const academyPayments = pgTable("academy_payments", {
   groupIdx: index("academy_payments_group_idx").on(table.groupId),
   statusIdx: index("academy_payments_status_idx").on(table.status),
 }));
-
+export const academyPaymentAttachments = createAcademyPaymentAttachmentsTable(academyPayments.id, users.id);
 export const academyTasks = pgTable("academy_tasks", {
   id: serial("id").primaryKey(),
   title: varchar("title", { length: 255 }).notNull(),

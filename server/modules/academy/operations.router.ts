@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -6,6 +8,8 @@ import type { PoolClient } from 'pg';
 import { pool } from '../../db';
 import { appConfig } from '../../config';
 import { requireAuth } from '../../middleware/auth.middleware';
+import { parsePaymentAttachments, paymentFilePath, removePaymentFiles } from '../../middleware/payment-attachments.middleware';
+import { validatePaymentAttachment } from '@shared/payment-attachments';
 import { storage } from '../../storage';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
@@ -102,6 +106,7 @@ import {
   ensureOperationsAccess,
   ensureSalesAccess,
   ensureModuleAccess,
+  ensureLeadRowAccess,
   insertRow,
   leadershipUserAccessSql,
   logIntegration,
@@ -128,9 +133,19 @@ import {
 } from './academy-route-support';
 
 export const registerAcademyOperationsRoutes = (router: ReturnType<typeof Router>) => {
-router.post('/payments', async (req, res) => {
+router.post('/payments', (req, res, next) => {
   if (!ensureModuleAccess(req, res, SALES_MODULES, 'Payment access required')) return;
+  next();
+}, parsePaymentAttachments, async (req, res) => {
+  const receiptFiles = Array.isArray(req.files) ? req.files : [];
+  let paymentCommitted = false;
   try {
+    for (const file of receiptFiles) {
+      if (file.size === 0) return res.status(400).json({ error: 'paymentFileEmpty' });
+      const validationError = validatePaymentAttachment(file.originalname, file.mimetype, file.size);
+      if (validationError) return res.status(400).json({ error: validationError });
+      await fs.promises.chmod(file.path, 0o640);
+    }
     const amountUzs = normalizeMoney(req.body.amountUzs);
     const leadId = parseId(req.body.leadId);
     const studentId = parseId(req.body.studentId);
@@ -183,7 +198,7 @@ router.post('/payments', async (req, res) => {
     const result = await withTransaction(async () => {
       const isScopedSalesUser = getAssignedModules(req.user).includes('sales')
         && !hasLeadershipAccess(req.user);
-      const selfAssignmentManager = isScopedSalesUser && req.body.assignToSelf === true
+      const selfAssignmentManager = isScopedSalesUser && (req.body.assignToSelf === true || req.body.assignToSelf === 'true')
         ? await getActiveSalesManager(Number(req.user!.id), true)
         : null;
       let lead = leadId
@@ -227,7 +242,7 @@ router.post('/payments', async (req, res) => {
           (lead && !lead.managerId)
           || (existingStudent && !existingStudent.managerId),
         );
-        if (assignmentMissing && req.body.assignToSelf !== true) {
+        if (assignmentMissing && req.body.assignToSelf !== true && req.body.assignToSelf !== 'true') {
           throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
         }
 
@@ -345,6 +360,17 @@ router.post('/payments', async (req, res) => {
         );
       }
 
+      for (const file of receiptFiles) {
+        await insertRow('academy_payment_attachments', {
+          paymentId: payment.id,
+          fileName: file.filename,
+          originalName: path.basename(file.originalname).replace(/[\u0000-\u001f\u007f]/g, '_').slice(0, 255),
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedBy: req.user!.id,
+        });
+      }
+
       let student = existingStudent ?? null;
       if (status === 'paid' && leadId) {
         student = await createStudentFromLead(req.actor!, leadId, payment.id);
@@ -369,10 +395,54 @@ router.post('/payments', async (req, res) => {
       return { payment, student };
     });
 
+    paymentCommitted = true;
     res.status(201).json(result);
   } catch (error: any) {
     logger.error('Failed to create payment', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to create payment') });
+  } finally {
+    if (!paymentCommitted) {
+      await removePaymentFiles(receiptFiles).catch((error) => {
+        logger.error('Failed to remove rejected payment files', { error });
+      });
+    }
+  }
+});
+
+router.get('/payments/:paymentId/attachments/:attachmentId/download', async (req, res) => {
+  if (!ensureModuleAccess(req, res, SALES_MODULES, 'Payment access required')) return;
+  try {
+    const paymentId = parseId(req.params.paymentId);
+    const attachmentId = parseId(req.params.attachmentId);
+    if (!paymentId || !attachmentId) return res.status(400).json({ error: 'invalidData' });
+    const attachment = await queryOne(
+      `SELECT attachment.file_name, attachment.original_name,
+              COALESCE(payment.lead_id, student.lead_id) AS lead_id
+       FROM academy_payment_attachments attachment
+       JOIN academy_payments payment ON payment.id = attachment.payment_id
+       LEFT JOIN academy_students student ON student.id = payment.student_id
+       WHERE attachment.id = $1 AND attachment.payment_id = $2`,
+      [attachmentId, paymentId],
+    );
+    if (!attachment) return res.status(404).json({ error: 'attachmentNotFound' });
+    if (attachment.leadId) {
+      const lead = await queryOne('SELECT * FROM academy_leads WHERE id = $1', [attachment.leadId]);
+      if (!lead) return res.status(404).json({ error: 'attachmentNotFound' });
+      if (!ensureLeadRowAccess(req, res, lead)) return;
+    } else if (!hasLeadershipAccess(req.user)) {
+      return res.status(403).json({ error: 'accessDenied' });
+    }
+    const filePath = paymentFilePath(attachment.fileName);
+    if (!filePath) return res.status(404).json({ error: 'attachmentNotFound' });
+    const stats = await fs.promises.lstat(filePath).catch(() => null);
+    if (!stats?.isFile() || stats.isSymbolicLink()) return res.status(404).json({ error: 'attachmentNotFound' });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.download(filePath, attachment.originalName);
+  } catch (error) {
+    logger.error('Failed to download payment attachment', { error, attachmentId: req.params.attachmentId });
+    res.status(500).json({ error: 'attachmentDownloadFailed' });
   }
 });
 

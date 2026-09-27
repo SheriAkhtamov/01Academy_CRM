@@ -23,6 +23,7 @@ import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
+import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
 import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
@@ -240,6 +241,7 @@ interface LeadDetails {
     createdAt?: string | null;
     studentId?: number | null;
     studentName?: string | null;
+    attachments?: PaymentReceiptAttachment[];
   }>;
 }
 
@@ -351,6 +353,7 @@ type TaskFormValues = z.infer<typeof taskSchema>;
 type PaymentMutationVariables = {
   values: PaymentFormValues;
   assignToSelf?: boolean;
+  files: File[];
 };
 
 const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
@@ -394,6 +397,7 @@ export function LeadDetailSheet({
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentFiles, setPaymentFiles] = useState<File[]>([]);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [pendingPaymentClaim, setPendingPaymentClaim] = useState<PaymentFormValues | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
@@ -460,6 +464,7 @@ export function LeadDetailSheet({
   // the deal form, an unsent payment, a task draft, or a comment draft.
   const sheetHasUnsavedChanges = leadForm.formState.isDirty
     || paymentForm.formState.isDirty
+    || paymentFiles.length > 0
     || taskForm.formState.isDirty
     || commentDraft.trim().length > 0
     || socialAccountsDirty;
@@ -484,6 +489,7 @@ export function LeadDetailSheet({
     setPendingPaymentClaim(null);
     setTaskDialogOpen(false);
     setPaymentDialogOpen(false);
+    setPaymentFiles([]);
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
     setSocialAccountsDirty(false);
@@ -590,6 +596,7 @@ export function LeadDetailSheet({
       setCommentDraft('');
       setTaskDialogOpen(false);
       setPaymentDialogOpen(false);
+      setPaymentFiles([]);
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
       leadForm.reset();
       paymentForm.reset();
@@ -718,7 +725,7 @@ export function LeadDetailSheet({
   });
 
   const createPayment = useMutation({
-    mutationFn: ({ values, assignToSelf }: PaymentMutationVariables) =>
+    mutationFn: ({ values, assignToSelf, files }: PaymentMutationVariables) =>
       paymentsApi.create({
         leadId: leadId!,
         studentId: Number(values.studentId),
@@ -729,10 +736,12 @@ export function LeadDetailSheet({
         comment: values.comment,
         status: 'paid',
         assignToSelf,
+        files,
       }),
     onSuccess: async () => {
       setPendingPaymentClaim(null);
       setPaymentDialogOpen(false);
+      setPaymentFiles([]);
       const refreshed = await leadQuery.refetch();
       const refreshedLead = refreshed.data;
       paymentForm.reset({
@@ -851,7 +860,7 @@ export function LeadDetailSheet({
       setPendingPaymentClaim(values);
       return;
     }
-    createPayment.mutate({ values });
+    createPayment.mutate({ values, files: paymentFiles });
   };
 
   const copyPhone = async (phone: string) => {
@@ -1437,6 +1446,7 @@ export function LeadDetailSheet({
                                   </p>
                                   {payment.studentName ? <p className="mt-0.5 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
                                   {payment.comment ? <p className="mt-0.5 text-xs text-muted-foreground">{payment.comment}</p> : null}
+                                  <PaymentAttachmentLinks paymentId={payment.id} attachments={payment.attachments ?? []} />
                                 </div>
                               </div>
                               <div className="flex shrink-0 flex-col items-end gap-1 text-right">
@@ -1558,7 +1568,9 @@ export function LeadDetailSheet({
         )}
       </SheetContent>
       {lead ? (
-        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <Dialog open={paymentDialogOpen} onOpenChange={(nextOpen) => {
+          if (!createPayment.isPending) setPaymentDialogOpen(nextOpen);
+        }}>
           <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{paymentActionLabel}</DialogTitle>
@@ -1666,8 +1678,9 @@ export function LeadDetailSheet({
                         </FormItem>
                       )}
                     />
+                    <PaymentFilesField files={paymentFiles} onChange={setPaymentFiles} disabled={createPayment.isPending} />
                     <DialogFooter className="md:col-span-2">
-                      <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
+                      <Button type="button" variant="outline" disabled={createPayment.isPending} onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
                       <Button type="submit" disabled={createPayment.isPending}>
                         <CreditCard data-icon="inline-start" />
                         {createPayment.isPending ? t('saving') : t('confirmPayment')}
@@ -1785,7 +1798,7 @@ export function LeadDetailSheet({
         }}
         onConfirm={() => {
           if (pendingPaymentClaim) {
-            createPayment.mutate({ values: pendingPaymentClaim, assignToSelf: true });
+            createPayment.mutate({ values: pendingPaymentClaim, assignToSelf: true, files: paymentFiles });
           }
         }}
       />

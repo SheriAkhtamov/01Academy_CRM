@@ -254,7 +254,7 @@ jobs:
           find static-assets -type f -mmin +2880 -delete
 
           backup_started_at="$(date +%s)"
-          docker compose up -d --no-build postgres crm
+          docker compose up -d --no-build postgres
           docker compose stop backup >/dev/null 2>&1 || true
           rm -f backups/.backup.lock
           if ! docker compose run --rm --no-deps -T \

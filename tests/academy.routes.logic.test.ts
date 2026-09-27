@@ -1,5 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -2075,6 +2077,116 @@ describe('academy route logic boundaries', () => {
     expect(insertedLeadId).toBe(42);
     expect(insertedPaidUntil).toBeInstanceOf(Date);
     expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
+  });
+
+  it('saves receipt files with the payment and makes them available for download', async () => {
+    let savedFileName = '';
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, manager_id: 1 }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5, status: 'pending' }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payment_attachments"')) {
+        savedFileName = String(readInsertValue(sql, values, 'file_name'));
+        expect(readInsertValue(sql, values, 'payment_id')).toBe(99);
+        return { rows: [{ id: 123, payment_id: 99 }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .field('studentId', '5')
+      .field('amountUzs', '100000')
+      .field('status', 'pending')
+      .attach('files', Buffer.from('%PDF-1.4 receipt'), 'receipt.pdf');
+
+    const filePath = path.resolve('uploads', 'payments', savedFileName);
+    try {
+      expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+      expect(savedFileName).toMatch(/\.pdf$/);
+      expect(await fs.promises.readFile(filePath, 'utf8')).toBe('%PDF-1.4 receipt');
+
+      mocks.poolQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM academy_payment_attachments attachment')) {
+          return { rows: [{ file_name: savedFileName, original_name: 'receipt.pdf', lead_id: 42 }] };
+        }
+        if (sql.includes('FROM academy_leads WHERE id = $1')) return { rows: [leadFixture()] };
+        return emptyResult();
+      });
+      const download = await request(await createApp())
+        .get('/api/academy/payments/99/attachments/123/download');
+      expect(download.status).toBe(200);
+      expect(download.headers['content-disposition']).toContain('receipt.pdf');
+      expect(download.body.toString()).toBe('%PDF-1.4 receipt');
+    } finally {
+      await fs.promises.unlink(filePath).catch(() => {});
+    }
+  });
+
+  it('rejects unsupported payment files before creating a payment', async () => {
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .field('studentId', '5')
+      .field('amountUzs', '100000')
+      .attach('files', Buffer.from('<svg/>'), 'receipt.svg');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('paymentFileTypeUnsupported');
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
+  });
+
+  it('removes uploaded receipt files when payment saving rolls back', async () => {
+    let savedFileName = '';
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, lead_id: 42, manager_id: 1 }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payments"')) {
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5 }] };
+      }
+      if (sql.includes('INSERT INTO "academy_payment_attachments"')) {
+        savedFileName = String(readInsertValue(sql, values, 'file_name'));
+        throw new Error('insert failed');
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .field('studentId', '5')
+      .field('amountUzs', '100000')
+      .field('status', 'pending')
+      .attach('files', Buffer.from('%PDF-1.4 receipt'), 'receipt.pdf');
+
+    expect(response.status).toBe(500);
+    expect(savedFileName).toMatch(/\.pdf$/);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    await vi.waitFor(() => {
+      expect(fs.existsSync(path.resolve('uploads', 'payments', savedFileName))).toBe(false);
+    });
+  });
+
+  it('does not serve a payment receipt to a manager who cannot see its lead', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_payment_attachments attachment')) {
+        return { rows: [{ file_name: 'receipt123456.pdf', original_name: 'receipt.pdf', lead_id: 42 }] };
+      }
+      if (sql.includes('FROM academy_leads WHERE id = $1')) {
+        return { rows: [leadFixture({ manager_id: 1 })] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .get('/api/academy/payments/99/attachments/123/download');
+
+    expect(response.status).toBe(403);
   });
 
   it('records the entered prepayment amount without granting a paid period', async () => {

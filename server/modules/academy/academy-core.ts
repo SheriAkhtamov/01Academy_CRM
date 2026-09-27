@@ -148,6 +148,7 @@ export const TABLES_WITHOUT_UPDATED_AT = new Set([
   'academy_lesson_status_history',
   'academy_parent_surveys',
   'academy_referral_rewards',
+  'academy_payment_attachments',
 ]);
 
 export const parseId = (value: unknown) => {

@@ -1,4 +1,3 @@
-import { Facebook, Instagram, MessageCircle, Send } from 'lucide-react';
 import {
   LEAD_CHANNELS,
   type LeadChannelKind,
@@ -14,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { LeadChannelBrandIcon } from '@/components/ux/lead/LeadChannelBrandIcon';
 
 const channelStyles: Record<LeadChannelKind, string> = {
   instagram: 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100',
@@ -21,13 +21,6 @@ const channelStyles: Record<LeadChannelKind, string> = {
   facebook: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
   whatsapp: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
 };
-
-const channelIcons = {
-  instagram: Instagram,
-  telegram: Send,
-  facebook: Facebook,
-  whatsapp: MessageCircle,
-} satisfies Record<LeadChannelKind, typeof Instagram>;
 
 const channelTranslationKeys = {
   instagram: 'socialNetworkInstagram',
@@ -68,7 +61,6 @@ export function LeadChannelLinks({
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
       {uniqueChannels.map((channel) => {
-        const Icon = channelIcons[channel.channel];
         const generatedUrl = buildLeadChannelProfileUrl(channel.channel, channel.handle, channel.externalId);
         const href = safeLeadChannelProfileUrl(channel.channel, channel.profileUrl)
           ?? safeLeadChannelProfileUrl(channel.channel, generatedUrl)
@@ -85,13 +77,13 @@ export function LeadChannelLinks({
         const content = href ? (
           <Button asChild variant="outline" size={showLabels ? 'sm' : 'icon'} className={buttonClassName}>
             <a href={href} target={external ? '_blank' : undefined} rel={external ? 'noreferrer' : undefined} aria-label={label}>
-              <Icon />
+              <LeadChannelBrandIcon channel={channel.channel} />
               {showLabels ? <span>{accountValue || label}</span> : null}
             </a>
           </Button>
         ) : (
           <Button type="button" variant="outline" size={showLabels ? 'sm' : 'icon'} className={buttonClassName} disabled aria-label={label}>
-            <Icon />
+            <LeadChannelBrandIcon channel={channel.channel} />
             {showLabels ? <span>{label}</span> : null}
           </Button>
         );

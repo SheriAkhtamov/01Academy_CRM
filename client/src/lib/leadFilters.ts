@@ -11,6 +11,7 @@ export interface FilterableLead extends LeadContactFields {
   sourceId?: number | null;
   managerId?: number | null;
   language?: string | null;
+  languages?: string[] | null;
   tags?: Array<{ id: number; tagId: number; name: string }> | null;
   firstViewedAt?: string | null;
   demoAt?: string | null;
@@ -108,8 +109,9 @@ export const leadMatchesFilters = (lead: FilterableLead, filters: LeadFilterStat
       && (lead.managerId === null || lead.managerId === undefined);
     if (!assignedManagerMatches && !unassignedMatches) return false;
   }
+  const leadLanguages = lead.languages?.length ? lead.languages : [lead.language];
   if (filters.languages.length > 0
-    && !filters.languages.includes(String(lead.language ?? '').trim().toLowerCase())) {
+    && !leadLanguages.some((item) => filters.languages.includes(String(item ?? '').trim().toLowerCase()))) {
     return false;
   }
   // Instagram leads carry a synthetic "instagram:" phone, which is not a number

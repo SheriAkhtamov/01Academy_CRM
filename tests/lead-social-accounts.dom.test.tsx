@@ -49,7 +49,8 @@ const renderEditor = (props: {
 
 const openCreateForm = async (networkName: RegExp) => {
   fireEvent.click(screen.getByRole('button', { name: /Добавить аккаунт|Add account/i }));
-  fireEvent.click(await screen.findByRole('option', { name: networkName }));
+  const dialog = await screen.findByRole('dialog', { name: /Добавить аккаунт|Add account/i });
+  fireEvent.click(within(dialog).getByRole('button', { name: networkName }));
 };
 
 describe('lead social account editor', () => {
@@ -62,17 +63,17 @@ describe('lead social account editor', () => {
     apiMocks.removeSocialAccount.mockResolvedValue({ channels: [] });
   });
 
-  it('opens the network dropdown first and saves one link-or-username field', async () => {
+  it('opens a modal with branded network choices and saves a profile link', async () => {
     renderEditor();
     await openCreateForm(/Телеграм|Telegram/i);
 
-    const input = screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i);
-    fireEvent.change(input, { target: { value: '@academy_support' } });
+    const input = screen.getByLabelText(/Ссылка на профиль|Profile link/i);
+    fireEvent.change(input, { target: { value: 'https://t.me/academy_support' } });
     fireEvent.click(screen.getByRole('button', { name: /^Сохранить$|^Save$/i }));
 
     await waitFor(() => expect(apiMocks.addSocialAccount).toHaveBeenCalledWith(42, {
       channel: 'telegram',
-      value: '@academy_support',
+      value: 'https://t.me/academy_support',
       assignToSelf: undefined,
     }));
   });
@@ -89,10 +90,10 @@ describe('lead social account editor', () => {
     });
     await openCreateForm(/Инстаграм|Instagram/i);
 
-    fireEvent.change(screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i), {
+    fireEvent.change(screen.getByLabelText(/Ссылка на профиль|Profile link/i), {
       target: { value: '@academy.uz' },
     });
-    fireEvent.blur(screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i));
+    fireEvent.blur(screen.getByLabelText(/Ссылка на профиль|Profile link/i));
 
     expect(await screen.findByText(/уже добавлен|already linked/i)).toBeTruthy();
     expect(apiMocks.addSocialAccount).not.toHaveBeenCalled();
@@ -110,10 +111,10 @@ describe('lead social account editor', () => {
     });
     await openCreateForm(/Ватсап|WhatsApp/i);
 
-    fireEvent.change(screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i), {
+    fireEvent.change(screen.getByLabelText(/Ссылка на профиль|Profile link/i), {
       target: { value: '+998 90 123 45 67' },
     });
-    fireEvent.blur(screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i));
+    fireEvent.blur(screen.getByLabelText(/Ссылка на профиль|Profile link/i));
 
     expect(await screen.findByText(/уже добавлен|already linked/i)).toBeTruthy();
     expect(apiMocks.addSocialAccount).not.toHaveBeenCalled();
@@ -122,7 +123,7 @@ describe('lead social account editor', () => {
   it('asks to assign an unassigned lead and then continues automatically', async () => {
     renderEditor({ managerId: null, canClaimUnassignedLead: true });
     await openCreateForm(/Инстаграм|Instagram/i);
-    fireEvent.change(screen.getByLabelText(/Ссылка на профиль или username|Profile link or username/i), {
+    fireEvent.change(screen.getByLabelText(/Ссылка на профиль|Profile link/i), {
       target: { value: '@academy.uz' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^Сохранить$|^Save$/i }));

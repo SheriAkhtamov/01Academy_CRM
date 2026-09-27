@@ -14,6 +14,7 @@ import {
   validateLeadForStatusChange,
 } from '@shared/academy';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
+import { selectedLeadLanguages } from '@shared/lead-languages';
 import { logger } from '../../lib/logger';
 import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
@@ -615,6 +616,10 @@ export const mergeLeadRecords = async (
     && !isGeneratedInstagramLeadName(duplicateLead.contactName)
     ? duplicateLead.contactName
     : retainedLead.contactName;
+  const mergedLanguages = [...new Set([
+    ...selectedLeadLanguages(retainedLead.languages, retainedLead.language),
+    ...selectedLeadLanguages(duplicateLead.languages, duplicateLead.language),
+  ])];
   const updatedRetainedLead = await updateRow('academy_leads', retainedLeadId, {
     contactName: retainedContactName,
     phone: primaryPhoneRow?.phone
@@ -629,7 +634,8 @@ export const mergeLeadRecords = async (
       ? retainedLead.acquisitionCostUzs
       : duplicateLead.acquisitionCostUzs,
     managerId: preferLeadValue(retainedLead.managerId, duplicateLead.managerId),
-    language: preferLeadValue(retainedLead.language, duplicateLead.language),
+    language: mergedLanguages[0],
+    languages: mergedLanguages,
     comment: latestMergedComment?.body ?? combineLeadComments(retainedLead.comment, duplicateLead.comment),
     firstContactAt: earliestLeadDate(retainedLead.firstContactAt, duplicateLead.firstContactAt),
     firstContactChannel: preferLeadValue(retainedLead.firstContactChannel, duplicateLead.firstContactChannel),
@@ -857,7 +863,10 @@ export const mergeLeadDraftIntoExisting = async (
       : preferLeadValue(retainedLead.schoolId, toIdOrNull(draft.schoolId, 'schoolId')),
     managerId: assignedManager?.id ?? retainedLead.managerId,
     comment: draftComment ?? retainedLead.comment,
-    language: preferLeadValue(retainedLead.language, nullableText(draft.language)),
+    language: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
+      draft.language ?? retainedLead.language)[0],
+    languages: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
+      draft.language ?? retainedLead.language),
     enrolledGroupId: nextEnrolledGroupId,
   });
   if (!updatedLead) {

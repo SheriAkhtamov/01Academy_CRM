@@ -15,6 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
+import { LeadChannelBrandIcon } from './LeadChannelBrandIcon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,15 +28,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 const SOCIAL_ACCOUNT_LIMIT = 20;
 
@@ -88,7 +83,6 @@ export function LeadSocialAccountsEditor({
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState<SocialAccountDraft | null>(null);
-  const [platformSelectOpen, setPlatformSelectOpen] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LeadChannelView | null>(null);
   const [pendingClaim, setPendingClaim] = useState<PendingClaimAction | null>(null);
@@ -239,7 +233,6 @@ export function LeadSocialAccountsEditor({
   const beginCreate = () => {
     setDraft({ mode: 'create', channel: '', value: '' });
     setShowValidation(false);
-    setPlatformSelectOpen(true);
   };
 
   const beginEdit = (account: LeadChannelView & { channel: LeadChannelKind }) => {
@@ -266,13 +259,12 @@ export function LeadSocialAccountsEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium">{t('leadSocialAccounts')}</p>
-          <p className="text-xs text-muted-foreground">{t('leadSocialAccountsDescription')}</p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          disabled={Boolean(draft) || manualAccountCount >= SOCIAL_ACCOUNT_LIMIT}
+          disabled={manualAccountCount >= SOCIAL_ACCOUNT_LIMIT}
           onClick={beginCreate}
         >
           <Plus data-icon="inline-start" />
@@ -300,7 +292,6 @@ export function LeadSocialAccountsEditor({
                     variant="ghost"
                     size="icon"
                     aria-label={t('editSocialAccount')}
-                    disabled={Boolean(draft)}
                     onClick={() => beginEdit(account)}
                   >
                     <Pencil />
@@ -330,70 +321,70 @@ export function LeadSocialAccountsEditor({
         <p className="text-xs text-muted-foreground">{t('leadSocialAccountLimitReached')}</p>
       ) : null}
 
-      {draft ? (
-        <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <div className="grid gap-3 sm:grid-cols-[11rem_minmax(0,1fr)]">
+      <Dialog open={Boolean(draft)} onOpenChange={(nextOpen) => {
+        if (!nextOpen && !saveAccount.isPending) setDraft(null);
+      }}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t(draft?.mode === 'edit' ? 'editSocialAccount' : 'addSocialAccount')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="lead-social-platform">{t('socialNetwork')}</Label>
-              <Select
-                open={platformSelectOpen}
-                onOpenChange={setPlatformSelectOpen}
-                value={draft.channel}
-                onValueChange={(channel) => {
-                  setDraft((current) => current ? {
-                    ...current,
-                    channel: channel as LeadChannelKind,
-                    value: current.channel === channel ? current.value : '',
-                  } : current);
-                  setShowValidation(false);
-                }}
-              >
-                <SelectTrigger id="lead-social-platform">
-                  <SelectValue placeholder={t('selectSocialNetwork')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {LEAD_CHANNELS.map((channel) => (
-                    <SelectItem key={channel} value={channel}>
-                      {t(channelTranslationKeys[channel])}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>{t('socialNetwork')}</Label>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={t('socialNetwork')}>
+                {LEAD_CHANNELS.map((channel) => (
+                  <button
+                    key={channel}
+                    type="button"
+                    aria-pressed={draft?.channel === channel}
+                    className="flex min-h-12 items-center gap-3 rounded-lg border border-border px-3 text-left text-sm font-medium transition-colors hover:bg-accent aria-pressed:border-primary aria-pressed:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      setDraft((current) => current ? {
+                        ...current,
+                        channel,
+                        value: current.channel === channel ? current.value : '',
+                      } : current);
+                      setShowValidation(false);
+                    }}
+                  >
+                    <LeadChannelBrandIcon channel={channel} />
+                    {t(channelTranslationKeys[channel])}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lead-social-account-value">{t('socialAccountLinkOrUsername')}</Label>
+              <Label htmlFor="lead-social-account-value">{t('socialAccountProfileLink')}</Label>
               <Input
                 ref={inputRef}
                 id="lead-social-account-value"
-                value={draft.value}
+                value={draft?.value ?? ''}
                 onChange={(event) => {
                   setDraft((current) => current ? { ...current, value: event.target.value } : current);
                   setShowValidation(false);
                 }}
                 onBlur={() => setShowValidation(true)}
-                placeholder={draft.channel
+                placeholder={draft?.channel
                   ? t(placeholderTranslationKeys[draft.channel])
                   : t('selectSocialNetworkFirst')}
                 autoComplete="off"
                 maxLength={500}
                 aria-invalid={Boolean(validationMessage)}
-                disabled={!draft.channel}
+                disabled={!draft?.channel}
               />
+              {validationMessage ? (
+                <p className="text-sm font-medium text-destructive">{validationMessage}</p>
+              ) : null}
             </div>
           </div>
-          {validationMessage ? (
-            <p className="text-sm font-medium text-destructive">{validationMessage}</p>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setDraft(null)}>
-              {t('cancel')}
-            </Button>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDraft(null)}>{t('cancel')}</Button>
             <Button type="button" disabled={!canSave || saveAccount.isPending} onClick={requestSave}>
               {saveAccount.isPending ? t('saving') : t('saveSocialAccount')}
             </Button>
-          </div>
-        </div>
-      ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
         if (!open && !deleteAccount.isPending) setDeleteTarget(null);

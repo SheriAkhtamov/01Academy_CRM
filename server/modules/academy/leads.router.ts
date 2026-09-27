@@ -78,6 +78,7 @@ import {
 } from '@shared/scheduling';
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
+import { parseLeadLanguageUpdates } from './lead-languages';
 import { parseLeadPreferenceUpdates } from './lead-preferences';
 import {
   countUnviewedLeads,
@@ -374,7 +375,7 @@ router.post('/leads', async (req, res) => {
         acquisitionCostUzs: normalizeMoney(input.acquisitionCostUzs ?? source?.costPerLeadUzs),
         statusCode,
         managerId,
-        language: nullableText(input.language) ?? 'ru',
+        language: input.languages?.[0] ?? input.language ?? 'ru', languages: input.languages ?? [input.language ?? 'ru'],
         comment: initialComment ?? null,
         enrolledGroupId,
         referralCode: nullableText(input.referralCode) ?? null,
@@ -969,10 +970,9 @@ router.patch('/leads/:id', async (req, res) => {
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
     const preferenceUpdates = parseLeadPreferenceUpdates(req.body);
     if (!preferenceUpdates) return res.status(400).json({ error: 'invalidData' });
-    const requestedComment = req.body.comment === undefined
-      ? undefined
-      : nullableText(req.body.comment);
-
+    const languageUpdates = parseLeadLanguageUpdates(req.body);
+    if (!languageUpdates) return res.status(400).json({ error: 'invalidData' });
+    const requestedComment = req.body.comment === undefined ? undefined : nullableText(req.body.comment);
     const hasRequestedGroup = req.body.enrolledGroupId !== undefined;
     const requestedGroupId = hasRequestedGroup
       ? toIdOrNull(req.body.enrolledGroupId, 'enrolledGroupId')
@@ -1094,7 +1094,7 @@ router.patch('/leads/:id', async (req, res) => {
       acquisitionCostUzs: toIntegerOrNull(req.body.acquisitionCostUzs),
       statusCode: nullableText(req.body.statusCode),
       managerId,
-      language: nullableText(req.body.language),
+      ...languageUpdates,
       comment: requestedComment,
       ...preferenceUpdates,
       firstContactAt: nullableDate(req.body.firstContactAt),

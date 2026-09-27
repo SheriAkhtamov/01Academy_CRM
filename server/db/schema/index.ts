@@ -293,7 +293,7 @@ export const academyLeads = pgTable("academy_leads", {
   acquisitionCostUzs: integer("acquisition_cost_uzs").notNull().default(0),
   statusCode: varchar("status_code", { length: 80 }).notNull().default("new_request"),
   managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
-  language: varchar("language", { length: 20 }).notNull().default("ru"),
+  language: varchar("language", { length: 20 }).notNull().default("ru"), languages: text("languages").array(),
   comment: text("comment"),
   locality: varchar("locality", { length: 40 }),
   studyDays: varchar("study_days", { length: 20 }),

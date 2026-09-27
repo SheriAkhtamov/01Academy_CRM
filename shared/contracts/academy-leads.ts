@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { normalizeLeadTagName } from '../lead-tags';
 import { LEAD_CHANNELS } from '../lead-channels';
 import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '../lead-preferences';
+import { LEAD_LANGUAGES } from '../lead-languages';
 import { positiveIdSchema } from './messages';
 
 const optionalPositiveIdInput = z.preprocess(
@@ -10,6 +11,8 @@ const optionalPositiveIdInput = z.preprocess(
 );
 
 const optionalTextInput = z.string().trim().max(5_000).optional().nullable();
+export const leadLanguagesSchema = z.array(z.enum(LEAD_LANGUAGES)).min(1).max(LEAD_LANGUAGES.length)
+  .refine((values) => new Set(values).size === values.length);
 
 /**
  * This contract covers the public shape accepted by POST /api/academy/leads.
@@ -32,6 +35,7 @@ export const createAcademyLeadRequestSchema = z.object({
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),
   statusCode: z.string().trim().max(80).optional().nullable(),
   language: z.enum(['ru', 'uz', 'en']).optional(),
+  languages: leadLanguagesSchema.optional(),
   comment: optionalTextInput,
   advertisingCampaign: optionalTextInput,
   referralCode: z.string().trim().max(120).optional().nullable(),
@@ -190,6 +194,7 @@ export const updateAcademyLeadRequestSchema = z.object({
   statusCode: z.string().trim().max(80).optional(),
   comment: optionalTextInput,
   locality: z.enum(LEAD_LOCALITIES).optional().nullable(),
+  languages: leadLanguagesSchema.optional(),
   studyDays: z.enum(LEAD_STUDY_DAYS).optional().nullable(),
   studyTime: z.string().refine((value) => LEAD_STUDY_TIMES.includes(value)).optional().nullable(),
   goal: optionalTextInput,

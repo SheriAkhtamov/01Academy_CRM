@@ -35,7 +35,6 @@ import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDial
 import { useHandoffKpiLead } from '@/features/sales-kpi/hooks';
 import {
   LocalizedFormMessage,
-  SegmentedControl,
   TabCount,
 } from '@/components/ux/lead/LeadSheetControls';
 import {
@@ -57,6 +56,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
@@ -105,6 +105,7 @@ import {
 } from 'lucide-react';
 import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '@shared/lead-preferences';
+import { LEAD_LANGUAGES, selectedLeadLanguages } from '@shared/lead-languages';
 import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
@@ -130,6 +131,7 @@ interface LeadDetails {
   managerName?: string | null;
   comment?: string | null;
   language?: string | null;
+  languages?: string[] | null;
   locality?: (typeof LEAD_LOCALITIES)[number] | null;
   studyDays?: (typeof LEAD_STUDY_DAYS)[number] | null;
   studyTime?: string | null;
@@ -298,7 +300,7 @@ const leadSchema = z.object({
   contactName: z.string().trim().min(1, 'fillRequiredFields'),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   sourceId: z.string().min(1, 'fillRequiredFields'),
-  language: z.string(),
+  languages: z.array(z.enum(LEAD_LANGUAGES)).min(1, 'fillRequiredFields'),
   expectedPaymentUzs: optionalNumberString,
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
   studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
@@ -355,7 +357,7 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   contactName: lead.contactName ?? '',
   phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
-  language: lead.language ?? 'ru',
+  languages: selectedLeadLanguages(lead.languages, lead.language),
   expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
   locality: lead.locality ?? '',
   studyDays: lead.studyDays ?? '',
@@ -390,6 +392,7 @@ export function LeadDetailSheet({
   const transferFunnel = useHandoffKpiLead();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [pendingPaymentClaim, setPendingPaymentClaim] = useState<PaymentFormValues | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
@@ -426,7 +429,7 @@ export function LeadDetailSheet({
       contactName: '',
       phoneNumbers: [''],
       sourceId: '',
-      language: 'ru',
+      languages: ['ru'],
       expectedPaymentUzs: '',
       locality: '',
       studyDays: '',
@@ -478,6 +481,7 @@ export function LeadDetailSheet({
   useEffect(() => {
     setCommentDraft('');
     setPendingPaymentClaim(null);
+    setTaskDialogOpen(false);
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
     setSocialAccountsDirty(false);
@@ -501,7 +505,7 @@ export function LeadDetailSheet({
       lead.contactName,
       (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
       lead.sourceId ?? '',
-      lead.language ?? '',
+      selectedLeadLanguages(lead.languages, lead.language).join(','),
       lead.expectedPaymentUzs ?? '',
       lead.locality ?? '',
       lead.studyDays ?? '',
@@ -582,6 +586,7 @@ export function LeadDetailSheet({
       setTagDropdownOpen(false);
       setSocialAccountsDirty(false);
       setCommentDraft('');
+      setTaskDialogOpen(false);
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
       leadForm.reset();
       paymentForm.reset();
@@ -614,6 +619,7 @@ export function LeadDetailSheet({
         expectedUpdatedAt: editVersion.current ?? currentLead?.updatedAt,
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         sourceId: Number(values.sourceId),
+        language: values.languages[0],
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
         locality: values.locality || null,
         studyDays: values.studyDays || null,
@@ -768,6 +774,7 @@ export function LeadDetailSheet({
     }),
     onSuccess: async () => {
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
+      setTaskDialogOpen(false);
       await queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
       await finishMutation(t('taskCreated'));
     },
@@ -901,7 +908,7 @@ export function LeadDetailSheet({
     if (!field) return;
     const phoneErrorIndex = Array.isArray(errors.phoneNumbers) ? errors.phoneNumbers.findIndex(Boolean) : 0;
     setInvalidField(field === 'phoneNumbers' ? `phoneNumbers.${Math.max(0, phoneErrorIndex)}` : field);
-    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'language' ? 'contacts' : 'details');
+    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'languages' ? 'contacts' : 'details');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
     if (!updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
@@ -1091,7 +1098,8 @@ export function LeadDetailSheet({
                 { label: t('contactPersonName'), value: lead.contactName },
                 { label: t('phone'), value: visibleLeadPhones(lead).join(', ') },
                 { label: t('source'), value: sources.find((source) => source.id === lead.sourceId)?.name ?? '' },
-                { label: t('communicationLanguage'), value: lead.language === 'uz' ? t('uzbekLang') : lead.language === 'en' ? t('english') : t('russian') },
+                { label: t('communicationLanguage'), value: selectedLeadLanguages(lead.languages, lead.language)
+                  .map((selected) => t(selected === 'uz' ? 'uzbekLang' : selected === 'en' ? 'english' : 'russian')).join(', ') },
                 { label: t('amount'), value: money(lead.expectedPaymentUzs) },
                 { label: t('leadLocality'), value: lead.locality ? t(localityKeys[lead.locality]) : '' },
                 { label: t('leadStudyDays'), value: lead.studyDays ? t(studyDaysKeys[lead.studyDays]) : '' },
@@ -1109,7 +1117,6 @@ export function LeadDetailSheet({
                               <UserRound className="size-4 text-sky-700 dark:text-sky-300" aria-hidden="true" />
                               {t('contactInformation')}
                             </CardTitle>
-                            <p className="text-sm text-muted-foreground">{t('leadWorkspaceContactHint')}</p>
                           </CardHeader>
                           <CardContent className="grid grid-cols-1 gap-4 pt-3 md:grid-cols-2">
                             <div className="space-y-4">
@@ -1126,20 +1133,29 @@ export function LeadDetailSheet({
                               />
                               <FormField
                                 control={leadForm.control}
-                                name="language"
+                                name="languages"
                                 render={({ field }) => (
                                   <FormItem>
                                     <FormLabel>{t('communicationLanguage')}</FormLabel>
-                                    <SegmentedControl
-                                      ariaLabel={t('communicationLanguage')}
-                                      value={field.value}
-                                      onChange={field.onChange}
-                                      options={[
-                                        { value: 'ru', label: t('russian') },
-                                        { value: 'uz', label: t('uzbekLang') },
-                                        { value: 'en', label: t('english') },
-                                      ]}
-                                    />
+                                    <div className="space-y-1 rounded-lg border border-border p-2">
+                                      {LEAD_LANGUAGES.map((option) => (
+                                        <div key={option} className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-accent">
+                                          <input
+                                            type="checkbox"
+                                            className="size-4 shrink-0 accent-primary"
+                                            id={`lead-language-${option}`}
+                                            checked={field.value.includes(option)}
+                                            disabled={field.value.length === 1 && field.value.includes(option)}
+                                            onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
+                                              item === option ? event.target.checked : field.value.includes(item)
+                                            )))}
+                                          />
+                                          <label htmlFor={`lead-language-${option}`} className="flex-1 cursor-pointer text-sm">
+                                            {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
+                                          </label>
+                                        </div>
+                                      ))}
+                                    </div>
                                     <LocalizedFormMessage />
                                   </FormItem>
                                 )}
@@ -1446,15 +1462,16 @@ export function LeadDetailSheet({
                               render={({ field }) => (
                                 <FormItem className="md:col-span-2">
                                   <FormLabel>{t('paymentMethod')}</FormLabel>
-                                  <SegmentedControl
-                                    ariaLabel={t('paymentMethod')}
-                                    value={field.value}
-                                    onChange={field.onChange}
-                                    options={PAYMENT_METHODS.map((method) => ({
-                                      value: method,
-                                      label: t(paymentMethodTranslationKeys[method]),
-                                    }))}
-                                  />
+                                  <Select value={field.value} onValueChange={field.onChange}>
+                                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                      {PAYMENT_METHODS.map((method) => (
+                                        <SelectItem key={method} value={method}>
+                                          {t(paymentMethodTranslationKeys[method])}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                   <LocalizedFormMessage />
                                 </FormItem>
                               )}
@@ -1563,64 +1580,8 @@ export function LeadDetailSheet({
 
                 <TabsContent value="tasks" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <Card className="overflow-hidden border-amber-200/80 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-200 dark:border-amber-900/70 dark:focus-within:border-amber-700 dark:focus-within:ring-amber-900">
-                      <CardHeader className="border-b border-amber-100 bg-amber-50/80 pb-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Plus className="size-4 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-                          {t('newTask')}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-3">
-                        <Form {...taskForm}>
-                          <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={taskForm.handleSubmit((values) => createTask.mutate(values))}>
-                            <FormField
-                              control={taskForm.control}
-                              name="title"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('taskTitle')}</FormLabel>
-                                  <FormControl><Input {...field} aria-invalid={fieldState.invalid} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={taskForm.control}
-                              name="deadlineAt"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('deadline')}</FormLabel>
-                                  <FormControl><Input {...field} type="datetime-local" /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={taskForm.control}
-                              name="description"
-                              render={({ field }) => (
-                                <FormItem className="md:col-span-2">
-                                  <FormLabel>{t('description')}</FormLabel>
-                                  <FormControl><Textarea {...field} /></FormControl>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex justify-end md:col-span-2">
-                              <Button type="submit" disabled={createTask.isPending}>
-                                {createTask.isPending
-                                  ? <Loader2 className="animate-spin" data-icon="inline-start" />
-                                  : <ClipboardList data-icon="inline-start" />}
-                                {t('createTask')}
-                              </Button>
-                            </div>
-                          </form>
-                        </Form>
-                      </CardContent>
-                    </Card>
-
                     <Card ref={tasksCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-amber-200/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-amber-900/70">
-                      <CardHeader className="border-b border-amber-100 bg-amber-50/80 pb-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+                      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-amber-100 bg-amber-50/80 pb-3 dark:border-amber-900/60 dark:bg-amber-950/30">
                         <CardTitle className="flex items-center gap-2 text-base">
                           <ClipboardList className="size-4 text-amber-700 dark:text-amber-300" aria-hidden="true" />
                           {t('leadTasks')}
@@ -1628,6 +1589,10 @@ export function LeadDetailSheet({
                             <Badge variant="secondary">{(lead.tasks ?? []).length}</Badge>
                           ) : null}
                         </CardTitle>
+                        <Button type="button" size="sm" onClick={() => setTaskDialogOpen(true)}>
+                          <Plus data-icon="inline-start" />
+                          {t('createTask')}
+                        </Button>
                       </CardHeader>
                       <CardContent className="flex flex-col gap-0 divide-y divide-border pt-3">
                         {(lead.tasks ?? []).length === 0 ? (
@@ -1713,6 +1678,59 @@ export function LeadDetailSheet({
           </>
         )}
       </SheetContent>
+      <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t('newTask')}</DialogTitle>
+          </DialogHeader>
+          <Form {...taskForm}>
+            <form className="space-y-4" onSubmit={taskForm.handleSubmit((values) => createTask.mutate(values))}>
+              <FormField
+                control={taskForm.control}
+                name="title"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>{t('taskTitle')}</FormLabel>
+                    <FormControl><Input {...field} autoFocus aria-invalid={fieldState.invalid} /></FormControl>
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={taskForm.control}
+                name="deadlineAt"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('deadline')}</FormLabel>
+                    <FormControl><Input {...field} type="datetime-local" /></FormControl>
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={taskForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('description')}</FormLabel>
+                    <FormControl><Textarea {...field} /></FormControl>
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setTaskDialogOpen(false)}>{t('cancel')}</Button>
+                <Button type="submit" disabled={createTask.isPending}>
+                  {createTask.isPending
+                    ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                    : <ClipboardList data-icon="inline-start" />}
+                  {t('createTask')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
       {lead ? (
         <LeadFunnelTransferDialog
           open={funnelTransferOpen}

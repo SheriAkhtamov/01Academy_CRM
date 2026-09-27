@@ -63,6 +63,7 @@ describe('pipeline lead filters', () => {
   it('filters by communication language regardless of stored casing', () => {
     const filters = withFilters({ languages: ['uz'] });
     expect(leadMatchesFilters(lead({ language: 'UZ' }), filters)).toBe(true);
+    expect(leadMatchesFilters(lead({ language: 'ru', languages: ['ru', 'uz'] }), filters)).toBe(true);
     expect(leadMatchesFilters(lead({ language: 'ru' }), filters)).toBe(false);
     expect(leadMatchesFilters(lead({ language: null }), filters)).toBe(false);
   });

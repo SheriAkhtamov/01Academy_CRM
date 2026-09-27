@@ -197,11 +197,16 @@ describe('lead workspace navigation and drafts', () => {
     const note = screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') });
     await user.type(note, 'Call after school');
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
-    const title = screen.getByRole('textbox', { name: i18n.t('taskTitle') });
+    expect(screen.queryByRole('textbox', { name: i18n.t('taskTitle') })).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('createTask') }));
+    const dialog = screen.getByRole('dialog', { name: i18n.t('newTask') });
+    const title = within(dialog).getByRole('textbox', { name: i18n.t('taskTitle') });
     await user.type(title, 'Arrange a demo');
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     expect((screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }) as HTMLTextAreaElement).value).toBe('Call after school');
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
+    await user.click(screen.getByRole('button', { name: i18n.t('createTask') }));
     expect((screen.getByRole('textbox', { name: i18n.t('taskTitle') }) as HTMLInputElement).value).toBe('Arrange a demo');
     expect(requests).toHaveLength(0);
   });
@@ -211,7 +216,7 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(await screen.findByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.type(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }), 'Keep this draft');
     switchTab('tasks');
-    await screen.findByRole('textbox', { name: i18n.t('taskTitle') });
+    await screen.findByRole('button', { name: i18n.t('createTask') });
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     expect((screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }) as HTMLTextAreaElement).value).toBe('Keep this draft');
   });
@@ -264,15 +269,15 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it('changes the communication language with arrow keys and saves it', async () => {
+  it('selects multiple communication languages and saves them', async () => {
     const { user } = renderSheet();
-    const russian = await screen.findByRole('radio', { name: i18n.t('russian') });
-    russian.focus();
-    await user.keyboard('{ArrowRight}');
-    expect(document.activeElement).toBe(screen.getByRole('radio', { name: i18n.t('uzbekLang') }));
+    const russian = await screen.findByRole('checkbox', { name: i18n.t('russian') });
+    expect((russian as HTMLInputElement).checked).toBe(true);
+    await user.click(screen.getByRole('checkbox', { name: i18n.t('uzbekLang') }));
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(1));
-    expect(requests[0].body.language).toBe('uz');
+    expect(requests[0].body.languages).toEqual(['ru', 'uz']);
+    expect(requests[0].body.language).toBe('ru');
   });
 
   it('requires confirmation before removing a phone and persists only on save', async () => {

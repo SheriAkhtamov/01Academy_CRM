@@ -59,8 +59,9 @@ describe('lead social accounts', () => {
   it('keeps the editor inside the shared lead sheet with confirmations and assignment recovery', () => {
     expect(leadSheet).toContain('<LeadSocialAccountsEditor');
     expect(leadSheet).toContain('socialAccountsDirty');
-    expect(editor).toContain('<Select');
-    expect(editor).toContain('socialAccountLinkOrUsername');
+    expect(editor).toContain('<Dialog');
+    expect(editor).toContain('<LeadChannelBrandIcon');
+    expect(editor).toContain('socialAccountProfileLink');
     expect(editor).toContain('<AlertDialog');
     expect(editor).toContain('<AssignLeadToSelfDialog');
     expect(editor).toContain('normalizeLeadSocialAccountValue');

@@ -823,6 +823,7 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
+  const paymentActionLabel = lead?.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment');
   const paymentNeedsStudent = (lead?.students?.length ?? 0) === 0;
   const waitingForCloser = lead?.funnelRole === 'closer' && !lead.managerId && !canTransferLeads;
   const canClaimLead = canClaimUnassignedLead && Boolean(currentUserId) && Boolean(lead && !lead.managerId && !lead.isArchived);
@@ -1410,7 +1411,7 @@ export function LeadDetailSheet({
                         </CardTitle>
                         <Button type="button" size="sm" className="w-full sm:w-auto" onClick={() => setPaymentDialogOpen(true)}>
                           <CreditCard data-icon="inline-start" />
-                          {t('recordPayment')}
+                          {paymentActionLabel}
                         </Button>
                       </CardHeader>
                       <CardContent className="flex flex-col gap-0 divide-y divide-border pt-3">
@@ -1560,7 +1561,7 @@ export function LeadDetailSheet({
         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
           <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{t('recordPayment')}</DialogTitle>
+              <DialogTitle>{paymentActionLabel}</DialogTitle>
             </DialogHeader>
             <div className="relative">
               <Form {...paymentForm}>

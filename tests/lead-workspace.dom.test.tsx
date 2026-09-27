@@ -124,6 +124,21 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.getByRole('tab', { name: i18n.t('dealTab') }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it('opens the next payment for a paid lead in another funnel in the same dialog', async () => {
+    lead = { ...lead, funnelId: 3, funnelRole: null, statusCode: 'paid' };
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+
+    expect(screen.getByText(i18n.t('paymentHistory'))).toBeTruthy();
+    expect(screen.queryByLabelText(i18n.t('paymentDate'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('recordAnotherPayment') }));
+
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('recordAnotherPayment') });
+    expect(within(dialog).getByLabelText(i18n.t('paymentDate'))).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') })).toBeTruthy();
+  });
+
   it('edits study preferences and lead intent in the card and saves them together', async () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });

@@ -193,9 +193,9 @@ describe('lead modal behavior', () => {
 
     await screen.findByRole('heading', { name: 'Alexandra Zadorozhnaya' });
     fireEvent.click(await screen.findByRole('button', {
-      name: /Record payment|Зафиксировать оплату/,
+      name: /Record another payment|Зафиксировать следующую оплату/,
     }));
-    expect(await screen.findByRole('dialog', { name: /Record payment|Зафиксировать оплату/ })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: /Record another payment|Зафиксировать следующую оплату/ })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', {
       name: /Confirm Payment|Подтвердить оплату/,
     }));

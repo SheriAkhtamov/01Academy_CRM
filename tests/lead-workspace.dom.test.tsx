@@ -103,6 +103,27 @@ describe('lead workspace navigation and drafts', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
   });
 
+  it('opens payment entry for a lead without a student and blocks it until a student is created', async () => {
+    lead = { ...lead, students: [] };
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+
+    const recordButton = screen.getByRole('button', { name: i18n.t('recordPayment') });
+    expect(recordButton.matches(':disabled')).toBe(false);
+    expect(screen.queryByText(i18n.t('studentRequiredForPayment'))).toBeNull();
+    await user.click(recordButton);
+
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('recordPayment') });
+    expect(within(dialog).getByRole('alert').textContent).toContain(i18n.t('studentRequiredForPayment'));
+    expect(dialog.querySelector('button[type="submit"]')?.matches(':disabled')).toBe(true);
+    expect(requests).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('goToStudents') }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
+    expect(screen.getByRole('tab', { name: i18n.t('dealTab') }).getAttribute('aria-selected')).toBe('true');
+  });
+
   it('edits study preferences and lead intent in the card and saves them together', async () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });

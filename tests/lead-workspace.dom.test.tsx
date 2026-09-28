@@ -285,6 +285,14 @@ describe('lead workspace navigation and drafts', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(i18n.t('contactPersonName'))));
     expect(requests).toHaveLength(0);
     expect(screen.getByRole('tab', { name: i18n.t('dealTab') }).getAttribute('aria-selected')).toBe('true');
+    const name = screen.getByLabelText(i18n.t('contactPersonName'));
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(document.getElementById(name.getAttribute('aria-describedby')!)?.textContent).toBe(i18n.t('contactPersonRequired'));
+    fireEvent.change(name, { target: { value: 'Complete parent' } });
+    await waitFor(() => expect(name.getAttribute('aria-invalid')).toBe('false'));
+    expect(screen.queryByText(i18n.t('contactPersonRequired'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
   });
 
   it('saves with the keyboard shortcut but ignores it inside a confirmation', async () => {

@@ -752,6 +752,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   realtimeDisconnectedDescription: { en: 'New leads, calls and messages will not appear until the connection is restored.', ru: 'Новые лиды, звонки и сообщения не появятся, пока связь не восстановится.' },
   realtimeReconnect: { en: 'Reconnect', ru: 'Переподключиться' },
   fillRequiredFields: { en: 'Fill in all required fields', ru: 'Заполните все обязательные поля' },
+  leadManagerRequired: { en: 'Select a responsible manager', ru: 'Выберите ответственного менеджера' },
+  leadLanguageRequired: { en: 'Select at least one communication language', ru: 'Выберите хотя бы один язык общения' },
   fieldRequired: { en: 'This field is required', ru: 'Обязательное поле' },
   fieldTooLong: { en: 'Value is too long', ru: 'Значение слишком длинное' },
   invalidDataFormat: { en: 'Invalid value format', ru: 'Неверный формат значения' },

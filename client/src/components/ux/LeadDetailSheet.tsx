@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
+import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
 import { invalidateLeadData, useLeadDetailsQuery } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
@@ -299,10 +300,10 @@ const optionalPhoneString = z.string().trim().refine(
   'invalidData',
 );
 const leadSchema = z.object({
-  contactName: z.string().trim().min(1, 'fillRequiredFields'),
+  contactName: z.string().trim().min(1, leadRequiredFieldKeys.contactName),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
-  sourceId: z.string().min(1, 'fillRequiredFields'),
-  languages: z.array(z.enum(LEAD_LANGUAGES)).min(1, 'fillRequiredFields'),
+  sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
+  languages: z.array(z.enum(LEAD_LANGUAGES)).min(1, leadRequiredFieldKeys.languages),
   expectedPaymentUzs: optionalNumberString,
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
   studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
@@ -1124,7 +1125,7 @@ export function LeadDetailSheet({
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <Form {...leadForm}>
-                    <form id="lead-details-form" onSubmit={saveDeal}>
+                    <form id="lead-details-form" noValidate onSubmit={saveDeal}>
                       <fieldset disabled={updateLead.isPending} className="flex min-w-0 flex-col gap-4">
                         <Card ref={contactsCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-sky-200/80 shadow-sm focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-900/70 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-900">
                           <CardHeader className="border-b border-sky-100 bg-sky-50/80 pb-3 dark:border-sky-900/60 dark:bg-sky-950/30">
@@ -1141,7 +1142,7 @@ export function LeadDetailSheet({
                                 render={({ field, fieldState }) => (
                                   <FormItem>
                                     <FormLabel>{t('contactPersonName')}</FormLabel>
-                                    <FormControl><Input {...field} aria-invalid={fieldState.invalid} /></FormControl>
+                                    <FormControl><Input {...field} aria-required aria-invalid={fieldState.invalid} /></FormControl>
                                     <LocalizedFormMessage />
                                   </FormItem>
                                 )}
@@ -1152,25 +1153,27 @@ export function LeadDetailSheet({
                                 render={({ field }) => (
                                   <FormItem>
                                     <FormLabel>{t('communicationLanguage')}</FormLabel>
-                                    <div className="space-y-1 rounded-lg border border-border p-2">
-                                      {LEAD_LANGUAGES.map((option) => (
-                                        <div key={option} className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-accent">
-                                          <input
-                                            type="checkbox"
-                                            className="size-4 shrink-0 accent-primary"
-                                            id={`lead-language-${option}`}
-                                            checked={field.value.includes(option)}
-                                            disabled={field.value.length === 1 && field.value.includes(option)}
-                                            onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
-                                              item === option ? event.target.checked : field.value.includes(item)
-                                            )))}
-                                          />
-                                          <label htmlFor={`lead-language-${option}`} className="flex-1 cursor-pointer text-sm">
-                                            {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
-                                          </label>
-                                        </div>
-                                      ))}
-                                    </div>
+                                    <FormControl>
+                                      <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="space-y-1 rounded-lg border border-border p-2 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:focus-visible:ring-destructive/20">
+                                        {LEAD_LANGUAGES.map((option) => (
+                                          <div key={option} className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-accent">
+                                            <input
+                                              type="checkbox"
+                                              className="size-4 shrink-0 accent-primary"
+                                              id={`lead-language-${option}`}
+                                              checked={field.value.includes(option)}
+                                              disabled={field.value.length === 1 && field.value.includes(option)}
+                                              onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
+                                                item === option ? event.target.checked : field.value.includes(item)
+                                              )))}
+                                            />
+                                            <label htmlFor={`lead-language-${option}`} className="flex-1 cursor-pointer text-sm">
+                                              {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
+                                            </label>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </FormControl>
                                     <LocalizedFormMessage />
                                   </FormItem>
                                 )}
@@ -1263,7 +1266,7 @@ export function LeadDetailSheet({
                                 <FormItem>
                                   <FormLabel>{t('source')}</FormLabel>
                                   <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger ref={field.ref} aria-invalid={fieldState.invalid}><SelectValue /></SelectTrigger></FormControl>
+                                    <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required aria-invalid={fieldState.invalid}><SelectValue /></SelectTrigger></FormControl>
                                     <SelectContent>
                                       <SelectGroup>
                                         {sources.map((source) => (

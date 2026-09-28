@@ -1559,7 +1559,7 @@ function StudentsTab({
 
 // ---- Lead Form Component ----
 
-function LeadForm({
+export function LeadForm({
   t,
   form,
   createLead,
@@ -1613,6 +1613,7 @@ function LeadForm({
     <Form {...form}>
       <form
         className="grid grid-cols-1 gap-3 md:grid-cols-2"
+        noValidate
         onSubmit={form.handleSubmit((values) => createLead.mutate(values))}
       >
         <FormField
@@ -1621,7 +1622,7 @@ function LeadForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel required>{t('contactPersonName')}</FormLabel>
-              <FormControl><Input {...field} placeholder={t('parentNamePlaceholder')} /></FormControl>
+              <FormControl><Input {...field} aria-required placeholder={t('parentNamePlaceholder')} /></FormControl>
               <LocalizedFormMessage />
             </FormItem>
           )}
@@ -1679,7 +1680,7 @@ function LeadForm({
             <FormItem>
               <FormLabel required>{t('source')}</FormLabel>
               <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl><SelectTrigger><SelectValue placeholder={t('selectSource')} /></SelectTrigger></FormControl>
+                <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required><SelectValue placeholder={t('selectSource')} /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
                     {activeSources.map((source: any) => (
@@ -1700,7 +1701,7 @@ function LeadForm({
               <FormLabel required>{t('salesFunnel')}</FormLabel>
               <Select value={field.value} onValueChange={field.onChange} disabled={createLead.isPending}>
                 <FormControl>
-                  <SelectTrigger><SelectValue placeholder={t('selectSalesFunnel')} /></SelectTrigger>
+                  <SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required><SelectValue placeholder={t('selectSalesFunnel')} /></SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   <SelectGroup>
@@ -1719,14 +1720,14 @@ function LeadForm({
           name="managerId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('responsibleManager')}</FormLabel>
+              <FormLabel required>{t('responsibleManager')}</FormLabel>
               <Select
                 value={field.value}
                 onValueChange={field.onChange}
                 disabled={managerSelectDisabled || createLead.isPending}
               >
                 <FormControl>
-                  <SelectTrigger>
+                  <SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required>
                     <SelectValue placeholder={t('selectManager')} />
                   </SelectTrigger>
                 </FormControl>

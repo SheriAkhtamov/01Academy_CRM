@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
+import type { TranslationKey } from '@/lib/i18n';
+
+export const leadRequiredFieldKeys = {
+  contactName: 'contactPersonRequired',
+  sourceId: 'sourceRequired',
+  funnelId: 'salesFunnelRequired',
+  managerId: 'leadManagerRequired',
+  languages: 'leadLanguageRequired',
+} as const satisfies Record<string, TranslationKey>;
 
 const optionalPhoneString = z.string().trim().refine(
   (value) => value === '' || value.length >= 7,
@@ -25,11 +34,11 @@ const uniquePhoneNumbers = (values: string[]) => {
 };
 
 export const createLeadSchema = z.object({
-  contactName: z.string().trim().min(1, 'fillRequiredFields'),
+  contactName: z.string().trim().min(1, leadRequiredFieldKeys.contactName),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
-  sourceId: z.string().min(1, 'fillRequiredFields'),
-  funnelId: z.string().min(1, 'salesFunnelRequired'),
-  managerId: z.string().min(1, 'fillRequiredFields'),
+  sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
+  funnelId: z.string().min(1, leadRequiredFieldKeys.funnelId),
+  managerId: z.string().min(1, leadRequiredFieldKeys.managerId),
   comment: z.string(),
   language: z.enum(['ru', 'uz', 'en']),
 });

@@ -549,8 +549,11 @@ export const resolveInitialLeadStatusCode = async (requestedCode: string | null 
   throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
 };
 
-export const normalizeDbValue = (value: DbValue) => {
-  if (Array.isArray(value)) return JSON.stringify(value);
+export const normalizeDbValue = (value: DbValue, table?: string, column?: string) => {
+  if (Array.isArray(value)) {
+    // pg encodes native SQL arrays; JSON columns still require JSON strings.
+    return table === 'academy_leads' && column === 'languages' ? value : JSON.stringify(value);
+  }
   if (value && typeof value === 'object' && !(value instanceof Date)) return JSON.stringify(value);
   return value;
 };
@@ -640,7 +643,7 @@ export const insertRow = async (table: string, values: Record<string, DbValue | 
 
   const columns = entries.map(([key]) => quoteIdent(toSnake(key)));
   const placeholders = entries.map((_, index) => `$${index + 1}`);
-  const params = entries.map(([, value]) => normalizeDbValue(value));
+  const params = entries.map(([key, value]) => normalizeDbValue(value, table, toSnake(key)));
   const rows = await query(
     `INSERT INTO ${quoteIdent(table)} (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
     params,
@@ -655,7 +658,7 @@ export const updateRow = async (table: string, id: number, values: Record<string
   }
 
   const assignments = entries.map(([key], index) => `${quoteIdent(toSnake(key))} = $${index + 2}`);
-  const params = [id, ...entries.map(([, value]) => normalizeDbValue(value))];
+  const params = [id, ...entries.map(([key, value]) => normalizeDbValue(value, table, toSnake(key)))];
   const updatedAtAssignment = TABLES_WITHOUT_UPDATED_AT.has(table) ? '' : ', updated_at = NOW()';
   const rows = await query(
     `UPDATE ${quoteIdent(table)}

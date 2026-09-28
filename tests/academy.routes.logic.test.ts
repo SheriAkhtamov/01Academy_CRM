@@ -4126,6 +4126,77 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_leads"'))).toBe(false);
   });
 
+  it.each([
+    { input: {}, expected: ['ru'] },
+    { input: { languages: ['ru', 'uz'] }, expected: ['ru', 'uz'] },
+    { input: { language: 'en' }, expected: ['en'] },
+  ])('creates a lead with native PostgreSQL languages $expected', async ({ input, expected }) => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('FROM academy_lead_sources')) return { rows: [{ id: 2 }] };
+      if (sql.includes('FROM academy_sales_funnels')) return { rows: [{ id: 3, is_assigned: true }] };
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ id: 1, code: 'new_request' }] };
+      if (sql.includes('FROM users u')) return { rows: [{ id: 7, full_name: 'Sales manager' }] };
+      if (sql.includes('INSERT INTO "academy_leads"')) {
+        const languages = readInsertValue(sql, values, 'languages');
+        // PostgreSQL text[] rejects the JSON string that this route used to send.
+        if (!Array.isArray(languages)) throw Object.assign(new Error('malformed array literal'), { code: '22P02' });
+        expect(languages).toEqual(expected);
+        return { rows: [leadFixture({ manager_id: 7, language: expected[0], languages })] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .post('/api/academy/leads')
+      .send({ contactName: 'Parent', sourceId: 2, funnelId: 3, ...input });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(response.body).toMatchObject({ language: expected[0], languages: expected });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'CREATE_ACADEMY_LEAD' }));
+  });
+
+  it.each([
+    { input: { languages: ['uz', 'ru'] }, expected: ['uz', 'ru'] },
+    { input: { language: 'en' }, expected: ['en'] },
+  ])('updates a lead with native PostgreSQL languages $expected', async ({ input, expected }) => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const existing = leadFixture({ manager_id: 7, languages: ['ru'] });
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')
+        ? { rows: [existing] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [existing] };
+      if (sql.includes('UPDATE "academy_leads"')) {
+        const parameter = Number(sql.match(/"languages" = \$(\d+)/)?.[1]);
+        const languages = values[parameter - 1];
+        if (!Array.isArray(languages)) throw Object.assign(new Error('malformed array literal'), { code: '22P02' });
+        expect(languages).toEqual(expected);
+        return { rows: [{ ...existing, language: expected[0], languages }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .patch('/api/academy/leads/42')
+      .send({ contactName: 'Updated parent', ...input });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toMatchObject({ language: expected[0], languages: expected });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_ACADEMY_LEAD' }));
+  });
+
+  it('keeps JSON arrays encoded for student risk flags on insert and update', async () => {
+    const { insertRow, updateRow } = await import('../server/modules/academy/academy-core');
+    await insertRow('academy_students', { riskFlags: ['low_attendance'] });
+    await updateRow('academy_students', 5, { riskFlags: ['low_attendance'] });
+    expect(mocks.poolQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO "academy_students"'), ['["low_attendance"]']);
+    expect(mocks.poolQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE "academy_students"'), [5, '["low_attendance"]']);
+  });
+
   it('rejects a lead whose referrer student does not exist', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();

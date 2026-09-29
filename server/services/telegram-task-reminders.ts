@@ -3,8 +3,9 @@ import { pool } from '../db';
 import { appConfig, isProductionEnvironment } from '../config';
 import { logger } from '../lib/logger';
 import { t } from '../lib/i18n';
+import { hasLeadershipAccess } from '@shared/academy';
 import { getTelegramTaskIdentity } from './telegram-tasks';
-import { planTelegramTaskReminders, type ReminderTask } from './telegram-task-reminder-plan';
+import { planTelegramTaskReminders, planTelegramWeeklyDigest, type ReminderTask } from './telegram-task-reminder-plan';
 
 type Delivery = { status: 'sent' | 'deferred' | 'failed' | 'uncertain'; code: number | null; retrySeconds: number | null };
 
@@ -105,10 +106,26 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
       const identity = await getTelegramTaskIdentity(botId, binding.telegram_user_id);
       if (!identity || identity.user.id !== binding.user_id || identity.binding.verification_id !== binding.verification_id) continue;
       const tasks = await client.query<ReminderTask>(
-        `SELECT id, title, due_at FROM board_tasks
-         WHERE assignee_id = $1 AND status IN ('backlog', 'todo', 'in_progress')
+        `SELECT id, title, due_at, status FROM board_tasks
+         WHERE assignee_id = $1 AND status <> 'accepted'
          ORDER BY due_at NULLS LAST, id`, [binding.user_id]);
-      for (const reminder of planTelegramTaskReminders(tasks.rows, now, timeZone)) {
+      const daily = planTelegramWeeklyDigest(tasks.rows, now, timeZone);
+      if (daily.length && hasLeadershipAccess(identity.user)) {
+        const team = await client.query<ReminderTask>(
+          `SELECT task.id, task.title, task.due_at, task.status, employee.full_name AS assignee_name
+           FROM board_tasks task
+           JOIN users employee ON employee.id = task.assignee_id
+           WHERE task.assignee_id <> $1 AND task.status <> 'accepted'
+             AND employee.is_active = true AND employee.is_archived = false
+           ORDER BY task.due_at NULLS LAST, employee.full_name, task.id`, [binding.user_id]);
+        daily.push(...planTelegramWeeklyDigest(team.rows, now, timeZone, 'team'));
+      }
+      const dueSoon = planTelegramTaskReminders(
+        tasks.rows.filter((task) => ['backlog', 'todo', 'in_progress'].includes(task.status ?? '')),
+        now, timeZone,
+      );
+      for (const reminder of [...daily, ...dueSoon]) {
+        if (Date.now() - started > 40_000) break;
         // Persist the claim BEFORE calling Telegram. It survives restarts, and
         // the unique key also protects against concurrent workers/repeated ticks.
         const claim = await client.query<{ id: number }>(
@@ -118,7 +135,17 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
            SET status = 'attempted', updated_at = $4
            WHERE telegram_task_reminders.status = 'deferred' AND telegram_task_reminders.next_attempt_at <= $4
            RETURNING id`, [binding.id, reminder.kind, reminder.eventKey, now]);
-        if (!claim.rows.length) continue;
+        if (!claim.rows.length) {
+          if (reminder.kind === 'daily') {
+            const prior = await client.query<{ status: string }>(
+              `SELECT status FROM telegram_task_reminders
+               WHERE binding_id = $1 AND kind = $2 AND event_key = $3`,
+              [binding.id, reminder.kind, reminder.eventKey]);
+            // Later chunks must never arrive before an earlier chunk succeeds.
+            if (prior.rows[0]?.status !== 'sent') break;
+          }
+          continue;
+        }
         const delivery = await sendTelegramTaskReminder(token, binding.telegram_user_id, reminder.text, appUrl);
         const nextAttempt = delivery.retrySeconds === null ? null : new Date(Date.now() + delivery.retrySeconds * 1000);
         await client.query(
@@ -129,10 +156,10 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
           reminderId: claim.rows[0].id, status: delivery.status, errorCode: delivery.code,
         });
         if (delivery.code === 429 || delivery.code === 401) return sent;
-        // At most one reminder per recipient per tick; stay below Telegram's
-        // free broadcast limit without paid broadcasts or blocking the API.
+        if (delivery.status !== 'sent') break;
+        // Pace consecutive chunks below Telegram's free broadcast limit.
         await delay(100);
-        break;
+        if (reminder.kind === 'due_soon') break;
       }
     }
     return sent;

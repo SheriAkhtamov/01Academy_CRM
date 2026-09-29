@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { planTelegramTaskReminders, type ReminderTask } from '../server/services/telegram-task-reminder-plan';
+import { planTelegramTaskReminders, planTelegramWeeklyDigest, weekKeys, type ReminderTask } from '../server/services/telegram-task-reminder-plan';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(), release: vi.fn(), connect: vi.fn(), identity: vi.fn(), fetch: vi.fn(), warn: vi.fn(),
@@ -20,9 +20,10 @@ import { notifyTelegramTaskProgress, processTelegramTaskReminders, sendTelegramT
 
 const zone = 'Asia/Tashkent';
 const morning = new Date('2026-09-04T04:00:00Z');
-const task = (id: number, due: string | null, title = 'Позвонить клиенту'): ReminderTask => ({ id, title, due_at: due ? new Date(due) : null });
+const task = (id: number, due: string | null, title = 'Позвонить клиенту'): ReminderTask => ({ id, title, due_at: due ? new Date(due) : null, status: 'todo' });
 const recipient = { id: 1, user_id: 7, telegram_user_id: '700', verification_id: 'version-1' };
 let tasks: ReminderTask[];
+let teamTasks: ReminderTask[];
 let recipients: typeof recipient[];
 type Row = { id: number; status: string; next: Date | null; code: number | null; updated: Date; bindingId: number };
 let claims: Map<string, Row>;
@@ -32,10 +33,10 @@ beforeEach(() => {
   mocks.config.production = true; mocks.config.token = '12345:test-only'; mocks.config.secret = 'test-only';
   vi.stubGlobal('fetch', mocks.fetch);
   mocks.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
-  tasks = [task(1, '2026-09-04T10:00:00Z')]; recipients = [{ ...recipient }]; claims = new Map();
+  tasks = [task(1, '2026-09-04T10:00:00Z')]; teamTasks = []; recipients = [{ ...recipient }]; claims = new Map();
   mocks.identity.mockImplementation(async (_bot, chat) => {
     const binding = recipients.find((row) => row.telegram_user_id === chat)!;
-    return { user: { id: binding.user_id }, binding: { verification_id: binding.verification_id } };
+    return { user: { id: binding.user_id, module: 'sales', modules: ['sales'] }, binding: { verification_id: binding.verification_id } };
   });
   mocks.connect.mockResolvedValue({ query: mocks.query, release: mocks.release });
   mocks.query.mockImplementation(async (sql: string, args: any[] = []) => {
@@ -49,9 +50,18 @@ beforeEach(() => {
       return { rows: recipients.filter((binding) => ![...claims.values()].some((row) =>
         row.bindingId === binding.id && [400, 403].includes(row.code ?? 0) && row.updated.getTime() > args[1].getTime() - 86_400_000)) };
     }
+    if (sql.includes('FROM board_tasks task')) {
+      expect(sql).toContain('task.assignee_id <> $1');
+      expect(sql).toContain('employee.is_active = true AND employee.is_archived = false');
+      return { rows: teamTasks };
+    }
     if (sql.includes('FROM board_tasks')) {
-      expect(sql).toContain("assignee_id = $1 AND status IN ('backlog', 'todo', 'in_progress')");
+      expect(sql).toContain("assignee_id = $1 AND status <> 'accepted'");
       return { rows: tasks };
+    }
+    if (sql.includes('SELECT status FROM telegram_task_reminders')) {
+      const row = claims.get(args.join('|'));
+      return { rows: row ? [{ status: row.status }] : [] };
     }
     if (sql.includes('SELECT telegram_user_id, verification_id FROM telegram_task_bindings')) {
       return { rows: args[1] === 7 ? [{ telegram_user_id: '700', verification_id: 'version-1' }] : [] };
@@ -76,15 +86,19 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('Telegram reminder schedule and message', () => {
-  it('uses the academy day rather than UTC and catches up only during the 09:00 hour', () => {
-    const entries = [task(1, '2026-09-03T19:30:00Z', 'Просроченная'), task(2, '2026-09-04T18:59:00Z', 'Сегодня'), task(3, '2026-09-04T19:00:00Z', 'Завтра'), task(4, null)];
-    const [daily] = planTelegramTaskReminders(entries, morning, zone);
+  it('groups the academy week from Monday to Sunday and sends during the 09:00 hour', () => {
+    const entries = [task(1, '2026-08-30T18:59:00Z', 'Просроченная'), task(2, '2026-09-03T19:30:00Z', 'Четверг'), task(3, '2026-09-04T19:00:00Z', 'Суббота'), task(4, null), task(5, '2026-09-06T19:00:00Z', 'Следующая неделя')];
+    const [daily] = planTelegramWeeklyDigest(entries, morning, zone);
+    expect(weekKeys(morning, zone)).toEqual(['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06']);
     expect(daily.eventKey).toBe('2026-09-04');
-    expect(daily.text).toContain('На сегодня: 1. Просрочено: 1. Без срока: 1.');
-    expect(daily.text).toContain('Просроченная'); expect(daily.text).toContain('Сегодня'); expect(daily.text).not.toContain('Завтра');
-    expect(planTelegramTaskReminders(entries, new Date('2026-09-04T03:59:00Z'), zone)).toEqual([]);
-    expect(planTelegramTaskReminders(entries, new Date('2026-09-04T04:59:00Z'), zone)[0].kind).toBe('daily');
-    expect(planTelegramTaskReminders(entries, new Date('2026-09-04T05:00:00Z'), zone)).toEqual([]);
+    expect(daily.text).toContain('Просроченная');
+    expect(daily.text).toContain('Четверг');
+    expect(daily.text).toContain('Суббота');
+    expect(daily.text).toContain('Задачи без срока');
+    expect(daily.text).not.toContain('Следующая неделя');
+    expect(planTelegramWeeklyDigest(entries, new Date('2026-09-04T03:59:00Z'), zone)).toEqual([]);
+    expect(planTelegramWeeklyDigest(entries, new Date('2026-09-04T04:59:00Z'), zone)[0].kind).toBe('daily');
+    expect(planTelegramWeeklyDigest(entries, new Date('2026-09-04T05:00:00Z'), zone)).toEqual([]);
   });
   it('reminds within the last hour, excludes expired deadlines and changes keys after rescheduling', () => {
     const now = new Date('2026-09-04T10:00:00Z');
@@ -95,10 +109,28 @@ describe('Telegram reminder schedule and message', () => {
     expect(planTelegramTaskReminders([task(2, '2026-09-04T10:30:00Z')], now, zone)[0].eventKey).not.toBe(planned[0].eventKey);
     expect(planTelegramTaskReminders([], morning, zone)).toEqual([]);
   });
-  it('bounds large digests, including emoji titles, and keeps English translations available', () => {
-    const planned = planTelegramTaskReminders(Array.from({ length: 100 }, (_, i) => task(i, null, '😀'.repeat(255))), morning, zone, 'en')[0];
-    expect(planned.text.length).toBeLessThan(4096);
-    expect(planned.text).toContain('92 more tasks'); expect(planned.text).toContain('Your tasks');
+  it('splits long digests without dropping tasks and keeps English translations available', () => {
+    const planned = planTelegramWeeklyDigest(Array.from({ length: 100 }, (_, i) => task(i, null, `Task ${i} ` + '😀'.repeat(255))), morning, zone, 'own', 'en');
+    expect(planned.length).toBeGreaterThan(1);
+    expect(planned.every((entry) => entry.text.length < 4096)).toBe(true);
+    expect(planned.map((entry) => entry.text).join('\n')).toContain('Task 99');
+    expect(planned[0].text).toContain('Your tasks');
+    expect(planTelegramWeeklyDigest([], morning, zone)[0].text).toContain('Задач на эту неделю нет');
+  });
+  it('marks completed tasks awaiting acceptance and groups team tasks by day', () => {
+    const own = planTelegramWeeklyDigest([
+      { ...task(1, '2026-09-04T06:00:00Z', 'Готовый отчёт'), status: 'done' },
+      { ...task(4, '2026-08-29T06:00:00Z', 'Старый готовый отчёт'), status: 'done' },
+    ], morning, zone);
+    expect(own[0].text).toContain('Готовый отчёт — 11:00 (выполнена)');
+    expect(own[0].text).not.toContain('Старый готовый отчёт');
+    const team = planTelegramWeeklyDigest([
+      { ...task(2, '2026-09-05T06:00:00Z', 'Проверить оплату'), assignee_name: 'Алина' },
+      { ...task(3, '2026-09-06T06:00:00Z', 'Подготовить план'), assignee_name: 'Боб' },
+    ], morning, zone, 'team');
+    expect(team[0].text).toContain('Алина: Проверить оплату');
+    expect(team[0].text).toContain('Боб: Подготовить план');
+    expect(team[0].eventKey).toBe('2026-09-04:team:0');
   });
 });
 
@@ -109,6 +141,36 @@ describe('Telegram reminder delivery', () => {
     expect(payload.chat_id).toBe('700'); expect(payload.parse_mode).toBeUndefined();
     expect(payload.reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://crm.example.test/miniapp/tasks');
     expect(mocks.release).toHaveBeenCalledOnce();
+  });
+  it('sends an administrator personal tasks first, followed by other active employees', async () => {
+    teamTasks = [
+      { ...task(10, '2026-09-05T08:00:00Z', 'Отчёт отдела'), assignee_name: 'Алина' },
+      { ...task(11, '2026-09-06T08:00:00Z', 'План отдела'), assignee_name: 'Боб' },
+    ];
+    mocks.identity.mockResolvedValue({ user: { id: 7, module: 'sales', modules: ['sales', 'administration'] }, binding: { verification_id: 'version-1' } });
+    expect(await processTelegramTaskReminders(zone, morning)).toBe(2);
+    const messages = mocks.fetch.mock.calls.map((call) => JSON.parse(call[1].body).text);
+    expect(messages[0]).toContain('Ваши задачи на неделю');
+    expect(messages[0]).toContain('Позвонить клиенту');
+    expect(messages[1]).toContain('Задачи сотрудников на неделю');
+    expect(messages[1]).toContain('Алина: Отчёт отдела');
+    expect(messages[1]).toContain('Боб: План отдела');
+    expect(messages[1]).not.toContain('Позвонить клиенту');
+    await processTelegramTaskReminders(zone, morning);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+  it('never reads team tasks for a non-administrator', async () => {
+    await processTelegramTaskReminders(zone, morning);
+    expect(mocks.query.mock.calls.some(([sql]) => sql.includes('FROM board_tasks task'))).toBe(false);
+  });
+  it('does not send a team section after an uncertain personal delivery', async () => {
+    teamTasks = [{ ...task(10, '2026-09-05T08:00:00Z', 'Отчёт отдела'), assignee_name: 'Алина' }];
+    mocks.identity.mockResolvedValue({ user: { id: 7, module: 'administration', modules: ['administration'] }, binding: { verification_id: 'version-1' } });
+    mocks.fetch.mockRejectedValueOnce(new Error('timeout'));
+    await processTelegramTaskReminders(zone, morning);
+    await processTelegramTaskReminders(zone, morning);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect([...claims.values()][0].status).toBe('uncertain');
   });
   it('persists claims across repeated worker invocations and next day uses a new key', async () => {
     await processTelegramTaskReminders(zone, morning); await processTelegramTaskReminders(zone, morning);
@@ -165,10 +227,12 @@ describe('Telegram reminder delivery', () => {
     await processTelegramTaskReminders(zone, morning); await processTelegramTaskReminders(zone, morning);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
-  it('sends at most one reminder per recipient per tick', async () => {
+  it('sends the weekly digest before deadline reminders', async () => {
     tasks = [task(1, '2026-09-04T04:30:00Z'), task(2, '2026-09-04T04:45:00Z')];
-    await processTelegramTaskReminders(zone, morning); expect(mocks.fetch).toHaveBeenCalledTimes(1);
     await processTelegramTaskReminders(zone, morning); expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body).text).toContain('Ваши задачи на неделю');
+    expect(JSON.parse(mocks.fetch.mock.calls[1][1].body).text).toContain('До срока задачи');
+    await processTelegramTaskReminders(zone, morning); expect(mocks.fetch).toHaveBeenCalledTimes(3);
   });
   it('destroys a connection if unlocking fails', async () => {
     const original = mocks.query.getMockImplementation()!;

@@ -6,11 +6,12 @@
 type Language = 'en' | 'ru';
 
 const translations = {
-    telegramReminderTitle: { en: '🔔 Your tasks', ru: '🔔 Ваши задачи' },
-    telegramReminderCounts: { en: 'Today: {today}. Overdue: {overdue}. No deadline: {undated}.', ru: 'На сегодня: {today}. Просрочено: {overdue}. Без срока: {undated}.' },
-    telegramReminderUndated: { en: 'no deadline', ru: 'без срока' },
-    telegramReminderMore: { en: '{count} more tasks. Open the app for the full list.', ru: 'Ещё задач: {count}. Полный список — в приложении.' },
-    telegramReminderTimezone: { en: 'Time: {timezone}.', ru: 'Время: {timezone}.' },
+    telegramReminderWeeklyOwn: { en: '📋 Your tasks for the week ({start}–{end})', ru: '📋 Ваши задачи на неделю ({start}–{end})' },
+    telegramReminderWeeklyTeam: { en: '👥 Team tasks for the week ({start}–{end})', ru: '👥 Задачи сотрудников на неделю ({start}–{end})' },
+    telegramReminderWeeklyEmpty: { en: 'No tasks for this week.', ru: 'Задач на эту неделю нет.' },
+    telegramReminderOverdue: { en: 'Overdue tasks', ru: 'Просроченные задачи' },
+    telegramReminderUndated: { en: 'Tasks without a deadline', ru: 'Задачи без срока' },
+    telegramReminderDone: { en: '(done)', ru: '(выполнена)' },
     telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n{title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n{title}\nСрок: {deadline} ({timezone}).' },
     telegramReminderOpen: { en: 'Open tasks', ru: 'Открыть задачи' },
     telegramTaskProgressStarted: {

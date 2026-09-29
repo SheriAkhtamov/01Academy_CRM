@@ -98,8 +98,15 @@ no new bot, credentials, webhook or paid broadcasts are needed.
 
 - Every minute the production scheduler checks current assignees' unfinished
   tasks (`backlog`, `todo`, `in_progress`). `done` and `accepted` are excluded.
-- At 09:00 in `ACADEMY_TIME_ZONE` (default Asia/Tashkent), send one daily digest
-  of today's, overdue and undated tasks. Catch-up is allowed until 10:00 only.
+- At 09:00 in `ACADEMY_TIME_ZONE` (default Asia/Tashkent), send a daily digest
+  for the current Monday–Sunday week. Tasks are grouped by day; overdue and
+  undated active tasks have separate sections. A digest is sent even when empty.
+  Employees with the administration module receive their own tasks first, then
+  the tasks of all other active employees, labeled by assignee. The team read
+  uses the employee's current module assignment. Accepted tasks stay in the
+  archive and are omitted; completed tasks awaiting acceptance are marked.
+  Long lists continue in subsequent messages without omitting tasks. Catch-up
+  is allowed until 10:00 only.
 - Within the final hour before the deadline, send a one-time reminder per
   task/deadline/recipient. Late-created tasks get the remaining-time reminder;
   a changed deadline uses a new key. No deadline means daily digest only.
@@ -109,7 +116,8 @@ no new bot, credentials, webhook or paid broadcasts are needed.
   selection of the current status do not send this message. Delivery happens
   outside the request, so a Telegram outage does not block changing the task.
   Progress messages are best effort; a failed Telegram request is logged.
-- Scheduled reminders include task titles and deadlines; progress messages
+- Scheduled reminders include task titles and deadlines; team digests also
+  include assignee names. Progress messages
   include the task title and assignee. Neither includes descriptions, lead cards,
   attachments or internal task IDs. Each has a button opening `/miniapp/tasks`.
 - Before each recipient's messages, recheck the same live employee/phone
@@ -122,7 +130,7 @@ no new bot, credentials, webhook or paid broadcasts are needed.
   The next daily digest covers unfinished work again.
 - Retry explicit 429 responses only after Telegram's `retry_after`, with a
   bot-wide cooldown. Blocked/missing chats (400/403) are suppressed for 24 hours.
-  One message per recipient per minute; broadcasts are paced at most 10/sec.
+  Digest chunks are sent in order and paced at most 10/sec.
 - Tests mock Telegram; do not send test messages to real employees or run the
   worker against copied production credentials in a local environment.
 

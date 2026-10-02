@@ -327,6 +327,7 @@ export function ArchiveTab({
           className="min-h-0 flex-1 overflow-auto"
           columns={columns}
           data={visibleLeads}
+          filterKey={JSON.stringify([search, reasonFilter, managerFilter, funnelFilter])}
           keyExtractor={(lead: ArchivedLead) => `archived-lead-${lead.id}`}
           emptyState={
             <div className="p-8">

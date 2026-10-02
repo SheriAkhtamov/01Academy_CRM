@@ -79,7 +79,6 @@ const creativeDisplayTitle = (row: MetaCreativeRow) => {
     || usefulCreativeTitle
     || row.adsetName
     || row.adName
-    || row.adId
     || '';
 };
 
@@ -154,7 +153,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     onError: (syncError: any) => toast({
       title: t('error'),
       description: syncError?.message === 'metaAttributionNotConfigured'
-        ? t('metaAttributionNotConfiguredDesc')
+        ? t('metaAttributionNotConfigured')
         : syncError?.message,
       variant: 'destructive',
     }),
@@ -329,7 +328,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       render: (row: MetaFormRow) => (
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{row.formName || t('metaFormUnknown')}</p>
-          <p className="truncate font-mono text-xs text-muted-foreground">{row.formId}</p>
         </div>
       ),
       sortable: true,
@@ -370,7 +368,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       {!data.integration.attributionConfigured ? (
         <Alert>
           <AlertTitle>{t('metaAttributionNotConfigured')}</AlertTitle>
-          <AlertDescription>{t('metaAttributionNotConfiguredDesc')}</AlertDescription>
         </Alert>
       ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
@@ -464,11 +461,11 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
           ) : null}
           {selected ? (
             <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
-              <Detail label={t('metaAd')} value={[selected.adName, selected.adId].filter(Boolean).join(' · ')} />
+              <Detail label={t('metaAd')} value={selected.adName} />
               <Detail label={t('creativeFormat')} value={formatLabel(selected.mediaType)} />
-              <Detail label={t('metaCampaign')} value={[selected.campaignName, selected.campaignId].filter(Boolean).join(' · ')} />
-              <Detail label={t('metaAdSet')} value={[selected.adsetName, selected.adsetId].filter(Boolean).join(' · ')} />
-              <Detail label={t('metaCreative')} value={[selected.creativeName, selected.creativeId].filter(Boolean).join(' · ')} />
+              <Detail label={t('metaCampaign')} value={selected.campaignName} />
+              <Detail label={t('metaAdSet')} value={selected.adsetName} />
+              <Detail label={t('metaCreative')} value={selected.creativeName} />
               <Detail label={t('metaPublication')} value={selected.sourceUrl} href={selected.sourceUrl} />
               <Detail label={t('utmTags')} value={[
                 selected.utmSource && `utm_source=${selected.utmSource}`,

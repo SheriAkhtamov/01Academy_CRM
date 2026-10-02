@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Alert, AlertTitle } from '@/components/ui/alert';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
+import { createStudentStatusDraft, reconcileStudentStatusDraft, studentStatusIsDirty } from '@/lib/studentStatusDraft';
 import {
   Sheet,
   SheetContent,
@@ -76,8 +79,14 @@ export function StudentDetailSheet({
   const ceoCopy = useCeoCopy();
   const onlinePbxCall = useOnlinePbxCall();
   const [activeTab, setActiveTab] = useState<StudentDetailTab>(initialTab);
-  const [statusDraft, setStatusDraft] = useState(String(student?.status ?? 'studying'));
-  const [exitReason, setExitReason] = useState(String(student?.exitReason ?? ''));
+  const studentId = student?.id ?? null;
+  const studentStatus = String(student?.status ?? 'studying');
+  const studentExitReason = String(student?.exitReason ?? '');
+  const [statusWorkspace, setStatusWorkspace] = useState(() => createStudentStatusDraft({ id: studentId, status: studentStatus, exitReason: studentExitReason }));
+  const statusDraft = statusWorkspace.status;
+  const exitReason = statusWorkspace.exitReason;
+  const setStatusDraft = (status: string) => setStatusWorkspace((current) => ({ ...current, status }));
+  const setExitReason = (reason: string) => setStatusWorkspace((current) => ({ ...current, exitReason: reason }));
   const [savingStatus, setSavingStatus] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [groupMutation, setGroupMutation] = useState<string | null>(null);
@@ -97,27 +106,18 @@ export function StudentDetailSheet({
     setConfirmStatus(null);
   }, [initialTab, open, student?.id]);
 
-  /*
-    Seed the status drafts from server data without wiping an in-progress edit:
-    while the sheet is open, values are adopted only when the server state for
-    this student actually changed (someone else updated it, or a save landed).
-    A plain background refetch keeps its old object identity but the same
-    status, so the draft survives it.
-  */
-  const seededStatusRef = useRef('');
   useEffect(() => {
-    const nextKey = `${student?.id ?? ''}:${String(student?.status ?? 'studying')}:${String(student?.exitReason ?? '')}`;
-    if (!open) {
-      setStatusDraft(String(student?.status ?? 'studying'));
-      setExitReason(String(student?.exitReason ?? ''));
-      seededStatusRef.current = nextKey;
-      return;
-    }
-    if (seededStatusRef.current === nextKey) return;
-    seededStatusRef.current = nextKey;
-    setStatusDraft(String(student?.status ?? 'studying'));
-    setExitReason(String(student?.exitReason ?? ''));
-  }, [open, student]);
+    const snapshot = { id: studentId, status: studentStatus, exitReason: studentExitReason };
+    setStatusWorkspace((current) => open
+      ? reconcileStudentStatusDraft(current, snapshot)
+      : createStudentStatusDraft(snapshot));
+  }, [open, studentId, studentStatus, studentExitReason]);
+
+  const statusDirty = studentStatusIsDirty(statusWorkspace);
+  const unsavedGuard = useUnsavedChangesGuard({
+    open, isDirty: statusDirty || Boolean(selectedGroupId),
+    isPending: savingStatus || groupMutation !== null, onOpenChange,
+  });
 
   if (!heldStudent) return null;
   const currentStudent = heldStudent;
@@ -141,10 +141,13 @@ export function StudentDetailSheet({
   const studentGroupNames = studentGroups.map((group: any) => group.groupName).filter(Boolean);
 
   const handleSaveStatus = async () => {
-    if (!onUpdateStatus) return;
+    if (!onUpdateStatus || statusWorkspace.incoming || savingStatus) return;
+    const saved = { id: currentStudent.id, status: statusDraft, exitReason };
     setSavingStatus(true);
     try {
       await onUpdateStatus(currentStudent.id, statusDraft, exitReason || undefined);
+      setStatusWorkspace((current) => ({ ...current, baseline: saved, incoming: null }));
+      setConfirmStatus(null);
     } catch {
       // The parent mutation owns the user-facing error toast.
     } finally {
@@ -155,10 +158,10 @@ export function StudentDetailSheet({
   const handleConfirmRemoveGroup = async () => {
     if (confirmRemoveGroupId === null || !onRemoveGroup) return;
     const groupId = confirmRemoveGroupId;
-    setConfirmRemoveGroupId(null);
     setGroupMutation(`remove-${groupId}`);
     try {
       await onRemoveGroup(currentStudent.id, groupId);
+      setConfirmRemoveGroupId(null);
     } catch {
       // The parent mutation owns the user-facing error toast.
     } finally {
@@ -198,7 +201,7 @@ export function StudentDetailSheet({
   ];
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={unsavedGuard.handleOpenChange}>
       <SheetContent className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <SheetHeader className="max-h-[45dvh] shrink-0 overflow-y-auto overscroll-contain border-b px-4 py-3 sm:max-h-none">
           <div className="flex items-start gap-4">
@@ -233,8 +236,10 @@ export function StudentDetailSheet({
                   <Button
                     size="sm"
                     onClick={() => {
-                      onOpenChange(false);
-                      onRecordPayment(Number(currentStudent.leadId));
+                      unsavedGuard.requestAction(() => {
+                        onOpenChange(false);
+                        onRecordPayment(Number(currentStudent.leadId));
+                      });
                     }}
                   >
                     <CreditCard data-icon="inline-start" />
@@ -296,6 +301,16 @@ export function StudentDetailSheet({
           </TabsList>
 
           <TabsContent value="info" className="space-y-3">
+            {statusWorkspace.incoming ? (
+              <Alert role="alert">
+                <AlertTitle>{t('studentChangesDetected')}</AlertTitle>
+                <p className="mt-2 text-sm">{t('studentLatestStatus')}: {studentStatusLabel(statusWorkspace.incoming.status)}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setStatusWorkspace((current) => current.incoming ? { ...current, baseline: current.incoming, incoming: null } : current)}>{t('studentKeepChanges')}</Button>
+                  <Button size="sm" variant="outline" onClick={() => unsavedGuard.requestAction(() => setStatusWorkspace((current) => current.incoming ? createStudentStatusDraft(current.incoming) : current))}>{t('studentAcceptChanges')}</Button>
+                </div>
+              </Alert>
+            ) : null}
             <InfoRow label={t('ageLabel')} value={String(currentStudent.studentAge ?? currentStudent.age ?? t('noData'))} />
             <InfoRow label={t('managerLabel')} value={currentStudent.managerName || t('noData')} />
             <InfoRow label={t('referralCodeLabel')} value={currentStudent.referralCode || t('noData')} />
@@ -331,7 +346,7 @@ export function StudentDetailSheet({
                 <Button
                   className="mt-3"
                   size="sm"
-                  disabled={savingStatus || (['paused', 'expelled'].includes(statusDraft) && !exitReason)}
+                  disabled={!statusDirty || savingStatus || Boolean(statusWorkspace.incoming) || (['paused', 'expelled'].includes(statusDraft) && !exitReason)}
                   onClick={() => {
                     const previous = String(currentStudent.status ?? 'studying');
                     const changed = statusDraft !== previous;
@@ -346,6 +361,7 @@ export function StudentDetailSheet({
                 >
                   {savingStatus ? ceoCopy.student.saving : ceoCopy.student.saveStatus}
                 </Button>
+                {statusDirty ? <p role="status" className="mt-2 text-xs text-muted-foreground">{t('unsavedChangesTitle')}</p> : null}
               </div>
             ) : null}
           </TabsContent>
@@ -360,6 +376,7 @@ export function StudentDetailSheet({
                 {onAddGroup && availableGroups.length > 0 ? (
                   <div className="mt-3 flex gap-2">
                     <select
+                      aria-label={t('chooseGroup')}
                       className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
                       value={selectedGroupId}
                       onChange={(event) => setSelectedGroupId(event.target.value)}
@@ -520,20 +537,20 @@ export function StudentDetailSheet({
         </div>
       </SheetContent>
 
-      <AlertDialog open={confirmRemoveGroupId !== null} onOpenChange={(open) => { if (!open) setConfirmRemoveGroupId(null); }}>
+      <AlertDialog open={confirmRemoveGroupId !== null} onOpenChange={(open) => { if (!open && groupMutation === null) setConfirmRemoveGroupId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('removeFromGroupTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('removeFromGroupConfirm')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void handleConfirmRemoveGroup()}>{t('delete')}</AlertDialogAction>
+            <AlertDialogCancel disabled={groupMutation !== null}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction disabled={groupMutation !== null} className="bg-red-600 hover:bg-red-700" onClick={(event) => { event.preventDefault(); void handleConfirmRemoveGroup(); }}>{groupMutation !== null ? t('saving') : t('removeFromGroup')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={confirmStatus !== null} onOpenChange={(open) => { if (!open) setConfirmStatus(null); }}>
+      <AlertDialog open={confirmStatus !== null} onOpenChange={(open) => { if (!open && !savingStatus) setConfirmStatus(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -549,13 +566,14 @@ export function StudentDetailSheet({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => { setConfirmStatus(null); void handleSaveStatus(); }}>
-              {confirmStatus === 'expelled' ? t('expelStudentTitle') : ceoCopy.student.saveStatus}
+            <AlertDialogCancel disabled={savingStatus}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction disabled={savingStatus || Boolean(statusWorkspace.incoming)} className="bg-red-600 hover:bg-red-700" onClick={(event) => { event.preventDefault(); void handleSaveStatus(); }}>
+              {savingStatus ? t('saving') : confirmStatus === 'expelled' ? t('expelStudentTitle') : ceoCopy.student.saveStatus}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <UnsavedChangesDialog open={unsavedGuard.confirmationOpen} onOpenChange={unsavedGuard.setConfirmationOpen} onDiscard={unsavedGuard.discardChanges} />
     </Sheet>
   );
 }

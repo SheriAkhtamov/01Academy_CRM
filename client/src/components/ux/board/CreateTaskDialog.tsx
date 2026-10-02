@@ -33,6 +33,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
     AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PRIORITY_ORDER, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
+import { useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 
 interface CreateTaskDialogProps {
     open: boolean;
@@ -85,7 +86,6 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
     const [activeFile, setActiveFile] = useState<File | null>(null);
     const [percent, setPercent] = useState(0);
     const [attempted, setAttempted] = useState(false);
-    const [confirmClose, setConfirmClose] = useState(false);
     const [optionalOpen, setOptionalOpen] = useState(false);
     const createdTaskId = useRef<number | null>(null);
     const requestKey = useRef<string>();
@@ -172,14 +172,16 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
         submitting.current = true; setAttempted(true); mutation.mutate();
     };
 
-    const handleOpenChange = (next: boolean) => {
-        // Never drop the draft while the create request is still in flight —
-        // Esc/overlay clicks would otherwise close the dialog mid-submit.
-        if (!next && mutation.isPending) return;
-        if (!next && (title || description || files.length || color || priority !== 'normal' || assigneeId !== defaultAssigneeId || dueAt || attempted)) { setConfirmClose(true); return; }
-        if (!next) reset();
-        onOpenChange(next);
-    };
+    const guard = useUnsavedChangesGuard({
+        open,
+        isDirty: Boolean(title || description || files.length || color || priority !== 'normal' || assigneeId !== defaultAssigneeId || dueAt || attempted),
+        isPending: mutation.isPending,
+        onOpenChange: (next) => {
+            if (!next) { reset(); mutation.reset(); }
+            onOpenChange(next);
+        },
+    });
+    const handleOpenChange = guard.handleOpenChange;
 
     const todayDue = miniMode ? quickTodayDue() : null;
     const tomorrowDue = miniMode ? quickTomorrowDue() : '';
@@ -278,10 +280,10 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                 </form>
             </DialogContent>
         </Dialog>
-        <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+        <AlertDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen}>
             <AlertDialogContent>
                 <AlertDialogHeader><AlertDialogTitle>{t('attachmentDraftDiscardTitle')}</AlertDialogTitle><AlertDialogDescription>{t('attachmentDraftDiscardDescription')}</AlertDialogDescription></AlertDialogHeader>
-                <AlertDialogFooter><AlertDialogCancel>{t('cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => { reset(); mutation.reset(); onOpenChange(false); }}>{t('close')}</AlertDialogAction></AlertDialogFooter>
+                <AlertDialogFooter><AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel><AlertDialogAction onClick={guard.discardChanges}>{t('discardChanges')}</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog></>
     );

@@ -62,7 +62,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { FinanceActionDialogs } from '@/components/finance/FinanceActionDialogs';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -168,6 +168,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const [cancelTarget, setCancelTarget] = useState<Row | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [payTarget, setPayTarget] = useState<Row | null>(null);
+  const [payMethod, setPayMethod] = useState('transfer');
+  const [batchMethod, setBatchMethod] = useState('transfer');
+  const [actionError, setActionError] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [transactionFilter, setTransactionFilter] = useState('all');
   
@@ -262,19 +265,19 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
   });
   const payAll = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/finance/payroll/payout-all', { period, method: 'transfer' }),
+    mutationFn: (method: string) => apiRequest('POST', '/api/finance/payroll/payout-all', { period, method }),
     onSuccess: () => { toast({ title: copy.batchSaved }); setBatchDialogOpen(false); invalidateFinance(); },
-    onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
+    onError: (error: Error) => setActionError(error.message),
   });
   const payExpense = useMutation({
-    mutationFn: (id: number) => apiRequest('POST', `/api/finance/expenses/${id}/pay`, { method: 'transfer' }),
-    onSuccess: () => { toast({ title: copy.expensePaid }); invalidateFinance(); },
-    onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
+    mutationFn: ({ id, method }: { id: number; method: string }) => apiRequest('POST', `/api/finance/expenses/${id}/pay`, { method }),
+    onSuccess: () => { toast({ title: copy.expensePaid }); setPayTarget(null); invalidateFinance(); },
+    onError: (error: Error) => setActionError(error.message),
   });
   const cancelExpense = useMutation({
     mutationFn: () => apiRequest('POST', `/api/finance/expenses/${cancelTarget!.id}/cancel`, { reason: cancelReason }),
     onSuccess: () => { toast({ title: copy.expenseCancelled }); setCancelTarget(null); setCancelReason(''); invalidateFinance(); },
-    onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
+    onError: (error: Error) => setActionError(error.message),
   });
 
   const selectedPayrollEntry = payroll.data?.entries.find((entry) => entry.employeeUserId === selectedEmployeeId)
@@ -325,19 +328,19 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     && !createExpense.isPending;
 
   const expenseGuard = useUnsavedChangesGuard({
-    open: expenseDialogOpen,
+    open: expenseDialogOpen, isPending: createExpense.isPending,
     isDirty: JSON.stringify(expenseForm) !== JSON.stringify(initialExpenseForm),
     onOpenChange: setExpenseDialogOpen,
   });
 
   const salaryGuard = useUnsavedChangesGuard({
-    open: salaryDialogOpen,
+    open: salaryDialogOpen, isPending: saveSalary.isPending,
     isDirty: JSON.stringify(salaryForm) !== JSON.stringify(initialSalaryForm),
     onOpenChange: setSalaryDialogOpen,
   });
 
   const payoutGuard = useUnsavedChangesGuard({
-    open: Boolean(payoutTarget),
+    open: Boolean(payoutTarget), isPending: savePayout.isPending,
     isDirty: JSON.stringify(payoutForm) !== JSON.stringify(initialPayoutForm),
     onOpenChange: (open) => !open && setPayoutTarget(null),
   });
@@ -482,7 +485,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <CardTitle>{copy.recentTransactions}</CardTitle>
               <Button asChild variant="ghost" size="sm"><Link href={financeRoutes.transactions}>{copy.seeAllTransactions}<ArrowUpRight data-icon="inline-end" /></Link></Button>
             </CardHeader>
-            <CardContent className="p-0"><TransactionTable rows={dashboard.data.recentTransactions} copy={copy} money={money} dateTime={dateTime} categoryLabel={categoryLabel} /></CardContent>
+            <CardContent className="p-0"><TransactionTable filterKey={JSON.stringify([period, transactionFilter])} rows={dashboard.data.recentTransactions} copy={copy} money={money} dateTime={dateTime} categoryLabel={categoryLabel} /></CardContent>
           </Card>
         </div>
       ) : null}
@@ -498,7 +501,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.incomeRegistry}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <IncomeRegistryTable rows={income.data.rows} copy={copy} money={money} dateTime={dateTime} methodLabel={methodLabel} />
+              <IncomeRegistryTable filterKey={period} rows={income.data.rows} copy={copy} money={money} dateTime={dateTime} methodLabel={methodLabel} />
             </CardContent>
           </Card>
         </div>
@@ -586,14 +589,15 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                       <div className="flex justify-end gap-1">
                         {row.entryKind === 'operating' && row.status === 'planned' ? (
                           <>
-                            <Button size="sm" variant="outline" onClick={() => setPayTarget(row)} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button>
-                            <Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => setCancelTarget(row)}><XCircle /></Button>
+                            <Button size="sm" variant="outline" onClick={() => { setActionError(''); setPayMethod(row.method || 'transfer'); setPayTarget(row); }} disabled={payExpense.isPending}><Check data-icon="inline-start" />{copy.pay}</Button>
+                            <Button size="icon" variant="ghost" aria-label={copy.cancel} onClick={() => { setActionError(''); setCancelReason(''); setCancelTarget(row); }}><XCircle /></Button>
                           </>
                         ) : null}
                       </div>
                     ),
                   },
                 ] satisfies DataTableColumn<ExpenseRegistryRow>[]}
+                filterKey={period}
                 data={[
                   ...expenses.data.operating.map((row): ExpenseRegistryRow => ({ ...row, entryKind: 'operating' })),
                   ...expenses.data.marketing.map((row): ExpenseRegistryRow => ({ ...row, entryKind: 'marketing' })),
@@ -615,7 +619,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           </StaggerGroup>
           <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <Card className="overflow-hidden">
-              <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => setBatchDialogOpen(true)} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
+              <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.payrollStatement}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Button variant="outline" onClick={() => { setActionError(''); setBatchDialogOpen(true); }} disabled={!payroll.data.summary.pendingCount}><UserRound data-icon="inline-start" />{copy.payAll}</Button></CardHeader>
               <CardContent className="p-0">
                 <DataTable
                   className="overflow-x-auto"
@@ -695,6 +699,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                     },
                   ] satisfies DataTableColumn<Row>[]}
                   data={payroll.data.entries}
+                  filterKey={period}
                   keyExtractor={(row) => String(row.employeeUserId)}
                   onRowClick={(row) => setSelectedEmployeeId(row.employeeUserId)}
                   rowClassName={(row) => (selectedPayrollEntry?.employeeUserId === row.employeeUserId ? 'bg-accent/40' : '')}
@@ -726,7 +731,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       {section === 'transactions' && transactions.data ? (
         <Card className="overflow-hidden">
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b border-border/70"><div><CardTitle>{copy.transactions}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></div><Select value={transactionFilter} onValueChange={setTransactionFilter}><SelectTrigger aria-label={copy.transactions} className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">{copy.all}</SelectItem><SelectItem value="income">{copy.incoming}</SelectItem><SelectItem value="expense">{copy.outgoing}</SelectItem></SelectGroup></SelectContent></Select></CardHeader>
-          <CardContent className="p-0"><TransactionTable rows={filteredTransactions} copy={copy} money={money} dateTime={dateTime} categoryLabel={categoryLabel} /></CardContent>
+          <CardContent className="p-0"><TransactionTable filterKey={JSON.stringify([period, transactionFilter])} rows={filteredTransactions} copy={copy} money={money} dateTime={dateTime} categoryLabel={categoryLabel} /></CardContent>
         </Card>
       ) : null}
 
@@ -786,10 +791,14 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.batchTitle}</AlertDialogTitle><AlertDialogDescription>{copy.batchDescription} {t('payAllConfirmCount').replace('{count}', String(payroll.data?.summary.pendingCount ?? 0))} {t('payAllConfirmTotal').replace('{amount}', money(payroll.data?.summary.pendingAmountUzs ?? 0))}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction onClick={() => payAll.mutate()} disabled={payAll.isPending}>{copy.confirmBatch}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={Boolean(payTarget)} onOpenChange={(open) => !open && setPayTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmPayTitle}</AlertDialogTitle><AlertDialogDescription>{payTarget ? `${payTarget.title} · ${money(payTarget.amountUzs)}` : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={payExpense.isPending}>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={payExpense.isPending} onClick={(event) => { event.preventDefault(); if (payTarget) payExpense.mutate(payTarget.id); setPayTarget(null); }}>{payExpense.isPending ? `${copy.pay}…` : copy.confirmPay}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => !open && setCancelTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{copy.confirmCancel}</AlertDialogTitle><AlertDialogDescription>{cancelTarget?.title}</AlertDialogDescription></AlertDialogHeader><Field><FieldLabel htmlFor="cancel-reason">{copy.cancellationReason}</FieldLabel><Input id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} onKeyDown={submitOnEnter(() => cancelExpense.mutate(), { disabled: !cancelReason.trim() || cancelExpense.isPending })} /></Field><AlertDialogFooter><AlertDialogCancel>{copy.formCancel}</AlertDialogCancel><AlertDialogAction disabled={!cancelReason.trim() || cancelExpense.isPending} onClick={() => cancelExpense.mutate()}>{copy.confirmCancel}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      
+      <FinanceActionDialogs copy={copy} error={actionError} money={money} methods={PAYMENT_METHODS} methodLabel={methodLabel}
+        pay={{ target: payTarget, method: payMethod, onMethodChange: setPayMethod, pending: payExpense.isPending,
+          onClose: () => setPayTarget(null), onConfirm: () => { if (payTarget) { setActionError(''); payExpense.mutate({ id: payTarget.id, method: payMethod }); } } }}
+        batch={{ open: batchDialogOpen, method: batchMethod, onMethodChange: setBatchMethod, count: payroll.data?.summary.pendingCount ?? 0,
+          amount: payroll.data?.summary.pendingAmountUzs ?? 0, pending: payAll.isPending, onClose: () => setBatchDialogOpen(false), onConfirm: () => { setActionError(''); payAll.mutate(batchMethod); } }}
+        cancel={{ target: cancelTarget, reason: cancelReason, onReasonChange: setCancelReason, pending: cancelExpense.isPending,
+          onClose: () => setCancelTarget(null), onConfirm: () => { if (cancelReason.trim()) { setActionError(''); cancelExpense.mutate(); } } }} />
+
       <UnsavedChangesDialog
         open={expenseGuard.confirmationOpen}
         onOpenChange={expenseGuard.setConfirmationOpen}

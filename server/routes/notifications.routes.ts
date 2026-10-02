@@ -24,6 +24,30 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
+router.get('/page', requireAuth, async (req, res) => {
+    const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit) || 25), 1), 100);
+    const offset = Math.min(Math.max(Math.trunc(Number(req.query.offset) || 0), 0), 1_000_000);
+    try {
+        const [items, total] = await Promise.all([
+            storage.getNotificationsByUser(req.user!.id, limit, offset),
+            storage.getNotificationCount(req.user!.id),
+        ]);
+        res.json({ items, total, nextOffset: items.length > 0 && offset + items.length < total ? offset + items.length : null });
+    } catch (error) {
+        logger.error('Failed to fetch notification page', { error, userId: req.user?.id });
+        res.status(500).json({ error: 'failedToLoadData' });
+    }
+});
+
+router.get('/unread-count', requireAuth, async (req, res) => {
+    try {
+        res.json({ count: await storage.getNotificationCount(req.user!.id, true) });
+    } catch (error) {
+        logger.error('Failed to count unread notifications', { error, userId: req.user?.id });
+        res.status(500).json({ error: 'failedToLoadData' });
+    }
+});
+
 router.post('/broadcast', requireAdministration, async (req, res) => {
     try {
         const input = employeeBroadcastRequestSchema.safeParse(req.body);

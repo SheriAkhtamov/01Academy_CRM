@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getNotificationsByUser: vi.fn(),
+  getNotificationCount: vi.fn(),
   getUsers: vi.fn(),
   createNotifications: vi.fn(),
   createMessages: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../server/storage', () => ({
   storage: {
     getNotificationsByUser: mocks.getNotificationsByUser,
+    getNotificationCount: mocks.getNotificationCount,
     getUsers: mocks.getUsers,
     createNotifications: mocks.createNotifications,
     createMessages: mocks.createMessages,
@@ -57,6 +59,7 @@ describe('notification route boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getNotificationsByUser.mockResolvedValue([]);
+    mocks.getNotificationCount.mockResolvedValue(0);
     mocks.getUsers.mockResolvedValue([
       { id: 7, fullName: 'Administrator', isActive: true, isArchived: false },
       { id: 8, fullName: 'First Employee', isActive: true, isArchived: false },
@@ -209,5 +212,23 @@ describe('notification route boundaries', () => {
     expect(response.body).toEqual({ error: 'employeeBroadcastRecipientsUnavailable' });
     expect(mocks.createMessages).not.toHaveBeenCalled();
     expect(mocks.createNotifications).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('notification history and complete unread count', () => {
+  it('returns the complete unread count independently of the latest notification page', async () => {
+    mocks.getNotificationCount.mockResolvedValue(230);
+    const response = await request(await createApp()).get('/api/notifications/unread-count');
+    expect(response.body).toEqual({ count: 230 });
+    expect(mocks.getNotificationCount).toHaveBeenCalledWith(7, true);
+  });
+  it('continues beyond the first hundred records with user-scoped pagination', async () => {
+    mocks.getNotificationsByUser.mockResolvedValue([{ id: 9 }]);
+    mocks.getNotificationCount.mockResolvedValue(105);
+    const response = await request(await createApp()).get('/api/notifications/page?offset=100&limit=25');
+    expect(response.body).toEqual({ items: [{ id: 9 }], total: 105, nextOffset: 101 });
+    expect(mocks.getNotificationsByUser).toHaveBeenCalledWith(7, 25, 100);
+    expect(mocks.getNotificationCount).toHaveBeenCalledWith(7);
   });
 });

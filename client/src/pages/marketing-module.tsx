@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useStickyState } from '@/hooks/useStickyState';
+import { useLocation, useSearch } from 'wouter';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
@@ -161,6 +162,9 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [location, setLocation] = useLocation();
+  const routeSearch = useSearch();
+  const requestedSourceId = new URLSearchParams(routeSearch).get('source');
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useStickyState('marketing-funnel-source', 'all');
@@ -204,6 +208,13 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const bySource = analytics?.bySource ?? [];
   const funnel = analytics?.funnel ?? [];
   const sources = data?.sources ?? [];
+  const selectedSource = sources.find((source: any) => String(source.id) === requestedSourceId);
+  const selectedSourceMetrics = bySource.find((source: any) => String(source.sourceId) === requestedSourceId);
+  const closeSource = () => {
+    const params = new URLSearchParams(routeSearch);
+    params.delete('source');
+    setLocation(`${location}${params.size ? `?${params}` : ''}`, { replace: true });
+  };
   const leads = data?.leads ?? [];
   const expenses = data?.expenses ?? [];
   const referrals = data?.referrals ?? [];
@@ -315,7 +326,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const sourceColumns = [
     { key: 'sourceName', header: t('source'), accessor: (row: any) => row.sourceName, sortable: true },
     { key: 'leads', header: t('navLeads'), accessor: (row: any) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'paidStudents', header: t('paidReferrals'), accessor: (row: any) => row.paidStudents, sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'paidStudents', header: t('marketingPaidStudents'), accessor: (row: any) => row.paidStudents, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'revenue', header: t('revenueLabel'), accessor: (row: any) => Number(row.revenue || 0), render: (row: any) => money(row.revenue), sortable: true, cellClassName: 'tabular-nums' },
     { key: 'expenses', header: t('expenses'), accessor: (row: any) => Number(row.expenses || 0), render: (row: any) => money(row.expenses), sortable: true, cellClassName: 'tabular-nums' },
     { key: 'cpl', header: t('cplColumn'), accessor: (row: any) => Number(row.cpl || 0), render: (row: any) => money(row.cpl), sortable: true, cellClassName: 'tabular-nums' },
@@ -509,7 +520,8 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               <DataTable
                 className="overflow-x-auto"
                 columns={sourceColumns}
-                data={bySource}
+                data={requestedSourceId ? bySource.filter((source: any) => String(source.sourceId) === requestedSourceId) : bySource}
+                filterKey={JSON.stringify([reportingQuery, requestedSourceId])}
                 keyExtractor={(row) => String(row.sourceId)}
                 emptyState={<EmptyState icon={Megaphone} title={t('marketingNoSourcesYet')} description={t('marketingNoSourcesDesc')} />}
               />
@@ -683,6 +695,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 className="overflow-x-auto"
                 columns={referralColumns}
                 data={topReferrers}
+                filterKey={reportingQuery}
                 keyExtractor={(row) => String(row.studentId)}
                 emptyState={<EmptyState title={t('marketingNoReferralsYet')} description={t('marketingNoReferralsDesc')} icon={HeartHandshake} />}
               />
@@ -722,6 +735,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 className="overflow-x-auto"
                 columns={expenseColumns}
                 data={filteredExpenses}
+                filterKey={JSON.stringify([expensePeriodFilter, reportingQuery])}
                 keyExtractor={(row, index) => String(row.id ?? index)}
                 emptyState={<EmptyState title={t('marketingNoExpensesYet')} description={t('marketingNoExpensesDesc')} icon={Wallet} />}
               />
@@ -800,6 +814,18 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           </DialogContent>
         </Dialog>
       )}
+      <Dialog open={Boolean(selectedSource)} onOpenChange={(open) => { if (!open) closeSource(); }}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader><DialogTitle>{selectedSource?.name || t('leadSources')}</DialogTitle></DialogHeader>
+          {selectedSource ? <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dt>{t('channel')}</dt><dd>{selectedSource.channel || t('noData')}</dd>
+            <dt>{t('campaign')}</dt><dd>{selectedSource.campaignName || t('noData')}</dd>
+            <dt>{t('navLeads')}</dt><dd>{selectedSourceMetrics?.leads ?? 0}</dd>
+            <dt>{t('marketingPaidStudents')}</dt><dd>{selectedSourceMetrics?.paidStudents ?? 0}</dd>
+          </dl> : null}
+          <Button variant="outline" onClick={closeSource}>{t('close')}</Button>
+        </DialogContent>
+      </Dialog>
       <UnsavedChangesDialog
         open={expenseDialogGuard.confirmationOpen}
         onOpenChange={expenseDialogGuard.setConfirmationOpen}

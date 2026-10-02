@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -22,6 +23,9 @@ interface ConfirmDialogProps {
     variant?: 'default' | 'destructive';
     isPending?: boolean;
     keepOpenOnConfirm?: boolean;
+    children?: ReactNode;
+    error?: string;
+    confirmDisabled?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -35,22 +39,27 @@ export default function ConfirmDialog({
     variant = 'default',
     isPending = false,
     keepOpenOnConfirm = false,
+    children,
+    error,
+    confirmDisabled = false,
 }: ConfirmDialogProps) {
     const { t } = useTranslation();
     const finalConfirmLabel = confirmLabel || t('ok');
     const finalCancelLabel = cancelLabel || t('cancel');
 
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
+        <AlertDialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next); }}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>{title}</AlertDialogTitle>
                     <AlertDialogDescription>{description}</AlertDialogDescription>
                 </AlertDialogHeader>
+                {children}
+                {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
                 <AlertDialogFooter>
                     <AlertDialogCancel disabled={isPending}>{finalCancelLabel}</AlertDialogCancel>
                     <AlertDialogAction
-                        disabled={isPending}
+                        disabled={isPending || confirmDisabled}
                         onClick={(event) => {
                             if (keepOpenOnConfirm) event.preventDefault();
                             onConfirm();

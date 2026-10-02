@@ -16,7 +16,6 @@ export function LeadVersionNotice({ pending, onKeepDraft, onUseServer, values }:
     <Alert ref={ref} className="mb-4" role="alert">
       <AlertTitle>{t('leadVersionReviewTitle')}</AlertTitle>
       <AlertDescription className="space-y-2">
-        <p>{t('leadVersionReviewDescription')}</p>
         <details>
           <summary className="cursor-pointer font-medium">{t('leadVersionServerValues')}</summary>
           <dl className="mt-2 space-y-1">

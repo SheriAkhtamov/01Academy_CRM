@@ -12,6 +12,7 @@ export function TransactionTable({
   categoryLabel,
   compact = false,
   pageSize = 25,
+  filterKey,
 }: {
   rows: Row[];
   copy: ReturnType<typeof financeCopy>;
@@ -20,6 +21,7 @@ export function TransactionTable({
   categoryLabel: (value: string) => string;
   compact?: boolean;
   pageSize?: number;
+  filterKey?: string;
 }) {
   const columns: DataTableColumn<Row>[] = [
     {
@@ -85,6 +87,7 @@ export function TransactionTable({
       className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
       columns={columns}
       data={rows}
+      filterKey={filterKey}
       keyExtractor={(row) => String(row.id)}
       pageSize={pageSize}
       emptyState={<div className="py-12 text-center text-sm text-muted-foreground">{copy.noData}</div>}

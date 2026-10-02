@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
 import { getInitials, formatUserModule } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { Bell, MessageCircle, X, Settings, Menu, Search, CheckCheck, UserPlus, Loader2, Check } from 'lucide-react';
+import { MessageCircle, X, Settings, Menu, Search, UserPlus, Loader2, Check } from 'lucide-react';
 import ChatSheet from './ux/ChatSheet';
 import ConfirmDialog from './ConfirmDialog';
 import SettingsModal from './modals/SettingsModal';
@@ -24,6 +23,7 @@ import { CommandPalette } from './ux/CommandPalette';
 import { ThemeToggle } from './ux/ThemeToggle';
 import { ModuleIdentity } from './ux/ModuleIdentity';
 import { UnreadCountBadge } from './ux/UnreadCountBadge';
+import { NotificationsMenu } from './ux/NotificationsMenu';
 import {
   conversationQueryOptions,
   totalUnreadMessages,
@@ -54,91 +54,15 @@ export default function Header({
   const [showSettings, setShowSettings] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [notificationToDelete, setNotificationToDelete] = useState<number | null>(null);
   const [accountToRemove, setAccountToRemove] = useState<SavedAccountEntry | null>(null);
-  const queryClient = useQueryClient();
-
-  const { data: notifications = [] } = useQuery<any[]>({
-    queryKey: ['/api/notifications'],
-    refetchInterval: 30000,
-    refetchOnWindowFocus: true,
-  });
 
   const { data: conversations = [] } = useQuery<ConversationUserDto[]>({
     ...conversationQueryOptions,
   });
 
-  const unreadNotificationCount = notifications.filter((n: any) => !n.isRead).length;
-  const unreadNotificationsLabel = t('unreadNotificationCount')
-    .replace('{count}', String(unreadNotificationCount));
   const unreadMessageCount = totalUnreadMessages(conversations);
   const unreadMessagesLabel = t('unreadMessageCount')
     .replace('{count}', String(unreadMessageCount));
-
-  // The badge is what the user watches, so move it the moment they act instead of
-  // waiting for a refetch round-trip; a failed request rolls the count back.
-  const cancelNotificationRefetch = async () => {
-    await queryClient.cancelQueries({ queryKey: ['/api/notifications'] });
-    return { previous: queryClient.getQueryData<any[]>(['/api/notifications']) };
-  };
-
-  const restoreNotifications = (context: { previous?: any[] } | undefined) => {
-    if (context?.previous) {
-      queryClient.setQueryData(['/api/notifications'], context.previous);
-    }
-  };
-
-  const markReadMutation = useMutation({
-    mutationFn: (notificationId: number) =>
-      apiRequest('PUT', `/api/notifications/${notificationId}/read`),
-    onMutate: async (notificationId) => {
-      const context = await cancelNotificationRefetch();
-      queryClient.setQueryData<any[]>(['/api/notifications'], (current = []) => current.map(
-        (item) => (item.id === notificationId ? { ...item, isRead: true } : item),
-      ));
-      return context;
-    },
-    onError: (error: Error, _notificationId, context) => {
-      restoreNotifications(context);
-      toast({ title: t('updateFailed'), description: error.message, variant: 'destructive' });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
-    },
-  });
-
-  const markAllReadMutation = useMutation({
-    mutationFn: () => apiRequest('PUT', '/api/notifications/read-all'),
-    onMutate: async () => {
-      const context = await cancelNotificationRefetch();
-      queryClient.setQueryData<any[]>(['/api/notifications'], (current = []) => current.map(
-        (item) => (item.isRead ? item : { ...item, isRead: true }),
-      ));
-      return context;
-    },
-    onError: (error: Error, _variables, context) => {
-      restoreNotifications(context);
-      toast({ title: t('updateFailed'), description: error.message, variant: 'destructive' });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
-    },
-  });
-
-  const deleteNotificationMutation = useMutation({
-    mutationFn: (notificationId: number) =>
-      apiRequest('DELETE', `/api/notifications/${notificationId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
-      setNotificationToDelete(null);
-    },
-    // The confirm dialog is kept open on confirm, and only onSuccess closes it.
-    // Without this a failed delete left it open with no spinner and no message.
-    onError: (error: Error) => {
-      setNotificationToDelete(null);
-      toast({ title: t('failedToDeleteResource'), description: error.message, variant: 'destructive' });
-    },
-  });
 
   const handleConfirmRemoveAccount = async () => {
     const account = accountToRemove;
@@ -201,82 +125,7 @@ export default function Header({
 
             <ThemeToggle />
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="relative rounded-full"
-                  aria-label={unreadNotificationCount > 0 ? unreadNotificationsLabel : t('notifications')}
-                >
-                  <Bell className="h-5 w-5" />
-                  <UnreadCountBadge
-                    count={unreadNotificationCount}
-                    label={unreadNotificationsLabel}
-                    announce
-                    className="pointer-events-none absolute -right-0.5 -top-0.5"
-                  />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[min(20rem,calc(100vw-1.5rem))]">
-                <DropdownMenuLabel className="flex items-center justify-between">
-                  <span>{t('notifications')}</span>
-                  {unreadNotificationCount > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => markAllReadMutation.mutate()}
-                      disabled={markAllReadMutation.isPending}
-                    >
-                      <CheckCheck className="h-3 w-3 mr-1" />
-                      {t('markAllRead')}
-                    </Button>
-                  )}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {notifications.length === 0 ? (
-                  <div className="p-6 text-center text-muted-foreground text-sm">
-                    {t('noNotifications')}
-                  </div>
-                ) : (
-                  // Previously only the first six were rendered and the rest were
-                  // announced as "+N hidden" with no way to reach them. Scroll the
-                  // full list instead.
-                  <div className="max-h-[60dvh] overflow-y-auto">
-                    {notifications.map((notification: any) => (
-                      // A plain wrapper, not a menu item: each actionable control
-                      // below is its own DropdownMenuItem, which is what puts it in
-                      // Radix's arrow-key order. Buttons nested inside a menu item
-                      // are unreachable by keyboard.
-                      <div
-                        key={notification.id}
-                        className={`flex items-start gap-1 pr-1 ${notification.isRead ? 'opacity-60' : ''}`}
-                      >
-                        <DropdownMenuItem
-                          className="min-w-0 flex-1 flex-col items-start gap-1 p-3"
-                          onSelect={(event) => {
-                            // Reading one notification should not dismiss the list.
-                            event.preventDefault();
-                            if (!notification.isRead) markReadMutation.mutate(notification.id);
-                          }}
-                        >
-                          <span className="font-medium text-foreground text-sm">{notification.title}</span>
-                          <span className="text-xs text-muted-foreground leading-relaxed">{notification.message}</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="mt-3 size-6 shrink-0 justify-center rounded-full p-0"
-                          aria-label={t('delete')}
-                          onSelect={() => setNotificationToDelete(notification.id)}
-                        >
-                          <X className="h-3 w-3 text-muted-foreground" />
-                        </DropdownMenuItem>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <NotificationsMenu />
 
             <div className="relative">
               {/*
@@ -423,20 +272,6 @@ export default function Header({
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-      />
-
-      <ConfirmDialog
-        open={notificationToDelete !== null}
-        onOpenChange={(open) => { if (!open && !deleteNotificationMutation.isPending) setNotificationToDelete(null); }}
-        title={t('deleteNotificationTitle')}
-        description={t('deleteNotificationConfirm')}
-        confirmLabel={t('delete')}
-        variant="destructive"
-        isPending={deleteNotificationMutation.isPending}
-        keepOpenOnConfirm
-        onConfirm={() => {
-          if (notificationToDelete !== null) deleteNotificationMutation.mutate(notificationToDelete);
-        }}
       />
 
       <ConfirmDialog

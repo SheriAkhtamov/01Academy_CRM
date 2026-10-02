@@ -92,6 +92,7 @@ interface DataTableProps<T> {
   rowClassName?: (row: T) => string;
   pageSize?: number;
   isLoading?: boolean;
+  filterKey?: string;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -107,6 +108,7 @@ export function DataTable<T extends Record<string, any>>({
   rowClassName,
   pageSize: initialPageSize = 25,
   isLoading = false,
+  filterKey,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const animateRows = useMotionFeature('entrances');
@@ -124,6 +126,11 @@ export function DataTable<T extends Record<string, any>>({
   const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
+  const [previousFilterKey, setPreviousFilterKey] = useState(filterKey);
+  if (previousFilterKey !== filterKey) {
+    setPreviousFilterKey(filterKey);
+    setCurrentPage(1);
+  }
 
   const sortedData = useMemo(() => {
     if (!sortKey || !sortDirection) return data;

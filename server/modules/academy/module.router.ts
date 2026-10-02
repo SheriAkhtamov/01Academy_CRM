@@ -646,20 +646,28 @@ router.post('/modules/marketing/meta-events/:id/retry', async (req, res) => {
 router.get('/search', async (req, res) => {
   try {
     const term = String(req.query.q ?? '').trim();
-    const limit = Math.min(Math.max(Number(req.query.limit ?? 8) || 8, 1), 10);
+    const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit ?? 8) || 8), 1), 20);
+    const grouped = req.query.grouped === '1';
+    const offset = Math.min(Math.max(Math.trunc(Number(req.query.offset) || 0), 0), 100_000);
+    const entityTypes = ['lead', 'student', 'group', 'course', 'source', 'user'];
+    const requestedType = String(req.query.type ?? 'all');
+    if (requestedType !== 'all' && !entityTypes.includes(requestedType)) return res.status(400).json({ error: 'invalidData' });
     if (term.length < 2) {
-      return res.json([]);
+      return res.json(grouped ? { items: [], hasMore: false } : []);
     }
 
     const like = `%${term.toLowerCase()}%`;
     const assignedModules = getAssignedModules(req.user);
     const isLeadershipActor = hasLeadershipAccess(req.user);
     const results: Row[] = [];
-    const remaining = () => Math.max(limit - results.length, 0);
+    const remaining = (entityType: string) => {
+      if (requestedType !== 'all' && requestedType !== entityType) return 0;
+      return grouped ? limit + 1 : Math.max(limit - results.length, 0);
+    };
 
     const pushLeads = async (whereSql: string, params: DbValue[], href: string) => {
       if (!assignedModules.includes('sales')) return;
-      if (remaining() <= 0) return;
+      if (remaining('lead') <= 0) return;
       const cleanDigits = term.replace(/\D/g, '');
       const hasDigits = cleanDigits.length >= 3;
 
@@ -686,8 +694,9 @@ router.get('/search', async (req, res) => {
         matchConditions += ` OR EXISTS (SELECT 1 FROM academy_lead_phones lp WHERE lp.lead_id = l.id AND regexp_replace(lp.phone, '[^0-9]', '', 'g') LIKE $${digitParamIndex})`;
       }
 
-      queryParams.push(remaining());
+      queryParams.push(remaining('lead'));
       const limitParamIndex = queryParams.length;
+      queryParams.push(grouped ? offset : 0);
 
       const rows = await query(
         `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, l.funnel_id, l.status_code,
@@ -698,7 +707,7 @@ router.get('/search', async (req, res) => {
          WHERE ${whereSql}
            AND ${matchConditions}
          ORDER BY l.created_at DESC
-         LIMIT $${limitParamIndex}`,
+         LIMIT $${limitParamIndex} OFFSET $${limitParamIndex + 1}`,
         queryParams,
       );
       const visibleRows = await applyLeadVisibilityForActor({
@@ -719,7 +728,7 @@ router.get('/search', async (req, res) => {
           mainPhone && mainPhone !== mainTitle ? mainPhone : (mainPhone ? mainPhone : null),
           lead.studentName && lead.studentName !== mainTitle ? lead.studentName : null,
           lead.courseName,
-          lead.isArchived ? 'Архив' : null,
+
         ].filter(Boolean);
 
         return {
@@ -727,6 +736,7 @@ router.get('/search', async (req, res) => {
           entityType: 'lead',
           title: mainTitle,
           subtitle: subtitleItems.join(' • '),
+          isArchived: Boolean(lead.isArchived),
           href: finalHref,
         };
       }));
@@ -734,7 +744,7 @@ router.get('/search', async (req, res) => {
 
     const pushStudents = async (whereSql: string, params: DbValue[], href: string) => {
       if (!assignedModules.includes(href.startsWith('/sales') ? 'sales' : 'teacher')) return;
-      if (remaining() <= 0) return;
+      if (remaining('student') <= 0) return;
       const cleanDigits = term.replace(/\D/g, '');
       const hasDigits = cleanDigits.length >= 3;
 
@@ -754,8 +764,9 @@ router.get('/search', async (req, res) => {
         matchConditions += ` OR (regexp_replace(COALESCE(st.phone, ''), '[^0-9]', '', 'g') LIKE $${digitParamIndex})`;
       }
 
-      queryParams.push(remaining());
+      queryParams.push(remaining('student'));
       const limitParamIndex = queryParams.length;
+      queryParams.push(grouped ? offset : 0);
 
       const rows = await query(
         `SELECT st.id, st.student_name, st.contact_name, st.phone, g.name AS group_name,
@@ -778,7 +789,7 @@ router.get('/search', async (req, res) => {
          WHERE ${whereSql}
            AND ${matchConditions}
          ORDER BY st.created_at DESC
-         LIMIT $${limitParamIndex}`,
+         LIMIT $${limitParamIndex} OFFSET $${limitParamIndex + 1}`,
         queryParams,
       );
       results.push(...rows.map((student) => {
@@ -803,7 +814,7 @@ router.get('/search', async (req, res) => {
 
     const pushGroups = async (whereSql: string, params: DbValue[], href: string) => {
       if (!assignedModules.includes('teacher')) return;
-      if (remaining() <= 0) return;
+      if (remaining('group') <= 0) return;
       const rows = await query(
         `SELECT g.id, g.name, c.name AS course_name, t.full_name AS teacher_name
          FROM academy_groups g
@@ -816,8 +827,8 @@ router.get('/search', async (req, res) => {
              OR LOWER(COALESCE(t.full_name, '')) LIKE $${params.length + 1}
            )
          ORDER BY g.created_at DESC
-         LIMIT $${params.length + 2}`,
-        [...params, like, remaining()],
+         LIMIT $${params.length + 2} OFFSET $${params.length + 3}`,
+        [...params, like, remaining('group'), grouped ? offset : 0],
       );
       results.push(...rows.map((group) => ({
         id: `group-${group.id}`,
@@ -830,14 +841,14 @@ router.get('/search', async (req, res) => {
 
     const pushCourses = async (href: string) => {
       if (!assignedModules.includes('teacher')) return;
-      if (remaining() <= 0) return;
+      if (remaining('course') <= 0) return;
       const rows = await query(
         `SELECT id, name, age_category
          FROM academy_courses
          WHERE LOWER(name) LIKE $1 OR LOWER(slug) LIKE $1 OR LOWER(COALESCE(age_category, '')) LIKE $1
          ORDER BY name
-         LIMIT $2`,
-        [like, remaining()],
+         LIMIT $2 OFFSET $3`,
+        [like, remaining('course'), grouped ? offset : 0],
       );
       results.push(...rows.map((course) => ({
         id: `course-${course.id}`,
@@ -853,39 +864,39 @@ router.get('/search', async (req, res) => {
       await pushStudents(`TRUE`, [], '/sales/clients');
       await pushGroups(`TRUE`, [], '/teacher-module/groups');
       await pushCourses('/teacher-module/groups');
-      if (remaining() > 0 && assignedModules.includes('marketing')) {
+      if (remaining('source') > 0 && assignedModules.includes('marketing')) {
         const sources = await query(
           `SELECT id, name, channel, campaign_name
            FROM academy_lead_sources
            WHERE is_active = true
              AND (LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1)
            ORDER BY name
-           LIMIT $2`,
-          [like, remaining()],
+           LIMIT $2 OFFSET $3`,
+          [like, remaining('source'), grouped ? offset : 0],
         );
         results.push(...sources.map((source) => ({
           id: `source-${source.id}`,
           entityType: 'source',
           title: source.name,
           subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-          href: '/marketing-module/sources',
+          href: `/marketing-module/sources?source=${source.id}`,
         })));
       }
-      if (remaining() > 0) {
+      if (remaining('user') > 0) {
         const users = await query(
           `SELECT id, full_name, module
            FROM users
            WHERE LOWER(full_name) LIKE $1 OR LOWER(module) LIKE $1
            ORDER BY full_name
-           LIMIT $2`,
-          [like, remaining()],
+           LIMIT $2 OFFSET $3`,
+          [like, remaining('user'), grouped ? offset : 0],
         );
         results.push(...users.map((user) => ({
           id: `user-${user.id}`,
           entityType: 'user',
           title: user.fullName,
-          subtitle: user.module,
-          href: '/employees',
+          module: user.module,
+          href: `/employees?employee=${user.id}`,
         })));
       }
     } else {
@@ -909,28 +920,33 @@ router.get('/search', async (req, res) => {
         }
       }
       if (assignedModules.includes('marketing')) {
-        if (remaining() > 0) {
+        if (remaining('source') > 0) {
           const sources = await query(
             `SELECT id, name, channel, campaign_name
              FROM academy_lead_sources
              WHERE is_active = true
                AND (LOWER(name) LIKE $1 OR LOWER(code) LIKE $1 OR LOWER(COALESCE(channel, '')) LIKE $1 OR LOWER(COALESCE(campaign_name, '')) LIKE $1)
              ORDER BY name
-             LIMIT $2`,
-            [like, remaining()],
+             LIMIT $2 OFFSET $3`,
+            [like, remaining('source'), grouped ? offset : 0],
           );
           results.push(...sources.map((source) => ({
             id: `source-${source.id}`,
             entityType: 'source',
             title: source.name,
             subtitle: [source.channel, source.campaignName].filter(Boolean).join(' • '),
-            href: '/marketing-module/sources',
+            href: `/marketing-module/sources?source=${source.id}`,
           })));
         }
       }
     }
 
-    res.json(results.slice(0, limit));
+    const uniqueResults = [...new Map(results.map((item) => [item.id, item])).values()];
+    if (grouped) {
+      const buckets = entityTypes.map((type) => uniqueResults.filter((item) => item.entityType === type));
+      return res.json({ items: buckets.flatMap((items) => items.slice(0, limit)), hasMore: buckets.some((items) => items.length > limit) });
+    }
+    res.json(uniqueResults.slice(0, limit));
   } catch (error) {
     logger.error('Failed to search academy data', { error });
     res.status(500).json({ error: 'Failed to search academy data' });

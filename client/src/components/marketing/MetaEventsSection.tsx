@@ -78,15 +78,16 @@ export function MetaEventsSection() {
     if (status === 'processing') return 'purple' as const;
     return 'outline' as const;
   };
+  const stageLabel = (row: MetaEventRow) => data?.integration.conversionStages?.find((stage) => stage.code === row.crmStage)?.name || t('noData');
+  const eventLabel = (row: MetaEventRow) => row.eventName === 'Purchase' ? t('payment') : t('lead');
   const columns = [
     {
       key: 'event',
       header: t('metaEvent'),
-      accessor: (row: MetaEventRow) => row.eventName,
+      accessor: eventLabel,
       render: (row: MetaEventRow) => (
         <div>
-          <p className="font-medium text-foreground">{row.eventName}</p>
-          <p className="font-mono text-xs text-muted-foreground">{row.eventId}</p>
+          <p className="font-medium text-foreground">{eventLabel(row)}</p>
         </div>
       ),
       sortable: true,
@@ -95,17 +96,17 @@ export function MetaEventsSection() {
       key: 'lead',
       header: t('lead'),
       accessor: (row: MetaEventRow) => row.contactName || '',
-      render: (row: MetaEventRow) => row.contactName || (row.leadId ? `#${row.leadId}` : t('noData')),
+      render: (row: MetaEventRow) => row.contactName || t('noData'),
       sortable: true,
     },
     {
       key: 'creative',
       header: t('metaCreative'),
       accessor: (row: MetaEventRow) => row.hookName || row.adName || '',
-      render: (row: MetaEventRow) => row.hookName || row.adName || row.adId || t('noData'),
+      render: (row: MetaEventRow) => row.hookName || row.adName || t('noData'),
       sortable: true,
     },
-    { key: 'crmStage', header: t('metaCrmStage'), accessor: (row: MetaEventRow) => row.crmStage, sortable: true },
+    { key: 'crmStage', header: t('metaCrmStage'), accessor: stageLabel, sortable: true },
     {
       key: 'status',
       header: t('status'),
@@ -144,13 +145,8 @@ export function MetaEventsSection() {
       {!data.integration.capiConfigured ? (
         <Alert>
           <AlertTitle>{t('metaCapiNotConfigured')}</AlertTitle>
-          <AlertDescription>{t('metaCapiNotConfiguredDesc')}</AlertDescription>
         </Alert>
       ) : null}
-      <Alert>
-        <AlertTitle>{t('metaConversionMapping')}</AlertTitle>
-        <AlertDescription>{t('metaOptimizationNotice')}</AlertDescription>
-      </Alert>
       <div className="grid grid-cols-tile gap-3">
         <EventMetric label={t('metaEventsTotal')} value={data.summary.total} icon={ListChecks} />
         <EventMetric label={t('metaEventsPending')} value={data.summary.pending} icon={Clock3} />
@@ -185,20 +181,18 @@ export function MetaEventsSection() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('metaEventDetails')}</DialogTitle>
-            <DialogDescription>{selected?.eventName}</DialogDescription>
+            <DialogDescription>{selected ? eventLabel(selected) : null}</DialogDescription>
           </DialogHeader>
           {selected ? (
             <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
-              <EventDetail label={t('metaEventId')} value={selected.eventId} />
               <EventDetail label={t('status')} value={statusLabel(selected.status)} />
-              <EventDetail label={t('metaCrmStage')} value={selected.crmStage} />
+              <EventDetail label={t('metaCrmStage')} value={stageLabel(selected)} />
               <EventDetail label={t('metaAttempts')} value={String(selected.attemptCount)} />
               <EventDetail label={t('metaEventTime')} value={dateTime(selected.eventTime)} />
               <EventDetail label={t('metaLastAttempt')} value={dateTime(selected.lastAttemptAt)} />
               <EventDetail label={t('metaNextAttempt')} value={dateTime(selected.nextAttemptAt)} />
               <EventDetail label={t('metaSentAt')} value={dateTime(selected.sentAt)} />
-              <EventDetail label={t('error')} value={selected.errorMessage} />
-              <EventDetail label={t('metaResponse')} value={selected.responsePayload ? JSON.stringify(selected.responsePayload, null, 2) : null} />
+              {selected.status === 'failed' ? <EventDetail label={t('error')} value={t('metaDeliveryFailed')} /> : null}
             </div>
           ) : null}
           {selected && selected.status !== 'sent' ? (
@@ -220,7 +214,7 @@ function EventDetail({ label, value }: { label: string; value?: string | null })
   return (
     <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-foreground">{value || t('noData')}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value || t('noData')}</p>
     </div>
   );
 }

@@ -18,8 +18,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Loader2, MessageCircle, Send, User, Circle, Search } from 'lucide-react';
-import { format, isToday } from 'date-fns';
-import { ru, enUS } from 'date-fns/locale';
+import { academyDateInputValue, academyToday, formatAcademyDate } from '@/lib/localeFormat';
 import type {
   ConversationUserDto,
   MessageDto,
@@ -39,7 +38,6 @@ interface ChatSheetProps {
 export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const { t, language } = useTranslation();
   const { user } = useAuth();
-  const locale = language === 'en' ? enUS : ru;
   const queryClient = useQueryClient();
   
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
@@ -456,11 +454,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                                   try {
                                     if (!message.createdAt) return '';
                                     const createdAt = new Date(message.createdAt);
-                                    return format(
-                                      createdAt,
-                                      isToday(createdAt) ? 'HH:mm' : 'd MMM, HH:mm',
-                                      { locale },
-                                    );
+                                    return formatAcademyDate(createdAt, language, {
+                                      ...(academyDateInputValue(createdAt) === academyToday() ? {} : { day: 'numeric', month: 'short' }),
+                                      hour: '2-digit', minute: '2-digit',
+                                    });
                                   } catch (e) {
                                     return t('now');
                                   }

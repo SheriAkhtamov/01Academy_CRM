@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataTable, type DataTableColumn } from '../client/src/components/ux/DataTable';
@@ -249,4 +249,19 @@ describe('scrolling tab strips', () => {
     expect(trigger.className).toContain('focus-visible:ring-inset');
     expect(trigger.className).not.toContain('focus-visible:ring-offset-2');
   });
+});
+
+
+it('resets to the first filtered page while preserving pagination on background refresh', () => {
+  i18n.setLanguage('en');
+  const rows = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `Record ${index + 1}` }));
+  const table = (data: typeof rows, filterKey: string) => <DataTable columns={[{ key: 'name', header: 'Name' }]} data={data} filterKey={filterKey} keyExtractor={(row) => String(row.id)} />;
+  const view = render(table(rows, 'all'));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('nextPage') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('nextPage') }));
+  view.rerender(table([...rows], 'all'));
+  expect(screen.getByText('Record 51')).toBeTruthy();
+  view.rerender(table(rows.slice(0, 80), 'filtered'));
+  expect(screen.getByText('Record 1')).toBeTruthy();
+  expect(screen.queryByText('Record 51')).toBeNull();
 });

@@ -1,15 +1,24 @@
 import { db } from '../db';
 import { notifications, type Notification, type InsertNotification } from '../db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, count, isNull, or } from 'drizzle-orm';
 
 class NotificationStorage {
-    async getNotificationsByUser(userId: number, limit = 100): Promise<Notification[]> {
+    async getNotificationsByUser(userId: number, limit = 100, offset = 0): Promise<Notification[]> {
         return db
             .select()
             .from(notifications)
             .where(eq(notifications.userId, userId))
-            .orderBy(desc(notifications.createdAt))
-            .limit(limit);
+            .orderBy(desc(notifications.createdAt), desc(notifications.id))
+            .limit(limit)
+            .offset(offset);
+    }
+
+    async getNotificationCount(userId: number, unreadOnly = false): Promise<number> {
+        const rows = await db.select({ value: count() }).from(notifications).where(and(
+            eq(notifications.userId, userId),
+            unreadOnly ? or(eq(notifications.isRead, false), isNull(notifications.isRead)) : undefined,
+        ));
+        return Number(rows[0]?.value ?? 0);
     }
 
     async createNotification(notification: InsertNotification): Promise<Notification> {
@@ -35,7 +44,7 @@ class NotificationStorage {
         await db
             .update(notifications)
             .set({ isRead: true })
-            .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+            .where(and(eq(notifications.userId, userId), or(eq(notifications.isRead, false), isNull(notifications.isRead))));
     }
 
     async deleteNotification(id: number, userId: number): Promise<boolean> {

@@ -1,7 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { apiRequest } from '@/lib/queryClient';
+import { searchAcademy } from '@/features/search/api';
+import { academySearchTypes, type AcademySearchType } from '@shared/contracts/academy-search';
+import { formatUserModule } from '@/lib/auth';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CommandDialog,
   CommandEmpty,
@@ -44,14 +47,6 @@ interface SearchItem {
   keywords?: string;
 }
 
-interface ServerSearchItem {
-  id: string;
-  entityType: string;
-  title: string;
-  subtitle?: string;
-  href: string;
-}
-
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -62,6 +57,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
+  const [searchType, setSearchType] = useState<AcademySearchType | 'all'>('all');
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -77,6 +73,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   useEffect(() => {
     if (!open) {
       setSearch('');
+      setSearchType('all');
     }
   }, [open]);
 
@@ -125,12 +122,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // search request per keystroke; the local navigation filter stays instant.
   const queriedSearch = useDeferredValue(normalizedSearch);
 
-  const { data: serverResults = [], isFetching, isError: searchError } = useQuery<ServerSearchItem[]>({
-    queryKey: ['academy-search', queriedSearch],
-    queryFn: () => apiRequest('GET', `/api/academy/search?q=${encodeURIComponent(queriedSearch)}&limit=8`),
+  const searchQuery = useInfiniteQuery({
+    queryKey: ['academy-search', queriedSearch, searchType],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => searchAcademy(queriedSearch, searchType, pageParam),
+    getNextPageParam: (lastPage, _pages, offset) => lastPage.hasMore ? offset + (searchType === 'all' ? 3 : 8) : undefined,
     enabled: open && queriedSearch.length >= 2,
     staleTime: 30_000,
     retry: 1,
+  });
+  const serverResults = [...new Map((searchQuery.data?.pages.flatMap((page) => page.items) ?? []).map((item) => [item.id, item])).values()];
+  const isFetching = searchQuery.isFetching;
+  const searchError = searchQuery.isError;
+  const availableTypes = academySearchTypes.filter((type) => {
+    if (type === 'user') return hasLeadershipAccess(user);
+    if (type === 'source') return canAccessAcademyModule(user, 'marketing');
+    if (type === 'lead') return canAccessAcademyModule(user, 'sales');
+    if (type === 'student') return canAccessAcademyModule(user, 'sales') || canAccessAcademyModule(user, 'teacher');
+    return canAccessAcademyModule(user, 'teacher');
   });
 
   const iconForEntity = (entityType: string) => {
@@ -159,18 +168,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     return labels[entityType] ?? entityType;
   };
 
-  const entityItems: SearchItem[] = useMemo(
-    () =>
-      serverResults.map((item) => ({
-        id: item.id,
-        type: labelForEntity(item.entityType),
-        title: item.title || t('noData'),
-        subtitle: item.subtitle,
-        href: item.href,
-        icon: iconForEntity(item.entityType),
-      })),
-    [serverResults, t]
-  );
+  const entityItems: SearchItem[] = serverResults.map((item) => ({
+    id: item.id, type: labelForEntity(item.entityType), title: item.title || t('noData'),
+    subtitle: [item.subtitle, item.module ? formatUserModule(item.module, t) : '', item.isArchived ? t('leadArchive') : ''].filter(Boolean).join(' · '),
+    href: item.href, icon: iconForEntity(item.entityType),
+  }));
 
   const filteredNavigation = useMemo(() => {
     if (!normalizedSearch) return [];
@@ -181,7 +183,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     );
   }, [navigationItems, normalizedSearch]);
 
-  const filteredEntities = normalizedSearch.length >= 2 ? entityItems : [];
+  const filteredEntities = normalizedSearch.length >= 2 && normalizedSearch === queriedSearch ? entityItems : [];
 
   const handleSelect = (href: string) => {
     onOpenChange(false);
@@ -199,8 +201,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // the record does not exist when the endpoint simply errored.
   const showSearchError = normalizedSearch.length >= 2
     && !searchPending
-    && searchError
-    && !showNavigation;
+    && searchError;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
@@ -209,6 +210,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         value={search}
         onValueChange={setSearch}
       />
+      <div className="border-b p-2">
+        <Select value={searchType} onValueChange={(value) => setSearchType(value as AcademySearchType | 'all')}>
+          <SelectTrigger aria-label={t('searchEntityType')} className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('searchAllCategories')}</SelectItem>
+            {availableTypes.map((type) => <SelectItem key={type} value={type}>{labelForEntity(type)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
       <CommandList>
         {!normalizedSearch && (
           <CommandEmpty className="py-8 text-center">
@@ -232,10 +242,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <CommandEmpty>{t('noSearchResults')}</CommandEmpty>
         )}
         {showSearchError && (
-          <CommandEmpty className="py-8 text-center">
+          <div role="alert" className="py-4 text-center">
             <AlertCircle className="mx-auto h-6 w-6 text-destructive mb-2" />
             <p className="text-sm text-destructive">{t('failedToLoadData')}</p>
-          </CommandEmpty>
+            <CommandItem value="retry-search" onSelect={() => void searchQuery.refetch()}>{t('retry')}</CommandItem>
+          </div>
         )}
         {showNavigation && (
           <CommandGroup heading={t('navigation')}>
@@ -283,6 +294,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             })}
           </CommandGroup>
         )}
+        {normalizedSearch.length >= 2 && searchQuery.hasNextPage ? (
+          <CommandItem value="load-more-results" disabled={searchQuery.isFetchingNextPage} onSelect={() => void searchQuery.fetchNextPage()}>
+            {searchQuery.isFetchingNextPage ? <Loader2 className="size-4 animate-spin" /> : null}
+            {t('loadMoreResults')}
+          </CommandItem>
+        ) : null}
       </CommandList>
     </CommandDialog>
   );

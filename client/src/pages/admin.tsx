@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'wouter';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useSearch } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -95,6 +95,7 @@ import {
   type UserUpdatePayload,
 } from '@/features/employees/employeeFormSchema';
 import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
+import { allowNavigation } from '@/lib/navigationGuard';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
 
 const formatDateInputValue = (value: unknown) => (
@@ -106,6 +107,10 @@ interface AdminProps {
 }
 
 export default function Admin({ mode = 'admin' }: AdminProps) {
+  const [location, setLocation] = useLocation();
+  const routeSearch = useSearch();
+  const requestedEmployeeId = new URLSearchParams(routeSearch).get('employee');
+  const openedEmployeeRef = useRef<string | null>(null);
   const isEmployeesPage = mode === 'employees';
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -170,6 +175,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const handleUserModalState = (open: boolean) => {
     setShowCreateUserModal(open);
     if (!open) {
+      const params = new URLSearchParams(routeSearch);
+      if (params.has('employee')) {
+        params.delete('employee');
+        allowNavigation(() => setLocation(`${location}${params.size ? `?${params}` : ''}`, { replace: true }));
+      }
       setSelectedUser(null);
       setSalesModuleTransfer(null);
       setSalesLeadTransferManagerId('');
@@ -360,6 +370,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       return await updateEmployeeCredentials(userId, data);
     },
     onSuccess: (data) => {
+      setPendingCredentialUpdate(null);
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       setUserCredentials(data);
       credentialsForm.reset({
@@ -380,6 +391,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       });
     },
   });
+  const credentialsGuard = useUnsavedChangesGuard({
+    open: showCredentialsModal, isDirty: credentialsForm.formState.isDirty,
+    isPending: updateUserCredentialsMutation.isPending, onOpenChange: handleCredentialsModalState,
+  });
+
 
   const fetchUserCredentials = async (userId: number) => {
     try {
@@ -519,7 +535,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     });
   };
 
-  const openEditUserModal = (user: any) => {
+  const openEditUserModal = useCallback((user: any) => {
     setSelectedUser(user);
     userForm.reset({
       email: user.email,
@@ -537,7 +553,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         : [],
     });
     setShowCreateUserModal(true);
-  };
+  }, [userForm]);
+
+  useEffect(() => {
+    if (!requestedEmployeeId) { openedEmployeeRef.current = null; return; }
+    if (openedEmployeeRef.current === requestedEmployeeId || usersLoading) return;
+    const employee = users.find((item) => String(item.id) === requestedEmployeeId);
+    if (!employee) return;
+    openedEmployeeRef.current = requestedEmployeeId;
+    openEditUserModal(employee);
+  }, [requestedEmployeeId, users, usersLoading, openEditUserModal]);
 
   const filteredUsers = users.filter((user: any) => {
     const matchesArchiveView = employeeListView === 'archive'
@@ -1084,6 +1109,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   className="overflow-x-auto"
                   columns={userColumns}
                   data={filteredUsers}
+                  filterKey={JSON.stringify([searchTerm, moduleFilter, employeeListView])}
                   keyExtractor={(row) => `user-${row.id}`}
                   defaultSortKey="user"
                   emptyState={
@@ -1261,8 +1287,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         </DialogContent>
       </Dialog>
 
+      <UnsavedChangesDialog open={credentialsGuard.confirmationOpen} onOpenChange={credentialsGuard.setConfirmationOpen} onDiscard={credentialsGuard.discardChanges} />
       {/* User Credentials Modal */}
-      <Dialog open={showCredentialsModal} onOpenChange={handleCredentialsModalState}>
+      <Dialog open={showCredentialsModal} onOpenChange={credentialsGuard.handleOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center space-x-2">
@@ -1315,13 +1342,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <div className={`min-w-0 break-all rounded-md p-3 font-mono text-sm ${userCredentials.temporaryPassword ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-900' : 'bg-slate-50 text-muted-foreground italic'}`}>
                     {userCredentials.temporaryPassword || t('passwordNotAvailable')}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {userCredentials.temporaryPassword
-                      ? t('storedCredentialPasswordHint')
-                      : userCredentials.passwordVisibleToAdministration
-                        ? t('passwordUnavailableAdminHint')
-                        : t('passwordHiddenForNonAdministration')}
-                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1409,7 +1429,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   >
                     {updateUserCredentialsMutation.isPending ? t('saving') : t('saveCredentials')}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => handleCredentialsModalState(false)}>
+                  <Button type="button" variant="outline" onClick={() => credentialsGuard.handleOpenChange(false)}>
                     {t('close')}
                   </Button>
                 </div>
@@ -1426,13 +1446,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         description={`${t('confirmCredentialsUpdateDescription')} ${userCredentials?.fullName || ''}`}
         confirmLabel={t('saveCredentials')}
         cancelLabel={t('cancel')}
+        isPending={updateUserCredentialsMutation.isPending}
+        keepOpenOnConfirm
         onConfirm={() => {
           if (userCredentials?.id && pendingCredentialUpdate) {
             updateUserCredentialsMutation.mutate({
               userId: userCredentials.id,
               data: pendingCredentialUpdate,
             });
-            setPendingCredentialUpdate(null);
           }
         }}
         variant="destructive"

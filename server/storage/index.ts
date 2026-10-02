@@ -31,6 +31,7 @@ export const storage = {
 
     // Notification operations
     getNotificationsByUser: notificationStorage.getNotificationsByUser.bind(notificationStorage),
+    getNotificationCount: notificationStorage.getNotificationCount.bind(notificationStorage),
     createNotification: notificationStorage.createNotification.bind(notificationStorage),
     createNotifications: notificationStorage.createNotifications.bind(notificationStorage),
     markNotificationAsRead: notificationStorage.markNotificationAsRead.bind(notificationStorage),

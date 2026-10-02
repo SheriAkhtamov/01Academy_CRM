@@ -6,12 +6,14 @@ import { StatusBadge } from '@/components/finance/StatusBadge';
 
 export function IncomeRegistryTable({
   rows,
+  filterKey,
   copy,
   money,
   dateTime,
   methodLabel,
 }: {
   rows: Row[];
+  filterKey?: string;
   copy: ReturnType<typeof financeCopy>;
   money: (value: number) => string;
   dateTime: (value: unknown) => string;
@@ -61,6 +63,7 @@ export function IncomeRegistryTable({
       className="overflow-auto overscroll-contain max-h-[min(70dvh,48rem)] [scrollbar-gutter:stable]"
       columns={columns}
       data={rows}
+      filterKey={filterKey}
       keyExtractor={(row) => String(row.id)}
       emptyState={<div className="py-12 text-center text-sm text-muted-foreground">{copy.noData}</div>}
     />

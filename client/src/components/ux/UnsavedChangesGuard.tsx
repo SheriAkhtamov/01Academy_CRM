@@ -6,25 +6,29 @@ import { useTranslation } from '@/hooks/useTranslation';
 interface UseUnsavedChangesGuardOptions {
   open: boolean;
   isDirty: boolean;
+  isPending?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function useUnsavedChangesGuard({
   open,
   isDirty,
+  isPending = false,
   onOpenChange,
 }: UseUnsavedChangesGuardOptions) {
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const pendingAction = useRef<(() => void) | null>(null);
 
   const requestAction = useCallback((action: () => void) => {
+    if (open && isPending) return;
     if (open && isDirty) {
       pendingAction.current = action;
       setConfirmationOpen(true);
     } else allowNavigation(action);
-  }, [open, isDirty]);
+  }, [open, isDirty, isPending]);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen && open && isPending) return;
     // Only a dialog the user is actually looking at can have changes worth
     // keeping; a dirty flag left behind by a previous session must not block it.
     if (!nextOpen && open && isDirty) {
@@ -34,7 +38,7 @@ export function useUnsavedChangesGuard({
     }
 
     allowNavigation(() => onOpenChange(nextOpen));
-  }, [isDirty, onOpenChange, open]);
+  }, [isDirty, isPending, onOpenChange, open]);
 
   const discardChanges = useCallback(() => {
     setConfirmationOpen(false);
@@ -49,12 +53,12 @@ export function useUnsavedChangesGuard({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !isDirty) return;
+    if (!open || (!isDirty && !isPending)) return;
     return registerNavigationGuard(requestAction);
-  }, [open, isDirty, requestAction]);
+  }, [open, isDirty, isPending, requestAction]);
 
   useEffect(() => {
-    if (!open || !isDirty) return;
+    if (!open || (!isDirty && !isPending)) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -63,7 +67,7 @@ export function useUnsavedChangesGuard({
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isDirty, open]);
+  }, [isDirty, isPending, open]);
 
   return {
     confirmationOpen,

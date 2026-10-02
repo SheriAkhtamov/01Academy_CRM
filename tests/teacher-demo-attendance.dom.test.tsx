@@ -20,13 +20,14 @@ const demoFixture: DemoLesson = {
   scheduledAt: '2026-09-16T05:00:00Z', status: 'scheduled', canManage: false,
   participants: [{ id: 77, studentId: 155, studentName: 'Demo student', contactName: 'Parent', status: 'invited', canManage: true }],
 };
-const regularLesson = {
+const regularLessonFixture = {
   id: 17, groupId: 20, groupName: 'Regular group', courseId: 1, teacherId: 4,
   topic: 'Regular lesson', lessonNumber: 1, durationMinutes: 60,
   scheduledAt: '2026-09-16T06:00:00Z', status: 'scheduled',
 };
 const clients: QueryClient[] = [];
 let demos: DemoLesson[];
+let regularLesson: typeof regularLessonFixture;
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -46,6 +47,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   i18n.setLanguage('en');
   demos = [{ ...demoFixture }];
+  regularLesson = { ...regularLessonFixture };
   apiMock.mockReset();
   apiMock.mockImplementation(async (method: string, url: string, payload?: any) => {
     if (url === '/api/academy/modules/teacher') return { groups: [], lessons: [regularLesson], students: [], attendance: [] };
@@ -59,6 +61,10 @@ beforeEach(() => {
       return demos[0];
     }
     if (url === '/api/academy/lessons/17/attendance-roster') return { lesson: regularLesson, students: [], attendance: [] };
+    if (url === '/api/academy/lessons/17/reschedule' && method === 'POST') {
+      regularLesson = { ...regularLesson, scheduledAt: payload.scheduledAt, status: 'scheduled' };
+      return { lesson: regularLesson, lessons: [regularLesson], shiftedCount: 1 };
+    }
     throw new Error(`Unexpected request: ${method} ${url}`);
   });
 });
@@ -134,6 +140,46 @@ describe('teacher demo attendance', () => {
     fireEvent.click(await screen.findByTestId('attendance-calendar-lesson-17'));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('GET', '/api/academy/lessons/17/attendance-roster'));
     expect(screen.queryByRole('dialog', { name: translations.demoLesson.en })).toBeNull();
+  });
+
+  it.each([
+    { status: 'scheduled', date: '2026-09-15T11:00', expectedAt: '2026-09-15T06:00:00.000Z', period: 'a past day' },
+    { status: 'scheduled', date: '2026-09-16T10:00', expectedAt: '2026-09-16T05:00:00.000Z', period: 'earlier today' },
+    { status: 'scheduled', date: '2026-09-18T11:00', expectedAt: '2026-09-18T06:00:00.000Z', period: 'a future day' },
+    { status: 'conducted', date: '2026-09-15T11:00', expectedAt: '2026-09-15T06:00:00.000Z', period: 'a past day' },
+  ])('reschedules a $status lesson to $period after a reason and confirmation', async ({ status, date, expectedAt }) => {
+    regularLesson = { ...regularLesson, status };
+    mount('/teacher-module/attendance?lesson=17');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(await within(dialog).findByRole('button', { name: /^Reschedule lesson/ }));
+    const dateInput = within(dialog).getByLabelText(translations.newLessonDate.en);
+    const reasonInput = within(dialog).getByLabelText(translations.rescheduleReason.en);
+    const submit = within(dialog).getByRole('button', { name: translations.rescheduleLesson.en }) as HTMLButtonElement;
+
+    expect(dateInput.getAttribute('min')).toBeNull();
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(dateInput, { target: { value: date } });
+    fireEvent.change(reasonInput, { target: { value: '   ' } });
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(reasonInput, { target: { value: '  Correct lesson date  ' } });
+    expect(submit.disabled).toBe(false);
+    fireEvent.change(dateInput, { target: { value: '' } });
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(dateInput, { target: { value: date } });
+    fireEvent.click(submit);
+
+    const confirmation = await screen.findByRole('alertdialog', { name: translations.rescheduleConfirmTitle.en });
+    expect(apiMock.mock.calls.some(([method, url]) => method === 'POST' && url === '/api/academy/lessons/17/reschedule')).toBe(false);
+    if (status === 'conducted') {
+      expect(within(confirmation).getByText(translations.rescheduleConductedWarning.en)).toBeTruthy();
+    }
+    fireEvent.click(within(confirmation).getByRole('button', { name: translations.rescheduleLesson.en }));
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('POST', '/api/academy/lessons/17/reschedule', {
+      scheduledAt: expectedAt,
+      reason: 'Correct lesson date',
+    }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
   it('requires a reason for a no-show and saves it through the teacher API', async () => {

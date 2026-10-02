@@ -161,9 +161,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
     if (!(nextScheduledAt instanceof Date)) {
       return res.status(400).json({ error: 'rescheduleDateRequired' });
     }
-    if (nextScheduledAt.getTime() <= Date.now()) {
-      return res.status(400).json({ error: 'rescheduleDateMustBeFuture' });
-    }
     const reason = nullableText(req.body.reason);
     if (!reason || reason.length > 500) {
       return res.status(400).json({ error: 'rescheduleReasonRequired' });
@@ -300,9 +297,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
         const affectedLesson = change.lesson;
         const oldDate = new Date(affectedLesson.scheduledAt);
         const newDate = change.scheduledAt;
-        if (newDate.getTime() <= Date.now()) {
-          throw Object.assign(new Error('rescheduleDateMustBeFuture'), { statusCode: 400 });
-        }
         const values: Row = {
           scheduledAt: newDate,
           durationMinutes: change.durationMinutes,

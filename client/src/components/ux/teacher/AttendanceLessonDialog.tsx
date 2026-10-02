@@ -39,7 +39,6 @@ import { EmptyState } from '@/components/ux/EmptyState';
 import { LessonStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import {
   TEACHER_CARD_PADDING,
@@ -83,7 +82,6 @@ export interface AttendanceLessonDialogProps {
   rescheduleReason: string;
   onRescheduleReasonChange: (value: string) => void;
   rescheduleAtDate: Date | null;
-  rescheduleMin: string;
   canReschedule: boolean;
   isRescheduling: boolean;
   onConfirmReschedule: () => void;
@@ -129,7 +127,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     rescheduleReason,
     onRescheduleReasonChange,
     rescheduleAtDate,
-    rescheduleMin,
     canReschedule,
     isRescheduling,
     onConfirmReschedule,
@@ -572,7 +569,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                         <Input
                           id="reschedule-at"
                           type="datetime-local"
-                          min={rescheduleMin}
                           value={rescheduleAt}
                           disabled={mutationPending}
                           onChange={(event) => onRescheduleAtChange(event.target.value)}
@@ -712,7 +708,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
           {lesson?.status === 'conducted' ? (
             <p className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-xs font-medium text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span>{t('rescheduleConductedWarning' as TranslationKey)}</span>
+              <span>{t('rescheduleConductedWarning')}</span>
             </p>
           ) : null}
           <AlertDialogFooter>

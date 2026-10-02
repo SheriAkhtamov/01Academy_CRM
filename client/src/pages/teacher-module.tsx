@@ -158,15 +158,6 @@ function localDateKey(value: string): string {
   return `${year}-${month}-${day}`;
 }
 
-function toDateTimeLocal(value: Date): string {
-  const { year, month: rawMonth, day: rawDay, hour, minute } = academyDateTimeParts(value);
-  const month = String(rawMonth).padStart(2, '0');
-  const day = String(rawDay).padStart(2, '0');
-  const hours = String(hour).padStart(2, '0');
-  const minutes = String(minute).padStart(2, '0');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
 type PersistedAttendanceDraft = {
   draft: TeacherAttendanceDraft;
   note: string;
@@ -732,7 +723,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const canRescheduleLesson = Boolean(
     ['scheduled', 'conducted'].includes(selectedLessonDetails?.status ?? '')
     && Number.isFinite(rescheduleTimestamp)
-    && rescheduleTimestamp > now
     && rescheduleReason.trim(),
   );
   const lessonMutationPending = saveAttendance.isPending || rescheduleLesson.isPending;
@@ -1149,7 +1139,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             rescheduleReason={rescheduleReason}
             onRescheduleReasonChange={setRescheduleReason}
             rescheduleAtDate={parsedRescheduleAt}
-            rescheduleMin={toDateTimeLocal(new Date(now + 5 * 60 * 1000))}
             canReschedule={canRescheduleLesson}
             isRescheduling={rescheduleLesson.isPending}
             onConfirmReschedule={handleRescheduleLesson}

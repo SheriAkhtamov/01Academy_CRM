@@ -1363,11 +1363,15 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('reschedules one lesson freely and rebuilds the chain from the group timetable', async () => {
-    const originalAt = new Date('2030-07-15T15:00:00.000Z'); // Monday 20:00
-    const followingAt = new Date('2030-07-17T15:00:00.000Z'); // Wednesday 20:00
-    const thirdAt = new Date('2030-07-19T15:00:00.000Z'); // Friday 20:00
-    const nextAt = new Date('2030-07-20T12:00:00.000Z'); // Saturday 17:00
+  it.each([
+    { year: 2024, period: 'past' },
+    { year: 2030, period: 'future' },
+  ])('lets a teacher reschedule into the $period and rebuilds the chain from the group timetable', async ({ year }) => {
+    mocks.actor = { id: 1, module: 'teacher', modules: ['teacher'] };
+    const originalAt = new Date(`${year}-07-15T15:00:00.000Z`); // Monday 20:00
+    const followingAt = new Date(`${year}-07-17T15:00:00.000Z`); // Wednesday 20:00
+    const thirdAt = new Date(`${year}-07-19T15:00:00.000Z`); // Friday 20:00
+    const nextAt = new Date(`${year}-07-20T12:00:00.000Z`); // Saturday 17:00
     const lessonRow = (id: number, scheduledAt: Date) => ({
       id,
       group_id: 20,
@@ -1447,9 +1451,9 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(200);
     expect(response.body.shiftedCount).toBe(3);
     expect(response.body.lessons.map((lesson: any) => new Date(lesson.scheduledAt).toISOString())).toEqual([
-      '2030-07-20T12:00:00.000Z',
-      '2030-07-22T15:00:00.000Z',
-      '2030-07-24T15:00:00.000Z',
+      `${year}-07-20T12:00:00.000Z`,
+      `${year}-07-22T15:00:00.000Z`,
+      `${year}-07-24T15:00:00.000Z`,
     ]);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_reschedules"'))).toHaveLength(3);
@@ -1531,10 +1535,10 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('reopens a conducted lesson, clears its attendance, and records both histories', async () => {
+  it.each([-7, 7])('reopens a conducted lesson at a date %i days from now, clears its attendance, and records both histories', async (dayOffset) => {
     const originalAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
     originalAt.setHours(10, 0, 0, 0);
-    const nextAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const nextAt = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000);
     nextAt.setHours(10, 0, 0, 0);
     const conducted = lessonFixture({ status: 'conducted', scheduled_at: originalAt });
 

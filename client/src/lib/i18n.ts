@@ -1372,6 +1372,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   confirmAction: { en: 'Confirm', ru: 'Подтвердить' },
   rescheduleConfirmTitle: { en: 'Reschedule the lesson?', ru: 'Перенести занятие?' },
   rescheduleConfirmDesc: { en: 'The lesson moves from {from} to {to}.', ru: 'Занятие переносится с {from} на {to}.' },
+  rescheduleConductedWarning: {
+    en: 'Rescheduling reopens this completed lesson and clears its attendance. You will need to mark attendance again.',
+    ru: 'После переноса проведённый урок станет запланированным, а отметки посещаемости будут удалены. Посещаемость нужно будет отметить заново.',
+  },
   lessonsHiddenByFilters: { en: 'All lessons are hidden by the filters', ru: 'Все занятия скрыты фильтрами' },
   lessonsHiddenByFiltersHint: {
     en: 'Reset the status filters to see the lessons of this period again.',
@@ -1639,7 +1643,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'Only a scheduled or completed lesson can be rescheduled',
     ru: 'Переносить можно только запланированное или проведённое занятие',
   },
-  rescheduleDateMustBeFuture: { en: 'Choose a future date and time', ru: 'Выберите будущие дату и время' },
   rescheduleDateMustChange: { en: 'The new lesson time must differ from the current one', ru: 'Новое время занятия должно отличаться от текущего' },
   rescheduleDateRequired: { en: 'Choose a new lesson date and time', ru: 'Выберите новые дату и время занятия' },
   rescheduleReasonRequired: { en: 'Specify the reason for rescheduling', ru: 'Укажите причину переноса' },

@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { Resend } from 'resend';
 import { logger } from '../lib/logger';
 import { appConfig, isProductionEnvironment } from '../config';
@@ -14,7 +14,7 @@ function escapeHtml(str: string): string {
 }
 
 class EmailService {
-  private transporter: nodemailer.Transporter | null = null;
+  private transporter: Transporter | null = null;
   private resend: Resend | null = null;
   private emailMethod: 'smtp' | 'resend' | 'console' = 'console';
 

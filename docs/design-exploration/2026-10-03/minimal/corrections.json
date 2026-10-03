@@ -1,0 +1,24 @@
+{
+  "tool": "built-in image_gen",
+  "edits": [
+    {
+      "number": "26",
+      "prompt": "Use case: text-localization / precise UI text correction. Edit the attached CRM concept. Change ONLY the text inside the funnel dropdown beside the page heading, above the Kanban. The correct Russian text is exactly \"Основная воронка\". Spell the second word exactly в-о-р-о-н-к-а. Keep the existing font size, font family, spacing, baseline, dropdown outline and chevron unchanged. Preserve the entire rest of the screenshot exactly: minimalist design, navigation, logo, all other labels, cards, contact fields, masked phones, counters, colors, toolbar and composition. No redesign, no added elements, no zoom or crop. Return the full landscape screenshot with this single text correction.",
+      "source": "26-compact-grid.png",
+      "result": "26-compact-grid-v2.png"
+    },
+    {
+      "number": "27",
+      "prompt": "Use case: text-localization / precise UI text correction. Edit the attached CRM concept. Change ONLY the text inside the funnel dropdown beside the page heading, above the Kanban. The correct Russian text is exactly \"Основная воронка\". Spell the second word exactly в-о-р-о-н-к-а. Keep the existing font size, font family, spacing, baseline, dropdown outline and chevron unchanged. Preserve the entire rest of the screenshot exactly: minimalist design, navigation, logo, all other labels, cards, contact fields, masked phones, counters, colors, toolbar and composition. No redesign, no added elements, no zoom or crop. Return the full landscape screenshot with this single text correction.",
+      "source": "27-quiet-blue.png",
+      "result": "27-quiet-blue-v2.png"
+    },
+    {
+      "number": "27",
+      "source": "27-quiet-blue-v2.png",
+      "result": "27-quiet-blue-v3.png",
+      "prompt": "Edit this screenshot with ONE tiny text correction. In the long white rounded funnel dropdown at x=311..636, y=176..223, replace the existing malformed label entirely with freshly typeset Russian text: \"Основная воронка\". It must read Основная SPACE воронка. The second word is exactly these Cyrillic letters: в о р о н к а. Currently the image incorrectly says \"врронка\"; change the erroneous first р to о. Do not retain the malformed glyph. Draw the full correct label \"Основная воронка\" in the same navy sans-serif font at the same position and size. Preserve every other pixel of the UI, all layout, colors, cards and text. Full screenshot output with no crop. Only this exact text replacement."
+    }
+  ],
+  "note": "Only the final corrected variants appear in the gallery. Discarded generated versions stay outside the tracked project."
+}

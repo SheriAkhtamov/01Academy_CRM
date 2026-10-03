@@ -8,7 +8,6 @@ import { requireAuth, requireAdministration } from '../middleware/auth.middlewar
 import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
 import {
-    ACADEMY_ACCESS_MODULES,
     ACADEMY_MODULES,
     getAssignedModules,
     hasLeadershipAccess,
@@ -32,14 +31,7 @@ import {
 } from './user-sales-funnel-support';
 
 const router = Router();
-const primaryModuleSet = new Set<string>(ACADEMY_MODULES);
-const accessModuleSet = new Set<string>(ACADEMY_ACCESS_MODULES);
-const moduleLoginPrefix: Record<AcademyModule, string> = {
-    administration: 'admin',
-    sales: 'sales',
-    teacher: 'teacher',
-    marketing: 'marketing',
-};
+const moduleSet = new Set<string>(ACADEMY_MODULES);
 const maxGeneratedLoginAttempts = 8;
 const USER_ACCESS_ADVISORY_LOCK = 10_100_001;
 
@@ -76,7 +68,7 @@ const slugifyName = (fullName: string) => {
 };
 
 const generateLogin = (fullName: string, module: AcademyModule, unavailableLogins: Set<string>) => {
-    const prefix = moduleLoginPrefix[module];
+    const prefix = module === 'administration' ? 'admin' : module;
     const base = `${prefix}.${slugifyName(fullName)}`;
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -124,7 +116,7 @@ const normalizeRequestedModules = (value: unknown, primaryModule: AcademyModule)
     }
     const rawModules = value ?? [];
     if ((rawModules as unknown[]).some((module) => (
-        typeof module !== 'string' || !accessModuleSet.has(module)
+        typeof module !== 'string' || !moduleSet.has(module)
     ))) {
         throw Object.assign(new Error('invalidData'), { statusCode: 400 });
     }
@@ -577,7 +569,7 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(400).json({ error: 'invalidData' });
         }
 
-        if (!primaryModuleSet.has(req.body.module)) {
+        if (!moduleSet.has(req.body.module)) {
             return res.status(400).json({ error: 'A valid module is required' });
         }
         const module = req.body.module as AcademyModule;
@@ -981,7 +973,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
         if (hasLeadershipAccess(currentUser)) {
             if (req.body.module !== undefined) {
-                if (!primaryModuleSet.has(req.body.module)) {
+                if (!moduleSet.has(req.body.module)) {
                     return res.status(400).json({ error: 'A valid module is required' });
                 }
                 updateData.module = req.body.module;

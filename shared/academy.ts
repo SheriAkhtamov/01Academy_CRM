@@ -5,14 +5,12 @@ export const ACADEMY_MODULES = [
   "sales",
   "teacher",
   "marketing",
+  "finance",
 ] as const;
 
 export type AcademyModule = (typeof ACADEMY_MODULES)[number];
-export const ACADEMY_ACCESS_MODULES = [
-  ...ACADEMY_MODULES,
-  "finance",
-] as const;
-export type AcademyAccessModule = (typeof ACADEMY_ACCESS_MODULES)[number];
+export const ACADEMY_ACCESS_MODULES = ACADEMY_MODULES;
+export type AcademyAccessModule = AcademyModule;
 export type ModuleAccessSource =
   | string
   | readonly string[]

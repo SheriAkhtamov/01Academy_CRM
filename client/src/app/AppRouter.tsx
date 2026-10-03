@@ -33,6 +33,7 @@ function ModuleBasedHome() {
     case 'sales': return <SalesDashboard />;
     case 'teacher': return <TeacherModule />;
     case 'marketing': return <MarketingModule />;
+    case 'finance': return <FinanceCenter />;
     default: return <AccessDenied titleKey="noModuleAssigned" />;
   }
 }

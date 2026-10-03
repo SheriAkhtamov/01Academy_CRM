@@ -80,6 +80,78 @@ describe('user route validation', () => {
     expect(mockStorage.getUsers).not.toHaveBeenCalled();
   });
 
+  it('creates a finance employee and includes the primary module in access automatically', async () => {
+    mockStorage.getUsers.mockResolvedValue([]);
+    const createdUser = {
+      id: 20,
+      email: 'finance.new.user@01academy.local',
+      fullName: 'New Finance User',
+      module: 'finance',
+      isActive: true,
+    };
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
+        if (statement.includes('INSERT INTO users')) return { rows: [createdUser], rowCount: 1 };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users').send({
+      fullName: createdUser.fullName,
+      module: 'finance',
+      modules: [],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.module).toBe('finance');
+    expect(response.body.modules).toEqual(['finance']);
+    const insertCall = client.query.mock.calls.find(([statement]) => statement.includes('INSERT INTO users'));
+    expect(insertCall?.[1]?.[0]).toMatch(/^finance\.new\.finance\.user\.[a-z0-9]+@01academy\.local$/);
+    expect(insertCall?.[1]?.[8]).toBe('finance');
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO user_modules'), [20, ['finance']]);
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('changes the primary module to finance and persists its access', async () => {
+    const existingUser = { ...administrationUser, id: 20, module: 'marketing', modules: ['marketing'] };
+    const updatedUser = { ...existingUser, module: 'finance', modules: ['finance'] };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce(updatedUser);
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string, _params?: unknown[]) => {
+        if (statement.includes('SELECT id, full_name, module, is_active')) {
+          return { rows: [{ id: 20, full_name: existingUser.fullName, module: 'marketing', is_active: true, is_archived: false }] };
+        }
+        if (statement.includes('SELECT module FROM user_modules')) return { rows: [{ module: 'marketing' }] };
+        if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0 }] };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.put('/api/users/20').send({ module: 'finance', modules: ['finance'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.module).toBe('finance');
+    expect(response.body.modules).toEqual(['finance']);
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), expect.arrayContaining(['finance']));
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO user_modules'), [20, ['finance']]);
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
   it('rejects duplicate employee phone numbers before opening a transaction', async () => {
     const app = await createApp();
     const agent = request.agent(app);

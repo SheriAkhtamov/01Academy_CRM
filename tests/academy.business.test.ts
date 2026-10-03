@@ -31,10 +31,12 @@ describe("01 Academy business rules", () => {
       "sales",
       "teacher",
       "marketing",
+      "finance",
     ]);
+    expect(ACADEMY_ACCESS_MODULES).toBe(ACADEMY_MODULES);
   });
 
-  it("exposes finance as a separately assigned access module", () => {
+  it("grants finance only when explicitly assigned as a primary or additional module", () => {
     expect(ACADEMY_ACCESS_MODULES).toEqual([
       "administration",
       "sales",
@@ -51,6 +53,9 @@ describe("01 Academy business rules", () => {
       module: "sales",
       modules: ["sales", "finance"],
     })).toBe(true);
+    expect(hasFinanceAccess({ module: "finance", modules: [] })).toBe(true);
+    expect(canAccessAcademyModule("finance", "finance")).toBe(true);
+    expect(hasLeadershipAccess("finance")).toBe(false);
   });
 
   it("keeps administration to its own module", () => {

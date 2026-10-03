@@ -79,6 +79,7 @@ import {
   updateEmployeeCredentials,
 } from '@/features/employees/employees-api';
 import {
+  ACADEMY_MODULES,
   getAssignedModules,
   type AcademyAccessModule,
   type AcademyModule,
@@ -590,16 +591,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
   };
 
-  const primaryModuleOptions = [
-    { value: 'administration', label: t(MODULE_NAVIGATION.administration.nameKey) },
-    { value: 'sales', label: t(MODULE_NAVIGATION.sales.nameKey) },
-    { value: 'teacher', label: t(MODULE_NAVIGATION.teacher.nameKey) },
-    { value: 'marketing', label: t(MODULE_NAVIGATION.marketing.nameKey) },
-  ] as const;
-  const accessModuleOptions = [
-    ...primaryModuleOptions,
-    { value: 'finance', label: t(MODULE_NAVIGATION.finance.nameKey) },
-  ] as const;
+  const moduleOptions = ACADEMY_MODULES.map((value) => ({
+    value,
+    label: t(MODULE_NAVIGATION[value].nameKey),
+  }));
   const primaryModuleValue = userForm.watch('module');
   const assignedModuleValues = userForm.watch('modules');
 
@@ -859,7 +854,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   </FormControl>
                                   <SelectContent>
                                     <SelectGroup>
-                                      {primaryModuleOptions.map((option) => (
+                                      {moduleOptions.map((option) => (
                                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                                       ))}
                                     </SelectGroup>
@@ -891,7 +886,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             <FormItem>
                               <FormLabel>{t('accessModules')}</FormLabel>
                               <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
-                                {accessModuleOptions.map((option) => {
+                                {moduleOptions.map((option) => {
                                   const value = option.value;
                                   const checked = (field.value ?? []).includes(value);
                                   const isPrimary = primaryModuleValue === value;
@@ -1046,7 +1041,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             onSearchTermChange={setSearchTerm}
             moduleFilter={moduleFilter}
             onModuleFilterChange={setModuleFilter}
-            moduleOptions={accessModuleOptions}
+            moduleOptions={moduleOptions}
           />
 
           {/* Users List */}

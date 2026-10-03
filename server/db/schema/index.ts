@@ -40,7 +40,7 @@ export const users = pgTable("users", {
   emailUnique: uniqueIndex("users_email_unique").on(sql`lower(${table.email})`),
   moduleIdx: index("users_module_idx").on(table.module),
   archiveIdx: index("users_archive_idx").on(table.isArchived, table.archivedAt),
-  moduleCheck: check("users_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing')`),
+  moduleCheck: check("users_module_check", sql`${table.module} IN (${sql.raw(ACADEMY_MODULES.map((module) => `'${module}'`).join(', '))})`),
 }));
 
 export const { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers } = createSalesFunnelTables(users.id);
@@ -91,7 +91,7 @@ export const userModules = pgTable("user_modules", {
   userIdx: index("user_modules_user_idx").on(table.userId),
   moduleIdx: index("user_modules_module_idx").on(table.module),
   userModuleUnique: uniqueIndex("user_modules_user_module_unique").on(table.userId, table.module),
-  moduleCheck: check("user_modules_module_check", sql`${table.module} IN ('administration', 'sales', 'teacher', 'marketing', 'finance')`),
+  moduleCheck: check("user_modules_module_check", sql`${table.module} IN (${sql.raw(ACADEMY_MODULES.map((module) => `'${module}'`).join(', '))})`),
 }));
 
 export const auditLogs = pgTable("audit_logs", {

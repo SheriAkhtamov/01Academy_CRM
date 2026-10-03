@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ACADEMY_ACCESS_MODULES, ACADEMY_MODULES } from '@shared/academy';
+import { ACADEMY_MODULES } from '@shared/academy';
 import { kpiRoleSchema } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
@@ -30,7 +30,7 @@ export const createUserSchema = (t: Translate) => z.object({
   dateOfBirth: z.string().optional(),
   position: z.string().optional(),
   module: z.enum(ACADEMY_MODULES),
-  modules: z.array(z.enum(ACADEMY_ACCESS_MODULES)).min(1, t('selectAtLeastOneModule')),
+  modules: z.array(z.enum(ACADEMY_MODULES)).min(1, t('selectAtLeastOneModule')),
   salesKpiRole: kpiRoleSchema.nullable().default(null),
   salesFunnelIds: z.array(z.number().int().positive()).default([]),
 }).superRefine((values, ctx) => {

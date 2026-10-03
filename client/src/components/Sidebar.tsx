@@ -168,13 +168,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
     // module's overview item — otherwise the landing screen shows no active
     // nav item at all.
     if (currentPath === '/' && user.module) {
-      const moduleHomes: Partial<Record<AcademyModule, string>> = {
-        administration: '/admin',
-        sales: '/sales',
-        teacher: '/teacher-module',
-        marketing: '/marketing-module',
-      };
-      return hrefPath === moduleHomes[user.module];
+      return hrefPath === MODULE_NAVIGATION[user.module]?.items[0]?.href;
     }
     if (href === '/admin/sales-settings') {
       return currentPath === href || currentPath === '/admin/leads';

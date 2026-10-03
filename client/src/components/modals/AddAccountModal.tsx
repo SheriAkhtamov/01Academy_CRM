@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Form,
@@ -54,7 +53,6 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
       await addAccount(data.login, data.password);
       toast({
         title: t('accountAdded'),
-        description: t('accountAddedDesc'),
       });
       form.reset();
       onOpenChange(false);
@@ -76,15 +74,12 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent aria-describedby={undefined} className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
             {t('addAccount')}
           </DialogTitle>
-          <DialogDescription>
-            {t('addAccountDescription')}
-          </DialogDescription>
         </DialogHeader>
 
         {error && (

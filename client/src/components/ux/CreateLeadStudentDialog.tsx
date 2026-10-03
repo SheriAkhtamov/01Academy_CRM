@@ -284,11 +284,6 @@ function LeadStudentFormDialog({
       setCreatedCount((count) => count + 1);
       toast({
         title: t('studentCreated'),
-        description: purpose === 'demo'
-          ? t('demoStudentCreatedFromLead')
-          : variables.values.groupIds.length > 0
-            ? t('studentCreatedFromLead')
-            : t('studentCreatedWithoutGroup'),
       });
       if (!variables.createAnother) {
         onOpenChange(false);
@@ -310,11 +305,6 @@ function LeadStudentFormDialog({
   });
 
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
-  const dialogDescription = isEditing
-    ? t('editStudentForContact')
-    : purpose === 'demo'
-      ? t('createDemoStudentForContact')
-      : t('createStudentForContact');
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !saveStudent.isPending && onOpenChange(nextOpen)}>
@@ -332,7 +322,7 @@ function LeadStudentFormDialog({
             ) : null}
           </DialogTitle>
           <DialogDescription>
-            {dialogDescription.replace('{name}', contactName)}
+            {contactName}
           </DialogDescription>
         </DialogHeader>
 
@@ -373,7 +363,6 @@ function LeadStudentFormDialog({
                   <FormControl>
                     <PhoneInput value={field.value} onValueChange={field.onChange} />
                   </FormControl>
-                  <p className="text-xs text-muted-foreground">{t('studentPhoneOptionalHint')}</p>
                   {fieldState.error ? <p className="text-sm font-medium text-destructive">{t('invalidStudentPhone')}</p> : null}
                 </FormItem>
               )}
@@ -441,7 +430,6 @@ function LeadStudentFormDialog({
                   );
                 })}
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">{t('studentGroupCanBeAssignedLater')}</p>
               {groupError ? <p className="mt-2 text-sm font-medium text-destructive">{t('studentGroupRequired')}</p> : null}
             </div> : null}
 

@@ -15,7 +15,6 @@ type ModuleType =
 
 interface ModuleDefinition {
   title: string;
-  description: string;
   icon: LucideIcon;
 }
 
@@ -77,7 +76,6 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
     finance: resolveDefinition('finance'),
     tasks: {
       title: t(TASKS_NAVIGATION_ITEM.labelKey),
-      description: t('taskBoardSubtitle'),
       icon: KanbanSquare,
     },
   };
@@ -88,7 +86,6 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
     const definition = MODULE_NAVIGATION[moduleType];
     return {
       title: t(definition.nameKey),
-      description: t(definition.descriptionKey),
       icon: definition.icon,
     };
   }
@@ -109,9 +106,7 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
         <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
           {title ?? module.title}
         </h1>
-        <p className="hidden truncate text-xs text-muted-foreground xl:block">
-          {subtitle ?? module.description}
-        </p>
+        {subtitle ? <p className="hidden truncate text-xs text-muted-foreground xl:block">{subtitle}</p> : null}
       </div>
     </div>
   );

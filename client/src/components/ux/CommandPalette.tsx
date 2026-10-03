@@ -223,13 +223,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         {!normalizedSearch && (
           <CommandEmpty className="py-8 text-center">
             <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground">{t('commandPaletteHint')}</p>
           </CommandEmpty>
         )}
         {normalizedSearch.length === 1 && (
           <CommandEmpty className="py-8 text-center">
             <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground">{t('commandPaletteHint')}</p>
           </CommandEmpty>
         )}
         {showSearching && (

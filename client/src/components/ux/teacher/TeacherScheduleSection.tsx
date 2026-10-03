@@ -123,7 +123,6 @@ export function TeacherScheduleSection({
             <EmptyState
               icon={CalendarDays}
               title={t('noLessonsInRange')}
-              description={t('scheduleEmptyWeekHint')}
               action={nextLesson ? (
                 <Button
                   type="button"

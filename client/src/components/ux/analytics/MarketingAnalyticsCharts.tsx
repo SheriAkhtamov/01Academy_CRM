@@ -138,7 +138,6 @@ export function MarketingAnalyticsCharts({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <AnalyticsChartCard
         title={t('marketingSourceEconomics')}
-        description={t('marketingSourceEconomicsDescription')}
         summary={`${t('marketingSourceEconomics')}. ${sourceEconomics.map((source) => (
           `${source.sourceName}: ${Number(source.expenses || 0) > 0 ? `${source.roas}x` : t('noData')}`
         )).join(', ')}`}
@@ -199,13 +198,12 @@ export function MarketingAnalyticsCharts({
             </ComposedChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('marketingConversionHealth')}
-        description={t('marketingConversionHealthDescription')}
         summary={`${t('marketingConversionHealth')}. ${conversionRings.map((item) => `${item.name}: ${item.value}%`).join(', ')}`}
         className="xl:col-span-4"
         chartClassName="h-[204px]"
@@ -239,13 +237,12 @@ export function MarketingAnalyticsCharts({
             </RadialBarChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('conversionFunnel')}
-        description={t('conversionFunnelDescription')}
         summary={`${t('conversionFunnel')}. ${funnel.map((stage) => `${stage.name}: ${stage.count}`).join(', ')}`}
         className="xl:col-span-7"
         chartClassName="h-[252px]"
@@ -288,13 +285,12 @@ export function MarketingAnalyticsCharts({
             </FunnelChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noFunnelData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noFunnelData')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('marketingAcquisitionBySource')}
-        description={t('marketingAcquisitionBySourceDescription')}
         summary={`${t('marketingAcquisitionBySource')}. ${acquisitionSources.map((source) => `${source.sourceName}: ${source.leads}/${source.paidStudents}`).join(', ')}`}
         className="xl:col-span-5"
         chartClassName="h-[260px]"
@@ -334,7 +330,7 @@ export function MarketingAnalyticsCharts({
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')}  />
         )}
       </AnalyticsChartCard>
     </div>

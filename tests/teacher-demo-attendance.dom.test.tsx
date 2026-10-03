@@ -151,7 +151,7 @@ describe('teacher demo attendance', () => {
     regularLesson = { ...regularLesson, status };
     mount('/teacher-module/attendance?lesson=17');
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: /^Reschedule lesson/ }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: translations.lessonRescheduling.en }));
     const dateInput = within(dialog).getByLabelText(translations.newLessonDate.en);
     const reasonInput = within(dialog).getByLabelText(translations.rescheduleReason.en);
     const submit = within(dialog).getByRole('button', { name: translations.rescheduleLesson.en }) as HTMLButtonElement;

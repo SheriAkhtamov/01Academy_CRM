@@ -301,7 +301,6 @@ export function ScheduleFilterPanel({
         <div className="flex min-h-32 flex-col items-center justify-center gap-2 text-center">
           <CalendarDays className="text-muted-foreground" />
           <p className="text-sm font-medium">{t('noScheduledGroups')}</p>
-          <p className="text-xs text-muted-foreground">{t('noScheduledGroupsDescription')}</p>
         </div>
       )}
     </div>

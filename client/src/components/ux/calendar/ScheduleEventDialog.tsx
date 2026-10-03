@@ -4,7 +4,6 @@ import {
   CalendarDays,
   Clock3,
   MapPin,
-  Repeat2,
   UserRoundCheck,
 } from 'lucide-react';
 import {
@@ -57,7 +56,7 @@ export function ScheduleEventDialog({
     {
       key: 'teacher',
       icon: UserRoundCheck,
-      value: event.teacherName || t('teacherWillBeAssigned'),
+      value: event.teacherName || t('notAssigned'),
     },
     ...(event.schoolName ? [{ key: 'school', icon: MapPin, value: event.schoolName }] : []),
     ...(event.roomName ? [{ key: 'room', icon: MapPin, value: event.roomName }] : []),
@@ -95,12 +94,6 @@ export function ScheduleEventDialog({
             </div>
           ))}
 
-          {event.source === 'recurring' ? (
-            <p className="mt-1 flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-              <Repeat2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-              {t('recurringLessonHint')}
-            </p>
-          ) : null}
         </dl>
       </DialogContent>
     </Dialog>

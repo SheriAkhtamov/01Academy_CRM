@@ -261,7 +261,6 @@ export default function TasksPage() {
             <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col">
                 <PageHeader
                     title={t('taskBoard')}
-                    subtitle={t('taskBoardSubtitle')}
                     actions={
                         <>
                             <div
@@ -434,7 +433,6 @@ export default function TasksPage() {
                                         </div>
                                         <div className="min-w-0">
                                             <h2 className="text-sm font-semibold text-foreground">{t('taskArchive')}</h2>
-                                            <p className="truncate text-xs text-muted-foreground">{t('taskArchiveDescription')}</p>
                                         </div>
                                     </div>
                                     <span className="rounded-full bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
@@ -452,7 +450,6 @@ export default function TasksPage() {
                                         <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/60 p-6 text-center">
                                             <Archive className="size-8 text-muted-foreground/50" aria-hidden="true" />
                                             <p className="text-sm font-medium text-foreground">{t('taskArchiveEmpty')}</p>
-                                            <p className="max-w-sm text-xs text-muted-foreground">{t('taskArchiveEmptyDescription')}</p>
                                         </div>
                                     )}
                                 </div>

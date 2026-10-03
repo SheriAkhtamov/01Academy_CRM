@@ -12,12 +12,12 @@ import { useMotionPreferences } from './MotionPreferencesProvider';
  * fire on every single interaction first, ornament last.
  */
 const FEATURE_LABELS = {
-  pageTransitions: { labelKey: 'motionPageTransitions', hintKey: 'motionPageTransitionsHint' },
-  entrances: { labelKey: 'motionEntrances', hintKey: 'motionEntrancesHint' },
-  boardReflow: { labelKey: 'motionBoardReflow', hintKey: 'motionBoardReflowHint' },
-  charts: { labelKey: 'motionCharts', hintKey: 'motionChartsHint' },
-  decorative: { labelKey: 'motionDecorative', hintKey: 'motionDecorativeHint' },
-} satisfies Record<MotionFeature, { labelKey: TranslationKey; hintKey: TranslationKey }>;
+  pageTransitions: { labelKey: 'motionPageTransitions' },
+  entrances: { labelKey: 'motionEntrances' },
+  boardReflow: { labelKey: 'motionBoardReflow' },
+  charts: { labelKey: 'motionCharts' },
+  decorative: { labelKey: 'motionDecorative' },
+} satisfies Record<MotionFeature, { labelKey: TranslationKey }>;
 
 /**
  * The animation switches shown inside Account Settings.
@@ -40,7 +40,6 @@ export function MotionSettingsPanel() {
             <Sparkles className="h-4 w-4 text-slate-500" />
             {t('interfaceAnimations')}
           </Label>
-          <p className="text-xs text-muted-foreground">{t('interfaceAnimationsHint')}</p>
         </div>
         <Switch
           id="motion-enabled"
@@ -60,7 +59,6 @@ export function MotionSettingsPanel() {
               <Label htmlFor={`motion-${feature}`} className="text-sm font-normal">
                 {t(FEATURE_LABELS[feature].labelKey)}
               </Label>
-              <p className="text-xs text-muted-foreground">{t(FEATURE_LABELS[feature].hintKey)}</p>
             </div>
             <Switch
               id={`motion-${feature}`}

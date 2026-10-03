@@ -52,7 +52,7 @@ describe('task creation with attachments', () => {
     await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Retry documents');
     await user.upload(input, [new File(['a'], 'one.pdf'), new File(['b'], 'two.xlsx')]);
     await user.click(screen.getByRole('button', { name: 'Create task' }));
-    await screen.findByText(/The task is saved, but some files/);
+    await screen.findByText(/The task was created. Retry uploading the remaining files./);
     expect(close).not.toHaveBeenCalled();
     expect((screen.getByRole('textbox', { name: 'Task title' }) as HTMLInputElement).matches(':disabled')).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Retry saving' }));

@@ -15,13 +15,11 @@ import {
 } from '@/components/ux/UnsavedChangesGuard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -161,22 +159,21 @@ const integrationCopy = (
   if (siteDomain) {
     return {
       title: siteDomain,
-      description: t('integrationProviderWebsiteSiteDesc').replace('{domain}', siteDomain),
     };
   }
   switch (provider) {
     case 'instagram':
-      return { title: t('instagramIntegration'), description: t('instagramIntegrationDesc') };
+      return { title: t('instagramIntegration')};
     case 'website':
-      return { title: t('integrationProviderWebsite'), description: t('integrationProviderWebsiteDesc') };
+      return { title: t('integrationProviderWebsite')};
     case 'meta':
-      return { title: t('metaIntegration'), description: t('metaIntegrationDesc') };
+      return { title: t('metaIntegration')};
     case 'onlinepbx':
-      return { title: t('onlinePbxIntegration'), description: t('onlinePbxIntegrationDesc') };
+      return { title: t('onlinePbxIntegration')};
     case 'telegram_tasks':
-      return { title: t('telegramTasksIntegration'), description: t('telegramTasksIntegrationDesc') };
+      return { title: t('telegramTasksIntegration')};
     default:
-      return { title: t('navIntegrations'), description: t('adminIntegrationsDescription') };
+      return { title: t('navIntegrations')};
   }
 };
 
@@ -238,7 +235,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     } else {
       toast({
         title: t('instagramConnectionFailed'),
-        description: t('instagramConnectionFailedDesc'),
         variant: 'destructive',
       });
     }
@@ -282,7 +278,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         || error.message === t('instagramIntegrationNotConfigured');
       toast({
         title: isNotConfigured ? t('instagramSetupRequired') : t('instagramConnectionFailed'),
-        description: isNotConfigured ? t('instagramSetupRequiredDesc') : error.message,
         variant: 'destructive',
       });
     },
@@ -322,7 +317,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         title: t('onlinePbxRoutingSaved'),
         description: settings.synchronized === false
           ? t('onlinePbxRoutingSyncPending')
-          : t('onlinePbxRoutingSavedDescription'),
+          : undefined,
         variant: settings.synchronized === false ? 'destructive' : undefined,
       });
     },
@@ -430,7 +425,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     <ModulePage>
       <PageHeader
         title={t('navIntegrations')}
-        subtitle={t('adminIntegrationsDescription')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
           { label: t('systemManagement'), href: '/admin/system-management' },
@@ -513,7 +507,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                     </div>
                     <div className="min-w-0">
                       <CardTitle>{copy.title}</CardTitle>
-                      <CardDescription className="mt-1">{copy.description}</CardDescription>
                       <p className={`mt-3 text-sm ${integration.connected ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}`}>
                         {statusText}
                       </p>
@@ -601,10 +594,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       </div>
 
       <Dialog open={integrationCatalogOpen} onOpenChange={setIntegrationCatalogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent aria-describedby={undefined} className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('integrationCatalogTitle')}</DialogTitle>
-            <DialogDescription>{t('integrationCatalogDescription')}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             {([
@@ -632,10 +624,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       />
 
       <Dialog open={onlinePbxSettingsOpen} onOpenChange={onlinePbxGuard.handleOpenChange}>
-        <DialogContent className="overflow-hidden sm:max-w-3xl">
+        <DialogContent aria-describedby={undefined} className="overflow-hidden sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('onlinePbxSettingsTitle')}</DialogTitle>
-            <DialogDescription>{t('onlinePbxSettingsDescription')}</DialogDescription>
           </DialogHeader>
 
           {onlinePbxRouting.isLoading ? (
@@ -654,7 +645,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             <Alert variant="destructive">
               <AlertCircle />
               <AlertTitle>{t('onlinePbxRoutingLoadFailed')}</AlertTitle>
-              <AlertDescription>{t('onlinePbxRoutingLoadFailedDescription')}</AlertDescription>
             </Alert>
           ) : (
             <div className="max-h-[68dvh] overflow-y-auto overscroll-contain pr-4">
@@ -662,12 +652,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 <Alert>
                   <Users />
                   <AlertTitle>{t('onlinePbxManagersBlockTitle')}</AlertTitle>
-                  <AlertDescription>
-                    {t('onlinePbxRoutingDescription').replace(
-                      '{seconds}',
-                      String(onlinePbxRouting.data?.ringDelaySeconds ?? 3),
-                    )}
-                  </AlertDescription>
                 </Alert>
 
                 <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
@@ -724,7 +708,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   <Alert variant="destructive">
                     <AlertCircle />
                     <AlertTitle>{t('onlinePbxNoExtensionsTitle')}</AlertTitle>
-                    <AlertDescription>{t('onlinePbxNoExtensionsDescription')}</AlertDescription>
                   </Alert>
                 ) : null}
 
@@ -843,7 +826,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   <Alert>
                     <AlertCircle />
                     <AlertTitle>{t('onlinePbxNoAssignments')}</AlertTitle>
-                    <AlertDescription>{t('onlinePbxNoAssignmentsDescription')}</AlertDescription>
                   </Alert>
                 ) : null}
 
@@ -856,9 +838,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         <PhoneForwarded className="size-4" />
                         {t('onlinePbxForwardingTitle')}
                       </h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {t('onlinePbxForwardingDescription')}
-                      </p>
                     </div>
                     <Switch
                       checked={onlinePbxRoutingDraft.forwarding.enabled}
@@ -888,11 +867,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         }));
                       }}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      {onlinePbxRoutingDraft.forwarding.enabled
-                        ? t('onlinePbxForwardingOnHint')
-                        : t('onlinePbxForwardingOffHint')}
-                    </p>
                   </div>
                 </section>
               </div>

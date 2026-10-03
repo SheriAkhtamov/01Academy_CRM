@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarClock, CalendarDays, CircleCheck, Clock3, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
 import { CALENDAR_TONES } from '@/components/ux/calendar/calendarTones';
 import {
@@ -344,7 +344,6 @@ export function AttendanceCalendar({
               <CalendarDays className="size-5 text-primary" />
               {t('attendanceCalendarTitle')}
             </CardTitle>
-            <CardDescription className="mt-1">{t('attendanceCalendarHint')}</CardDescription>
           </div>
           {nextPending ? (
             <Button
@@ -418,7 +417,6 @@ export function AttendanceCalendar({
               icon={CalendarDays}
               className="py-0"
               title={hiddenStates.size > 0 ? t('lessonsHiddenByFilters') : t('noLessonsInRange')}
-              description={hiddenStates.size > 0 ? t('lessonsHiddenByFiltersHint') : t('scheduleEmptyWeekHint')}
               action={hiddenStates.size > 0 ? (
                 <Button
                   type="button"

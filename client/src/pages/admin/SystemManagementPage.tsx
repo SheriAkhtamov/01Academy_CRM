@@ -83,13 +83,11 @@ function SystemManagementOverview() {
       href: '/admin/system-management/integrations',
       icon: Plug,
       title: t('navIntegrations'),
-      description: t('adminIntegrationsDescription'),
     },
     {
       href: '/admin/system-management/employee-notifications',
       icon: BellRing,
       title: t('employeeNotifications'),
-      description: t('employeeNotificationsDescription'),
     },
   ];
 
@@ -97,7 +95,6 @@ function SystemManagementOverview() {
     <ModulePage>
       <PageHeader
         title={t('systemManagement')}
-        subtitle={t('systemManagementSubtitle')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
           { label: t('systemManagement') },
@@ -123,9 +120,6 @@ function SystemManagementOverview() {
                       <h2 className="font-semibold text-foreground">{section.title}</h2>
                       <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
                     </div>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {section.description}
-                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -251,7 +245,6 @@ function EmployeeNotificationsPage() {
     <ModulePage>
       <PageHeader
         title={t('employeeNotifications')}
-        subtitle={t('employeeNotificationsSubtitle')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
           { label: t('systemManagement'), href: '/admin/system-management' },
@@ -325,7 +318,6 @@ function EmployeeNotificationsPage() {
               <div className="py-12 text-center">
                 <Users className="mx-auto size-10 text-muted-foreground/50" />
                 <p className="mt-3 font-medium text-foreground">{t('noEmployeesFound')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{t('adjustSearchCriteria')}</p>
               </div>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border/70">
@@ -409,7 +401,6 @@ function EmployeeNotificationsPage() {
           <Card>
             <CardHeader>
               <CardTitle>{t('broadcastChannel')}</CardTitle>
-              <CardDescription>{t('broadcastChannelDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <button
@@ -426,9 +417,6 @@ function EmployeeNotificationsPage() {
                 <BellRing className="mt-0.5 size-5 shrink-0 text-primary" />
                 <span>
                   <span className="block text-sm font-semibold text-foreground">{t('systemNotification')}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {t('systemNotificationDescription')}
-                  </span>
                 </span>
               </button>
               <button
@@ -448,9 +436,6 @@ function EmployeeNotificationsPage() {
                 <MessageCircle className="mt-0.5 size-5 shrink-0 text-primary" />
                 <span>
                   <span className="block text-sm font-semibold text-foreground">{t('personalMessage')}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {t('personalMessageDescription')}
-                  </span>
                 </span>
               </button>
             </CardContent>

@@ -222,9 +222,6 @@ export function LeadTagsEditor({
       <label htmlFor={`lead-${leadId}-tag-input`} className="sr-only">
         {t('leadTags')}
       </label>
-      <span id={`lead-${leadId}-tag-hint`} className="sr-only">
-        {t('leadTagsHint')}
-      </span>
 
       <div className="relative">
         <div

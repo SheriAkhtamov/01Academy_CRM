@@ -6,7 +6,6 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +38,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const { t, language } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -228,16 +226,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           prev ? [...prev, createdMessage] : [createdMessage]
         );
       }
-      
       // Force refresh of messages
       queryClient.invalidateQueries({ queryKey: messageQueryKeys.thread(variables.receiverId) });
       queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
-      
       // Check if this is the first message to this employee
       const isNewConversation = !conversationEmployees.some((employee) => (
         employee.id === variables.receiverId
       ));
-      
       if (isNewConversation) {
         setSearchQuery('');
       }
@@ -255,7 +250,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   const handleSendMessage = () => {
     if (!newMessage.trim() || !selectedEmployeeId || sendMessageMutation.isPending) return;
-    
     sendMessageMutation.mutate({
       receiverId: selectedEmployeeId,
       content: newMessage.trim(),
@@ -265,13 +259,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   const selectedEmployee = useMemo(() => {
     if (!selectedEmployeeId) return null;
-    
     const employee = (Array.isArray(employees) ? employees : [])
       .concat(Array.isArray(conversationEmployees) ? conversationEmployees : [])
       .find((item) => item.id === selectedEmployeeId);
-      
     if (!employee) return null;
-    
     // Add online status from usersWithStatus
     const userStatus = Array.isArray(usersWithStatus) 
       ? usersWithStatus.find((item) => item.id === selectedEmployeeId)
@@ -285,7 +276,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
-      <SheetContent
+      <SheetContent aria-describedby={undefined}
         side="right"
         showOverlay={false}
         className="w-[min(960px,calc(100vw-1rem))] max-w-none p-0 sm:max-w-2xl lg:max-w-4xl"
@@ -297,9 +288,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
             <MessageCircle />
             {t('employeeChat')}
           </SheetTitle>
-          <SheetDescription>
-            {t('chatWithEmployees')}
-          </SheetDescription>
         </SheetHeader>
 
         <div className="flex h-[calc(100dvh-101px)] min-h-0">
@@ -380,9 +368,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     <p className="text-sm">
                       {searchQuery ? t('noSearchResults') : t('noConversationsYet')}
                     </p>
-                    {!searchQuery && (
-                      <p className="text-xs text-muted-foreground mt-1">{t('useSearchToStartChat')}</p>
-                    )}
                   </div>
                 )}
               </div>
@@ -471,7 +456,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       <div className="text-center py-8 text-muted-foreground">
                         <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">{t('noMessagesYet')}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t('startConversation')}</p>
                       </div>
                     ) : null}
                     <div ref={messagesEndRef} aria-hidden="true" />
@@ -508,7 +492,6 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 <div className="text-center">
                   <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-30" />
                   <p className="text-lg font-medium mb-2 text-foreground">{t('selectEmployee')}</p>
-                  <p className="text-sm text-muted-foreground">{t('chatWithEmployees')}</p>
                 </div>
               </div>
             )}

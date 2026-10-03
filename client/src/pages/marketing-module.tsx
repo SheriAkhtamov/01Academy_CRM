@@ -54,7 +54,6 @@ import {
   Users,
   DollarSign,
   Target,
-  BarChart3,
   HeartHandshake,
   Wallet,
   Plus,
@@ -416,17 +415,11 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     'meta-attribution': t(moduleSectionLabelKey('marketing', 'meta-attribution')),
     'meta-events': t(moduleSectionLabelKey('marketing', 'meta-events')),
   };
-  const sectionSubtitle = section === 'meta-attribution'
-    ? t('metaAttributionSubtitle')
-    : section === 'meta-events'
-      ? t('metaEventManagerSubtitle')
-      : t('channelsAndEfficiency');
 
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={sectionSubtitle}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.marketing.nameKey), href: '/marketing-module' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
@@ -523,7 +516,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 data={requestedSourceId ? bySource.filter((source: any) => String(source.sourceId) === requestedSourceId) : bySource}
                 filterKey={JSON.stringify([reportingQuery, requestedSourceId])}
                 keyExtractor={(row) => String(row.sourceId)}
-                emptyState={<EmptyState icon={Megaphone} title={t('marketingNoSourcesYet')} description={t('marketingNoSourcesDesc')} />}
+                emptyState={<EmptyState icon={Megaphone} title={t('marketingNoSourcesYet')}  />}
               />
             </CardContent>
           </Card>
@@ -697,7 +690,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 data={topReferrers}
                 filterKey={reportingQuery}
                 keyExtractor={(row) => String(row.studentId)}
-                emptyState={<EmptyState title={t('marketingNoReferralsYet')} description={t('marketingNoReferralsDesc')} icon={HeartHandshake} />}
+                emptyState={<EmptyState title={t('marketingNoReferralsYet')} icon={HeartHandshake} />}
               />
             </CardContent>
           </Card>
@@ -737,7 +730,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 data={filteredExpenses}
                 filterKey={JSON.stringify([expensePeriodFilter, reportingQuery])}
                 keyExtractor={(row, index) => String(row.id ?? index)}
-                emptyState={<EmptyState title={t('marketingNoExpensesYet')} description={t('marketingNoExpensesDesc')} icon={Wallet} />}
+                emptyState={<EmptyState title={t('marketingNoExpensesYet')} icon={Wallet} />}
               />
             </CardContent>
           </Card>

@@ -290,7 +290,7 @@ export function DemoLessonDialog({
         queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.availability }),
         queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.resourceAvailability }),
       ]);
-      toast({ title: t('demoLessonCreated'), description: t('demoLessonCreatedDescription') });
+      toast({ title: t('demoLessonCreated')});
       onOpenChange(false);
       onCreated?.(demo);
     },

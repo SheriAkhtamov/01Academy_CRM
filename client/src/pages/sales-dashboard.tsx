@@ -42,13 +42,6 @@ import {
 } from '@/components/ui/form';
 import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -92,7 +85,6 @@ import {
   AlertCircle,
   Archive,
   Plus,
-  TrendingUp,
   Trash2,
   UserCheck,
 } from 'lucide-react';
@@ -257,10 +249,7 @@ function ArchiveLeadDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle id="archive-lead-title">{t('archiveLead')}</DialogTitle>
-          <DialogDescription id="archive-lead-description">
-            {lead.contactName ? `${lead.contactName}. ` : null}
-            {t('archiveLeadDescription')}
-          </DialogDescription>
+          <DialogDescription>{lead.contactName}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -758,7 +747,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => leadsApi.create(createLeadPayload(values)),
     onSuccess: () => {
-      toast({ title: t('leadCreated'), description: t('leadCreatedDesc') });
+      toast({ title: t('leadCreated')});
       leadForm.reset(leadFormDefaults);
       setDuplicateHint(null);
       setLeadDialogOpen(false);
@@ -783,7 +772,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     mutationFn: ({ retainedLeadId, values }: { retainedLeadId: number; values: CreateLeadFormValues }) =>
       leadsApi.mergeDraft<Lead>({ retainedLeadId, draft: createLeadPayload(values) }),
     onSuccess: (retainedLead: Lead) => {
-      toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
+      toast({ title: t('leadMergeCompleted')});
       leadForm.reset(leadFormDefaults);
       setDuplicateHint(null);
       setLeadDialogOpen(false);
@@ -1096,21 +1085,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     schedule: t(moduleSectionLabelKey('sales', 'schedule')),
     students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
-  const sectionSubtitle = section === 'overview'
-    ? undefined
-    : section === 'schedule'
-      ? t('salesScheduleSubtitle')
-      : section === 'archive'
-        ? t('leadArchiveDescription')
-        : isAdministrationModule
-          ? t('globalSalesModuleDescription')
-          : t('salesManagerModule');
   const ownsContentScroll = ['pipeline', 'archive', 'schedule', 'students'].includes(section);
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
       <PageHeader
         title={sectionTitle[section]}
-        subtitle={sectionSubtitle}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
@@ -1319,7 +1298,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         <DialogContent className="max-h-[90dvh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('newApplication')}</DialogTitle>
-            <DialogDescription className="sr-only">{t('formCreation')} {t('newApplication')}</DialogDescription>
+            <DialogDescription className="sr-only">{t('newApplication')}</DialogDescription>
           </DialogHeader>
           <LeadForm
             t={t}
@@ -1535,7 +1514,7 @@ function StudentsTab({
             keyExtractor={(student: Student) => `student-${student.id}`}
             emptyState={
               <div className="p-8">
-                <EmptyState title={t('noClientsYet')} description={t('noClientsYetDesc')} icon={UserCheck} />
+                <EmptyState title={t('noClientsYet')} icon={UserCheck} />
               </div>
             }
             onRowClick={openStudent}

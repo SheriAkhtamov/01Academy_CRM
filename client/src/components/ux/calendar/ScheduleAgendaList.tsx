@@ -131,7 +131,7 @@ export function ScheduleAgendaList({
                         <span className="block truncate text-xs text-muted-foreground">
                           {[
                             event.topic || event.courseName,
-                            event.teacherName || t('teacherWillBeAssigned'),
+                            event.teacherName || t('notAssigned'),
                             event.schoolName,
                           ].filter(Boolean).join(' · ')}
                         </span>

@@ -24,7 +24,6 @@ import {
 } from '@/components/ux/analytics/AnalyticsChartCard';
 import { percentage, shortenChartLabel } from '@/lib/analyticsCharts';
 import { useChartEntrance } from '@/components/ux/motion';
-import { cn } from '@/lib/utils';
 
 /* Two heights for the whole block instead of four hand-tuned pixel values, so
    cards that share a row line up on the same baseline. */
@@ -82,7 +81,6 @@ export function TeacherAnalyticsCharts({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <AnalyticsChartCard
         title={t('teacherLessonDynamics')}
-        description={t('teacherLessonDynamicsDescription')}
         summary={t('teacherLessonDynamicsSummary').replace('{count}', String(timeline.length))}
         className="xl:col-span-8"
         chartClassName={CHART_HEIGHT_TALL}
@@ -129,13 +127,12 @@ export function TeacherAnalyticsCharts({
             </ComposedChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noLessons')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noLessons')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('attendanceStructure')}
-        description={t('attendanceStructureDescription')}
         summary={t('attendanceStructureSummary')
           .replace('{present}', String(presentValue))
           .replace('{absent}', String(absentValue))}
@@ -175,13 +172,12 @@ export function TeacherAnalyticsCharts({
             </div>
           </div>
         ) : (
-          <AnalyticsChartEmpty title={t('noAttendanceData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noAttendanceData')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('groupQualityComparison')}
-        description={t('groupQualityComparisonDescription')}
         summary={hasHiddenGroups
           ? t('groupQualityComparisonSummaryTruncated')
             .replace('{shown}', String(comparedGroups.length))
@@ -271,7 +267,7 @@ export function TeacherAnalyticsCharts({
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noGroups')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noGroups')}  />
         )}
       </AnalyticsChartCard>
 

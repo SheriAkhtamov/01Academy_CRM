@@ -74,7 +74,7 @@ describe('sales dashboard operational metrics', () => {
     expect(metrics).toContain('history.entered_at <= lead.archived_at');
     expect(salesOverviewMetrics).toContain('targetRefusalDialogOpen ? <OverviewDialog');
     expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsTitle')");
-    expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsDescription')");
+    expect(salesOverviewMetrics).toContain('metrics.targetRefusalReasons.map');
   });
   // The overview used to draw two funnels as two identical lists of horizontal
   // bars a few hundred pixels apart: one counting persisted events in the

@@ -162,7 +162,7 @@ export function SalesOverviewMetrics({
         />
       </div>
 
-      {targetRefusalDialogOpen ? <OverviewDialog title={t('targetRefusalReasonsTitle')} description={t('targetRefusalReasonsDescription')} onClose={() => setTargetRefusalDialogOpen(false)}>
+      {targetRefusalDialogOpen ? <OverviewDialog title={t('targetRefusalReasonsTitle')} onClose={() => setTargetRefusalDialogOpen(false)}>
           {metrics?.targetRefusalReasons.length ? (
             <div className="space-y-4">
               {metrics.targetRefusalReasons.map((item) => {

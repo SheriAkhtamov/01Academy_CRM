@@ -4,7 +4,7 @@ import { isFullCycleKpiRole, type KpiMetric, type KpiMetricId, type KpiOverviewE
 import { useTranslation } from '@/hooks/useTranslation';
 import { OverviewDialog, overviewButton } from '@/components/ux/sales-overview/OverviewDialog';
 import { SalesTargetBullet } from '@/components/ux/sales-overview/SalesMetricGauge';
-import { metricHelp, metricKeys } from '../copy';
+import { metricKeys } from '../copy';
 import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
 import { KpiMetricDetails } from './KpiMetricDetails';
 import { KpiSaleReviewDialog } from './KpiSaleReviewDialog';
@@ -19,7 +19,7 @@ function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOver
       <KpiMetricsGrid metrics={employee.calculation.metrics} onSelect={setMetric} />
       {employee.calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</button> : null}
     </OverviewDialog>
-    {metric ? <KpiMetricDetails metric={metric} help={metricHelp(metric.id, employee.version.config, t)} onClose={() => setMetric(null)} /> : null}
+    {metric ? <KpiMetricDetails metric={metric} onClose={() => setMetric(null)} /> : null}
   </>;
 }
 
@@ -54,6 +54,6 @@ export function SalesKpiOverview({ month, employees, loading, failed, onRetry }:
             </button>;
           })}</div>}
     {selected ? <EmployeeDetails employee={selected} periodLabel={periodLabel} onClose={() => setSelectedId(null)} /> : null}
-    {metric && employee ? <KpiMetricDetails metric={metric} help={metricHelp(metric.id, employee.version.config, t)} onClose={() => setMetric(null)} /> : null}
+    {metric && employee ? <KpiMetricDetails metric={metric} onClose={() => setMetric(null)} /> : null}
   </section>;
 }

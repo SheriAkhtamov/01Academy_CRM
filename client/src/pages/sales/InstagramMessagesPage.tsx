@@ -42,13 +42,10 @@ import {
   ChevronLeft,
   Clock3,
   Copy,
-  CornerDownLeft,
   CornerUpLeft,
   ExternalLink,
   Image as ImageIcon,
-  Instagram,
   Loader2,
-  MailOpen,
   Maximize2,
   MessageCircle,
   Plus,
@@ -61,7 +58,6 @@ import {
   Smile,
   Sparkles,
   Trash2,
-  UserRound,
   UserRoundCog,
   X,
 } from 'lucide-react';
@@ -1141,7 +1137,6 @@ export default function MessagesPage() {
       if (status.status === 'running') {
         toast({
           title: status.alreadyRunning ? t('instagramSyncRunning') : t('instagramSyncStarted'),
-          description: t('instagramSyncStartedDesc'),
         });
         return;
       }
@@ -1326,7 +1321,7 @@ export default function MessagesPage() {
   const syncStatusDescription = syncStatus?.status === 'running'
     ? hasSyncProgress
       ? syncSummaryText(syncStatus?.stats, t)
-      : t('instagramSyncRunningDesc')
+      : ''
     : [syncSummaryText(syncStatus?.stats, t), syncStatusError].filter(Boolean).join(' ');
 
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
@@ -1351,7 +1346,6 @@ export default function MessagesPage() {
     <ModulePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
         title={t('salesInbox')}
-        subtitle={t('messagesDesc')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           { label: t('salesInbox') },
@@ -1410,9 +1404,6 @@ export default function MessagesPage() {
                 <MessageCircle className="h-8 w-8" />
               </div>
               <h2 className="mt-5 text-lg font-semibold text-foreground">{t('noConversations')}</h2>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                {t('noConversationsDesc')}
-              </p>
               <Button
                 className="mt-5"
                 onClick={() => syncConversations.mutate()}
@@ -2202,10 +2193,6 @@ export default function MessagesPage() {
                         {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       </Button>
                     </div>
-                    <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
-                      <CornerDownLeft className="h-3 w-3" />
-                      {t('instagramReplyPolicyHint')}
-                    </p>
                   </div>
                 </>
               ) : (

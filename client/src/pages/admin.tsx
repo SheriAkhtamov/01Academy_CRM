@@ -18,7 +18,6 @@ import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -80,8 +79,6 @@ import {
   updateEmployeeCredentials,
 } from '@/features/employees/employees-api';
 import {
-  ACADEMY_ACCESS_MODULES,
-  ACADEMY_MODULES,
   getAssignedModules,
   type AcademyAccessModule,
   type AcademyModule,
@@ -237,7 +234,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       setShowCredentialsModal(true);
       toast({
         title: t('userCreatedSuccessfullyTitle'),
-        description: t('newUserAddedDescription'),
       });
       handleUserModalState(false);
     },
@@ -259,7 +255,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       toast({
         title: t('userUpdatedSuccessfullyTitle'),
-        description: t('userInformationUpdatedDescription'),
       });
       handleUserModalState(false);
     },
@@ -281,7 +276,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       toast({
         title: t('userDeletedSuccessfullyTitle'),
-        description: t('userRemovedFromSystemDescription'),
       });
       setUserToDelete(null);
       setSalesModuleTransfer(null);
@@ -304,7 +298,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       toast({
         title: t('employeeArchivedTitle'),
-        description: t('employeeArchivedDescription'),
       });
       setUserToArchive(null);
       setSalesModuleTransfer(null);
@@ -325,7 +318,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       toast({
         title: t('employeeRestoredTitle'),
-        description: t('employeeRestoredDescription'),
       });
       setUserToRestore(null);
     },
@@ -347,7 +339,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       setUserCredentials(data);
       toast({
         title: t('passwordResetSuccessfullyTitle'),
-        description: t('passwordResetDescription'),
       });
     },
     onError: (error: Error) => {
@@ -380,7 +371,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       });
       toast({
         title: t('credentialsUpdatedTitle'),
-        description: t('credentialsUpdatedDescription'),
       });
     },
     onError: (error: Error) => {
@@ -395,7 +385,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     open: showCredentialsModal, isDirty: credentialsForm.formState.isDirty,
     isPending: updateUserCredentialsMutation.isPending, onOpenChange: handleCredentialsModalState,
   });
-
 
   const fetchUserCredentials = async (userId: number) => {
     try {
@@ -619,31 +608,26 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       href: '/employees',
       icon: Users,
       title: t('employees'),
-      description: t('adminEmployeesDescription'),
     },
     {
       href: '/admin/tasks',
       icon: KanbanSquare,
       title: t('taskBoard'),
-      description: t('taskBoardSubtitle'),
     },
     {
       href: '/admin/academy-settings',
       icon: SlidersHorizontal,
       title: t('academyConfiguration'),
-      description: t('academyConfigurationDescription'),
     },
     {
       href: '/admin/sales-settings',
       icon: UserCheck,
       title: t('salesSettings'),
-      description: t('salesSettingsDescription'),
     },
     {
       href: '/admin/system-management',
       icon: Settings2,
       title: t('systemManagement'),
-      description: t('systemManagementDescription'),
     },
   ];
 
@@ -752,7 +736,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     <ModulePage contained={isEmployeesPage}>
       <PageHeader
         title={isEmployeesPage ? t('employees') : t('administration')}
-        subtitle={isEmployeesPage ? t('employeesPageSubtitle') : t('adminControlCenterSubtitle')}
         breadcrumbs={isEmployeesPage
           ? [{ label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' }, { label: t('employees') }]
           : [{ label: t('administration') }]}
@@ -773,19 +756,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           <div>
             <div>
               <h2 className="text-xl font-semibold text-foreground">{t('userManagement')}</h2>
-              <p className="text-sm text-muted-foreground">
-                {t('createManageUserAccounts')}
-              </p>
             </div>
             <Dialog open={showCreateUserModal} onOpenChange={userDialogGuard.handleOpenChange}>
-                <DialogContent className="grid max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+                <DialogContent aria-describedby={undefined} className="grid max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
                   <DialogHeader className="shrink-0 border-b border-border px-4 py-5 pr-12 text-left sm:px-6">
                     <DialogTitle>
                       {selectedUser ? t('editUser') : t('addNewUser')}
                     </DialogTitle>
-                    <DialogDescription className="sr-only">
-                      {t('createManageUserAccounts')}
-                    </DialogDescription>
                   </DialogHeader>
                   <Form {...userForm}>
                     <form
@@ -822,7 +799,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                       {...field}
                                     />
                                   </FormControl>
-                                  <p className="text-xs text-muted-foreground">{t('loginManagedInCredentials')}</p>
                                   <FormMessage />
                                 </FormItem>
                               ) : (
@@ -830,7 +806,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   <FormLabel required>{t('loginLabel')}</FormLabel>
                                   <div className="rounded-lg border border-dashed border-border bg-muted/70 p-3">
                                     <p className="text-sm font-medium text-foreground">{t('employeeLoginGenerated')}</p>
-                                    <p className="mt-1 text-xs text-muted-foreground">{t('employeeLoginHint')}</p>
                                   </div>
                                   <input type="hidden" {...field} value="" />
                                   <FormMessage />
@@ -890,9 +865,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                     </SelectGroup>
                                   </SelectContent>
                                 </Select>
-                                <p className="text-xs text-muted-foreground">
-                                  {t('moduleAssignmentHint')}
-                                </p>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -950,7 +922,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   );
                                 })}
                               </div>
-                              <p className="text-xs text-muted-foreground">{t('accessModulesHint')}</p>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1118,13 +1089,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       <h3 className="text-lg font-medium text-foreground mb-2">
                         {employeeListView === 'archive' ? t('noArchivedEmployees') : t('noUsersFound')}
                       </h3>
-                      <p className="text-muted-foreground mb-4">
-                        {searchTerm || moduleFilter !== 'all'
-                          ? t('adjustSearchCriteria')
-                          : employeeListView === 'archive'
-                            ? t('noArchivedEmployeesDescription')
-                          : t('createFirstUser')}
-                      </p>
                     </div>
                   }
                 />
@@ -1155,7 +1119,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           <h2 className="font-semibold text-foreground">{section.title}</h2>
                           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </div>
-                        <p className="mt-1 text-sm leading-6 text-muted-foreground">{section.description}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1290,15 +1253,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       <UnsavedChangesDialog open={credentialsGuard.confirmationOpen} onOpenChange={credentialsGuard.setConfirmationOpen} onDiscard={credentialsGuard.discardChanges} />
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={credentialsGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center space-x-2">
               <Key className="h-5 w-5" />
               <span>{t('userCredentials')}</span>
             </DialogTitle>
-            <DialogDescription className="sr-only">
-              {t('employeeLoginHint')}
-            </DialogDescription>
           </DialogHeader>
           {userCredentials && (
             <Form {...credentialsForm}>

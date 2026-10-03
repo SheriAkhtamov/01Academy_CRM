@@ -26,7 +26,6 @@ export function EmployeeKpiField({ control, assignment, onRoleChange }: {
           {KPI_ROLES.map((role) => <SelectItem key={role} value={role}>{t(roleKeys[role])}</SelectItem>)}
         </SelectContent>
       </Select>
-      <p className="text-xs leading-relaxed text-muted-foreground">{t('kpiAssignmentHint')}</p>
       {assignment?.current ? <p className="text-xs">{t('kpiCurrentAssignment').replace('{role}', assignment.current.role ? t(roleKeys[assignment.current.role]) : t('kpiNotAssigned'))}</p> : null}
       {assignment?.scheduled ? <p className="text-xs text-primary">{t('kpiAssignmentScheduled')
         .replace('{month}', assignment.scheduled.effectiveMonth)

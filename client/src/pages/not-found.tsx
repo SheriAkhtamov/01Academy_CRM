@@ -35,9 +35,6 @@ export default function NotFound() {
             >
               {t('pageNotFound')}
             </motion.h1>
-            <motion.p variants={fadeInUp} className="mt-2 text-sm text-muted-foreground">
-              {t('pageNotFoundDescription')}
-            </motion.p>
             <motion.div variants={fadeInUp}>
               <Link href="/">
                 <Button className="mt-6">{t('dashboard')}</Button>

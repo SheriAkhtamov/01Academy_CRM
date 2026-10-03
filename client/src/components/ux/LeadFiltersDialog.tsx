@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -329,13 +328,12 @@ export function LeadFiltersDialog({ filters, onApply, sources, managers, leads }
         The rows are declared instead, and `minmax(0, 1fr)` is what lets the
         middle row shrink so its scroll area actually scrolls.
       */}
-      <DialogContent className="grid max-h-[85dvh] max-w-3xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+      <DialogContent aria-describedby={undefined} className="grid max-h-[85dvh] max-w-3xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-1 border-b border-border/60 bg-muted/30 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-base">
             <SlidersHorizontal className="size-4 text-muted-foreground" />
             {t('leadFilters')}
           </DialogTitle>
-          <DialogDescription>{t('leadFiltersDescription')}</DialogDescription>
         </DialogHeader>
 
         {/* Enter applies, so the keyboard path does not end at a mouse click. */}

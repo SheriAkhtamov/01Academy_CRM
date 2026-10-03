@@ -196,7 +196,6 @@ export default function CallJournalPage() {
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
-        subtitle={t('callJournalDescription')}
         breadcrumbs={[
           { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
           { label: t('callJournal') },
@@ -303,7 +302,6 @@ export default function CallJournalPage() {
             <div className="flex flex-col items-center px-6 py-16 text-center">
               <Phone className="size-10 text-muted-foreground/50" />
               <p className="mt-3 font-medium">{t('noCallsInJournal')}</p>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noCallsInJournalDescription')}</p>
             </div>
           ) : (
             <div

@@ -19,12 +19,9 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
-  CalendarDays,
   Check,
   CircleDollarSign,
   Clock3,
-  Info,
-  Landmark,
   Loader2,
   Plus,
   ReceiptText,
@@ -63,13 +60,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FinanceActionDialogs } from '@/components/finance/FinanceActionDialogs';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   isReportingPresetKey,
   reportingRangeForPreset,
@@ -173,7 +169,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const [actionError, setActionError] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [transactionFilter, setTransactionFilter] = useState('all');
-  
   const defaultExpenseForm = useMemo(() => ({
     category: 'other', title: '', vendor: '', description: '', amountUzs: '',
     expenseDate: currentDateOnly(), status: 'paid', method: 'transfer',
@@ -297,9 +292,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const sectionTitle = {
     overview: copy.module, income: copy.income, expenses: copy.expenses, payroll: copy.payroll, transactions: copy.transactions,
   }[section];
-  const sectionSubtitle = {
-    overview: copy.subtitle, income: copy.incomeSubtitle, expenses: copy.expensesSubtitle, payroll: copy.payrollSubtitle, transactions: copy.transactionsSubtitle,
-  }[section];
 
   const openSalaryDialog = (entry?: Row | null) => {
     const target = entry ?? selectedPayrollEntry ?? payroll.data?.entries[0];
@@ -352,7 +344,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     <ModulePage contained={contained} className="flex flex-col gap-4">
       <PageHeader
         title={sectionTitle}
-        subtitle={sectionSubtitle}
         breadcrumbs={[{ label: copy.module, href: financeRoutes.overview }, ...(section === 'overview' ? [] : [{ label: sectionTitle }])]}
         actions={(
           <>
@@ -450,7 +441,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <CardHeader className="px-4 pb-2 pt-3.5">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-[15px]">{copy.expenseStructure}</CardTitle>
-                  <Tooltip><TooltipTrigger asChild><button type="button" aria-label={copy.methodology}><Info className="size-4 text-muted-foreground" /></button></TooltipTrigger><TooltipContent className="max-w-xs">{copy.methodology}</TooltipContent></Tooltip>
                 </div>
                 <CardDescription className="mt-0.5 text-xs">{money(dashboard.data.summary.totalExpenses)}</CardDescription>
               </CardHeader>
@@ -516,7 +506,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <FinanceMetric label={copy.planned} value={money(expenses.data.summary.plannedOperatingUzs)} icon={Clock3} tone="warning" />
           </StaggerGroup>
           <Card className="overflow-hidden">
-            <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle><CardDescription>{copy.methodology}</CardDescription></CardHeader>
+            <CardHeader className="border-b border-border/70"><CardTitle>{copy.expenseRegistry}</CardTitle></CardHeader>
             <CardContent className="p-0">
               <DataTable
                 className="overflow-x-auto"
@@ -736,8 +726,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       ) : null}
 
       <Dialog open={expenseDialogOpen} onOpenChange={expenseGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.expenseDialogTitle}</DialogTitle><DialogDescription>{copy.expenseDialogDescription}</DialogDescription></DialogHeader>
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
+          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.expenseDialogTitle}</DialogTitle></DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <FieldGroup className="gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -763,7 +753,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
             <FieldGroup className="gap-4">
             <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{payroll.data?.entries.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}>{entry.employeeName}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
             <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
-            <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /><FieldDescription>{copy.salaryDialogDescription}</FieldDescription></Field>
+            <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
             <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
             </FieldGroup>
           </div>
@@ -804,7 +794,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
         onOpenChange={expenseGuard.setConfirmationOpen}
         onDiscard={expenseGuard.discardChanges}
       />
-      
       <UnsavedChangesDialog
         open={salaryGuard.confirmationOpen}
         onOpenChange={salaryGuard.setConfirmationOpen}

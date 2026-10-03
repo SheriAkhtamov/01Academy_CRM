@@ -155,7 +155,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     [t, user?.email],
   );
 
-
   const form = useForm<z.infer<typeof settingsSchema>>({
     resolver: zodResolver(settingsSchema),
     defaultValues: buildSettingsValues(user),
@@ -383,7 +382,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                   )}
                 />
               </div>
-              <p className="mt-3 text-xs text-slate-500">{t('passwordChangeHint')}</p>
             </div>
 
             {/*

@@ -3,7 +3,7 @@ import { Redirect, Switch, Route } from 'wouter';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canAccessAcademyModule, hasFinanceAccess, hasLeadershipAccess, type AcademyModule } from '@shared/academy';
+import { canAccessAcademyModule, hasFinanceAccess, type AcademyModule } from '@shared/academy';
 import Layout, { AppSpinner } from '@/components/Layout';
 import { SPRING, scaleIn } from '@/lib/motion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -44,15 +44,12 @@ function AccessDenied({
   titleKey?: 'accessDeniedModule' | 'noModuleAssigned';
   descriptionKey?: 'financeCenterAccessRequired';
 }) {
-  const { user } = useAuth();
   const { t } = useTranslation();
   const title = titleKey === 'noModuleAssigned'
     ? t('noModuleAssigned')
     : t('accessDeniedModule');
   const description = descriptionKey === 'financeCenterAccessRequired'
     ? t('financeCenterAccessRequired')
-    : hasLeadershipAccess(user)
-      ? t('adminModuleBoundaryDescription')
       : t('contactAdministratorForAccess');
 
   return (

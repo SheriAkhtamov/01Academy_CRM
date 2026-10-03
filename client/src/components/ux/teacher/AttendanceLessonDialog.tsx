@@ -6,8 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
-  Clock3,
-  Loader2,
+  Clock3,  Loader2,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -301,9 +300,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                         </span>
                       ) : null}
                     </>
-                  ) : (
-                    t('attendanceCalendarHint')
-                  )}
+                  ) : null}
                 </DialogDescription>
               </div>
             </div>
@@ -512,7 +509,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                     rows={2}
                     className="rounded-xl text-sm"
                   />
-                  <p className="text-xs text-muted-foreground">{t('lessonNoteScopeHint')}</p>
                   {/* The API writes one note onto every attendance row, so
                       individual notes that already differ are about to be
                       flattened. Say so before it happens. */}
@@ -552,8 +548,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                       <Calendar className="size-4" />
                     </span>
                     <span>
-                      <span className="block text-xs font-bold text-foreground">{t('rescheduleLesson')}</span>
-                      <span className="block text-xs text-muted-foreground">{t('rescheduleLessonHint')}</span>
+                      <span className="block text-xs font-bold text-foreground">{t('lessonRescheduling')}</span>
                     </span>
                   </span>
                   <ChevronDown className={cn('size-4 shrink-0 transition-transform', rescheduleOpen && 'rotate-180')} />
@@ -590,7 +585,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">{t('rescheduleChainWarning')}</p>
                     <div className="flex justify-end">
                       <Button
                         type="button"

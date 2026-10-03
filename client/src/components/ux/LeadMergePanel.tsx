@@ -26,7 +26,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -154,7 +153,7 @@ export function LeadMergePanel() {
       setSecondLead(null);
       setRetainedLeadId('');
       await invalidateSalesLeadData(queryClient, Number(retainedLead?.id));
-      toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
+      toast({ title: t('leadMergeCompleted')});
     },
     onError: (error: any) => {
       setConfirmOpen(false);
@@ -186,7 +185,6 @@ export function LeadMergePanel() {
       <Card>
         <CardHeader>
           <CardTitle>{t('leadMergeTitle')}</CardTitle>
-          <CardDescription>{t('leadMergeDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
@@ -224,7 +222,6 @@ export function LeadMergePanel() {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <p className="text-sm text-muted-foreground">{t('retainedLeadHelp')}</p>
               </div>
 
               {previewQuery.isLoading ? <Skeleton className="h-16 w-full" /> : null}
@@ -277,10 +274,9 @@ export function LeadMergePanel() {
       <Dialog open={searchTarget !== null} onOpenChange={(open) => {
         if (!open) setSearchTarget(null);
       }}>
-        <DialogContent className="max-w-xl">
+        <DialogContent aria-describedby={undefined} className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{t('selectLeadForMerge')}</DialogTitle>
-            <DialogDescription>{t('selectLeadForMergeDescription')}</DialogDescription>
           </DialogHeader>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

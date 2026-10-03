@@ -413,7 +413,7 @@ export function LeadSocialAccountsEditor({
       <AssignLeadToSelfDialog
         open={Boolean(pendingClaim)}
         leadName={leadName}
-        description={t('leadSocialAccountAssignmentDescription')}
+        description={t('leadActionRequiresAssignmentDescription')}
         confirmLabel={t('assignToMeAndContinue')}
         isPending={saveAccount.isPending || deleteAccount.isPending}
         onOpenChange={(open) => {

@@ -352,9 +352,6 @@ export function TeacherGroupsSection({
               title={listedGroups.length === 0
                 ? (isArchiveView ? t('noArchivedGroups') : t('noGroups'))
                 : t('noScheduleGroupsFound')}
-              description={listedGroups.length === 0
-                ? (isArchiveView ? t('noArchivedGroupsDescription') : t('noGroupsAssigned'))
-                : t('adjustSearchCriteria')}
               action={listedGroups.length === 0 ? undefined : (
                 <Button type="button" variant="outline" onClick={() => setQuery('')}>
                   {t('resetFilters')}

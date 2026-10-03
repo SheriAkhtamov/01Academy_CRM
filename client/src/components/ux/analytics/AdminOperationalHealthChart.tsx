@@ -37,7 +37,6 @@ export function AdminOperationalHealthChart({
   return (
     <AnalyticsChartCard
       title={t('adminOperationalHealth')}
-      description={t('adminOperationalHealthDescription')}
       summary={`${t('adminOperationalHealth')}. ${metrics.map((metric) => `${metric.label}: ${metric.display}`).join(', ')}`}
       className={className}
       chartClassName="h-[210px]"
@@ -85,7 +84,7 @@ export function AdminOperationalHealthChart({
           </RadarChart>
         </ResponsiveContainer>
       ) : (
-        <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+        <AnalyticsChartEmpty title={t('noData')}  />
       )}
     </AnalyticsChartCard>
   );

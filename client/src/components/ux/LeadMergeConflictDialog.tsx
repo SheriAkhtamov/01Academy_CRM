@@ -104,7 +104,6 @@ export function LeadMergeConflictDialog({
           ) : null}
         </div>
 
-        <p className="text-sm text-muted-foreground">{t('leadMergePreservesRelations')}</p>
         {!canMerge ? (
           <p className="text-sm font-medium text-destructive">{t('leadMergeUnavailableForManager')}</p>
         ) : null}

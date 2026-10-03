@@ -105,7 +105,6 @@ export function LeadCommentsCard({
           {t('commentsLabel')}
           <Badge variant="secondary">{comments.length}</Badge>
         </CardTitle>
-        <p className="text-sm text-muted-foreground">{t('leadCommentsHint')}</p>
       </CardHeader>
       <CardContent className="space-y-5 pt-6">
         <form

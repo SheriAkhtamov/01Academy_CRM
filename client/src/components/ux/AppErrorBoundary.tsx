@@ -109,7 +109,7 @@ export function AppErrorBoundary({
             <AlertCircle />
             <AlertTitle>{t('errorOccurred')}</AlertTitle>
             <AlertDescription className="flex flex-col items-start gap-3">
-              <span>{import.meta.env.DEV && error.message ? error.message : t('failedToLoadData')}</span>
+              <span>{t('failedToLoadData')}</span>
               <div className="flex flex-wrap gap-2">
                 {!isModuleLoadError(error) ? (
                   <Button type="button" variant="outline" size="sm" onClick={reset}>

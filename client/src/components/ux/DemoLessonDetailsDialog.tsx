@@ -697,14 +697,13 @@ export function DemoLessonDetailsDialog({
       <Dialog open={reasonParticipantId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen) closeNoShowReason();
       }}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             confirmNoShowReason();
           }} className="flex min-h-0 flex-1 flex-col">
             <DialogHeader className="shrink-0 border-b px-6 py-4">
               <DialogTitle>{t('demoNoShowReasonTitle')}</DialogTitle>
-              <DialogDescription>{t('demoNoShowReasonDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
@@ -824,7 +823,7 @@ export function DemoLessonDetailsDialog({
       <Dialog open={notConductedOpen} onOpenChange={(nextOpen) => {
         if (!finalizeDemo.isPending) setNotConductedOpen(nextOpen);
       }}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (!notConductedReasonCode || !notConductedReasonValid) return;
@@ -836,7 +835,6 @@ export function DemoLessonDetailsDialog({
           }} className="flex min-h-0 flex-1 flex-col">
             <DialogHeader className="shrink-0 border-b px-6 py-4">
               <DialogTitle>{t('markDemoNotConductedTitle')}</DialogTitle>
-              <DialogDescription>{t('markDemoNotConductedDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
@@ -899,14 +897,13 @@ export function DemoLessonDetailsDialog({
       <Dialog open={changeTeacherOpen} onOpenChange={(nextOpen) => {
         if (!changeDemoTeacher.isPending) setChangeTeacherOpen(nextOpen);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent aria-describedby={undefined} className="max-w-lg">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (teacherSelectionValid) changeDemoTeacher.mutate();
           }} className="space-y-5">
             <DialogHeader>
               <DialogTitle>{t('changeDemoTeacher')}</DialogTitle>
-              <DialogDescription>{t('changeDemoTeacherDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
@@ -1017,14 +1014,13 @@ export function DemoLessonDetailsDialog({
       <Dialog open={rescheduleOpen} onOpenChange={(nextOpen) => {
         if (!rescheduleDemo.isPending) setRescheduleOpen(nextOpen);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent aria-describedby={undefined} className="max-w-lg">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (rescheduleIsValid) rescheduleDemo.mutate();
           }} className="space-y-5">
             <DialogHeader>
               <DialogTitle>{t('rescheduleDemoLessonTitle')}</DialogTitle>
-              <DialogDescription>{t('rescheduleDemoLessonDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1063,7 +1059,6 @@ export function DemoLessonDetailsDialog({
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">{t('demoRescheduleResourceHint')}</p>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setRescheduleOpen(false)}>

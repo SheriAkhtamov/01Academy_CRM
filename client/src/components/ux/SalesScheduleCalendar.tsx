@@ -356,13 +356,6 @@ export function SalesScheduleCalendar({
     <div className="flex max-w-md flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-card/95 px-5 py-6 text-center shadow-2xs">
       <CalendarDays className="text-muted-foreground" />
       <p className="text-sm font-medium">{t('noLessonsThisWeek')}</p>
-      <p className="text-xs text-muted-foreground">
-        {selectedGroupIds.size === 0 && demos.length === 0
-          ? t('selectGroupsToSeeSchedule')
-          : selectedTeacherIds.size > 0
-            ? t('noLessonsForSelectedTeachers')
-            : t('noLessonsThisWeekDescription')}
-      </p>
     </div>
   );
 

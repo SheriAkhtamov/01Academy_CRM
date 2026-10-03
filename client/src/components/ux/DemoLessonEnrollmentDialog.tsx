@@ -18,7 +18,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -158,7 +157,6 @@ export function DemoLessonEnrollmentDialog({
       ]);
       toast({
         title: t('demoEnrollmentSaved'),
-        description: t('demoEnrollmentSavedDescription'),
       });
       onOpenChange(false);
     },
@@ -189,12 +187,9 @@ export function DemoLessonEnrollmentDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !enroll.isPending && onOpenChange(nextOpen)}>
       {/* DialogContent carries a `grid` class that Tailwind emits after `flex`,
           so declaring rows is what actually bounds the scrollable middle. */}
-      <DialogContent className="grid max-h-[90dvh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+      <DialogContent aria-describedby={undefined} className="grid max-h-[90dvh] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-6 pb-5 pt-6 pr-12">
           <DialogTitle>{t('enrollInDemoLesson')}</DialogTitle>
-          <DialogDescription>
-            {t('enrollStudentsInDemoDescription').replace('{lead}', leadName)}
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-col gap-4 px-6">
@@ -227,7 +222,6 @@ export function DemoLessonEnrollmentDialog({
             ) : students.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-background px-4 py-3 text-sm">
                 <p className="font-medium">{t('noStudentsForDemo')}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{t('noStudentsForDemoHint')}</p>
               </div>
             ) : (
               <div className="grid max-h-32 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
@@ -359,9 +353,7 @@ export function DemoLessonEnrollmentDialog({
             <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 text-center">
               <CalendarDays className="mb-3 size-8 text-muted-foreground/55" />
               <p className="text-sm font-medium">{search ? t('noSearchResults') : t('noUpcomingDemoLessons')}</p>
-              {!search ? (
-                <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noUpcomingDemoLessonsDescription')}</p>
-              ) : null}
+              {!search ? null : null}
             </div>
           )}
         </div>

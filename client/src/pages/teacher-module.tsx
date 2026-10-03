@@ -310,7 +310,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
         })),
       }),
     onSuccess: (_result, variables) => {
-      toast({ title: t('attendanceSaved'), description: t('attendanceSavedDesc') });
+      toast({ title: t('attendanceSaved')});
       attendanceDraftDirty.current = false;
       attendanceNoteDirty.current = false;
       writePersistedAttendanceDraft(variables.lessonId, null);
@@ -609,7 +609,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     onSuccess: (result, variables) => {
       toast({
         title: t('lessonRescheduled'),
-        description: t('lessonRescheduledDesc').replace('{count}', String(result.shiftedCount ?? 1)),
       });
       setRescheduleReason('');
       setRescheduleAt('');

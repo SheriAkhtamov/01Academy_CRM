@@ -73,7 +73,6 @@ export function FinanceAnalyticsCharts({
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <AnalyticsChartCard
         title={t('financeExpenseDynamics')}
-        description={t('financeExpenseDynamicsDescription')}
         summary={`${t('financeExpenseDynamics')}. ${trend.map((point) => `${dateLabel(point.periodStart)}: ${money(
           Number(point.operatingExpenses || 0)
           + Number(point.payrollExpenses || 0)
@@ -126,13 +125,12 @@ export function FinanceAnalyticsCharts({
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')}  />
         )}
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
         title={t('financeProfitContribution')}
-        description={t('financeProfitContributionDescription')}
         summary={`${t('financeProfitContribution')}. ${contributionData.map((item) => `${item.name}: ${money(item.value)}`).join(', ')}`}
         chartClassName="h-[258px]"
         footer={hasContributionData ? (
@@ -175,7 +173,7 @@ export function FinanceAnalyticsCharts({
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+          <AnalyticsChartEmpty title={t('noData')}  />
         )}
       </AnalyticsChartCard>
     </section>

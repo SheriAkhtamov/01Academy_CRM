@@ -282,7 +282,7 @@ export function ScheduleTimeGrid({
                         </span>
                       ) : roomy ? (
                         <span className="truncate text-[10px] opacity-75">
-                          {event.teacherName || t('teacherWillBeAssigned')}
+                          {event.teacherName || t('notAssigned')}
                         </span>
                       ) : null}
                       {spacious ? (
@@ -304,10 +304,7 @@ export function ScheduleTimeGrid({
                       {timeRange} · {event.topic || event.courseName || t('lessonColumn')}
                     </p>
                     <p className="text-xs opacity-80">
-                      {event.teacherName || t('teacherWillBeAssigned')}
-                    </p>
-                    <p className="mt-1 text-[10px] uppercase tracking-wide opacity-70">
-                      {t('openLessonDetails')}
+                      {event.teacherName || t('notAssigned')}
                     </p>
                   </TooltipContent>
                 </Tooltip>

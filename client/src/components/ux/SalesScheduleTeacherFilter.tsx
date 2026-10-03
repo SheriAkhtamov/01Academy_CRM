@@ -67,9 +67,6 @@ export function SalesScheduleTeacherFilter({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-foreground">{t('scheduleTeacherFilter')}</p>
-          <p className="text-[11px] leading-4 text-muted-foreground">
-            {t('scheduleTeacherFilterDescription')}
-          </p>
         </div>
         {selectedTeachers.length > 0 ? (
           <Button

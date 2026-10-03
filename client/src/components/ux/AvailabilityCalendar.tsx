@@ -161,7 +161,6 @@ export function AvailabilityCalendar({
       <div className={cn('flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 text-center', className)}>
         <CalendarDays className="text-muted-foreground" />
         <p className="text-sm font-medium">{t('selectSchoolAndCourseForSlots')}</p>
-        <p className="max-w-md text-xs text-muted-foreground">{t('slotCalendarHint')}</p>
       </div>
     );
   }
@@ -173,7 +172,7 @@ export function AvailabilityCalendar({
           <p className="text-sm font-semibold text-foreground">{t('availableSlots')}</p>
           <p className="truncate text-xs text-muted-foreground">
             {availability.data
-              ? `${t('resourceConflictRule')} · ${availability.data.durationMinutes} ${t('minuteShort')}`
+              ? `${availability.data.durationMinutes} ${t('minuteShort')}`
               : t('checkingAvailability')}
           </p>
         </div>
@@ -372,7 +371,6 @@ export function AvailabilityCalendar({
           <div className="flex min-h-24 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted/60 p-4 text-center">
             <UserRoundCheck className="text-muted-foreground" />
             <p className="text-sm font-medium">{t('noAvailableSlotsForDay')}</p>
-            <p className="text-xs text-muted-foreground">{t('chooseAnotherDayOrWeek')}</p>
           </div>
         )
       ) : null}

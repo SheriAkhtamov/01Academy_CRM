@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -57,10 +56,9 @@ export function LeadFunnelTransferDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t('sendLeadToFunnelTitle')}</DialogTitle>
-          <DialogDescription>{t('sendLeadToFunnelDescription')}</DialogDescription>
         </DialogHeader>
         {isError ? (
           <Alert variant="destructive">

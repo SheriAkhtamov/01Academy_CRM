@@ -18,7 +18,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -146,7 +145,7 @@ export function BulkLeadActionsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <DialogTitle>{t('bulkLeadActionsTitle')}</DialogTitle>
@@ -154,9 +153,6 @@ export function BulkLeadActionsDialog({
                 {t('selectedLeadsCount').replace('{count}', String(selectedCount))}
               </Badge>
             </div>
-            <DialogDescription>
-              {t('bulkLeadActionsDescription').replace('{count}', String(selectedCount))}
-            </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
@@ -188,7 +184,6 @@ export function BulkLeadActionsDialog({
             </TabsList>
 
             <TabsContent value="status" className="space-y-4 pt-3">
-              <p className="text-sm text-muted-foreground">{t('bulkMoveToStageDescription')}</p>
               <div className="space-y-2">
                 <Label htmlFor="bulk-lead-status">{t('selectTargetStage')}</Label>
                 <Select value={targetStatusCode} onValueChange={setTargetStatusCode}>
@@ -211,7 +206,6 @@ export function BulkLeadActionsDialog({
 
             {canManageAllLeads ? (
               <TabsContent value="manager" className="space-y-4 pt-3">
-                <p className="text-sm text-muted-foreground">{t('bulkAssignManagerDescription')}</p>
                 <div className="space-y-2">
                   <Label htmlFor="bulk-lead-manager">{t('selectManager')}</Label>
                   <Select value={targetManagerId} onValueChange={setTargetManagerId}>
@@ -231,7 +225,6 @@ export function BulkLeadActionsDialog({
             ) : null}
 
             <TabsContent value="archive" className="space-y-4 pt-3">
-              <p className="text-sm text-muted-foreground">{t('bulkArchiveLeadsDescription')}</p>
               {!canArchiveSelected ? (
                 <Alert variant="destructive">
                   <AlertCircle />
@@ -293,7 +286,6 @@ export function BulkLeadActionsDialog({
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
                   <div className="flex items-start gap-3">
                     <Trash2 className="mt-0.5 size-5 shrink-0 text-destructive" />
-                    <p className="text-sm text-muted-foreground">{t('bulkDeleteLeadsDescription')}</p>
                   </div>
                 </div>
               </TabsContent>

@@ -332,9 +332,9 @@ export function ArchiveTab({
           emptyState={
             <div className="p-8">
               {filtersActive ? (
-                <EmptyState title={t('archiveNoMatches')} description={t('archiveNoMatchesDesc')} icon={Search} />
+                <EmptyState title={t('archiveNoMatches')} icon={Search} />
               ) : (
-                <EmptyState title={t('noArchivedLeads')} description={t('noArchivedLeadsDesc')} icon={Archive} />
+                <EmptyState title={t('noArchivedLeads')} icon={Archive} />
               )}
             </div>
           }

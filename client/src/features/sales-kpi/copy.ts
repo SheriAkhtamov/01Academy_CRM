@@ -1,4 +1,4 @@
-import { isFullCycleKpiConfig, ROLE_METRICS, type KpiMetricId, type KpiPlanConfig, type KpiRole, type KpiSaleKind } from '@shared/sales-kpi';
+import { type KpiMetricId, type KpiRole, type KpiSaleKind } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
 export const roleKeys = {
@@ -14,21 +14,6 @@ export const metricKeys = {
   trialConversion: 'kpiTrialConversionMetric', offer: 'kpiOfferMetric', renewals: 'kpiRenewalsMetric',
   renewalConversion: 'kpiRenewalConversionMetric', upsells: 'kpiUpsellsMetric', referrals: 'kpiReferralsMetric', nps: 'kpiNpsMetric',
 } satisfies Record<KpiMetricId, TranslationKey>;
-export const metricHelpKeys = {
-  response: 'kpiResponseHelp', qualified: 'kpiQualifiedHelp', bookings: 'kpiBookingsHelp',
-  attendance: 'kpiAttendanceHelp', crm: 'kpiCrmHelp', reactivation: 'kpiReactivationHelp',
-  reactivatedAttendance: 'kpiReactivatedHelp', newStudents: 'kpiNewStudentsHelp',
-  trialConversion: 'kpiTrialConversionHelp', offer: 'kpiOfferHelp', renewals: 'kpiRenewalsHelp',
-  renewalConversion: 'kpiRenewalConversionHelp', upsells: 'kpiUpsellsHelp', referrals: 'kpiReferralsHelp', nps: 'kpiNpsHelp',
-} satisfies Record<KpiMetricId, TranslationKey>;
-export function metricHelp(id: KpiMetricId, planConfig: KpiPlanConfig, t: (key: TranslationKey) => string) {
-  const config = isFullCycleKpiConfig(planConfig)
-    ? (ROLE_METRICS.hunter.includes(id) ? planConfig.hunter : planConfig.closer)
-    : planConfig;
-  return t(metricHelpKeys[id]).replace('{minutes}', String(config.responseTargetMinutes))
-    .replace('{days}', String(id === 'reactivation' ? config.reactivationDays : config.conversionWindowDays))
-    .replace('{hour}', String(config.offerNextDayHour));
-}
 export const saleKindKeys = {
   new: 'kpiSaleNew', renewal: 'kpiSaleRenewal', upsell: 'kpiSaleUpsell', installment: 'kpiSaleInstallment', unclassified: 'kpiSaleUnclassified',
 } satisfies Record<KpiSaleKind, TranslationKey>;

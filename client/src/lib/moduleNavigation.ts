@@ -40,7 +40,6 @@ export interface ModuleNavigationItem {
 
 export interface ModuleNavigationDefinition {
   nameKey: TranslationKey;
-  descriptionKey: TranslationKey;
   icon: LucideIcon;
   items: readonly ModuleNavigationItem[];
 }
@@ -48,7 +47,6 @@ export interface ModuleNavigationDefinition {
 export const MODULE_NAVIGATION = {
   administration: {
     nameKey: 'administration',
-    descriptionKey: 'administrationModuleDescription',
     icon: ShieldCheck,
     items: [
       { id: 'overview', labelKey: 'adminDashboardTitle', href: '/admin', icon: BarChart3 },
@@ -61,7 +59,6 @@ export const MODULE_NAVIGATION = {
   },
   sales: {
     nameKey: 'salesModule',
-    descriptionKey: 'salesModuleDescription',
     icon: TrendingUp,
     items: [
       { id: 'overview', labelKey: 'salesOverviewTitle', href: '/sales', icon: BarChart3 },
@@ -75,7 +72,6 @@ export const MODULE_NAVIGATION = {
   },
   teacher: {
     nameKey: 'teacher',
-    descriptionKey: 'teacherModuleDescription',
     icon: GraduationCap,
     items: [
       { id: 'overview', labelKey: 'teacherPerformance', href: '/teacher-module', icon: BarChart3 },
@@ -86,7 +82,6 @@ export const MODULE_NAVIGATION = {
   },
   marketing: {
     nameKey: 'marketingTab',
-    descriptionKey: 'marketingModuleDescription',
     icon: Megaphone,
     items: [
       { id: 'overview', labelKey: 'marketingOverviewTitle', href: '/marketing-module', icon: BarChart3 },
@@ -100,7 +95,6 @@ export const MODULE_NAVIGATION = {
   },
   finance: {
     nameKey: 'financeModule',
-    descriptionKey: 'financeCenterSubtitle',
     icon: Landmark,
     items: [
       { id: 'overview', labelKey: 'financeCenterOverview', href: '/finance', icon: Landmark },
@@ -112,7 +106,6 @@ export const MODULE_NAVIGATION = {
   },
 } as const satisfies Record<AcademyAccessModule, {
   nameKey: TranslationKey;
-  descriptionKey: TranslationKey;
   icon: LucideIcon;
   items: readonly ModuleNavigationItem[];
 }>;

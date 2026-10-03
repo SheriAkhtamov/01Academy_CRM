@@ -139,7 +139,6 @@ export function MetaEventsSection() {
     return <div className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>;
   }
 
-
   return (
     <div className="space-y-4">
       {!data.integration.capiConfigured ? (
@@ -170,7 +169,6 @@ export function MetaEventsSection() {
             emptyState={(
               <div className="py-14 text-center">
                 <p className="font-medium text-foreground">{t('metaNoEvents')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{t('metaNoEventsDesc')}</p>
               </div>
             )}
           />

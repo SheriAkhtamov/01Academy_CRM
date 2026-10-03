@@ -218,14 +218,14 @@ const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekS
 
 const toDateInput = academyDateInputValue;
 
-function EmptyTableState({ title, description }: { title: string; description: string }) {
+function EmptyTableState({ title, description }: { title: string; description?: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
       <div className="flex size-11 items-center justify-center rounded-xl bg-muted">
         <Building2 className="text-muted-foreground" />
       </div>
       <p className="font-medium text-foreground">{title}</p>
-      <p className="max-w-md text-sm text-muted-foreground">{description}</p>
+      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
     </div>
   );
 }
@@ -555,7 +555,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       );
       toast({
         title: editingGroup ? t('groupUpdated') : t('groupCreated'),
-        description: teacher?.fullName ?? t('teacherAssignmentPendingDescription'),
       });
       setGroupDialogOpen(false);
       setEditingGroup(null);
@@ -882,16 +881,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const groupEmptyState = isGroupArchive
     ? {
       title: t('noArchivedGroups'),
-      description: t('noArchivedGroupsDescription'),
     }
     : requestedFilter === 'without-teacher'
       ? {
         title: ceoCopy.settings.noGroupsWithoutTeacher,
-        description: ceoCopy.settings.allGroupsStaffed,
       }
       : {
         title: t('noGroups'),
-        description: t('noGroupsDescription'),
       };
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupTeacherId = groupForm.watch('teacherId');
@@ -1117,7 +1113,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{row.name}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {row.teacherName ?? t('teacherWillBeAssigned')}
+            {row.teacherName ?? t('notAssigned')}
           </p>
         </div>
       ),
@@ -1309,7 +1305,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     <ModulePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
-        subtitle={isSalesSettingsMode ? t('salesSettingsDescription') : t('academyConfigurationDescription')}
         breadcrumbs={[
           { label: t('administration'), href: '/admin' },
           { label: isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration') },
@@ -1371,7 +1366,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>{t('schools')}</CardTitle>
-                <CardDescription>{t('schoolsDescription')}</CardDescription>
               </div>
               <Button onClick={() => openSchool()}>
                 <Plus data-icon="inline-start" />{t('addSchool')}
@@ -1384,7 +1378,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 data={schools}
                 keyExtractor={(row) => `school-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noSchools')} description={t('noSchoolsDescription')} />}
+                emptyState={<EmptyTableState title={t('noSchools')}  />}
               />
             </CardContent>
           </Card>
@@ -1395,7 +1389,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>{t('rooms')}</CardTitle>
-                <CardDescription>{t('noRoomsDescription')}</CardDescription>
               </div>
               <Button onClick={() => openRoom()}>
                 <Plus data-icon="inline-start" />{t('addRoom')}
@@ -1408,7 +1401,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 data={rooms}
                 keyExtractor={(row) => `room-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noRooms')} description={t('noRoomsDescription')} />}
+                emptyState={<EmptyTableState title={t('noRooms')}  />}
               />
             </CardContent>
           </Card>
@@ -1419,7 +1412,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>{t('courses')}</CardTitle>
-                <CardDescription>{t('coursesManagementDescription')}</CardDescription>
               </div>
               <Button onClick={() => openCourse()}>
                 <Plus data-icon="inline-start" />{t('addCourse')}
@@ -1432,7 +1424,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 data={courses}
                 keyExtractor={(row) => `course-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noCourses')} description={t('noCoursesDescription')} />}
+                emptyState={<EmptyTableState title={t('noCourses')}  />}
               />
             </CardContent>
           </Card>
@@ -1443,9 +1435,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>{t('navGroups')}</CardTitle>
-                <CardDescription>
-                  {isGroupArchive ? t('completedGroupsArchiveDescription') : t('groupsDescription')}
-                </CardDescription>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <div
@@ -1496,7 +1485,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 data={displayedGroups}
                 keyExtractor={(row) => `group-${row.id}`}
                 defaultSortKey="name"
-                emptyState={<EmptyTableState title={groupEmptyState.title} description={groupEmptyState.description} />}
+                emptyState={<EmptyTableState title={groupEmptyState.title}  />}
               />
             </CardContent>
           </Card>
@@ -1510,7 +1499,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           <Card>
             <CardHeader>
               <CardTitle>{t('pipelineStages')}</CardTitle>
-              <CardDescription>{t('pipelineSelectFunnel')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               {(salesFunnels.data ?? []).map((funnel) => (
@@ -1532,7 +1520,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               ))}
               {salesFunnels.isLoading ? <Skeleton className="h-20" /> : null}
               {!salesFunnels.isLoading && salesFunnels.data?.length === 0 ? (
-                <EmptyTableState title={t('noSalesFunnels')} description={t('noSalesFunnelsDescription')} />
+                <EmptyTableState title={t('noSalesFunnels')}  />
               ) : null}
             </CardContent>
           </Card>
@@ -1550,10 +1538,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </ModulePageBody>
 
       <Dialog open={Boolean(selectedStageFunnel)} onOpenChange={(open) => { if (!open) setSelectedStageFunnelId(null); }}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{selectedStageFunnel?.name}</DialogTitle>
-            <DialogDescription>{t('pipelineStagesDescription')}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-6 py-4">
             <Button onClick={() => openStatus()}>
@@ -1618,17 +1605,16 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </div>
             ))}
             {funnelStatuses.length === 0 ? (
-              <EmptyTableState title={t('noPipelineStages')} description={t('noPipelineStagesDescription')} />
+              <EmptyTableState title={t('noPipelineStages')}  />
             ) : null}
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
-            <DialogDescription>{t('schoolFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...schoolForm}>
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
@@ -1684,10 +1670,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={roomDialogOpen} onOpenChange={roomGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
-            <DialogDescription>{t('roomFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...roomForm}>
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
@@ -1739,10 +1724,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={courseDialogOpen} onOpenChange={courseGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
-            <DialogDescription>{t('courseFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...courseForm}>
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={courseForm.handleSubmit((values) => saveCourse.mutate(values))}>
@@ -1782,7 +1766,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
                   <div>
                     <FormLabel>{t('activeCourse')}</FormLabel>
-                    <p className="text-xs text-muted-foreground">{t('activeCourseDescription')}</p>
                   </div>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
@@ -1798,10 +1781,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={groupDialogOpen} onOpenChange={groupGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
-            <DialogDescription>{t('groupFormDescription')}</DialogDescription>
           </DialogHeader>
           <Form {...groupForm}>
             <form
@@ -1852,7 +1834,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormItem>
                     <FormLabel required>{t('groupCapacity')}</FormLabel>
                     <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <p className="text-[11px] text-muted-foreground">{t('groupCapacityDescription')}</p>
                     <LocalizedFormMessage />
                   </FormItem>
                 )} />
@@ -1919,7 +1900,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherWillBeAssigned')}</SelectItem>
+                          <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherAutoSelect')}</SelectItem>
                           {groupTeachers.map((teacher) => (
                             <SelectItem key={teacher.id} value={String(teacher.id)}>
                               {teacher.fullName}
@@ -1979,11 +1960,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <div className="flex flex-col gap-2">
                 <div>
                   <p className="text-sm font-medium text-foreground">{t('schedule')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('roomScheduleRule')} · {selectedGroupTeacherId === AUTO_TEACHER_VALUE
-                      ? t('teacherWillBeAssigned')
-                      : t('teacherScheduleWillBeChecked')}
-                  </p>
                 </div>
                 <WeekScheduleEditor
                   value={groupSchedule}
@@ -2018,12 +1994,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       />
 
       <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
-            <DialogDescription>
-              {selectedStageFunnel?.name ? `${selectedStageFunnel.name} · ` : ''}{t('pipelineStageFormDescription')}
-            </DialogDescription>
           </DialogHeader>
           <Form {...statusForm}>
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
@@ -2164,9 +2137,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   </Select>
                   {availableTransferStatuses.length === 0 ? (
                     <p className="text-xs text-destructive">{t('pipelineStageNoTransferTarget')}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t('pipelineStageTransferHint')}</p>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

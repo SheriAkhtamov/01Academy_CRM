@@ -22,7 +22,7 @@ function SaleEditor({ sale, onClose }: { sale: KpiSaleFact; onClose: () => void 
   const dirty = kind !== (sale.kind === 'unclassified' ? 'renewal' : sale.kind) || cycleKey !== (sale.cycleKey ?? '') || referralInitiated !== sale.referralInitiated || reason.length > 0;
   const guard = useUnsavedChangesGuard({ open: true, isDirty: dirty, onOpenChange: (open) => { if (!open && !mutation.isPending) onClose(); } });
   return <>
-    <OverviewDialog title={`${t('kpiSalesReview')} · ${sale.name}`} description={t('kpiSalesReviewHint')} onClose={() => { if (!mutation.isPending) guard.handleOpenChange(false); }}>
+    <OverviewDialog title={`${t('kpiSalesReview')} · ${sale.name}`} onClose={() => { if (!mutation.isPending) guard.handleOpenChange(false); }}>
       <form className="space-y-4" onSubmit={async (event) => {
         event.preventDefault();
         if (mutation.isPending) return;
@@ -55,7 +55,7 @@ export function KpiSaleReviewDialog({ sales, onClose }: { sales: KpiSaleFact[]; 
   const { t, language } = useTranslation();
   const [editing, setEditing] = useState<KpiSaleFact | null>(null);
   return <>
-    <OverviewDialog title={t('kpiSalesReview')} description={t('kpiSalesReviewHint')} onClose={onClose}>
+    <OverviewDialog title={t('kpiSalesReview')} onClose={onClose}>
       <div className="overflow-x-auto">
       <table className="w-full text-sm [&_th]:p-3 [&_th:first-child]:text-left [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:p-3 [&_tr]:border-b"><thead><tr><th>{t('kpiRecord')}</th><th>{t('kpiSaleKind')}</th><th className="text-right">{t('amount')}</th><th><span className="sr-only">{t('actions')}</span></th></tr></thead>
         <tbody>{sales.map((sale) => <tr key={sale.id}>

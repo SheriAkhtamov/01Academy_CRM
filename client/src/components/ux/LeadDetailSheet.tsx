@@ -681,7 +681,7 @@ export function LeadDetailSheet({
       setDuplicateHint(null);
       await invalidateLeadData(queryClient, retainedLeadId);
       onChanged();
-      toast({ title: t('leadMergeCompleted'), description: t('leadMergeCompletedDescription') });
+      toast({ title: t('leadMergeCompleted')});
       if (retainedLeadId === leadId) {
         hydratedLeadKey.current = null;
         await leadQuery.refetch();
@@ -757,7 +757,6 @@ export function LeadDetailSheet({
       onChanged();
       toast({
         title: t('paymentSaved'),
-        description: t('paymentSavedDesc'),
       });
     },
     onError: (

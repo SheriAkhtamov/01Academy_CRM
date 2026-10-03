@@ -5,14 +5,13 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { OverviewDialog, overviewButton } from '@/components/ux/sales-overview/OverviewDialog';
 import { metricKeys } from '../copy';
 
-export function KpiMetricDetails({ metric, help, onClose }: { metric: KpiMetric; help: string; onClose: () => void }) {
+export function KpiMetricDetails({ metric, onClose }: { metric: KpiMetric; onClose: () => void }) {
   const { t, language } = useTranslation();
   const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(50);
   const filtered = metric.details.filter((detail) => detail.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const dateFormat = new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', { timeZone: 'Asia/Tashkent', dateStyle: 'short', timeStyle: 'short' });
-  return <OverviewDialog title={t(metricKeys[metric.id])} description={t('kpiDetailsDescription')} onClose={onClose}>
-      <p className="text-sm leading-relaxed text-muted-foreground">{help}</p>
+  return <OverviewDialog title={t(metricKeys[metric.id])} onClose={onClose}>
       <div className="space-y-1.5"><label htmlFor="kpi-detail-search" className="sr-only">{t('kpiSearchDetails')}</label>
         <input className="h-11 w-full rounded-lg border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" id="kpi-detail-search" placeholder={t('kpiSearchDetails')} value={search} onChange={(event) => { setSearch(event.target.value); setLimit(50); }} /></div>
       <p className="text-xs text-muted-foreground">{t('kpiDetailsCount').replace('{count}', String(filtered.length))}</p>

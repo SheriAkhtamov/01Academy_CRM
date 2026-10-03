@@ -16,11 +16,10 @@ import { salesFunnelsApi, type SalesFunnel } from './api';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -303,7 +302,6 @@ export function SalesFunnelsPanel() {
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle>{t('salesFunnels')}</CardTitle>
-            <CardDescription>{t('salesFunnelsDescription')}</CardDescription>
           </div>
           <Button type="button" onClick={() => openEditor()}>
             <Plus data-icon="inline-start" />{t('addSalesFunnel')}
@@ -332,7 +330,6 @@ export function SalesFunnelsPanel() {
                 <EmptyState
                   icon={GitBranch}
                   title={t('noSalesFunnels')}
-                  description={t('noSalesFunnelsDescription')}
                   action={(
                     <Button type="button" onClick={() => openEditor()}>
                       <Plus data-icon="inline-start" />{t('addSalesFunnel')}
@@ -346,10 +343,9 @@ export function SalesFunnelsPanel() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeEditor())}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>{editing ? t('editSalesFunnel') : t('addSalesFunnel')}</DialogTitle>
-            <DialogDescription>{t('salesFunnelFormDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="space-y-2">

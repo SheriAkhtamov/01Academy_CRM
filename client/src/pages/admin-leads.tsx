@@ -461,7 +461,6 @@ export function LeadAssignmentContent() {
             <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center">
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{t('selectedLeadsCount').replace('{count}', String(selectedLeadIds.size))}</p>
-                <p className="text-sm text-muted-foreground">{t('bulkAssignmentHint')}</p>
               </div>
               <Select value={bulkManagerId} onValueChange={setBulkManagerId}>
                 <SelectTrigger aria-label={t('selectManager')} className="w-full md:w-64">
@@ -509,7 +508,6 @@ export function LeadAssignmentContent() {
                     </div>
                     <div>
                       <h3 className="font-medium text-foreground">{t('noLeadsFound')}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">{t('adjustFilters')}</p>
                     </div>
                     {(managerFilter !== 'all' || statusFilter !== 'all' || funnelFilter !== 'all' || searchQuery.trim()) ? (
                       <Button
@@ -630,7 +628,6 @@ export default function AdminLeadsPage() {
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
         title={t('salesSettings')}
-        subtitle={t('salesSettingsDescription')}
         breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('salesSettings') }]}
       />
       <LeadAssignmentContent />

@@ -10,7 +10,6 @@ import {
   Newspaper,
   Play,
   RefreshCw,
-  Settings2,
   Target,
   Wallet,
   UserRoundCheck,
@@ -361,7 +360,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     return <div className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>;
   }
 
-
   const summary = data.summary;
   return (
     <div className="space-y-4">
@@ -416,7 +414,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             emptyState={(
               <div className="py-14 text-center">
                 <p className="font-medium text-foreground">{t('metaNoAttribution')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{t('metaNoAttributionDesc')}</p>
               </div>
             )}
           />
@@ -488,10 +485,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[85dvh]">
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 pb-4 pt-6 pr-12">
             <DialogTitle>{t('metaAttributedLeads')}</DialogTitle>
-            <DialogDescription>
-              {t('metaAttributedLeadsDescription')}
-              {selectedLeadsCreative ? ` ${selectedLeadsCreative.hookName || selectedLeadsCreative.adName || selectedLeadsCreative.adId || ''}` : ''}
-            </DialogDescription>
+            <DialogDescription>{selectedLeadsCreative?.hookName || selectedLeadsCreative?.adName}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6">
             {selectedLeadsCreative ? (

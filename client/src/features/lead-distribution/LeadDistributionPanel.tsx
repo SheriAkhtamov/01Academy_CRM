@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -79,7 +79,6 @@ export function LeadDistributionPanel() {
 
   const data = settings.data;
   const cannotEnable = !data.defaultFunnelId || data.eligibleManagers.length === 0;
-  const switchDescriptionId = 'auto-lead-distribution-description';
 
   return (
     <AlertDialog
@@ -100,9 +99,6 @@ export function LeadDistributionPanel() {
                 : t('autoLeadDistributionDisabled')}
             </Badge>
           </div>
-          <CardDescription id={switchDescriptionId}>
-            {t('autoLeadDistributionDescription')}
-          </CardDescription>
         </div>
         <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
           {update.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -115,7 +111,6 @@ export function LeadDistributionPanel() {
             id="auto-lead-distribution"
             checked={data.enabled}
             disabled={update.isPending || (!data.enabled && cannotEnable)}
-            aria-describedby={switchDescriptionId}
             onCheckedChange={setPendingEnabled}
           />
         </div>
@@ -151,9 +146,6 @@ export function LeadDistributionPanel() {
           <div className="rounded-lg border p-4">
             <p className="text-sm font-medium">{t('autoLeadDistributionCurrentQueue')}</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{data.unassignedNewLeadCount}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('autoLeadDistributionCurrentQueueDescription')}
-            </p>
           </div>
         </div>
       </CardContent>

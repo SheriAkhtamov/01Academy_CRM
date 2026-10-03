@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -68,10 +68,6 @@ export function IntegrationSettingsDialog({
     telegram_tasks: t('telegramTasksIntegration'), website: t('integrationProviderWebsite'),
     instagram: t('instagramIntegration'), meta: t('metaIntegration'), onlinepbx: t('onlinePbxIntegration'),
   };
-  const instructions: Record<IntegrationType, string> = {
-    telegram_tasks: t('integrationTelegramSteps'), website: t('integrationWebsiteSteps'),
-    instagram: t('integrationInstagramSteps'), meta: t('integrationMetaSteps'), onlinepbx: t('integrationPbxSteps'),
-  };
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [issuedToken, setIssuedToken] = useState('');
   const [issuedDomain, setIssuedDomain] = useState('');
@@ -130,10 +126,9 @@ export function IntegrationSettingsDialog({
   return (
     <>
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+      <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{titles[provider]}</DialogTitle>
-          <DialogDescription>{instructions[provider]}</DialogDescription>
         </DialogHeader>
         {settings.isLoading ? <Skeleton className="h-48 w-full" /> : settings.isError ? (
           <Button variant="outline" onClick={() => settings.refetch()}>{t('retry')}</Button>
@@ -191,7 +186,6 @@ export function IntegrationSettingsDialog({
             {provider === 'onlinepbx' && safe?.webhookUrl ? (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
                 <p>{t('integrationWebhookUrl')}: <span className="break-all select-all">{safe.webhookUrl}</span></p>
-                <p className="text-muted-foreground">{t('integrationPbxWebhookSteps')}</p>
               </div>
             ) : null}
             <DialogFooter className="gap-2">

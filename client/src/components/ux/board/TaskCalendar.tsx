@@ -498,7 +498,6 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                 <CardHeader className="shrink-0 gap-3 border-b border-border/70 bg-muted/20 pb-4">
                     <CalendarNavigator
                         label={rangeLabel}
-                        hint={t('taskCalendarHint')}
                         previousLabel={effectiveView === 'month' ? t('previousMonth') : t('previousWeek')}
                         nextLabel={effectiveView === 'month' ? t('nextMonth') : t('nextWeek')}
                         atToday={atToday}
@@ -574,7 +573,6 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                     icon={CalendarDays}
                                     className="py-0"
                                     title={hiddenStates.size > 0 ? t('taskCalendarHiddenByFilters') : t('taskCalendarEmpty')}
-                                    description={hiddenStates.size > 0 ? t('taskCalendarHiddenByFiltersHint') : t('taskCalendarEmptyHint')}
                                     action={hiddenStates.size > 0 ? (
                                         <Button
                                             type="button"
@@ -872,7 +870,6 @@ function UnscheduledPanel({
                     </p>
                 ) : (
                     <>
-                        <p className="px-1 text-xs text-muted-foreground">{t('taskUnscheduledHint')}</p>
                         {tasks.map((task) => (
                             <DraggableTaskChip
                                 key={task.id}

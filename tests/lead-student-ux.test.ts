@@ -55,7 +55,7 @@ describe('lead and student UX separation', () => {
     expect(studentDialog).toContain('value.groupIds.length > 0');
     expect(studentDialog).toContain('leadsApi.createStudent<CreatedLeadStudent>');
     expect(leadsApi).toContain('`/api/academy/leads/${leadId}/students`');
-    expect(studentDialog).toContain("t('studentGroupCanBeAssignedLater')");
+    expect(studentDialog).toContain('values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt');
     expect(studentDialog).toContain('values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId)');
     expect(studentDialog).toContain("t('createAndAddAnotherStudent')");
     expect(studentDialog).toContain('createAnother: true');

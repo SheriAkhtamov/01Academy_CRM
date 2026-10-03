@@ -67,7 +67,6 @@ export function LeadStudentsCard({
               {t('students')}
               <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
             </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">{t('leadStudentsHint')}</p>
           </div>
           <Button type="button" size="sm" onClick={() => onCreateStudentOpenChange(true)}>
             <Plus data-icon="inline-start" />
@@ -81,7 +80,6 @@ export function LeadStudentsCard({
                 <Users className="size-5" />
               </span>
               <p className="font-medium">{t('noStudentsForLead')}</p>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">{t('noStudentsForLeadHint')}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">

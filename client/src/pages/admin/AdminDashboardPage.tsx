@@ -356,7 +356,6 @@ export default function AdminDashboardPage() {
       <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
         <PageHeader
           title={t('adminDashboardTitle')}
-          subtitle={t('adminDashboardSubtitle')}
           breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         />
         <Alert variant="destructive">
@@ -477,7 +476,6 @@ export default function AdminDashboardPage() {
     {
       key: 'tasks',
       title: ceoCopy.dashboard.escalatedTasks,
-      detail: ceoCopy.dashboard.escalatedTasksDetail,
       value: data.alerts.overdueTasks,
       icon: ListTodo,
       tone: 'bg-destructive/10 text-destructive',
@@ -521,7 +519,6 @@ export default function AdminDashboardPage() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <PageHeader
         title={t('adminDashboardTitle')}
-        subtitle={t('adminDashboardSubtitle')}
         breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         actions={(
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -694,7 +691,7 @@ export default function AdminDashboardPage() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <AnalyticsChartEmpty title={t('noData')} description={t('analyticsEmptyPeriodHint')} />
+                <AnalyticsChartEmpty title={t('noData')}  />
               )}
               <figcaption className="sr-only">{businessTrendSummary}</figcaption>
             </figure>
@@ -751,7 +748,6 @@ export default function AdminDashboardPage() {
         <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">{t('adminOperationalAlerts')}</CardTitle>
-            <CardDescription>{t('adminItemsNeedAttention')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-1 px-4 pb-4 pt-0">
             {alerts.map((item) => {
@@ -807,7 +803,6 @@ export default function AdminDashboardPage() {
         <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
           <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-base">{ceoCopy.dashboard.churnReasons}</CardTitle>
-            <CardDescription>{ceoCopy.dashboard.churnStatuses}</CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
             {churnData.length > 0 ? (
@@ -836,7 +831,6 @@ export default function AdminDashboardPage() {
         <Card className="border-border/60 shadow-sm xl:col-span-4 2xl:col-span-6">
           <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-[15px]">{t('adminCourseLoad')}</CardTitle>
-            <CardDescription>{t('adminCourseLoadDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4 pt-0">
             {data.courseLoad.length > 0 ? (
@@ -871,7 +865,6 @@ export default function AdminDashboardPage() {
         <Card className="border-border/60 shadow-sm xl:col-span-2 2xl:col-span-3">
           <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-base">{t('adminRecentActivity')}</CardTitle>
-            <CardDescription>{t('adminAcrossProject')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-1 px-4 pb-4 pt-0">
             {data.recentActivity.length > 0 ? data.recentActivity.map((item) => {
@@ -909,7 +902,6 @@ export default function AdminDashboardPage() {
           <h2 id="project-pulse-title" className="text-lg font-semibold tracking-tight">
             {t('adminProjectPulse')}
           </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('adminProjectPulseDescription')}</p>
         </div>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <AdminOperationalHealthChart metrics={healthMetrics} className="xl:col-span-5" />
@@ -941,7 +933,6 @@ export default function AdminDashboardPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle>{t('adminNextLessons')}</CardTitle>
-            <CardDescription>{t('adminNextLessonsDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-tile gap-3">
             {data.upcomingLessons.map((lesson) => (

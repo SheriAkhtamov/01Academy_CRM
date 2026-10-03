@@ -1,0 +1,10 @@
+{
+  "tool": "built-in image_gen",
+  "corrections": [
+    {
+      "concept": "10",
+      "target": "10-bold-academy.png",
+      "prompt": "Use case: text-localization / precise UI label correction.\nEdit the attached UI concept image. Preserve its entire layout, typography, colors, sidebar, branding, Kanban columns, numbers, fictional contacts, masked phones, borders, shadows, buttons and all other details exactly. Change ONLY these three course values inside the second Kanban column:\n\"Курс: Общий английский\" becomes \"Курс: Vibe Coding\".\n\"Курс: AI для детей\" becomes \"Курс: AI Kids\".\n\"Курс: Разговорный английский\" becomes \"Курс: AI Creator\".\nThese are the academy's real course names. Do not add any other new course name or capability. Return the full same wide screenshot, without cropping."
+    }
+  ]
+}

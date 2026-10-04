@@ -7,9 +7,10 @@ import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
 import { academyInstant, academyToday } from '../client/src/lib/localeFormat';
 
-vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
-  useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
+const onlinePbxCall = vi.hoisted(() => ({
+  startCall: vi.fn(), isPending: false, pendingPhone: null as string | null,
 }));
+vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 
 Element.prototype.hasPointerCapture = () => false;
 Element.prototype.setPointerCapture = () => undefined;
@@ -37,6 +38,9 @@ let queryClient: QueryClient;
 
 beforeEach(() => {
   i18n.setLanguage('ru');
+  onlinePbxCall.startCall.mockClear();
+  onlinePbxCall.isPending = false;
+  onlinePbxCall.pendingPhone = null;
   lead = structuredClone(initialLead);
   requests = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -75,6 +79,59 @@ function renderSheet() {
   const view = render(content());
   return { user: userEvent.setup(), onOpenChange, switchTab: (tab: 'deal' | 'activity' | 'tasks') => view.rerender(content(tab)) };
 }
+
+describe('calling from the lead workspace', () => {
+  it.each([0, 1, 2])('calls the chosen number at index %s from a separate dialog', async (index) => {
+    lead.phoneNumbers.push('+998901234569');
+    const { user, onOpenChange } = renderSheet();
+    await user.click(await screen.findByRole('button', { name: i18n.t('callShort') }));
+
+    const dialog = screen.getByRole('dialog', { name: i18n.t('chooseLeadCallPhone') });
+    expect(within(dialog).getByText(lead.contactName)).toBeTruthy();
+    lead.phoneNumbers.forEach((phone) => expect(within(dialog).getByRole('button', { name: phone })).toBeTruthy());
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: lead.phoneNumbers[index] }));
+
+    expect(onlinePbxCall.startCall).toHaveBeenCalledExactlyOnceWith(lead.phoneNumbers[index]);
+    expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: lead.contactName })).toBeTruthy();
+  });
+
+  it.each(['cancel', 'escape'])('dismisses the picker with %s without calling or closing the lead', async (action) => {
+    const { user, onOpenChange } = renderSheet();
+    const callButton = await screen.findByRole('button', { name: i18n.t('callShort') });
+    await user.click(callButton);
+    if (action === 'escape') await user.keyboard('{Escape}');
+    else await user.click(within(screen.getByRole('dialog', { name: i18n.t('chooseLeadCallPhone') }))
+      .getByRole('button', { name: i18n.t('cancel') }));
+
+    expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(callButton));
+  });
+
+  it('calls directly when the lead has only one phone', async () => {
+    lead.phoneNumbers = [lead.phoneNumbers[0]];
+    const { user } = renderSheet();
+    await user.click(await screen.findByRole('button', { name: i18n.t('callShort') }));
+    expect(onlinePbxCall.startCall).toHaveBeenCalledExactlyOnceWith(lead.phoneNumbers[0]);
+    expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();
+  });
+
+  it('prevents another call while a secondary number is being dialled', async () => {
+    onlinePbxCall.isPending = true;
+    onlinePbxCall.pendingPhone = lead.phoneNumbers[1];
+    const { user } = renderSheet();
+    const button = await screen.findByRole('button', { name: i18n.t('callShort') });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.querySelector('.animate-spin')).toBeTruthy();
+    await user.click(button);
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();
+  });
+});
 
 describe('lead workspace navigation and drafts', () => {
   it('records the chosen payment date without showing or sending a paid-through date', async () => {

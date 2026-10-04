@@ -1437,6 +1437,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadWorkspaceRemovePhoneHint: { en: 'The number will be removed when you save the lead.', ru: 'Номер будет удалён после сохранения карточки.' },
   leadSheetNoContactInfo: { en: 'No contact info', ru: 'Нет контактных данных' },
   callShort: { en: 'Call', ru: 'Звонок' },
+  chooseLeadCallPhone: { en: 'Choose a number to call', ru: 'Выберите номер для звонка' },
   writeShort: { en: 'Message', ru: 'Писать' },
 
   // UX improvements — academy configuration, schools, courses and scheduling

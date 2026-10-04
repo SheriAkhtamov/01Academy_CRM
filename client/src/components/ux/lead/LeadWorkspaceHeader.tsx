@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { CheckCircle2, Copy, ExternalLink, Loader2, MessageSquare, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LeadStageStepper, type StepperStageSource } from './LeadSheetControls';
+import { LeadCallDialog } from './LeadCallDialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { leadMessageTarget } from '@/lib/leadContact';
@@ -35,6 +36,7 @@ export function LeadWorkspaceHeader({
   assignmentAction, actionsDisabled = false,
 }: LeadWorkspaceHeaderProps) {
   const { t } = useTranslation();
+  const [callDialogOpen, setCallDialogOpen] = useState(false);
   return (
     <SheetHeader className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto border-b border-border bg-background px-4 pb-3 pt-4 text-left sm:px-6">
       <div className="flex items-start gap-3 pr-10">
@@ -115,9 +117,12 @@ export function LeadWorkspaceHeader({
             size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
             variant="default"
             disabled={actionsDisabled || onlinePbxCall.isPending}
-            onClick={() => onlinePbxCall.startCall(primaryPhone)}
+            onClick={() => {
+              if (visiblePhoneNumbers.length > 1) setCallDialogOpen(true);
+              else onlinePbxCall.startCall(primaryPhone);
+            }}
           >
-            {onlinePbxCall.isPending && onlinePbxCall.pendingPhone === primaryPhone ? (
+            {onlinePbxCall.isPending ? (
               <Loader2 className="animate-spin" data-icon="inline-start" />
             ) : (
               <Phone data-icon="inline-start" />
@@ -141,6 +146,14 @@ export function LeadWorkspaceHeader({
         {archiveAction}
         {workflowActions}
       </fieldset>
+      <LeadCallDialog
+        open={callDialogOpen}
+        onOpenChange={setCallDialogOpen}
+        leadName={lead.contactName}
+        phoneNumbers={visiblePhoneNumbers}
+        onCall={onlinePbxCall.startCall}
+        disabled={actionsDisabled || onlinePbxCall.isPending}
+      />
     </SheetHeader>
   );
 }

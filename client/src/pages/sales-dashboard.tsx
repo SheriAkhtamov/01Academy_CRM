@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/dialog';
 import { DataTable } from '@/components/ux/DataTable';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
+import { LeadCallDialog } from '@/components/ux/lead/LeadCallDialog';
 import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
 import { leadMatchesFilters } from '@/lib/leadFilters';
 import { submitOnEnter } from '@/lib/submitOnEnter';
@@ -69,7 +70,7 @@ import { SalesScheduleCalendar } from '@/components/ux/SalesScheduleCalendar';
 import { SalesOverviewMetrics } from '@/components/ux/SalesOverviewMetrics';
 import { SalesOverviewEmployeeFilter } from '@/components/ux/SalesOverviewEmployeeFilter';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
-import { leadMessageTarget, primaryVisibleLeadPhone } from '@/lib/leadContact';
+import { leadMessageTarget, visibleLeadPhones } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
@@ -431,7 +432,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const ceoCopy = useCeoCopy();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
-  const { startCall: startOnlinePbxCall } = useOnlinePbxCall();
+  const { startCall: startOnlinePbxCall, isPending: isCallPending } = useOnlinePbxCall();
   const isAdministrationModule = hasLeadershipAccess(user);
   const hasSalesModule = getAssignedModules(user).includes('sales');
   const queryClient = useQueryClient();
@@ -470,6 +471,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
+  const [callDialogLead, setCallDialogLead] = useState<Lead | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
   const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
@@ -972,12 +974,15 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'call') {
-      const phone = primaryVisibleLeadPhone(lead);
+      if (isCallPending) return;
+      const phones = visibleLeadPhones(lead);
+      const phone = phones[0];
       if (!phone) {
         toast({ title: t('phoneNotProvided'), variant: 'destructive' });
         return;
       }
-      startOnlinePbxCall(phone);
+      if (phones.length > 1) setCallDialogLead(lead);
+      else startOnlinePbxCall(phone);
       return;
     }
     if (action === 'message') {
@@ -993,7 +998,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       return;
     }
-  }, [openLead, setLocation, startOnlinePbxCall, t]);
+  }, [isCallPending, openLead, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -1345,6 +1350,14 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         open={leadDialogGuard.confirmationOpen}
         onOpenChange={leadDialogGuard.setConfirmationOpen}
         onDiscard={leadDialogGuard.discardChanges}
+      />
+      <LeadCallDialog
+        open={Boolean(callDialogLead)}
+        onOpenChange={(open) => { if (!open) setCallDialogLead(null); }}
+        leadName={callDialogLead?.contactName ?? ''}
+        phoneNumbers={visibleLeadPhones(callDialogLead)}
+        onCall={startOnlinePbxCall}
+        disabled={isCallPending}
       />
       <LeadDetailSheet
         leadId={selectedLeadId}

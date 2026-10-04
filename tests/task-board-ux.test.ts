@@ -48,7 +48,7 @@ describe('task board interaction UX', () => {
   });
 
   it('drags from the whole card without a separate handle and keeps one stable preview', () => {
-    expect(taskBoard).toContain('dragProps={{ ...attributes, ...listeners }}');
+    expect(taskBoard).toContain('dragProps={disabled ? undefined : { ...attributes, ...listeners }}');
     expect(taskBoard).not.toContain('setActivatorNodeRef');
     expect(taskBoard).not.toContain('GripVertical');
     expect(taskBoard).not.toContain('hasDragHandle');
@@ -99,7 +99,7 @@ describe('task board interaction UX', () => {
     expect(chipStart).toBeGreaterThan(-1);
     expect(chipEnd).toBeGreaterThan(chipStart);
     expect(taskCalendar.slice(chipStart, chipEnd)).not.toContain('useDraggable');
-    expect(taskCalendar).toContain('dragProps={{ ...attributes, ...listeners, ref: setNodeRef }}');
+    expect(taskCalendar).toContain('dragProps={disabled ? { ref: setNodeRef } : { ...attributes, ...listeners, ref: setNodeRef }}');
   });
 
   it('lets a task be dropped onto a period that has nothing in it yet', () => {

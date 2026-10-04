@@ -14,6 +14,7 @@ import {
     type User,
 } from '../db/schema';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
+import { canManageBoardTask } from '@shared/board-permissions';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
@@ -29,16 +30,15 @@ const isTaskSupervisor = (user?: User) => hasLeadershipAccess(user);
 router.use(authorize);
 
 const canReadTask = (user: User, task: BoardTask | { creatorId: number | null; assigneeId: number | null }) =>
-    user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor(user);
+    Boolean(user && task);
 
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>
-    canReadTask(user, task);
+    canManageBoardTask(user, task);
 
-// Accepting (Done -> Accepted) and re-opening (out of Accepted) are reserved
-// for the task creator, regardless of the assignee's administrative access.
+// The assignee controls every transition, including archiving and reopening.
 const canAcceptOrReopen = (user: User, task: BoardTask) =>
-    user.id === task.creatorId;
+    canManageTask(user, task);
 
 const parseId = (raw: unknown) => {
     const text = String(raw ?? '').trim();
@@ -101,8 +101,8 @@ const authorizeAttachmentUpload = async (
         if (requestKey !== undefined && !validRequestKey(requestKey)) return res.status(400).json({ error: 'Invalid upload key' });
         const task = await storage.board.getTask(taskId);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canReadTask(req.user!, task)) {
-            return res.status(403).json({ error: 'accessDenied' });
+        if (!canManageTask(req.user!, task)) {
+            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
         res.locals.boardTask = task;
         next();
@@ -173,7 +173,7 @@ function validateTransition(
     user: User,
 ): { code: number; error: string } | null {
     if ((toStatus === 'accepted' || task.status === 'accepted') && !canAcceptOrReopen(user, task)) {
-        return { code: 403, error: 'onlyCreatorCanAcceptHint' };
+        return { code: 403, error: 'onlyAssigneeCanManageTask' };
     }
     if (task.status === toStatus) return null;
 
@@ -239,10 +239,9 @@ router.get('/tasks', async (req, res) => {
             if (!board) return res.json({ board: null, tasks: [] });
             boardId = board.id;
         }
-        const visibleToUserId = isTaskSupervisor(req.user!) ? undefined : req.user!.id;
         const [board, tasks] = await Promise.all([
             storage.board.getBoard(boardId),
-            storage.board.getTasks(boardId, visibleToUserId, archived),
+            storage.board.getTasks(boardId, undefined, archived),
         ]);
         if (!board) return res.status(404).json({ error: 'Board not found' });
         res.json({ board, tasks });
@@ -385,7 +384,7 @@ router.patch('/tasks/:id', async (req, res) => {
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
         if (!canManageTask(req.user!, task)) {
-            return res.status(403).json({ error: 'You are not allowed to edit this task' });
+            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
 
         const updates: Record<string, unknown> = {};
@@ -458,7 +457,7 @@ router.patch('/tasks/:id', async (req, res) => {
         }
         const atomicUpdate = (storage.board as any).updateTaskWithActivities;
         const updated = atomicUpdate
-            ? await atomicUpdate.call(storage.board, id, task.status, updates, activities)
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, activities, req.user!.id)
             : await storage.board.updateTask(id, updates);
         if (!atomicUpdate) {
             for (const activity of activities) {
@@ -470,11 +469,11 @@ router.patch('/tasks/:id', async (req, res) => {
         res.json(updated);
     } catch (error) {
         logger.error('Failed to update task', { error, taskId: req.params.id });
-        res.status(500).json({ error: 'Failed to update task' });
+        return sendHttpError(res, error, 'Failed to update task');
     }
 });
 
-// Move a task to another column (with the creator-only accept/reopen rules).
+// Move an assigned task to another column.
 router.patch('/tasks/:id/status', async (req, res) => {
     try {
         const id = parseId(req.params.id);
@@ -492,7 +491,7 @@ router.patch('/tasks/:id/status', async (req, res) => {
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
         if (!canManageTask(req.user!, task)) {
-            return res.status(403).json({ error: 'accessDenied' });
+            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
 
         const transitionError = validateTransition(task, status, req.user!);
@@ -529,7 +528,7 @@ router.patch('/tasks/:id/status', async (req, res) => {
         };
         const atomicUpdate = (storage.board as any).updateTaskWithActivities;
         const updated = atomicUpdate
-            ? await atomicUpdate.call(storage.board, id, task.status, updates, [activity])
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, [activity], req.user!.id)
             : await storage.board.updateTask(id, updates);
         if (!atomicUpdate) {
             await storage.board.createActivity({ taskId: id, ...activity });
@@ -562,16 +561,16 @@ router.delete('/tasks/:id', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (req.user!.id !== task.creatorId && !isTaskSupervisor(req.user!)) {
-            return res.status(403).json({ error: 'Only the creator can delete this task' });
+        if (!canManageTask(req.user!, task)) {
+            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
 
-        await storage.board.deleteTask(id);
+        await storage.board.deleteTask(id, req.user!.id);
         broadcastTask('BOARD_TASK_DELETED', task);
         res.json({ success: true });
     } catch (error) {
         logger.error('Failed to delete task', { error, taskId: req.params.id });
-        res.status(500).json({ error: 'Failed to delete task' });
+        return sendHttpError(res, error, 'Failed to delete task');
     }
 });
 
@@ -586,7 +585,7 @@ router.post('/tasks/:id/comments', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        if (!canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
 
         const commentValues = {
             taskId: id,
@@ -626,8 +625,8 @@ router.patch('/comments/:id', async (req, res) => {
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
         const task = await storage.board.getTask(comment.taskId);
-        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
-        if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
+        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (req.user!.id !== comment.authorId) {
             return res.status(403).json({ error: 'You can only edit your own comments' });
         }
 
@@ -648,8 +647,8 @@ router.delete('/comments/:id', async (req, res) => {
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
         const task = await storage.board.getTask(comment.taskId);
-        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
-        if (req.user!.id !== comment.authorId && !isTaskSupervisor(req.user!)) {
+        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (req.user!.id !== comment.authorId) {
             return res.status(403).json({ error: 'You can only delete your own comments' });
         }
 
@@ -674,7 +673,7 @@ router.post('/tasks/:id/checklist', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        if (!canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
 
         const item = await storage.board.createChecklistItem({
             taskId: id,
@@ -699,7 +698,7 @@ router.patch('/checklist/:id', async (req, res) => {
         const item = await storage.board.getChecklistItem(id);
         if (!item) return res.status(404).json({ error: 'Item not found' });
         const task = await storage.board.getTask(item.taskId);
-        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
 
         const updates: Record<string, unknown> = {};
         if (req.body.content !== undefined) {
@@ -731,7 +730,7 @@ router.delete('/checklist/:id', async (req, res) => {
         const item = await storage.board.getChecklistItem(id);
         if (!item) return res.status(404).json({ error: 'Item not found' });
         const task = await storage.board.getTask(item.taskId);
-        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
 
         await storage.board.deleteChecklistItem(id);
         broadcastTask('BOARD_TASK_UPDATED', { id: item.taskId, boardId: 0 });
@@ -756,9 +755,9 @@ router.post(
         if (!req.file) return res.status(400).json({ error: 'File is required' });
         // Re-check after the upload: the task may have been deleted/reassigned.
         const task = await storage.board.getTask(id);
-        if (!task || !canReadTask(req.user!, task)) {
+        if (!task || !canManageTask(req.user!, task)) {
             await removeUploadedFile(req.file.path);
-            return res.status(403).json({ error: 'accessDenied' });
+            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
         await fs.promises.chmod(req.file.path, 0o640);
 
@@ -820,12 +819,7 @@ router.delete('/attachments/:id', async (req, res) => {
         if (!attachment) return res.status(404).json({ error: 'Attachment not found' });
 
         const task = await storage.board.getTask(attachment.taskId);
-        if (!task || !canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
-        const canDelete =
-            req.user!.id === attachment.uploadedBy ||
-            (task && req.user!.id === task.creatorId) ||
-            isTaskSupervisor(req.user!);
-        if (!canDelete) return res.status(403).json({ error: 'Not allowed to delete this attachment' });
+        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
 
         await storage.board.deleteAttachment(id);
         const filePath = resolveStoredAttachmentPath(attachment.fileName);

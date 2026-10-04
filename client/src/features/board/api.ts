@@ -35,4 +35,7 @@ export const boardApi = {
   updateTaskDueAt: <T>(taskId: number, dueAt: string | null) => (
     apiRequest('PATCH', `/api/board/tasks/${taskId}`, { dueAt }) as Promise<T>
   ),
+  updateTaskAssignee: <T>(taskId: number, assigneeId: number) => (
+    apiRequest('PATCH', `/api/board/tasks/${taskId}`, { assigneeId }) as Promise<T>
+  ),
 };

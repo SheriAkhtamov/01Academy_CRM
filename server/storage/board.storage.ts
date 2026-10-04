@@ -78,14 +78,13 @@ class BoardStorage {
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
-    async getPendingAcceptanceCount(boardId: number, creatorId: number): Promise<number> {
+    async getPendingAcceptanceCount(boardId: number, assigneeId: number): Promise<number> {
         const [row] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(boardTasks)
             .where(and(
                 eq(boardTasks.boardId, boardId),
-                eq(boardTasks.creatorId, creatorId),
-                ne(boardTasks.assigneeId, creatorId),
+                eq(boardTasks.assigneeId, assigneeId),
                 eq(boardTasks.status, 'done'),
             ));
         return row?.count ?? 0;
@@ -419,12 +418,17 @@ class BoardStorage {
         expectedStatus: string,
         data: Partial<InsertBoardTask> & { acceptedAt?: Date | null; acceptedBy?: number | null },
         activities: Omit<InsertBoardTaskActivity, 'taskId'>[],
+        assigneeId?: number,
     ): Promise<BoardTask> {
         return db.transaction(async (tx) => {
             const [row] = await tx
                 .update(boardTasks)
                 .set({ ...data, updatedAt: new Date() })
-                .where(and(eq(boardTasks.id, id), eq(boardTasks.status, expectedStatus)))
+                .where(and(
+                    eq(boardTasks.id, id),
+                    eq(boardTasks.status, expectedStatus),
+                    assigneeId === undefined ? undefined : eq(boardTasks.assigneeId, assigneeId),
+                ))
                 .returning();
             if (!row) {
                 throw Object.assign(new Error('Task changed concurrently'), { statusCode: 409 });
@@ -438,8 +442,14 @@ class BoardStorage {
         });
     }
 
-    async deleteTask(id: number): Promise<void> {
-        await db.delete(boardTasks).where(eq(boardTasks.id, id));
+    async deleteTask(id: number, assigneeId?: number): Promise<void> {
+        const deleted = await db.delete(boardTasks).where(and(
+            eq(boardTasks.id, id),
+            assigneeId === undefined ? undefined : eq(boardTasks.assigneeId, assigneeId),
+        )).returning({ id: boardTasks.id });
+        if (!deleted.length && assigneeId !== undefined) {
+            throw Object.assign(new Error('onlyAssigneeCanManageTask'), { statusCode: 403 });
+        }
     }
 
     // -- Comments ----------------------------------------------------------

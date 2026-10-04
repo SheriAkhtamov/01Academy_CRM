@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { boardRequest as apiRequest } from '@/features/board/transport';
 import { hapticNotify } from '@/features/board/telegram';
-import { boardQueryKeys } from '@/features/board/api';
+import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { academyDateInputValue, academyInstant, academyMinutesOfDay, academyToday } from '@/lib/localeFormat';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -112,15 +112,18 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
     const mutation = useMutation({
         mutationFn: async () => {
             requestKey.current ??= crypto.randomUUID();
+            const targetAssigneeId = canAssignUsers
+                ? assigneeId === UNASSIGNED ? null : Number(assigneeId)
+                : currentUser?.id ?? null;
+            const needsHandover = files.length > 0 && targetAssigneeId !== null
+                && targetAssigneeId !== currentUser?.id;
             if (createdTaskId.current === null) {
                 const task = await apiRequest('POST', '/api/board/tasks', {
                 title: title.trim(),
                 description: description.trim() || null,
                 priority,
                 color,
-                assigneeId: canAssignUsers
-                    ? assigneeId === UNASSIGNED ? null : Number(assigneeId)
-                    : currentUser?.id ?? null,
+                assigneeId: needsHandover ? currentUser?.id : targetAssigneeId,
                 dueAt: dueAt ? dueInputToInstant(dueAt) : null,
                 requestKey: requestKey.current,
                 }) as { id: number };
@@ -131,6 +134,13 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                 setActiveFile(file); setPercent(0);
                 await uploadTaskAttachment(createdTaskId.current, file, setPercent);
                 setUploaded((previous) => [...previous, file]);
+            }
+            if (needsHandover) {
+                // Reading before retrying also handles a successful handover whose response was lost.
+                const task = await boardApi.getTask<{ assigneeId: number | null }>(createdTaskId.current!);
+                if (task.assigneeId !== targetAssigneeId) {
+                    await boardApi.updateTaskAssignee(createdTaskId.current!, targetAssigneeId!);
+                }
             }
         },
         onSuccess: () => {

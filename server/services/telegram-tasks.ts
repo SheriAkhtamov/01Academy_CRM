@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { pool } from '../db';
 import { storage } from '../storage';
 import { normalizeEmployeePhone, type TaskToken } from './telegram-tasks-crypto';
-import { hasLeadershipAccess } from '@shared/academy';
 import type { User } from '../db/schema';
 
 export const telegramTaskAccess = {
@@ -13,7 +12,7 @@ export const telegramTaskAccess = {
   async canDownload(user: User, attachmentId: number) {
     const attachment = await storage.board.getAttachment(attachmentId);
     const task = attachment && await storage.board.getTask(attachment.taskId);
-    return Boolean(task && (task.creatorId === user.id || task.assigneeId === user.id || hasLeadershipAccess(user)));
+    return Boolean(user && task);
   },
 };
 

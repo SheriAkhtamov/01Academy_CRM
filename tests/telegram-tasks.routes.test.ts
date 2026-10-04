@@ -112,13 +112,13 @@ describe('Telegram bot and isolated task API', () => {
   });
   it('preserves board read permissions and checks the live binding', async () => {
     const response = await request(app()).get('/api/miniapp/board/tasks').set('Authorization', `Bearer ${token()}`);
-    expect(response.status).toBe(200); expect(mock.tasks).toHaveBeenCalledWith(1, 7, false);
+    expect(response.status).toBe(200); expect(mock.tasks).toHaveBeenCalledWith(1, undefined, false);
     expect(mock.identity).toHaveBeenCalledWith('12345', '654321', expect.objectContaining({ userId: 7, verificationId: 'v1' }));
   });
-  it('denies other employees task details and assignee-only acceptance', async () => {
+  it('lets employees read other tasks but only change their own', async () => {
     mock.detail.mockResolvedValue({ creatorId: 99, assigneeId: 98 });
-    expect((await request(app()).get('/api/miniapp/board/tasks/1').set('Authorization', `Bearer ${token()}`)).status).toBe(403);
-    mock.task.mockResolvedValue({ id: 1, creatorId: 99, assigneeId: 7, status: 'done' });
+    expect((await request(app()).get('/api/miniapp/board/tasks/1').set('Authorization', `Bearer ${token()}`)).status).toBe(200);
+    mock.task.mockResolvedValue({ id: 1, creatorId: 7, assigneeId: 99, status: 'done' });
     expect((await request(app()).patch('/api/miniapp/board/tasks/1/status').set('Authorization', `Bearer ${token()}`).send({ status: 'accepted' })).status).toBe(403);
   });
   it('does not expose other modules or allow lead assignment', async () => {

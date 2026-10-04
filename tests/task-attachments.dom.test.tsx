@@ -19,6 +19,10 @@ const employee: UserMini = { id: 7, fullName: 'Creator', module: 'sales', positi
 const provider = (children: React.ReactNode, client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) =>
   <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 beforeEach(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => undefined;
+  Element.prototype.releasePointerCapture ??= () => undefined;
+  Element.prototype.scrollIntoView ??= () => undefined;
   vi.clearAllMocks(); i18n.setLanguage('en');
   mocks.api.mockResolvedValue({ id: 100 }); mocks.upload.mockResolvedValue({ id: 5 });
   Object.assign(mocks.user, { id: 7, module: 'sales', modules: ['sales'] });
@@ -45,6 +49,36 @@ describe('task creation with attachments', () => {
     expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({ requestKey: expect.any(String), assigneeId: 7 }));
     expect(mocks.upload.mock.calls.map((args) => args[1].name)).toEqual(files.map((file) => file.name));
   });
+  it.each([false, true])('finishes attachments before handing a new task to another employee (lost response: %s)', async (loseResponse) => {
+    const colleague = { ...employee, id: 8, fullName: 'Teammate' };
+    let assigneeId = 7;
+    mocks.api.mockImplementation(async (method: string) => {
+      if (method === 'GET') return { id: 100, assigneeId };
+      if (method === 'PATCH') {
+        assigneeId = 8;
+        if (loseResponse) throw new Error('offline');
+      }
+      return { id: 100 };
+    });
+    const close = vi.fn();
+    const view = render(provider(<CreateTaskDialog open onOpenChange={close} users={[employee, colleague]} currentUser={employee} canAssignUsers />));
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Delegate with files');
+    await user.click(screen.getByRole('combobox', { name: i18n.t('assigneeLabel') }));
+    await user.click(screen.getByRole('option', { name: colleague.fullName }));
+    await user.upload(view.container.ownerDocument.querySelector('input[type=file]') as HTMLInputElement, new File(['file'], 'report.pdf'));
+    await user.click(screen.getByRole('button', { name: 'Create task' }));
+    if (loseResponse) {
+      await user.click(await screen.findByRole('button', { name: 'Retry saving' }));
+    }
+    await waitFor(() => expect(close).toHaveBeenCalledWith(false));
+    expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({ assigneeId: 7 }));
+    expect(mocks.upload).toHaveBeenCalledOnce();
+    const handovers = mocks.api.mock.calls.filter(([method]) => method === 'PATCH');
+    expect(handovers).toEqual([['PATCH', '/api/board/tasks/100', { assigneeId: 8 }]]);
+    expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(mocks.api.mock.invocationCallOrder[2]);
+  });
+
   it('retries only pending files without recreating the task', async () => {
     const { close, input } = setup();
     mocks.upload.mockResolvedValueOnce({ id: 5 }).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ id: 6 });
@@ -109,8 +143,8 @@ describe('miniapp task creation', () => {
 });
 
 describe('task acceptance UI', () => {
-  it.each([{ id: 7, admin: false, enabled: true }, { id: 8, admin: false, enabled: false }, { id: 8, admin: true, enabled: false }])(
-    'creator-only acceptance for $id with admin=$admin', ({ id, admin, enabled }) => {
+  it.each([{ id: 7, admin: false, enabled: false }, { id: 8, admin: false, enabled: true }, { id: 8, admin: true, enabled: true }, { id: 1, admin: true, enabled: false }])(
+    'assignee-only acceptance for $id with admin=$admin', ({ id, admin, enabled }) => {
       Object.assign(mocks.user, { id, module: admin ? 'administration' : 'sales', modules: [admin ? 'administration' : 'sales'] });
       const task: TaskDetail = { id: 100, boardId: 1, title: 'Task', description: null, status: 'done', priority: 'normal', color: null,
         position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
@@ -128,6 +162,36 @@ describe('task acceptance UI', () => {
       }
     },
   );
+});
+
+describe('read-only task details', () => {
+  it.each([{ id: 7, module: 'sales' }, { id: 1, module: 'administration' }])('keeps foreign tasks readable without changing or deleting them for $module', async ({ id, module }) => {
+    Object.assign(mocks.user, { id, module, modules: [module] });
+    const task: TaskDetail = { id: 100, boardId: 1, title: 'Foreign task', description: 'Task details', status: 'todo', priority: 'normal', color: null,
+      position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
+      dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
+      comments: [{ id: 2, taskId: 100, author: employee, body: 'Existing comment', createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z' }],
+      checklist: [{ id: 3, taskId: 100, content: 'Existing item', isDone: false, position: 0, createdBy: 7, createdAt: '2026-09-03T10:00:00Z' }],
+      attachments: [], activity: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    client.setQueryData(['/api/board/tasks/100'], task);
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={vi.fn()} users={[employee]} />, client));
+    expect(screen.getByText('Foreign task')).toBeTruthy();
+    expect(screen.getByText('Existing comment')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('edit') })).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('deleteTaskTitle') })).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('delete') })).toBeNull();
+    expect(screen.queryByPlaceholderText(i18n.t('addCommentPlaceholder'))).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('checklistLabel')) }));
+    expect((screen.getByRole('checkbox', { name: 'Existing item' }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByPlaceholderText(i18n.t('addChecklistPlaceholder'))).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('delete') })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: i18n.t('attachmentsLabel') }));
+    expect(screen.queryByRole('button', { name: i18n.t('attachFile') })).toBeNull();
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
 });
 
 describe('miniapp task progress', () => {

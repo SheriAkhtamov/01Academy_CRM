@@ -1891,7 +1891,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   noChecklistYet: { en: 'No checklist items yet', ru: 'В чеклисте пока нет пунктов' },
   noCommentsYet: { en: 'No comments yet', ru: 'Комментариев пока нет' },
   noDueDate: { en: 'No due date', ru: 'Без срока' },
-  onlyCreatorCanAcceptHint: { en: 'Only the employee who assigned the task can accept or reopen it.', ru: 'Принять или вернуть задачу в работу может только сотрудник, который её поручил.' },
+  onlyAssigneeCanManageTask: { en: 'Only the assignee can change this task.', ru: 'Изменять эту задачу может только её исполнитель.' },
   priorityLabel: { en: 'Priority', ru: 'Приоритет' },
   priorityLow: { en: 'Low priority', ru: 'Низкий приоритет' },
   priorityNormal: { en: 'Normal priority', ru: 'Обычный приоритет' },

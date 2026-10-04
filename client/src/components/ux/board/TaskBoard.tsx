@@ -34,7 +34,7 @@ interface TaskBoardProps {
     tasks: TaskSummary[];
     onStatusChange: (taskId: number, status: BoardStatus) => Promise<boolean>;
     onTaskClick: (taskId: number) => void;
-    canMoveTask?: (task: TaskSummary, status: BoardStatus) => boolean;
+    canMoveTask: (task: TaskSummary, status: BoardStatus) => boolean;
 }
 
 const reconcileBoardTasks = (
@@ -51,9 +51,11 @@ const reconcileBoardTasks = (
 function DraggableTaskCard({
     task,
     onClick,
+    disabled,
 }: {
     task: TaskSummary;
     onClick: () => void;
+    disabled: boolean;
 }) {
     const suppressClickRef = useRef(false);
     // Same trade as the lead board: the FLIP measure-and-spring pass on every
@@ -62,6 +64,7 @@ function DraggableTaskCard({
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `task-${task.id}`,
         data: { taskId: task.id, status: task.status },
+        disabled,
     });
 
     useEffect(() => {
@@ -92,7 +95,7 @@ function DraggableTaskCard({
         >
             <TaskCard
                 task={task}
-                dragProps={{ ...attributes, ...listeners }}
+                dragProps={disabled ? undefined : { ...attributes, ...listeners }}
                 onClick={() => {
                     if (!suppressClickRef.current) onClick();
                 }}
@@ -107,12 +110,14 @@ function TaskColumn({
     tasks,
     onTaskClick,
     canDrop,
+    canMoveTask,
 }: {
     status: BoardStatus;
     label: string;
     tasks: TaskSummary[];
     onTaskClick: (taskId: number) => void;
     canDrop: boolean;
+    canMoveTask: TaskBoardProps['canMoveTask'];
 }) {
     const { t } = useTranslation();
     const { isOver, setNodeRef } = useDroppable({
@@ -147,7 +152,7 @@ function TaskColumn({
             >
                 <AnimatePresence initial={false}>
                     {tasks.map((task) => (
-                        <DraggableTaskCard key={task.id} task={task} onClick={() => onTaskClick(task.id)} />
+                        <DraggableTaskCard key={task.id} task={task} disabled={!BOARD_COLUMNS.some((column) => canMoveTask(task, column.status))} onClick={() => onTaskClick(task.id)} />
                     ))}
                 </AnimatePresence>
                 {tasks.length === 0 ? (
@@ -292,7 +297,8 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                                 label={t(col.labelKey)}
                                 tasks={col.tasks}
                                 onTaskClick={onTaskClick}
-                                canDrop={!activeTask || !canMoveTask || canMoveTask(activeTask, col.status)}
+                                canDrop={!activeTask || canMoveTask(activeTask, col.status)}
+                                canMoveTask={canMoveTask}
                             />
                         ))}
                     </div>

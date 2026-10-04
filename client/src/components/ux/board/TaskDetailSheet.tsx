@@ -52,7 +52,7 @@ import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { hasLeadershipAccess } from '@shared/academy';
+import { canManageBoardTask } from '@shared/board-permissions';
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
@@ -190,10 +190,17 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
         queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
     };
 
-    const isTaskSupervisor = hasLeadershipAccess(user);
-    const canManage = !!task && !!user && (user.id === task.creatorId || user.id === task.assigneeId || isTaskSupervisor);
-    const canAcceptReopen = !!task && !!user && user.id === task.creatorId;
-    const canDelete = canAcceptReopen || (!!task && isTaskSupervisor);
+    const canManage = canManageBoardTask(user, task);
+    const canAcceptReopen = canManage;
+    const canDelete = canManage;
+
+    useEffect(() => {
+        if (!canManage) {
+            setEditing(false);
+            setConfirmDelete(false);
+            setPendingDelete(null);
+        }
+    }, [canManage]);
 
     const onError = (error: Error) => { hapticNotify('error'); toast({ title: error.message, variant: 'destructive' }); };
 
@@ -206,9 +213,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                 color: draftColor,
                 dueAt: draftDue ? dueInputToInstant(draftDue) : null,
             };
-            if (isTaskSupervisor) {
-                payload.assigneeId = draftAssignee === UNASSIGNED ? null : Number(draftAssignee);
-            }
+            payload.assigneeId = draftAssignee === UNASSIGNED ? null : Number(draftAssignee);
             return apiRequest('PATCH', `/api/board/tasks/${taskId}`, payload);
         },
         onSuccess: () => { hapticNotify('success'); invalidate(); setEditing(false); toast({ title: t('taskUpdated') }); },
@@ -371,7 +376,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                         <SheetHeader className="space-y-0 border-b border-border p-4 pr-12 sm:p-5 sm:pr-14">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
-                                    {editing ? (
+                                    {editing && canManage ? (
                                         <><SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle><Input disabled={saveMutation.isPending} aria-label={t('taskTitle')} value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="text-base font-semibold" /></>
                                     ) : (
                                         <SheetTitle className="text-base leading-snug">{task.title}</SheetTitle>
@@ -423,18 +428,20 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         {task.status === 'in_progress' ? t('miniTaskMarkDone') : t('miniTaskStartWork')}
                                     </Button>
                                 ) : null}
-                                <Select
-                                    value={WORKING_STATUSES.includes(task.status) ? task.status : ''}
-                                    onValueChange={(v) => statusMutation.mutate(v as BoardStatus)}
-                                    disabled={!canManage || task.status === 'accepted' || statusMutation.isPending}
-                                >
-                                    <SelectTrigger aria-label={t('status')} className={cn('h-9 w-44', tasksOnly && 'w-full')}><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
-                                    <SelectContent>
-                                        {WORKING_STATUSES.map((s) => (
-                                            <SelectItem key={s} value={s}>{columnLabel(s, t)}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                {canManage ? (
+                                    <Select
+                                        value={WORKING_STATUSES.includes(task.status) ? task.status : ''}
+                                        onValueChange={(v) => statusMutation.mutate(v as BoardStatus)}
+                                        disabled={!canManage || task.status === 'accepted' || statusMutation.isPending}
+                                    >
+                                        <SelectTrigger aria-label={t('status')} className={cn('h-9 w-44', tasksOnly && 'w-full')}><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
+                                        <SelectContent>
+                                            {WORKING_STATUSES.map((s) => (
+                                                <SelectItem key={s} value={s}>{columnLabel(s, t)}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : <Badge variant="outline">{columnLabel(task.status, t)}</Badge>}
 
                                 {task.status === 'done' && canAcceptReopen ? (
                                     <Button
@@ -463,7 +470,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                             {/* Meta + edit form */}
                             <div className="space-y-4 border-b border-border p-5">
-                                {editing ? (
+                                {editing && canManage ? (
                                     <>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
@@ -484,7 +491,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label htmlFor="task-detail-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
-                                                {isTaskSupervisor ? (
+                                                {canManage ? (
                                                     <Select disabled={saveMutation.isPending} value={draftAssignee} onValueChange={setDraftAssignee}>
                                                         <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
@@ -542,17 +549,21 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                                 {/* Comments */}
                                 <TabsContent value="comments" className="mt-4 space-y-3">
-                                    <div className="flex gap-2">
-                                        <Textarea
-                                            value={commentText}
-                                            onChange={(e) => setCommentText(e.target.value)}
-                                            placeholder={t('addCommentPlaceholder')}
-                                            rows={2}
-                                            className="resize-none"
-                                            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); } }}
-                                        />
-                                        <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={sendComment}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
-                                    </div>
+                                    {canManage ? (
+                                        <>
+                                            <div className="flex gap-2">
+                                                <Textarea
+                                                    value={commentText}
+                                                    onChange={(e) => setCommentText(e.target.value)}
+                                                    placeholder={t('addCommentPlaceholder')}
+                                                    rows={2}
+                                                    className="resize-none"
+                                                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); } }}
+                                                />
+                                                <Button size="sm" className="self-end" disabled={!commentText.trim() || commentMutation.isPending} onClick={sendComment}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
+                                            </div>
+                                        </>
+                                    ) : null}
                                     {task.comments.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noCommentsYet')}</p>
                                     ) : (
@@ -567,7 +578,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                             <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt, language)}</span>
                                                         </div>
-                                                        {user && (user.id === c.author?.id || isTaskSupervisor) ? (
+                                                        {canManage && user?.id === c.author?.id ? (
                                                             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => { setDeleteError(''); setPendingDelete({ kind: 'comment', id: c.id }); } }><Trash2 className="size-3.5" /></Button>
                                                         ) : null}
                                                     </div>
@@ -580,24 +591,30 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                                 {/* Checklist */}
                                 <TabsContent value="checklist" className="mt-4 space-y-3">
-                                    <div className="flex gap-2">
-                                        <Input
-                                            value={checklistText}
-                                            onChange={(e) => setChecklistText(e.target.value)}
-                                            placeholder={t('addChecklistPlaceholder')}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
-                                        />
-                                        <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
-                                    </div>
+                                    {canManage ? (
+                                        <>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    value={checklistText}
+                                                    onChange={(e) => setChecklistText(e.target.value)}
+                                                    placeholder={t('addChecklistPlaceholder')}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
+                                                />
+                                                <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
+                                            </div>
+                                        </>
+                                    ) : null}
                                     {task.checklist.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noChecklistYet')}</p>
                                     ) : (
                                         <ul className="space-y-1.5">
                                             {task.checklist.map((item) => (
                                                 <li key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60">
-                                                    <Checkbox aria-label={item.content} checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
+                                                    <Checkbox disabled={!canManage} aria-label={item.content} checked={item.isDone} onCheckedChange={(v) => toggleChecklistMutation.mutate({ id: item.id, isDone: Boolean(v) })} />
                                                     <span className={cn('flex-1 text-sm', item.isDone && 'text-muted-foreground line-through')}>{item.content}</span>
-                                                    <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-100 transition-opacity hover:opacity-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" aria-label={t('delete')} onClick={() => { setDeleteError(''); setPendingDelete({ kind: 'checklist', id: item.id }); } }><Trash2 className="size-3.5" /></Button>
+                                                    {canManage ? (
+                                                        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground opacity-100 transition-opacity hover:opacity-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100" aria-label={t('delete')} onClick={() => { setDeleteError(''); setPendingDelete({ kind: 'checklist', id: item.id }); } }><Trash2 className="size-3.5" /></Button>
+                                                    ) : null}
                                                 </li>
                                             ))}
                                         </ul>
@@ -606,27 +623,31 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                                 {/* Attachments */}
                                 <TabsContent value="attachments" className="mt-4 space-y-3">
-                                    {failedUpload ? <div role="alert" className="flex items-center gap-2 text-sm text-destructive"><span className="min-w-0 break-all">{t('attachmentUploadFailed')}: {failedUpload.name}</span><Button variant="outline" disabled={uploadMutation.isPending} onClick={() => handleAttachmentSelected(failedUpload)}>{t('retry')}</Button></div> : null}
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept={ALLOWED_ATTACHMENT_EXTENSIONS.join(',')}
-                                        className="hidden"
-                                        onChange={(e) => { const f = e.target.files?.[0]; handleAttachmentSelected(f); e.target.value = ''; }}
-                                    />
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
-                                            {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
-                                        </Button>
-                                        <span className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</span>
-                                    </div>
-                                    {uploadPercent !== null ? (
-                                        <div className="flex items-center gap-2" role="progressbar" aria-label={t('attachmentUploading')} aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>
-                                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                                                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadPercent}%` }} />
+                                    {canManage ? (
+                                        <>
+                                            {failedUpload ? <div role="alert" className="flex items-center gap-2 text-sm text-destructive"><span className="min-w-0 break-all">{t('attachmentUploadFailed')}: {failedUpload.name}</span><Button variant="outline" disabled={uploadMutation.isPending} onClick={() => handleAttachmentSelected(failedUpload)}>{t('retry')}</Button></div> : null}
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept={ALLOWED_ATTACHMENT_EXTENSIONS.join(',')}
+                                                className="hidden"
+                                                onChange={(e) => { const f = e.target.files?.[0]; handleAttachmentSelected(f); e.target.value = ''; }}
+                                            />
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
+                                                    {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
+                                                </Button>
+                                                <span className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</span>
                                             </div>
-                                            <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{uploadPercent}%</span>
-                                        </div>
+                                            {uploadPercent !== null ? (
+                                                <div className="flex items-center gap-2" role="progressbar" aria-label={t('attachmentUploading')} aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>
+                                                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadPercent}%` }} />
+                                                    </div>
+                                                    <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{uploadPercent}%</span>
+                                                </div>
+                                            ) : null}
+                                        </>
                                     ) : null}
                                     {task.attachments.length === 0 ? (
                                         <p className="py-6 text-center text-sm text-muted-foreground">{t('noAttachmentsYet')}</p>
@@ -640,7 +661,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                         <p className="text-[11px] text-muted-foreground">{formatFileSize(a.size)} · {a.uploadedBy?.fullName ?? '—'}</p>
                                                     </div>
                                                     <TaskAttachmentDownload id={a.id} name={a.originalName} compact />
-                                                    {user && (user.id === a.uploadedBy?.id || user.id === task.creatorId || isTaskSupervisor) ? (
+                                                    {canManage ? (
                                                         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => { setDeleteError(''); setPendingDelete({ kind: 'attachment', id: a.id }); } }><Trash2 className="size-3.5" /></Button>
                                                     ) : null}
                                                 </li>

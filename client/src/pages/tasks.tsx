@@ -19,7 +19,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useStickyState } from '@/hooks/useStickyState';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { hasLeadershipAccess, type AcademyModule } from '@shared/academy';
+import type { AcademyModule } from '@shared/academy';
+import { canManageBoardTask } from '@shared/board-permissions';
 import type { TranslationKey } from '@/lib/i18n';
 import {
     TASK_OWNER_ALL,
@@ -71,7 +72,6 @@ export default function TasksPage() {
     const { user } = useAuth();
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const isTaskSupervisor = hasLeadershipAccess(user);
 
     const [createOpen, setCreateOpen] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -157,13 +157,7 @@ export default function TasksPage() {
 
     const ownerOptions = useMemo(() => {
         const options = new Map<number, UserMini>();
-        // A head receives every task, so the whole roster is a fair offer — a
-        // colleague with a zero next to their name simply has nothing open.
-        // Everyone else only ever receives the tasks they take part in, so the
-        // roster would be a list of names that all resolve to an empty board.
-        if (isTaskSupervisor) {
-            for (const employee of users) options.set(employee.id, employee);
-        }
+        for (const employee of users) options.set(employee.id, employee);
         // A deactivated employee drops out of /api/users while their open tasks
         // stay on the board, so whoever is still on a card stays selectable.
         for (const task of tasks) {
@@ -173,7 +167,7 @@ export default function TasksPage() {
         }
         if (user) options.delete(user.id);
         return [...options.values()].sort((a, b) => a.fullName.localeCompare(b.fullName, language));
-    }, [isTaskSupervisor, language, tasks, user, users]);
+    }, [language, tasks, user, users]);
 
     // A colleague can leave the list between refetches — their last shared task
     // was deleted, or their account was closed. Fall back to the viewer's own
@@ -192,6 +186,7 @@ export default function TasksPage() {
     }, [ownerFilter, ownerOptions, t]);
 
     const handleStatusChange = async (taskId: number, status: BoardStatus): Promise<boolean> => {
+        if (!canManageBoardTask(user, tasks.find((task) => task.id === taskId))) return false;
         try {
             await boardApi.updateTaskStatus(taskId, status);
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
@@ -209,6 +204,7 @@ export default function TasksPage() {
     };
 
     const handleReschedule = async (taskId: number, dueAt: string | null): Promise<boolean> => {
+        if (!canManageBoardTask(user, tasks.find((task) => task.id === taskId))) return false;
         try {
             await boardApi.updateTaskDueAt(taskId, dueAt);
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
@@ -227,8 +223,7 @@ export default function TasksPage() {
     };
 
     const canMoveTask = (task: BoardTasksResponse['tasks'][number], status: BoardStatus) => {
-        if (task.status === status) return true;
-        return task.status !== 'accepted' && status !== 'accepted';
+        return canManageBoardTask(user, task) && task.status !== 'accepted' && status !== 'accepted';
     };
 
     // The open task lives in the URL (`?task=`): browser Back closes the sheet
@@ -344,11 +339,9 @@ export default function TasksPage() {
                                             count={user ? taskCounts.get(user.id) ?? 0 : 0}
                                         />
                                     </SelectItem>
-                                    {isTaskSupervisor ? (
-                                        <SelectItem value={TASK_OWNER_ALL} textValue={t('allEmployees')}>
-                                            <OwnerOption name={t('allEmployees')} count={tasks.length} />
-                                        </SelectItem>
-                                    ) : null}
+                                    <SelectItem value={TASK_OWNER_ALL} textValue={t('allEmployees')}>
+                                        <OwnerOption name={t('allEmployees')} count={tasks.length} />
+                                    </SelectItem>
                                     {ownerOptions.map((option) => (
                                         <SelectItem
                                             key={option.id}
@@ -459,6 +452,7 @@ export default function TasksPage() {
                                 tasks={visibleTasks}
                                 onTaskClick={openTask}
                                 onReschedule={handleReschedule}
+                                canRescheduleTask={(task) => canManageBoardTask(user, task)}
                             />
                         ) : (
                             <TaskBoard

@@ -72,6 +72,7 @@ interface TaskCalendarProps {
     onTaskClick: (taskId: number) => void;
     /** Resolves false when the server refused, so the move can be rolled back. */
     onReschedule: (taskId: number, dueAt: string | null) => Promise<boolean>;
+    canRescheduleTask: (task: TaskSummary) => boolean;
 }
 
 type TaskCalendarState = 'overdue' | 'planned' | 'finished';
@@ -146,6 +147,7 @@ function TaskChip({
     roomy = false,
     dragProps,
     isDragging = false,
+    isDraggable = false,
     onClick,
 }: {
     task: TaskSummary;
@@ -153,6 +155,7 @@ function TaskChip({
     roomy?: boolean;
     dragProps?: ButtonHTMLAttributes<HTMLButtonElement> & { ref?: (node: HTMLElement | null) => void };
     isDragging?: boolean;
+    isDraggable?: boolean;
     onClick?: () => void;
 }) {
     const { t, language } = useTranslation();
@@ -185,7 +188,7 @@ function TaskChip({
                 'w-full rounded-md border border-l-[3px] text-left transition-[box-shadow,transform] duration-150 ease-out',
                 'hover:scale-[1.02] hover:shadow-md active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 roomy ? 'px-3 py-2.5' : 'px-1.5 py-1',
-                dragProps && 'cursor-grab active:cursor-grabbing',
+                isDraggable && 'cursor-grab active:cursor-grabbing',
                 isDragging && 'opacity-25',
             )}
             style={{
@@ -221,16 +224,19 @@ function DraggableTaskChip({
     state,
     roomy = false,
     onClick,
+    disabled,
 }: {
     task: TaskSummary;
     state: TaskCalendarState;
     roomy?: boolean;
     onClick: () => void;
+    disabled: boolean;
 }) {
     const suppressClickRef = useRef(false);
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `calendar-task-${task.id}`,
         data: { taskId: task.id, dueAt: task.dueAt },
+        disabled,
     });
 
     /* A drag ends with a click event on the same element; without this the
@@ -251,7 +257,8 @@ function DraggableTaskChip({
             state={state}
             roomy={roomy}
             isDragging={isDragging}
-            dragProps={{ ...attributes, ...listeners, ref: setNodeRef }}
+            isDraggable={!disabled}
+            dragProps={disabled ? { ref: setNodeRef } : { ...attributes, ...listeners, ref: setNodeRef }}
             onClick={() => {
                 if (!suppressClickRef.current) onClick();
             }}
@@ -259,7 +266,7 @@ function DraggableTaskChip({
     );
 }
 
-export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarProps) {
+export function TaskCalendar({ tasks, onTaskClick, onReschedule, canRescheduleTask }: TaskCalendarProps) {
     const { t, language } = useTranslation();
     const locale = resolveLocale(language);
     const isCompactViewport = useIsCompactViewport();
@@ -371,7 +378,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
 
     const moveTask = useCallback((taskId: number, dueAt: string | null) => {
         const task = calendarTasks.find((item) => item.id === taskId);
-        if (!task || task.dueAt === dueAt) return;
+        if (!task || !canRescheduleTask(task) || task.dueAt === dueAt) return;
 
         const baseline = latestTasksRef.current.find((item) => item.id === taskId)?.dueAt ?? task.dueAt;
         const token = ++nextMoveTokenRef.current;
@@ -393,7 +400,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
             .then(() => onReschedule(taskId, dueAt))
             .then(finishMove)
             .catch(() => finishMove(false));
-    }, [calendarTasks, onReschedule]);
+    }, [calendarTasks, canRescheduleTask, onReschedule]);
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -409,6 +416,8 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
         const taskId = Number(event.active.data.current?.taskId);
         setActiveTaskId(null);
         if (!Number.isFinite(taskId) || !event.over) return;
+        const draggedTask = latestTasksRef.current.find((task) => task.id === taskId);
+        if (!draggedTask || !canRescheduleTask(draggedTask)) return;
 
         if (event.over.id === UNSCHEDULED_DROP_ID) {
             /* Dropping a deadline is the one move on this screen that destroys
@@ -427,7 +436,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
            toast for a deadline that did not move. */
         if (previousDueAt && academyDateInputValue(previousDueAt) === dateKey) return;
         moveTask(taskId, dueAtForDay(dateKey, previousDueAt));
-    }, [moveTask]);
+    }, [canRescheduleTask, moveTask]);
 
     const shift = (direction: number) => {
         setAnchorKey((current) => (
@@ -608,6 +617,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                             tasks={dayTasks}
                                             now={now}
                                             onTaskClick={onTaskClick}
+                                            canRescheduleTask={canRescheduleTask}
                                         />
                                     );
                                 })}
@@ -647,6 +657,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                                                     tasks={shown}
                                                     now={now}
                                                     onTaskClick={onTaskClick}
+                                                    canRescheduleTask={canRescheduleTask}
                                                     overflow={dayTasks.length - shown.length}
                                                     isExpanded={isExpanded}
                                                     canExpand={effectiveView === 'month' && dayTasks.length > VISIBLE_PER_DAY}
@@ -661,7 +672,7 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                     </div>
 
                     {panelOpen ? (
-                        <UnscheduledPanel tasks={unscheduled} now={now} onTaskClick={onTaskClick} />
+                        <UnscheduledPanel tasks={unscheduled} now={now} onTaskClick={onTaskClick} canRescheduleTask={canRescheduleTask} />
                     ) : null}
                 </CardContent>
 
@@ -721,6 +732,7 @@ function CalendarDayCell({
     tasks,
     now,
     onTaskClick,
+    canRescheduleTask,
     overflow,
     isExpanded,
     canExpand,
@@ -735,6 +747,7 @@ function CalendarDayCell({
     tasks: TaskSummary[];
     now: number;
     onTaskClick: (taskId: number) => void;
+    canRescheduleTask: TaskCalendarProps['canRescheduleTask'];
     overflow: number;
     isExpanded: boolean;
     canExpand: boolean;
@@ -772,6 +785,7 @@ function CalendarDayCell({
                     <DraggableTaskChip
                         key={task.id}
                         task={task}
+                        disabled={!canRescheduleTask(task)}
                         state={taskCalendarState(task, now)}
                         onClick={() => onTaskClick(task.id)}
                     />
@@ -799,6 +813,7 @@ function AgendaDay({
     tasks,
     now,
     onTaskClick,
+    canRescheduleTask,
 }: {
     dateKey: string;
     label: string;
@@ -806,6 +821,7 @@ function AgendaDay({
     tasks: TaskSummary[];
     now: number;
     onTaskClick: (taskId: number) => void;
+    canRescheduleTask: TaskCalendarProps['canRescheduleTask'];
 }) {
     const { isOver, setNodeRef } = useDroppable({ id: `task-day-${dateKey}`, data: { dateKey } });
 
@@ -825,6 +841,7 @@ function AgendaDay({
                     <DraggableTaskChip
                         key={task.id}
                         task={task}
+                        disabled={!canRescheduleTask(task)}
                         state={taskCalendarState(task, now)}
                         roomy
                         onClick={() => onTaskClick(task.id)}
@@ -839,10 +856,12 @@ function UnscheduledPanel({
     tasks,
     now,
     onTaskClick,
+    canRescheduleTask,
 }: {
     tasks: TaskSummary[];
     now: number;
     onTaskClick: (taskId: number) => void;
+    canRescheduleTask: TaskCalendarProps['canRescheduleTask'];
 }) {
     const { t } = useTranslation();
     const { isOver, setNodeRef } = useDroppable({ id: UNSCHEDULED_DROP_ID });
@@ -877,6 +896,7 @@ function UnscheduledPanel({
                             <DraggableTaskChip
                                 key={task.id}
                                 task={task}
+                                disabled={!canRescheduleTask(task)}
                                 state={taskCalendarState(task, now)}
                                 roomy
                                 onClick={() => onTaskClick(task.id)}

@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskCalendar, dueAtForDay } from '../client/src/components/ux/board/TaskCalendar';
+import { TaskBoard } from '../client/src/components/ux/board/TaskBoard';
+import { TooltipProvider } from '../client/src/components/ui/tooltip';
+import { canManageBoardTask } from '../shared/board-permissions';
 import { i18n } from '../client/src/lib/i18n';
 import type { TaskSummary } from '../client/src/lib/boardTypes';
 
@@ -63,10 +66,10 @@ describe('task calendar', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  const renderCalendar = (calendarTasks = tasks) => {
+  const renderCalendar = (calendarTasks = tasks, canRescheduleTask: (task: TaskSummary) => boolean = () => true) => {
     const onTaskClick = vi.fn();
     const onReschedule = vi.fn().mockResolvedValue(true);
-    render(<TaskCalendar tasks={calendarTasks} onTaskClick={onTaskClick} onReschedule={onReschedule} />);
+    render(<TaskCalendar tasks={calendarTasks} onTaskClick={onTaskClick} onReschedule={onReschedule} canRescheduleTask={canRescheduleTask} />);
     return { onTaskClick, onReschedule };
   };
 
@@ -143,6 +146,32 @@ describe('task calendar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Today' }));
     expect(screen.getByTestId('task-calendar-task-1')).toBeTruthy();
+  });
+
+  it('keeps another employee task clickable without registering it for deadline dragging', async () => {
+    const foreign = task({ id: 90, creator: person, assignee: { ...person, id: 8 }, dueAt: '2026-06-18T12:00:00.000Z' });
+    const mine = task({ id: 91, assignee: person, dueAt: '2026-06-18T12:00:00.000Z' });
+    const { onTaskClick, onReschedule } = renderCalendar([foreign, mine], (task) => canManageBoardTask(person, task));
+    expect(screen.getByTestId('task-calendar-task-90').getAttribute('aria-roledescription')).toBeNull();
+    expect(screen.getByTestId('task-calendar-task-91').getAttribute('aria-roledescription')).toBe('draggable');
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByTestId('task-calendar-task-90'));
+    expect(onTaskClick).toHaveBeenCalledWith(90);
+    expect(onReschedule).not.toHaveBeenCalled();
+  });
+
+  it('keeps another employee task clickable without registering it for column dragging', async () => {
+    const foreign = task({ id: 90, title: 'Foreign task', creator: person, assignee: { ...person, id: 8 } });
+    const mine = task({ id: 91, title: 'My task', assignee: person });
+    const onTaskClick = vi.fn();
+    const onStatusChange = vi.fn().mockResolvedValue(true);
+    render(<TooltipProvider><TaskBoard tasks={[foreign, mine]} onTaskClick={onTaskClick} onStatusChange={onStatusChange} canMoveTask={(task) => canManageBoardTask(person, task)} /></TooltipProvider>);
+    const foreignCard = screen.getByText('Foreign task').closest('button');
+    const ownCard = screen.getByText('My task').closest('button');
+    expect(foreignCard?.getAttribute('aria-roledescription')).toBeNull();
+    expect(ownCard?.getAttribute('aria-roledescription')).toBe('draggable');
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByText('Foreign task'));
+    expect(onTaskClick).toHaveBeenCalledWith(90);
+    expect(onStatusChange).not.toHaveBeenCalled();
   });
 
   it('asks before a drag strips a deadline, since nothing here can undo it', () => {

@@ -155,7 +155,7 @@ describe("board routes", () => {
     return app;
   };
 
-  it("lists only the current employee's visible tasks for non-administrators", async () => {
+  it("lets every employee view the shared task board", async () => {
     const app = await createApp();
     const agent = request.agent(app);
 
@@ -163,10 +163,10 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id, false);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false);
   });
 
-  it("counts only the signed-in creator's tasks awaiting acceptance on the visible board", async () => {
+  it("counts the signed-in assignee's tasks awaiting acceptance", async () => {
     const app = await createApp();
     const agent = request.agent(app);
 
@@ -198,7 +198,7 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks?archived=true");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, staffUser.id, true);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, true);
   });
 
   it("rejects an invalid archive filter", async () => {
@@ -211,6 +211,53 @@ describe("board routes", () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Invalid archive filter" });
     expect(mockStorage.board.getTasks).not.toHaveBeenCalled();
+  });
+
+  it.each([staffUser, adminUser])('makes other employees tasks read-only for $module, even when the actor created them', async (actor) => {
+    const task = { id: 100, boardId: 1, title: 'Delegated work', creatorId: actor.id, assigneeId: 8, status: 'todo' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.getTaskDetail.mockResolvedValue(task);
+    mockStorage.board.getComment.mockResolvedValue({ id: 10, taskId: 100, authorId: actor.id });
+    mockStorage.board.getChecklistItem.mockResolvedValue({ id: 10, taskId: 100 });
+    mockStorage.board.getAttachment.mockResolvedValue({ id: 10, taskId: 100, uploadedBy: actor.id });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor.id });
+    expect((await agent.get('/api/board/tasks/100')).status).toBe(200);
+    const actions = [
+      () => agent.patch('/api/board/tasks/100').send({ title: 'Changed', assigneeId: actor.id, creatorId: actor.id }),
+      () => agent.patch('/api/board/tasks/100/status').send({ status: 'in_progress', position: 5 }),
+      () => agent.patch('/api/board/tasks/100/status').send({ status: 'todo', position: 5 }),
+      () => agent.delete('/api/board/tasks/100'),
+      () => agent.post('/api/board/tasks/100/comments').send({ body: 'Changed' }),
+      () => agent.patch('/api/board/comments/10').send({ body: 'Changed' }),
+      () => agent.delete('/api/board/comments/10'),
+      () => agent.post('/api/board/tasks/100/checklist').send({ content: 'Changed' }),
+      () => agent.patch('/api/board/checklist/10').send({ isDone: true }),
+      () => agent.delete('/api/board/checklist/10'),
+      () => agent.post('/api/board/tasks/100/attachments').send({}),
+      () => agent.delete('/api/board/attachments/10'),
+    ];
+    const responses = [];
+    for (const action of actions) responses.push(await action());
+    expect(responses.map((response) => response.status)).toEqual(Array(12).fill(403));
+    for (const mutation of [mockStorage.board.updateTask, mockStorage.board.deleteTask, mockStorage.board.createActivity,
+      mockStorage.board.createComment, mockStorage.board.updateComment, mockStorage.board.deleteComment,
+      mockStorage.board.createChecklistItem, mockStorage.board.updateChecklistItem, mockStorage.board.deleteChecklistItem,
+      mockStorage.board.createAttachmentWithActivity, mockStorage.board.deleteAttachment]) {
+      expect(mutation).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([staffUser, adminUser])('lets an assignee edit and delete their own task without creator or module privileges: $module', async (actor) => {
+    const task = { id: 100, boardId: 1, title: 'Assigned to me', creatorId: 8, assigneeId: actor.id, status: 'todo' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...task, ...updates }));
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor.id });
+    expect((await agent.patch('/api/board/tasks/100').send({ title: 'My change', dueAt: '2026-10-06T12:00:00Z' })).status).toBe(200);
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect((await agent.delete('/api/board/tasks/100')).status).toBe(200);
+    expect(mockStorage.board.deleteTask).toHaveBeenCalledWith(100, actor.id);
   });
 
   it("assigns new staff-created tasks to the current employee", async () => {
@@ -274,7 +321,7 @@ describe("board routes", () => {
     mockStorage.board.getTask.mockResolvedValue({ ...task, status: 'todo' });
     const creator = request.agent(await createApp());
     await creator.post('/test/session').send({ userId: 7 });
-    expect((await creator.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect((await creator.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(403);
     expect(progressNotify).not.toHaveBeenCalled();
   });
 
@@ -418,7 +465,7 @@ describe("board routes", () => {
       color: null,
       position: 0,
       creatorId: staffUser.id,
-      assigneeId: assigneeUser.id,
+      assigneeId: staffUser.id,
       dueAt: null,
       acceptedAt: null,
       acceptedBy: null,
@@ -462,13 +509,11 @@ describe("board routes", () => {
   });
 
   it.each([
-    { actor: 8, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
-    { actor: 1, creator: 7, assignee: 1, from: 'done', to: 'accepted' },
+    { actor: 7, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
     { actor: 1, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
-    { actor: 1, creator: null, assignee: 1, from: 'done', to: 'accepted' },
-    { actor: 8, creator: 7, assignee: 8, from: 'accepted', to: 'accepted' },
-    { actor: 1, creator: 7, assignee: 1, from: 'accepted', to: 'todo' },
-  ])('denies accept/reopen by non-creator $actor (including administrators)', async ({ actor, creator, assignee, from, to }) => {
+    { actor: 1, creator: 1, assignee: 8, from: 'accepted', to: 'todo' },
+    { actor: 7, creator: 7, assignee: null, from: 'done', to: 'accepted' },
+  ])('denies accept/reopen to non-assignee $actor (including creators and administrators)', async ({ actor, creator, assignee, from, to }) => {
     mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: creator, assigneeId: assignee, status: from });
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: actor });
@@ -478,8 +523,8 @@ describe("board routes", () => {
     expect(mockStorage.board.createActivity).not.toHaveBeenCalled();
   });
 
-  it('allows self-assigned tasks only because the actor is also the creator', async () => {
-    const task = { id: 100, boardId: 1, creatorId: 7, assigneeId: 7, status: 'done' };
+  it('lets an assignee archive completed work', async () => {
+    const task = { id: 100, boardId: 1, creatorId: 8, assigneeId: 7, status: 'done' };
     mockStorage.board.getTask.mockResolvedValue(task);
     mockStorage.board.updateTask.mockResolvedValue({ ...task, status: 'accepted' });
     const agent = request.agent(await createApp());
@@ -488,7 +533,7 @@ describe("board routes", () => {
   });
 
   it('makes repeated acceptance idempotent without overwriting approval history', async () => {
-    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8, status: 'accepted', acceptedBy: 7 });
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 8, assigneeId: 7, status: 'accepted', acceptedBy: 7 });
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: 7 });
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
@@ -519,12 +564,12 @@ describe("board routes", () => {
     mockStorage.board.createAttachment.mockReset();
   });
 
-  it('denies upload/download to an unrelated employee before exposing files', async () => {
-    mockStorage.board.getAttachment.mockResolvedValue({ id: 10, taskId: 100 });
+  it('denies uploads to observers while allowing them to read task attachments', async () => {
+    mockStorage.board.getAttachment.mockResolvedValue({ id: 10, taskId: 100, fileName: 'invalid-name' });
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: 8 });
     expect((await agent.post('/api/board/tasks/100/attachments').attach('file', Buffer.from('x'), 'x.pdf')).status).toBe(403);
-    expect((await agent.get('/api/board/attachments/10/download')).status).toBe(403);
+    expect((await agent.get('/api/board/attachments/10/download')).status).toBe(404);
     expect(mockStorage.board.createAttachment).not.toHaveBeenCalled();
   });
 

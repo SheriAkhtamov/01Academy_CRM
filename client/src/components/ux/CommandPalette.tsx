@@ -35,7 +35,7 @@ import {
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
-import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
+import { MODULE_NAVIGATION, SYSTEM_MANAGEMENT_NAVIGATION_ITEMS, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
 interface SearchItem {
   id: string;
@@ -92,7 +92,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         const canOpen = module === 'finance' ? hasFinanceAccess(user) : hasModule(module);
         if (!canOpen) return [];
         const definition = MODULE_NAVIGATION[module];
-        return definition.items.map((item) => ({
+        const items = module === 'administration'
+          ? [...definition.items, ...SYSTEM_MANAGEMENT_NAVIGATION_ITEMS]
+          : definition.items;
+        return items.map((item) => ({
           id: `nav-${module}-${item.id}`,
           type: t(definition.nameKey),
           title: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)

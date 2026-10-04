@@ -33,6 +33,7 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/admin/tasks',
   '/admin/academy-settings',
   '/admin/audit',
+  '/admin/system-management/audit',
   '/tasks',
 ]);
 

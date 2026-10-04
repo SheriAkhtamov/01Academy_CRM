@@ -287,7 +287,8 @@ export function AppRouter() {
             <AcademySettings />
           </ModuleGuard>
         )} />
-        <Route path="/admin/audit" component={() => (
+        <Route path="/admin/audit" component={() => <Redirect to="/admin/system-management/audit" />} />
+        <Route path="/admin/system-management/audit" component={() => (
           <ModuleGuard module="administration">
             <AuditPage />
           </ModuleGuard>

@@ -36,6 +36,7 @@ describe('isContainedModuleRoute', () => {
     '/admin/tasks',
     '/admin/academy-settings',
     '/admin/audit',
+    '/admin/system-management/audit',
     '/tasks',
     '/tasks?task=42',
   ])('keeps the app shell from adding a second scrollbar for %s', (location) => {

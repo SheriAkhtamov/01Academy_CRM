@@ -6,7 +6,6 @@ import {
   BellRing,
   Loader2,
   MessageCircle,
-  Plug,
   Search,
   Send,
   Users,
@@ -54,6 +53,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatUserModule, getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
+import { SYSTEM_MANAGEMENT_NAVIGATION_ITEMS } from '@/lib/moduleNavigation';
 import { messageQueryKeys } from '@/features/messages/api';
 import { sendEmployeeBroadcast } from '@/features/employee-broadcast/api';
 
@@ -77,18 +77,6 @@ interface BroadcastEmployee {
 
 function SystemManagementOverview() {
   const { t } = useTranslation();
-  const sections = [
-    {
-      href: '/admin/system-management/integrations',
-      icon: Plug,
-      title: t('navIntegrations'),
-    },
-    {
-      href: '/admin/system-management/employee-notifications',
-      icon: BellRing,
-      title: t('employeeNotifications'),
-    },
-  ];
 
   return (
     <ModulePage>
@@ -97,7 +85,7 @@ function SystemManagementOverview() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {sections.map((section) => {
+        {SYSTEM_MANAGEMENT_NAVIGATION_ITEMS.map((section) => {
           const Icon = section.icon;
           return (
             <Link
@@ -112,7 +100,7 @@ function SystemManagementOverview() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-semibold text-foreground">{section.title}</h2>
+                      <h2 className="font-semibold text-foreground">{t(section.labelKey)}</h2>
                       <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
                     </div>
                   </div>

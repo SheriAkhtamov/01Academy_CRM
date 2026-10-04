@@ -5,6 +5,7 @@ import {
   ArrowUpFromLine,
   Banknote,
   BarChart3,
+  BellRing,
   Calendar,
   ClipboardCheck,
   ClipboardList,
@@ -18,6 +19,7 @@ import {
   MousePointerClick,
   MessagesSquare,
   PhoneCall,
+  Plug,
   ReceiptText,
   ShieldCheck,
   SlidersHorizontal,
@@ -53,7 +55,6 @@ export const MODULE_NAVIGATION = {
       { id: 'employees', labelKey: 'employees', href: '/employees', icon: Users },
       { id: 'academy-structure', labelKey: 'academyConfiguration', href: '/admin/academy-settings', icon: SlidersHorizontal },
       { id: 'sales-management', labelKey: 'salesSettings', href: '/admin/sales-settings', icon: UserCheck },
-      { id: 'audit', labelKey: 'auditLog', href: '/admin/audit', icon: ClipboardList },
       { id: 'system-management', labelKey: 'systemManagement', href: '/admin/system-management', icon: Settings2 },
     ],
   },
@@ -116,6 +117,12 @@ export const TASKS_NAVIGATION_ITEM = {
   href: '/tasks',
   icon: KanbanSquare,
 } as const satisfies ModuleNavigationItem;
+
+export const SYSTEM_MANAGEMENT_NAVIGATION_ITEMS = [
+  { id: 'integrations', labelKey: 'navIntegrations', href: '/admin/system-management/integrations', icon: Plug },
+  { id: 'employee-notifications', labelKey: 'employeeNotifications', href: '/admin/system-management/employee-notifications', icon: BellRing },
+  { id: 'audit', labelKey: 'auditLog', href: '/admin/system-management/audit', icon: ClipboardList },
+] as const satisfies readonly ModuleNavigationItem[];
 
 export function moduleSectionLabelKey(
   module: AcademyAccessModule,

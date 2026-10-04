@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { translations } from '../client/src/lib/i18n';
 import {
   MODULE_NAVIGATION,
+  SYSTEM_MANAGEMENT_NAVIGATION_ITEMS,
   TASKS_NAVIGATION_ITEM,
 } from '../client/src/lib/moduleNavigation';
 
@@ -52,7 +53,6 @@ describe('module navigation naming', () => {
         'Сотрудники',
         'Структура академии',
         'Управление продажами',
-        'Журнал действий',
         'Управление системой',
       ],
       sales: [
@@ -77,11 +77,15 @@ describe('module navigation naming', () => {
       finance: ['Обзор финансов', 'Доходы', 'Расходы', 'Зарплаты', 'Операции'],
     });
     expect(localized(TASKS_NAVIGATION_ITEM.labelKey, 'ru')).toBe('Задачи');
+    expect(SYSTEM_MANAGEMENT_NAVIGATION_ITEMS.map((item) => localized(item.labelKey, 'ru')))
+      .toEqual(['Интеграции', 'Уведомления сотрудникам', 'Журнал действий']);
   });
 
   it('keeps navigation routes unique and stable', () => {
-    const hrefs = Object.values(MODULE_NAVIGATION)
-      .flatMap((definition) => definition.items.map((item) => item.href));
+    const hrefs = [
+      ...Object.values(MODULE_NAVIGATION).flatMap((definition) => definition.items.map((item) => item.href)),
+      ...SYSTEM_MANAGEMENT_NAVIGATION_ITEMS.map((item) => item.href),
+    ];
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/teacher-module/schedule');
@@ -89,6 +93,7 @@ describe('module navigation naming', () => {
     expect(hrefs).toContain('/marketing-module/meta-events');
     expect(hrefs).toContain('/finance/transactions');
     expect(hrefs).toContain('/admin/system-management');
+    expect(hrefs).toContain('/admin/system-management/audit');
     expect(TASKS_NAVIGATION_ITEM.href).toBe('/tasks');
   });
 });

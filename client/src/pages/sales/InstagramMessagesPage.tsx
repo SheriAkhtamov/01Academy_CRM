@@ -1586,7 +1586,7 @@ export default function MessagesPage() {
                               <AvatarFallback>{initials(participantLabel)}</AvatarFallback>
                             </Avatar>
                             {unread ? (
-                              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 rounded-full border-2 border-background bg-primary" />
+                              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 rounded-full border-2 border-background bg-red-600" />
                             ) : null}
                           </div>
                           <div className="min-w-0 flex-1">

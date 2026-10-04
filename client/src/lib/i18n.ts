@@ -1845,6 +1845,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
 
   // UX improvements — administration task board
   acceptTask: { en: 'Accept task', ru: 'Принять задачу' },
+  finishOwnTask: { en: 'Complete task', ru: 'Завершить задачу' },
   activityAccepted: { en: 'accepted the task', ru: 'принял(а) задачу' },
   activityAssigned: { en: 'assigned the task', ru: 'назначил(а) исполнителя' },
   activityAttached: { en: 'attached a file', ru: 'прикрепил(а) файл' },
@@ -1892,6 +1893,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   noCommentsYet: { en: 'No comments yet', ru: 'Комментариев пока нет' },
   noDueDate: { en: 'No due date', ru: 'Без срока' },
   onlyAssigneeCanManageTask: { en: 'Only the assignee can change this task.', ru: 'Изменять эту задачу может только её исполнитель.' },
+  onlyCreatorCanFinalizeTask: { en: 'Only the task creator can complete or accept it.', ru: 'Завершить или принять задачу может только её автор.' },
   priorityLabel: { en: 'Priority', ru: 'Приоритет' },
   priorityLow: { en: 'Low priority', ru: 'Низкий приоритет' },
   priorityNormal: { en: 'Normal priority', ru: 'Обычный приоритет' },
@@ -1908,6 +1910,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   taskArchive: { en: 'Archive', ru: 'Архив' },
   taskArchiveEmpty: { en: 'The task archive is empty', ru: 'Архив задач пуст' },
   taskAcceptedAndArchived: { en: 'Task accepted and moved to the archive', ru: 'Задача принята и перемещена в архив' },
+  taskCompletedAndArchived: { en: 'Task completed and moved to the archive', ru: 'Задача завершена и перемещена в архив' },
   taskAcceptedOn: { en: 'Accepted on', ru: 'Принято' },
   taskReopened: { en: 'Task returned to active work', ru: 'Задача возвращена в работу' },
   taskOwnerFilter: { en: 'Show tasks of', ru: 'Показывать задачи' },

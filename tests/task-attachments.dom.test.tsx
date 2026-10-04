@@ -143,8 +143,8 @@ describe('miniapp task creation', () => {
 });
 
 describe('task acceptance UI', () => {
-  it.each([{ id: 7, admin: false, enabled: false }, { id: 8, admin: false, enabled: true }, { id: 8, admin: true, enabled: true }, { id: 1, admin: true, enabled: false }])(
-    'assignee-only acceptance for $id with admin=$admin', ({ id, admin, enabled }) => {
+  it.each([{ id: 7, admin: false, enabled: true }, { id: 8, admin: false, enabled: false }, { id: 8, admin: true, enabled: false }, { id: 1, admin: true, enabled: false }])(
+    'creator-only acceptance of delegated work for $id with admin=$admin', ({ id, admin, enabled }) => {
       Object.assign(mocks.user, { id, module: admin ? 'administration' : 'sales', modules: [admin ? 'administration' : 'sales'] });
       const task: TaskDetail = { id: 100, boardId: 1, title: 'Task', description: null, status: 'done', priority: 'normal', color: null,
         position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
@@ -162,6 +162,45 @@ describe('task acceptance UI', () => {
       }
     },
   );
+});
+
+describe('task finalization actions', () => {
+  it.each([false, true])('offers completion rather than acceptance on self-assigned tasks (miniapp: %s)', async (tasksOnly) => {
+    const task: TaskDetail = { id: 100, boardId: 1, title: 'Personal task', description: null, status: 'done', priority: 'normal', color: null,
+      position: 0, creatorId: 7, assigneeId: 7, creator: employee, assignee: employee, leadId: null, lead: null,
+      dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
+      comments: [], checklist: [], attachments: [], activity: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    client.setQueryData(['/api/board/tasks/100'], task);
+    mocks.api.mockResolvedValue({ ...task, status: 'accepted' });
+    const close = vi.fn();
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={[employee]} tasksOnly={tasksOnly} />, client));
+    expect(screen.queryByRole('button', { name: i18n.t('acceptTask') })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: i18n.t('finishOwnTask') }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/board/tasks/100/status', { status: 'accepted' }));
+    await waitFor(() => expect(close).toHaveBeenCalledWith(false));
+    expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('taskCompletedAndArchived') });
+  });
+
+  it('lets an author accept delegated work while hiding editing and deletion', async () => {
+    const task: TaskDetail = { id: 100, boardId: 1, title: 'Delegated task', description: null, status: 'done', priority: 'normal', color: null,
+      position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
+      dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
+      comments: [], checklist: [], attachments: [], activity: [] };
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+    client.setQueryData(['/api/board/tasks/100'], task);
+    mocks.api.mockResolvedValue({ ...task, status: 'accepted' });
+    const close = vi.fn();
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={[employee]} />, client));
+    expect(screen.queryByRole('button', { name: i18n.t('finishOwnTask') })).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('edit') })).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('deleteTaskTitle') })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: i18n.t('acceptTask') }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/board/tasks/100/status', { status: 'accepted' }));
+    await waitFor(() => expect(close).toHaveBeenCalledWith(false));
+    expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('taskAcceptedAndArchived') });
+  });
 });
 
 describe('read-only task details', () => {

@@ -166,7 +166,7 @@ describe("board routes", () => {
     expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false);
   });
 
-  it("counts the signed-in assignee's tasks awaiting acceptance", async () => {
+  it("counts delegated tasks awaiting their creator's acceptance", async () => {
     const app = await createApp();
     const agent = request.agent(app);
 
@@ -509,11 +509,11 @@ describe("board routes", () => {
   });
 
   it.each([
-    { actor: 7, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
+    { actor: 8, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
     { actor: 1, creator: 7, assignee: 8, from: 'done', to: 'accepted' },
     { actor: 1, creator: 1, assignee: 8, from: 'accepted', to: 'todo' },
     { actor: 7, creator: 7, assignee: null, from: 'done', to: 'accepted' },
-  ])('denies accept/reopen to non-assignee $actor (including creators and administrators)', async ({ actor, creator, assignee, from, to }) => {
+  ])('denies self-approval of delegated work and unrelated acceptance or reopening by $actor', async ({ actor, creator, assignee, from, to }) => {
     mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: creator, assigneeId: assignee, status: from });
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: actor });
@@ -523,8 +523,8 @@ describe("board routes", () => {
     expect(mockStorage.board.createActivity).not.toHaveBeenCalled();
   });
 
-  it('lets an assignee archive completed work', async () => {
-    const task = { id: 100, boardId: 1, creatorId: 8, assigneeId: 7, status: 'done' };
+  it('lets an employee finalize a task created for themselves', async () => {
+    const task = { id: 100, boardId: 1, creatorId: 7, assigneeId: 7, status: 'done' };
     mockStorage.board.getTask.mockResolvedValue(task);
     mockStorage.board.updateTask.mockResolvedValue({ ...task, status: 'accepted' });
     const agent = request.agent(await createApp());
@@ -532,8 +532,31 @@ describe("board routes", () => {
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
   });
 
+  it.each([staffUser, adminUser])('lets only the author accept delegated work without granting other changes: $module', async (actor) => {
+    const task = { id: 100, boardId: 1, creatorId: actor.id, assigneeId: 8, status: 'done' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...task, ...updates }));
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor.id });
+    expect((await agent.patch('/api/board/tasks/100').send({ title: 'Changed' })).status).toBe(403);
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(403);
+    expect((await agent.delete('/api/board/tasks/100')).status).toBe(403);
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
+    expect(mockStorage.board.updateTask).toHaveBeenCalledWith(100, expect.objectContaining({ status: 'accepted', acceptedBy: actor.id }));
+    expect(mockStorage.board.deleteTask).not.toHaveBeenCalled();
+  });
+
+  it('does not let an author skip the done stage when accepting delegated work', async () => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8, status: 'in_progress' });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(400);
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+  });
+
   it('makes repeated acceptance idempotent without overwriting approval history', async () => {
-    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 8, assigneeId: 7, status: 'accepted', acceptedBy: 7 });
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8, status: 'accepted', acceptedBy: 7 });
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: 7 });
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);

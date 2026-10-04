@@ -52,7 +52,7 @@ import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canManageBoardTask } from '@shared/board-permissions';
+import { canFinalizeBoardTask, canManageBoardTask, isSelfAssignedBoardTask } from '@shared/board-permissions';
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
@@ -191,7 +191,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     };
 
     const canManage = canManageBoardTask(user, task);
-    const canAcceptReopen = canManage;
+    const canFinalize = canFinalizeBoardTask(user, task);
+    const selfAssigned = isSelfAssignedBoardTask(task);
     const canDelete = canManage;
 
     useEffect(() => {
@@ -226,7 +227,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
             hapticNotify('success');
             invalidate();
             if (status === 'accepted') {
-                toast({ title: t('taskAcceptedAndArchived') });
+                toast({ title: selfAssigned ? t('taskCompletedAndArchived') : t('taskAcceptedAndArchived') });
                 unsavedGuard.handleOpenChange(false);
             } else if (task?.status === 'accepted') {
                 toast({ title: t('taskReopened') });
@@ -443,18 +444,18 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </Select>
                                 ) : <Badge variant="outline">{columnLabel(task.status, t)}</Badge>}
 
-                                {task.status === 'done' && canAcceptReopen ? (
+                                {task.status === 'done' && canFinalize ? (
                                     <Button
                                         size="sm"
                                         className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
                                         onClick={() => statusMutation.mutate('accepted')}
                                         disabled={statusMutation.isPending}
                                     >
-                                        <CheckCircle2 className="size-4" /> {t('acceptTask')}
+                                        <CheckCircle2 className="size-4" /> {selfAssigned ? t('finishOwnTask') : t('acceptTask')}
                                     </Button>
                                 ) : null}
 
-                                {task.status === 'accepted' && canAcceptReopen ? (
+                                {task.status === 'accepted' && canManage ? (
                                     <Button
                                         size="sm"
                                         variant="outline"

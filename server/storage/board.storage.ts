@@ -78,13 +78,14 @@ class BoardStorage {
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
-    async getPendingAcceptanceCount(boardId: number, assigneeId: number): Promise<number> {
+    async getPendingAcceptanceCount(boardId: number, creatorId: number): Promise<number> {
         const [row] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(boardTasks)
             .where(and(
                 eq(boardTasks.boardId, boardId),
-                eq(boardTasks.assigneeId, assigneeId),
+                eq(boardTasks.creatorId, creatorId),
+                ne(boardTasks.assigneeId, creatorId),
                 eq(boardTasks.status, 'done'),
             ));
         return row?.count ?? 0;
@@ -419,6 +420,7 @@ class BoardStorage {
         data: Partial<InsertBoardTask> & { acceptedAt?: Date | null; acceptedBy?: number | null },
         activities: Omit<InsertBoardTaskActivity, 'taskId'>[],
         assigneeId?: number,
+        creatorId?: number,
     ): Promise<BoardTask> {
         return db.transaction(async (tx) => {
             const [row] = await tx
@@ -428,6 +430,7 @@ class BoardStorage {
                     eq(boardTasks.id, id),
                     eq(boardTasks.status, expectedStatus),
                     assigneeId === undefined ? undefined : eq(boardTasks.assigneeId, assigneeId),
+                    creatorId === undefined ? undefined : eq(boardTasks.creatorId, creatorId),
                 ))
                 .returning();
             if (!row) {

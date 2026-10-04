@@ -14,7 +14,7 @@ import {
     type User,
 } from '../db/schema';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { canManageBoardTask } from '@shared/board-permissions';
+import { canFinalizeBoardTask, canManageBoardTask } from '@shared/board-permissions';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
@@ -35,10 +35,6 @@ const canReadTask = (user: User, task: BoardTask | { creatorId: number | null; a
 // Can edit core fields (title, description, priority, assignee, due date).
 const canManageTask = (user: User, task: BoardTask) =>
     canManageBoardTask(user, task);
-
-// The assignee controls every transition, including archiving and reopening.
-const canAcceptOrReopen = (user: User, task: BoardTask) =>
-    canManageTask(user, task);
 
 const parseId = (raw: unknown) => {
     const text = String(raw ?? '').trim();
@@ -170,11 +166,7 @@ const resolveAssignee = async (
 function validateTransition(
     task: BoardTask,
     toStatus: BoardTaskStatus,
-    user: User,
 ): { code: number; error: string } | null {
-    if ((toStatus === 'accepted' || task.status === 'accepted') && !canAcceptOrReopen(user, task)) {
-        return { code: 403, error: 'onlyAssigneeCanManageTask' };
-    }
     if (task.status === toStatus) return null;
 
     if (toStatus === 'accepted') {
@@ -473,7 +465,7 @@ router.patch('/tasks/:id', async (req, res) => {
     }
 });
 
-// Move an assigned task to another column.
+// Assignees manage progress; authors accept completed work.
 router.patch('/tasks/:id/status', async (req, res) => {
     try {
         const id = parseId(req.params.id);
@@ -490,11 +482,15 @@ router.patch('/tasks/:id/status', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canManageTask(req.user!, task)) {
+        const finalizing = status === 'accepted';
+        if (finalizing && !canFinalizeBoardTask(req.user!, task)) {
+            return res.status(403).json({ error: 'onlyCreatorCanFinalizeTask' });
+        }
+        if (!finalizing && !canManageTask(req.user!, task)) {
             return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
         }
 
-        const transitionError = validateTransition(task, status, req.user!);
+        const transitionError = validateTransition(task, status);
         if (transitionError) {
             return res.status(transitionError.code).json({ error: transitionError.error });
         }
@@ -528,7 +524,9 @@ router.patch('/tasks/:id/status', async (req, res) => {
         };
         const atomicUpdate = (storage.board as any).updateTaskWithActivities;
         const updated = atomicUpdate
-            ? await atomicUpdate.call(storage.board, id, task.status, updates, [activity], req.user!.id)
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, [activity],
+                finalizing ? task.assigneeId : req.user!.id,
+                finalizing ? req.user!.id : undefined)
             : await storage.board.updateTask(id, updates);
         if (!atomicUpdate) {
             await storage.board.createActivity({ taskId: id, ...activity });

@@ -118,8 +118,8 @@ describe('Telegram bot and isolated task API', () => {
   it('lets employees read other tasks but only change their own', async () => {
     mock.detail.mockResolvedValue({ creatorId: 99, assigneeId: 98 });
     expect((await request(app()).get('/api/miniapp/board/tasks/1').set('Authorization', `Bearer ${token()}`)).status).toBe(200);
-    mock.task.mockResolvedValue({ id: 1, creatorId: 7, assigneeId: 99, status: 'done' });
-    expect((await request(app()).patch('/api/miniapp/board/tasks/1/status').set('Authorization', `Bearer ${token()}`).send({ status: 'accepted' })).status).toBe(403);
+    mock.task.mockResolvedValue({ id: 1, creatorId: 7, assigneeId: 99, status: 'todo' });
+    expect((await request(app()).patch('/api/miniapp/board/tasks/1/status').set('Authorization', `Bearer ${token()}`).send({ status: 'in_progress' })).status).toBe(403);
   });
   it('does not expose other modules or allow lead assignment', async () => {
     expect((await request(app()).get('/api/miniapp/sales').set('Authorization', `Bearer ${token()}`)).status).toBe(404);

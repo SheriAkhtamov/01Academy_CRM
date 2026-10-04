@@ -110,6 +110,7 @@ export const ACTIVE_PIPELINE_STATUSES = LEAD_STATUSES
 
 export const LEAD_ARCHIVE_REASONS = [
   { code: "no_answer", translationKey: "archiveReasonNoAnswer", label: "Не отвечает" },
+  { code: "no_answer_after_three_attempts", translationKey: "archiveReasonNoAnswerAfterThreeAttempts", label: "Не удалось дозвониться после трёх попыток" },
   { code: "not_interested", translationKey: "archiveReasonNotInterested", label: "Не заинтересован" },
   { code: "no_budget", translationKey: "archiveReasonNoBudget", label: "Нет бюджета" },
   { code: "schedule_conflict", translationKey: "archiveReasonScheduleConflict", label: "Не подходит расписание" },

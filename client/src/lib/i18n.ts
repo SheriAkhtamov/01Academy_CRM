@@ -1033,6 +1033,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   archiveReasonChoseCompetitor: { en: 'Chose a competitor', ru: 'Выбрал конкурента' },
   archiveReasonDuplicateOrInvalid: { en: 'Duplicate or invalid request', ru: 'Дубль или невалидная заявка' },
   archiveReasonNoAnswer: { en: 'No answer', ru: 'Не отвечает' },
+  archiveReasonNoAnswerAfterThreeAttempts: { en: 'No answer after three call attempts', ru: 'Не удалось дозвониться после трёх попыток' },
   archiveReasonNoBudget: { en: 'No budget', ru: 'Нет бюджета' },
   archiveReasonNotInterested: { en: 'Not interested', ru: 'Не заинтересован' },
   archiveReasonOther: { en: 'Other reason', ru: 'Другая причина' },

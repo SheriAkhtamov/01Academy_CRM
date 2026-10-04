@@ -226,7 +226,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         values.approvedBy = null;
         values.approvedAt = null;
       }
-      if (options.beforeCreate) {
+      if (options.beforeCreate && table !== 'academy_rooms') {
         await options.beforeCreate({ values, req });
       }
       const row = table === 'academy_groups'
@@ -246,6 +246,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
               values,
               forceAutoAssign: req.body.autoAssign === true || !values.teacherId,
             });
+            return insertRow(table, values);
+          })
+        : table === 'academy_rooms'
+          ? await withTransaction(async () => {
+            await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+            if (options.beforeCreate) await options.beforeCreate({ values, req });
             return insertRow(table, values);
           })
         : table === 'academy_teachers'
@@ -400,6 +406,9 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           })
         : options.beforeUpdate
           ? await withTransaction(async () => {
+            if (table === 'academy_rooms') {
+              await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
+            }
             const lockedRow = await queryOne(
               `SELECT * FROM ${quoteIdent(table)} WHERE id = $1 FOR UPDATE`,
               [id],

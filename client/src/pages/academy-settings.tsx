@@ -1,3 +1,5 @@
+import { SchoolSettingsTable, RoomSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
+import type { School, Room } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -97,7 +99,6 @@ import {
   Edit3,
   GitBranch,
   Loader2,
-  MapPin,
   Plus,
   Trash2,
   Target,
@@ -105,23 +106,6 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { ACADEMY_TIME_ZONE, academyDateInputValue } from '@/lib/localeFormat';
-interface School {
-  id: number;
-  name: string;
-  code: string;
-  address: string;
-  timezone: string;
-  isActive: boolean;
-}
-
-interface Room {
-  id: number;
-  schoolId: number;
-  name: string;
-  capacity: number;
-  isActive: boolean;
-}
-
 interface Course {
   id: number;
   name: string;
@@ -958,106 +942,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
     [selectedGroupTeacherId, teachers],
   );
-  const schoolNameById = useMemo(
-    () => new Map(schools.map((school) => [school.id, school.name])),
-    [schools],
-  );
-
-  const schoolColumns: DataTableColumn<School>[] = [
-    {
-      key: 'name',
-      header: t('school'),
-      sortable: true,
-      accessor: (row) => row.name,
-      render: (row) => (
-        <div className="min-w-0">
-          <p className="truncate font-medium text-foreground">{row.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{row.code}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'address',
-      header: t('address'),
-      sortable: true,
-      accessor: (row) => row.address,
-      render: (row) => (
-        <div className="flex max-w-md items-center gap-2">
-          <MapPin className="shrink-0 text-muted-foreground" />
-          <span className="truncate">{row.address}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: t('status'),
-      accessor: (row) => row.isActive ? 1 : 0,
-      render: (row) => <Badge variant={row.isActive ? 'default' : 'secondary'}>{row.isActive ? t('active') : t('inactive')}</Badge>,
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (row) => (
-        <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => openSchool(row)}>
-            <Edit3 />
-            <span className="sr-only">{t('edit')}</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ resource: 'schools', id: row.id, name: row.name })}>
-            <Trash2 />
-            <span className="sr-only">{t('delete')}</span>
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const roomColumns: DataTableColumn<Room>[] = [
-    {
-      key: 'name',
-      header: t('room'),
-      sortable: true,
-      accessor: (row) => row.name,
-      render: (row) => <div className="flex items-center gap-2 font-medium text-foreground"><DoorOpen />{row.name}</div>,
-    },
-    {
-      key: 'school',
-      header: t('school'),
-      sortable: true,
-      accessor: (row) => schoolNameById.get(row.schoolId) ?? '',
-      render: (row) => <span className="text-muted-foreground">{schoolNameById.get(row.schoolId) ?? '—'}</span>,
-    },
-    {
-      key: 'capacity',
-      header: t('roomCapacity'),
-      sortable: true,
-      accessor: (row) => row.capacity,
-      render: (row) => `${row.capacity} ${t('students')}`,
-    },
-    {
-      key: 'status',
-      header: t('status'),
-      accessor: (row) => row.isActive ? 1 : 0,
-      render: (row) => <Badge variant={row.isActive ? 'default' : 'secondary'}>{row.isActive ? t('active') : t('inactive')}</Badge>,
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (row) => (
-        <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => openRoom(row)}>
-            <Edit3 />
-            <span className="sr-only">{t('edit')}</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ resource: 'rooms', id: row.id, name: row.name })}>
-            <Trash2 />
-            <span className="sr-only">{t('delete')}</span>
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   const courseColumns: DataTableColumn<Course>[] = [
     {
       key: 'name',
@@ -1356,49 +1240,17 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="schools" className="mt-0">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle>{t('schools')}</CardTitle>
-              </div>
-              <Button onClick={() => openSchool()}>
-                <Plus data-icon="inline-start" />{t('addSchool')}
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                className="overflow-x-auto"
-                columns={schoolColumns}
-                data={schools}
-                keyExtractor={(row) => `school-${row.id}`}
-                defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noSchools')}  />}
-              />
-            </CardContent>
-          </Card>
+          <SchoolSettingsTable data={schools} archived={requestedFilter === 'archive'}
+            onArchiveChange={(archived) => navigate(archived ? `${basePath}?tab=schools&filter=archive` : basePath)}
+            onAdd={() => openSchool()} onEdit={openSchool} onChanged={invalidate}
+            onDelete={(row) => setDeleteTarget({ resource: 'schools', id: row.id, name: row.name })} />
         </TabsContent>
 
         <TabsContent value="rooms" className="mt-0">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle>{t('rooms')}</CardTitle>
-              </div>
-              <Button onClick={() => openRoom()}>
-                <Plus data-icon="inline-start" />{t('addRoom')}
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                className="overflow-x-auto"
-                columns={roomColumns}
-                data={rooms}
-                keyExtractor={(row) => `room-${row.id}`}
-                defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noRooms')}  />}
-              />
-            </CardContent>
-          </Card>
+          <RoomSettingsTable data={rooms} schools={schools} archived={requestedFilter === 'archive'}
+            onArchiveChange={(archived) => navigate(`${basePath}?tab=rooms${archived ? '&filter=archive' : ''}`)}
+            onAdd={() => openRoom()} onEdit={openRoom}
+            onDelete={(row) => setDeleteTarget({ resource: 'rooms', id: row.id, name: row.name })} />
         </TabsContent>
 
         <TabsContent value="courses" className="mt-0">

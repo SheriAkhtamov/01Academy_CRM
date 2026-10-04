@@ -102,6 +102,7 @@ registerSimpleCrud('schools', 'academy_schools', [
   orderBy: 'is_active DESC, name',
   requireAdministration: true,
   beforeUpdate: async ({ id, values, row }) => {
+    if (row.isArchived) throw Object.assign(new Error('schoolIsArchived'), { statusCode: 409 });
     if (row.isActive !== false && values.isActive === false) {
       const usage = await queryOne<{ inUse: boolean }>(
         `SELECT (
@@ -126,7 +127,12 @@ registerSimpleCrud('rooms', 'academy_rooms', [
 ], {
   orderBy: 'school_id, is_active DESC, name',
   requireAdministration: true,
+  beforeCreate: async ({ values }) => {
+    const school = await queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true AND is_archived = false`, [values.schoolId]);
+    if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
+  },
   beforeUpdate: async ({ id, values, row }) => {
+    if (row.isArchived) throw Object.assign(new Error('roomIsArchived'), { statusCode: 409 });
     const nextSchoolId = Number(values.schoolId ?? row.schoolId);
     if (Number(values.schoolId) > 0 && Number(row.schoolId) !== nextSchoolId) {
       const usage = await queryOne<{ inUse: boolean }>(
@@ -138,7 +144,7 @@ registerSimpleCrud('rooms', 'academy_rooms', [
       );
       if (usage?.inUse) throw Object.assign(new Error('roomSchoolCannotChangeWhileInUse'), { statusCode: 409 });
     }
-    const school = await queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true`, [nextSchoolId]);
+    const school = await queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true AND is_archived = false`, [nextSchoolId]);
     if (!school) throw Object.assign(new Error('School not found'), { statusCode: 404 });
     if (row.isActive !== false && values.isActive === false) {
       const activeGroup = await queryOne(

@@ -855,6 +855,13 @@
       "when": 1790539200002,
       "tag": "0121_allow_finance_primary_module",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1791150870233,
+      "tag": "0122_archive_schools_and_rooms",
+      "breakpoints": true
     }
   ]
 }

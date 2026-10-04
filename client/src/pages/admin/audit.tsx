@@ -68,6 +68,8 @@ const emptyFilters: AuditFilters = { userId: 'all', action: 'all', entityType: '
 
 const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
   action = action.toUpperCase();
+  if (action.startsWith('UNARCHIVE')) return t('auditActionRestored');
+  if (action.startsWith('ARCHIVE')) return t('auditActionArchived');
   if (action.startsWith('CREATE')) return copy.created;
   if (action.startsWith('DELETE')) return copy.deleted;
   if (action.includes('REFUND')) return copy.refund;
@@ -81,6 +83,7 @@ const entityLabel = (entity: string, copy: AuditCopy, t: Translate) => ({
   academy_payment: copy.payment, academy_payments: copy.payment, academy_group: copy.group, academy_groups: copy.group,
   academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
   academy_task: copy.task, academy_company_settings: t('settings'),
+  academy_school: t('school'), academy_schools: t('school'), academy_room: t('room'), academy_rooms: t('room'),
 }[entity] ?? t('auditObject'));
 
 const integrationStatusLabel = (status: string, t: Translate) => ({
@@ -358,6 +361,8 @@ export default function AuditPage() {
                     <SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem>
                     <SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem>
                     <SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem>
+                    <SelectItem value="ARCHIVE">{t('auditActionArchived')}</SelectItem>
+                    <SelectItem value="UNARCHIVE">{t('auditActionRestored')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -372,6 +377,8 @@ export default function AuditPage() {
                     <SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem>
                     <SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem>
                     <SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem>
+                    <SelectItem value="academy_schools">{t('schools')}</SelectItem>
+                    <SelectItem value="academy_rooms">{t('rooms')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

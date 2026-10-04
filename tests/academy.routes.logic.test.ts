@@ -4812,4 +4812,116 @@ describe('academy route logic boundaries', () => {
     }));
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
+
+  describe('school archive and room cascade', () => {
+    const prepare = (archived = false) => {
+      const school = { id: 3, name: 'School', is_active: !archived, is_archived: archived,
+        archived_previous_is_active: archived ? false : null };
+      const rooms = [true, false].map((active, index) => ({
+        id: 10 + index, school_id: 3, name: `Room ${index}`, is_active: archived ? false : active,
+        is_archived: archived, archived_previous_is_active: archived ? active : null,
+      }));
+      const handler = async (sql: string) => {
+        if (sql.includes('SELECT * FROM academy_schools')) return { rows: [school] };
+        if (sql.includes('SELECT * FROM academy_rooms')) return { rows: rooms };
+        if (sql.includes('UPDATE academy_rooms')) return { rows: rooms.map((room) => ({ ...room,
+          is_active: archived ? room.archived_previous_is_active : false, is_archived: !archived,
+          archived_previous_is_active: archived ? null : room.is_active,
+        })) };
+        if (sql.includes('UPDATE "academy_schools"')) return { rows: [{ ...school,
+          is_active: false, is_archived: !archived, archived_previous_is_active: archived ? null : school.is_active,
+        }] };
+        return emptyResult();
+      };
+      mocks.clientQuery.mockImplementation(handler);
+      return { school, handler };
+    };
+
+    it('archives the school and both active and inactive rooms in one transaction', async () => {
+      prepare();
+      const response = await request(await createApp()).post('/api/academy/schools/3/archive');
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ isArchived: true, isActive: false, archivedPreviousIsActive: true });
+      const roomUpdate = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE academy_rooms'));
+      expect(roomUpdate?.[1]).toEqual([3]);
+      expect(String(roomUpdate?.[0])).toContain('archived_previous_is_active = is_active');
+      expect(String(roomUpdate?.[0])).toContain('WHERE school_id = $1 AND is_archived = false');
+      expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+      expect(mocks.createAuditLog.mock.calls.map(([log]) => log.action)).toEqual([
+        'ARCHIVE_ACADEMY_SCHOOL', 'ARCHIVE_ACADEMY_ROOM', 'ARCHIVE_ACADEMY_ROOM',
+      ]);
+    });
+
+    it('rejects an active group without archiving any rooms', async () => {
+      const { handler } = prepare();
+      mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('SELECT id FROM academy_groups')
+        ? { rows: [{ id: 7 }] } : handler(sql));
+      const response = await request(await createApp()).post('/api/academy/schools/3/archive');
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('schoolArchiveHasActiveGroups');
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the room cascade when updating the school fails', async () => {
+      const { handler } = prepare();
+      mocks.clientQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('UPDATE "academy_schools"')) throw new Error('Write failed');
+        return handler(sql);
+      });
+      const response = await request(await createApp()).post('/api/academy/schools/3/archive');
+      expect(response.status).toBe(500);
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE academy_rooms'))).toBe(true);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('restores the previous inactive school state and individual room states', async () => {
+      prepare(true);
+      const response = await request(await createApp()).post('/api/academy/schools/3/unarchive');
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ isArchived: false, isActive: false, archivedPreviousIsActive: null });
+      const roomUpdate = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE academy_rooms'));
+      expect(String(roomUpdate?.[0])).toContain('is_active = COALESCE(archived_previous_is_active, false)');
+      expect(mocks.createAuditLog.mock.calls.slice(1).map(([log]) => log.newValues[0].isActive)).toEqual([true, false]);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('does not overwrite snapshots when an archive request is retried', async () => {
+      prepare(true);
+      const response = await request(await createApp()).post('/api/academy/schools/3/archive');
+      expect(response.status).toBe(200);
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('rejects a new room when the school is unavailable, within the same scheduling lock', async () => {
+      const response = await request(await createApp()).post('/api/academy/rooms')
+        .send({ schoolId: 3, name: 'Room', capacity: 12, isActive: true });
+      expect(response.status).toBe(404);
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('is_archived = false'))).toBe(true);
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('INSERT'))).toBe(false);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('denies school archiving to employees without administration access', async () => {
+      mocks.actor = { id: 4, module: 'sales', modules: ['sales'] };
+      const response = await request(await createApp()).post('/api/academy/schools/3/archive');
+      expect(response.status).toBe(403);
+      expect(mocks.connect).not.toHaveBeenCalled();
+    });
+
+    it.each(['schools', 'rooms'])('prevents reactivating archived %s through ordinary editing', async (resource) => {
+      const archived = { id: 3, school_id: 7, is_archived: true, is_active: false };
+      mocks.poolQuery.mockResolvedValue({ rows: [archived] });
+      mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('SELECT * FROM')
+        ? { rows: [archived] } : emptyResult());
+      const response = await request(await createApp()).patch(`/api/academy/${resource}/3`).send({ isActive: true });
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe(resource === 'schools' ? 'schoolIsArchived' : 'roomIsArchived');
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+    });
+  });
 });

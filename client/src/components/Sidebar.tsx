@@ -237,9 +237,8 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
     return (
       <Tooltip key={item.name + item.href}>
         <TooltipTrigger asChild>
-          <Link href={item.href}>
+          <Link href={item.href} onClick={() => onClose?.()}>
             <div
-              onClick={() => onClose?.()}
               className={cn(
                 'sidebar-nav-item group',
                 isActive && 'active'

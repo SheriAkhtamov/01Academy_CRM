@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -9,7 +9,7 @@ import Header from './Header';
 import { RealtimeStatusBanner } from '@/components/ux/RealtimeStatusBanner';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { PageTransition } from '@/components/ux/motion';
-import { SPRING, TRANSITION } from '@/lib/motion';
+import { SPRING } from '@/lib/motion';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
 
 interface LayoutProps {
@@ -53,6 +53,7 @@ export default function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     if (lastLocation.current === location) return undefined;
+    setSidebarOpen(false);
     const isPop = popNavigation.current;
     popNavigation.current = false;
     lastLocation.current = location;
@@ -174,19 +175,15 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={TRANSITION.fast}
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
-      </AnimatePresence>
+      {/* Remove the backdrop with the drawer state, without waiting for an exit
+          animation that can outlive navigation or a viewport change. */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/*
         The drawer transform stays on Tailwind rather than framer: `lg:translate-x-0`

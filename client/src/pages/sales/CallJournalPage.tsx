@@ -36,7 +36,6 @@ import {
   type TelephonyCallStatus,
 } from '@/lib/telephony';
 import { cn } from '@/lib/utils';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
 
 type JournalCall = {
@@ -196,10 +195,6 @@ export default function CallJournalPage() {
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
       <PageHeader
         title={t('callJournal')}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
-          { label: t('callJournal') },
-        ]}
         actions={(
           <>
             <Select value={employee} onValueChange={setSelectedEmployee}>

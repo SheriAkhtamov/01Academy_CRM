@@ -627,7 +627,6 @@ export default function AdminLeadsPage() {
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
       <PageHeader
         title={t('salesSettings')}
-        breadcrumbs={[{ label: t('administration'), href: '/admin' }, { label: t('salesSettings') }]}
       />
       <LeadAssignmentContent />
     </div>

@@ -731,9 +731,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     <ModulePage contained={isEmployeesPage}>
       <PageHeader
         title={isEmployeesPage ? t('employees') : t('administration')}
-        breadcrumbs={isEmployeesPage
-          ? [{ label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' }, { label: t('employees') }]
-          : [{ label: t('administration') }]}
         actions={isEmployeesPage ? (
           <Button onClick={openCreateUserModal}>
             <Plus className="h-4 w-4 mr-2" />

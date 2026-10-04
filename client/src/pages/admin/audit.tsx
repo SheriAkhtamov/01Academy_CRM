@@ -19,7 +19,6 @@ import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import type { AcademyModule } from '@shared/academy';
 import { websiteIntegrationDomain } from '@shared/lead-integrations';
 
@@ -216,10 +215,6 @@ export default function AuditPage() {
     <ModulePage contained>
       <PageHeader
         title={ceoCopy.audit.title}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
-          { label: ceoCopy.audit.title },
-        ]}
         titleActions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
       />
 

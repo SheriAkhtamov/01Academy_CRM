@@ -344,7 +344,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     <ModulePage contained={contained} className="flex flex-col gap-4">
       <PageHeader
         title={sectionTitle}
-        breadcrumbs={[{ label: copy.module, href: financeRoutes.overview }, ...(section === 'overview' ? [] : [{ label: sectionTitle }])]}
         actions={(
           <>
             {section !== 'overview' ? (

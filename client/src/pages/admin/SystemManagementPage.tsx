@@ -54,7 +54,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatUserModule, getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { messageQueryKeys } from '@/features/messages/api';
 import { sendEmployeeBroadcast } from '@/features/employee-broadcast/api';
 
@@ -95,10 +94,6 @@ function SystemManagementOverview() {
     <ModulePage>
       <PageHeader
         title={t('systemManagement')}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
-          { label: t('systemManagement') },
-        ]}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -245,11 +240,6 @@ function EmployeeNotificationsPage() {
     <ModulePage>
       <PageHeader
         title={t('employeeNotifications')}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
-          { label: t('systemManagement'), href: '/admin/system-management' },
-          { label: t('employeeNotifications') },
-        ]}
       />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">

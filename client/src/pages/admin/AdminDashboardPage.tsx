@@ -60,7 +60,6 @@ import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
@@ -356,7 +355,6 @@ export default function AdminDashboardPage() {
       <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
         <PageHeader
           title={t('adminDashboardTitle')}
-          breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         />
         <Alert variant="destructive">
           <AlertTriangle />
@@ -517,7 +515,6 @@ export default function AdminDashboardPage() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <PageHeader
         title={t('adminDashboardTitle')}
-        breadcrumbs={[{ label: t(MODULE_NAVIGATION.administration.nameKey) }]}
         actions={(
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge variant="outline">

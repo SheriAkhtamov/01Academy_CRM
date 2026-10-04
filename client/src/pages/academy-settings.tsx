@@ -1303,10 +1303,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     <ModulePage contained>
       <PageHeader
         title={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}
-        breadcrumbs={[
-          { label: t('administration'), href: '/admin' },
-          { label: isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration') },
-        ]}
       />
 
       <ModulePageBody contained ariaLabel={isSalesSettingsMode ? t('salesSettings') : t('academyConfiguration')}>

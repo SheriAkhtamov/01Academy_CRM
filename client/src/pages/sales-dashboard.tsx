@@ -73,7 +73,7 @@ import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { leadMessageTarget, visibleLeadPhones } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
-import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
+import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import {
@@ -1089,10 +1089,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     <ModulePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
       <PageHeader
         title={sectionTitle[section]}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
-          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
-        ]}
         actions={
           section === 'pipeline' ? (
             <div className="flex flex-wrap gap-2">

@@ -4,7 +4,6 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
 import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { toast } from '@/hooks/use-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Alert, AlertTitle } from '@/components/ui/alert';
@@ -425,11 +424,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     <ModulePage>
       <PageHeader
         title={t('navIntegrations')}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
-          { label: t('systemManagement'), href: '/admin/system-management' },
-          { label: t('navIntegrations') },
-        ]}
         titleAccessory={integrations.data ? (
           <Badge variant={connectedCount === totalCount ? 'success' : 'warning'}>
             {t('integrationsConnectedSummary')

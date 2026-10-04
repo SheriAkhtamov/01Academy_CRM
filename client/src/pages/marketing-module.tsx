@@ -4,7 +4,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useStickyState } from '@/hooks/useStickyState';
 import { useLocation, useSearch } from 'wouter';
-import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
+import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -419,10 +419,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
       <PageHeader
         title={sectionTitle[section]}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.marketing.nameKey), href: '/marketing-module' },
-          ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
-        ]}
         actions={
           canManageExpenses && (section === 'overview' || section === 'sources' || section === 'expenses') ? (
             <Button onClick={() => setExpenseDialogOpen(true)}>

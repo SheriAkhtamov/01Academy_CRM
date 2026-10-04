@@ -906,7 +906,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     return () => window.removeEventListener('beforeunload', handler);
   }, [section]);
 
-  /* The page frame — title, breadcrumbs, section navigation — is rendered by
+  /* The page frame — title and section navigation — is rendered by
      the same tree in every state. Errors and loading used to replace it and
      leave the user with no idea where they were. */
   const header = (
@@ -915,10 +915,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       subtitle={section === 'overview'
         ? t('teacherGreeting').replace('{name}', fullName)
         : t(MODULE_NAVIGATION.teacher.nameKey)}
-      breadcrumbs={[
-        { label: t(MODULE_NAVIGATION.teacher.nameKey), href: '/teacher-module' },
-        ...(section === 'overview' ? [] : [{ label: sectionTitle[section] }]),
-      ]}
     />
   );
 

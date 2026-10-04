@@ -12,7 +12,6 @@ import { useStickyState } from '@/hooks/useStickyState';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -1346,10 +1345,6 @@ export default function MessagesPage() {
     <ModulePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
         title={t('salesInbox')}
-        breadcrumbs={[
-          { label: t(MODULE_NAVIGATION.sales.nameKey), href: '/sales' },
-          { label: t('salesInbox') },
-        ]}
         actions={(
           <Button
             size="sm"

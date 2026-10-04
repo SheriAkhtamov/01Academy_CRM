@@ -8,13 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DateRangeField } from '@/components/ux/DateRangeField';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertCircle, ChevronRight, Filter, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
@@ -64,6 +64,8 @@ interface PaginationMeta {
 
 type AuditCopy = ReturnType<typeof useCeoCopy>['audit'];
 type Translate = (key: TranslationKey) => string;
+type AuditFilters = { userId: string; action: string; entityType: string; from: string; to: string };
+const emptyFilters: AuditFilters = { userId: 'all', action: 'all', entityType: 'all', from: '', to: '' };
 
 const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
   action = action.toUpperCase();
@@ -117,6 +119,8 @@ export default function AuditPage() {
   const [integrationPage, setIntegrationPage] = useState(1);
   const [integrationLimit, setIntegrationLimit] = useState(25);
   const [selected, setSelected] = useState<AuditLog | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState<AuditFilters>(emptyFilters);
 
   const queryUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -148,14 +152,21 @@ export default function AuditPage() {
     if (totalPages && integrationPage > totalPages) setIntegrationPage(totalPages);
   }, [data?.pagination.integrations.totalPages, integrationPage]);
 
-  const resetFilters = () => {
-    setUserId('all');
-    setAction('all');
-    setEntityType('all');
-    setFrom('');
-    setTo('');
-    setAuditPage(1);
+  const openFilters = () => {
+    setFilterDraft({ userId, action, entityType, from, to });
+    setFiltersOpen(true);
   };
+  const applyFilters = () => {
+    setUserId(filterDraft.userId);
+    setAction(filterDraft.action);
+    setEntityType(filterDraft.entityType);
+    setFrom(filterDraft.from);
+    setTo(filterDraft.to);
+    setAuditPage(1);
+    setFiltersOpen(false);
+  };
+  const activeFilterCount = Number(userId !== 'all') + Number(action !== 'all')
+    + Number(entityType !== 'all') + Number(Boolean(from || to));
   const oldValues = selected ? jsonObject(selected.oldValues) : {};
   const newValues = selected ? jsonObject(selected.newValues) : {};
   const changedFields = auditVisibleFields(oldValues, newValues);
@@ -174,6 +185,32 @@ export default function AuditPage() {
     total: 0,
     totalPages: 1,
   };
+  const journalHeader = (
+    <CardHeader className="gap-2 space-y-0 border-b border-border/70 pb-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <CardTitle role="heading" aria-level={2}>{tab === 'audit' ? ceoCopy.audit.history : ceoCopy.audit.integrationLogs}</CardTitle>
+        <Select value={tab} onValueChange={setTab}>
+          <SelectTrigger className="w-[13rem] max-w-full" aria-label={t('auditSection')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="audit">{ceoCopy.audit.history}</SelectItem>
+            <SelectItem value="integrations">{ceoCopy.audit.integrations}</SelectItem>
+          </SelectContent>
+        </Select>
+        {tab === 'audit' ? (
+          <Button variant="outline" size="sm" onClick={openFilters}>
+            <Filter data-icon="inline-start" />
+            {t('auditFilterButton')}
+            {activeFilterCount > 0 ? <Badge variant="secondary">{activeFilterCount}</Badge> : null}
+          </Button>
+        ) : null}
+      </div>
+      {tab === 'audit' ? (
+        <CardDescription>{isLoading ? ceoCopy.audit.loading : `${ceoCopy.audit.shown} ${auditPagination.total} ${ceoCopy.audit.lastEvents}`}</CardDescription>
+      ) : null}
+    </CardHeader>
+  );
 
   return (
     <ModulePage contained>
@@ -183,35 +220,13 @@ export default function AuditPage() {
           { label: t(MODULE_NAVIGATION.administration.nameKey), href: '/admin' },
           { label: ceoCopy.audit.title },
         ]}
-        actions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
+        titleActions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
       />
 
       <ModulePageBody contained ariaLabel={ceoCopy.audit.title}>
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="audit">{ceoCopy.audit.history}</TabsTrigger>
-          <TabsTrigger value="integrations">{ceoCopy.audit.integrations}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="audit" className="mt-5 space-y-5">
-          <Card>
-            <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_2.2fr_auto] xl:items-end">
-              <div className="space-y-1.5"><Label htmlFor="audit-filter-employee">{ceoCopy.audit.employee}</Label><Select value={userId} onValueChange={(value) => { setUserId(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-employee"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>{(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-1.5"><Label htmlFor="audit-filter-action">{ceoCopy.audit.action}</Label><Select value={action} onValueChange={(value) => { setAction(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-action"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allActions}</SelectItem><SelectItem value="CREATE">{ceoCopy.audit.created}</SelectItem><SelectItem value="UPDATE">{ceoCopy.audit.changed}</SelectItem><SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem><SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem><SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label htmlFor="audit-filter-object">{ceoCopy.audit.object}</Label><Select value={entityType} onValueChange={(value) => { setEntityType(value); setAuditPage(1); }}><SelectTrigger id="audit-filter-object"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ceoCopy.audit.allObjects}</SelectItem><SelectItem value="academy_lead">{ceoCopy.audit.leads}</SelectItem><SelectItem value="academy_student">{ceoCopy.audit.students}</SelectItem><SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem><SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem><SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem></SelectContent></Select></div>
-              <DateRangeField
-                idPrefix="audit-filter"
-                fromLabel={ceoCopy.audit.fromDate}
-                toLabel={ceoCopy.audit.toDate}
-                value={{ from, to }}
-                onChange={(range) => { setFrom(range.from); setTo(range.to); setAuditPage(1); }}
-              />
-              <Button variant="ghost" onClick={resetFilters}><RotateCcw data-icon="inline-start" />{ceoCopy.audit.reset}</Button>
-            </CardContent>
-          </Card>
-
+      {tab === 'audit' ? (
           <Card className="overflow-hidden">
-            <CardHeader className="border-b border-border/70 pb-4"><CardTitle>{ceoCopy.audit.history}</CardTitle><CardDescription>{isLoading ? ceoCopy.audit.loading : `${ceoCopy.audit.shown} ${auditPagination.total} ${ceoCopy.audit.lastEvents}`}</CardDescription></CardHeader>
+            {journalHeader}
             <CardContent className="p-0">
               {/*
                 A 900px table on a 375px screen is six columns of horizontal
@@ -280,11 +295,9 @@ export default function AuditPage() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="integrations" className="mt-5">
+      ) : (
           <Card className="overflow-hidden">
-            <CardHeader className="border-b border-border/70"><CardTitle>{ceoCopy.audit.integrationLogs}</CardTitle></CardHeader>
+            {journalHeader}
             <CardContent className="p-0">
               <ul className="divide-y divide-border/60 md:hidden">
                 {(data?.integrationLogs ?? []).map((log) => (
@@ -321,9 +334,71 @@ export default function AuditPage() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+      )}
       </ModulePageBody>
+
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="max-w-xl" aria-describedby={undefined}>
+          <DialogHeader><DialogTitle>{t('auditFiltersTitle')}</DialogTitle></DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); applyFilters(); }} className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="audit-filter-employee">{ceoCopy.audit.employee}</Label>
+                <Select value={filterDraft.userId} onValueChange={(value) => setFilterDraft((draft) => ({ ...draft, userId: value }))}>
+                  <SelectTrigger id="audit-filter-employee"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>
+                    {(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="audit-filter-action">{ceoCopy.audit.action}</Label>
+                <Select value={filterDraft.action} onValueChange={(value) => setFilterDraft((draft) => ({ ...draft, action: value }))}>
+                  <SelectTrigger id="audit-filter-action"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{ceoCopy.audit.allActions}</SelectItem>
+                    <SelectItem value="CREATE">{ceoCopy.audit.created}</SelectItem>
+                    <SelectItem value="UPDATE">{ceoCopy.audit.changed}</SelectItem>
+                    <SelectItem value="DELETE">{ceoCopy.audit.deleted}</SelectItem>
+                    <SelectItem value="REFUND">{ceoCopy.audit.refund}</SelectItem>
+                    <SelectItem value="APPROVE">{ceoCopy.audit.approved}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="audit-filter-object">{ceoCopy.audit.object}</Label>
+                <Select value={filterDraft.entityType} onValueChange={(value) => setFilterDraft((draft) => ({ ...draft, entityType: value }))}>
+                  <SelectTrigger id="audit-filter-object"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{ceoCopy.audit.allObjects}</SelectItem>
+                    <SelectItem value="academy_lead">{ceoCopy.audit.leads}</SelectItem>
+                    <SelectItem value="academy_student">{ceoCopy.audit.students}</SelectItem>
+                    <SelectItem value="academy_payment">{ceoCopy.audit.payments}</SelectItem>
+                    <SelectItem value="academy_group">{ceoCopy.audit.groups}</SelectItem>
+                    <SelectItem value="academy_lesson">{ceoCopy.audit.schedule}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <DateRangeField
+                className="flex-wrap sm:col-span-2"
+                idPrefix="audit-filter"
+                fromLabel={ceoCopy.audit.fromDate}
+                toLabel={ceoCopy.audit.toDate}
+                value={{ from: filterDraft.from, to: filterDraft.to }}
+                onChange={(range) => setFilterDraft((draft) => ({ ...draft, ...range }))}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" className="sm:mr-auto" onClick={() => setFilterDraft(emptyFilters)}>
+                <RotateCcw data-icon="inline-start" />{ceoCopy.audit.reset}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setFiltersOpen(false)}>{t('cancel')}</Button>
+              <Button type="submit">{t('auditApplyFilters')}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">

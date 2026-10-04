@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
@@ -21,6 +22,10 @@ vi.mock('../client/src/components/ux/board/CreateTaskDialog', () => ({ CreateTas
 const task = { id: 1, title: 'My assigned task', status: 'todo', priority: 'normal', color: null, creator: { id: 8, fullName: 'Creator' }, assignee: { id: 7, fullName: 'Employee' }, lead: null, dueAt: null, acceptedAt: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 };
 let client: QueryClient;
 beforeEach(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => undefined;
+  Element.prototype.releasePointerCapture ??= () => undefined;
+  Element.prototype.scrollIntoView ??= () => undefined;
   vi.clearAllMocks(); i18n.setLanguage('en');
   mocks.board.mockImplementation(async (_method, url) => ({ tasks: url.includes('archived=true') ? [{ ...task, id: 3, title: 'Archived task', status: 'accepted' }] : [task, { ...task, id: 2, title: 'Delegated task', creator: task.assignee, assignee: task.creator }] }));
   mocks.mini.mockResolvedValue([{ id: 7, fullName: 'Employee' }]);
@@ -34,6 +39,38 @@ describe('Mobile tasks interface', () => {
     expect(screen.queryByText('Delegated task')).toBeNull();
     expect(screen.getByRole('navigation').querySelectorAll('button')).toHaveLength(3);
     expect(screen.queryByText('Sales')).toBeNull();
+  });
+  it('shows a selected employee tasks and opens their detail without changing the signed-in user', async () => {
+    setup();
+    await screen.findByText('My assigned task');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Show tasks of' }));
+    await user.click(screen.getByRole('option', { name: 'Creator' }));
+    expect(screen.getByText('Delegated task')).toBeTruthy();
+    expect(screen.queryByText('My assigned task')).toBeNull();
+    expect(screen.getByText('Total tasks: 1')).toBeTruthy();
+    await user.click(screen.getByText('Delegated task'));
+    expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 2, tasksOnly: true }));
+    expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ currentUser: expect.objectContaining({ id: 7 }) }));
+  });
+  it('includes employees with no tasks, clears filters when choosing them and returns to my tasks from navigation', async () => {
+    mocks.mini.mockResolvedValue([{ id: 7, fullName: 'Employee' }, { id: 9, fullName: 'No assignments' }]);
+    setup();
+    await screen.findByText('My assigned task');
+    const filters = within(screen.getByRole('group', { name: 'Quick filters' }));
+    fireEvent.click(filters.getByRole('button', { name: /Done/ }));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'unmatched' } });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Show tasks of' }));
+    await user.click(screen.getByRole('option', { name: 'No assignments' }));
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+    expect(filters.getByRole('button', { name: /All statuses/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('Total tasks: 0')).toBeTruthy();
+    expect(screen.getByText('No tasks here yet')).toBeTruthy();
+    await user.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'My tasks' }));
+    await screen.findByText('My assigned task');
+    expect(screen.getByRole('combobox', { name: 'Show tasks of' }).textContent).toContain('My tasks');
+    expect(screen.queryByText('Delegated task')).toBeNull();
   });
   it('switches to delegated tasks and accepted archive tasks', async () => {
     setup(); await screen.findByText('My assigned task');

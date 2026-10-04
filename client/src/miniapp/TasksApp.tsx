@@ -1,9 +1,10 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
 import { CreateTaskDialog } from '@/components/ux/board/CreateTaskDialog';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -20,6 +21,7 @@ type QuickFilter = 'all' | Exclude<BoardStatus, 'accepted'>;
 type TaskGroup = 'review' | 'overdue' | 'today' | 'other' | 'done';
 
 const PULL_THRESHOLD = 72;
+const OWNER_SELF = 'me';
 const PRIORITY_RANK = { urgent: 0, normal: 1, low: 2 } as const;
 
 function isDueToday(task: TaskSummary): boolean {
@@ -52,6 +54,7 @@ export function TasksApp() {
   const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TaskTab>('mine');
+  const [owner, setOwner] = useState(OWNER_SELF);
   const [filter, setFilter] = useState<QuickFilter>('all');
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase());
@@ -67,6 +70,18 @@ export function TasksApp() {
     enabled: Boolean(user), refetchInterval: 30_000,
   });
   const users = useQuery<UserMini[]>({ queryKey: ['mini-users'], queryFn: () => miniRequest('GET', '/users'), enabled: Boolean(user), staleTime: 60_000 });
+  const currentUserId = user?.id;
+  const ownerOptions = useMemo(() => {
+    const employees = new Map<number, UserMini>();
+    for (const employee of users.data ?? []) employees.set(employee.id, employee);
+    for (const task of tasks.data?.tasks ?? []) {
+      for (const employee of [task.assignee, task.creator]) {
+        if (employee) employees.set(employee.id, employee);
+      }
+    }
+    if (currentUserId !== undefined) employees.delete(currentUserId);
+    return [...employees.values()].sort((left, right) => left.fullName.localeCompare(right.fullName, language));
+  }, [users.data, tasks.data, currentUserId, language]);
 
   useEffect(() => {
     const app = telegramApp();
@@ -86,7 +101,8 @@ export function TasksApp() {
   if (isLoading) return <div className="mini-center" role="status" aria-label={t('loading')}><Loader2 className="size-7 animate-spin" /></div>;
   if (!user) return <div className="mini-center" role="alert"><p>{t('miniTasksSessionExpired')}</p></div>;
 
-  const owned = (tasks.data?.tasks ?? []).filter((task) => tab === 'mine' ? task.assignee?.id === user.id
+  const selectedOwnerId = owner === OWNER_SELF ? user.id : Number(owner);
+  const owned = (tasks.data?.tasks ?? []).filter((task) => tab === 'mine' ? task.assignee?.id === selectedOwnerId
     : tab === 'assigned' ? task.creator?.id === user.id : task.creator?.id === user.id || task.assignee?.id === user.id);
   const active = tab === 'archive' ? owned : owned.filter((task) => task.status !== 'accepted');
   const visible = active.filter((task) => (filter === 'all' || task.status === filter)
@@ -109,6 +125,13 @@ export function TasksApp() {
   const changeTab = (next: TaskTab) => {
     hapticSelect();
     setTab(next);
+    setOwner(OWNER_SELF);
+    setFilter('all');
+    setSearch('');
+  };
+  const changeOwner = (next: string) => {
+    hapticSelect();
+    setOwner(next);
     setFilter('all');
     setSearch('');
   };
@@ -163,7 +186,29 @@ export function TasksApp() {
     <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">{pullDistance > 0 ? <RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin', !tasks.isFetching && !pullActive && 'opacity-50')} /> : null}</div>
     <header className="mini-header">
       <div className="mini-header-top"><p className="truncate text-sm text-muted-foreground">{user.fullName}</p><Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin')} /></Button></div>
-      <div className="mini-title-row"><div className="min-w-0"><h1>{heading}</h1><p className="mini-task-total">{t('miniTasksTasksCount')}: {active.length}</p></div><Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button></div>
+      <div className="mini-title-row">
+        <div className="min-w-0 flex-1">
+          <h1>
+            {tab === 'mine' ? (
+              <Select value={owner} onValueChange={changeOwner}>
+                <SelectTrigger className="mini-task-owner" aria-label={t('taskOwnerFilter')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-w-[calc(100vw-2rem)]">
+                  <SelectItem value={OWNER_SELF} textValue={t('myTasks')} className="min-h-11">{t('myTasks')}</SelectItem>
+                  {ownerOptions.map((employee) => (
+                    <SelectItem key={employee.id} value={String(employee.id)} textValue={employee.fullName} className="min-h-11">
+                      {employee.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : heading}
+          </h1>
+          <p className="mini-task-total">{t('miniTasksTasksCount')}: {active.length}</p>
+        </div>
+        <Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button>
+      </div>
       <div className="mini-search"><Search className="pointer-events-none absolute left-3 top-3 size-5 text-muted-foreground" /><Input className="h-11 pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>
       {tab !== 'archive' ? <div className="mini-filters" role="group" aria-label={t('miniTasksFilters')}>
         {([

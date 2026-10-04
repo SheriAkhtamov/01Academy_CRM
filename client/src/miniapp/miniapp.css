@@ -16,6 +16,9 @@
 .mini-header-top, .mini-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .mini-header-top { min-height: 2.5rem; }
 .mini-title-row h1 { color: var(--foreground); font-size: 1.55rem; line-height: 1.2; font-weight: 700; letter-spacing: -.025em; }
+.mini-title-row .mini-task-owner { min-height: 2.75rem; height: auto; max-width: 100%; gap: .5rem; padding: 0; border: 0; border-radius: .35rem; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; line-height: inherit; letter-spacing: inherit; text-align: left; box-shadow: none; }
+.mini-task-owner > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-task-owner > svg { flex-shrink: 0; }
 .mini-task-total { margin-top: .2rem; color: var(--muted-foreground); font-size: .82rem; }
 .mini-new-task { display: inline-flex; flex: none; align-items: center; gap: .4rem; min-height: 2.55rem; padding-inline: .85rem; border-radius: .8rem; white-space: nowrap; box-shadow: var(--shadow-xs); }
 .mini-search { position: relative; }

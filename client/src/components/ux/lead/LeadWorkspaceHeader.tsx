@@ -81,13 +81,13 @@ export function LeadWorkspaceHeader({
                   </a>
                   <button
                     type="button"
-                    title={t('clickToCopy')}
-                    aria-label={`${t('clickToCopy')}: ${phone}`}
+                    title={t('telephonyCopyNumber')}
+                    aria-label={`${t('telephonyCopyNumber')}: ${phone}`}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => copyPhone(phone)}
                   >
                     <Copy className="size-3" aria-hidden="true" />
-                    <span className="sr-only">{t('clickToCopy')}</span>
+                    <span className="sr-only">{t('telephonyCopyNumber')}</span>
                   </button>
                 </span>
               ))

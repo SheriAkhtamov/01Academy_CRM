@@ -105,7 +105,6 @@ export const financeCopy = (t: Translate) => ({
   paymentStatus: t('financeCenterPaymentStatus'),
   saveExpense: t('financeCenterSaveExpense'),
   salaryDialogTitle: t('financeCenterSalaryDialogTitle'),
-  salaryDialogDescription: t('financeCenterSalaryDialogDescription'),
   effectiveMonth: t('financeCenterEffectiveMonth'),
   note: t('comment'),
   saveSalary: t('financeCenterSaveSalary'),

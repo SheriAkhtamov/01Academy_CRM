@@ -22,18 +22,18 @@ class MiniErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
   static getDerivedStateFromError(error: Error) { return { error }; }
   componentDidCatch(error: Error, info: ErrorInfo) { console.error('[MiniApp]', error, info); }
   render() {
-    if (this.state.error) return <MiniErrorScreen error={this.state.error} onRetry={() => this.setState({ error: null })} />;
+    if (this.state.error) return <MiniErrorScreen onRetry={() => this.setState({ error: null })} />;
     return this.props.children;
   }
 }
 
-function MiniErrorScreen({ error, onRetry }: { error: Error; onRetry: () => void }) {
+function MiniErrorScreen({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="mini-center" role="alert">
       <AlertCircle className="size-10 text-destructive" />
       <h1 className="text-lg font-medium">{t('errorOccurred')}</h1>
-      <p className="text-sm text-muted-foreground">{import.meta.env.DEV && error.message ? error.message : t('failedToLoadData')}</p>
+      <p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p>
       <div className="flex flex-wrap justify-center gap-2">
         <Button variant="outline" onClick={() => window.location.reload()}><RotateCcw className="mr-2 size-4" />{t('reloadPage')}</Button>
         <Button variant="outline" onClick={onRetry}>{t('retry')}</Button>

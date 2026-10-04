@@ -7,7 +7,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { MODULE_NAVIGATION } from '@/lib/moduleNavigation';
 import { toast } from '@/hooks/use-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
@@ -451,7 +451,6 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             <Alert variant="destructive">
               <AlertCircle />
               <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-              <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
             </Alert>
             <Button variant="outline" onClick={() => integrations.refetch()} disabled={integrations.isFetching}>
               {t('retry')}
@@ -725,7 +724,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="truncate font-medium">
-                                {manager?.fullName ?? status?.fullName ?? `#${assignment.managerId}`}
+                                {manager?.fullName ?? status?.fullName ?? t('unknown')}
                               </p>
                               <Badge variant={status?.isOnline ? 'success' : 'secondary'}>
                                 {status?.isOnline ? t('online') : t('offline')}

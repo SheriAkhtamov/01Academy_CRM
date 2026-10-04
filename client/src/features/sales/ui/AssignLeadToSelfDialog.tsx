@@ -1,6 +1,5 @@
-import { AlertCircle, UserCheck } from 'lucide-react';
+import { UserCheck } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -48,12 +47,6 @@ export function AssignLeadToSelfDialog({
             {description}
           </DialogDescription>
         </DialogHeader>
-
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
-          <AlertDescription>{description}</AlertDescription>
-        </Alert>
 
         <div className="flex justify-end gap-2">
           <Button

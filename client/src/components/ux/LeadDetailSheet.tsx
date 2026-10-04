@@ -1368,8 +1368,7 @@ export function LeadDetailSheet({
                           rows={3}
                           className="resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
                         />
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                          <span className="text-xs text-muted-foreground/70">{t('ctrlEnterToSend')}</span>
+                        <div className="mt-2 flex items-center justify-end gap-3">
                           <Button
                             type="submit"
                             size="sm"
@@ -1593,7 +1592,7 @@ export function LeadDetailSheet({
                               <SelectGroup>
                                 {lead.students?.map((student) => (
                                   <SelectItem key={student.id} value={String(student.id)}>
-                                    {student.studentName || `${t('student')} #${student.id}`}
+                                    {student.studentName || t('student')}
                                   </SelectItem>
                                 ))}
                               </SelectGroup>

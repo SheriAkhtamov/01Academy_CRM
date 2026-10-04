@@ -474,6 +474,9 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
         ? null
         : calendarTasks.find((task) => task.id === activeTaskId) ?? null;
     const panelOpen = unscheduledPanel === 'open';
+    const announceDropDate = (dateKey?: string) => dateKey
+        ? new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeZone: 'UTC' }).format(dateFromDayKey(dateKey))
+        : t('noDueDate');
 
     return (
         /* Clipping is what lets the grid and the side panel scroll inside
@@ -488,10 +491,10 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule }: TaskCalendarP
                 onDragEnd={handleDragEnd}
                 accessibility={{
                     announcements: {
-                        onDragStart: () => t('dragTaskToDayHint'),
-                        onDragOver: () => t('dragTaskToDayHint'),
-                        onDragEnd: () => t('dragTaskToDayHint'),
-                        onDragCancel: () => t('dragTaskToDayHint'),
+                        onDragStart: ({ active }) => calendarTasks.find((task) => task.id === active.data.current?.taskId)?.title,
+                        onDragOver: ({ over }) => over ? announceDropDate(over.data.current?.dateKey) : undefined,
+                        onDragEnd: ({ over }) => over ? announceDropDate(over.data.current?.dateKey) : t('cancel'),
+                        onDragCancel: () => t('cancel'),
                     },
                 }}
             >

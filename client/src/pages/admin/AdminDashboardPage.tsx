@@ -458,7 +458,6 @@ export default function AdminDashboardPage() {
     {
       key: 'attendance',
       title: t('adminLowAttendance'),
-      detail: t('adminStudentsNeedAttention'),
       value: data.alerts.lowAttendanceStudents,
       icon: UserRoundX,
       tone: 'bg-amber-100 text-amber-600',
@@ -467,7 +466,6 @@ export default function AdminDashboardPage() {
     {
       key: 'teachers',
       title: t('adminGroupsWithoutTeacher'),
-      detail: t('adminScheduleNeedsAttention'),
       value: data.alerts.groupsWithoutTeacher,
       icon: BookOpenCheck,
       tone: 'bg-primary-50 text-primary-600',
@@ -597,7 +595,6 @@ export default function AdminDashboardPage() {
           <CardHeader className="flex flex-col items-start gap-2 px-4 pb-2 pt-3.5 sm:flex-row sm:justify-between">
             <div>
               <CardTitle className="text-[15px]">{t('adminBusinessDynamics')}</CardTitle>
-              <CardDescription className="mt-0.5 text-xs">{t('dataForSelectedPeriod')}</CardDescription>
             </div>
             {hasBusinessTrend ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
@@ -771,9 +768,11 @@ export default function AdminDashboardPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium leading-5">{item.title}</p>
-                      <p className="truncate text-xs text-slate-500">
-                        {item.value === 0 ? t('adminNoIssues') : item.detail}
-                      </p>
+                      {item.value === 0 || item.detail ? (
+                        <p className="truncate text-xs text-slate-500">
+                          {item.value === 0 ? t('adminNoIssues') : item.detail}
+                        </p>
+                      ) : null}
                     </div>
                     <Badge variant={item.value === 0 ? 'success' : 'secondary'}>
                       {item.value}

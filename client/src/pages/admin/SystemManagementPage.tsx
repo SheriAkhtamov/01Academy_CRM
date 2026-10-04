@@ -465,7 +465,7 @@ function EmployeeNotificationsPage() {
               {channel === 'notification' ? t('composeSystemNotification') : t('composePersonalMessage')}
             </DialogTitle>
             <DialogDescription>
-              {t('employeeBroadcastDialogDescription')
+              {t('selectedEmployeesCount')
                 .replace('{count}', String(selectedEmployees.length))}
             </DialogDescription>
           </DialogHeader>

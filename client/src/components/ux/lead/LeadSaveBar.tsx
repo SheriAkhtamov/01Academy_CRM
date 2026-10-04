@@ -19,7 +19,6 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
           {dirty ? <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" /> : <CheckCircle2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground sm:text-sm">{dirty ? t('leadWorkspaceDraft') : t('leadWorkspaceSaved')}</p>
-            <p className="hidden text-xs text-muted-foreground sm:block">{t('leadWorkspaceSaveShortcut')}</p>
           </div>
         </div>
         {dirty ? (
@@ -28,7 +27,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
             <span className="sr-only sm:not-sr-only">{t('undoChanges')}</span>
           </Button>
         ) : null}
-        <Button type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending || saveDisabled} title={t('leadWorkspaceSaveShortcut')}>
+        <Button type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending || saveDisabled}>
           {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
           {pending ? t('saving') : t('saveChanges')}
         </Button>

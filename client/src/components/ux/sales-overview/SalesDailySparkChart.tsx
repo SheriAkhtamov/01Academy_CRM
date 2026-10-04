@@ -14,7 +14,6 @@ export function SalesDailySparkChart({ points, title, formatValue, kind = 'area'
 }) {
   const { t, language } = useTranslation();
   const gradientId = useId().replace(/:/g, '');
-  const helpId = useId();
   const [selected, setSelected] = useState<number | null>(null);
   if (!points?.length) return <div className="mt-5 h-32 rounded-lg bg-muted/30" aria-busy={!points} />;
   const max = Math.max(1, ...points.map((point) => point.value));
@@ -38,9 +37,8 @@ export function SalesDailySparkChart({ points, title, formatValue, kind = 'area'
       <span className="text-muted-foreground">{selected === null ? t('salesDailyTrend') : day(active.date)}</span>
       {selected !== null ? <span>{formatValue(active.value)}</span> : null}
     </div>
-    <span id={helpId} className="sr-only">{t('salesChartKeyboard')}</span>
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" className={`${expanded ? 'h-52' : compact ? 'h-16' : 'h-[90px]'} w-full overflow-visible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-      role="slider" tabIndex={0} aria-label={t('salesDailyChart').replace('{metric}', title)} aria-describedby={helpId}
+      role="slider" tabIndex={0} aria-label={t('salesDailyChart').replace('{metric}', title)}
       aria-orientation="horizontal" aria-valuemin={0} aria-valuemax={points.length - 1} aria-valuenow={index} aria-valuetext={`${day(active.date)}: ${formatValue(active.value)}`}
       onPointerDown={pick} onPointerMove={pick} onPointerLeave={(event) => { if (event.currentTarget.ownerDocument.activeElement !== event.currentTarget) setSelected(null); }} onFocus={() => setSelected(index)} onBlur={() => setSelected(null)}
       onKeyDown={(event) => {

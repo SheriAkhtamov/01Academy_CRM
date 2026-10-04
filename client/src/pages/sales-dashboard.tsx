@@ -385,12 +385,6 @@ function AssignLeadBeforeMoveDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
-          <AlertDescription>{t('leadMoveRequiresResponsibleManagerDescription')}</AlertDescription>
-        </Alert>
-
         <div className="space-y-2">
           <label className="text-sm font-medium" htmlFor="lead-move-manager">
             {t('responsibleManager')}

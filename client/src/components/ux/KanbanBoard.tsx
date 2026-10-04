@@ -703,6 +703,14 @@ export function KanbanBoard({
         onDragStart={handleDragStart}
         onDragCancel={() => setActiveLeadId(null)}
         onDragEnd={handleDragEnd}
+        accessibility={{
+          announcements: {
+            onDragStart: ({ active }) => boardLeads.find((lead) => lead.id === active.data.current?.leadId)?.contactName,
+            onDragOver: ({ over }) => statusesByCode.get(over?.data.current?.statusCode)?.name,
+            onDragEnd: ({ over }) => statusesByCode.get(over?.data.current?.statusCode)?.name ?? t('cancel'),
+            onDragCancel: () => t('cancel'),
+          },
+        }}
       >
         <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-2">
           <div className="flex h-full min-w-max items-stretch gap-4 px-2">

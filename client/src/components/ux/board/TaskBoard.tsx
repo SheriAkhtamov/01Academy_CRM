@@ -270,10 +270,16 @@ export function TaskBoard({ tasks, onStatusChange, onTaskClick, canMoveTask }: T
                 onDragEnd={handleDragEnd}
                 accessibility={{
                     announcements: {
-                        onDragStart: () => t('dragTaskHint'),
-                        onDragOver: () => t('dragTaskHint'),
-                        onDragEnd: () => t('dragTaskHint'),
-                        onDragCancel: () => t('dragTaskHint'),
+                        onDragStart: ({ active }) => boardTasks.find((task) => task.id === active.data.current?.taskId)?.title,
+                        onDragOver: ({ over }) => {
+                            const column = BOARD_COLUMNS.find((entry) => entry.status === over?.data.current?.status);
+                            return column ? t(column.labelKey) : undefined;
+                        },
+                        onDragEnd: ({ over }) => {
+                            const column = BOARD_COLUMNS.find((entry) => entry.status === over?.data.current?.status);
+                            return column ? t(column.labelKey) : t('cancel');
+                        },
+                        onDragCancel: () => t('cancel'),
                     },
                 }}
             >

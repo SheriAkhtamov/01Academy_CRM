@@ -312,7 +312,6 @@ export function SalesFunnelsPanel() {
             <EmptyState
               icon={GitBranch}
               title={t('failedToLoadData')}
-              description={t('failedToLoadDataHint')}
               action={(
                 <Button type="button" variant="outline" onClick={() => funnels.refetch()}>
                   {t('retry')}

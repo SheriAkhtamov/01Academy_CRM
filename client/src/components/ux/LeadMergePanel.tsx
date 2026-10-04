@@ -10,7 +10,7 @@ import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -74,7 +74,6 @@ function LeadCandidateCard({
   const content = (
     <div className="flex min-w-0 flex-1 flex-col gap-2 text-left">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">#{lead.id}</Badge>
         <span className="font-medium text-foreground">{lead.contactName}</span>
         {lead.statusName ? <Badge variant="secondary">{lead.statusName}</Badge> : null}
       </div>
@@ -141,6 +140,9 @@ export function LeadMergePanel() {
   const freshSecondLead = previewLeads.find((lead) => lead.id === secondLead?.id) ?? secondLead;
   const retainedLead = retainedLeadId === String(freshFirstLead?.id) ? freshFirstLead : freshSecondLead;
   const duplicateLead = retainedLeadId === String(freshFirstLead?.id) ? freshSecondLead : freshFirstLead;
+  const selectedCardLabel = (lead: LeadMergeCandidate | null) => lead
+    ? `${t(lead.id === firstLead?.id ? 'leadMergeFirstLead' : 'leadMergeSecondLead')} · ${lead.contactName}`
+    : '';
 
   const mergeMutation = useMutation({
     mutationFn: () => leadsApi.merge({
@@ -217,8 +219,8 @@ export function LeadMergePanel() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value={String(firstLead.id)}>#{firstLead.id} — {firstLead.contactName}</SelectItem>
-                      <SelectItem value={String(secondLead.id)}>#{secondLead.id} — {secondLead.contactName}</SelectItem>
+                      <SelectItem value={String(firstLead.id)}>{selectedCardLabel(firstLead)} — {primaryContact(firstLead)}</SelectItem>
+                      <SelectItem value={String(secondLead.id)}>{selectedCardLabel(secondLead)} — {primaryContact(secondLead)}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -228,15 +230,14 @@ export function LeadMergePanel() {
               {previewQuery.isError ? (
                 <Alert variant="destructive">
                   <AlertTitle>{t('leadMergePreviewFailed')}</AlertTitle>
-                  <AlertDescription>{t('retry')}</AlertDescription>
                 </Alert>
               ) : null}
               {retainedLead && duplicateLead ? (
                 <div className="flex flex-col gap-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">#{duplicateLead.id} {duplicateLead.contactName}</Badge>
+                    <Badge variant="secondary">{selectedCardLabel(duplicateLead)}</Badge>
                     <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
-                    <Badge>#{retainedLead.id} {retainedLead.contactName}</Badge>
+                    <Badge>{selectedCardLabel(retainedLead)}</Badge>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline">{t('mergeInstagramChats')}: {Number(duplicateLead.instagramConversationCount ?? 0)}</Badge>
@@ -296,7 +297,6 @@ export function LeadMergePanel() {
             ) : searchQuery.isError ? (
               <Alert variant="destructive">
                 <AlertTitle>{t('leadMergeSearchFailed')}</AlertTitle>
-                <AlertDescription>{t('retry')}</AlertDescription>
               </Alert>
             ) : searchResults.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t('noMatchingLeads')}</p>
@@ -315,8 +315,8 @@ export function LeadMergePanel() {
             <AlertDialogTitle>{t('confirmLeadMergeTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t('confirmLeadMergeDescription')
-                .replace('{duplicate}', duplicateLead?.contactName ?? '')
-                .replace('{retained}', retainedLead?.contactName ?? '')}
+                .replace('{duplicate}', selectedCardLabel(duplicateLead))
+                .replace('{retained}', selectedCardLabel(retainedLead))}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

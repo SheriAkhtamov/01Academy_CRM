@@ -8,7 +8,7 @@ import { formatAcademyDate } from '@/lib/localeFormat';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -384,7 +384,6 @@ export function LeadAssignmentContent() {
         <Alert variant="destructive">
           <AlertCircle />
           <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-          <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
         </Alert>
         <Button variant="outline" onClick={() => refetchAll()} disabled={leadsQuery.isFetching || usersQuery.isFetching || statusesQuery.isFetching || funnelsQuery.isFetching}>
           {t('retry')}

@@ -441,10 +441,9 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       </Card>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{selected ? creativeDisplayTitle(selected) || t('metaDetails') : t('metaDetails')}</DialogTitle>
-            <DialogDescription>{t('metaDetails')}</DialogDescription>
           </DialogHeader>
           {selected ? (
             <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/20 p-3">
@@ -545,7 +544,7 @@ function AttributedLeadRow({
   dateTime: (value?: string | null) => string;
 }) {
   const { t } = useTranslation();
-  const name = lead.contactName || lead.studentName || `#${lead.id}`;
+  const name = lead.contactName || lead.studentName || t('lead');
   const href = `${lead.isArchived ? '/sales/archive' : '/sales/pipeline'}?lead=${lead.id}`;
 
   return (

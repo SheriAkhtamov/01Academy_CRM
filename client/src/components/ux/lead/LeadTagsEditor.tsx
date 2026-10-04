@@ -286,7 +286,6 @@ export function LeadTagsEditor({
                 ? `${listboxId}-option-${resolvedActiveSuggestionIndex}`
                 : undefined
             }
-            aria-describedby={`lead-${leadId}-tag-hint`}
             autoComplete="off"
             className="h-6 min-w-32 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-wait"
             value={customTagName}

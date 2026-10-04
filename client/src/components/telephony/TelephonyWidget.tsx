@@ -213,7 +213,6 @@ export function TelephonyWidget() {
           <header
             className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 py-2 pl-3.5 pr-2"
             onDoubleClick={isMobile ? undefined : resetToDefault}
-            title={isMobile ? undefined : t('telephonyDragHint')}
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">

@@ -513,7 +513,6 @@ export function TeacherGroupsSection({
                       <EmptyState
                         icon={Users}
                         title={t('noStudents')}
-                        description={t('noStudentsInGroup')}
                       />
                     )}
                   />

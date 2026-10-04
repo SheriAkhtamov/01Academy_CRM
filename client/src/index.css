@@ -844,10 +844,6 @@
     background-size: 200% 200%;
   }
 
-  .login-card__subtitle {
-    @apply text-sm text-slate-500;
-  }
-
   .login-card__error {
     @apply rounded-lg border px-4 py-3;
     background-color: var(--danger-tint-background);

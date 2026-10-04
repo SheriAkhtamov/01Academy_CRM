@@ -34,7 +34,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -444,10 +443,10 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       {section === 'overview' ? (
         <StaggerGroup count={7} className="grid grid-cols-tile gap-3">
           <StaggerItem preset="pop" className="h-full">
-            <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} detail={t('dataForSelectedPeriod')} icon={Users} tone="blue" />
+            <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} icon={Users} tone="blue" />
           </StaggerItem>
           <StaggerItem preset="pop" className="h-full">
-            <KpiCard title={t('paidCustomersForPeriod')} value={summary.newPaidStudents ?? 0} detail={t('dataForSelectedPeriod')} icon={Megaphone} tone="green" />
+            <KpiCard title={t('paidCustomersForPeriod')} value={summary.newPaidStudents ?? 0} icon={Megaphone} tone="green" />
           </StaggerItem>
           <StaggerItem preset="pop" className="h-full">
             <KpiCard
@@ -743,10 +742,9 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       {/* ─── Expense Dialog ─── */}
       {canManageExpenses && (
         <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
-          <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
+          <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0" aria-describedby={undefined}>
             <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
               <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
-              <DialogDescription>{t('addExpense')}</DialogDescription>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

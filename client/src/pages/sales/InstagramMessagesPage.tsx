@@ -1688,7 +1688,7 @@ export default function MessagesPage() {
                       ) : null}
                       <p className="sr-only">
                         {[
-                          selectedConversation.leadId ? `${t('lead')} #${selectedConversation.leadId}` : null,
+                          selectedConversation.leadId ? t('lead') : null,
                           `@${selectedConversation.accountUsername}`,
                         ].filter(Boolean).join(' · ')}
                       </p>

@@ -119,8 +119,13 @@ describe('task acceptance UI', () => {
       const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
       client.setQueryData(['/api/board/tasks/100'], task);
       render(provider(<TaskDetailSheet taskId={100} open onOpenChange={() => undefined} users={[employee]} />, client));
-      const accept = screen.getByRole('button', { name: 'Accept task' }) as HTMLButtonElement;
-      expect(accept.disabled).toBe(!enabled);
+      const accept = screen.queryByRole('button', { name: 'Accept task' }) as HTMLButtonElement | null;
+      if (enabled) {
+        expect(accept).not.toBeNull();
+        expect(accept?.disabled).toBe(false);
+      } else {
+        expect(accept).toBeNull();
+      }
     },
   );
 });

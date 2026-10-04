@@ -246,7 +246,7 @@ export function DemoLessonEnrollmentDialog({
                       />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">
-                          {student.studentName || `${t('student')} #${student.id}`}
+                          {student.studentName || t('student')}
                         </span>
                         {student.studentAge ? (
                           <span className="block text-xs text-muted-foreground">

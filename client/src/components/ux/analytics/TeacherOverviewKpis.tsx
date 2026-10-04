@@ -125,13 +125,13 @@ function KpiGauge({
   );
 }
 
-function KpiValue({ value, caption }: { value: ReactNode; caption: string }) {
+function KpiValue({ value, caption }: { value: ReactNode; caption?: string }) {
   return (
     <div className="min-w-0">
       <div className="text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
         {value}
       </div>
-      <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{caption}</p>
+      {caption ? <p className="mt-1.5 line-clamp-2 text-xs leading-4 text-muted-foreground">{caption}</p> : null}
     </div>
   );
 }
@@ -233,7 +233,6 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
                 <span className="text-sm font-semibold text-muted-foreground">{t('teachingHoursUnit')}</span>
               </span>
             )}
-            caption={t('dataForSelectedPeriod')}
           />
         </KpiShell>
       </StaggerItem>

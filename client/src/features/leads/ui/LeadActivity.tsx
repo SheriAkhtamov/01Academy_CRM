@@ -126,8 +126,7 @@ export function LeadCommentsCard({
             placeholder={t('addCommentPlaceholder')}
             rows={3}
           />
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground/70">{t('ctrlEnterToSend')}</span>
+          <div className="flex justify-end">
             <Button type="submit" disabled={isPending || !draft.trim()}>
               {isPending
                 ? <Loader2 className="animate-spin" data-icon="inline-start" />

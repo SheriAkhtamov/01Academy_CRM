@@ -29,7 +29,6 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import {
     CheckCircle2,
     Loader2,
-    Lock,
     Paperclip,
     Pencil,
     RotateCcw,
@@ -437,34 +436,29 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </SelectContent>
                                 </Select>
 
-                                {task.status === 'done' && (!tasksOnly || canAcceptReopen) ? (
+                                {task.status === 'done' && canAcceptReopen ? (
                                     <Button
                                         size="sm"
                                         className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
                                         onClick={() => statusMutation.mutate('accepted')}
-                                        disabled={!canAcceptReopen || statusMutation.isPending}
-                                        title={!canAcceptReopen ? t('onlyCreatorCanAcceptHint') : undefined}
+                                        disabled={statusMutation.isPending}
                                     >
                                         <CheckCircle2 className="size-4" /> {t('acceptTask')}
                                     </Button>
                                 ) : null}
 
-                                {task.status === 'accepted' && (!tasksOnly || canAcceptReopen) ? (
+                                {task.status === 'accepted' && canAcceptReopen ? (
                                     <Button
                                         size="sm"
                                         variant="outline"
                                         className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
                                         onClick={() => statusMutation.mutate('in_progress')}
-                                        disabled={!canAcceptReopen || statusMutation.isPending}
-                                        title={!canAcceptReopen ? t('onlyCreatorCanAcceptHint') : undefined}
+                                        disabled={statusMutation.isPending}
                                     >
                                         <RotateCcw className="size-4" /> {t('reopenTask')}
                                     </Button>
                                 ) : null}
 
-                                {!tasksOnly && !canAcceptReopen && (task.status === 'done' || task.status === 'accepted') ? (
-                                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Lock className="size-3" />{t('onlyCreatorCanAcceptHint')}</span>
-                                ) : null}
                             </div>
 
                             {/* Meta + edit form */}

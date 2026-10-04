@@ -106,7 +106,6 @@ export default function Login() {
               <Logo size="lg" />
             </motion.div>
             <div className="login-card__title">{t('platformName')}</div>
-            <div className="login-card__subtitle">{t('signInToContinue')}</div>
           </StaggerItem>
 
           {/*

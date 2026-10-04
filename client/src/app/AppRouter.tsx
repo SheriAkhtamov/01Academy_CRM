@@ -51,7 +51,7 @@ function AccessDenied({
     : t('accessDeniedModule');
   const description = descriptionKey === 'financeCenterAccessRequired'
     ? t('financeCenterAccessRequired')
-      : t('contactAdministratorForAccess');
+    : undefined;
 
   return (
     <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
@@ -63,7 +63,7 @@ function AccessDenied({
         transition={SPRING.gentle}
       >
         <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        {description ? <p className="mt-2 text-sm text-muted-foreground">{description}</p> : null}
       </motion.div>
     </div>
   );
@@ -115,7 +115,6 @@ export function AppRouter() {
         <Alert variant="destructive" className="max-w-lg">
           <AlertTitle>{t('sessionCheckFailedTitle')}</AlertTitle>
           <AlertDescription>
-            <p>{t('sessionCheckFailedDescription')}</p>
             <Button className="mt-4" variant="outline" disabled={isRefetchingSession} onClick={() => void refetchSession().catch(() => undefined)}>
               {isRefetchingSession ? t('loading') : t('retry')}
             </Button>

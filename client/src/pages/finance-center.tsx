@@ -747,8 +747,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       </Dialog>
 
       <Dialog open={salaryDialogOpen} onOpenChange={salaryGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle><DialogDescription>{copy.salaryDialogDescription}</DialogDescription></DialogHeader>
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle></DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <FieldGroup className="gap-4">
             <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{payroll.data?.entries.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}>{entry.employeeName}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>

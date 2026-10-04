@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
@@ -1052,7 +1052,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <Alert variant="destructive">
                     <AlertCircle />
                     <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-                    <AlertDescription>{t('failedToLoadDataHint')}</AlertDescription>
                   </Alert>
                   <Button variant="outline" size="sm" onClick={() => refetchUsers()}>{t('retry')}</Button>
                 </div>

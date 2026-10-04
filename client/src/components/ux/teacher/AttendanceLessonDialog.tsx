@@ -36,7 +36,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { LessonStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import {
@@ -139,12 +138,8 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
   const { t, language } = useTranslation();
   const rescheduleBodyId = useId();
-  const keyboardHintId = useId();
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
-  // The hint costs a line of a phone modal and describes keys that device does
-  // not have.
-  const hasKeyboardPointer = useMediaQuery('(pointer: fine)');
 
   const summary = useMemo(() => {
     let marked = 0;
@@ -385,12 +380,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                       {t('allAbsent')}
                     </Button>
                   </div>
-
-                  {hasKeyboardPointer ? (
-                    <p id={keyboardHintId} className="text-xs text-muted-foreground">
-                      {t('attendanceKeyboardHint')}
-                    </p>
-                  ) : null}
                 </div>
 
                 <div className="space-y-2.5">
@@ -401,7 +390,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   <ul
                     className="space-y-2.5"
                     aria-label={t('groupStudentsCount').replace('{count}', String(students.length))}
-                    aria-describedby={hasKeyboardPointer ? keyboardHintId : undefined}
                     onKeyDown={handleRosterKeyDown}
                     onFocus={handleRosterFocus}
                   >
@@ -528,7 +516,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   icon={Users}
                   className="py-4"
                   title={t('noStudents')}
-                  description={t('noStudentsInGroup')}
                 />
               </div>
             ) : null}

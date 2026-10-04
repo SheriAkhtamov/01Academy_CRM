@@ -23,7 +23,7 @@ import { LeadAssignmentContent } from '@/pages/admin-leads';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -218,14 +218,13 @@ const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekS
 
 const toDateInput = academyDateInputValue;
 
-function EmptyTableState({ title, description }: { title: string; description?: string }) {
+function EmptyTableState({ title }: { title: string }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
       <div className="flex size-11 items-center justify-center rounded-xl bg-muted">
         <Building2 className="text-muted-foreground" />
       </div>
       <p className="font-medium text-foreground">{title}</p>
-      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
     </div>
   );
 }
@@ -1290,7 +1289,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           <Card>
             <CardHeader>
               <CardTitle>{t('failedToLoadData')}</CardTitle>
-              <CardDescription>{t('retry')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Button onClick={() => configuration.refetch()}>{t('retry')}</Button>

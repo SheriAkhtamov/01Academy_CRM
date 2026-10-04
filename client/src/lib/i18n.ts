@@ -1612,6 +1612,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   studentRequiresAtLeastOneGroup: { en: 'An active student must stay in at least one group.', ru: 'У активного ученика должна остаться хотя бы одна группа.' },
   availableSlots: { en: 'Available slots', ru: 'Свободные слоты' },
   demoLesson: { en: 'Demo lesson', ru: 'Демо-урок' },
+  demoLessonWithCourse: { en: 'Demo lesson — {course}', ru: 'Демо-урок — {course}' },
   demoParticipantsShort: { en: 'participants', ru: 'участников' },
   createDemoLesson: { en: 'Create demo lesson', ru: 'Создать демо-урок' },
   demoFormat: { en: 'Demo format', ru: 'Формат демо' },

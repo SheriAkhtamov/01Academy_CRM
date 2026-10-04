@@ -101,9 +101,13 @@ export function ScheduleMonthGrid({
                     const tone = event.source === 'demo'
                       ? demoToneForStatus(event.demoStatus)
                       : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
-                    const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
+                    const eventName = event.source === 'demo'
+                      ? (event.courseName
+                        ? t('demoLessonWithCourse').replace('{course}', event.courseName)
+                        : t('demoLesson'))
+                      : event.groupName;
                     const demoStatusKey = getDemoCalendarStatusKey(event);
-                    const displayName = demoStatusKey ? t(demoStatusKey) : eventName;
+                    const displayName = demoStatusKey ? `${eventName} · ${t(demoStatusKey)}` : eventName;
                     return (
                       <button
                         key={event.id}
@@ -118,6 +122,7 @@ export function ScheduleMonthGrid({
                           color: tone.foreground,
                         }}
                         aria-label={`${formatCalendarMinutes(event.startMinutes)}, ${displayName}`}
+                        title={displayName}
                         onClick={() => onSelectEvent(event)}
                       >
                         <span className="shrink-0 tabular-nums opacity-80">

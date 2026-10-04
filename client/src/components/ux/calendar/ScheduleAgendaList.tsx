@@ -80,7 +80,11 @@ export function ScheduleAgendaList({
                 const tone = event.source === 'demo'
                   ? demoToneForStatus(event.demoStatus)
                   : calendarToneAt(groupIndexById.get(event.groupId) ?? 0);
-                const eventName = event.source === 'demo' ? t('demoLesson') : event.groupName;
+                const eventName = event.source === 'demo'
+                  ? (event.courseName
+                    ? t('demoLessonWithCourse').replace('{course}', event.courseName)
+                    : t('demoLesson'))
+                  : event.groupName;
                 const demoStatusKey = getDemoCalendarStatusKey(event);
                 const demoStatus = demoStatusKey ? t(demoStatusKey) : null;
                 const timeRange = `${formatCalendarMinutes(event.startMinutes)}–${formatCalendarMinutes(event.endMinutes)}`;

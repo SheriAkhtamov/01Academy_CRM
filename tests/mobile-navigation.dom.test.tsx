@@ -51,7 +51,9 @@ beforeEach(() => {
     listeners.forEach((listener) => listener({ matches } as MediaQueryListEvent));
   };
   vi.stubGlobal('matchMedia', (query: string) => query === desktop.media ? desktop : {
-    matches: false, addListener: vi.fn(), removeListener: vi.fn(),
+    matches: false, media: query, onchange: null,
+    addListener: vi.fn(), removeListener: vi.fn(),
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(() => true),
   });
 });
 

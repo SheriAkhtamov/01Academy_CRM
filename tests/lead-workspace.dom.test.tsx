@@ -389,6 +389,9 @@ describe('lead workspace navigation and drafts', () => {
   });
 
   it('requires confirmation before removing a phone and persists only on save', async () => {
+    // Start with a loaded record so initial hydration cannot replace the phone
+    // button between user-event's pointer movement and click on slower runners.
+    queryClient.setQueryData(['/api/academy/leads', 15], lead);
     const { user } = renderSheet();
     await waitFor(() => expect((screen.getByLabelText(`${i18n.t('phone')} 2`) as HTMLInputElement).value).toContain('68'));
     await user.click(screen.getAllByRole('button', { name: i18n.t('removePhone') })[1]);

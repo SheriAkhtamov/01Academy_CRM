@@ -258,42 +258,32 @@ export default function TasksPage() {
                     title={t('taskBoard')}
                     actions={
                         <>
-                            <div
-                                role="group"
-                                aria-label={t('taskListMode')}
-                                className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+                            <Select
+                                value={taskListView}
+                                onValueChange={(value) => changeTaskListView(value as TaskListView)}
                             >
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    data-testid="task-list-active"
-                                    aria-pressed={!isArchiveView}
-                                    className={cn(
-                                        'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
-                                        !isArchiveView && 'bg-card text-foreground shadow-2xs hover:bg-card',
-                                    )}
-                                    onClick={() => changeTaskListView('active')}
+                                <SelectTrigger
+                                    className="w-full max-md:min-h-11 sm:w-44"
+                                    aria-label={t('taskListMode')}
+                                    data-testid="task-list-mode"
                                 >
-                                    <ListTodo className="size-4" aria-hidden="true" />
-                                    {t('activeTasks')}
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    data-testid="task-list-archive"
-                                    aria-pressed={isArchiveView}
-                                    className={cn(
-                                        'h-8 gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-card/70 max-md:h-11 max-md:px-3.5',
-                                        isArchiveView && 'bg-card text-foreground shadow-2xs hover:bg-card',
-                                    )}
-                                    onClick={() => changeTaskListView('archive')}
-                                >
-                                    <Archive className="size-4" aria-hidden="true" />
-                                    {t('taskArchive')}
-                                </Button>
-                            </div>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="active" textValue={t('activeTasks')} data-testid="task-list-active">
+                                        <span className="inline-flex items-center gap-2">
+                                            <ListTodo className="size-4 shrink-0" aria-hidden="true" />
+                                            {t('activeTasks')}
+                                        </span>
+                                    </SelectItem>
+                                    <SelectItem value="archive" textValue={t('taskArchive')} data-testid="task-list-archive">
+                                        <span className="inline-flex items-center gap-2">
+                                            <Archive className="size-4 shrink-0" aria-hidden="true" />
+                                            {t('taskArchive')}
+                                        </span>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
                             {!isArchiveView ? (
                                 <div
                                     role="group"

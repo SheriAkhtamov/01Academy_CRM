@@ -291,11 +291,6 @@ interface DuplicateLeadHint extends LeadMergeDialogLead {
   leadId?: number | null;
   statusCode?: string | null;
 }
-const optionalNumberString = z.string().refine(
-  (value) => value === '' || (Number.isFinite(Number(value)) && Number(value) >= 0),
-  'invalidData',
-);
-
 const optionalPhoneString = z.string().trim().refine(
   (value) => value === '' || value.length >= 7,
   'invalidData',
@@ -305,7 +300,6 @@ const leadSchema = z.object({
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
   languages: z.array(z.enum(LEAD_LANGUAGES)),
-  expectedPaymentUzs: optionalNumberString,
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
   studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
   studyTime: z.string().refine((value) => !value || LEAD_STUDY_TIMES.includes(value), 'invalidData'),
@@ -363,7 +357,6 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
   languages: selectedLeadLanguages(lead.languages, lead.language),
-  expectedPaymentUzs: lead.expectedPaymentUzs ? String(lead.expectedPaymentUzs) : '',
   locality: lead.locality ?? '',
   studyDays: lead.studyDays ?? '',
   studyTime: lead.studyTime ?? '',
@@ -438,7 +431,6 @@ export function LeadDetailSheet({
       phoneNumbers: [''],
       sourceId: '',
       languages: [],
-      expectedPaymentUzs: '',
       locality: '',
       studyDays: '',
       studyTime: '',
@@ -517,7 +509,6 @@ export function LeadDetailSheet({
       (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
       lead.sourceId ?? '',
       selectedLeadLanguages(lead.languages, lead.language).join(','),
-      lead.expectedPaymentUzs ?? '',
       lead.locality ?? '',
       lead.studyDays ?? '',
       lead.studyTime ?? '',
@@ -546,7 +537,10 @@ export function LeadDetailSheet({
       editVersion.current = lead.updatedAt;
       setVersionConflict(false);
     } else if (editVersion.current !== lead.updatedAt) {
-      setVersionConflict(true);
+      if (hydratedLeadKey.current === leadSnapshotKey) {
+        editVersion.current = lead.updatedAt;
+        setVersionConflict(false);
+      } else setVersionConflict(true);
     }
 
     if (hydratedLeadKey.current !== leadSnapshotKey && (changedLead || !leadForm.formState.isDirty)) {
@@ -634,7 +628,6 @@ export function LeadDetailSheet({
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         sourceId: Number(values.sourceId),
         language: values.languages[0] ?? '',
-        expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
         locality: values.locality || null,
         studyDays: values.studyDays || null,
         studyTime: values.studyTime || null,
@@ -1118,7 +1111,6 @@ export function LeadDetailSheet({
                 { label: t('source'), value: sources.find((source) => source.id === lead.sourceId)?.name ?? '' },
                 { label: t('communicationLanguage'), value: selectedLeadLanguages(lead.languages, lead.language)
                   .map((selected) => t(selected === 'uz' ? 'uzbekLang' : selected === 'en' ? 'english' : 'russian')).join(', ') },
-                { label: t('amount'), value: money(lead.expectedPaymentUzs) },
                 { label: t('leadLocality'), value: lead.locality ? t(localityKeys[lead.locality]) : '' },
                 { label: t('leadStudyDays'), value: lead.studyDays ? t(studyDaysKeys[lead.studyDays]) : '' },
                 { label: t('leadStudyTime'), value: lead.studyTime ?? '' },
@@ -1276,26 +1268,6 @@ export function LeadDetailSheet({
                                       </SelectGroup>
                                     </SelectContent>
                                   </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={leadForm.control}
-                              name="expectedPaymentUzs"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('expectedPayment')}</FormLabel>
-                                  <FormControl>
-                                    <CurrencyInput
-                                      ref={field.ref}
-                                      onBlur={field.onBlur}
-                                      name={field.name}
-                                      value={field.value}
-                                      onValueChange={field.onChange}
-                                      aria-invalid={fieldState.invalid}
-                                    />
-                                  </FormControl>
                                   <LocalizedFormMessage />
                                 </FormItem>
                               )}

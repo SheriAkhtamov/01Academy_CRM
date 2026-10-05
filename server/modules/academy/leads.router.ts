@@ -80,6 +80,7 @@ import {
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
 import { parseLeadLanguageUpdates } from './lead-languages';
+import { parseStudentLeadPayment, saveStudentLeadPayment } from './student-lead-payment';
 import { parseLeadPreferenceUpdates } from './lead-preferences';
 import {
   countUnviewedLeads,
@@ -1452,7 +1453,7 @@ router.post('/leads/:id/students', async (req, res) => {
       return res.status(409).json({ error: 'archivedLeadMustBeRestoredBeforeStudentCreation' });
     }
     const demoOnly = req.body.demoOnly === true;
-
+    const payment = parseStudentLeadPayment(req.body);
     const studentName = nullableText(req.body.studentName);
     if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
     const parsedStudentAge = req.body.studentAge === undefined || req.body.studentAge === null || req.body.studentAge === ''
@@ -1484,13 +1485,13 @@ router.post('/leads/:id/students', async (req, res) => {
     const enrolledAt = hasEnrollment
       ? parseOptionalDate(req.body.enrolledAt, 'enrolledAt') ?? new Date()
       : null;
-
     const student = await withTransaction(async () => {
       const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
       if (!lead) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
       if (lead.isArchived) {
         throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeStudentCreation'), { statusCode: 409 });
       }
+      await saveStudentLeadPayment(lead, payment, req.actor!);
       const selectedGroups: Row[] = [];
       for (const groupId of groupIds) {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
@@ -1594,7 +1595,6 @@ router.post('/leads/:id/students', async (req, res) => {
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to create student') });
   }
 });
-
 // Provider webhooks live in incoming.routes.ts as public routes verified by
 // provider-specific signatures or secrets, not session authentication.
 };

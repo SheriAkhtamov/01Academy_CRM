@@ -158,7 +158,14 @@ export const leadDemoAttendanceRequestSchema = z.object({
   demoResult: optionalTextInput,
 });
 
+export const studentLeadPaymentRequestSchema = z.object({
+  expectedPaymentUzs: z.number().int().min(0).max(2_147_483_647).optional().nullable(),
+  expectedLeadUpdatedAt: z.string().datetime().optional().nullable(),
+});
+export type StudentLeadPaymentRequest = z.infer<typeof studentLeadPaymentRequestSchema>;
+
 export const createLeadStudentRequestSchema = z.object({
+  ...studentLeadPaymentRequestSchema.shape,
   studentName: z.string().trim().min(1).max(255),
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),
   phone: z.string().trim().max(80).optional().nullable(),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -11,7 +11,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { academyToday } from '@/lib/localeFormat';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
+import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
+import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -71,6 +72,9 @@ const studentSchema = z.object({
     'invalidStudentAge',
   ),
   phone: z.string().trim().refine((value) => value === '' || value.replace(/\D/g, '').length >= 7, 'invalidStudentPhone'),
+  expectedPaymentUzs: z.string().refine((value) => value === '' || (
+    /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) <= 2_147_483_647
+  ), 'invalidData'),
   groupIds: z.array(z.string()),
   primaryGroupId: z.string(),
   enrolledAt: z.string(),
@@ -96,6 +100,7 @@ const EMPTY_STUDENT: StudentFormValues = {
   studentName: '',
   studentAge: '',
   phone: '',
+  expectedPaymentUzs: '',
   groupIds: [],
   primaryGroupId: '',
   enrolledAt: todayInputValue(),
@@ -108,6 +113,8 @@ interface CreateLeadStudentDialogProps {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
+  expectedPaymentUzs?: number | null;
+  leadUpdatedAt?: string | null;
   purpose?: 'enrollment' | 'demo';
   onCreated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
@@ -118,6 +125,8 @@ interface EditLeadStudentDialogProps {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
+  expectedPaymentUzs?: number | null;
+  leadUpdatedAt?: string | null;
   student: EditableLeadStudent;
   onUpdated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
@@ -128,6 +137,8 @@ type LeadStudentFormDialogProps = {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
+  expectedPaymentUzs?: number | null;
+  leadUpdatedAt?: string | null;
   purpose?: 'enrollment' | 'demo';
 } & (
   | {
@@ -156,6 +167,8 @@ function LeadStudentFormDialog({
   leadId,
   contactName,
   groups,
+  expectedPaymentUzs,
+  leadUpdatedAt,
   purpose = 'enrollment',
   ...modeProps
 }: LeadStudentFormDialogProps) {
@@ -173,12 +186,14 @@ function LeadStudentFormDialog({
     studentName: editedStudent?.studentName ?? '',
     studentAge: editedStudent?.studentAge ? String(editedStudent.studentAge) : '',
     phone: editedStudent?.phone ?? '',
+    expectedPaymentUzs: expectedPaymentUzs == null ? '' : String(expectedPaymentUzs),
     groupIds: currentGroupIds,
     primaryGroupId: currentPrimaryGroupId,
     enrolledAt: todayInputValue(),
     demoOnly: false,
   } : {
     ...EMPTY_STUDENT,
+    expectedPaymentUzs: expectedPaymentUzs == null ? '' : String(expectedPaymentUzs),
     enrolledAt: todayInputValue(),
     demoOnly: purpose === 'demo',
   }, [
@@ -187,6 +202,7 @@ function LeadStudentFormDialog({
     editedStudent?.phone,
     editedStudent?.studentAge,
     editedStudent?.studentName,
+    expectedPaymentUzs,
     isEditing,
     purpose,
   ]);
@@ -195,6 +211,10 @@ function LeadStudentFormDialog({
     defaultValues: initialValues,
   });
   const [createdCount, setCreatedCount] = useState(0);
+  const openedFormKey = useRef<string | null>(null);
+  const paymentSnapshot = useRef({ amount: expectedPaymentUzs ?? null, updatedAt: leadUpdatedAt });
+  const latestLeadVersion = useRef(leadUpdatedAt);
+  latestLeadVersion.current = leadUpdatedAt;
   const selectedGroupIds = form.watch('groupIds');
   const primaryGroupId = form.watch('primaryGroupId');
 
@@ -223,10 +243,15 @@ function LeadStudentFormDialog({
   )), [availableGroups, selectedGroupIds]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { openedFormKey.current = null; return; }
+    const formKey = `${leadId}:${editedStudent?.id ?? 'create'}:${purpose}`;
+    const opening = openedFormKey.current !== formKey;
+    if (!opening && form.formState.isDirty) return;
     form.reset(initialValues);
-    setCreatedCount(0);
-  }, [form, initialValues, open]);
+    paymentSnapshot.current = { amount: expectedPaymentUzs ?? null, updatedAt: leadUpdatedAt };
+    openedFormKey.current = formKey;
+    if (opening) setCreatedCount(0);
+  }, [editedStudent?.id, expectedPaymentUzs, form, initialValues, leadId, leadUpdatedAt, open, purpose]);
 
   useEffect(() => {
     if (selectedGroupIds.length === 0) {
@@ -240,6 +265,11 @@ function LeadStudentFormDialog({
 
   const saveStudent = useMutation({
     mutationFn: async ({ values }: { values: StudentFormValues; createAnother: boolean }) => {
+      const amount = values.expectedPaymentUzs === '' ? null : Number(values.expectedPaymentUzs);
+      const payment = amount === paymentSnapshot.current.amount ? {} : {
+        expectedPaymentUzs: amount,
+        expectedLeadUpdatedAt: paymentSnapshot.current.updatedAt,
+      };
       if (modeProps.mode === 'edit') {
         const updatedStudent = await studentsApi.updateDetails<CreatedLeadStudent>(
           modeProps.student.id,
@@ -247,6 +277,7 @@ function LeadStudentFormDialog({
             studentName: values.studentName,
             studentAge: values.studentAge ? Number(values.studentAge) : null,
             phone: values.phone || null,
+            ...payment,
           },
         );
         const currentGroupIdSet = new Set(currentGroupIds);
@@ -271,6 +302,7 @@ function LeadStudentFormDialog({
         primaryGroupId: values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId),
         enrolledAt: values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt,
         demoOnly: values.demoOnly,
+        ...payment,
       });
     },
     onSuccess: async (student, variables) => {
@@ -291,10 +323,15 @@ function LeadStudentFormDialog({
       }
       form.reset({
         ...EMPTY_STUDENT,
+        expectedPaymentUzs: variables.values.expectedPaymentUzs,
         phone: variables.values.phone,
         enrolledAt: variables.values.enrolledAt || todayInputValue(),
         demoOnly: purpose === 'demo',
       });
+      paymentSnapshot.current = {
+        amount: variables.values.expectedPaymentUzs === '' ? null : Number(variables.values.expectedPaymentUzs),
+        updatedAt: latestLeadVersion.current,
+      };
       form.setFocus('studentName');
     },
     onError: (error: Error) => toast({
@@ -329,7 +366,10 @@ function LeadStudentFormDialog({
         <Form {...form}>
           <form
             className="flex min-h-0 flex-1 flex-col"
-            onSubmit={form.handleSubmit((values) => saveStudent.mutate({ values, createAnother: false }))}
+            onSubmit={(event) => {
+              event.stopPropagation();
+              void form.handleSubmit((values) => saveStudent.mutate({ values, createAnother: false }))(event);
+            }}
           >
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
             <FormField
@@ -367,6 +407,21 @@ function LeadStudentFormDialog({
                 </FormItem>
               )}
             />
+            {purpose === 'enrollment' ? (
+              <FormField
+                control={form.control}
+                name="expectedPaymentUzs"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>{t('expectedPayment')}</FormLabel>
+                    <FormControl>
+                      <CurrencyInput {...field} onValueChange={field.onChange} aria-invalid={fieldState.invalid} />
+                    </FormControl>
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
             {purpose === 'enrollment' && selectedGroupIds.length > 0 ? (
               <FormField
                 control={form.control}

@@ -1739,6 +1739,39 @@ describe('academy route logic boundaries', () => {
     }));
   });
 
+  it.each([false, true])('saves expected payment with student details atomically (student failure: %s)', async (failStudent) => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    const linkedLead = leadFixture({ manager_id: 1, expected_payment_uzs: 100_000,
+      updated_at: new Date('2026-10-05T08:00:00Z') });
+    const child = { id: 5, lead_id: 42, student_name: 'Child' };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
+      if (sql.includes('FROM academy_leads l')) return { rows: [linkedLead] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_leads')) return { rows: [linkedLead] };
+      if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [{ ...linkedLead, expected_payment_uzs: 250_000 }] };
+      if (sql.includes('UPDATE "academy_students"')) {
+        if (failStudent) throw new Error('Student write failed');
+        return { rows: [{ ...child, student_name: 'Updated child' }] };
+      }
+      return emptyResult();
+    });
+    const response = await request(await createApp()).patch('/api/academy/students/5').send({
+      studentName: 'Updated child', expectedPaymentUzs: 250_000, expectedLeadUpdatedAt: '2026-10-05T08:00:00Z',
+    });
+    expect(response.status).toBe(failStudent ? 500 : 200);
+    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_leads"'))?.[1])
+      .toEqual([42, 250_000]);
+    expect(mocks.clientQuery).toHaveBeenCalledWith(failStudent ? 'ROLLBACK' : 'COMMIT');
+    if (failStudent) {
+      expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    }
+  });
+
   it('rolls back a transfer into a completed group before writing transfer history', async () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) {

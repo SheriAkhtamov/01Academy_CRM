@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Router } from 'wouter';
 import { memoryLocation } from 'wouter/memory-location';
@@ -11,6 +12,7 @@ import {
 } from '../client/src/components/ux/UnsavedChangesGuard';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import Admin from '../client/src/pages/admin';
+import { i18n } from '../client/src/lib/i18n';
 
 class ResizeObserverStub {
   observe() {}
@@ -22,6 +24,7 @@ class ResizeObserverStub {
 (Element.prototype as unknown as Record<string, unknown>).setPointerCapture = () => undefined;
 (Element.prototype as unknown as Record<string, unknown>).releasePointerCapture = () => undefined;
 (Element.prototype as unknown as Record<string, unknown>).scrollIntoView = () => undefined;
+HTMLElement.prototype.scrollTo = () => undefined;
 
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
@@ -194,13 +197,13 @@ describe('lead sheet drafts do not leak between leads', () => {
     .find((input) => input.getAttribute('inputmode') === 'numeric') as HTMLInputElement;
 
   it('reseeds the payment form for the new lead and closes it without a warning', async () => {
+    const user = userEvent.setup();
     const onOpenChange = vi.fn();
     const view = render(renderSheet(15, onOpenChange));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
 
-    const paymentTab = Array.from(document.querySelectorAll('button'))
-      .find((button) => /Платеж|Оплат|Payment/i.test(button.textContent ?? ''));
-    fireEvent.click(paymentTab as HTMLElement);
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+    await user.click(await screen.findByRole('button', { name: i18n.t('recordPayment') }));
     await waitFor(() => expect(paymentAmountInput()).toBeTruthy());
 
     fireEvent.change(paymentAmountInput(), { target: { value: '777777' } });
@@ -208,9 +211,13 @@ describe('lead sheet drafts do not leak between leads', () => {
 
     // The board swaps the sheet to another lead while it stays open.
     view.rerender(renderSheet(16, onOpenChange));
-    await waitFor(() => expect(paymentAmountInput().value).not.toBe('777 777'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+    await user.click(await screen.findByRole('button', { name: i18n.t('recordPayment') }));
+    await waitFor(() => expect(paymentAmountInput()).toBeTruthy());
     expect(paymentAmountInput().value).toBe('1 600 000');
-
+    await user.click(within(screen.getByRole('dialog', { name: i18n.t('recordPayment') }))
+      .getByRole('button', { name: i18n.t('cancel') }));
     fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(warningShown()).toBe(false);

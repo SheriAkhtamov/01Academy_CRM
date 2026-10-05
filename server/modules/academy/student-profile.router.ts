@@ -17,6 +17,7 @@ import {
 import { getLead } from './academy-leads';
 import { loadAuthorizedStudent, loadStudentProfileData } from './student-profile-data';
 import { registerStudentPortfolioRoutes } from './student-portfolio.router';
+import { parseStudentLeadPayment, saveStudentLeadPayment } from './student-lead-payment';
 
 export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Router>) => {
   registerStudentPortfolioRoutes(router);
@@ -43,6 +44,7 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
     try {
       const studentId = parseId(req.params.id);
       if (!studentId) return res.status(400).json({ error: 'Invalid student id' });
+      const payment = parseStudentLeadPayment(req.body);
 
       const studentName = nullableText(req.body.studentName);
       if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
@@ -81,12 +83,13 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
       }
 
       const student = await withTransaction(async () => {
-        if (initialStudent.leadId) {
-          await queryOne(
-            `SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`,
+        const lockedLead = initialStudent.leadId
+          ? await queryOne(
+            payment.expectedPaymentUzs === undefined
+              ? `SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`
+              : `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
             [initialStudent.leadId],
-          );
-        }
+          ) : null;
         const lockedStudent = await queryOne(
           `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
           [studentId],
@@ -94,6 +97,7 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
         if (!lockedStudent) {
           throw Object.assign(new Error('Student not found'), { statusCode: 404 });
         }
+        await saveStudentLeadPayment(lockedLead, payment, req);
         const updatedStudent = await updateRow('academy_students', studentId, {
           studentName,
           studentAge: parsedStudentAge,

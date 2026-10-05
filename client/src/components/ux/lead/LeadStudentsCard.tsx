@@ -39,6 +39,8 @@ type LeadStudentsCardProps = {
   lead: {
     id: number;
     contactName: string;
+    expectedPaymentUzs?: number | null;
+    updatedAt?: string | null;
     students?: LeadStudent[];
   };
   groups: LeadStudentGroupOption[];
@@ -133,6 +135,8 @@ export function LeadStudentsCard({
         onOpenChange={onCreateStudentOpenChange}
         leadId={lead.id}
         contactName={lead.contactName}
+        expectedPaymentUzs={lead.expectedPaymentUzs}
+        leadUpdatedAt={lead.updatedAt}
         groups={groups}
         onCreated={onRefresh}
       />
@@ -146,6 +150,8 @@ export function LeadStudentsCard({
           }}
           leadId={lead.id}
           contactName={lead.contactName}
+          expectedPaymentUzs={lead.expectedPaymentUzs}
+          leadUpdatedAt={lead.updatedAt}
           groups={groups}
           onUpdated={async () => {
             await onRefresh();

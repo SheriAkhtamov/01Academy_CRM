@@ -49,6 +49,16 @@ beforeEach(() => {
     if (method !== 'GET') {
       const body = JSON.parse(String(init?.body ?? '{}'));
       requests.push({ url, method, body });
+      if (method === 'PATCH' && url.startsWith('/api/academy/students/')) {
+        lead = { ...lead, students: lead.students.map((student) => ({ ...student,
+          studentName: body.studentName, studentAge: body.studentAge, phone: body.phone,
+        })), ...('expectedPaymentUzs' in body ? {
+          expectedPaymentUzs: body.expectedPaymentUzs, updatedAt: '2026-08-01T09:00:00.000Z',
+        } : {}) };
+        return new Response(JSON.stringify(lead.students[0]), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }
       if (method === 'PATCH') lead = { ...lead, ...body };
     }
     return new Response(JSON.stringify(url.includes('lead-tags') ? [] : lead), {
@@ -223,6 +233,31 @@ describe('lead workspace navigation and drafts', () => {
       goal: 'Study AI tools', urgency: 'Start tomorrow',
     });
     await screen.findByText(i18n.t('leadWorkspaceSaved'));
+  });
+
+  it('edits expected payment only inside the student dialog and preserves the lead draft', async () => {
+    const { user } = renderSheet();
+    const name = await screen.findByLabelText(i18n.t('contactPersonName'));
+    expect(screen.queryByRole('textbox', { name: i18n.t('expectedPayment') })).toBeNull();
+    fireEvent.change(name, { target: { value: 'Parent draft' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+    const dialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
+    const amount = within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement;
+    expect(amount.value.replace(/\D/g, '')).toBe('100000');
+    fireEvent.change(amount, { target: { value: '250000' } });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('editStudent') })).toBeNull());
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ url: '/api/academy/students/50', method: 'PATCH', body: {
+      expectedPaymentUzs: 250_000, expectedLeadUpdatedAt: '2026-08-01T08:00:00.000Z',
+    } });
+    expect((name as HTMLInputElement).value).toBe('Parent draft');
+    expect(screen.queryByText(i18n.t('leadVersionReviewTitle'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1].body).toMatchObject({ contactName: 'Parent draft', expectedUpdatedAt: '2026-08-01T09:00:00.000Z' });
+    expect(requests[1].body).not.toHaveProperty('expectedPaymentUzs');
+    expect(lead.expectedPaymentUzs).toBe(250_000);
   });
 
   it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {
@@ -450,7 +485,8 @@ describe('lead version recovery and completed work', () => {
     expect((name as HTMLInputElement).value).toBe('My edit');
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(1));
-    expect(requests[0].body).toMatchObject({ contactName: 'My edit', expectedUpdatedAt: '2026-09-05T12:00:00Z', expectedPaymentUzs: 200_000 });
+    expect(requests[0].body).toMatchObject({ contactName: 'My edit', expectedUpdatedAt: '2026-09-05T12:00:00Z' });
+    expect(requests[0].body).not.toHaveProperty('expectedPaymentUzs');
   });
   it('recovers from a real 409 response without retrying a stale version', async () => {
     const { user } = renderSheet();

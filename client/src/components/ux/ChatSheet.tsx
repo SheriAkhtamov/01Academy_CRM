@@ -16,8 +16,10 @@ import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, MessageCircle, Send, User, Circle, Search } from 'lucide-react';
+import { Loader2, MessageCircle, Send, User, Circle, Search, Paperclip } from 'lucide-react';
 import { academyDateInputValue, academyToday, formatAcademyDate } from '@/lib/localeFormat';
+import { MAX_MESSAGE_FILE_BYTES, MAX_MESSAGE_FILES } from '@shared/contracts/messages';
+import { ChatFileDrafts, ChatMessageAttachments } from '@/components/ux/chat/ChatAttachments';
 import type {
   ConversationUserDto,
   MessageDto,
@@ -28,6 +30,8 @@ import {
   messageQueryKeys,
   messagesApi,
 } from '@/features/messages/api';
+
+const EMPTY_FILES: File[] = [];
 
 interface ChatSheetProps {
   open: boolean;
@@ -40,6 +44,9 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const queryClient = useQueryClient();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
+  const [filesByEmployee, setFilesByEmployee] = useState<Record<number, File[]>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedFiles = selectedEmployeeId ? filesByEmployee[selectedEmployeeId] ?? EMPTY_FILES : EMPTY_FILES;
   const [searchQuery, setSearchQuery] = useState('');
   const readAttemptedFor = useRef<string | null>(null);
   const [readErrorFor, setReadErrorFor] = useState<number | null>(null);
@@ -210,10 +217,11 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: (messageData: SendMessageRequest & { draftSnapshot: string }) =>
+    mutationFn: (messageData: SendMessageRequest & { draftSnapshot: string; files: File[] }) =>
       messagesApi.send({
         receiverId: messageData.receiverId,
         content: messageData.content,
+        files: messageData.files,
       }),
     onSuccess: (createdMessage, variables) => {
       setDraftsByEmployee((current) => {
@@ -221,9 +229,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
         const { [variables.receiverId]: _removed, ...rest } = current;
         return rest;
       });
+      setFilesByEmployee((current) => {
+        const remaining = (current[variables.receiverId] ?? []).filter((file) => !variables.files.includes(file));
+        if (remaining.length) return { ...current, [variables.receiverId]: remaining };
+        const { [variables.receiverId]: _removed, ...rest } = current;
+        return rest;
+      });
       if (createdMessage?.id) {
         queryClient.setQueryData(messageQueryKeys.thread(variables.receiverId), (prev: MessageDto[] | undefined) =>
-          prev ? [...prev, createdMessage] : [createdMessage]
+          prev?.some((message) => message.id === createdMessage.id) ? prev : [...(prev ?? []), createdMessage]
         );
       }
       // Force refresh of messages
@@ -249,12 +263,24 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   });
 
   const handleSendMessage = () => {
-    if (!newMessage.trim() || !selectedEmployeeId || sendMessageMutation.isPending) return;
+    if ((!newMessage.trim() && selectedFiles.length === 0) || !selectedEmployeeId || sendMessageMutation.isPending) return;
     sendMessageMutation.mutate({
       receiverId: selectedEmployeeId,
       content: newMessage.trim(),
       draftSnapshot: newMessage,
+      files: [...selectedFiles],
     });
+  };
+
+  const attachFiles = (files: File[]) => {
+    if (!selectedEmployeeId || files.length === 0) return;
+    if (files.some((file) => file.size > MAX_MESSAGE_FILE_BYTES)) {
+      toast({ title: t('messageFileTooLarge'), variant: 'destructive' }); return;
+    }
+    if (selectedFiles.length + files.length > MAX_MESSAGE_FILES) {
+      toast({ title: t('messageFileLimit'), variant: 'destructive' }); return;
+    }
+    setFilesByEmployee((current) => ({ ...current, [selectedEmployeeId]: [...(current[selectedEmployeeId] ?? []), ...files] }));
   };
 
   const selectedEmployee = useMemo(() => {
@@ -269,8 +295,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
       : null;
     return {
       ...employee,
-      isOnline: userStatus?.isOnline || false,
-      lastSeenAt: userStatus?.lastSeenAt,
+      isOnline: userStatus?.isOnline ?? employee.isOnline ?? false,
+      lastSeenAt: userStatus?.lastSeenAt ?? employee.lastSeenAt,
     };
   }, [selectedEmployeeId, employees, conversationEmployees, usersWithStatus]);
 
@@ -386,13 +412,18 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                         {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate font-medium text-foreground">{selectedEmployee.fullName}</p>
                       <p className="text-xs text-muted-foreground">{selectedEmployee.position}</p>
+                      {!selectedEmployee.isOnline && selectedEmployee.lastSeenAt && !Number.isNaN(Date.parse(selectedEmployee.lastSeenAt)) ? <p className="mt-1 text-xs text-muted-foreground">
+                        {t('employeeLastSeen').replace('{date}', formatAcademyDate(selectedEmployee.lastSeenAt, language, {
+                          day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                        }))}
+                      </p> : null}
                     </div>
                     <Badge
                       variant={selectedEmployee.isOnline ? "default" : "secondary"}
-                      className={`ml-auto ${selectedEmployee.isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-muted text-muted-foreground'}`}
+                      className={`ml-auto shrink-0 ${selectedEmployee.isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-muted text-muted-foreground'}`}
                     >
                       <Circle className={`w-2 h-2 mr-1 ${selectedEmployee.isOnline ? 'fill-emerald-500 text-emerald-500' : 'fill-muted-foreground/40 text-muted-foreground/40'}`} />
                       {selectedEmployee.isOnline ? t('online') : t('offline')}
@@ -422,14 +453,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                             className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                           >
                             <div
-                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
+                              className={`min-w-0 max-w-[85%] lg:max-w-md px-4 py-2 rounded-2xl ${
                                 isOwnMessage
                                   ? 'text-white rounded-br-sm'
                                   : 'bg-muted text-foreground rounded-bl-sm'
                               }`}
                               style={isOwnMessage ? { background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' } : undefined}
                             >
-                              <p className="text-sm leading-relaxed">{message.content}</p>
+                              {message.attachments?.length ? <ChatMessageAttachments attachments={message.attachments} /> : null}
+                              {message.content ? <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p> : null}
                               <p
                                 className={`text-xs mt-1 ${
                                   isOwnMessage ? 'text-white/70' : 'text-muted-foreground'
@@ -464,8 +496,17 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
                 {/* Message Input */}
                 <div className="border-t border-border/70 p-4">
+                  {selectedFiles.length > 0 ? <ChatFileDrafts files={selectedFiles} disabled={sendMessageMutation.isPending} onRemove={(file) => {
+                    if (!selectedEmployeeId) return;
+                    setFilesByEmployee((current) => ({ ...current, [selectedEmployeeId]: (current[selectedEmployeeId] ?? []).filter((item) => item !== file) }));
+                  }} /> : null}
+                  <input ref={fileInputRef} type="file" multiple className="sr-only" aria-label={t('attachmentsLabel')} disabled={sendMessageMutation.isPending} onChange={(event) => {
+                    attachFiles(Array.from(event.target.files ?? [])); event.target.value = '';
+                  }} />
                   <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="icon" title={t('messageUploadHint')} aria-label={t('attachFile')} disabled={sendMessageMutation.isPending} onClick={() => fileInputRef.current?.click()}><Paperclip className="size-4" /></Button>
                     <Input
+                      className="min-w-0 flex-1"
                       placeholder={t('typeMessage')}
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
@@ -478,11 +519,11 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     />
                     <Button
                       onClick={handleSendMessage}
-                      disabled={!newMessage.trim() || sendMessageMutation.isPending}
+                      disabled={(!newMessage.trim() && selectedFiles.length === 0) || sendMessageMutation.isPending}
                       size="icon"
                     >
-                      <Send />
-                      <span className="sr-only">{t('send')}</span>
+                      {sendMessageMutation.isPending ? <Loader2 className="animate-spin" /> : <Send />}
+                      <span className="sr-only">{sendMessageMutation.isPending ? t('sendingMessage') : t('send')}</span>
                     </Button>
                   </div>
                 </div>

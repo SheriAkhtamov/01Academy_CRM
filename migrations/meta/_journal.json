@@ -869,6 +869,13 @@
       "when": 1791230515400,
       "tag": "0123_student_expected_payment",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1791235653243,
+      "tag": "0124_message_attachments",
+      "breakpoints": true
     }
   ]
 }

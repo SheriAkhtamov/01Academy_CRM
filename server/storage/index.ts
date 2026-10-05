@@ -45,6 +45,7 @@ export const storage = {
     getConversationsByUser: messageStorage.getConversations.bind(messageStorage),
     getMessagesBetweenUsers: messageStorage.getMessagesBetweenUsers.bind(messageStorage),
     createMessage: messageStorage.createMessage.bind(messageStorage),
+    getMessageAttachment: messageStorage.getMessageAttachment.bind(messageStorage),
     createMessages: messageStorage.createMessages.bind(messageStorage),
     markConversationAsRead: messageStorage.markConversationAsRead.bind(messageStorage),
     markMessageAsRead: async (id: number, userId: number) => {

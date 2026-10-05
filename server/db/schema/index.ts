@@ -1,5 +1,6 @@
 import { academySchools, academyRooms } from './academy-resources';
 export { academySchools, academyRooms } from './academy-resources';
+import type { MessageAttachment } from '@shared/contracts/messages';
 import { sql } from "drizzle-orm";
 import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -1058,10 +1059,13 @@ export const messages = pgTable("messages", {
   senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   receiverId: integer("receiver_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  attachments: jsonb("attachments").$type<MessageAttachment[]>().notNull().default([]),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  attachmentsArray: check("messages_attachments_array", sql`jsonb_typeof(${table.attachments}) = 'array'`),
+}));
 export const savedAccounts = pgTable("saved_accounts", {
   id: serial("id").primaryKey(),
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

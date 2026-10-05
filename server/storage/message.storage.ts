@@ -1,9 +1,12 @@
+import type { MessageAttachment } from '@shared/contracts/messages';
 import { db } from '../db';
 import { messages, users, type Message, type InsertMessage, type User } from '../db/schema';
 import { eq, or, and, asc, sql } from 'drizzle-orm';
 
 type ConversationUser = Pick<User, 'id' | 'fullName' | 'position' | 'email'> & {
     unreadCount: number;
+    isOnline: boolean | null;
+    lastSeenAt: Date | null;
 };
 
 class MessageStorage {
@@ -14,6 +17,7 @@ class MessageStorage {
         ${users.fullName} as "fullName",
         ${users.position} as position,
         ${users.email} as email,
+        ${users.isOnline} as "isOnline", ${users.lastSeenAt} as "lastSeenAt",
         MAX(${messages.createdAt}) as last_message_time,
         COUNT(*) FILTER (
           WHERE ${messages.receiverId} = ${userId}
@@ -42,6 +46,7 @@ class MessageStorage {
                 senderId: messages.senderId,
                 receiverId: messages.receiverId,
                 content: messages.content,
+                attachments: messages.attachments,
                 isRead: messages.isRead,
                 createdAt: messages.createdAt,
                 updatedAt: messages.updatedAt,
@@ -64,6 +69,7 @@ class MessageStorage {
             senderId: row.senderId,
             receiverId: row.receiverId,
             content: row.content,
+            attachments: row.attachments,
             isRead: row.isRead,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
@@ -76,40 +82,54 @@ class MessageStorage {
     }
 
     async createMessage(message: InsertMessage): Promise<Message> {
-        const result = await db.insert(messages).values(message).returning();
-        const newMessage = result[0];
+        return db.transaction(async (tx) => {
+            const result = await tx.insert(messages).values(message).returning();
+            const newMessage = result[0];
 
-        const [messageWithSender] = await db
-            .select({
-                id: messages.id,
-                senderId: messages.senderId,
-                receiverId: messages.receiverId,
-                content: messages.content,
-                isRead: messages.isRead,
-                createdAt: messages.createdAt,
-                updatedAt: messages.updatedAt,
-                senderId_user: users.id,
-                senderFullName: users.fullName,
-                senderPosition: users.position,
-            })
-            .from(messages)
-            .leftJoin(users, eq(messages.senderId, users.id))
-            .where(eq(messages.id, newMessage.id));
+            const [messageWithSender] = await tx
+                .select({
+                    id: messages.id,
+                    senderId: messages.senderId,
+                    receiverId: messages.receiverId,
+                    content: messages.content,
+                    attachments: messages.attachments,
+                    isRead: messages.isRead,
+                    createdAt: messages.createdAt,
+                    updatedAt: messages.updatedAt,
+                    senderId_user: users.id,
+                    senderFullName: users.fullName,
+                    senderPosition: users.position,
+                })
+                .from(messages)
+                .leftJoin(users, eq(messages.senderId, users.id))
+                .where(eq(messages.id, newMessage.id));
 
-        return {
-            id: messageWithSender.id,
-            senderId: messageWithSender.senderId,
-            receiverId: messageWithSender.receiverId,
-            content: messageWithSender.content,
-            isRead: messageWithSender.isRead,
-            createdAt: messageWithSender.createdAt,
-            updatedAt: messageWithSender.updatedAt,
-            sender: messageWithSender.senderId_user ? {
-                id: messageWithSender.senderId_user,
-                fullName: messageWithSender.senderFullName || '',
-                position: messageWithSender.senderPosition || '',
-            } : undefined,
-        } as Message;
+            return {
+                id: messageWithSender.id,
+                senderId: messageWithSender.senderId,
+                receiverId: messageWithSender.receiverId,
+                content: messageWithSender.content,
+                attachments: messageWithSender.attachments,
+                isRead: messageWithSender.isRead,
+                createdAt: messageWithSender.createdAt,
+                updatedAt: messageWithSender.updatedAt,
+                sender: messageWithSender.senderId_user ? {
+                    id: messageWithSender.senderId_user,
+                    fullName: messageWithSender.senderFullName || '',
+                    position: messageWithSender.senderPosition || '',
+                } : undefined,
+            } as Message;
+        });
+    }
+
+    async getMessageAttachment(fileId: string, userId: number): Promise<MessageAttachment | null> {
+        const result = await db.execute(sql`
+          SELECT attachment AS file FROM ${messages}
+          CROSS JOIN LATERAL jsonb_array_elements(${messages.attachments}) attachment
+          WHERE (${messages.senderId} = ${userId} OR ${messages.receiverId} = ${userId})
+            AND attachment->>'id' = ${fileId} LIMIT 1
+        `);
+        return (result.rows[0]?.file as MessageAttachment | undefined) ?? null;
     }
 
     async createMessages(items: InsertMessage[]): Promise<Message[]> {

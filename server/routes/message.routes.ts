@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { messageFilePath, parseMessageUpload, removeMessageFiles, uploadedMessageAttachment } from '../middleware/message-upload.middleware';
 import {
     positiveIdSchema,
     sendMessageRequestSchema,
@@ -42,7 +43,37 @@ router.get('/:receiverId', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/', requireAuth, async (req, res) => {
+router.get('/attachments/:fileId', requireAuth, async (req, res) => {
+    try {
+        const filePath = messageFilePath(req.params.fileId);
+        if (!filePath) return res.status(404).json({ error: 'resourceNotFound' });
+        const attachment = await storage.getMessageAttachment(req.params.fileId, req.user!.id);
+        if (!attachment) return res.status(404).json({ error: 'resourceNotFound' });
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        res.setHeader('Cache-Control', 'private, no-store');
+        const inline = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'video/mp4', 'video/webm', 'video/quicktime'].includes(attachment.mimeType);
+        if (!inline || req.query.download === '1') {
+            res.setHeader('Content-Type', 'application/octet-stream');
+            return res.download(filePath, attachment.name, (error) => {
+                if (error && !res.headersSent) res.status(404).json({ error: 'attachmentDownloadFailed' });
+            });
+        }
+        res.setHeader('Content-Type', attachment.mimeType);
+        const name = encodeURIComponent(attachment.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${name}`);
+        res.sendFile(filePath, { acceptRanges: true }, (error) => {
+            if (error && !res.headersSent) res.status(404).json({ error: 'attachmentDownloadFailed' });
+        });
+    } catch (error) {
+        logger.error('Failed to download message attachment', { error, userId: req.user?.id });
+        if (!res.headersSent) res.status(500).json({ error: 'attachmentDownloadFailed' });
+    }
+});
+
+router.post('/', requireAuth, parseMessageUpload, async (req, res) => {
+    const files = (Array.isArray(req.files) ? req.files : []) as Express.Multer.File[];
+    let saved = false;
     try {
         const input = sendMessageRequestSchema.safeParse(req.body);
         if (!input.success) {
@@ -55,6 +86,9 @@ router.post('/', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Receiver and content are required' });
         }
         const { receiverId, content } = input.data;
+        if (!content && files.length === 0) {
+            return res.status(400).json({ error: 'Receiver and content are required' });
+        }
         if (receiverId === req.user!.id) {
             return res.status(400).json({ error: 'Cannot send a message to yourself' });
         }
@@ -69,7 +103,9 @@ router.post('/', requireAuth, async (req, res) => {
             receiverId,
             content,
             isRead: false,
+            attachments: await Promise.all(files.map(uploadedMessageAttachment)),
         });
+        saved = true;
 
         publishRealtimeEvent({
             type: 'NEW_MESSAGE',
@@ -81,6 +117,8 @@ router.post('/', requireAuth, async (req, res) => {
     } catch (error) {
         logger.error('Error sending message', { error, senderId: req.user?.id });
         res.status(500).json({ error: 'Failed to send message' });
+    } finally {
+        if (!saved) await removeMessageFiles(files).catch((error) => logger.error('Failed to remove unsent message files', { error }));
     }
 });
 

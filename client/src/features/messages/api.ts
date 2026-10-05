@@ -27,9 +27,16 @@ export const messagesApi = {
       messageIds: number[];
     }>
   ),
-  send: (message: SendMessageRequest) => (
-    apiRequest('POST', '/api/messages', message) as Promise<MessageDto>
-  ),
+  send: (message: SendMessageRequest & { files?: File[] }) => {
+    if (!message.files?.length) return apiRequest('POST', '/api/messages', {
+      receiverId: message.receiverId, content: message.content,
+    }) as Promise<MessageDto>;
+    const form = new FormData();
+    form.append('receiverId', String(message.receiverId));
+    form.append('content', message.content);
+    message.files.forEach((file) => form.append('files', file));
+    return apiRequest('POST', '/api/messages', form) as Promise<MessageDto>;
+  },
 };
 
 export const conversationQueryOptions = {

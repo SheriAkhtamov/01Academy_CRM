@@ -15,8 +15,24 @@ import {
   withTransaction,
 } from './academy-core';
 import { getLead } from './academy-leads';
+import { loadAuthorizedStudent, loadStudentProfileData } from './student-profile-data';
+import { registerStudentPortfolioRoutes } from './student-portfolio.router';
 
 export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Router>) => {
+  registerStudentPortfolioRoutes(router);
+  router.get('/students/:id/profile', async (req, res) => {
+    try {
+      const authorized = await loadAuthorizedStudent(req, res);
+      if (!authorized) return;
+      const details = await loadStudentProfileData(Number(authorized.student.id));
+      res.json({ student: authorized.student, lead: authorized.lead ? {
+        id: authorized.lead.id, contactName: authorized.lead.contactName, phone: authorized.lead.phone,
+      } : null, ...details });
+    } catch (error) {
+      logger.error('Failed to load student profile', { error, studentId: req.params.id });
+      res.status(500).json({ error: 'studentProfileLoadFailed' });
+    }
+  });
   router.patch('/students/:id', async (req, res) => {
     if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Student update access required')) return;
     try {

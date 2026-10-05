@@ -2,11 +2,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
-import { StudentDetailSheet } from '../client/src/components/ux/StudentDetailSheet';
+import { StudentDetailDialog } from '../client/src/components/ux/StudentDetailDialog';
 import { CreateTaskDialog } from '../client/src/components/ux/board/CreateTaskDialog';
 import { i18n } from '../client/src/lib/i18n';
 import { allowNavigation, requestNavigation } from '../client/src/lib/navigationGuard';
 
+vi.mock('../client/src/features/students/api', () => ({ studentsApi: { profile: vi.fn().mockImplementation(() => new Promise(() => {})) } }));
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => ({ isPending: false, startCall: vi.fn() }) }));
 beforeAll(() => {
   globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
@@ -15,7 +16,8 @@ beforeAll(() => {
 beforeEach(() => { i18n.setLanguage('en'); allowNavigation(() => history.replaceState(null, '', '/tasks')); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const student = { id: 1, studentName: 'Student', contactName: 'Parent', status: 'studying', exitReason: '', attendancePercent: 80, progressPercent: 40 };
-const sheet = (record: typeof student, onClose = vi.fn(), save = vi.fn(), extras = {}) => <StudentDetailSheet student={record} open onOpenChange={onClose} onUpdateStatus={save} dateTime={() => ''} {...extras} />;
+const studentQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const sheet = (record: typeof student, onClose = vi.fn(), save = vi.fn(), extras = {}) => <QueryClientProvider client={studentQueryClient}><StudentDetailDialog student={record} open onOpenChange={onClose} onUpdateStatus={save} dateTime={() => ''} {...extras} /></QueryClientProvider>;
 const changeStatus = () => fireEvent.change(screen.getByRole('combobox', { name: i18n.t('status') }), { target: { value: 'paused' } });
 
 it('protects a student status draft on close and allows cancellation or explicit discard', () => {
@@ -50,7 +52,7 @@ it('confirms discarding the student draft before adopting updated details', () =
 });
 
 it('names the group picker for assistive technology', async () => {
-  render(sheet(student, vi.fn(), vi.fn(), { initialTab: 'schedule', onAddGroup: vi.fn(), data: { groups: [{ id: 5, name: 'Group', status: 'open' }] } }));
+  render(sheet(student, vi.fn(), vi.fn(), { initialTab: 'learning', onAddGroup: vi.fn(), data: { groups: [{ id: 5, name: 'Group', status: 'open' }] } }));
   await waitFor(() => expect(screen.getByRole('combobox', { name: i18n.t('chooseGroup') })).toBeTruthy());
 });
 

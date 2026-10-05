@@ -58,7 +58,7 @@ import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
 import { leadMatchesFilters } from '@/lib/leadFilters';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
-import { StudentDetailSheet } from '@/components/ux/StudentDetailSheet';
+import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { SalesOverviewPeriodFilter } from '@/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '@/features/sales/useSalesReportingRange';
@@ -465,6 +465,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [leadSheetTab, setLeadSheetTab] = useState<LeadSheetTab>('deal');
+  const [paymentStudentId, setPaymentStudentId] = useState<number | null>(null);
   const [callDialogLead, setCallDialogLead] = useState<Lead | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentSheetOpen, setStudentSheetOpen] = useState(false);
@@ -895,10 +896,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
   useLeadViewTracking({ leadId: selectedLeadId, open: leadSheetOpen, leads: myLeads });
 
-  const openLead = useCallback((leadId: number, tab: LeadSheetTab = "deal") => {
+  const openLead = useCallback((leadId: number, tab: LeadSheetTab = "deal", studentId?: number) => {
     requestNavigation(() => {
       setSelectedLeadId(leadId);
       setLeadSheetTab(tab);
+      setPaymentStudentId(studentId ?? null);
       setLeadSheetOpen(true);
       replaceSalesParams({ lead: String(leadId), student: null }, { push: true });
     });
@@ -1354,6 +1356,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         open={leadSheetOpen}
         onOpenChange={handleLeadSheetState}
         initialTab={leadSheetTab}
+        initialPaymentStudentId={paymentStudentId}
         courses={data.courses ?? []}
         schools={data.schools ?? []}
         demoLeads={pipelineLeads}
@@ -1406,7 +1409,7 @@ function StudentsTab({
   selectedStudent: Student | null;
   studentSheetOpen: boolean;
   openStudent: (student: Student) => void;
-  openLead: (leadId: number, tab?: LeadSheetTab) => void;
+  openLead: (leadId: number, tab?: LeadSheetTab, studentId?: number) => void;
   onStudentSheetOpenChange: (open: boolean) => void;
   onUpdateStudentStatus?: (id: number, status: string, exitReason?: string) => Promise<unknown>;
   onAddStudentGroup?: (id: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
@@ -1524,15 +1527,16 @@ function StudentsTab({
           />
         </CardContent>
       </Card>
-      <StudentDetailSheet
+      <StudentDetailDialog
         student={myStudents.find((student) => student.id === selectedStudent?.id) ?? selectedStudent}
         open={studentSheetOpen}
         onOpenChange={onStudentSheetOpenChange}
-        onRecordPayment={(leadId) => openLead(leadId, 'payment')}
+        onOpenLead={(leadId) => openLead(leadId)}
+        onRecordPayment={(leadId, studentId) => openLead(leadId, 'payment', studentId)}
         onUpdateStatus={onUpdateStudentStatus}
         onAddGroup={onAddStudentGroup}
         onRemoveGroup={onRemoveStudentGroup}
-        data={{ projects: data.projects, payments: data.payments, referrals: data.referrals, groups: data.groups }}
+        data={{ groups: data.groups }}
         dateTime={dateTime}
       />
     </div>

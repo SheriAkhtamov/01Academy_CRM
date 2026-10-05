@@ -215,3 +215,23 @@ describe('lead modal behavior', () => {
     }));
   });
 });
+
+it('preselects the student whose profile opened the lead payment form', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    id: 15, contactName: 'Parent', statusCode: 'paid', managerId: 1, sourceId: 1,
+    expectedPaymentUzs: 100_000, createdAt: '2026-10-01', updatedAt: '2026-10-01',
+    phoneNumbers: [], payments: [], students: [
+      { id: 50, studentName: 'First child', status: 'studying' },
+      { id: 51, studentName: 'Second child', status: 'studying' },
+    ],
+  }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <LeadDetailSheet leadId={15} open initialTab="payment" initialPaymentStudentId={51} onOpenChange={vi.fn()}
+      courses={[]} groups={[]} sources={[{ id: 1, name: 'Website' }]} statuses={[]}
+      managers={[{ id: 1, fullName: 'Manager' }]} currentUserId={1}
+      leadStatusName={(code) => code} dateTime={(value) => value ?? ''} money={(value) => String(value ?? '')} onChanged={vi.fn()} />
+  </QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: /Record another payment|Зафиксировать следующую оплату/ }));
+  const studentPicker = await screen.findByRole('combobox', { name: /Student receiving the payment|Ученик, за которого вносится оплата/ });
+  expect(studentPicker.textContent).toBe('Second child');
+});

@@ -251,6 +251,7 @@ interface LeadDetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: LeadSheetTab;
+  initialPaymentStudentId?: number | null;
   courses: Array<{ id: number; name: string }>;
   schools?: Array<{ id: number; name: string; isActive?: boolean }>;
   demoLeads?: DemoLessonDialogLead[];
@@ -375,6 +376,7 @@ export function LeadDetailSheet({
   open,
   onOpenChange,
   initialTab = 'deal',
+  initialPaymentStudentId,
   groups,
   courses,
   schools = [],
@@ -531,15 +533,14 @@ export function LeadDetailSheet({
       lead.id,
       lead.expectedPaymentUzs ?? '',
       lead.offerPriceUzs ?? '',
+      initialPaymentStudentId ?? '',
       (lead.students ?? []).map((student) => student.id).join(','),
       (lead.payments ?? []).map((payment) => payment.id).join(','),
     ].join('|');
-  }, [leadQuery.data]);
-
+  }, [leadQuery.data, initialPaymentStudentId]);
   useEffect(() => {
     const lead = leadQuery.data;
     if (!open || !lead || !leadSnapshotKey) return;
-
     const changedLead = hydratedLeadId.current !== lead.id;
     if (changedLead || !leadForm.formState.isDirty) {
       editVersion.current = lead.updatedAt;
@@ -563,7 +564,9 @@ export function LeadDetailSheet({
       const paymentDirty = paymentForm.formState.isDirty;
       if (changedLead || !paymentDirty || hydratedTransientKey.current === null) {
         paymentForm.reset({
-          studentId: lead.students?.length === 1 ? String(lead.students[0].id) : '',
+          studentId: initialPaymentStudentId && lead.students?.some((student) => student.id === initialPaymentStudentId)
+            ? String(initialPaymentStudentId)
+            : lead.students?.length === 1 ? String(lead.students[0].id) : '',
           amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
           method: 'transfer',
           type: 'full',
@@ -573,7 +576,7 @@ export function LeadDetailSheet({
       }
       hydratedTransientKey.current = transientSnapshotKey;
     }
-  }, [open, leadQuery.data, leadSnapshotKey, transientSnapshotKey, leadForm, paymentForm]);
+  }, [open, leadQuery.data, leadSnapshotKey, transientSnapshotKey, initialPaymentStudentId, leadForm, paymentForm]);
 
   // Reset hydration tracking when the sheet closes so reopening reseeds cleanly.
   useEffect(() => {

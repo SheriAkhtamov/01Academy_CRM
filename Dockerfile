@@ -16,7 +16,7 @@ COPY --from=build /app/migrations ./migrations
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/apply-migrations.js ./
 
-RUN mkdir -p /app/logs /app/uploads/board /app/uploads/payments \
+RUN mkdir -p /app/logs /app/uploads/board /app/uploads/payments /app/uploads/portfolio \
     && chmod -R a+rX /app/migrations \
     && chown -R node:node /app/logs /app/uploads
 

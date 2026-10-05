@@ -1,9 +1,10 @@
+import { UserAvatar } from '@/components/ux/UserAvatar';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
-import { getInitials, formatUserModule } from '@/lib/auth';
+import { formatUserModule } from '@/lib/auth';
 import type { SavedAccountEntry } from '@shared/auth';
 import {
   DropdownMenu,
@@ -82,12 +83,7 @@ export default function AccountSwitcher() {
           </div>
           <DropdownMenuItem className="cursor-default opacity-100">
             <div className="flex items-center gap-3 w-full">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
-              >
-                {getInitials(user.fullName)}
-              </div>
+              <UserAvatar user={user} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{user.fullName}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -110,12 +106,7 @@ export default function AccountSwitcher() {
                   className="cursor-pointer"
                 >
                   <div className="flex items-center gap-3 w-full">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                      style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
-                    >
-                      {getInitials(account.accountUser.fullName)}
-                    </div>
+                    <UserAvatar user={account.accountUser} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{account.accountUser.fullName}</p>

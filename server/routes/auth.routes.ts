@@ -6,6 +6,7 @@ import { authService } from '../services/auth';
 import { resolveAuthSession } from '../services/authSession';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
+import { parseUserPhotoUpload, retainUploadedUserPhoto, cleanupUploadedUserPhoto } from '../middleware/user-photo.middleware';
 import { t } from '../lib/i18n';
 import { secureSessionCookies } from '../config';
 import { logger } from '../lib/logger';
@@ -146,7 +147,7 @@ router.post('/logout', (req, res) => {
     });
 });
 
-router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
+router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Request, res: Response) => {
     try {
         const currentUser = req.user!;
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim() || req.body.fullName.trim().length > 255) {
@@ -219,6 +220,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                      email = $3,
                      position = $4,
                      phone = $5,
+                     avatar_url = COALESCE($7, avatar_url),
                      password = COALESCE($6, password),
                      credential_password_ciphertext = NULL,
                      updated_at = NOW()
@@ -230,6 +232,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                     position,
                     phone,
                     newPasswordHash,
+                    res.locals.userPhotoUrl ?? null,
                 ],
             );
             await client.query(
@@ -245,6 +248,7 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
                 });
             }
             await client.query('COMMIT');
+            retainUploadedUserPhoto(res);
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
             throw error;
@@ -280,6 +284,8 @@ router.put('/me/settings', requireAuth, async (req: Request, res: Response) => {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
         return sendHttpError(res, error, 'failedToUpdateCredentials');
+    } finally {
+        await cleanupUploadedUserPhoto(req, res);
     }
 });
 

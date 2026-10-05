@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/ux/UserAvatar';
 import { Badge } from '@/components/ui/badge';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -351,11 +351,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       }`}
                       onClick={() => setSelectedEmployeeId(employee.id)}
                     >
-                      <Avatar className="size-10">
-                        <AvatarFallback>
-                          {employee.fullName?.split(' ').map((name) => name[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                      <UserAvatar user={employee} className="size-10 shrink-0 text-xs" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
                           {employee.fullName}
@@ -407,11 +403,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {/* Chat Header */}
                 <div className="border-b border-border bg-muted/40 p-4">
                   <div className="flex items-center gap-3">
-                    <Avatar className="size-8">
-                      <AvatarFallback>
-                        {selectedEmployee.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || t('unknown').charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar user={selectedEmployee} className="size-8 shrink-0 text-xs" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium text-foreground">{selectedEmployee.fullName}</p>
                       <p className="text-xs text-muted-foreground">{selectedEmployee.position}</p>

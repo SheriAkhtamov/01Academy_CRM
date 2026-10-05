@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AUTH_SESSION_QUERY_KEY, type SanitizedUser } from '@shared/auth';
+import { AUTH_SESSION_QUERY_KEY, SAVED_ACCOUNTS_QUERY_KEY, type SanitizedUser } from '@shared/auth';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -33,6 +33,8 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import { MotionSettingsPanel } from '@/components/ux/motion';
+import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
+import { withUserPhoto } from '@/features/employees/user-photo-api';
 import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
 const createSettingsSchema = (
@@ -147,6 +149,7 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { user, setUser } = useAuth();
+  const [photo, setPhoto] = React.useState<File | null>(null);
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -165,14 +168,15 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const currentValues = form.watch();
   const settingsDialogGuard = useUnsavedChangesGuard({
     open,
-    isDirty: hasSettingsChanges(currentValues, baselineValues),
-    onOpenChange,
+    isDirty: hasSettingsChanges(currentValues, baselineValues) || Boolean(photo),
+    onOpenChange: (nextOpen) => { if (!nextOpen) setPhoto(null); onOpenChange(nextOpen); },
   });
 
   // Reset form when user data changes or modal opens
   React.useEffect(() => {
     if (user && open) {
       form.reset(buildSettingsValues(user));
+      setPhoto(null);
     }
   }, [user, open, form]);
 
@@ -191,20 +195,24 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       const normalizedEmail = profileData.email.trim().toLowerCase();
       const credentialsChanged = normalizedEmail !== user.email.trim().toLowerCase()
         || Boolean(newPassword || confirmNewPassword);
-      const result = await apiRequest('PUT', '/api/auth/me/settings', {
+      const result = await apiRequest('PUT', '/api/auth/me/settings', withUserPhoto({
         fullName: profileData.fullName.trim(),
         email: normalizedEmail,
         position: profileData.position.trim(),
         phone: profileData.phone?.trim() || null,
         ...(credentialsChanged ? { currentPassword, newPassword, confirmNewPassword } : {}),
-      });
+      }, photo));
 
       return result.user ?? result;
     },
     onSuccess: (updatedUser) => {
+      setPhoto(null);
       setUser(updatedUser);
       queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
+      queryClient.invalidateQueries({ queryKey: SAVED_ACCOUNTS_QUERY_KEY });
       toast({
         title: t('success'),
         description: t('profileUpdated'),
@@ -238,6 +246,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
             <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-4">
+            <UserPhotoPicker photo={photo} onChange={setPhoto} currentPhotoUrl={user?.avatarUrl} fullName={currentValues.fullName} disabled={updateProfileMutation.isPending} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Full Name */}
               <FormField

@@ -1,10 +1,11 @@
+import { UserAvatar } from '@/components/ux/UserAvatar';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useToast } from '@/hooks/use-toast';
-import { getInitials, formatUserModule } from '@/lib/auth';
+import { formatUserModule } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -155,10 +156,7 @@ export default function Header({
                   className="rounded-full"
                   aria-label={t('currentAccount')}
                 >
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold"
-                       style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))', boxShadow: 'var(--shadow-primary)' }}>
-                    {getInitials(user?.fullName || '')}
-                  </div>
+                  <UserAvatar user={user} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[min(16rem,calc(100vw-1.5rem))]">
@@ -166,12 +164,7 @@ export default function Header({
                 <div className="px-3 py-2">
                   <p className="text-xs text-muted-foreground">{t('currentAccount')}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0"
-                      style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
-                    >
-                      {getInitials(user?.fullName || '')}
-                    </div>
+                    <UserAvatar user={user} className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{user?.fullName}</p>
                       <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
@@ -202,12 +195,7 @@ export default function Header({
                           className="min-w-0 flex-1"
                         >
                           <div className="flex items-center gap-2 w-full">
-                            <div
-                              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0"
-                              style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))' }}
-                            >
-                              {getInitials(account.accountUser.fullName)}
-                            </div>
+                            <UserAvatar user={account.accountUser} className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0" />
                             <span className="text-sm truncate flex-1">{account.accountUser.fullName}</span>
                             {isSwitching && (
                               <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />

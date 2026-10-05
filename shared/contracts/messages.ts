@@ -32,6 +32,7 @@ export type MessageDto = {
 export type ConversationUserDto = {
   id: number;
   fullName: string;
+  avatarUrl?: string | null;
   position?: string | null;
   isOnline?: boolean | null;
   lastSeenAt?: string | null;

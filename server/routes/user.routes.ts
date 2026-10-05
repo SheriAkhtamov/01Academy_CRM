@@ -20,6 +20,8 @@ import { getPasswordPolicyError } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
 import { registerUserArchiveRoutes } from './user-archive.routes';
+import { parseUserPhotoUpload, retainUploadedUserPhoto, cleanupUploadedUserPhoto } from '../middleware/user-photo.middleware';
+import { registerUserPhotoRoutes } from './user-photo.routes';
 import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
 import { parseEmployeeKpiRole, readEmployeeKpiAssignments, setEmployeeKpiAssignment } from '../infrastructure/sales-kpi/employee-assignments';
@@ -424,6 +426,7 @@ const transferAssignedSalesLeads = async ({
 
 type UserUpdateData = {
     fullName?: string;
+    avatarUrl?: string;
     position?: string | null;
     phone?: string | null;
     onlinePbxExtension?: string | null;
@@ -436,6 +439,7 @@ type UserUpdateData = {
 
 const userUpdateColumns: Record<keyof UserUpdateData, string> = {
     fullName: 'full_name',
+    avatarUrl: 'avatar_url',
     position: 'position',
     phone: 'phone',
     onlinePbxExtension: 'online_pbx_extension',
@@ -550,7 +554,8 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
     }
 });
 
-router.post('/', requireAdministration, async (req, res) => {
+registerUserPhotoRoutes(router);
+router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) => {
     try {
         const { position, isActive } = req.body;
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
@@ -603,12 +608,12 @@ router.post('/', requireAdministration, async (req, res) => {
                 const inserted = await client.query(
                     `INSERT INTO users
                        (email, password, credential_password_ciphertext, full_name, phone,
-                        online_pbx_extension, date_of_birth, position, module, is_active)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                        online_pbx_extension, date_of_birth, position, module, is_active, avatar_url)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                      RETURNING
                        id, email, password,
                        credential_password_ciphertext AS "credentialPasswordCiphertext",
-                       full_name AS "fullName", phone,
+                       full_name AS "fullName", phone, avatar_url AS "avatarUrl",
                        online_pbx_extension AS "onlinePbxExtension", date_of_birth AS "dateOfBirth",
                        position, module,
                        is_active AS "isActive", is_online AS "isOnline",
@@ -625,6 +630,7 @@ router.post('/', requireAdministration, async (req, res) => {
                         typeof position === 'string' ? position.trim() || null : null,
                         module,
                         isActive !== undefined ? isActive : true,
+                        res.locals.userPhotoUrl ?? null,
                     ],
                 );
                 newUser = inserted.rows[0];
@@ -655,6 +661,7 @@ router.post('/', requireAdministration, async (req, res) => {
                     ],
                 );
                 await client.query('COMMIT');
+                retainUploadedUserPhoto(res);
                 break;
             } catch (error) {
                 await client.query('ROLLBACK').catch(() => undefined);
@@ -694,6 +701,8 @@ router.post('/', requireAdministration, async (req, res) => {
             return res.status(409).json({ error: 'loginAlreadyExists' });
         }
         return sendHttpError(res, error, 'Failed to create user');
+    } finally {
+        await cleanupUploadedUserPhoto(req, res);
     }
 });
 
@@ -904,7 +913,7 @@ registerUserArchiveRoutes(router, {
     syncAcademyTeacherForUser,
 });
 
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
     try {
         const id = parsePositiveId(req.params.id);
         const currentUser = req.user;
@@ -926,6 +935,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         }
 
         const updateData: UserUpdateData = {};
+        if (res.locals.userPhotoUrl) updateData.avatarUrl = res.locals.userPhotoUrl;
 
         if (req.body.fullName !== undefined) {
             if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim() || req.body.fullName.trim().length > 255) {
@@ -1127,6 +1137,7 @@ router.put('/:id', requireAuth, async (req, res) => {
             await syncUserSalesFunnels(client, id, nextModules, salesFunnelIds);
             if (!nextIsActive) await revokeUserAuthenticationArtifacts(id, { executor: client });
             await client.query('COMMIT');
+            retainUploadedUserPhoto(res);
         } catch (error) {
             await client.query('ROLLBACK');
             throw error;
@@ -1162,6 +1173,8 @@ router.put('/:id', requireAuth, async (req, res) => {
         return sendHttpError(res, error, 'Failed to update user', {
             ...(typedError.leadCount !== undefined ? { leadCount: typedError.leadCount } : {}),
         });
+    } finally {
+        await cleanupUploadedUserPhoto(req, res);
     }
 });
 

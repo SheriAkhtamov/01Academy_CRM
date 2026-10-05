@@ -1,3 +1,4 @@
+import { AUTH_SESSION_QUERY_KEY, SAVED_ACCOUNTS_QUERY_KEY } from '@shared/auth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
 import { useForm } from 'react-hook-form';
@@ -93,6 +94,9 @@ import {
   type UserUpdatePayload,
 } from '@/features/employees/employeeFormSchema';
 import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
+import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
+import { EmployeeFunnelSelect } from '@/features/employees/EmployeeFunnelSelect';
+import { UserAvatar } from '@/components/ux/UserAvatar';
 import { allowNavigation } from '@/lib/navigationGuard';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
 
@@ -116,6 +120,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const [userToArchive, setUserToArchive] = useState<any>(null);
   const [userToRestore, setUserToRestore] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
   const [userCredentials, setUserCredentials] = useState<any>(null);
   const [pendingCredentialUpdate, setPendingCredentialUpdate] = useState<z.infer<ReturnType<typeof createCredentialsSchema>> | null>(null);
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
@@ -179,6 +184,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         allowNavigation(() => setLocation(`${location}${params.size ? `?${params}` : ''}`, { replace: true }));
       }
       setSelectedUser(null);
+      setPhoto(null);
       setSalesModuleTransfer(null);
       setSalesLeadTransferManagerId('');
       userForm.reset(defaultUserFormValues);
@@ -188,12 +194,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   // values survive here and an untouched form is reported as having unsaved changes.
   const openCreateUserModal = () => {
     setSelectedUser(null);
+    setPhoto(null);
     userForm.reset(defaultUserFormValues);
     setShowCreateUserModal(true);
   };
   const userDialogGuard = useUnsavedChangesGuard({
     open: showCreateUserModal,
-    isDirty: userForm.formState.isDirty,
+    isDirty: userForm.formState.isDirty || Boolean(photo),
     onOpenChange: handleUserModalState,
   });
 
@@ -226,7 +233,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const createUserMutation = useMutation({
     mutationFn: async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
-      return await createEmployee(data);
+      return await createEmployee(data, photo);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
@@ -249,10 +256,14 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: UserUpdatePayload }) => {
-      return await updateEmployee(id, data);
+      return await updateEmployee(id, data, photo);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: SAVED_ACCOUNTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/messages/conversations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
       toast({
         title: t('userUpdatedSuccessfullyTitle'),
@@ -527,6 +538,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
   const openEditUserModal = useCallback((user: any) => {
     setSelectedUser(user);
+    setPhoto(null);
     userForm.reset({
       email: user.email,
       fullName: user.fullName,
@@ -634,14 +646,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       accessor: (row) => `${row.fullName} ${row.email}`,
       render: (row) => (
         <div className="flex items-center space-x-3">
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
-            style={{ background: 'linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to))', boxShadow: 'var(--shadow-primary)' }}
-          >
-            <span>
-              {row.fullName.split(' ').map((name: string) => name[0]).join('').slice(0, 2)}
-            </span>
-          </div>
+          <UserAvatar user={row} className="size-12 shrink-0 text-sm" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{row.fullName}</p>
             <p className="text-sm text-muted-foreground truncate">{row.email}</p>
@@ -763,6 +768,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     >
                       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
                         <div className="flex flex-col gap-4">
+                        <UserPhotoPicker photo={photo} onChange={setPhoto} currentPhotoUrl={selectedUser?.avatarUrl} fullName={userForm.watch('fullName')} disabled={createUserMutation.isPending || updateUserMutation.isPending} />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <FormField
                             control={userForm.control}
@@ -952,38 +958,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   ) : salesFunnels.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">{t('noSalesFunnels')}</p>
                                   ) : (
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                      {salesFunnels.map((funnel) => {
-                                        const checked = field.value.includes(funnel.id);
-                                        return (
-                                          <label
-                                            key={funnel.id}
-                                            className="flex items-center gap-3 rounded-lg border border-border/70 bg-background p-3 text-sm"
-                                          >
-                                            <Checkbox
-                                              checked={checked}
-                                              disabled={!funnel.isActive && !checked}
-                                              onCheckedChange={(nextChecked) => {
-                                                if (nextChecked === true) {
-                                                  field.onChange([...new Set([...field.value, funnel.id])]);
-                                                  return;
-                                                }
-                                                field.onChange(field.value.filter((id) => id !== funnel.id));
-                                              }}
-                                            />
-                                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                              {funnel.name}
-                                            </span>
-                                            {funnel.workflowRole ? (
-                                              <Badge variant="outline">
-                                                {t(funnel.workflowRole === 'closer' ? 'kpiCloser' : 'kpiHunter')}
-                                              </Badge>
-                                            ) : null}
-                                            {!funnel.isActive ? <Badge variant="secondary">{t('inactive')}</Badge> : null}
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
+                                    <FormControl><EmployeeFunnelSelect ref={field.ref} name={field.name} onBlur={field.onBlur} funnels={salesFunnels} value={field.value} onChange={field.onChange} /></FormControl>
                                   )}
                                   <FormMessage />
                                 </FormItem>

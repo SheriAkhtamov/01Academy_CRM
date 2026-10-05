@@ -4,6 +4,7 @@ export type SanitizedUser = {
   id: number;
   email: string;
   fullName: string;
+  avatarUrl?: string | null;
   phone: string | null;
   onlinePbxExtension: string | null;
   dateOfBirth: Date | string | null;

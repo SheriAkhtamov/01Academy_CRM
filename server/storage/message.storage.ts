@@ -3,7 +3,7 @@ import { db } from '../db';
 import { messages, users, type Message, type InsertMessage, type User } from '../db/schema';
 import { eq, or, and, asc, sql } from 'drizzle-orm';
 
-type ConversationUser = Pick<User, 'id' | 'fullName' | 'position' | 'email'> & {
+type ConversationUser = Pick<User, 'id' | 'fullName' | 'position' | 'email' | 'avatarUrl'> & {
     unreadCount: number;
     isOnline: boolean | null;
     lastSeenAt: Date | null;
@@ -15,6 +15,7 @@ class MessageStorage {
       SELECT
         ${users.id} as id,
         ${users.fullName} as "fullName",
+        ${users.avatarUrl} as "avatarUrl",
         ${users.position} as position,
         ${users.email} as email,
         ${users.isOnline} as "isOnline", ${users.lastSeenAt} as "lastSeenAt",

@@ -22,6 +22,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   credentialPasswordCiphertext: text("credential_password_ciphertext"),
   fullName: varchar("full_name", { length: 255 }).notNull(),
+  avatarUrl: text("avatar_url"),
   phone: varchar("phone", { length: 50 }),
   onlinePbxExtension: varchar("online_pbx_extension", { length: 20 }),
   dateOfBirth: timestamp("date_of_birth"),

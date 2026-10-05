@@ -1,9 +1,10 @@
 import { apiRequest } from '@/lib/queryClient';
+import { withUserPhoto } from './user-photo-api';
 
-export const createEmployee = (data: unknown) => apiRequest('POST', '/api/users', data);
+export const createEmployee = (data: unknown, photo?: File | null) => apiRequest('POST', '/api/users', withUserPhoto(data, photo));
 
-export const updateEmployee = (id: number, data: unknown) => (
-  apiRequest('PUT', `/api/users/${id}`, data)
+export const updateEmployee = (id: number, data: unknown, photo?: File | null) => (
+  apiRequest('PUT', `/api/users/${id}`, withUserPhoto(data, photo))
 );
 
 export const deleteEmployee = (id: number, leadTransferManagerId?: number) => {

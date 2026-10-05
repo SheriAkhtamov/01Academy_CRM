@@ -59,6 +59,7 @@ import { leadMatchesFilters } from '@/lib/leadFilters';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
+import { StudentPaymentAmounts } from '@/components/ux/student/StudentPaymentAmounts';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { SalesOverviewPeriodFilter } from '@/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '@/features/sales/useSalesReportingRange';
@@ -175,6 +176,8 @@ interface Student {
   enrolledAt?: string;
   createdAt: string;
   paymentStatus?: string;
+  paidAmountUzs?: number | null;
+  expectedPaymentUzs?: number | null;
   riskFlags?: string[];
   referralCode?: string;
 }
@@ -197,12 +200,6 @@ interface PendingLeadMove {
 const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
 ) as Record<string, TranslationKey>;
-
-const paymentStatusTranslationKeys: Record<string, TranslationKey> = {
-  paid: 'paymentStatusPaid',
-  pending: 'paymentStatusPending',
-  overdue: 'paymentStatusOverdue',
-};
 
 const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   overview: '/sales',
@@ -453,12 +450,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const paymentStatusName = (code: string | null | undefined) => {
-    if (!code) return t('noData');
-    const key = paymentStatusTranslationKeys[code];
-    return key ? t(key) : code;
   };
 
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
@@ -1223,7 +1214,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         <StudentsTab
           t={t}
           myStudents={studentsForCurrentRisk}
-          paymentStatusName={paymentStatusName}
           dateTime={dateTime}
           data={data}
           selectedStudent={selectedStudent}
@@ -1385,10 +1375,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 }
 // ---- Sub-components for tabs ----
 
-function StudentsTab({
+export function StudentsTab({
   t,
   myStudents,
-  paymentStatusName,
   dateTime,
   data,
   selectedStudent,
@@ -1404,7 +1393,6 @@ function StudentsTab({
 }: {
   t: (key: TranslationKey) => string;
   myStudents: Student[];
-  paymentStatusName: (code: string | null | undefined) => string;
   dateTime: (v: string | null | undefined) => string;
   data: any;
   selectedStudent: Student | null;
@@ -1485,24 +1473,13 @@ function StudentsTab({
       ),
     },
     {
-      key: 'paymentStatus',
-      header: t('paymentStatus'),
+      key: 'paidAmountUzs',
+      header: t('paidOfExpected'),
       sortable: true,
-      // Sort by the same derived value the cell renders, so a row displaying
-      // "Overdue" cannot sort as if it were "pending".
-      accessor: (student: Student) => {
-        const isOverdue = student.nextPaymentAt && new Date(student.nextPaymentAt) < new Date();
-        return isOverdue ? 'overdue' : student.paymentStatus ?? 'paid';
-      },
-      render: (student: Student) => {
-        const isOverdue = student.nextPaymentAt && new Date(student.nextPaymentAt) < new Date();
-        const paymentStatus = isOverdue ? 'overdue' : student.paymentStatus ?? 'paid';
-        return (
-          <Badge variant={paymentStatus === 'overdue' ? 'destructive' : paymentStatus === 'paid' ? 'success' : 'warning'}>
-            {paymentStatusName(paymentStatus)}
-          </Badge>
-        );
-      },
+      accessor: (student: Student) => student.paidAmountUzs ?? 0,
+      render: (student: Student) => (
+        <StudentPaymentAmounts paidAmountUzs={student.paidAmountUzs} expectedPaymentUzs={student.expectedPaymentUzs} />
+      ),
     },
   ];
 

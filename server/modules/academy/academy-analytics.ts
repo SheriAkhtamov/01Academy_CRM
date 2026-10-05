@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
-import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
+import { leadExpectedPaymentTotalSelect, studentPaidAmountSelect } from './student-expected-payment';
 import { appConfig } from '../../config';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { storage } from '../../storage';
@@ -273,7 +273,7 @@ export const getAcademyDataset = async (
     )),
     slice('students', () => (
       query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
-        sc.name AS school_name,
+        sc.name AS school_name, ${isTeacherScoped ? 'NULL AS paid_amount_uzs' : studentPaidAmountSelect('st')},
         ${studentGroupMembershipsSelect('st')},
         (
           SELECT CASE

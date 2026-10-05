@@ -32,3 +32,9 @@ export const leadExpectedPaymentTotalSelect = (alias: string) => `CASE
         FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id)
   ELSE COALESCE(${alias}.expected_payment_uzs, ${alias}.offer_price_uzs)
   END AS expected_payment_total_uzs`;
+
+export const studentPaidAmountSelect = (alias: string) => `COALESCE((
+  SELECT SUM(confirmed_payment.amount_uzs)
+  FROM academy_payments confirmed_payment
+  WHERE confirmed_payment.student_id = ${alias}.id AND confirmed_payment.status = 'paid'
+), 0)::double precision AS paid_amount_uzs`;

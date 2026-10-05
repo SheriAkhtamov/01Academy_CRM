@@ -25,6 +25,25 @@ beforeEach(() => {
 });
 
 describe("getAcademyDataset slice gating", () => {
+  it("returns confirmed payment totals alongside each student's own forecast", async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => sql.includes('SELECT st.*')
+      ? { rows: [{ id: 12, manager_id: 7, expected_payment_uzs: 1_000_000, paid_amount_uzs: 300_000 }] }
+      : { rows: [] });
+    const dataset = await (await loadDataset())({ userId: 7, module: 'sales', modules: ['sales'], scopeModule: 'sales' }, { include: ['students'] });
+    expect(dataset.students).toEqual([expect.objectContaining({ id: 12, expectedPaymentUzs: 1_000_000, paidAmountUzs: 300_000 })]);
+    const studentQuery = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('SELECT st.*'))!;
+    expect(studentQuery[0]).toContain("confirmed_payment.status = 'paid'");
+    expect(studentQuery[0]).toContain('confirmed_payment.student_id = st.id');
+    expect(studentQuery[1]).toEqual([7]);
+  });
+
+  it("does not add payment amounts to teacher-scoped data", async () => {
+    await (await loadDataset())({ userId: 7, module: 'teacher', modules: ['teacher'], scopeModule: 'teacher' }, { include: ['students'] });
+    const studentQuery = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('SELECT st.*'))!;
+    expect(studentQuery[0]).toContain('NULL AS paid_amount_uzs');
+    expect(studentQuery[0]).not.toContain('confirmed_payment');
+  });
+
   it("queries every slice when no include list is given", async () => {
     const getAcademyDataset = await loadDataset();
     await getAcademyDataset();

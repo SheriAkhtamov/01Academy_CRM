@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { leadFilterAmount } from '@/lib/leadFilters';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import {
   closestCorners,
@@ -86,6 +87,7 @@ export interface KanbanLead {
   comment?: string | null;
   studentAge?: number;
   expectedPaymentUzs?: number;
+  expectedPaymentTotalUzs?: number | null;
   offerPriceUzs?: number;
   statusCode: string;
   /** Stays empty while nobody has opened the lead card yet. */
@@ -441,7 +443,7 @@ function KanbanColumn({
 
   const totalSum = useMemo(() => {
     return leads.reduce((sum, lead) => {
-      const val = Number(lead.offerPriceUzs || lead.expectedPaymentUzs || 0);
+      const val = leadFilterAmount(lead);
       return sum + (Number.isFinite(val) ? val : 0);
     }, 0);
   }, [leads]);

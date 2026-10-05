@@ -15,7 +15,8 @@ describe('school and room archive migration', () => {
   it('registers the migration once after the existing final migration', () => {
     const entries = journal.entries;
     expect(entries.filter((entry: { tag: string }) => entry.tag === '0122_archive_schools_and_rooms')).toHaveLength(1);
-    expect(entries.at(-1)).toMatchObject({ idx: 122, tag: '0122_archive_schools_and_rooms' });
-    expect(entries.at(-1).when).toBeGreaterThan(entries.at(-2).when);
+    const archiveIndex = entries.findIndex((entry: { tag: string }) => entry.tag === '0122_archive_schools_and_rooms');
+    expect(entries[archiveIndex]).toMatchObject({ idx: 122, tag: '0122_archive_schools_and_rooms' });
+    expect(entries[archiveIndex].when).toBeGreaterThan(entries[archiveIndex - 1].when);
   });
 });

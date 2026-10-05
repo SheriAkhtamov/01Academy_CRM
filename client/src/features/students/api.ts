@@ -1,7 +1,7 @@
 import { apiRequest } from '@/lib/queryClient';
 import type { StudentProfile, StudentProject } from '@shared/contracts/student-profile';
 import { uploadStudentProject } from './project-upload';
-import type { StudentLeadPaymentRequest } from '@shared/contracts/academy-leads';
+import type { StudentExpectedPaymentRequest } from '@shared/contracts/academy-leads';
 
 export const studentsApi = {
   profile: (studentId: number, context: 'sales' | 'teacher' = 'sales') => apiRequest('GET', `/api/academy/students/${studentId}/profile${context === 'teacher' ? '?context=teacher' : ''}`) as Promise<StudentProfile>,
@@ -12,7 +12,7 @@ export const studentsApi = {
     studentName: string;
     studentAge: number | null;
     phone: string | null;
-  } & StudentLeadPaymentRequest) => (
+  } & StudentExpectedPaymentRequest) => (
     apiRequest('PATCH', `/api/academy/students/${studentId}`, input) as Promise<T>
   ),
   updateStatus: <T>(studentId: number, status: string, exitReason?: string) => (

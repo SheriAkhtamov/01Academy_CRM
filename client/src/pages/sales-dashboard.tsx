@@ -120,6 +120,7 @@ interface Lead {
   language?: string | null;
   demoAt?: string | null;
   expectedPaymentUzs?: number;
+  expectedPaymentTotalUzs?: number | null;
   offerPriceUzs?: number;
   firstContactAt?: string;
   isArchived?: boolean;

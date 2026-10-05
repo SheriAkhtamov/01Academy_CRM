@@ -18,6 +18,7 @@ export interface FilterableLead extends LeadContactFields {
   comment?: string | null;
   studentAge?: number | null;
   expectedPaymentUzs?: number | null;
+  expectedPaymentTotalUzs?: number | null;
   offerPriceUzs?: number | null;
   createdAt?: string | null;
 }
@@ -79,7 +80,9 @@ export const countActiveLeadFilters = (filters: LeadFilterState) => {
 };
 
 export const leadFilterAmount = (lead: FilterableLead) => (
-  Number(lead.offerPriceUzs || lead.expectedPaymentUzs || 0)
+  Number(lead.expectedPaymentTotalUzs !== undefined
+    ? lead.expectedPaymentTotalUzs ?? 0
+    : lead.offerPriceUzs || lead.expectedPaymentUzs || 0)
 );
 
 const matchesTriState = (state: LeadFilterTriState, present: boolean) => (

@@ -98,7 +98,7 @@ const makeLead = (id: number, contactName: string) => ({
   createdAt: '2026-01-01T00:00:00.000Z',
   expectedPaymentUzs: id * 100000,
   offerPriceUzs: id * 100000,
-  students: [{ id: id * 10, studentName: `Ученик ${id}`, status: 'active', groups: [] }],
+  students: [{ id: id * 10, expectedPaymentUzs: id * 100000, studentName: `Ученик ${id}`, status: 'active', groups: [] }],
   payments: [],
   comments: [],
   tasks: [],

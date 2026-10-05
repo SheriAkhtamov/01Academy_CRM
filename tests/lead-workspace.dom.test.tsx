@@ -24,7 +24,7 @@ const initialLead = {
   goal: 'Interested in AI', urgency: 'Ready this week',
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
-  students: [{ id: 50, studentName: 'Test student', status: 'studying' }],
+  students: [{ id: 50, studentName: 'Test student', status: 'studying', expectedPaymentUzs: 100_000, updatedAt: '2026-08-01T08:00:00.000Z' }],
   payments: [], comments: [],
   tasks: [
     { id: 1, title: 'Future task', status: 'todo', dueAt: '2099-08-02T08:00:00.000Z' },
@@ -50,12 +50,13 @@ beforeEach(() => {
       const body = JSON.parse(String(init?.body ?? '{}'));
       requests.push({ url, method, body });
       if (method === 'PATCH' && url.startsWith('/api/academy/students/')) {
-        lead = { ...lead, students: lead.students.map((student) => ({ ...student,
+        const studentId = Number(url.split('/').at(-1));
+        lead = { ...lead, students: lead.students.map((student) => student.id !== studentId ? student : ({ ...student,
           studentName: body.studentName, studentAge: body.studentAge, phone: body.phone,
-        })), ...('expectedPaymentUzs' in body ? {
-          expectedPaymentUzs: body.expectedPaymentUzs, updatedAt: '2026-08-01T09:00:00.000Z',
-        } : {}) };
-        return new Response(JSON.stringify(lead.students[0]), {
+          ...('expectedPaymentUzs' in body ? { expectedPaymentUzs: body.expectedPaymentUzs } : {}),
+          updatedAt: '2026-08-01T09:00:00.000Z',
+        })) };
+        return new Response(JSON.stringify(lead.students.find((student) => student.id === studentId)), {
           status: 200, headers: { 'content-type': 'application/json' },
         });
       }
@@ -249,15 +250,68 @@ describe('lead workspace navigation and drafts', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('editStudent') })).toBeNull());
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ url: '/api/academy/students/50', method: 'PATCH', body: {
-      expectedPaymentUzs: 250_000, expectedLeadUpdatedAt: '2026-08-01T08:00:00.000Z',
+      expectedPaymentUzs: 250_000, expectedStudentUpdatedAt: '2026-08-01T08:00:00.000Z',
     } });
     expect((name as HTMLInputElement).value).toBe('Parent draft');
     expect(screen.queryByText(i18n.t('leadVersionReviewTitle'))).toBeNull();
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[1].body).toMatchObject({ contactName: 'Parent draft', expectedUpdatedAt: '2026-08-01T09:00:00.000Z' });
+    expect(requests[1].body).toMatchObject({ contactName: 'Parent draft', expectedUpdatedAt: '2026-08-01T08:00:00.000Z' });
     expect(requests[1].body).not.toHaveProperty('expectedPaymentUzs');
-    expect(lead.expectedPaymentUzs).toBe(250_000);
+    expect(lead.students[0].expectedPaymentUzs).toBe(250_000);
+    expect(lead.expectedPaymentUzs).toBe(100_000);
+  });
+
+  it('starts every new student with a blank independent forecast', async () => {
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('createStudent') }));
+    const dialog = screen.getByRole('dialog', { name: i18n.t('createStudent') });
+    const amount = within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement;
+    expect(amount.value).toBe('');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: i18n.t('studentName') }), { target: { value: 'New student' } });
+    fireEvent.change(amount, { target: { value: '400000' } });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('createAndAddAnotherStudent') }));
+    await waitFor(() => expect(amount.value).toBe(''));
+    expect(requests[0]).toMatchObject({ url: '/api/academy/leads/15/students', method: 'POST', body: {
+      studentName: 'New student', expectedPaymentUzs: 400_000,
+    } });
+    expect(requests[0].body).not.toHaveProperty('expectedLeadUpdatedAt');
+    expect(lead.students[0].expectedPaymentUzs).toBe(100_000);
+  });
+
+  it('keeps sibling forecasts independent in editing and payment entry', async () => {
+    lead = { ...lead, students: [lead.students[0], {
+      ...lead.students[0], id: 51, studentName: 'Second student', expectedPaymentUzs: 200_000,
+    }] };
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getAllByRole('button', { name: i18n.t('edit') })[0]);
+    const studentDialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
+    fireEvent.change(within(studentDialog).getByRole('textbox', { name: i18n.t('expectedPayment') }), { target: { value: '350000' } });
+    await user.click(within(studentDialog).getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('editStudent') })).toBeNull());
+    expect(lead.students.map((student) => student.expectedPaymentUzs)).toEqual([350_000, 200_000]);
+    await user.click(screen.getAllByRole('button', { name: i18n.t('edit') })[1]);
+    const siblingDialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
+    expect((within(siblingDialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement).value.replace(/\D/g, '')).toBe('200000');
+    await user.click(within(siblingDialog).getByRole('button', { name: i18n.t('cancel') }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+    await user.click(screen.getByRole('button', { name: i18n.t('recordPayment') }));
+    const paymentDialog = screen.getByRole('dialog', { name: i18n.t('recordPayment') });
+    const amount = within(paymentDialog).getByRole('textbox', { name: i18n.t('amount') }) as HTMLInputElement;
+    expect(amount.value).toBe('');
+    const chooseStudent = async (name: string) => {
+      await user.click(within(paymentDialog).getByRole('combobox', { name: i18n.t('paymentStudent') }));
+      await user.click(screen.getByRole('option', { name }));
+    };
+    await chooseStudent('Test student');
+    expect(amount.value.replace(/\D/g, '')).toBe('350000');
+    await chooseStudent('Second student');
+    expect(amount.value.replace(/\D/g, '')).toBe('200000');
+    fireEvent.change(amount, { target: { value: '150000' } });
+    await chooseStudent('Test student');
+    expect(amount.value.replace(/\D/g, '')).toBe('150000');
   });
 
   it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {

@@ -16,6 +16,7 @@ import {
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { selectedLeadLanguages } from '@shared/lead-languages';
 import { logger } from '../../lib/logger';
+import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
 import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
 import {
@@ -934,7 +935,7 @@ export const getLead = (id: number) =>
         u.full_name AS manager_name,
         (SELECT workflow_role FROM academy_sales_funnels WHERE id = l.funnel_id) AS funnel_role,
         archived_by_user.full_name AS archived_by_name,
-        ${leadPhoneNumbersSelect('l')},
+        ${leadExpectedPaymentTotalSelect('l')}, ${leadPhoneNumbersSelect('l')},
         ${leadChannelsSelect('l')},
         ${leadTagsSelect('l')},
         ${leadGroupReservationsSelect('l')}
@@ -1483,6 +1484,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     messenger: lead.messenger ?? null,
     studentName: lead.studentName || lead.contactName,
     studentAge: lead.studentAge ?? null,
+    expectedPaymentUzs: Number(lead.expectedPaymentUzs) >= 0 ? lead.expectedPaymentUzs ?? null : null,
     courseId: enrolledGroup?.courseId ?? lead.courseId ?? course?.id ?? null,
     schoolId: enrolledGroup?.schoolId ?? lead.schoolId ?? null,
     groupId: lead.enrolledGroupId ?? null,
@@ -1761,17 +1763,29 @@ export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, pr
   }
 
   if (lead.statusCode === 'enrolled' && previousStatus !== 'enrolled') {
-    await insertRow('academy_payments', {
-      leadId: lead.id,
-      groupId: lead.enrolledGroupId ?? null,
-      amountUzs: normalizeMoney(lead.expectedPaymentUzs || lead.offerPriceUzs),
-      type: 'full',
-      method: lead.paymentMethod || 'transfer',
-      status: 'pending',
-      dueAt: addDays(now, 3),
-      period: 'month_1',
-      discount: 'none',
-      comment: 'Ожидаемая оплата после записи на курс' });
+    const students = await query(
+      `SELECT id, group_id, expected_payment_uzs FROM academy_students WHERE lead_id = $1 ORDER BY id`,
+      [lead.id],
+    );
+    const forecasts: Row[] = students.length > 0 ? students : [{
+      expectedPaymentUzs: lead.expectedPaymentUzs ?? lead.offerPriceUzs,
+      groupId: lead.enrolledGroupId,
+    }];
+    for (const forecast of forecasts) {
+      if (students.length > 0 && forecast.expectedPaymentUzs == null) continue;
+      await insertRow('academy_payments', {
+        leadId: lead.id,
+        studentId: forecast.id ?? null,
+        groupId: forecast.groupId ?? null,
+        amountUzs: normalizeMoney(forecast.expectedPaymentUzs),
+        type: 'full',
+        method: lead.paymentMethod || 'transfer',
+        status: 'pending',
+        dueAt: addDays(now, 3),
+        period: 'month_1',
+        discount: 'none',
+        comment: 'Ожидаемая оплата после записи на курс' });
+    }
   }
 
   if (lead.statusCode === 'not_now') {

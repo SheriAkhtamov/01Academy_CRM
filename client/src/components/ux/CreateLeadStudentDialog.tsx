@@ -55,6 +55,8 @@ type CreatedLeadStudent = {
 export type EditableLeadStudent = CreatedLeadStudent & {
   studentAge?: number | null;
   phone?: string | null;
+  expectedPaymentUzs?: number | null;
+  updatedAt?: string | null;
   groups?: Array<{
     groupId: number;
     groupName: string;
@@ -113,8 +115,6 @@ interface CreateLeadStudentDialogProps {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
-  expectedPaymentUzs?: number | null;
-  leadUpdatedAt?: string | null;
   purpose?: 'enrollment' | 'demo';
   onCreated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
@@ -125,8 +125,6 @@ interface EditLeadStudentDialogProps {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
-  expectedPaymentUzs?: number | null;
-  leadUpdatedAt?: string | null;
   student: EditableLeadStudent;
   onUpdated: (student: CreatedLeadStudent) => void | Promise<void>;
 }
@@ -137,8 +135,6 @@ type LeadStudentFormDialogProps = {
   leadId: number;
   contactName: string;
   groups: LeadStudentGroupOption[];
-  expectedPaymentUzs?: number | null;
-  leadUpdatedAt?: string | null;
   purpose?: 'enrollment' | 'demo';
 } & (
   | {
@@ -167,14 +163,14 @@ function LeadStudentFormDialog({
   leadId,
   contactName,
   groups,
-  expectedPaymentUzs,
-  leadUpdatedAt,
   purpose = 'enrollment',
   ...modeProps
 }: LeadStudentFormDialogProps) {
   const { t } = useTranslation();
   const isEditing = modeProps.mode === 'edit';
   const editedStudent = modeProps.mode === 'edit' ? modeProps.student : null;
+  const expectedPaymentUzs = editedStudent?.expectedPaymentUzs;
+  const studentUpdatedAt = editedStudent?.updatedAt;
   const currentGroupIds = useMemo(
     () => (editedStudent?.groups ?? []).map((group) => String(group.groupId)),
     [editedStudent?.groups],
@@ -193,7 +189,6 @@ function LeadStudentFormDialog({
     demoOnly: false,
   } : {
     ...EMPTY_STUDENT,
-    expectedPaymentUzs: expectedPaymentUzs == null ? '' : String(expectedPaymentUzs),
     enrolledAt: todayInputValue(),
     demoOnly: purpose === 'demo',
   }, [
@@ -212,9 +207,7 @@ function LeadStudentFormDialog({
   });
   const [createdCount, setCreatedCount] = useState(0);
   const openedFormKey = useRef<string | null>(null);
-  const paymentSnapshot = useRef({ amount: expectedPaymentUzs ?? null, updatedAt: leadUpdatedAt });
-  const latestLeadVersion = useRef(leadUpdatedAt);
-  latestLeadVersion.current = leadUpdatedAt;
+  const paymentSnapshot = useRef({ amount: expectedPaymentUzs ?? null, updatedAt: studentUpdatedAt });
   const selectedGroupIds = form.watch('groupIds');
   const primaryGroupId = form.watch('primaryGroupId');
 
@@ -248,10 +241,10 @@ function LeadStudentFormDialog({
     const opening = openedFormKey.current !== formKey;
     if (!opening && form.formState.isDirty) return;
     form.reset(initialValues);
-    paymentSnapshot.current = { amount: expectedPaymentUzs ?? null, updatedAt: leadUpdatedAt };
+    paymentSnapshot.current = { amount: expectedPaymentUzs ?? null, updatedAt: studentUpdatedAt };
     openedFormKey.current = formKey;
     if (opening) setCreatedCount(0);
-  }, [editedStudent?.id, expectedPaymentUzs, form, initialValues, leadId, leadUpdatedAt, open, purpose]);
+  }, [editedStudent?.id, expectedPaymentUzs, form, initialValues, leadId, studentUpdatedAt, open, purpose]);
 
   useEffect(() => {
     if (selectedGroupIds.length === 0) {
@@ -266,10 +259,7 @@ function LeadStudentFormDialog({
   const saveStudent = useMutation({
     mutationFn: async ({ values }: { values: StudentFormValues; createAnother: boolean }) => {
       const amount = values.expectedPaymentUzs === '' ? null : Number(values.expectedPaymentUzs);
-      const payment = amount === paymentSnapshot.current.amount ? {} : {
-        expectedPaymentUzs: amount,
-        expectedLeadUpdatedAt: paymentSnapshot.current.updatedAt,
-      };
+      const payment = amount === paymentSnapshot.current.amount ? {} : { expectedPaymentUzs: amount };
       if (modeProps.mode === 'edit') {
         const updatedStudent = await studentsApi.updateDetails<CreatedLeadStudent>(
           modeProps.student.id,
@@ -278,6 +268,7 @@ function LeadStudentFormDialog({
             studentAge: values.studentAge ? Number(values.studentAge) : null,
             phone: values.phone || null,
             ...payment,
+            expectedStudentUpdatedAt: paymentSnapshot.current.updatedAt,
           },
         );
         const currentGroupIdSet = new Set(currentGroupIds);
@@ -302,7 +293,7 @@ function LeadStudentFormDialog({
         primaryGroupId: values.demoOnly || !values.primaryGroupId ? null : Number(values.primaryGroupId),
         enrolledAt: values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt,
         demoOnly: values.demoOnly,
-        ...payment,
+        ...(purpose === 'enrollment' ? { expectedPaymentUzs: amount } : {}),
       });
     },
     onSuccess: async (student, variables) => {
@@ -323,15 +314,11 @@ function LeadStudentFormDialog({
       }
       form.reset({
         ...EMPTY_STUDENT,
-        expectedPaymentUzs: variables.values.expectedPaymentUzs,
         phone: variables.values.phone,
         enrolledAt: variables.values.enrolledAt || todayInputValue(),
         demoOnly: purpose === 'demo',
       });
-      paymentSnapshot.current = {
-        amount: variables.values.expectedPaymentUzs === '' ? null : Number(variables.values.expectedPaymentUzs),
-        updatedAt: latestLeadVersion.current,
-      };
+      paymentSnapshot.current = { amount: null, updatedAt: undefined };
       form.setFocus('studentName');
     },
     onError: (error: Error) => toast({

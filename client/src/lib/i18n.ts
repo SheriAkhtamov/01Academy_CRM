@@ -732,6 +732,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   studentsCreatedCount: { en: 'Created: {count}', ru: 'Создано: {count}' },
   studentCreateFailed: { en: 'Student was not created', ru: 'Не удалось создать ученика' },
   studentUpdated: { en: 'Student details updated', ru: 'Данные ученика обновлены' },
+  studentChangedConcurrently: { en: 'Another employee changed this student. Reopen the form before saving.', ru: 'Другой сотрудник изменил данные ученика. Откройте форму заново перед сохранением.' },
   studentUpdateFailed: { en: 'Student details were not updated', ru: 'Не удалось обновить данные ученика' },
   studentGroupRequired: { en: 'Select at least one group', ru: 'Выберите хотя бы одну группу' },
   studentNameRequired: { en: 'Enter the student name', ru: 'Укажите имя ученика' },

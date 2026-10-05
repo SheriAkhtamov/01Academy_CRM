@@ -1,37 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({ updateRow: vi.fn(), createAudit: vi.fn() }));
-vi.mock('../server/modules/academy/academy-core', () => mocks);
-import { parseStudentLeadPayment, saveStudentLeadPayment } from '../server/modules/academy/student-lead-payment';
+import { describe, expect, it } from 'vitest';
+import { assertStudentLeadAccess, assertStudentVersion, parseStudentExpectedPayment } from '../server/modules/academy/student-expected-payment';
+import { leadFilterAmount } from '../client/src/lib/leadFilters';
 
 const actor = { id: 7, module: 'sales', modules: ['sales'] };
-const lead = { id: 12, managerId: 7, expectedPaymentUzs: 100_000, updatedAt: '2026-10-05T08:00:00Z' };
-beforeEach(() => { vi.clearAllMocks(); mocks.updateRow.mockResolvedValue({ ...lead, expectedPaymentUzs: 250_000 }); });
+const lead = { id: 12, managerId: 7 };
+const student = { id: 34, expectedPaymentUzs: 100_000, updatedAt: '2026-10-05T08:00:00Z' };
 
-describe('expected payment saved from the student dialog', () => {
-  it.each([250_000, 0, null])('saves %s and records the linked lead change', async (amount) => {
-    const payment = parseStudentLeadPayment({ expectedPaymentUzs: amount, expectedLeadUpdatedAt: lead.updatedAt });
-    await saveStudentLeadPayment(lead, payment, actor);
-    expect(mocks.updateRow).toHaveBeenCalledWith('academy_leads', 12, { expectedPaymentUzs: amount });
-    expect(mocks.createAudit).toHaveBeenCalledWith(actor, 'UPDATE_ACADEMY_LEAD', 'academy_lead', 12, expect.any(Object), lead);
+describe('independent student expected payments', () => {
+  it.each([250_000, 0, null])('accepts %s for a single student', (amount) => {
+    expect(parseStudentExpectedPayment({ expectedPaymentUzs: amount, expectedStudentUpdatedAt: student.updatedAt }))
+      .toEqual({ expectedPaymentUzs: amount, expectedStudentUpdatedAt: student.updatedAt });
   });
-  it('leaves payment unchanged when only student details are saved', async () => {
-    await saveStudentLeadPayment(lead, parseStudentLeadPayment({ studentName: 'Child' }), actor);
-    await saveStudentLeadPayment(lead, { expectedPaymentUzs: 100_000 }, actor);
-    expect(mocks.updateRow).not.toHaveBeenCalled();
+  it('omits the amount when only student details are saved', () => {
+    expect(parseStudentExpectedPayment({ studentName: 'Child' })).toEqual({});
   });
   it.each([-1, 1.5, 2_147_483_648, '100000'])('rejects an invalid amount %s', (amount) => {
-    expect(() => parseStudentLeadPayment({ expectedPaymentUzs: amount })).toThrow('invalidData');
+    expect(() => parseStudentExpectedPayment({ expectedPaymentUzs: amount })).toThrow('invalidData');
   });
-  it('protects a payment changed while the student dialog was open', async () => {
-    await expect(saveStudentLeadPayment(lead, {
-      expectedPaymentUzs: 250_000, expectedLeadUpdatedAt: '2026-10-05T07:00:00Z',
-    }, actor)).rejects.toMatchObject({ statusCode: 409, message: 'leadChangedConcurrently' });
-    expect(mocks.updateRow).not.toHaveBeenCalled();
+  it('protects the student changed while the dialog was open', () => {
+    expect(() => assertStudentVersion(student, {
+      expectedPaymentUzs: 250_000, expectedStudentUpdatedAt: '2026-10-05T07:00:00Z',
+    })).toThrow('studentChangedConcurrently');
+    expect(() => assertStudentVersion(student, { expectedStudentUpdatedAt: student.updatedAt })).not.toThrow();
   });
-  it('checks the current lead owner under the lock', async () => {
-    await expect(saveStudentLeadPayment({ ...lead, managerId: 8 }, { expectedPaymentUzs: 250_000 }, actor))
-      .rejects.toMatchObject({ statusCode: 403 });
-    expect(mocks.updateRow).not.toHaveBeenCalled();
+  it('checks the current lead owner under the lock', () => {
+    expect(() => assertStudentLeadAccess({ ...lead, managerId: 8 }, actor)).toThrow('accessDenied');
+    expect(() => assertStudentLeadAccess(lead, actor)).not.toThrow();
+  });
+  it('uses the total of student forecasts without reviving a cleared legacy amount', () => {
+    expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, offerPriceUzs: 150_000, expectedPaymentTotalUzs: 450_000 })).toBe(450_000);
+    expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, expectedPaymentTotalUzs: null })).toBe(0);
+    expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, expectedPaymentTotalUzs: 0 })).toBe(0);
   });
 });

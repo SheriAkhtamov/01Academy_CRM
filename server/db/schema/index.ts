@@ -424,6 +424,7 @@ export const academyStudents = pgTable("academy_students", {
   messenger: varchar("messenger", { length: 120 }),
   studentName: varchar("student_name", { length: 255 }),
   studentAge: integer("student_age"),
+  expectedPaymentUzs: integer("expected_payment_uzs"),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
   managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
@@ -443,6 +444,8 @@ export const academyStudents = pgTable("academy_students", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
+  expectedPaymentCheck: check("academy_students_expected_payment_nonnegative",
+    sql`${table.expectedPaymentUzs} IS NULL OR ${table.expectedPaymentUzs} >= 0`),
   phoneIdx: index("academy_students_phone_idx").on(table.phone),
   groupIdx: index("academy_students_group_idx").on(table.groupId),
   leadIdx: index("academy_students_lead_idx").on(table.leadId),

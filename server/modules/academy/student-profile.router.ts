@@ -17,7 +17,7 @@ import {
 import { getLead } from './academy-leads';
 import { loadAuthorizedStudent, loadStudentProfileData } from './student-profile-data';
 import { registerStudentPortfolioRoutes } from './student-portfolio.router';
-import { parseStudentLeadPayment, saveStudentLeadPayment } from './student-lead-payment';
+import { assertStudentLeadAccess, assertStudentVersion, parseStudentExpectedPayment } from './student-expected-payment';
 
 export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Router>) => {
   registerStudentPortfolioRoutes(router);
@@ -44,7 +44,7 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
     try {
       const studentId = parseId(req.params.id);
       if (!studentId) return res.status(400).json({ error: 'Invalid student id' });
-      const payment = parseStudentLeadPayment(req.body);
+      const payment = parseStudentExpectedPayment(req.body);
 
       const studentName = nullableText(req.body.studentName);
       if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
@@ -85,7 +85,7 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
       const student = await withTransaction(async () => {
         const lockedLead = initialStudent.leadId
           ? await queryOne(
-            payment.expectedPaymentUzs === undefined
+            payment.expectedPaymentUzs === undefined && !payment.expectedStudentUpdatedAt
               ? `SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`
               : `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`,
             [initialStudent.leadId],
@@ -97,11 +97,18 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
         if (!lockedStudent) {
           throw Object.assign(new Error('Student not found'), { statusCode: 404 });
         }
-        await saveStudentLeadPayment(lockedLead, payment, req);
+        if (lockedStudent.leadId !== initialStudent.leadId) {
+          throw Object.assign(new Error('studentChangedConcurrently'), { statusCode: 409 });
+        }
+        if (initialStudent.leadId && (payment.expectedPaymentUzs !== undefined || payment.expectedStudentUpdatedAt)) {
+          assertStudentLeadAccess(lockedLead, req);
+        }
+        assertStudentVersion(lockedStudent, payment);
         const updatedStudent = await updateRow('academy_students', studentId, {
           studentName,
           studentAge: parsedStudentAge,
           phone: normalizedPhone?.phone ?? null,
+          expectedPaymentUzs: payment.expectedPaymentUzs,
         });
         if (!updatedStudent) {
           throw Object.assign(new Error('Student not found'), { statusCode: 404 });

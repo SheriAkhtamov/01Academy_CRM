@@ -1739,11 +1739,11 @@ describe('academy route logic boundaries', () => {
     }));
   });
 
-  it.each([false, true])('saves expected payment with student details atomically (student failure: %s)', async (failStudent) => {
+  it.each([false, true])('saves an independent student amount atomically (student failure: %s)', async (failStudent) => {
     mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
-    const linkedLead = leadFixture({ manager_id: 1, expected_payment_uzs: 100_000,
-      updated_at: new Date('2026-10-05T08:00:00Z') });
-    const child = { id: 5, lead_id: 42, student_name: 'Child' };
+    const linkedLead = leadFixture({ manager_id: 1, expected_payment_uzs: 100_000 });
+    const child = { id: 5, lead_id: 42, student_name: 'Child', expected_payment_uzs: 100_000,
+      updated_at: new Date('2026-10-05T08:00:00Z') };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
       if (sql.includes('FROM academy_leads l')) return { rows: [linkedLead] };
@@ -1752,24 +1752,72 @@ describe('academy route logic boundaries', () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT * FROM academy_leads')) return { rows: [linkedLead] };
       if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
-      if (sql.includes('UPDATE "academy_leads"')) return { rows: [{ ...linkedLead, expected_payment_uzs: 250_000 }] };
       if (sql.includes('UPDATE "academy_students"')) {
         if (failStudent) throw new Error('Student write failed');
-        return { rows: [{ ...child, student_name: 'Updated child' }] };
+        return { rows: [{ ...child, student_name: 'Updated child', expected_payment_uzs: 250_000 }] };
       }
       return emptyResult();
     });
     const response = await request(await createApp()).patch('/api/academy/students/5').send({
-      studentName: 'Updated child', expectedPaymentUzs: 250_000, expectedLeadUpdatedAt: '2026-10-05T08:00:00Z',
+      studentName: 'Updated child', expectedPaymentUzs: 250_000, expectedStudentUpdatedAt: '2026-10-05T08:00:00Z',
     });
     expect(response.status).toBe(failStudent ? 500 : 200);
-    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_leads"'))?.[1])
-      .toEqual([42, 250_000]);
+    const studentWrite = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_students"'));
+    expect(studentWrite?.[0]).toContain('"expected_payment_uzs"');
+    expect(studentWrite?.[1]).toEqual([5, 'Updated child', null, null, 250_000]);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_leads"'))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith(failStudent ? 'ROLLBACK' : 'COMMIT');
     if (failStudent) {
       expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
       expect(mocks.createAuditLog).not.toHaveBeenCalled();
+    } else {
+      expect(response.body.expectedPaymentUzs).toBe(250_000);
+      expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_ACADEMY_STUDENT_DETAILS' }));
     }
+  });
+
+  it('rejects a stale student forecast before making any writes', async () => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    const lead = leadFixture({ manager_id: 1 });
+    const child = { id: 5, lead_id: 42, student_name: 'Child', expected_payment_uzs: 300_000,
+      updated_at: new Date('2026-10-05T09:00:00Z') };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
+      if (sql.includes('FROM academy_leads l')) return { rows: [lead] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_leads')) return { rows: [lead] };
+      if (sql.includes('SELECT * FROM academy_students')) return { rows: [child] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).patch('/api/academy/students/5').send({
+      studentName: 'Child', expectedPaymentUzs: 250_000, expectedStudentUpdatedAt: '2026-10-05T08:00:00Z',
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('studentChangedConcurrently');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('creates enrollment payment expectations per student instead of copying the family total', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id, group_id, expected_payment_uzs FROM academy_students')) {
+        return { rows: [
+          { id: 5, group_id: 20, expected_payment_uzs: 250_000 },
+          { id: 6, group_id: 21, expected_payment_uzs: 350_000 },
+          { id: 7, group_id: 22, expected_payment_uzs: null },
+        ] };
+      }
+      return emptyResult();
+    });
+    const { handleLeadStatusEffects } = await import('../server/modules/academy/academy-leads');
+    await handleLeadStatusEffects(mocks.actor, { id: 42, statusCode: 'enrolled', expectedPaymentUzs: 900_000 }, 'qualified');
+    const writes = mocks.poolQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_payments"'));
+    expect(writes.map(([sql, values]) => ({
+      studentId: readInsertValue(sql, values, 'student_id'), amount: readInsertValue(sql, values, 'amount_uzs'),
+    }))).toEqual([{ studentId: 5, amount: 250_000 }, { studentId: 6, amount: 350_000 }]);
   });
 
   it('rolls back a transfer into a completed group before writing transfer history', async () => {
@@ -2537,13 +2585,13 @@ describe('academy route logic boundaries', () => {
     const lead = leadFixture({
       status_code: 'qualified',
       phone: '+998901234567',
-      is_archived: false,
+      is_archived: false, expected_payment_uzs: 900_000,
     });
     const student = {
       id: 77,
       lead_id: 42,
       student_name: 'Second child',
-      student_age: 9,
+      student_age: 9, expected_payment_uzs: 250_000,
       group_id: 20,
       course_id: 3,
       school_id: 2,
@@ -2584,7 +2632,7 @@ describe('academy route logic boundaries', () => {
       .post('/api/academy/leads/42/students')
       .send({
         studentName: 'Second child',
-        studentAge: 9,
+        studentAge: 9, expectedPaymentUzs: 250_000,
         groupIds: [20],
         primaryGroupId: 20,
         enrolledAt: '2026-07-21',
@@ -2594,6 +2642,7 @@ describe('academy route logic boundaries', () => {
     const studentInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_students"'));
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'lead_id')).toBe(42);
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'student_name')).toBe('Second child');
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'expected_payment_uzs')).toBe(250_000);
     const membershipInsert = mocks.clientQuery.mock.calls.find(([sql]) => (
       String(sql).includes('INSERT INTO academy_student_group_enrollments')
       && String(sql).includes('UNNEST($5::int[])')
@@ -2710,6 +2759,7 @@ describe('academy route logic boundaries', () => {
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
     const studentInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_students"'));
+    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'expected_payment_uzs')).toBeNull();
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'status')).toBe('trial');
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'group_id')).toBeNull();
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'next_payment_at')).toBeNull();

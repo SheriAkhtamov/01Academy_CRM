@@ -80,7 +80,7 @@ import {
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
 import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
 import { parseLeadLanguageUpdates } from './lead-languages';
-import { parseStudentLeadPayment, saveStudentLeadPayment } from './student-lead-payment';
+import { assertStudentLeadAccess, leadExpectedPaymentTotalSelect, parseStudentExpectedPayment } from './student-expected-payment';
 import { parseLeadPreferenceUpdates } from './lead-preferences';
 import {
   countUnviewedLeads,
@@ -242,7 +242,7 @@ router.get('/leads', async (req, res) => {
     const leads = await query(
       `SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-          ${leadPhoneNumbersSelect('l')},
+          ${leadExpectedPaymentTotalSelect('l')}, ${leadPhoneNumbersSelect('l')},
           ${leadTagsSelect('l')}
        FROM academy_leads l
        LEFT JOIN academy_courses c ON c.id = l.course_id
@@ -1440,7 +1440,6 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to convert lead to student') });
   }
 });
-
 router.post('/leads/:id/students', async (req, res) => {
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Student creation access required')) return;
   try {
@@ -1453,7 +1452,7 @@ router.post('/leads/:id/students', async (req, res) => {
       return res.status(409).json({ error: 'archivedLeadMustBeRestoredBeforeStudentCreation' });
     }
     const demoOnly = req.body.demoOnly === true;
-    const payment = parseStudentLeadPayment(req.body);
+    const payment = parseStudentExpectedPayment(req.body);
     const studentName = nullableText(req.body.studentName);
     if (!studentName) return res.status(400).json({ error: 'studentNameRequired' });
     const parsedStudentAge = req.body.studentAge === undefined || req.body.studentAge === null || req.body.studentAge === ''
@@ -1491,7 +1490,7 @@ router.post('/leads/:id/students', async (req, res) => {
       if (lead.isArchived) {
         throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeStudentCreation'), { statusCode: 409 });
       }
-      await saveStudentLeadPayment(lead, payment, req.actor!);
+      assertStudentLeadAccess(lead, req.actor!);
       const selectedGroups: Row[] = [];
       for (const groupId of groupIds) {
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
@@ -1515,6 +1514,7 @@ router.post('/leads/:id/students', async (req, res) => {
         messenger: null,
         studentName,
         studentAge,
+        expectedPaymentUzs: payment.expectedPaymentUzs ?? null,
         courseId: hasEnrollment
           ? Number(primaryGroup!.courseId)
           : demoOnly

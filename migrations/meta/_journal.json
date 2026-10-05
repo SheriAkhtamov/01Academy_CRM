@@ -862,6 +862,13 @@
       "when": 1791150870233,
       "tag": "0122_archive_schools_and_rooms",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1791230515400,
+      "tag": "0123_student_expected_payment",
+      "breakpoints": true
     }
   ]
 }

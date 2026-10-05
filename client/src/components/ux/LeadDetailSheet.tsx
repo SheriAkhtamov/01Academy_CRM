@@ -145,6 +145,8 @@ interface LeadDetails {
     contactName?: string | null;
     studentName?: string | null;
     studentAge?: number | null;
+    expectedPaymentUzs?: number | null;
+    updatedAt?: string | null;
     phone?: string | null;
     status: string;
     courseId?: number | null;
@@ -165,6 +167,7 @@ interface LeadDetails {
       enrolledAt?: string | null;
     }>;
   }>;
+  expectedPaymentTotalUzs?: number | null;
   expectedPaymentUzs?: number | null;
   offerPriceUzs?: number | null;
   firstContactAt?: string | null;
@@ -525,7 +528,7 @@ export function LeadDetailSheet({
       lead.expectedPaymentUzs ?? '',
       lead.offerPriceUzs ?? '',
       initialPaymentStudentId ?? '',
-      (lead.students ?? []).map((student) => student.id).join(','),
+      (lead.students ?? []).map((student) => `${student.id}:${student.expectedPaymentUzs ?? ''}`).join(','),
       (lead.payments ?? []).map((payment) => payment.id).join(','),
     ].join('|');
   }, [leadQuery.data, initialPaymentStudentId]);
@@ -557,11 +560,12 @@ export function LeadDetailSheet({
     if (hydratedTransientKey.current !== transientSnapshotKey) {
       const paymentDirty = paymentForm.formState.isDirty;
       if (changedLead || !paymentDirty || hydratedTransientKey.current === null) {
+        const studentId = initialPaymentStudentId && lead.students?.some((student) => student.id === initialPaymentStudentId)
+          ? String(initialPaymentStudentId)
+          : lead.students?.length === 1 ? String(lead.students[0].id) : '';
         paymentForm.reset({
-          studentId: initialPaymentStudentId && lead.students?.some((student) => student.id === initialPaymentStudentId)
-            ? String(initialPaymentStudentId)
-            : lead.students?.length === 1 ? String(lead.students[0].id) : '',
-          amountUzs: String(lead.expectedPaymentUzs ?? lead.offerPriceUzs ?? ''),
+          studentId,
+          amountUzs: String(lead.students?.find((student) => String(student.id) === studentId)?.expectedPaymentUzs ?? ''),
           method: 'transfer',
           type: 'full',
           paidAt: academyToday(),
@@ -743,7 +747,7 @@ export function LeadDetailSheet({
       const refreshedLead = refreshed.data;
       paymentForm.reset({
         studentId: refreshedLead?.students?.length === 1 ? String(refreshedLead.students[0].id) : '',
-        amountUzs: String(refreshedLead?.expectedPaymentUzs ?? refreshedLead?.offerPriceUzs ?? ''),
+        amountUzs: String(refreshedLead?.students?.length === 1 ? refreshedLead.students[0].expectedPaymentUzs ?? '' : ''),
         method: 'transfer',
         type: 'full',
         paidAt: academyToday(),
@@ -1369,8 +1373,8 @@ export function LeadDetailSheet({
                         <div className="min-w-0">
                           <p className="truncate text-xs text-muted-foreground">{t('expectedPayment')}</p>
                           <p className="truncate text-sm font-semibold tabular-nums">
-                            {lead.expectedPaymentUzs || lead.offerPriceUzs
-                              ? money(lead.expectedPaymentUzs ?? lead.offerPriceUzs)
+                            {(lead.expectedPaymentTotalUzs !== undefined ? lead.expectedPaymentTotalUzs : lead.expectedPaymentUzs) != null
+                              ? money(lead.expectedPaymentTotalUzs !== undefined ? lead.expectedPaymentTotalUzs : lead.expectedPaymentUzs)
                               : '—'}
                           </p>
                         </div>
@@ -1560,7 +1564,13 @@ export function LeadDetailSheet({
                       render={({ field, fieldState }) => (
                         <FormItem className="md:col-span-2">
                           <FormLabel>{t('paymentStudent')}</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select value={field.value} onValueChange={(studentId) => {
+                            field.onChange(studentId);
+                            if (!paymentForm.getFieldState('amountUzs').isDirty && paymentForm.getValues('type') === 'full') {
+                              const amount = lead.students?.find((student) => String(student.id) === studentId)?.expectedPaymentUzs;
+                              paymentForm.setValue('amountUzs', String(amount ?? ''), { shouldDirty: false });
+                            }
+                          }}>
                             <FormControl><SelectTrigger aria-invalid={fieldState.invalid}><SelectValue placeholder={t('selectStudent')} /></SelectTrigger></FormControl>
                             <SelectContent>
                               <SelectGroup>

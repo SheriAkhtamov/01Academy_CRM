@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
+import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
 import { appConfig } from '../../config';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { storage } from '../../storage';
@@ -243,7 +244,7 @@ export const getAcademyDataset = async (
     slice('leads', () => (
       query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
         sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-        ${leadPhoneNumbersSelect('l')},
+        ${leadExpectedPaymentTotalSelect('l')}, ${leadPhoneNumbersSelect('l')},
         ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
@@ -259,7 +260,7 @@ export const getAcademyDataset = async (
       ? Promise.resolve([])
       : query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
           sc.name AS school_name, archived_by_user.full_name AS archived_by_name,
-          ${leadPhoneNumbersSelect('l')},
+          ${leadExpectedPaymentTotalSelect('l')}, ${leadPhoneNumbersSelect('l')},
           ${leadTagsSelect('l')}
         FROM academy_leads l
         LEFT JOIN academy_courses c ON c.id = l.course_id
@@ -1056,7 +1057,7 @@ export const getMarketingModuleDataset = async () => {
   const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`),
     query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
-        ${leadTagsSelect('l')}
+        ${leadExpectedPaymentTotalSelect('l')}, ${leadTagsSelect('l')}
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true

@@ -145,6 +145,7 @@ describe('lead modal behavior', () => {
         id: 50,
         managerId: claimed ? 1 : null,
         studentName: 'Alexandra Zadorozhnaya',
+        expectedPaymentUzs: 100_000,
         status: 'studying',
       }],
       payments: [],
@@ -221,8 +222,8 @@ it('preselects the student whose profile opened the lead payment form', async ()
     id: 15, contactName: 'Parent', statusCode: 'paid', managerId: 1, sourceId: 1,
     expectedPaymentUzs: 100_000, createdAt: '2026-10-01', updatedAt: '2026-10-01',
     phoneNumbers: [], payments: [], students: [
-      { id: 50, studentName: 'First child', status: 'studying' },
-      { id: 51, studentName: 'Second child', status: 'studying' },
+      { id: 50, studentName: 'First child', status: 'studying', expectedPaymentUzs: 100_000 },
+      { id: 51, studentName: 'Second child', status: 'studying', expectedPaymentUzs: 250_000 },
     ],
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -234,4 +235,6 @@ it('preselects the student whose profile opened the lead payment form', async ()
   fireEvent.click(await screen.findByRole('button', { name: /Record another payment|Зафиксировать следующую оплату/ }));
   const studentPicker = await screen.findByRole('combobox', { name: /Student receiving the payment|Ученик, за которого вносится оплата/ });
   expect(studentPicker.textContent).toBe('Second child');
+  const amount = screen.getByRole('textbox', { name: /^(Amount|Сумма)$/ }) as HTMLInputElement;
+  expect(amount.value.replace(/\D/g, '')).toBe('250000');
 });

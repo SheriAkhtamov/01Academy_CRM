@@ -12,9 +12,9 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-export function StudentPortfolioTab({ studentId, projects, open, loading, requestAction, onDraftChange, dateTime }: {
+export function StudentPortfolioTab({ studentId, projects, open, loading, readOnly = false, requestAction, onDraftChange, dateTime }: {
   studentId: number; projects: StudentProject[]; open: boolean;
-  loading: boolean; requestAction: (action: () => void) => void;
+  loading: boolean; readOnly?: boolean; requestAction: (action: () => void) => void;
   onDraftChange: (dirty: boolean, pending: boolean) => void;
   dateTime: (value: string | null | undefined) => string;
 }) {
@@ -57,7 +57,7 @@ export function StudentPortfolioTab({ studentId, projects, open, loading, reques
   return <div className="space-y-4">
     <div className="flex items-center justify-between gap-3">
       <h3 className="text-sm font-semibold">{t('portfolio')} <span className="ml-1 text-muted-foreground">{projects.length}</span></h3>
-      <Button size="sm" variant="outline" disabled={adding || loading} onClick={() => setAdding(true)}><Plus data-icon="inline-start" />{t('studentProjectAdd')}</Button>
+      {!readOnly ? <Button size="sm" variant="outline" disabled={adding || loading} onClick={() => setAdding(true)}><Plus data-icon="inline-start" />{t('studentProjectAdd')}</Button> : null}
     </div>
     {adding ? <form className="space-y-3 rounded-xl border bg-muted/30 p-4" onSubmit={(event) => { event.preventDefault(); if (!save.isPending) submit(); }}>
       <div className="space-y-1.5"><Label htmlFor={`${fieldId}-title`}>{t('studentProjectTitle')}</Label>
@@ -81,7 +81,7 @@ export function StudentPortfolioTab({ studentId, projects, open, loading, reques
         <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary">{project.fileUrl ? <File className="size-5" /> : <Link className="size-5" />}</span>
         <div className="min-w-0 flex-1"><p className="break-words text-sm font-medium">{project.title}</p><p className="mt-0.5 break-all text-xs text-muted-foreground">{project.fileName || dateTime(project.createdAt)}</p></div>
         {project.url && studentProjectLinkSchema.safeParse(project.url).success ? <Button size="sm" variant="ghost" asChild><a href={project.url} target="_blank" rel="noopener noreferrer"><ExternalLink data-icon="inline-start" />{t('studentProjectOpen')}</a></Button> : null}
-        {project.fileUrl && project.fileUrl.startsWith(`/api/academy/students/${studentId}/projects/files/`) ? <Button size="sm" variant="outline" asChild><a href={project.fileUrl}>{t('download')}</a></Button> : null}
+        {project.fileUrl && project.fileUrl.startsWith(`/api/academy/students/${studentId}/projects/files/`) ? <Button size="sm" variant="outline" asChild><a href={readOnly ? `${project.fileUrl}&context=teacher` : project.fileUrl}>{t('download')}</a></Button> : null}
       </div>)}
     </div>}
   </div>;

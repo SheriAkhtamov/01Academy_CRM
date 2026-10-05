@@ -3,7 +3,7 @@ import type { StudentProfile, StudentProject } from '@shared/contracts/student-p
 import { uploadStudentProject } from './project-upload';
 
 export const studentsApi = {
-  profile: (studentId: number) => apiRequest('GET', `/api/academy/students/${studentId}/profile`) as Promise<StudentProfile>,
+  profile: (studentId: number, context: 'sales' | 'teacher' = 'sales') => apiRequest('GET', `/api/academy/students/${studentId}/profile${context === 'teacher' ? '?context=teacher' : ''}`) as Promise<StudentProfile>,
   addProject: (studentId: number, input: { title: string; url?: string; file?: File }, onProgress: (percent: number) => void) => input.file
     ? uploadStudentProject(studentId, input.title, input.file, onProgress)
     : apiRequest('POST', `/api/academy/students/${studentId}/projects`, { title: input.title, url: input.url }) as Promise<StudentProject>,

@@ -61,8 +61,10 @@ export function registerStudentPortfolioRoutes(router: Router) {
       const filePath = studentProjectFilePath(req.params.fileId);
       if (!filePath) return res.status(404).json({ error: 'resourceNotFound' });
       const project = await queryOne(`SELECT file_url FROM academy_portfolio_projects
-        WHERE student_id = $1 AND split_part(file_url, '?', 1) = $2 LIMIT 1`,
-      [authorized.student.id, `/api/academy/students/${authorized.student.id}/projects/files/${req.params.fileId}`]);
+        WHERE student_id = $1 AND split_part(file_url, '?', 1) = $2
+        ${authorized.teacherId ? 'AND group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $3)' : ''} LIMIT 1`,
+      [authorized.student.id, `/api/academy/students/${authorized.student.id}/projects/files/${req.params.fileId}`,
+        ...(authorized.teacherId ? [authorized.teacherId] : [])]);
       const info = studentProjectFileInfo(project?.fileUrl);
       if (!info) return res.status(404).json({ error: 'resourceNotFound' });
       res.setHeader('Content-Type', 'application/octet-stream');

@@ -63,6 +63,8 @@ interface TeacherGroupsSectionProps {
   dayNamesFull: string[];
   archivePendingGroupId: number | null;
   onSelectGroup: (groupId: number | null) => void;
+  onOpenStudent: (student: TeacherStudent) => void;
+  studentProfileOpen?: boolean;
   onChangeView: (view: TeacherGroupView) => void;
   onArchiveGroup: (group: TeacherGroup) => void;
   onRestoreGroup: (group: TeacherGroup) => void;
@@ -149,6 +151,8 @@ export function TeacherGroupsSection({
   dayNamesFull,
   archivePendingGroupId,
   onSelectGroup,
+  onOpenStudent,
+  studentProfileOpen = false,
   onChangeView,
   onArchiveGroup,
   onRestoreGroup,
@@ -446,7 +450,7 @@ export function TeacherGroupsSection({
 
       {/* Group detail as a Sheet: Escape/overlay/X all close it, matching the
           interaction model of every other detail view in the CRM. */}
-      <Sheet open={detailGroup !== null} onOpenChange={(open) => {
+      <Sheet open={detailGroup !== null && !studentProfileOpen} onOpenChange={(open) => {
         if (!open) onSelectGroup(null);
       }}>
         <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
@@ -509,6 +513,7 @@ export function TeacherGroupsSection({
                     columns={studentColumns}
                     data={groupStudents}
                     keyExtractor={(row) => String(row.id)}
+                    onRowClick={onOpenStudent}
                     emptyState={(
                       <EmptyState
                         icon={Users}

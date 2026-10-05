@@ -6,14 +6,14 @@ import { formatAcademyNumber } from '@/lib/localeFormat';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 
-export function StudentLearningSection({ profile, student, management, dateTime }: { profile?: StudentProfile; student: StudentProfileStudent; management: ReactNode; dateTime: (value: string | null | undefined) => string }) {
+export function StudentLearningSection({ profile, student, management, dateTime, teaching = false }: { profile?: StudentProfile; student: StudentProfileStudent; management: ReactNode; dateTime: (value: string | null | undefined) => string; teaching?: boolean }) {
   const { t } = useTranslation();
   return <div className="space-y-4">
     <dl className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-xl bg-muted/40 p-4 text-sm">
       <Detail label={t('age')} value={student.studentAge?.toString() ?? t('noData')} />
-      <Detail label={t('managerLabel')} value={student.managerName || t('noData')} />
+      {!teaching ? <><Detail label={t('managerLabel')} value={student.managerName || t('noData')} />
       <Detail label={t('nextPaymentLabel')} value={student.nextPaymentAt ? dateTime(student.nextPaymentAt) : t('noData')} />
-      <Detail label={t('referralCodeField')} value={student.referralCode || t('noData')} />
+      <Detail label={t('referralCodeField')} value={student.referralCode || t('noData')} /></> : null}
     </dl>
     {profile?.groups.length ? <div className="space-y-3">{profile.groups.map((group) => <section key={group.groupId} className="space-y-3 rounded-xl border p-4">
       <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary"><BookOpen className="size-4" /></span><div className="min-w-0 flex-1"><h3 className="break-words text-sm font-semibold">{group.courseName || group.groupName}</h3><p className="mt-0.5 break-words text-xs text-muted-foreground">{group.groupName}{group.schoolName ? ` · ${group.schoolName}` : ''}</p></div>{group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}</div>
@@ -41,7 +41,7 @@ export function StudentPaymentsSection({ profile, dateTime }: { profile: Student
   const statusLabel = (value: string) => ({ paid: t('paymentStatusPaid'), pending: t('paymentStatusPending'), overdue: t('paymentStatusOverdue'), refunded: t('paymentStatusRefunded') })[value] ?? t('noData');
   const methodLabel = (value: string) => ({ cash: t('paymentMethodCash'), card: t('paymentMethodCard'), transfer: t('paymentMethodTransfer') })[value] ?? t('payment');
   return <div className="space-y-4">
-    <dl className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-4 text-sm"><Detail label={t('studentPaymentCharged')} value={money(profile.summary.charged)} />{profile.summary.refunded > 0 ? <Detail label={t('paymentStatusRefunded')} value={money(profile.summary.refunded)} /> : null}</dl>
+    <dl className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-4 text-sm"><Detail label={t('paymentStatusPaid')} value={money(profile.summary.paid)} /><Detail label={t('studentPaymentRemaining')} value={money(profile.summary.remaining)} /><Detail label={t('studentPaymentCharged')} value={money(profile.summary.charged)} />{profile.summary.refunded > 0 ? <Detail label={t('paymentStatusRefunded')} value={money(profile.summary.refunded)} /> : null}</dl>
     {profile.payments.length ? <div className="divide-y rounded-xl border">{profile.payments.map((payment) => <div key={payment.id} className="flex flex-wrap items-start gap-3 p-3">
       <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted"><CreditCard className="size-4 text-muted-foreground" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold tabular-nums">{money(payment.amountUzs)}</p><p className="mt-0.5 text-xs text-muted-foreground">{dateTime(payment.paidAt || payment.dueAt || payment.createdAt)} · {methodLabel(payment.method)}</p>{payment.paidUntil ? <p className="mt-1 text-xs text-muted-foreground">{t('studentPaidUntil')}: {dateTime(payment.paidUntil)}</p> : null}{payment.comment ? <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">{payment.comment}</p> : null}</div>
       <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : payment.status === 'refunded' ? 'secondary' : 'warning'}>{statusLabel(payment.status)}</Badge>

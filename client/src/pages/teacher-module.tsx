@@ -29,6 +29,7 @@ import { DemoLessonDetailsDialog } from '@/components/ux/DemoLessonDetailsDialog
 import { demoLessonQueryKeys, teacherDemoLessonsApi } from '@/features/demo-lessons/api';
 import { AttendanceLessonDialog } from '@/components/ux/teacher/AttendanceLessonDialog';
 import { TeacherGroupsSection } from '@/components/ux/teacher/TeacherGroupsSection';
+import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
 import {
   TeacherScheduleSection,
   type TeacherScheduleDayView,
@@ -226,6 +227,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
      a specific lesson to another route instead of losing it on unmount. */
   const searchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
   const groupParam = searchParams.get('group') ?? '';
+  const studentParam = searchParams.get('student') ?? '';
   const weekParam = searchParams.get('week') ?? '';
   const groupView: TeacherGroupView = searchParams.get('groups') === 'archive' ? 'archive' : 'active';
 
@@ -333,6 +335,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const groups: TeacherGroup[] = useMemo(() => data?.groups ?? [], [data]);
   const allLessons: TeacherLesson[] = useMemo(() => data?.lessons ?? [], [data]);
   const students: TeacherStudent[] = useMemo(() => data?.students ?? [], [data]);
+  const selectedStudent = useMemo(() => students.find((student) => student.id === Number(studentParam)) ?? null, [students, studentParam]);
   const attendanceRecords: TeacherAttendanceRecord[] = useMemo(() => data?.attendance ?? [], [data]);
 
   const activeGroups = useMemo(() => groups.filter((group) => !group.isArchived), [groups]);
@@ -1006,9 +1009,12 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           dayNamesFull={dayNamesFull}
           archivePendingGroupId={pendingGroupId}
           onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
+          onOpenStudent={(student) => pushParams({ student: String(student.id) })}
+          studentProfileOpen={Boolean(selectedStudent)}
           onChangeView={(nextView) => replaceParams({
             groups: nextView === 'archive' ? 'archive' : null,
             group: null,
+            student: null,
           })}
           onArchiveGroup={(group) => archiveGroup.mutate(group)}
           onRestoreGroup={(group) => restoreGroup.mutate(group)}
@@ -1047,6 +1053,14 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       <ModulePageBody contained={contained} ariaLabel={sectionTitle[section]}>
         {renderBody()}
       </ModulePageBody>
+
+      {section === 'groups' && selectedStudent ? <StudentDetailDialog
+        student={selectedStudent}
+        open
+        context="teacher"
+        onOpenChange={(open) => { if (!open) replaceParams({ student: null }); }}
+        dateTime={(value) => formatAcademyDate(value, language)}
+      /> : null}
 
       {section === 'attendance' ? (
         <>

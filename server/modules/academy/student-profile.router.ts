@@ -24,8 +24,13 @@ export const registerAcademyStudentProfileRoutes = (router: ReturnType<typeof Ro
     try {
       const authorized = await loadAuthorizedStudent(req, res);
       if (!authorized) return;
-      const details = await loadStudentProfileData(Number(authorized.student.id));
-      res.json({ student: authorized.student, lead: authorized.lead ? {
+      const details = await loadStudentProfileData(Number(authorized.student.id), authorized.teacherId);
+      const student = authorized.teacherId ? {
+        id: authorized.student.id, studentName: authorized.student.studentName,
+        contactName: authorized.student.contactName, studentAge: authorized.student.studentAge,
+        status: authorized.student.status, createdAt: authorized.student.createdAt, updatedAt: authorized.student.updatedAt,
+      } : authorized.student;
+      res.json({ student, lead: authorized.lead ? {
         id: authorized.lead.id, contactName: authorized.lead.contactName, phone: authorized.lead.phone,
       } : null, ...details });
     } catch (error) {

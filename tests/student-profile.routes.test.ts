@@ -8,7 +8,10 @@ import { MAX_STUDENT_PROJECT_BYTES } from '../shared/contracts/student-profile';
 const mocks = vi.hoisted(() => ({ query: vi.fn(), queryOne: vi.fn(), insertRow: vi.fn(), createAudit: vi.fn(), getLead: vi.fn() }));
 vi.mock('../server/modules/academy/academy-core', () => ({
   ...mocks, SALES_MODULES: new Set(['sales', 'administration']), LEAD_MODULES: new Set(['sales', 'administration']),
-  ensureModuleAccess: () => true, ensureLeadRowAccess: () => true, ensureLeadMutationAccess: () => true,
+  ensureModuleAccess: (req: express.Request, res: express.Response, modules: Set<string>) => {
+    if (modules.has(String(req.user?.module))) return true;
+    res.status(403).json({ error: 'Student access required' }); return false;
+  }, ensureLeadRowAccess: () => true, ensureLeadMutationAccess: () => true,
   parseId: (value: string) => /^[1-9]\d*$/.test(String(value)) ? Number(value) : null,
   withTransaction: (run: () => Promise<unknown>) => run(), normalizePhoneForStorage: vi.fn(), nullableText: vi.fn(), updateRow: vi.fn(),
 }));
@@ -20,16 +23,17 @@ import { STUDENT_PROJECT_UPLOAD_DIR, studentProjectFileInfo, studentProjectFileP
 const student = { id: 321, managerId: 7, leadId: 12, contactName: 'Parent', studentName: 'Child', status: 'studying', groupId: 5, courseId: 1 };
 const files: string[] = [];
 let savedFileUrl: string | null;
-const app = (userId = 7) => {
+let teacherMembership: { id: number } | null;
+const app = (userId = 7, module = 'sales') => {
   const app = express(); app.use(express.json());
-  app.use((req, _res, next) => { req.user = { id: userId, module: 'sales', modules: ['sales'] } as typeof req.user; next(); });
+  app.use((req, _res, next) => { req.user = { id: userId, module, modules: [module] } as typeof req.user; next(); });
   const router = express.Router(); registerAcademyStudentProfileRoutes(router); app.use('/api/academy', router);
   return app;
 };
 beforeEach(() => {
-  vi.clearAllMocks(); savedFileUrl = null;
+  vi.clearAllMocks(); savedFileUrl = null; teacherMembership = { id: 4 };
   mocks.getLead.mockResolvedValue({ id: 12, contactName: 'Current parent', phone: '+998901234567', managerId: 7 });
-  mocks.queryOne.mockImplementation(async (sql: string) => sql.includes('SELECT file_url') ? savedFileUrl ? { fileUrl: savedFileUrl } : null : student);
+  mocks.queryOne.mockImplementation(async (sql: string) => sql.includes('SELECT teacher.id') ? teacherMembership : sql.includes('SELECT file_url') ? savedFileUrl ? { fileUrl: savedFileUrl } : null : student);
   mocks.query.mockResolvedValue([]);
   mocks.insertRow.mockImplementation(async (_table, values) => {
     savedFileUrl = values.fileUrl;
@@ -106,4 +110,39 @@ describe('student profile routes', () => {
     expect(rejected.body.error).toBe('studentProjectFileTooLarge');
     expect(await fs.readdir(STUDENT_PROJECT_UPLOAD_DIR)).toEqual(before);
   }, 30_000);
+});
+
+describe('student profiles in the teacher module', () => {
+  it('allows an assigned teacher and returns only their academic data', async () => {
+    const response = await request(app(9, 'teacher')).get('/api/academy/students/321/profile?context=teacher');
+    expect(response.status).toBe(200);
+    expect(response.body.student).toMatchObject({ id: 321, studentName: 'Child' });
+    expect(response.body.student).not.toHaveProperty('managerId');
+    expect(response.body.student).not.toHaveProperty('leadId');
+    expect(response.body.lead).toBeNull();
+    expect(response.body.payments).toEqual([]);
+    expect(mocks.getLead).not.toHaveBeenCalled();
+    expect(mocks.query.mock.calls.some(([sql]) => sql.includes('FROM academy_payments'))).toBe(false);
+    for (const [sql, params] of mocks.query.mock.calls) {
+      expect(sql).toContain('g.teacher_id = $2');
+      expect(params).toEqual([321, 4]);
+    }
+  });
+  it('denies unrelated teachers, sales context and teacher mutations', async () => {
+    teacherMembership = null;
+    expect((await request(app(9, 'teacher')).get('/api/academy/students/321/profile?context=teacher')).status).toBe(403);
+    expect(mocks.query).not.toHaveBeenCalled();
+    teacherMembership = { id: 4 };
+    expect((await request(app(9, 'teacher')).get('/api/academy/students/321/profile')).status).toBe(403);
+    expect((await request(app(9, 'teacher')).post('/api/academy/students/321/projects?context=teacher').send({ title: 'Project', url: 'https://example.com' })).status).toBe(403);
+    expect(mocks.insertRow).not.toHaveBeenCalled();
+  });
+  it('limits project file downloads to the teacher’s groups', async () => {
+    const created = await request(app()).post('/api/academy/students/321/projects').field('title', 'Project').attach('file', Buffer.from('test'), 'project.zip');
+    expect(created.status).toBe(201);
+    const response = await request(app(9, 'teacher')).get(`${created.body.fileUrl}&context=teacher`);
+    expect(response.status).toBe(200);
+    const [sql, params] = mocks.queryOne.mock.calls.find(([sql]) => sql.includes('SELECT file_url'))!;
+    expect(sql).toContain('teacher_id = $3'); expect(params[2]).toBe(4);
+  });
 });

@@ -30,5 +30,5 @@ export const leadExpectedPaymentTotalSelect = (alias: string) => `CASE
   WHEN EXISTS (SELECT 1 FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id)
   THEN (SELECT SUM(forecast.expected_payment_uzs)::double precision
         FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id)
-  ELSE ${alias}.expected_payment_uzs
+  ELSE COALESCE(${alias}.expected_payment_uzs, ${alias}.offer_price_uzs)
   END AS expected_payment_total_uzs`;

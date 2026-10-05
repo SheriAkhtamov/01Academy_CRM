@@ -31,5 +31,6 @@ describe('independent student expected payments', () => {
     expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, offerPriceUzs: 150_000, expectedPaymentTotalUzs: 450_000 })).toBe(450_000);
     expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, expectedPaymentTotalUzs: null })).toBe(0);
     expect(leadFilterAmount({ ...lead, expectedPaymentUzs: 100_000, expectedPaymentTotalUzs: 0 })).toBe(0);
+    expect(leadFilterAmount({ ...lead, expectedPaymentUzs: null, offerPriceUzs: 150_000, expectedPaymentTotalUzs: 150_000 })).toBe(150_000);
   });
 });

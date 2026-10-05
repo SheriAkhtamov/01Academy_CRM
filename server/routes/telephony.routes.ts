@@ -31,13 +31,12 @@ import {
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
 import {
-  buildTelephonyCallVisibilitySql,
   buildUnresolvedMissedCallSql,
   getMissedCallUnreadSummary,
-  MISSED_INCOMING_CALL_SQL,
-  telephonyCallVisibilityCondition,
+  telephonyPersonalHistoryCondition,
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { buildCallJournalQuery } from '../services/call-journal';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
 
 const router = Router();
@@ -1189,8 +1188,8 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
   if (!['all', 'missed', 'incoming', 'outgoing'].includes(filter)) {
     return res.status(400).json({ error: 'invalidData' });
   }
-  const params: unknown[] = hasLeadershipAccess(req.user) ? [] : [req.user!.id];
-  const conditions = [telephonyCallVisibilityCondition(req.user!)];
+  const params: unknown[] = [req.user!.id];
+  const conditions = [telephonyPersonalHistoryCondition(req.user!)];
   if (filter === 'missed') conditions.push(buildUnresolvedMissedCallSql('call'));
   else if (filter !== 'all') conditions.push(`call.direction = $${params.push(filter)}`);
   const limitParam = `$${params.push(limit)}`;
@@ -1270,111 +1269,13 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
     return res.status(403).json({ error: 'salesAccessRequired' });
   }
 
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  const addParam = (value: unknown) => {
-    params.push(value);
-    return `$${params.length}`;
-  };
-
-  if (!hasLeadershipAccess(req.user)) {
-    const actor = addParam(req.user!.id);
-    conditions.push(buildTelephonyCallVisibilitySql(actor));
-  }
-
-  // Narrowing to one employee never widens what the reader may see: the
-  // visibility rule above still applies, this only adds to it.
-  const employeeId = Number(String(req.query.userId ?? '').trim());
-  if (Number.isInteger(employeeId) && employeeId > 0) {
-    conditions.push(`call.user_id = ${addParam(employeeId)}`);
-  }
-  const direction = String(req.query.direction ?? '').trim();
-  if (['incoming', 'outgoing'].includes(direction)) {
-    conditions.push(`call.direction = ${addParam(direction)}`);
-  }
-  const status = String(req.query.status ?? '').trim();
-  if (['dialing', 'ringing', 'connected', 'ended', 'failed', 'declined', 'missed'].includes(status)) {
-    conditions.push(`call.status = ${addParam(status)}`);
-  }
-  const search = String(req.query.q ?? '').trim().toLowerCase();
-  if (search) {
-    const like = addParam(`%${search}%`);
-    conditions.push(`(
-      LOWER(call.phone) LIKE ${like}
-      OR LOWER(COALESCE(call.contact_name, '')) LIKE ${like}
-      OR LOWER(COALESCE(lead.contact_name, '')) LIKE ${like}
-      OR LOWER(COALESCE(lead.student_name, '')) LIKE ${like}
-      OR LOWER(COALESCE(employee.full_name, '')) LIKE ${like}
-    )`);
-  }
-  const from = String(req.query.from ?? '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
-    conditions.push(`call.started_at >= ${addParam(`${from}T00:00:00`)}::timestamp`);
-  }
-  const to = String(req.query.to ?? '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-    conditions.push(`call.started_at < (${addParam(`${to}T00:00:00`)}::timestamp + INTERVAL '1 day')`);
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limitParam = addParam(limit);
-  const offsetParam = addParam((page - 1) * limit);
-
-  const result = await pool.query(
-    `SELECT call.id,
-            call.client_call_id AS "clientCallId",
-            call.provider_call_id AS "providerCallId",
-            call.user_id AS "userId",
-            employee.full_name AS "userName",
-            call.extension,
-            call.direction,
-            call.status,
-            call.phone,
-            call.lead_id AS "leadId",
-            COALESCE(NULLIF(lead.student_name, ''), NULLIF(lead.contact_name, ''), call.contact_name)
-              AS "leadName",
-            lead.contact_name AS "contactName",
-            lead.manager_id AS "managerId",
-            manager.full_name AS "managerName",
-            call.started_at AS "startedAt",
-            call.answered_at AS "answeredAt",
-            call.ended_at AS "endedAt",
-            call.duration_seconds AS "durationSeconds",
-            call.talk_seconds AS "talkSeconds",
-            call.hangup_cause AS "hangupCause",
-            call.note,
-            (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording",
-            ${buildUnresolvedMissedCallSql('call')} AS "requiresCallback",
-            COUNT(*) OVER()::int AS "totalCount",
-            COUNT(*) FILTER (WHERE ${MISSED_INCOMING_CALL_SQL}) OVER()::int AS "missedCount",
-            COUNT(*) FILTER (WHERE call.talk_seconds > 0) OVER()::int AS "answeredCount",
-            COALESCE(SUM(call.talk_seconds) OVER(), 0)::int AS "totalTalkSeconds"
-     FROM telephony_calls call
-     LEFT JOIN users employee ON employee.id = call.user_id
-     LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-     LEFT JOIN users manager ON manager.id = lead.manager_id
-     ${where}
-     ORDER BY call.started_at DESC, call.id DESC
-     LIMIT ${limitParam} OFFSET ${offsetParam}`,
-    params,
-  );
-
-  const first = result.rows[0];
-  res.json({
-    items: result.rows.map((row) => {
-      const { totalCount: _total, missedCount: _missed, answeredCount: _answered, totalTalkSeconds: _talk, ...item } = row;
-      return item;
-    }),
-    page,
-    limit,
-    total: Number(first?.totalCount ?? 0),
-    summary: {
-      missed: Number(first?.missedCount ?? 0),
-      answered: Number(first?.answeredCount ?? 0),
-      talkSeconds: Number(first?.totalTalkSeconds ?? 0),
-    },
-  });
+  const parsed = (() => {
+    try { return buildCallJournalQuery(req.user!, req.query); }
+    catch { return null; }
+  })();
+  if (!parsed) return res.status(400).json({ error: 'invalidData' });
+  const result = await pool.query(parsed.sql, parsed.params);
+  res.json(result.rows[0]);
 }));
 
 router.use(telephonyRecordingRoutes);

@@ -5,6 +5,8 @@ const callJournal = readFileSync(
   new URL('../client/src/pages/sales/CallJournalPage.tsx', import.meta.url),
   'utf8',
 );
+const callJournalQuery = readFileSync(new URL('../server/services/call-journal.ts', import.meta.url), 'utf8');
+const journalFilters = readFileSync(new URL('../client/src/features/telephony/useCallJournalFilters.ts', import.meta.url), 'utf8');
 const telephonyWidget = readFileSync(
   new URL('../client/src/components/telephony/TelephonyWidget.tsx', import.meta.url),
   'utf8',
@@ -45,14 +47,11 @@ describe('call journal navigation', () => {
   });
 
   it('defaults to fifty calls and lets the shared pagination change the server page size', () => {
-    expect(callJournal).toContain('const CALL_JOURNAL_DEFAULT_PAGE_SIZE = 50;');
-    expect(callJournal).toContain('const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);');
-    expect(callJournal).toContain('limit: String(pageSize)');
+    expect(journalFilters).toContain("params.set('limit', String(filters.limit));");
     expect(callJournal).toContain('pageSize={journalQuery.data?.limit ?? pageSize}');
-    expect(callJournal).toContain('onPageSizeChange={(nextPageSize) => {');
+    expect(callJournal).toContain('onPageSizeChange={(limit) => updateFilters({ limit })}');
     expect(paginationControls).toContain('const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;');
-    expect(telephonyRoutes).toContain('const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);');
-    expect(telephonyRoutes).toContain('LIMIT ${limitParam} OFFSET ${offsetParam}');
+    expect(callJournalQuery).toContain('LIMIT ${limitParam} OFFSET (SELECT');
   });
 
   it('keeps page controls outside the row scroller and resets scroll position on navigation', () => {
@@ -76,7 +75,7 @@ describe('call journal navigation', () => {
 
   it('shows a localized red indicator beside every missed call needing a callback', () => {
     expect(callJournal).toContain('requiresCallback={call.requiresCallback}');
-    expect(telephonyRoutes).toContain("${buildUnresolvedMissedCallSql('call')} AS \"requiresCallback\"");
+    expect(callJournalQuery).toContain("${buildUnresolvedMissedCallSql('call')} AS \"requiresCallback\"");
     expect(callJournal).toContain("title={t('newMissedCall')}");
     expect(callJournal).toContain('rounded-full bg-destructive');
     expect(callJournal).toContain('<CallStatus call={call} requiresCallback={requiresCallback} />');
@@ -104,18 +103,11 @@ describe('call journal navigation', () => {
     expect(telephonyRoutes).toContain('publishMissedCallFollowupUpdate({ direction, status, talkSeconds });');
   });
 
-  it('offers an employee picker in the header that opens on the reader\'s own calls', () => {
-    expect(callJournal).toContain("const ALL_EMPLOYEES = 'all';");
-    expect(callJournal).toContain('const ownEmployeeId = user && hasOnlinePbxManagerAssignment(user) ? String(user.id) : null;');
-    expect(callJournal).toContain('const employee = selectedEmployee ?? ownEmployeeId ?? ALL_EMPLOYEES;');
-    // The picker belongs to the header actions slot, which is the top-right
-    // corner of every module page.
-    const actions = callJournal.indexOf('actions={(');
-    const picker = callJournal.indexOf('<Select value={employee} onValueChange={setSelectedEmployee}>');
-    expect(picker).toBeGreaterThan(actions);
-    expect(picker).toBeLessThan(callJournal.indexOf("t('callJournalRefresh')"));
-    expect(callJournal).toContain("aria-label={t('callJournalEmployee')}");
+  it('keeps the employee picker beside the other filters and includes unassigned calls', () => {
     expect(callJournal).toContain("<SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>");
+    expect(callJournal).toContain('<SelectItem value="unassigned">');
+    expect(callJournal).toContain("aria-label={t('callJournalEmployee')}");
+    expect(callJournal.indexOf('Select value={employee}')).toBeGreaterThan(callJournal.indexOf('<CardContent className="grid'));
   });
 
   it('keeps the reader selectable before the operator roster arrives', () => {
@@ -124,11 +116,11 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('{ id: user.id, name: user.fullName, extension: user.onlinePbxExtension ?? \'\' },');
   });
 
-  it('asks the server for one employee and resets paging when the pick changes', () => {
-    expect(callJournal).toContain("if (employee !== ALL_EMPLOYEES) params.set('userId', employee);");
-    expect(callJournal).toContain('useEffect(() => setPage(1), [deferredSearch, direction, employee, status, from, to]);');
-    expect(telephonyRoutes).toContain('const employeeId = Number(String(req.query.userId ?? \'\').trim());');
-    expect(telephonyRoutes).toContain('conditions.push(`call.user_id = ${addParam(employeeId)}`);');
+  it('delegates filter and pagination state to the URL', () => {
+    expect(callJournal).toContain('useCallJournalFilters(ownEmployeeId ?? ALL_EMPLOYEES)');
+    expect(journalFilters).toContain("readCallJournalFilters(new URLSearchParams(routeSearch), defaultEmployeeId)");
+    expect(journalFilters).toContain('const next = { ...filters, page: 1, ...changes };');
+    expect(callJournalQuery).toContain('buildPersonalCallHistorySql(addParam(Number(filters.userId)))');
   });
 
   it('lists only telephony-enabled sales employees, the reader included', () => {
@@ -142,14 +134,9 @@ describe('call journal navigation', () => {
   });
 
   it('narrows the journal without widening what a manager may read', () => {
-    const visibility = telephonyRoutes.indexOf('buildTelephonyCallVisibilitySql(actor)');
-    const employeeFilter = telephonyRoutes.indexOf('conditions.push(`call.user_id = ${addParam(employeeId)}`);');
-
-    expect(visibility).toBeGreaterThan(0);
-    // Both land in the same AND-joined condition list, so a picked employee can
-    // only ever subtract rows from what the reader is already allowed to see.
-    expect(employeeFilter).toBeGreaterThan(visibility);
-    expect(telephonyRoutes).toContain("const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';");
+    expect(callJournalQuery).toContain('telephonyCallVisibilityCondition(viewer');
+    expect(callJournalQuery).toContain("WHERE ${conditions.join(' AND ')}");
+    expect(callJournalQuery).toContain("conditions.push('call.user_id IS NULL')");
   });
 
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {

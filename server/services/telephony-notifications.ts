@@ -23,6 +23,11 @@ export const buildMissedIncomingCallSql = (callAlias: string) => `(
 
 export const MISSED_INCOMING_CALL_SQL = buildMissedIncomingCallSql('call');
 
+export const buildPersonalCallHistorySql = (actorParameter: string) => `(
+  call.user_id = ${actorParameter}
+  OR (call.user_id IS NULL AND ${buildMissedIncomingCallSql('call')})
+)`;
+
 /**
  * A missed call stays actionable until the team places any later outgoing call
  * to the same normalized number. Phone values enter this table through
@@ -55,6 +60,11 @@ export const telephonyCallVisibilityCondition = (viewer: TelephonyNotificationVi
     : buildTelephonyCallVisibilitySql(actorParameter)
 );
 
+export const telephonyPersonalHistoryCondition = (viewer: TelephonyNotificationViewer, actorParameter = '$1') => `(
+  ${telephonyCallVisibilityCondition(viewer, actorParameter)}
+  AND ${buildPersonalCallHistorySql(actorParameter)}
+)`;
+
 export const getMissedCallUnreadSummary = async (
   viewer: TelephonyNotificationViewer,
   client: Queryable = pool,
@@ -66,8 +76,8 @@ export const getMissedCallUnreadSummary = async (
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
      WHERE ${buildUnresolvedMissedCallSql('call')}
-       AND ${telephonyCallVisibilityCondition(viewer)}`,
-    hasLeadershipAccess(viewer as ModuleAccessSource) ? [] : [viewer.id],
+       AND ${telephonyPersonalHistoryCondition(viewer)}`,
+    [viewer.id],
   );
 
   return {

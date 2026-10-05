@@ -47,6 +47,14 @@ describe('missed call notification state', () => {
     expect(params).toEqual([7]);
   });
 
+  it('keeps an administrator counter personal and includes unassigned callbacks', async () => {
+    query.mockResolvedValue({ rows: [{ count: 6 }] });
+    await expect(getMissedCallUnreadSummary({ id: 1, module: 'administration', modules: ['sales', 'administration'] }, { query } as never)).resolves.toEqual({ count: 6 });
+    expect(query.mock.calls[0][0]).toContain('call.user_id = $1');
+    expect(query.mock.calls[0][0]).toContain('OR (call.user_id IS NULL AND');
+    expect(query.mock.calls[0][1]).toEqual([1]);
+  });
+
   it('keeps the count-only helper compatible with existing consumers', async () => {
     query.mockResolvedValue({ rows: [{ count: 4 }] });
 

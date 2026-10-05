@@ -19,7 +19,7 @@ vi.mock('../server/middleware/auth.middleware', () => ({
 }));
 
 import telephonyRoutes from '../server/routes/telephony.routes';
-import { buildUnresolvedMissedCallSql, telephonyCallVisibilityCondition } from '../server/services/telephony-notifications';
+import { buildUnresolvedMissedCallSql, telephonyPersonalHistoryCondition } from '../server/services/telephony-notifications';
 
 const app = express();
 app.use('/api/telephony', telephonyRoutes);
@@ -45,10 +45,19 @@ describe('telephony widget call history', () => {
     expect(history.body).toEqual(calls);
     expect(history.body).toHaveLength(summary.body.count);
     const [sql, params] = mocks.query.mock.calls[1];
-    expect(sql).toContain(`WHERE ${telephonyCallVisibilityCondition(mocks.viewer!)}`);
+    expect(sql).toContain(`WHERE ${telephonyPersonalHistoryCondition(mocks.viewer!)}`);
     expect(sql).toContain(buildUnresolvedMissedCallSql('call'));
     expect(sql).not.toContain('WHERE user_id = $1');
-    expect(params).toEqual([50, 0]);
+    expect(params).toEqual([1, 50, 0]);
+  });
+
+  it('keeps an administrator widget personal while adding unassigned missed calls', async () => {
+    await request(app).get('/api/telephony/calls?filter=all');
+    const [sql, params] = mocks.query.mock.calls[0];
+    expect(sql).toContain('call.user_id = $1');
+    expect(sql).toContain('OR (call.user_id IS NULL AND');
+    expect(sql).toContain("call.direction = 'incoming'");
+    expect(params).toEqual([1, 30, 0]);
   });
 
   it('uses the same visibility as the counter for a sales employee, including calls to their leads', async () => {
@@ -56,7 +65,7 @@ describe('telephony widget call history', () => {
     await request(app).get('/api/telephony/calls?filter=missed');
 
     const [sql, params] = mocks.query.mock.calls[0];
-    expect(sql).toContain(`WHERE ${telephonyCallVisibilityCondition(mocks.viewer)}`);
+    expect(sql).toContain(`WHERE ${telephonyPersonalHistoryCondition(mocks.viewer)}`);
     expect(sql).toContain('lead.manager_id = $1');
     expect(sql).toContain('assignment.funnel_id = lead.funnel_id');
     expect(params).toEqual([7, 30, 0]);
@@ -67,15 +76,15 @@ describe('telephony widget call history', () => {
     const [sql, params] = mocks.query.mock.calls[0];
     expect(sql.indexOf(buildUnresolvedMissedCallSql('call'))).toBeLessThan(sql.indexOf('LIMIT'));
     expect(sql).toContain('ORDER BY call.started_at DESC, call.id DESC');
-    expect(sql).toContain('LIMIT $1 OFFSET $2');
-    expect(params).toEqual([50, 100]);
+    expect(sql).toContain('LIMIT $2 OFFSET $3');
+    expect(params).toEqual([1, 50, 100]);
   });
 
   it('keeps incoming and outgoing filters inside the employee visibility boundary', async () => {
     mocks.viewer = { id: 7, module: 'sales', modules: ['sales'] };
     await request(app).get('/api/telephony/calls?filter=incoming&limit=50&offset=50');
     const [sql, params] = mocks.query.mock.calls[0];
-    expect(sql).toContain(telephonyCallVisibilityCondition(mocks.viewer));
+    expect(sql).toContain(telephonyPersonalHistoryCondition(mocks.viewer));
     expect(sql).toContain('call.direction = $2');
     expect(params).toEqual([7, 'incoming', 50, 50]);
   });

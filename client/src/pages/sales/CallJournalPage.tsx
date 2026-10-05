@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link, useLocation, useSearch } from 'wouter';
+import { Link } from 'wouter';
 import {
   Clock3,
   Headphones,
@@ -24,6 +24,7 @@ import { PageHeader } from '@/components/ux/PageHeader';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { journalOperatorsQueryOptions } from '@/features/telephony/api';
+import { useCallJournalFilters } from '@/features/telephony/useCallJournalFilters';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -75,7 +76,6 @@ type JournalResponse = {
 };
 
 const finalStatuses = new Set<TelephonyCallStatus>(['ended', 'failed', 'declined', 'missed']);
-const CALL_JOURNAL_DEFAULT_PAGE_SIZE = 50;
 const ALL_EMPLOYEES = 'all';
 
 const statusVariant = (status: TelephonyCallStatus) => {
@@ -88,31 +88,12 @@ export default function CallJournalPage() {
   const { t, language } = useTranslation();
   const { user } = useAuth();
   const onlinePbxCall = useOnlinePbxCall();
-  // Filters live in the URL: a configured view ("missed, last week, Anna")
-  // survives navigation, refresh and can be shared as a link.
-  const [, setRoute] = useLocation();
-  const routeSearch = useSearch();
-  const initialParams = useRef(new URLSearchParams(routeSearch));
-  const [search, setSearch] = useState(() => initialParams.current.get('q') ?? '');
-  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(() => {
-    const value = initialParams.current.get('userId');
-    return value && value !== ALL_EMPLOYEES ? value : null;
-  });
-  const [direction, setDirection] = useState(() => initialParams.current.get('direction') ?? 'all');
-  const [status, setStatus] = useState(() => initialParams.current.get('status') ?? 'all');
-  const [from, setFrom] = useState(() => initialParams.current.get('from') ?? '');
-  const [to, setTo] = useState(() => initialParams.current.get('to') ?? '');
-  const [page, setPage] = useState(() => Math.max(1, Number(initialParams.current.get('page')) || 1));
-  const [pageSize, setPageSize] = useState(CALL_JOURNAL_DEFAULT_PAGE_SIZE);
+  const ownEmployeeId = user && hasOnlinePbxManagerAssignment(user) ? String(user.id) : null;
+  const { filters, queryString, search, deferredSearch, setSearch, updateFilters, resetFilters } = useCallJournalFilters(ownEmployeeId ?? ALL_EMPLOYEES);
+  const { userId: employee, direction, status, from, to, page, limit: pageSize } = filters;
   const journalListRef = useRef<HTMLDivElement | null>(null);
-  const deferredSearch = useDeferredValue(search.trim());
 
   const operatorsQuery = useQuery(journalOperatorsQueryOptions);
-  // A manager opens the journal to read their own calls, so their name is the
-  // default; someone without a phone widget of their own has no calls to open
-  // on and keeps the whole team's history instead.
-  const ownEmployeeId = user && hasOnlinePbxManagerAssignment(user) ? String(user.id) : null;
-  const employee = selectedEmployee ?? ownEmployeeId ?? ALL_EMPLOYEES;
   const employeeOptions = useMemo(() => {
     const operators = operatorsQuery.data ?? [];
     // The reader's own name has to be selectable before the roster arrives,
@@ -126,48 +107,9 @@ export default function CallJournalPage() {
     ];
   }, [operatorsQuery.data, ownEmployeeId, user]);
 
-  useEffect(() => setPage(1), [deferredSearch, direction, employee, status, from, to]);
   useEffect(() => {
     journalListRef.current?.scrollTo({ top: 0 });
   }, [deferredSearch, direction, employee, from, page, status, to]);
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(pageSize),
-    });
-    if (deferredSearch) params.set('q', deferredSearch);
-    if (employee !== ALL_EMPLOYEES) params.set('userId', employee);
-    if (direction !== 'all') params.set('direction', direction);
-    if (status !== 'all') params.set('status', status);
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
-    return params.toString();
-  }, [deferredSearch, direction, employee, from, page, pageSize, status, to]);
-
-  // Mirror the active view into the URL (replace: filters are not history
-  // steps). The page number is only written when it is not the first one.
-  useEffect(() => {
-    const params = new URLSearchParams(routeSearch);
-    const apply = (changes: Record<string, string | null>) => {
-      Object.entries(changes).forEach(([key, value]) => {
-        if (value === null) params.delete(key);
-        else params.set(key, value);
-      });
-    };
-    apply({
-      q: deferredSearch || null,
-      userId: employee !== ALL_EMPLOYEES ? employee : null,
-      direction: direction !== 'all' ? direction : null,
-      status: status !== 'all' ? status : null,
-      from: from || null,
-      to: to || null,
-      page: page > 1 ? String(page) : null,
-    });
-    const query = params.toString();
-    if (query === routeSearch) return;
-    setRoute(query ? `/sales/calls?${query}` : '/sales/calls', { replace: true });
-  }, [deferredSearch, direction, employee, from, page, routeSearch, setRoute, status, to]);
 
   const journalQuery = useQuery<JournalResponse>({
     queryKey: ['/api/telephony/calls/journal', queryString],
@@ -177,6 +119,11 @@ export default function CallJournalPage() {
     // instead of collapsing the list into a skeleton on every transition.
     placeholderData: keepPreviousData,
   });
+  useEffect(() => {
+    if (journalQuery.data && !journalQuery.isPlaceholderData && journalQuery.data.page !== page) {
+      updateFilters({ page: journalQuery.data.page });
+    }
+  }, [journalQuery.data, journalQuery.isPlaceholderData, page, updateFilters]);
   const dateTime = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
@@ -197,26 +144,6 @@ export default function CallJournalPage() {
         title={t('callJournal')}
         actions={(
           <>
-            <Select value={employee} onValueChange={setSelectedEmployee}>
-              {/* Radix drops a className on SelectValue, so the value span is
-                  stretched from the trigger instead — otherwise `justify-between`
-                  strands the name in the middle, away from its person icon. */}
-              <SelectTrigger
-                className="w-full gap-2 sm:w-56 [&>span]:flex-1 [&>span]:text-left"
-                aria-label={t('callJournalEmployee')}
-              >
-                <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>
-                {employeeOptions.map((operator) => (
-                  <SelectItem key={operator.id} value={String(operator.id)}>
-                    {operator.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
               <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
               {t('callJournalRefresh')}
@@ -243,8 +170,8 @@ export default function CallJournalPage() {
         </section>
 
         <Card className="shrink-0">
-          <CardContent className="grid grid-cols-1 items-end gap-3 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_190px_minmax(320px,1fr)]">
-            <div className="relative sm:col-span-2 xl:col-span-1">
+          <CardContent className="grid grid-cols-1 items-end gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="relative sm:col-span-2 xl:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -254,7 +181,28 @@ export default function CallJournalPage() {
                 aria-label={t('search')}
               />
             </div>
-            <Select value={direction} onValueChange={setDirection}>
+            <Select value={employee} onValueChange={(userId) => updateFilters({ userId })}>
+              {/* Radix drops a className on SelectValue, so the value span is
+                  stretched from the trigger instead — otherwise `justify-between`
+                  strands the name in the middle, away from its person icon. */}
+              <SelectTrigger
+                className="w-full gap-2 [&>span]:flex-1 [&>span]:text-left"
+                aria-label={t('callJournalEmployee')}
+              >
+                <UserRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>
+                <SelectItem value="unassigned">{t('notAssigned')}</SelectItem>
+                {employeeOptions.map((operator) => (
+                  <SelectItem key={operator.id} value={String(operator.id)}>
+                    {operator.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={direction} onValueChange={(direction) => updateFilters({ direction: direction as typeof filters.direction })}>
               <SelectTrigger aria-label={t('callDirection')}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('allDirections')}</SelectItem>
@@ -262,10 +210,13 @@ export default function CallJournalPage() {
                 <SelectItem value="outgoing">{t('outgoingCall')}</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={status} onValueChange={setStatus}>
+            <Select value={status} onValueChange={(status) => updateFilters({ status: status as typeof filters.status })}>
               <SelectTrigger aria-label={t('status')}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('allStatuses')}</SelectItem>
+                <SelectItem value="callback">{t('callJournalRequiresCallback')}</SelectItem>
+                <SelectItem value="dialing">{t('telephonyStatusDialing')}</SelectItem>
+                <SelectItem value="ringing">{t('telephonyStatusRinging')}</SelectItem>
                 <SelectItem value="connected">{t('telephonyStatusConnected')}</SelectItem>
                 <SelectItem value="ended">{t('telephonyStatusEnded')}</SelectItem>
                 <SelectItem value="missed">{t('telephonyStatusMissed')}</SelectItem>
@@ -276,10 +227,11 @@ export default function CallJournalPage() {
             <DateRangeField
               idPrefix="call-journal-range"
               variant="floating"
-              className="sm:col-span-2 xl:col-span-1"
+              className="sm:col-span-2 xl:col-span-2"
               value={{ from, to }}
-              onChange={(range) => { setFrom(range.from); setTo(range.to); }}
+              onChange={(range) => updateFilters(range)}
             />
+            <Button type="button" variant="outline" onClick={resetFilters}>{t('reset')}</Button>
           </CardContent>
         </Card>
 
@@ -356,11 +308,8 @@ export default function CallJournalPage() {
             pageSize={journalQuery.data?.limit ?? pageSize}
             totalItems={journalQuery.data?.total ?? 0}
             disabled={journalQuery.isFetching}
-            onPageChange={setPage}
-            onPageSizeChange={(nextPageSize) => {
-              setPageSize(nextPageSize);
-              setPage(1);
-            }}
+            onPageChange={(page) => updateFilters({ page })}
+            onPageSizeChange={(limit) => updateFilters({ limit })}
           />
         </Card>
       </ModulePageBody>

@@ -805,6 +805,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   keepEditing: { en: 'Keep editing', ru: 'Продолжить редактирование' },
   noLeadsInStage: { en: 'No leads in this stage', ru: 'В этапе нет лидов' },
   call: { en: 'Call', ru: 'Позвонить' },
+  callJournalRequiresCallback: { en: 'Needs a callback', ru: 'Требуют перезвона' },
   callJournal: { en: 'Call Log', ru: 'Журнал звонков' },
   callJournalSummary: { en: 'Call journal summary', ru: 'Сводка журнала вызовов' },
   callJournalSearch: { en: 'Phone, lead, or employee', ru: 'Номер, лид или сотрудник' },

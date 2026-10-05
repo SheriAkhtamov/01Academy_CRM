@@ -359,7 +359,7 @@ function LeadStudentFormDialog({
               name="phone"
               render={({ field, fieldState }) => (
                 <FormItem>
-                  <FormLabel>{t('studentPhone')}</FormLabel>
+                  <FormLabel>{t('studentPhoneOptional')}</FormLabel>
                   <FormControl>
                     <PhoneInput value={field.value} onValueChange={field.onChange} />
                   </FormControl>

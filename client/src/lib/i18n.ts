@@ -742,7 +742,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   studentUpdateFailed: { en: 'Student details were not updated', ru: 'Не удалось обновить данные ученика' },
   studentGroupRequired: { en: 'Select at least one group', ru: 'Выберите хотя бы одну группу' },
   studentNameRequired: { en: 'Enter the student name', ru: 'Укажите имя ученика' },
-  studentPhone: { en: 'Student phone', ru: 'Телефон ученика' },
+  studentPhoneOptional: { en: 'Student phone (optional)', ru: 'Телефон ученика (необязательно)' },
   studentStatusTrial: { en: 'Trial student', ru: 'Пробный ученик' },
   studentRequiredForPayment: { en: 'A student is needed to record a payment', ru: 'Для оплаты нужен ученик' },
   goToStudents: { en: 'Go to students', ru: 'Перейти к ученикам' },

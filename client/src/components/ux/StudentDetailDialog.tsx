@@ -7,7 +7,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { getInitials } from '@/lib/auth';
 import { formatAcademyNumber } from '@/lib/localeFormat';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -59,10 +59,10 @@ export function StudentDetailDialog({ student, open, onOpenChange, initialTab = 
     guard.requestAction(() => { onOpenChange(false); if (payment) onRecordPayment?.(leadId, currentStudent.id); else onOpenLead?.(leadId); });
   };
   const tabs = [{ value: 'learning', label: t('studentLearning'), icon: BookOpen }, { value: 'attendance', label: t('attendanceTab'), icon: CheckCircle2 }, { value: 'portfolio', label: t('portfolio'), icon: FolderOpen }, { value: 'payments', label: t('navPayments'), icon: CreditCard }] as const;
-  return <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-    <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
-      <DialogHeader className="max-h-[45dvh] shrink-0 space-y-4 overflow-y-auto overscroll-contain border-b px-4 pb-4 pt-5 text-left sm:px-6">
-        <div className="flex items-start gap-3 pr-8"><Avatar className="size-11 shrink-0"><AvatarFallback className="bg-primary/10 font-semibold text-primary">{getInitials(name)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><DialogTitle className="break-words text-xl">{name}</DialogTitle><DialogDescription asChild><div className="mt-1.5 flex flex-wrap items-center gap-2"><Badge variant="secondary">{statusLabel}</Badge>{currentStudent.phone ? <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={onlinePbxCall.isPending} onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}><Phone data-icon="inline-start" />{currentStudent.phone}</Button> : null}</div></DialogDescription></div></div>
+  return <Sheet open={open} onOpenChange={guard.handleOpenChange}>
+    <SheetContent side="right" className="flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl">
+      <SheetHeader className="max-h-[45dvh] shrink-0 space-y-4 overflow-y-auto overscroll-contain border-b px-4 pb-4 pt-5 text-left sm:px-6">
+        <div className="flex items-start gap-3 pr-8"><Avatar className="size-11 shrink-0"><AvatarFallback className="bg-primary/10 font-semibold text-primary">{getInitials(name)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><SheetTitle className="break-words text-xl">{name}</SheetTitle><SheetDescription asChild><div className="mt-1.5 flex flex-wrap items-center gap-2"><Badge variant="secondary">{statusLabel}</Badge>{currentStudent.phone ? <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={onlinePbxCall.isPending} onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}><Phone data-icon="inline-start" />{currentStudent.phone}</Button> : null}</div></SheetDescription></div></div>
         <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5"><UserRound className="size-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="text-[11px] font-medium text-muted-foreground">{t('studentLinkedLead')}</p><p className="break-words text-sm font-medium">{leadId ? profile?.lead?.contactName || currentStudent.contactName : t('studentNoLinkedLead')}</p></div>{leadId && onOpenLead ? <Button size="sm" variant="outline" className="shrink-0" onClick={() => openLinkedLead(false)}>{t('openLead')}<ArrowUpRight data-icon="inline-end" /></Button> : null}</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Metric label={t('studentLessonsCompleted')} value={summary?.completedLessons.toString() ?? '—'} detail={`${t('studentLessonsRemaining')}: ${summary?.remainingLessons ?? '—'}`} />
@@ -70,7 +70,7 @@ export function StudentDetailDialog({ student, open, onOpenChange, initialTab = 
           <Metric label={t('paymentStatusPaid')} value={money(summary?.paid)} detail={t('uzs')} />
           <Metric label={t('studentPaymentRemaining')} value={money(summary?.remaining)} detail={t('uzs')} />
         </div>
-      </DialogHeader>
+      </SheetHeader>
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudentDetailTab)} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b px-4 py-3 sm:px-6"><TabsList className="grid h-auto w-full grid-cols-4 gap-1 bg-muted/60 p-1">{tabs.map(({ value, label, icon: Icon }) => <TabsTrigger key={value} value={value} className="min-h-10 gap-1.5 px-1 text-[11px] sm:px-3 sm:text-sm"><Icon className="hidden size-4 shrink-0 min-[420px]:block" />{label}</TabsTrigger>)}</TabsList></div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
@@ -82,10 +82,10 @@ export function StudentDetailDialog({ student, open, onOpenChange, initialTab = 
         </div>
       </Tabs>
       {leadId && onRecordPayment ? <div className="flex shrink-0 justify-end border-t bg-muted/20 px-4 py-3 sm:px-6"><Button size="sm" onClick={() => openLinkedLead(true)}><CreditCard data-icon="inline-start" />{t('recordAnotherPayment')}</Button></div> : null}
-    </DialogContent>
+    </SheetContent>
     {management.confirmations}
     <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
-  </Dialog>;
+  </Sheet>;
 }
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) { return <div className="min-w-0 rounded-lg border bg-background px-3 py-2.5"><p className="text-[11px] text-muted-foreground">{label}</p><p className="mt-1 break-words text-lg font-semibold leading-tight tracking-tight tabular-nums">{value}</p>{detail ? <p className="mt-1 text-[10px] text-muted-foreground">{detail}</p> : null}</div>; }
 function LoadingSection() { const { t } = useTranslation(); return <div role="status" aria-label={t('loading')} className="space-y-3"><Skeleton className="h-20 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /><Skeleton className="h-20 w-full rounded-xl" /></div>; }

@@ -634,7 +634,7 @@ export const mergeLeadRecords = async (
       ? retainedLead.acquisitionCostUzs
       : duplicateLead.acquisitionCostUzs,
     managerId: preferLeadValue(retainedLead.managerId, duplicateLead.managerId),
-    language: mergedLanguages[0],
+    language: mergedLanguages[0] ?? '',
     languages: mergedLanguages,
     comment: latestMergedComment?.body ?? combineLeadComments(retainedLead.comment, duplicateLead.comment),
     firstContactAt: earliestLeadDate(retainedLead.firstContactAt, duplicateLead.firstContactAt),
@@ -864,7 +864,7 @@ export const mergeLeadDraftIntoExisting = async (
     managerId: assignedManager?.id ?? retainedLead.managerId,
     comment: draftComment ?? retainedLead.comment,
     language: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
-      draft.language ?? retainedLead.language)[0],
+      draft.language ?? retainedLead.language)[0] ?? '',
     languages: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
       draft.language ?? retainedLead.language),
     enrolledGroupId: nextEnrolledGroupId,

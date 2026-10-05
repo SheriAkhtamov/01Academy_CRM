@@ -359,9 +359,9 @@ router.post('/leads', async (req, res) => {
       if (validationError) {
         throw Object.assign(new Error(validationError), { statusCode: 400 });
       }
-
       const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
       const initialComment = nullableText(input.comment);
+      const languages = input.languages ?? (input.language ? [input.language] : []);
       const createdLead = await insertRow('academy_leads', {
         contactName,
         phone: primaryPhone,
@@ -376,7 +376,7 @@ router.post('/leads', async (req, res) => {
         acquisitionCostUzs: normalizeMoney(input.acquisitionCostUzs ?? source?.costPerLeadUzs),
         statusCode,
         managerId,
-        language: input.languages?.[0] ?? input.language ?? 'ru', languages: input.languages ?? [input.language ?? 'ru'],
+        language: languages[0] ?? '', languages,
         comment: initialComment ?? null,
         enrolledGroupId,
         referralCode: nullableText(input.referralCode) ?? null,

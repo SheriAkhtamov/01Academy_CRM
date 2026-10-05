@@ -299,9 +299,9 @@ export const importLeadRecords = async (
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
              contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
-             language, comment, first_contact_channel, created_at, updated_at
+             language, languages, comment, first_contact_channel, created_at, updated_at
           )
-           VALUES ($1, $2, $3, $4, $5, 'new_request', 'ru', $6, 'instagram', $7, NOW())
+           VALUES ($1, $2, $3, $4, $5, 'new_request', '', ARRAY[]::text[], $6, 'instagram', $7, NOW())
            RETURNING id`,
           [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment, commentCreatedAt],
         );

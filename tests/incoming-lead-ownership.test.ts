@@ -70,6 +70,8 @@ describe('external lead ownership', () => {
             phone: params[1] ?? null,
             messenger: params[2] ?? null,
             manager_id: null,
+            language: params[6],
+            languages: params[9],
           }],
         };
       }
@@ -97,6 +99,7 @@ describe('external lead ownership', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.managerId).toBeNull();
+    expect(response.body).toMatchObject({ language: '', languages: [] });
 
     const leadInsertCalls = mocks.clientQuery.mock.calls.filter(([sql]) =>
       String(sql).includes('INSERT INTO academy_leads'));
@@ -121,6 +124,16 @@ describe('external lead ownership', () => {
     expect(response.status).toBe(401);
     expect(mocks.clientQuery).not.toHaveBeenCalled();
     expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each(['ru', 'uz', 'en'])('preserves the %s language provided by the website', async (language) => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Website Client', phone: '+998904445566', locale: language });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ language, languages: [language] });
   });
 
   it('accepts a site token and stores a Telegram contact', async () => {
@@ -158,13 +171,14 @@ describe('external lead ownership', () => {
       5,
       3,
       '01academy.pro',
-      'ru',
+      '',
       [
         'Компания: Acme',
         'Отдел / размер группы: 10–20 человек',
         'Страница заявки: https://01academy.pro/#cta',
       ].join('\n'),
       1,
+      [],
     ]);
     const integrationLogCall = mocks.poolQuery.mock.calls.find(([sql]) =>
       String(sql).includes('INSERT INTO academy_integration_logs'));
@@ -235,7 +249,7 @@ describe('external lead ownership', () => {
 
     expect(incomingSource).not.toContain('getLeadAssigneeId');
     expect(instagramSource).not.toContain('getLeadAssigneeId');
-    expect(instagramSource).toContain("VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'ru',$5,$6)");
+    expect(instagramSource).toContain("VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'',ARRAY[]::text[],$5,$6)");
     expect(instagramSource).toMatch(
       /INSERT INTO academy_tasks[\s\S]+?'Ответить на новый диалог Instagram[^`]+?NULL/,
     );

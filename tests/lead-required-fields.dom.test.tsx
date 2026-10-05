@@ -34,6 +34,8 @@ it('marks every missing required selection, focuses the first, and submits after
   const user = userEvent.setup();
   const mutate = vi.fn();
   render(<CreationForm mutate={mutate} />);
+  const language = screen.getByRole('combobox', { name: i18n.t('communicationLanguage') });
+  expect(language.textContent).toBe(i18n.t('selectCommunicationLanguage'));
   const fields = [
     { label: 'source', error: 'sourceRequired', option: 'Website' },
     { label: 'salesFunnel', error: 'salesFunnelRequired', option: 'Main funnel' },
@@ -62,4 +64,16 @@ it('marks every missing required selection, focuses the first, and submits after
   await waitFor(() => expect(mutate).toHaveBeenCalledOnce());
   expect(mutate).toHaveBeenCalledWith({ ...EMPTY_LEAD_FORM, contactName: 'Parent',
     sourceId: '1', funnelId: '2', managerId: '7' });
+});
+
+it('lets the manager select a language and return to an empty selection', async () => {
+  const user = userEvent.setup();
+  render(<CreationForm mutate={vi.fn()} />);
+  const language = screen.getByRole('combobox', { name: i18n.t('communicationLanguage') });
+  await user.click(language);
+  await user.click(screen.getByRole('option', { name: i18n.t('russian') }));
+  expect(language.textContent).toBe(i18n.t('russian'));
+  await user.click(language);
+  await user.click(screen.getByRole('option', { name: i18n.t('leadClearSelection') }));
+  expect(language.textContent).toBe(i18n.t('selectCommunicationLanguage'));
 });

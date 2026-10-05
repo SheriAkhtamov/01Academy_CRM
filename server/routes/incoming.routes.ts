@@ -340,7 +340,7 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const team = nullableText(body.team, 255);
     const message = nullableText(body.message ?? body.comment, 2000);
     const pageUrl = nullableText(body.pageUrl ?? body.page, 2000);
-    const language = nullableText(body.locale ?? body.language, 20) ?? 'ru';
+    const language = nullableText(body.locale ?? body.language, 20) ?? '';
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
     const integrationProvider = websiteIntegrationProvider(siteDomain);
     const integrationPayload = { ...body, siteDomain };
@@ -371,9 +371,9 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
-          (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,'new_request',NULL,$7,$8,$9) RETURNING *`,
-        [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId],
+          (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by, languages)
+         VALUES ($1,$2,$3,$4,$5,$6,'new_request',NULL,$7,$8,$9,$10) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId, language ? [language] : []],
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);

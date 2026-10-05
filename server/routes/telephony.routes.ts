@@ -241,10 +241,10 @@ const ensureContactByPhone = async (
     const funnelId = await resolveLeadFunnelId(client, 'onlinepbx');
     const leadResult = await client.query<{ id: number; contactName: string }>(
       `INSERT INTO academy_leads (
-         contact_name, phone, source_id, funnel_id, status_code, manager_id, language,
+         contact_name, phone, source_id, funnel_id, status_code, manager_id, language, languages,
          first_contact_channel, created_by
        )
-       VALUES ($1,$2,$3,$4,'new_request',$5,'ru','call',$6)
+       VALUES ($1,$2,$3,$4,'new_request',$5,'',ARRAY[]::text[],'call',$6)
        RETURNING id, contact_name AS "contactName"`,
       [
         contactName,

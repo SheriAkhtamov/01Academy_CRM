@@ -1377,8 +1377,8 @@ const ensureLeadForConversation = async (
 
   const inserted = await client.query(
     `INSERT INTO academy_leads
-      (contact_name, phone, messenger, source_id, funnel_id, status_code, manager_id, language, comment, created_by)
-     VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'ru',$5,$6)
+      (contact_name, phone, messenger, source_id, funnel_id, status_code, manager_id, language, languages, comment, created_by)
+     VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'',ARRAY[]::text[],$5,$6)
      RETURNING id, manager_id, funnel_id, status_code, contact_name, messenger, true AS created_lead`,
     [
       contactName,

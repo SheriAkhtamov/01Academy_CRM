@@ -304,7 +304,7 @@ const leadSchema = z.object({
   contactName: z.string().trim().min(1, leadRequiredFieldKeys.contactName),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
-  languages: z.array(z.enum(LEAD_LANGUAGES)).min(1, leadRequiredFieldKeys.languages),
+  languages: z.array(z.enum(LEAD_LANGUAGES)),
   expectedPaymentUzs: optionalNumberString,
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
   studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
@@ -437,7 +437,7 @@ export function LeadDetailSheet({
       contactName: '',
       phoneNumbers: [''],
       sourceId: '',
-      languages: ['ru'],
+      languages: [],
       expectedPaymentUzs: '',
       locality: '',
       studyDays: '',
@@ -633,7 +633,7 @@ export function LeadDetailSheet({
         expectedUpdatedAt: editVersion.current ?? currentLead?.updatedAt,
         ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
         sourceId: Number(values.sourceId),
-        language: values.languages[0],
+        language: values.languages[0] ?? '',
         expectedPaymentUzs: values.expectedPaymentUzs ? Number(values.expectedPaymentUzs) : null,
         locality: values.locality || null,
         studyDays: values.studyDays || null,
@@ -1164,7 +1164,6 @@ export function LeadDetailSheet({
                                               className="size-4 shrink-0 accent-primary"
                                               id={`lead-language-${option}`}
                                               checked={field.value.includes(option)}
-                                              disabled={field.value.length === 1 && field.value.includes(option)}
                                               onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
                                                 item === option ? event.target.checked : field.value.includes(item)
                                               )))}

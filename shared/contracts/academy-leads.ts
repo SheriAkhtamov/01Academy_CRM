@@ -11,7 +11,8 @@ const optionalPositiveIdInput = z.preprocess(
 );
 
 const optionalTextInput = z.string().trim().max(5_000).optional().nullable();
-export const leadLanguagesSchema = z.array(z.enum(LEAD_LANGUAGES)).min(1).max(LEAD_LANGUAGES.length)
+export const leadLanguageSchema = z.union([z.enum(LEAD_LANGUAGES), z.literal('')]);
+export const leadLanguagesSchema = z.array(z.enum(LEAD_LANGUAGES)).max(LEAD_LANGUAGES.length)
   .refine((values) => new Set(values).size === values.length);
 
 /**
@@ -34,7 +35,7 @@ export const createAcademyLeadRequestSchema = z.object({
   studentName: z.string().trim().max(255).optional().nullable(),
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),
   statusCode: z.string().trim().max(80).optional().nullable(),
-  language: z.enum(['ru', 'uz', 'en']).optional(),
+  language: leadLanguageSchema.optional(),
   languages: leadLanguagesSchema.optional(),
   comment: optionalTextInput,
   advertisingCampaign: optionalTextInput,

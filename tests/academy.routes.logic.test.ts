@@ -4131,7 +4131,9 @@ describe('academy route logic boundaries', () => {
   });
 
   it.each([
-    { input: {}, expected: ['ru'] },
+    { input: {}, expected: [] },
+    { input: { language: '' }, expected: [] },
+    { input: { languages: [], language: 'ru' }, expected: [] },
     { input: { languages: ['ru', 'uz'] }, expected: ['ru', 'uz'] },
     { input: { language: 'en' }, expected: ['en'] },
   ])('creates a lead with native PostgreSQL languages $expected', async ({ input, expected }) => {
@@ -4146,7 +4148,8 @@ describe('academy route logic boundaries', () => {
         // PostgreSQL text[] rejects the JSON string that this route used to send.
         if (!Array.isArray(languages)) throw Object.assign(new Error('malformed array literal'), { code: '22P02' });
         expect(languages).toEqual(expected);
-        return { rows: [leadFixture({ manager_id: 7, language: expected[0], languages })] };
+        expect(readInsertValue(sql, values, 'language')).toBe(expected[0] ?? '');
+        return { rows: [leadFixture({ manager_id: 7, language: expected[0] ?? '', languages })] };
       }
       return emptyResult();
     });
@@ -4156,12 +4159,14 @@ describe('academy route logic boundaries', () => {
       .send({ contactName: 'Parent', sourceId: 2, funnelId: 3, ...input });
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
-    expect(response.body).toMatchObject({ language: expected[0], languages: expected });
+    expect(response.body).toMatchObject({ language: expected[0] ?? '', languages: expected });
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'CREATE_ACADEMY_LEAD' }));
   });
 
   it.each([
+    { input: { languages: [] }, expected: [] },
+    { input: { language: '' }, expected: [] },
     { input: { languages: ['uz', 'ru'] }, expected: ['uz', 'ru'] },
     { input: { language: 'en' }, expected: ['en'] },
   ])('updates a lead with native PostgreSQL languages $expected', async ({ input, expected }) => {
@@ -4178,7 +4183,7 @@ describe('academy route logic boundaries', () => {
         const languages = values[parameter - 1];
         if (!Array.isArray(languages)) throw Object.assign(new Error('malformed array literal'), { code: '22P02' });
         expect(languages).toEqual(expected);
-        return { rows: [{ ...existing, language: expected[0], languages }] };
+        return { rows: [{ ...existing, language: expected[0] ?? '', languages }] };
       }
       return emptyResult();
     });
@@ -4188,7 +4193,7 @@ describe('academy route logic boundaries', () => {
       .send({ contactName: 'Updated parent', ...input });
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
-    expect(response.body).toMatchObject({ language: expected[0], languages: expected });
+    expect(response.body).toMatchObject({ language: expected[0] ?? '', languages: expected });
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE_ACADEMY_LEAD' }));
   });

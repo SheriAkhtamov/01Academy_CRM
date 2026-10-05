@@ -1737,10 +1737,11 @@ export function LeadForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>{t('communicationLanguage')}</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+              <Select value={field.value} onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}>
+                <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectCommunicationLanguage')} /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectGroup>
+                    <SelectItem value="__none__">{t('leadClearSelection')}</SelectItem>
                     <SelectItem value="ru">{t('russian')}</SelectItem>
                     <SelectItem value="uz">{t('uzbekLang')}</SelectItem>
                     <SelectItem value="en">{t('english')}</SelectItem>

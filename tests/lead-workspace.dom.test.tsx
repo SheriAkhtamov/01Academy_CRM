@@ -388,6 +388,27 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests[0].body.language).toBe('ru');
   });
 
+  it('keeps an unspecified language empty when saving other lead changes', async () => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      expect((checkbox as HTMLInputElement).checked).toBe(false);
+    }
+    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Updated parent' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ language: '', languages: [] });
+  });
+
+  it('allows clearing the last selected language and saves the empty selection', async () => {
+    const { user } = renderSheet();
+    await user.click(await screen.findByRole('checkbox', { name: i18n.t('russian') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ language: '', languages: [] });
+  });
+
   it('requires confirmation before removing a phone and persists only on save', async () => {
     // Start with a loaded record so initial hydration cannot replace the phone
     // button between user-event's pointer movement and click on slower runners.

@@ -16,8 +16,16 @@ describe('lead communication languages', () => {
     });
   });
 
-  it('rejects empty, repeated, and unknown languages', () => {
-    expect(parseLeadLanguageUpdates({ languages: [] })).toBeNull();
+  it('leaves missing languages unselected and respects an explicitly empty selection', () => {
+    expect(selectedLeadLanguages(null, null)).toEqual([]);
+    expect(selectedLeadLanguages(undefined, '')).toEqual([]);
+    expect(selectedLeadLanguages([], 'ru')).toEqual([]);
+    expect(parseLeadLanguageUpdates({ languages: [] })).toEqual({ language: '', languages: [] });
+    expect(parseLeadLanguageUpdates({ language: '' })).toEqual({ language: '', languages: [] });
+    expect(parseLeadLanguageUpdates({})).toEqual({});
+  });
+
+  it('rejects repeated and unknown languages', () => {
     expect(parseLeadLanguageUpdates({ languages: ['ru', 'ru'] })).toBeNull();
     expect(parseLeadLanguageUpdates({ languages: ['ru', 'other'] })).toBeNull();
   });

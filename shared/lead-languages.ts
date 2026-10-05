@@ -9,5 +9,5 @@ export const selectedLeadLanguages = (languages: unknown, language: unknown): Le
   const selected = Array.isArray(languages)
     ? [...new Set(languages.filter(isLeadLanguage))]
     : [];
-  return selected.length ? selected : [isLeadLanguage(language) ? language : 'ru'];
+  return Array.isArray(languages) ? selected : isLeadLanguage(language) ? [language] : [];
 };

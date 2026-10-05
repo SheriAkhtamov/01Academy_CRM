@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
+import { leadLanguageSchema, type CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import type { TranslationKey } from '@/lib/i18n';
 
 export const leadRequiredFieldKeys = {
@@ -7,7 +7,6 @@ export const leadRequiredFieldKeys = {
   sourceId: 'sourceRequired',
   funnelId: 'salesFunnelRequired',
   managerId: 'leadManagerRequired',
-  languages: 'leadLanguageRequired',
 } as const satisfies Record<string, TranslationKey>;
 
 const optionalPhoneString = z.string().trim().refine(
@@ -40,7 +39,7 @@ export const createLeadSchema = z.object({
   funnelId: z.string().min(1, leadRequiredFieldKeys.funnelId),
   managerId: z.string().min(1, leadRequiredFieldKeys.managerId),
   comment: z.string(),
-  language: z.enum(['ru', 'uz', 'en']),
+  language: leadLanguageSchema,
 });
 
 export type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
@@ -52,7 +51,7 @@ export const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   funnelId: '',
   managerId: '',
   comment: '',
-  language: 'ru',
+  language: '',
 };
 
 export const createLeadPayload = (values: CreateLeadFormValues): CreateAcademyLeadRequest => ({

@@ -49,10 +49,10 @@ export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
   ))
 )`;
 
-const visibilityCondition = (viewer: TelephonyNotificationViewer) => (
+export const telephonyCallVisibilityCondition = (viewer: TelephonyNotificationViewer, actorParameter = '$1') => (
   hasLeadershipAccess(viewer as ModuleAccessSource)
     ? 'TRUE'
-    : buildTelephonyCallVisibilitySql('$1')
+    : buildTelephonyCallVisibilitySql(actorParameter)
 );
 
 export const getMissedCallUnreadSummary = async (
@@ -66,7 +66,7 @@ export const getMissedCallUnreadSummary = async (
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
      WHERE ${buildUnresolvedMissedCallSql('call')}
-       AND ${visibilityCondition(viewer)}`,
+       AND ${telephonyCallVisibilityCondition(viewer)}`,
     hasLeadershipAccess(viewer as ModuleAccessSource) ? [] : [viewer.id],
   );
 

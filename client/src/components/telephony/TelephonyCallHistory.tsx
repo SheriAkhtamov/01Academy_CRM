@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
   ArrowUpRight,
@@ -16,33 +16,25 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { formatCallDuration } from '@/lib/telephony';
-import { telephonyApi, telephonyQueryKeys, type CallHistoryItem } from '@/features/telephony/api';
+import { missedCallUnreadQueryOptions, telephonyApi, telephonyQueryKeys, type CallHistoryFilter, type CallHistoryItem } from '@/features/telephony/api';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CallNoteEditor } from '@/components/telephony/CallNoteEditor';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import type { TranslationKey } from '@/lib/i18n';
 
-type HistoryFilter = 'all' | 'missed' | 'incoming' | 'outgoing';
-
 const filterLabelKeys = {
   all: 'telephonyFilterAll',
   missed: 'telephonyFilterMissed',
   incoming: 'telephonyFilterIncoming',
   outgoing: 'telephonyFilterOutgoing',
-} satisfies Record<HistoryFilter, TranslationKey>;
+} satisfies Record<CallHistoryFilter, TranslationKey>;
 
 const unansweredStatuses = new Set(['missed', 'failed', 'declined']);
 
 export const isUnansweredIncoming = (call: Pick<CallHistoryItem, 'direction' | 'status' | 'talkSeconds'>) => (
   call.direction === 'incoming' && call.talkSeconds === 0 && unansweredStatuses.has(call.status)
 );
-
-const matchesFilter = (call: CallHistoryItem, filter: HistoryFilter) => {
-  if (filter === 'missed') return isUnansweredIncoming(call);
-  if (filter === 'all') return true;
-  return call.direction === filter;
-};
 
 const matchesSearch = (call: CallHistoryItem, search: string) => {
   if (!search) return true;
@@ -88,23 +80,26 @@ export function TelephonyCallHistory({
   onCollapse: () => void;
 }) {
   const { t, language } = useTranslation();
-  const [filter, setFilter] = useState<HistoryFilter>('all');
+  const [filter, setFilter] = useState<CallHistoryFilter>('all');
   const [search, setSearch] = useState('');
   const [expandedNoteCallId, setExpandedNoteCallId] = useState<number | null>(null);
 
   // A websocket event invalidates this key the moment a call changes, so the
   // list needs no polling of its own.
-  const historyQuery = useQuery({
-    queryKey: telephonyQueryKeys.calls,
-    queryFn: () => telephonyApi.getCalls(50),
+  const historyQuery = useInfiniteQuery({
+    queryKey: [...telephonyQueryKeys.calls, filter],
+    queryFn: ({ pageParam }) => telephonyApi.getCalls(50, filter, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _pages, lastOffset) => lastPage.length === 50 ? lastOffset + 50 : undefined,
     staleTime: 15_000,
   });
 
-  const calls = useMemo(() => historyQuery.data ?? [], [historyQuery.data]);
-  const missedCount = useMemo(() => calls.filter(isUnansweredIncoming).length, [calls]);
+  const missedQuery = useQuery(missedCallUnreadQueryOptions);
+  const calls = useMemo(() => historyQuery.data?.pages.flat() ?? [], [historyQuery.data]);
+  const missedCount = missedQuery.data?.count ?? 0;
   const visibleCalls = useMemo(
-    () => calls.filter((call) => matchesFilter(call, filter) && matchesSearch(call, search)),
-    [calls, filter, search],
+    () => calls.filter((call) => matchesSearch(call, search)),
+    [calls, search],
   );
 
   return (
@@ -132,7 +127,7 @@ export function TelephonyCallHistory({
           ) : null}
         </div>
         <div className="flex gap-1.5 overflow-x-auto pb-0.5" data-no-drag>
-          {(Object.keys(filterLabelKeys) as HistoryFilter[]).map((option) => (
+          {(Object.keys(filterLabelKeys) as CallHistoryFilter[]).map((option) => (
             <button
               key={option}
               type="button"
@@ -256,14 +251,26 @@ export function TelephonyCallHistory({
           {historyQuery.isLoading ? (
             <p className="px-6 py-16 text-center text-sm text-muted-foreground">{t('loading')}</p>
           ) : null}
-          {!historyQuery.isLoading && calls.length === 0 ? (
-            <p className="px-6 py-16 text-center text-sm text-muted-foreground">{t('telephonyNoCalls')}</p>
+          {historyQuery.isError ? (
+            <div role="alert" className="space-y-2 px-6 py-6 text-center text-sm">
+              <p className="text-destructive">{t('failedToLoadData')}</p>
+              <button type="button" className="text-primary underline" onClick={() => void historyQuery.refetch()}>{t('retry')}</button>
+            </div>
           ) : null}
-          {!historyQuery.isLoading && calls.length > 0 && visibleCalls.length === 0 ? (
+          {historyQuery.isSuccess && calls.length === 0 ? (
+            <p className="px-6 py-16 text-center text-sm text-muted-foreground">{filter === 'all' ? t('telephonyNoCalls') : t('telephonyNoCallsFound')}</p>
+          ) : null}
+          {historyQuery.isSuccess && calls.length > 0 && visibleCalls.length === 0 ? (
             <p className="px-6 py-16 text-center text-sm text-muted-foreground">{t('telephonyNoCallsFound')}</p>
           ) : null}
 
-          {calls.length >= 50 ? (
+          {historyQuery.hasNextPage ? (
+            <button type="button" className="flex w-full items-center justify-center px-3 py-3 text-xs text-primary hover:bg-accent/40 disabled:opacity-50"
+              disabled={historyQuery.isFetchingNextPage} onClick={() => void historyQuery.fetchNextPage()}>
+              {historyQuery.isFetchingNextPage ? t('loading') : t('loadMoreResults')}
+            </button>
+          ) : null}
+          {filter === 'all' && calls.length === 50 ? (
             <Link
               href="/sales/calls"
               onClick={onCollapse}

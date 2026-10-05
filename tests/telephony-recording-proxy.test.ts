@@ -60,9 +60,6 @@ describe('OnlinePBX recording proxy URL validation', () => {
 
   it('keeps stored recordings playable even when legacy talk time is zero', () => {
     expect(telephonyRoutes).toContain(
-      `(NULLIF(BTRIM(recording_url), '') IS NOT NULL OR talk_seconds > 0) AS "hasRecording"`,
-    );
-    expect(telephonyRoutes).toContain(
       `(NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording"`,
     );
     expect(academyRoutes).toContain(

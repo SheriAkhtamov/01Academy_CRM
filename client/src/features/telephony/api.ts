@@ -5,6 +5,8 @@ export type MissedCallUnreadSummary = {
   count: number;
 };
 
+export type CallHistoryFilter = 'all' | 'missed' | 'incoming' | 'outgoing';
+
 export type CallHistoryItem = {
   id: number;
   clientCallId: string | null;
@@ -53,8 +55,8 @@ export const telephonyApi = {
   getMissedCallUnread: () => (
     apiRequest('GET', '/api/telephony/calls/missed/unread') as Promise<MissedCallUnreadSummary>
   ),
-  getCalls: (limit = 50) => (
-    apiRequest('GET', `/api/telephony/calls?limit=${limit}`) as Promise<CallHistoryItem[]>
+  getCalls: (limit = 50, filter: CallHistoryFilter = 'all', offset = 0) => (
+    apiRequest('GET', `/api/telephony/calls?limit=${limit}&filter=${filter}&offset=${offset}`) as Promise<CallHistoryItem[]>
   ),
   getExtensions: () => (
     apiRequest('GET', '/api/telephony/extensions') as Promise<TelephonyExtension[]>

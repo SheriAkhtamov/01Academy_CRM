@@ -35,6 +35,7 @@ import {
   buildUnresolvedMissedCallSql,
   getMissedCallUnreadSummary,
   MISSED_INCOMING_CALL_SQL,
+  telephonyCallVisibilityCondition,
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
@@ -1179,21 +1180,37 @@ router.post('/calls/events', requireAuth, callLimiter, asyncRoute(async (req, re
 }));
 
 router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
-  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  if (!canAccessAcademyModule(req.user, 'sales')) {
+    return res.status(403).json({ error: 'salesAccessRequired' });
+  }
+  const limit = Math.min(Math.max(safeInteger(req.query.limit) || 30, 1), 100);
+  const offset = safeInteger(req.query.offset);
+  const filter = String(req.query.filter ?? 'all');
+  if (!['all', 'missed', 'incoming', 'outgoing'].includes(filter)) {
+    return res.status(400).json({ error: 'invalidData' });
+  }
+  const params: unknown[] = hasLeadershipAccess(req.user) ? [] : [req.user!.id];
+  const conditions = [telephonyCallVisibilityCondition(req.user!)];
+  if (filter === 'missed') conditions.push(buildUnresolvedMissedCallSql('call'));
+  else if (filter !== 'all') conditions.push(`call.direction = $${params.push(filter)}`);
+  const limitParam = `$${params.push(limit)}`;
+  const offsetParam = `$${params.push(offset)}`;
   const result = await pool.query(
-    `SELECT id, client_call_id AS "clientCallId", provider_call_id AS "providerCallId",
-            user_id AS "userId", extension, direction, status, phone,
-            contact_type AS "contactType", contact_id AS "contactId",
-            contact_name AS "contactName", lead_id AS "leadId", started_at AS "startedAt",
-            answered_at AS "answeredAt", ended_at AS "endedAt",
-            duration_seconds AS "durationSeconds", talk_seconds AS "talkSeconds",
-            hangup_cause AS "hangupCause", note,
-            (NULLIF(BTRIM(recording_url), '') IS NOT NULL OR talk_seconds > 0) AS "hasRecording"
-     FROM telephony_calls
-     WHERE user_id = $1
-     ORDER BY started_at DESC
-     LIMIT $2`,
-    [req.user!.id, limit],
+    `SELECT call.id, call.client_call_id AS "clientCallId", call.provider_call_id AS "providerCallId",
+            call.user_id AS "userId", call.extension, call.direction, call.status, call.phone,
+            call.contact_type AS "contactType", call.contact_id AS "contactId",
+            COALESCE(NULLIF(lead.contact_name, ''), call.contact_name) AS "contactName",
+            call.lead_id AS "leadId", call.started_at AS "startedAt",
+            call.answered_at AS "answeredAt", call.ended_at AS "endedAt",
+            call.duration_seconds AS "durationSeconds", call.talk_seconds AS "talkSeconds",
+            call.hangup_cause AS "hangupCause", call.note,
+            (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording"
+     FROM telephony_calls call
+     LEFT JOIN academy_leads lead ON lead.id = call.lead_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY call.started_at DESC, call.id DESC
+     LIMIT ${limitParam} OFFSET ${offsetParam}`,
+    params,
   );
   res.json(result.rows);
 }));

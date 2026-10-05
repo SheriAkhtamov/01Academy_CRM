@@ -242,9 +242,9 @@ const ensureContactByPhone = async (
     const leadResult = await client.query<{ id: number; contactName: string }>(
       `INSERT INTO academy_leads (
          contact_name, phone, source_id, funnel_id, status_code, manager_id, language,
-         comment, first_contact_channel, created_by
+         first_contact_channel, created_by
        )
-       VALUES ($1,$2,$3,$4,'new_request',$5,'ru',$6,'call',$7)
+       VALUES ($1,$2,$3,$4,'new_request',$5,'ru','call',$6)
        RETURNING id, contact_name AS "contactName"`,
       [
         contactName,
@@ -252,7 +252,6 @@ const ensureContactByPhone = async (
         sourceResult.rows[0].id,
         funnelId,
         managerResult.rows[0]?.id ?? null,
-        `Создан автоматически из ${directionLabel} звонка.`,
         actorId,
       ],
     );

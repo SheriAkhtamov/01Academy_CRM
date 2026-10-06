@@ -4,12 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
-  getInitials,
-  formatUserModule,
-} from '@/lib/auth';
-import {
   canAccessAcademyModule,
-  getAssignedModules,
   hasFinanceAccess,
   hasLeadershipAccess,
   type AcademyAccessModule,
@@ -37,7 +32,7 @@ import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { instagramInboxUnreadQueryOptions } from '@/features/sales/instagram-inbox-api';
-import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
+import { MODULE_NAVIGATION, RESOURCE_NAVIGATION_ITEMS, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 import { useStickyState } from '@/hooks/useStickyState';
 
 interface NavItem {
@@ -149,8 +144,6 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
 
   if (!user) return null;
 
-  const assignedModules = getAssignedModules(user);
-  const additionalModules = assignedModules.filter((module) => module !== user.module);
   const hasModule = (moduleName: AcademyModule) => canAccessAcademyModule(user, moduleName);
 
   const isItemActive = (href: string) => {
@@ -322,7 +315,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         <StaggerGroup
           ref={navRef}
           count={sections.length + 1}
-          className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden"
+          className="min-h-0 flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden"
           // A <nav> landmark is what screen readers navigate by; StaggerGroup
           // renders a plain div, so the role has to be restated here.
           role="navigation"
@@ -377,30 +370,32 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         </StaggerGroup>
 
         {/* Language Switcher */}
-        <div className="border-t border-border/70 px-4 py-2">
+        <div className="shrink-0 border-t border-border/70 px-4 py-2">
           <LanguageSwitcher />
         </div>
 
-        {/* User Profile */}
-        <div className="border-t border-border/70 px-3 py-3">
-          <div className="sidebar-user-card">
-            <div className="sidebar-user-avatar">
-              {getInitials(user.fullName)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-foreground truncate">{user.fullName}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.position || formatUserModule(user.module, t)}</p>
-              {user.position && (
-                <p className="text-[10px] text-muted-foreground truncate">{formatUserModule(user.module, t)}</p>
-              )}
-              {additionalModules.length > 0 && (
-                <p className="text-[10px] text-muted-foreground truncate">
-                  {additionalModules.map((item) => formatUserModule(item, t)).join(' · ')}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+        <nav
+          aria-label={t('sidebarResources')}
+          className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-t border-border/70 px-3 py-1"
+        >
+          {RESOURCE_NAVIGATION_ITEMS.map((item) => {
+            const isActive = isItemActive(item.href);
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                onClick={() => onClose?.()}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  'flex min-h-11 items-center rounded-sm px-1 text-xs font-medium underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  isActive ? 'text-primary underline' : 'text-muted-foreground',
+                )}
+              >
+                {t(item.labelKey)}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
     </TooltipProvider>
   );

@@ -24,6 +24,7 @@ const TasksPage = lazy(() => import('@/pages/tasks'));
 const AuditPage = lazy(() => import('@/pages/admin/audit'));
 const SystemManagementPage = lazy(() => import('@/pages/admin/SystemManagementPage'));
 const FinanceCenter = lazy(() => import('@/pages/finance-center'));
+const ResourcePage = lazy(() => import('@/pages/resource'));
 
 function ModuleBasedHome() {
   const { user } = useAuth();
@@ -141,6 +142,9 @@ export function AppRouter() {
       <Layout>
         <Switch>
         <Route path="/" component={ModuleBasedHome} />
+        <Route path="/help" component={() => <ResourcePage resource="help" />} />
+        <Route path="/support" component={() => <ResourcePage resource="support" />} />
+        <Route path="/updates" component={() => <ResourcePage resource="updates" />} />
         <Route path="/integrations" component={() => <Redirect to="/admin/system-management/integrations" />} />
         <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
         <Route path="/sales/pipeline" component={() => (

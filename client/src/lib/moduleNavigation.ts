@@ -8,11 +8,13 @@ import {
   Calendar,
   ClipboardCheck,
   ClipboardList,
+  CircleHelp,
   Flame,
   GraduationCap,
   KanbanSquare,
   Landmark,
   Layers3,
+  LifeBuoy,
   Megaphone,
   MousePointerClick,
   MessagesSquare,
@@ -24,6 +26,7 @@ import {
   TrendingUp,
   RadioTower,
   Settings2,
+  Sparkles,
   UserCheck,
   Users,
   WalletCards,
@@ -113,6 +116,19 @@ export const TASKS_NAVIGATION_ITEM = {
   href: '/tasks',
   icon: KanbanSquare,
 } as const satisfies ModuleNavigationItem;
+
+export const RESOURCE_NAVIGATION_ITEMS = [
+  { id: 'help', labelKey: 'helpCenter', href: '/help', icon: CircleHelp },
+  { id: 'support', labelKey: 'supportLink', href: '/support', icon: LifeBuoy },
+  { id: 'updates', labelKey: 'whatsNew', href: '/updates', icon: Sparkles },
+] as const satisfies readonly {
+  id: string;
+  labelKey: TranslationKey;
+  href: string;
+  icon: LucideIcon;
+}[];
+
+export type ResourcePageId = (typeof RESOURCE_NAVIGATION_ITEMS)[number]['id'];
 
 export const SYSTEM_MANAGEMENT_NAVIGATION_ITEMS = [
   { id: 'integrations', labelKey: 'navIntegrations', href: '/admin/system-management/integrations', icon: Plug },

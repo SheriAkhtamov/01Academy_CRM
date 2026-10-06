@@ -1,6 +1,11 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  helpCenter: { en: 'Help', ru: 'Справка' },
+  supportLink: { en: 'Support', ru: 'Поддержка' },
+  whatsNew: { en: "What's new", ru: 'Что нового' },
+  sidebarResources: { en: 'Useful links', ru: 'Полезные ссылки' },
+  resourceComingSoon: { en: 'Coming soon', ru: 'Скоро' },
   studentChangesDetected: { en: 'Student details have changed', ru: 'Данные ученика изменились' },
   studentLatestStatus: { en: 'Updated learning status', ru: 'Обновлённый статус обучения' },
   studentKeepChanges: { en: 'Keep my changes', ru: 'Оставить мои правки' },

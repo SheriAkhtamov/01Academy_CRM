@@ -907,16 +907,6 @@
     @apply scale-105;
   }
 
-  .sidebar-user-card {
-    @apply flex items-center gap-3;
-  }
-
-  .sidebar-user-avatar {
-    @apply w-9 h-9 rounded-full text-white flex items-center justify-center text-sm font-medium flex-shrink-0;
-    background: linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to));
-    box-shadow: var(--shadow-primary);
-  }
-
   .telephony-control {
     @apply flex w-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-muted px-1 py-2.5 text-[11px] font-medium text-foreground transition hover:bg-accent;
   }

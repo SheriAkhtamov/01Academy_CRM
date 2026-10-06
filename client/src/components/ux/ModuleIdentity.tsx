@@ -3,7 +3,7 @@ import { KanbanSquare } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { MODULE_NAVIGATION, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
+import { MODULE_NAVIGATION, RESOURCE_NAVIGATION_ITEMS, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 
 type ModuleType =
   | 'sales'
@@ -68,6 +68,7 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
   const [location] = useLocation();
   const { user } = useAuth();
   const { t } = useTranslation();
+  const resource = RESOURCE_NAVIGATION_ITEMS.find((item) => item.href === location);
   const moduleDefinitions: Record<ModuleType, ModuleDefinition> = {
     sales: resolveDefinition('sales'),
     administration: resolveDefinition('administration'),
@@ -79,7 +80,9 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
       icon: KanbanSquare,
     },
   };
-  const module = moduleDefinitions[resolveModuleType(location, user?.module)];
+  const module = resource
+    ? { title: t(resource.labelKey), icon: resource.icon }
+    : moduleDefinitions[resolveModuleType(location, user?.module)];
   const Icon = module.icon;
 
   function resolveDefinition(moduleType: Exclude<ModuleType, 'tasks'>): ModuleDefinition {
@@ -101,7 +104,7 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
 
       <div className="min-w-0">
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          {t('currentModule')}
+          {t(resource ? 'sidebarResources' : 'currentModule')}
         </p>
         <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
           {title ?? module.title}

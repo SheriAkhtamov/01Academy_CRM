@@ -10,6 +10,11 @@ type AuthenticatedUser = User & {
 declare module 'express-session' {
   interface SessionData {
     userId?: number;
+    publicAttendance?: {
+      fingerprint: string;
+      expiresAt: number;
+      csrfToken: string;
+    };
     instagramOAuth?: {
       state: string;
       createdAt: number;

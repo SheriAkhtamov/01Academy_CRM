@@ -25,6 +25,12 @@
     "cookieSecure": false
   },
 
+  "publicAttendance": {
+    "enabled": false,
+    "passwordHash": "",
+    "groupIds": []
+  },
+
   "email": {
     "resendApiKey": "",
     "smtp": {

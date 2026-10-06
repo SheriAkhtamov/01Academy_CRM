@@ -27,6 +27,11 @@ export interface AppConfig {
     secret: string;
     cookieSecure?: boolean;
   };
+  publicAttendance?: {
+    enabled: boolean;
+    passwordHash?: string;
+    groupIds?: number[];
+  };
   email: {
     resendApiKey?: string;
     smtp?: {
@@ -174,6 +179,17 @@ const readConfigFile = (): AppConfig => {
 };
 
 export const validateConfig = (config: AppConfig) => {
+  const attendance = config.publicAttendance;
+  if (attendance?.enabled && (
+    !/^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(attendance.passwordHash ?? '')
+    || !Array.isArray(attendance.groupIds)
+    || attendance.groupIds.length === 0
+    || attendance.groupIds.length > 100
+    || attendance.groupIds.some((id) => !Number.isSafeInteger(id) || id < 1)
+    || new Set(attendance.groupIds).size !== attendance.groupIds.length
+  )) {
+    throw new Error('publicAttendance requires a scrypt password hash and distinct positive group IDs');
+  }
   const telegram = config.integrations?.telegramTasks;
   if (telegram?.botToken?.trim() || telegram?.webhookSecret?.trim()) {
     if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(telegram.botToken?.trim() ?? '')

@@ -68,6 +68,9 @@ const emptyFilters: AuditFilters = { userId: 'all', action: 'all', entityType: '
 
 const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
   action = action.toUpperCase();
+  if (action === 'PUBLIC_ATTENDANCE_MARKED') return t('publicAttendanceMarked');
+  if (action === 'PUBLIC_ATTENDANCE_CLEARED') return t('publicAttendanceCleared');
+  if (action === 'PUBLIC_ATTENDANCE_LESSON_COMPLETED') return t('publicAttendanceConducted');
   if (action.startsWith('UNARCHIVE')) return t('auditActionRestored');
   if (action.startsWith('ARCHIVE')) return t('auditActionArchived');
   if (action.startsWith('CREATE')) return copy.created;
@@ -81,7 +84,7 @@ const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
 const entityLabel = (entity: string, copy: AuditCopy, t: Translate) => ({
   academy_lead: copy.lead, academy_leads: copy.lead, academy_student: copy.student, academy_students: copy.student,
   academy_payment: copy.payment, academy_payments: copy.payment, academy_group: copy.group, academy_groups: copy.group,
-  academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
+  academy_attendance: t('attendanceLabel'), academy_lesson: copy.schedule, academy_lessons: copy.schedule, academy_marketing_expense: copy.expense,
   academy_task: copy.task, academy_company_settings: t('settings'),
   academy_school: t('school'), academy_schools: t('school'), academy_room: t('room'), academy_rooms: t('room'),
 }[entity] ?? t('auditObject'));
@@ -248,7 +251,7 @@ export default function AuditPage() {
                           </Badge>
                           <span className="text-sm font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span>
                         </div>
-                        <p className="truncate text-sm">{log.userName ?? ceoCopy.audit.system}</p>
+                        <p className="truncate text-sm">{log.action.startsWith('PUBLIC_ATTENDANCE_') ? t('publicAttendanceActor') : log.userName ?? ceoCopy.audit.system}</p>
                         <p className="truncate text-xs text-muted-foreground">
                           {auditVisibleFields(jsonObject(log.oldValues), jsonObject(log.newValues)).slice(0, 3).map((field) => auditFieldLabel(field, t)).join(', ') || '—'}
                         </p>
@@ -274,7 +277,7 @@ export default function AuditPage() {
                 <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="border-b border-border/70 bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">{ceoCopy.audit.date}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.employee}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.action}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.object}</th><th className="px-5 py-3 font-medium">{ceoCopy.audit.changes}</th><th className="w-12 px-3 py-3" /></tr></thead>
                   <tbody>
-                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td><td className="px-5 py-3"><p className="font-medium">{log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ? formatUserModule(log.userModule, t) : '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action, ceoCopy.audit, t)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span></td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{auditVisibleFields(jsonObject(log.oldValues), jsonObject(log.newValues)).slice(0, 3).map((field) => auditFieldLabel(field, t)).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
+                    {(data?.logs ?? []).map((log) => <tr key={log.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30"><td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{formatAcademyDate(log.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}</td><td className="px-5 py-3"><p className="font-medium">{log.action.startsWith('PUBLIC_ATTENDANCE_') ? t('publicAttendanceActor') : log.userName ?? ceoCopy.audit.system}</p><p className="text-xs text-muted-foreground">{log.userModule ? formatUserModule(log.userModule, t) : '—'}</p></td><td className="px-5 py-3"><Badge variant={log.action.startsWith('DELETE') ? 'destructive' : log.action.includes('APPROVE') ? 'success' : 'outline'}>{actionLabel(log.action, ceoCopy.audit, t)}</Badge></td><td className="px-5 py-3"><span className="font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span></td><td className="max-w-64 truncate px-5 py-3 text-muted-foreground">{auditVisibleFields(jsonObject(log.oldValues), jsonObject(log.newValues)).slice(0, 3).map((field) => auditFieldLabel(field, t)).join(', ') || '—'}</td><td className="px-3 py-3"><Button size="icon" variant="ghost" onClick={() => setSelected(log)} aria-label={ceoCopy.audit.viewChanges}><ChevronRight /></Button></td></tr>)}
                     {isError ? <tr><td colSpan={6} className="px-5 py-12 text-center"><span className="inline-flex items-center gap-2 text-destructive"><AlertCircle className="size-4" />{t('failedToLoadData')}</span><Button className="ml-3" variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>{t('retry')}</Button></td></tr> : null}
                     {!isLoading && !isError && (data?.logs.length ?? 0) === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">{ceoCopy.audit.noResults}</td></tr> : null}
                   </tbody>

@@ -11,12 +11,14 @@ import chatGroupRoutes from '../services/chat-groups';
 import notificationsRoutes from './notifications.routes';
 import telephonyRoutes from './telephony.routes';
 import userRoutes from './user.routes';
+import publicAttendanceRoutes from './public-attendance.routes';
 
 /**
  * API composition belongs here; transport concerns such as sessions,
  * WebSockets, static assets and process lifecycle stay in the app bootstrap.
  */
 export const registerApiRoutes = (app: Express): void => {
+  app.use('/api/public/attendance', publicAttendanceRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/client-errors', clientErrorsRoutes);
   app.use('/api/users', userRoutes);

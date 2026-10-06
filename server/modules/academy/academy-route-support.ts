@@ -16,6 +16,7 @@ import {
   zonedWallClockToInstant,
 } from '../../lib/academy-time';
 import {
+  buildFollowingRecurringLessonSchedule,
   buildRecurringLessonSchedule,
   type CalendarDate,
 } from '../../lib/lesson-schedule';
@@ -377,12 +378,14 @@ export const groupLessonBackedFieldChanged = (field: string, nextValue: unknown,
       !== JSON.stringify(normalizedGroupScheduleForComparison(previousValue));
   }
   if (field === 'startDate' || field === 'endDate') {
-    const timestamp = (value: unknown) => {
+    const calendarDay = (value: unknown) => {
       if (value === null || value === undefined || value === '') return null;
-      const parsed = new Date(value as string | number | Date).getTime();
-      return Number.isNaN(parsed) ? null : parsed;
+      const parsed = new Date(value as string | number | Date);
+      if (Number.isNaN(parsed.getTime())) return null;
+      const { year, month, day } = getZonedDateTimeParts(parsed, ACADEMY_TIME_ZONE);
+      return `${year}-${month}-${day}`;
     };
-    return timestamp(nextValue) !== timestamp(previousValue);
+    return calendarDay(nextValue) !== calendarDay(previousValue);
   }
   if (field === 'frequency') {
     return nullableText(nextValue) !== nullableText(previousValue);
@@ -692,9 +695,9 @@ export const calendarDateFromInstant = (value: Date): CalendarDate => {
 export const calendarDateToUtcMarker = (value: CalendarDate) =>
   new Date(Date.UTC(value.year, value.month - 1, value.day));
 
-export const materializeGroupLessons = async (groupId: number): Promise<Row[]> => {
+export const materializeGroupLessons = async (groupId: number, after?: Date): Promise<Row[]> => {
   if (!transactionContext.getStore()) {
-    return withTransaction(() => materializeGroupLessons(groupId));
+    return withTransaction(() => materializeGroupLessons(groupId, after));
   }
 
   await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
@@ -703,7 +706,7 @@ export const materializeGroupLessons = async (groupId: number): Promise<Row[]> =
     [groupId],
   );
   if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-  if (!['open', 'in_progress'].includes(String(group.status)) || !group.teacherId) return [];
+  if (group.isArchived === true || !['open', 'in_progress'].includes(String(group.status)) || !group.teacherId) return [];
 
   const existingLessons = await query<Row>(
     `SELECT id FROM academy_lessons WHERE group_id = $1 ORDER BY scheduled_at, id`,
@@ -724,9 +727,12 @@ export const materializeGroupLessons = async (groupId: number): Promise<Row[]> =
   const fallbackStart = membership?.membershipStart
     ? new Date(membership.membershipStart)
     : new Date(group.createdAt ?? Date.now());
-  const startDate = explicitStartDate && !Number.isNaN(explicitStartDate.getTime())
+  let startDate = explicitStartDate && !Number.isNaN(explicitStartDate.getTime())
     ? calendarDateFromDateOnly(explicitStartDate)
     : calendarDateFromInstant(fallbackStart);
+  if (after && calendarDateToUtcMarker(startDate) < calendarDateToUtcMarker(calendarDateFromInstant(after))) {
+    startDate = calendarDateFromInstant(after);
+  }
   const lessonCount = Number(group.lessonCount);
   const generatedSlots = buildRecurringLessonSchedule({
     startDate,
@@ -734,6 +740,7 @@ export const materializeGroupLessons = async (groupId: number): Promise<Row[]> =
     lessonCount,
     fallbackDurationMinutes: Number(group.lessonDurationMinutes),
     timeZone: ACADEMY_TIME_ZONE,
+    after,
   });
   if (generatedSlots.length !== lessonCount) {
     throw Object.assign(new Error('groupLessonGenerationFailed'), { statusCode: 409 });
@@ -765,10 +772,79 @@ export const materializeGroupLessons = async (groupId: number): Promise<Row[]> =
   const lastLesson = createdLessons[createdLessons.length - 1];
   const lastLessonDate = calendarDateFromInstant(new Date(lastLesson.scheduledAt));
   await updateRow('academy_groups', groupId, {
-    startDate: calendarDateToUtcMarker(startDate),
+    startDate: calendarDateToUtcMarker(after ? calendarDateFromInstant(generatedSlots[0].scheduledAt) : startDate),
     endDate: calendarDateToUtcMarker(lastLessonDate),
   });
   return createdLessons;
+};
+
+export const restoreArchivedGroupLessons = async (group: Row, actorId: number, reference = new Date()) => {
+  const groupId = Number(group.id);
+  const lessons = await query<Row>(
+    `SELECT * FROM academy_lessons WHERE group_id = $1
+     ORDER BY lesson_number, id FOR UPDATE`,
+    [groupId],
+  );
+  const pending = lessons.filter((lesson) => lesson.status === 'scheduled');
+  const startBoundary = group.startDate
+    ? getZonedDateOnlyRange(new Date(group.startDate), ACADEMY_TIME_ZONE).start.getTime() - 1
+    : reference.getTime();
+  const after = new Date(Math.max(reference.getTime(), startBoundary));
+  if (lessons.length === 0) {
+    await materializeGroupLessons(groupId, after);
+    return;
+  }
+  if (pending.length === 0) return;
+
+  const slots = buildFollowingRecurringLessonSchedule({
+    after,
+    schedule: group.schedule,
+    lessonCount: pending.length,
+    fallbackDurationMinutes: Number(group.lessonDurationMinutes),
+    timeZone: ACADEMY_TIME_ZONE,
+  });
+  if (slots.length !== pending.length) {
+    throw Object.assign(new Error('groupLessonGenerationFailed'), { statusCode: 409 });
+  }
+  const lessonIds = pending.map((lesson) => Number(lesson.id));
+  const attendance = await queryOne(
+    `SELECT lesson_id FROM academy_attendance WHERE lesson_id = ANY($1::int[]) LIMIT 1`,
+    [lessonIds],
+  );
+  if (attendance) {
+    throw Object.assign(new Error('lessonWithAttendanceCannotBeRescheduled'), { statusCode: 409 });
+  }
+
+  for (const [index, lesson] of pending.entries()) {
+    const slot = slots[index];
+    const values: Row = { scheduledAt: slot.scheduledAt, durationMinutes: slot.durationMinutes };
+    await prepareLessonMutation({
+      values,
+      oldRow: lesson,
+      excludeLessonId: Number(lesson.id),
+      excludeLessonIds: lessonIds,
+    });
+    await updateRow('academy_lessons', Number(lesson.id), values);
+    if (slot.scheduledAt.getTime() !== new Date(lesson.scheduledAt).getTime()) {
+      await insertRow('academy_lesson_reschedules', {
+        lessonId: Number(lesson.id),
+        previousScheduledAt: new Date(lesson.scheduledAt),
+        nextScheduledAt: slot.scheduledAt,
+        reason: 'Возвращение группы из архива',
+        changedBy: actorId,
+      });
+    }
+  }
+  const lastDate = new Date(Math.max(
+    slots[slots.length - 1].scheduledAt.getTime(),
+    ...lessons.filter((lesson) => lesson.status === 'conducted')
+      .map((lesson) => new Date(lesson.scheduledAt).getTime()),
+  ));
+  await updateRow('academy_groups', groupId, {
+    endDate: calendarDateToUtcMarker(calendarDateFromInstant(lastDate)),
+    // Older archive actions marked an unfinished group completed.
+    ...(group.status === 'completed' ? { status: 'in_progress' } : {}),
+  });
 };
 
 export const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) => {
@@ -776,6 +852,7 @@ export const reconcileAutomaticTeacherAssignments = async (teacherId?: number | 
     `SELECT id
      FROM academy_groups
      WHERE status IN ('open', 'in_progress')
+       AND is_archived = false
        AND (teacher_id IS NULL OR teacher_id = $1)
      ORDER BY created_at, id`,
     [teacherId ?? null],

@@ -1839,7 +1839,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   groupArchivedOn: { en: 'Archived on {date}', ru: 'В архиве с {date}' },
   restoreGroupFromArchive: { en: 'Restore from archive', ru: 'Вернуть из архива' },
   restoreGroupTitle: { en: 'Restore group from the archive?', ru: 'Вернуть группу из архива?' },
-  restoreGroupConfirm: { en: 'The group returns to the list and to the calendars. It stays completed.', ru: 'Группа вернётся в список и в календари. Статус «завершена» сохранится.' },
+  restoreGroupConfirm: { en: 'The group returns to the list. Remaining lessons resume on future dates according to its timetable.', ru: 'Группа вернётся в список. Оставшиеся занятия появятся в календарях на будущие даты по расписанию группы.' },
   groupRestoredFromArchive: { en: 'Group returned from the archive', ru: 'Группа возвращена из архива' },
   groupRestoreFailed: { en: 'Group was not restored', ru: 'Не удалось вернуть группу из архива' },
   onlyCompletedGroupsCanBeArchived: { en: 'Only a completed group can be archived.', ru: 'В архив можно перенести только завершённую группу.' },

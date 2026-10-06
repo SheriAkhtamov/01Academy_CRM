@@ -39,6 +39,8 @@ export interface SalesScheduleGroup {
   schedule?: AcademyScheduleItem[] | null;
   lessonDurationMinutes?: number | null;
   status?: string | null;
+  isArchived?: boolean;
+  lessonCount?: number | null;
   startDate?: string | null;
   endDate?: string | null;
 }
@@ -58,6 +60,7 @@ export interface SalesScheduleLesson {
   scheduledAt: string;
   durationMinutes?: number | null;
   status?: string | null;
+  groupIsArchived?: boolean;
 }
 
 export interface SalesScheduleCourse {
@@ -228,9 +231,13 @@ export function buildSalesScheduleEvents({
   const normalizedWeekStart = startOfDay(weekStart);
   const weekStartKey = academyDayKeyOf(normalizedWeekStart);
   const groupById = new Map(groups.map((group) => [group.id, group]));
+  const lessonCounts = new Map<number, number>();
+  for (const lesson of lessons) {
+    lessonCounts.set(lesson.groupId, (lessonCounts.get(lesson.groupId) ?? 0) + 1);
+  }
 
   const actualEvents = lessons.flatMap((lesson) => {
-    if (lesson.status === 'cancelled') return [];
+    if (lesson.status === 'cancelled' || lesson.groupIsArchived || groupById.get(lesson.groupId)?.isArchived) return [];
     const event = toEvent(lesson, groupById.get(lesson.groupId));
     if (!event) return [];
     const offsetDays = academyDayDiff(academyDayKeyOf(event.startsAt), weekStartKey);
@@ -246,7 +253,10 @@ export function buildSalesScheduleEvents({
   );
 
   const recurringEvents = groups.flatMap((group) => {
-    if (group.status === 'completed') return [];
+    if (group.isArchived || group.status === 'completed') return [];
+    // Once the whole course has dated lessons, those rows define the calendar.
+    // Projecting extra weekly slots would bring vacated archive dates back.
+    if (Number(group.lessonCount) > 0 && (lessonCounts.get(group.id) ?? 0) >= Number(group.lessonCount)) return [];
     const durationMinutes = Math.max(15, Number(group.lessonDurationMinutes || 60));
 
     return (group.schedule ?? []).flatMap((item, scheduleIndex) => {
@@ -410,6 +420,7 @@ export function getGroupsWithSchedule(
   return groups
     .filter((group) => (
       group.status !== 'completed'
+      && !group.isArchived
       && ((group.schedule?.length ?? 0) > 0 || lessonGroupIds.has(group.id))
     ))
     .sort((left, right) => left.name.localeCompare(right.name));

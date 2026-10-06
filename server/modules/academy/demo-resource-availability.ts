@@ -53,6 +53,8 @@ export const getDemoResourceAvailability = async (
       `SELECT teacher_id, room_id
        FROM academy_lessons
        WHERE status <> 'cancelled'
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND scheduled_at < $2
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1`,
       [startsAt, endsAt],
@@ -66,7 +68,7 @@ export const getDemoResourceAvailability = async (
          AND ($3::int IS NULL OR id <> $3)`,
       [startsAt, endsAt, options.excludeDemoLessonId ?? null],
     ),
-    query(`SELECT * FROM academy_groups WHERE status IN ('open', 'in_progress')`),
+    query(`SELECT * FROM academy_groups WHERE status IN ('open', 'in_progress') AND is_archived = false`),
   ]);
   if (!course || !school) {
     throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 404 });

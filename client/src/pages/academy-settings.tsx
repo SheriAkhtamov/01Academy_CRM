@@ -567,8 +567,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   /* The archive is a flag of its own, not the `completed` status: a completed
      group that is still being watched stays on the active list, and shelving
-     one hides it from every calendar in the CRM. Archiving a group that is
-     still running also completes it, which is what this button always did. */
+     one hides it from every calendar in the CRM without completing it. */
   const { archiveGroup, restoreGroup } = useGroupArchive<Group>((_group, archived) => {
     if (archived) setArchiveGroupTarget(null);
     else setRestoreGroupTarget(null);

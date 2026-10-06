@@ -102,12 +102,15 @@ import {
 } from './academy-core';
 import {
   buildCrudScope,
+  GROUP_SCHEDULE_PREPARATION_FIELDS,
+  groupLessonBackedFieldChanged,
   groupSchedulePreparationRequired,
   materializeGroupLessons,
   prepareGroupMetadataMutation,
   prepareGroupMutation,
   prepareLessonMutation,
   reconcileAutomaticTeacherAssignments,
+  restoreArchivedGroupLessons,
 } from './academy-route-support';
 
 export const createAcademyCrudRegistrar = (router: ReturnType<typeof Router>) => {
@@ -329,6 +332,13 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           if (!lockedRow) {
             throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
           }
+          // A full form submission must not overwrite unchanged dates with
+          // midnight values or turn a capacity edit into a timetable change.
+          for (const field of GROUP_SCHEDULE_PREPARATION_FIELDS) {
+            if (field in values && !groupLessonBackedFieldChanged(field, values[field], lockedRow[field])) {
+              delete values[field];
+            }
+          }
           if (options.beforeUpdate) {
             await options.beforeUpdate({ id, values, row: lockedRow, req });
           }
@@ -347,7 +357,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             });
           }
           const updatedGroup = await updateRow(table, id, values);
-          await materializeGroupLessons(id);
+          if (lockedRow.isArchived === true && values.isArchived === false && updatedGroup) {
+            await restoreArchivedGroupLessons(updatedGroup, req.user!.id);
+          } else if (prepareSchedule || (values.status !== undefined && values.status !== lockedRow.status)) {
+            await materializeGroupLessons(id);
+          }
           return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [id]) ?? updatedGroup;
         })
         : table === 'academy_lessons'
@@ -419,7 +433,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       await createAudit(req, `UPDATE_${table.toUpperCase()}`, table, id, row, oldRow);
       res.json(row);
     } catch (error: any) {
-      logger.error(`Failed to update ${path}`, { error });
+      logger.error(`Failed to update ${path}`, {
+        error,
+        resourceId: req.params.id,
+        errorCode: getPublicErrorMessage(error, `Failed to update ${path}`),
+      });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, `Failed to update ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),

@@ -801,7 +801,7 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
   const currentMonthStart = currentRange.start;
   const nextMonthStart = currentRange.end;
   const previousMonthStart = previousRange.start;
-  const activeGroups = data.groups.filter((group) => ['open', 'in_progress'].includes(group.status));
+  const activeGroups = data.groups.filter((group) => !group.isArchived && ['open', 'in_progress'].includes(group.status));
   const activeTeachers = data.teachers.filter((teacher) => teacher.status === 'active');
   const activeUsers = users.filter((user) => user.isActive && !user.isArchived);
   const onlineUsers = activeUsers.filter((user) => user.isOnline);

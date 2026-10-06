@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSalesScheduleRangeEvents,
+  getGroupsWithSchedule,
   groupSalesScheduleEventsByDate,
   searchSalesScheduleFilterTree,
   type SalesScheduleGroup,
@@ -40,6 +41,29 @@ const groups: SalesScheduleGroup[] = [
 ];
 
 describe('sales schedule range events', () => {
+  it('hides archived groups and their actual lessons in every date range', () => {
+    const archivedGroups = [{ ...groups[0], isArchived: true }, groups[1]];
+    const lessons = [{ id: 500, groupId: 1, scheduledAt: '2026-06-15T10:00:00+05:00' }];
+    expect(getGroupsWithSchedule(archivedGroups, lessons).map((group) => group.id)).toEqual([2]);
+    for (const dayCount of [1, 7, 42]) {
+      const events = buildSalesScheduleRangeEvents({ groups: archivedGroups, lessons, demos: [], rangeStart: new Date(2026, 5, 15), dayCount });
+      expect(events.some((event) => event.groupId === 1)).toBe(false);
+    }
+    expect(buildSalesScheduleRangeEvents({ groups: [], lessons: [{ ...lessons[0], groupIsArchived: true }], demos: [], rangeStart: new Date(2026, 5, 15), dayCount: 7 })).toEqual([]);
+  });
+
+  it('does not recreate vacated dates when a fully materialized group resumes later', () => {
+    const events = buildSalesScheduleRangeEvents({
+      groups: [{ ...groups[0], lessonCount: 2 }],
+      lessons: [
+        { id: 500, groupId: 1, scheduledAt: '2026-06-22T10:00:00+05:00' },
+        { id: 501, groupId: 1, scheduledAt: '2026-06-29T10:00:00+05:00' },
+      ],
+      demos: [], rangeStart: new Date(2026, 5, 15), dayCount: 28,
+    });
+    expect(events.map((event) => [event.source, event.dayIndex])).toEqual([['lesson', 7], ['lesson', 14]]);
+  });
+
   it('expands a single day without leaking the rest of the week', () => {
     // Monday 2026-06-15 — only the Monday group may appear.
     const events = buildSalesScheduleRangeEvents({

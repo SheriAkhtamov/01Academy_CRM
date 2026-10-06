@@ -274,6 +274,8 @@ export const findAvailableTeacher = async (options: {
           SELECT COUNT(*)::int
           FROM academy_lessons l
           WHERE l.teacher_id = t.id
+            AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+              WHERE archived.id = l.group_id AND archived.is_archived = true)
             AND l.status = 'scheduled'
             AND l.scheduled_at >= NOW()
         ) AS upcoming_lessons
@@ -295,6 +297,7 @@ export const findAvailableTeacher = async (options: {
       `SELECT * FROM academy_groups
        WHERE teacher_id = ANY($1::int[])
          AND status IN ('open', 'in_progress')
+         AND is_archived = false
          AND ($2::int IS NULL OR id <> $2)`,
       [teacherIds, options.excludeGroupId ?? null],
     )
@@ -346,6 +349,8 @@ export const findAvailableTeacher = async (options: {
         `SELECT id
          FROM academy_lessons
          WHERE teacher_id = $1
+           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+             WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
            AND status <> 'cancelled'
            AND scheduled_at < $3
            AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
@@ -386,7 +391,7 @@ export const findTeacherForGroupSchedule = async (options: {
   const candidates = await query(
     `SELECT t.*,
         (SELECT COUNT(*)::int FROM academy_groups g
-         WHERE g.teacher_id = t.id AND g.status IN ('open', 'in_progress')) AS active_groups
+         WHERE g.teacher_id = t.id AND g.status IN ('open', 'in_progress') AND g.is_archived = false) AS active_groups
      FROM academy_teachers t
      WHERE t.status = 'active'
      ORDER BY active_groups, t.id`,
@@ -397,6 +402,7 @@ export const findTeacherForGroupSchedule = async (options: {
     ? await query(
       `SELECT * FROM academy_groups
        WHERE status IN ('open', 'in_progress')
+         AND is_archived = false
          AND teacher_id = ANY($1::int[])
          AND ($2::int IS NULL OR id <> $2)`,
       [teacherIds, options.excludeGroupId ?? null],
@@ -413,6 +419,8 @@ export const findTeacherForGroupSchedule = async (options: {
       `SELECT teacher_id, scheduled_at, duration_minutes
        FROM academy_lessons
        WHERE teacher_id = ANY($1::int[])
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND status <> 'cancelled'
          AND scheduled_at >= $2
          AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
@@ -549,6 +557,7 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
      FROM academy_groups
      WHERE teacher_id = $1
        AND status IN ('open', 'in_progress')
+       AND is_archived = false
        AND ($2::int IS NULL OR id <> $2)`,
     [options.teacherId, options.excludeGroupId ?? null],
   );
@@ -576,6 +585,8 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
       `SELECT scheduled_at, duration_minutes
        FROM academy_lessons
        WHERE teacher_id = $1
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND status <> 'cancelled'
          AND scheduled_at >= $2
          AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
@@ -661,6 +672,8 @@ export const assertTeacherCanLeadLesson = async (options: {
       `SELECT id
        FROM academy_lessons
        WHERE teacher_id = $1
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND status <> 'cancelled'
          AND scheduled_at < $3
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
@@ -685,6 +698,7 @@ export const assertTeacherCanLeadLesson = async (options: {
        FROM academy_groups
        WHERE teacher_id = $1
          AND status IN ('open', 'in_progress')
+         AND is_archived = false
          AND ($2::int IS NULL OR id <> $2)`,
       [options.teacherId, options.excludeGroupId ?? null],
     ),
@@ -745,6 +759,7 @@ export const assertRoomScheduleAvailable = async (options: {
     `SELECT * FROM academy_groups
      WHERE room_id = $1
        AND status IN ('open', 'in_progress')
+       AND is_archived = false
        AND ($2::int IS NULL OR id <> $2)`,
     [options.roomId, options.excludeGroupId ?? null],
   );
@@ -773,6 +788,8 @@ export const assertRoomScheduleAvailable = async (options: {
       `SELECT scheduled_at, duration_minutes
        FROM academy_lessons
        WHERE room_id = $1
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND status <> 'cancelled'
          AND scheduled_at >= $2
          AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
@@ -826,6 +843,8 @@ export const assertLessonRoomAvailable = async (options: {
     queryOne(
       `SELECT id FROM academy_lessons
        WHERE room_id = $1
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND status <> 'cancelled'
          AND scheduled_at < $3
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
@@ -849,6 +868,8 @@ export const assertLessonRoomAvailable = async (options: {
         `SELECT id
          FROM academy_lessons
          WHERE group_id = $1
+           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+             WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
            AND status <> 'cancelled'
            AND scheduled_at < $3
            AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
@@ -862,6 +883,7 @@ export const assertLessonRoomAvailable = async (options: {
       `SELECT * FROM academy_groups
        WHERE room_id = $1
          AND status IN ('open', 'in_progress')
+         AND is_archived = false
          AND ($2::int IS NULL OR id <> $2)`,
       [options.roomId, options.excludeGroupId ?? null],
     ),
@@ -913,7 +935,9 @@ export const listAvailableSchoolSlots = async (options: {
   const [teachers, rooms] = await Promise.all([query(
     `SELECT t.*,
         (SELECT COUNT(*)::int FROM academy_lessons l
-         WHERE l.teacher_id = t.id AND l.status = 'scheduled' AND l.scheduled_at >= NOW()) AS upcoming_lessons
+         WHERE l.teacher_id = t.id AND l.status = 'scheduled' AND l.scheduled_at >= NOW()
+           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+             WHERE archived.id = l.group_id AND archived.is_archived = true)) AS upcoming_lessons
      FROM academy_teachers t
      WHERE t.status = 'active'
        AND t.course_ids @> $1::jsonb
@@ -933,6 +957,8 @@ export const listAvailableSchoolSlots = async (options: {
     query(
       `SELECT * FROM academy_lessons
        WHERE status <> 'cancelled'
+         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
          AND scheduled_at < $2
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1
          AND (school_id = $3 OR teacher_id = ANY($4::int[]))
@@ -942,6 +968,7 @@ export const listAvailableSchoolSlots = async (options: {
     query(
       `SELECT * FROM academy_groups
        WHERE status IN ('open', 'in_progress')
+         AND is_archived = false
          AND (school_id = $1 OR teacher_id = ANY($2::int[]))
          AND ($3::int IS NULL OR id <> $3)`,
       [options.schoolId, teacherIds, options.excludeGroupId ?? null],

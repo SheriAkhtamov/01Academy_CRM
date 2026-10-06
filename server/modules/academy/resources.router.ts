@@ -105,6 +105,7 @@ registerSimpleCrud('schools', 'academy_schools', [
            EXISTS (
              SELECT 1 FROM academy_groups
              WHERE school_id = $1 AND status IN ('open', 'in_progress')
+               AND is_archived = false
            )
            OR EXISTS (
              SELECT 1 FROM academy_rooms
@@ -146,6 +147,7 @@ registerSimpleCrud('rooms', 'academy_rooms', [
       const activeGroup = await queryOne(
         `SELECT id FROM academy_groups
          WHERE room_id = $1 AND status IN ('open', 'in_progress')
+           AND is_archived = false
          LIMIT 1`,
         [id],
       );

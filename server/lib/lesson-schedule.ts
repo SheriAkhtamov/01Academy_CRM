@@ -81,7 +81,7 @@ const generateRecurringLessonSchedule = (
 };
 
 export const buildRecurringLessonSchedule = (
-  options: Omit<RecurringLessonScheduleOptions, 'after'>,
+  options: RecurringLessonScheduleOptions,
 ): GeneratedLessonSlot[] => generateRecurringLessonSchedule(options);
 
 /**

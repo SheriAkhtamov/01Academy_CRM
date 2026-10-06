@@ -110,9 +110,9 @@ import {
   resolveTeacherId,
 } from './academy-analytics';
 import {
-  assertGroupLifecycleUpdateAllowed,
   getLessonRoster,
   prepareLessonMutation,
+  restoreArchivedGroupLessons,
 } from './academy-route-support';
 
 export const registerAcademyLearningRoutes = (router: ReturnType<typeof Router>) => {
@@ -1081,17 +1081,6 @@ router.post('/groups/:id/archive', async (req, res) => {
         archivedAt: new Date(),
         archivedBy: req.user!.id,
       };
-      /* Administration keeps its one-click "to the archive" on a running group,
-         and that click still has to answer for the lessons and the reserved
-         leads it ends. */
-      if (lockedGroup.status !== 'completed') {
-        values.status = 'completed';
-        await assertGroupLifecycleUpdateAllowed({
-          id: groupId,
-          values: { status: 'completed' },
-          row: lockedGroup,
-        });
-      }
       return updateRow('academy_groups', groupId, values);
     });
     await createAudit(req, 'ARCHIVE_ACADEMY_GROUP', 'academy_group', groupId, archived, group);
@@ -1113,20 +1102,21 @@ router.post('/groups/:id/unarchive', async (req, res) => {
     if (group.isArchived !== true) return res.json(group);
 
     const restored = await withTransaction(async () => {
+      await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
       const lockedGroup = await queryOne(
         `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
         [groupId],
       );
       if (!lockedGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
       if (lockedGroup.isArchived !== true) return lockedGroup;
-      /* Only the shelving is undone. The group comes back exactly as completed
-         as it was, so restoring it can never resurrect a finished course as
-         live work. */
-      return updateRow('academy_groups', groupId, {
+      const updatedGroup = await updateRow('academy_groups', groupId, {
         isArchived: false,
         archivedAt: null,
         archivedBy: null,
       });
+      if (!updatedGroup) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+      await restoreArchivedGroupLessons(updatedGroup, req.user!.id);
+      return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId]) ?? updatedGroup;
     });
     await createAudit(req, 'UNARCHIVE_ACADEMY_GROUP', 'academy_group', groupId, restored, group);
     res.json(restored);

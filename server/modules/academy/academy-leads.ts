@@ -1181,7 +1181,7 @@ export const validateEnrollmentGroup = async (
   if (!groupId) return null;
   const group = await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId]);
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
-  if (!['open', 'in_progress'].includes(String(group.status))) {
+  if (group.isArchived === true || !['open', 'in_progress'].includes(String(group.status))) {
     throw Object.assign(new Error('groupNotOpen'), { statusCode: 409 });
   }
   const resources = await queryOne<{ resourcesActive: boolean }>(

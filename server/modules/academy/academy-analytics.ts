@@ -296,7 +296,7 @@ export const getAcademyDataset = async (
     slice('lessons', () => (
       query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
         sc.name AS school_name,
-        COALESCE(g.is_archived, false) AS group_is_archived
+        COALESCE(g.is_archived, false) AS group_is_archived, g.status AS group_status
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id

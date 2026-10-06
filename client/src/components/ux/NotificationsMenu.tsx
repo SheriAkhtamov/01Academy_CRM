@@ -24,6 +24,8 @@ export function NotificationsMenu() {
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<NotificationDto | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearError, setClearError] = useState('');
   const unread = useQuery({ queryKey: notificationQueryKeys.unread, queryFn: notificationsApi.unread, refetchInterval: 30_000, refetchOnWindowFocus: true });
   const query = useInfiniteQuery({
     queryKey: notificationQueryKeys.pages, initialPageParam: 0,
@@ -73,6 +75,17 @@ export function NotificationsMenu() {
     onError: (error: Error) => setDeleteError(error.message),
   });
   const readPending = read.isPending || readAll.isPending;
+  const clear = useMutation({
+    mutationFn: notificationsApi.clear,
+    onSuccess: async () => {
+      await client.cancelQueries({ queryKey: notificationQueryKeys.all });
+      client.setQueryData<Pages>(notificationQueryKeys.pages, { pageParams: [0], pages: [{ items: [], total: 0, nextOffset: null }] });
+      client.setQueryData(notificationQueryKeys.unread, { count: 0 });
+      setClearOpen(false);
+      void invalidate();
+    },
+    onError: (error: Error) => setClearError(error.message),
+  });
   return <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
@@ -82,7 +95,12 @@ export function NotificationsMenu() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[min(22rem,calc(100vw-1.5rem))]">
-        <DropdownMenuLabel>{t('notifications')}</DropdownMenuLabel>
+        <div className="flex items-center justify-between gap-2 pr-2">
+          <DropdownMenuLabel>{t('notifications')}</DropdownMenuLabel>
+          <Button type="button" variant="ghost" className="h-7 px-2 text-xs" aria-label={t('clearNotifications')}
+            disabled={query.isLoading || query.isError || items.length === 0 || readPending || remove.isPending || clear.isPending}
+            onClick={() => { setOpen(false); setClearError(''); setClearOpen(true); }}>{t('clearNotificationsAction')}</Button>
+        </div>
         {count > 0 ? <DropdownMenuItem disabled={readPending} onSelect={(event) => { event.preventDefault(); readAll.mutate(); }}><CheckCheck className="mr-2 size-4" />{t('markAllRead')}</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         {query.isLoading ? <div role="status" aria-label={t('loading')} className="space-y-3 p-3"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-full" /></div> : null}
@@ -118,5 +136,8 @@ export function NotificationsMenu() {
     <ConfirmDialog open={Boolean(deleteTarget)} onOpenChange={(next) => { if (!next) setDeleteTarget(null); }} title={t('deleteNotificationTitle')}
       description={`${deleteTarget?.title || ''}. ${t('deleteNotificationConfirm')}`} confirmLabel={t('delete')} variant="destructive" keepOpenOnConfirm
       isPending={remove.isPending} error={deleteError} onConfirm={() => { if (deleteTarget) { setDeleteError(''); remove.mutate(deleteTarget.id); } }} />
+    <ConfirmDialog open={clearOpen} onOpenChange={(next) => { if (!clear.isPending) setClearOpen(next); }} title={t('clearNotifications')}
+      description={t('clearNotificationsConfirm')} confirmLabel={t('clearNotificationsAction')} variant="destructive" keepOpenOnConfirm
+      isPending={clear.isPending} error={clearError} onConfirm={() => { setClearError(''); clear.mutate(); }} />
   </>;
 }

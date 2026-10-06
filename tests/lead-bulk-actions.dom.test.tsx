@@ -45,19 +45,25 @@ const renderWithProviders = (node: ReactNode) => render(
 );
 
 describe('bulk actions on the sales pipeline', () => {
-  it('selects a whole stage and reveals checked lead-card checkboxes', async () => {
+  it('opens selection without selecting leads, then selects only the requested stage', async () => {
     i18n.setLanguage('en');
     const user = userEvent.setup();
     renderWithProviders(<SelectionHarness />);
 
     expect(screen.queryByLabelText('Select lead First lead')).toBeNull();
-    const stageCheckbox = screen.getByLabelText('Select all leads in New request');
-    await user.click(stageCheckbox);
+    await user.click(screen.getByRole('button', { name: 'Select leads in New request' }));
+    expect(screen.getByLabelText('Select lead First lead').getAttribute('data-state')).toBe('unchecked');
+    expect(screen.getByLabelText('Select lead Second lead').getAttribute('data-state')).toBe('unchecked');
+    const stageButton = screen.getByRole('button', { name: 'Select all leads in New request' });
+    expect(stageButton.textContent).toBe('Select all');
+    await user.click(stageButton);
 
     expect(screen.getByLabelText('Select lead First lead').getAttribute('data-state')).toBe('checked');
     expect(screen.getByLabelText('Select lead Second lead').getAttribute('data-state')).toBe('checked');
     expect(screen.queryByLabelText('Select lead Other stage lead')).toBeNull();
-    expect(stageCheckbox.getAttribute('data-state')).toBe('checked');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Select lead First lead')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Select leads in New request' })).toBeTruthy();
   });
 
   it('requires two destructive confirmations before bulk deletion', async () => {

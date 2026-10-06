@@ -1,3 +1,4 @@
+import { createChatGroupTables } from './chat-groups';
 import { academySchools, academyRooms } from './academy-resources';
 export { academySchools, academyRooms } from './academy-resources';
 import type { MessageAttachment } from '@shared/contracts/messages';
@@ -1070,6 +1071,7 @@ export const messages = pgTable("messages", {
 }, (table) => ({
   attachmentsArray: check("messages_attachments_array", sql`jsonb_typeof(${table.attachments}) = 'array'`),
 }));
+export const { chatGroups, chatGroupMembers, chatGroupMessages } = createChatGroupTables(users.id);
 export const savedAccounts = pgTable("saved_accounts", {
   id: serial("id").primaryKey(),
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

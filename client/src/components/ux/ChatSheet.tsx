@@ -16,7 +16,11 @@ import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, MessageCircle, Send, User, Circle, Search, Paperclip } from 'lucide-react';
+import { Loader2, MessageCircle, Send, User, Circle, Search, Paperclip, Plus, UsersRound } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { CreateChatGroupDialog } from './chat/CreateChatGroupDialog';
+import { GroupChatThread } from './chat/GroupChatThread';
+import { chatGroupQueryOptions } from '@/features/messages/chat-groups-api';
 import { academyDateInputValue, academyToday, formatAcademyDate } from '@/lib/localeFormat';
 import { MAX_MESSAGE_FILE_BYTES, MAX_MESSAGE_FILES } from '@shared/contracts/messages';
 import { ChatFileDrafts, ChatMessageAttachments } from '@/components/ux/chat/ChatAttachments';
@@ -43,6 +47,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [createChatMode, setCreateChatMode] = useState<'group' | 'direct' | null>(null);
+  const groupsQuery = useQuery({ ...chatGroupQueryOptions, enabled: open });
+  const selectedGroup = groupsQuery.data?.find((group) => group.id === selectedGroupId) ?? null;
   const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
   const [filesByEmployee, setFilesByEmployee] = useState<Record<number, File[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -320,7 +328,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           {/* Employee List */}
           <div className="flex w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
             <div className="border-b border-border p-3 sm:p-4">
-              <h3 className="mb-3 hidden font-medium text-foreground sm:block">{t('employees')}</h3>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="hidden font-medium text-foreground sm:block">{t('employees')}</h3>
+                <DropdownMenu><DropdownMenuTrigger asChild>
+                  <Button type="button" variant="ghost" className="ml-auto size-7 p-0" aria-label={t('chatCreateMenu')}><Plus className="size-4" /></Button>
+                </DropdownMenuTrigger><DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setCreateChatMode('group')}><UsersRound className="mr-2 size-4" />{t('createGroup')}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setCreateChatMode('direct')}><MessageCircle className="mr-2 size-4" />{t('newDirectChat')}</DropdownMenuItem>
+                </DropdownMenuContent></DropdownMenu>
+              </div>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -333,6 +349,16 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
             </div>
             <ScrollArea className="min-h-0 flex-1">
               <div className="p-2">
+                {groupsQuery.isError ? <div role="alert" className="text-sm text-destructive">{t('failedToLoadData')} <Button size="sm" variant="outline" onClick={() => void groupsQuery.refetch()}>{t('retry')}</Button></div> : null}
+                {(groupsQuery.data ?? []).filter((group) => group.name.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())).map((group) => (
+                  <button key={`group-${group.id}`} type="button" className={`mb-1 flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted ${selectedGroupId===group.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''}`}
+                    onClick={() => { setSelectedEmployeeId(null); setSelectedGroupId(group.id); }}>
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10"><UsersRound className="size-5 text-primary" /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{group.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</span></span>
+                    <UnreadCountBadge count={group.unreadCount} label={t('unreadMessageCount').replace('{count}', String(group.unreadCount))} />
+                  </button>
+                ))}
                 {filteredEmployees.map((employee) => {
                   const employeeUnreadCount = Number(employee.unreadCount) || 0;
                   const employeeUnreadLabel = t('unreadMessageCount')
@@ -349,7 +375,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                         selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
                       }`}
-                      onClick={() => setSelectedEmployeeId(employee.id)}
+                      onClick={() => { setSelectedGroupId(null); setSelectedEmployeeId(employee.id); }}
                     >
                       <UserAvatar user={employee} className="size-10 shrink-0 text-xs" />
                       <div className="min-w-0 flex-1">
@@ -384,7 +410,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {(searchQuery.trim() ? employeesError : conversationsError) ? <Alert variant="destructive"><AlertDescription>
                   {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void (searchQuery.trim() ? refetchEmployees() : refetchConversations())}>{t('retry')}</Button>
                 </AlertDescription></Alert> : null}
-                {filteredEmployees.length === 0 && !conversationsLoading && !(searchQuery.trim() ? employeesError : conversationsError) && (
+                {filteredEmployees.length === 0 && !groupsQuery.data?.some((group) => group.name.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())) && !conversationsLoading && !(searchQuery.trim() ? employeesError : conversationsError) && (
                   <div className="py-8 text-center text-muted-foreground">
                     <User className="mx-auto mb-2 size-8 opacity-40" />
                     <p className="text-sm">
@@ -398,7 +424,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
           {/* Chat Area */}
           <div className="flex min-w-0 flex-1 flex-col">
-            {selectedEmployee ? (
+            <GroupChatThread group={selectedGroup} />
+            {selectedGroup ? null : selectedEmployee ? (
               <>
                 {/* Chat Header */}
                 <div className="border-b border-border bg-muted/40 p-4">
@@ -531,6 +558,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           </div>
         </div>
       </SheetContent>
+      <CreateChatGroupDialog open={createChatMode !== null} mode={createChatMode ?? 'group'}
+        onOpenChange={(next) => { if (!next) setCreateChatMode(null); }}
+        onCreated={(group) => { setSelectedEmployeeId(null); setSelectedGroupId(group.id); setSearchQuery(''); }}
+        onSelectEmployee={(id) => { setSelectedGroupId(null); setSelectedEmployeeId(id); setSearchQuery(''); }} />
     </Sheet>
   );
 }

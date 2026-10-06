@@ -37,6 +37,7 @@ export const storage = {
     markNotificationAsRead: notificationStorage.markNotificationAsRead.bind(notificationStorage),
     markAllNotificationsAsRead: notificationStorage.markAllNotificationsAsRead.bind(notificationStorage),
     deleteNotification: notificationStorage.deleteNotification.bind(notificationStorage),
+    clearNotifications: notificationStorage.clearNotifications.bind(notificationStorage),
 
     // Audit Log operations
     createAuditLog: auditStorage.createAuditLog.bind(auditStorage),

@@ -54,6 +54,12 @@ class NotificationStorage {
             .returning({ id: notifications.id });
         return deleted.length > 0;
     }
+
+    async clearNotifications(userId: number): Promise<number> {
+        const deleted = await db.delete(notifications)
+            .where(eq(notifications.userId, userId)).returning({ id: notifications.id });
+        return deleted.length;
+    }
 }
 
 export const notificationStorage = new NotificationStorage();

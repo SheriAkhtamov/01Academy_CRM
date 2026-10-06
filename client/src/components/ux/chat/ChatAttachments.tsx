@@ -14,7 +14,9 @@ export function ChatMessageAttachments({ attachments }: { attachments: MessageAt
   const { t, language } = useTranslation();
   const [preview, setPreview] = useState<MessageAttachment | null>(null);
   const [failed, setFailed] = useState<string[]>([]);
-  const safeAttachments = attachments.filter((file) => file.url === `/api/messages/attachments/${file.id}` && /^[A-Za-z0-9_-]{21}$/.test(file.id));
+  const safeAttachments = attachments.filter((file) => [
+    `/api/messages/attachments/${file.id}`, `/api/chat-groups/attachments/${file.id}`,
+  ].includes(file.url) && /^[A-Za-z0-9_-]{21}$/.test(file.id));
   return <>
     <div className="space-y-2">
       {safeAttachments.map((file) => <div key={file.id} className="min-w-0 space-y-1">

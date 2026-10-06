@@ -41,6 +41,12 @@ const groups: SalesScheduleGroup[] = [
 ];
 
 describe('sales schedule range events', () => {
+  it('hides frozen group timetables and actual lessons', () => {
+    const frozen = [{ ...groups[0], status: 'frozen' }];
+    const lessons = [{ id: 500, groupId: 1, scheduledAt: '2026-06-15T10:00:00+05:00', groupStatus: 'frozen' }];
+    expect(getGroupsWithSchedule(frozen, lessons)).toEqual([]);
+    expect(buildSalesScheduleRangeEvents({ groups: frozen, lessons, demos: [], rangeStart: new Date(2026,5,15), dayCount: 7 })).toEqual([]);
+  });
   it('hides archived groups and their actual lessons in every date range', () => {
     const archivedGroups = [{ ...groups[0], isArchived: true }, groups[1]];
     const lessons = [{ id: 500, groupId: 1, scheduledAt: '2026-06-15T10:00:00+05:00' }];

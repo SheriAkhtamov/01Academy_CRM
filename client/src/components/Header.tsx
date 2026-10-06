@@ -30,6 +30,7 @@ import {
   totalUnreadMessages,
 } from '@/features/messages/api';
 import type { ConversationUserDto } from '@shared/contracts/messages';
+import { chatGroupQueryOptions } from '@/features/messages/chat-groups-api';
 import type { SavedAccountEntry } from '@shared/auth';
 
 interface HeaderProps {
@@ -59,7 +60,8 @@ export default function Header({
     ...conversationQueryOptions,
   });
 
-  const unreadMessageCount = totalUnreadMessages(conversations);
+  const { data: chatGroups = [] } = useQuery(chatGroupQueryOptions);
+  const unreadMessageCount = totalUnreadMessages(conversations) + chatGroups.reduce((sum, group) => sum + Number(group.unreadCount || 0), 0);
   const unreadMessagesLabel = t('unreadMessageCount')
     .replace('{count}', String(unreadMessageCount));
 

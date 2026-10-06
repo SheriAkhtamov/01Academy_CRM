@@ -11,6 +11,10 @@ const lesson = (id: number, groupId: number, overrides: Record<string, unknown> 
 });
 
 describe('archived groups leave the teacher calendars', () => {
+  it('also hides lessons while the group is frozen', () => {
+    expect(lessonsOutsideArchivedGroups([lesson(1,10),lesson(2,20)], [{id:10,status:'frozen'}]).map((item)=>item.id)).toEqual([2]);
+    expect(lessonsOutsideArchivedGroups([lesson(1,10,{groupStatus:'frozen'})],[])).toEqual([]);
+  });
   it('drops the lessons of a shelved group and keeps every other one', () => {
     const lessons = [lesson(1, 10), lesson(2, 20), lesson(3, 10)];
     const groups = [{ id: 10, isArchived: true }, { id: 20, isArchived: false }];

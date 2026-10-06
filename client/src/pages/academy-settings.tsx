@@ -772,7 +772,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
       maxStudents: group.maxStudents || 12,
-      status: ['open', 'in_progress', 'completed'].includes(group.status)
+      status: ['open', 'in_progress', 'frozen', 'completed'].includes(group.status)
         ? group.status as GroupValues['status']
         : 'open',
       startDate: toDateInput(group.startDate),
@@ -1003,12 +1003,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 ? <span className="text-muted-foreground">{t('reservedSeats')}: {row.reservedStudents}</span>
                 : null}
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-[width]"
-                style={{ width: `${Math.min(100, (occupied / Math.max(1, row.maxStudents || 12)) * 100)}%` }}
-              />
-            </div>
           </div>
         );
       },
@@ -1024,7 +1018,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             ? t('groupStatusOpen')
             : row.status === 'in_progress'
               ? t('groupStatusInProgress')
-              : t('groupStatusCompleted')}
+              : row.status === 'frozen' ? t('groupStatusFrozen') : t('groupStatusCompleted')}
         </Badge>
       ),
     },

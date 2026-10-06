@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
-import { SegmentedControl } from '@/components/ux/lead/LeadSheetControls';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 /**
@@ -328,13 +328,10 @@ export function FilterTriStateRow({
         <Icon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{label}</span>
       </span>
-      <SegmentedControl
-        ariaLabel={label}
-        value={value}
-        onChange={onChange}
-        options={options}
-        className="w-[9.5rem] shrink-0 border-transparent bg-background/80 p-0.5 [&>button]:px-1 [&>button]:py-1 [&>button]:text-xs"
-      />
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger aria-label={label} className="h-8 w-24 shrink-0 bg-background text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+      </Select>
     </div>
   );
 }

@@ -30,6 +30,7 @@ import {
   Archive,
   CalendarPlus2,
   Wallet,
+  X,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -452,11 +453,8 @@ function KanbanColumn({
     () => leads.reduce((count, lead) => count + (selectedLeadIds.has(lead.id) ? 1 : 0), 0),
     [leads, selectedLeadIds],
   );
-  const allSelected = leads.length > 0 && selectedCount === leads.length;
-  const someSelected = selectedCount > 0 && !allSelected;
-  // Checkboxes appear per stage (as before); only *dragging* is what the
-  // global flag disables.
-  const selectionMode = selectedCount > 0;
+  const [selecting, setSelecting] = useState(false);
+  const selectionMode = selecting || selectedCount > 0;
 
   const toggleStageLeads = (selected: boolean) => {
     const next = new Set(selectedLeadIds);
@@ -494,12 +492,15 @@ function KanbanColumn({
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
             {onSelectedLeadIdsChange ? (
-              <Checkbox
-                checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                onCheckedChange={(checked) => toggleStageLeads(checked === true)}
-                disabled={leads.length === 0 || isPending}
-                aria-label={t('selectStageLeads').replace('{stage}', status.name)}
-              />
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button type="button" variant="ghost" className="h-6 px-1.5 text-[11px]" disabled={leads.length === 0 || isPending}
+                  aria-label={(selectionMode ? t('selectStageLeads') : t('startSelectingStageLeads')).replace('{stage}', status.name)}
+                  onClick={() => { if (selectionMode) toggleStageLeads(true); else setSelecting(true); }}>
+                  {selectionMode ? t('selectAll') : t('selectLeads')}
+                </Button>
+                {selectionMode ? <Button type="button" variant="ghost" className="size-6 p-0" aria-label={t('cancel')} disabled={isPending}
+                  onClick={() => { toggleStageLeads(false); setSelecting(false); }}><X className="size-3" /></Button> : null}
+              </div>
             ) : null}
             <span
               className="size-2.5 shrink-0 rounded-full"

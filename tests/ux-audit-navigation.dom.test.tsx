@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
@@ -39,6 +39,24 @@ it('uses the complete unread count and loads notifications beyond the latest pag
   expect(fetch.mock.calls.some(([url]) => String(url).includes('offset=25'))).toBe(true);
 });
 
+it('requires confirmation to clear notifications and resets the unread badge', async () => {
+  let cleared=false;
+  const fetch=vi.spyOn(globalThis,'fetch').mockImplementation(async(url,options)=>{
+    if (options?.method==='DELETE') {cleared=true;return response({success:true,deletedCount:143});}
+    if (url==='/api/notifications/unread-count') return response({count:cleared?0:143});
+    return response({items:cleared?[]:[{id:1,title:'First notice',message:null,isRead:false}],total:cleared?0:143,nextOffset:cleared?null:25});
+  });
+  const user=userEvent.setup(); mount(<NotificationsMenu />);
+  await user.click(await screen.findByRole('button',{name:/143 unread notifications/}));
+  await screen.findByText('First notice');
+  await user.click(screen.getByRole('button',{name:'Clear notifications'}));
+  expect(fetch.mock.calls.some(([,options])=>options?.method==='DELETE')).toBe(false);
+  const dialog=screen.getByRole('alertdialog');
+  await user.click(within(dialog).getByRole('button',{name:'Clear'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Notifications'})).toBeTruthy());
+  expect(fetch.mock.calls.filter(([,options])=>options?.method==='DELETE')).toHaveLength(1);
+});
+
 it('shows an error rather than an empty notification list after a failed request', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => url === '/api/notifications/unread-count' ? response({ count: 0 }) : response({ error: 'failedToLoadData' }, 500));
   mount(<NotificationsMenu />);
@@ -72,6 +90,7 @@ it('opens the selected lead source directly inside its dialog', async () => {
 it('formats employee chat time on the academy clock across midnight', async () => {
   const colleague = { id: 2, fullName: 'Colleague', position: 'Teacher', unreadCount: 0, isOnline: false };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    if (url === '/api/chat-groups') return response([]);
     if (url === '/api/messages/2') return response([{ id: 4, senderId: 2, receiverId: 1, content: 'Hello', isRead: true, createdAt: '2026-10-02T23:30:00Z' }]);
     return response([colleague]);
   });

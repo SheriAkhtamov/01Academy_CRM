@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Loader2, Shuffle, UsersRound } from 'lucide-react';
+import { AlertCircle, Loader2, Shuffle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -128,26 +128,6 @@ export function LeadDistributionPanel() {
           </Alert>
         ) : null}
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg border p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium">
-              <UsersRound className="size-4 text-muted-foreground" />
-              {t('autoLeadDistributionManagers')}
-              <Badge variant="secondary">{data.eligibleManagers.length}</Badge>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {data.eligibleManagers.length > 0
-                ? data.eligibleManagers.map((manager) => (
-                  <Badge key={manager.id} variant="outline">{manager.fullName}</Badge>
-                ))
-                : <span className="text-sm text-muted-foreground">{t('autoLeadDistributionManagerListEmpty')}</span>}
-            </div>
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-sm font-medium">{t('autoLeadDistributionCurrentQueue')}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums">{data.unassignedNewLeadCount}</p>
-          </div>
-        </div>
       </CardContent>
     </Card>
       <AlertDialogContent>

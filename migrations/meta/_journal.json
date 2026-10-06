@@ -890,6 +890,13 @@
       "when": 1791284290166,
       "tag": "0126_archive_courses_and_individual_rooms",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1791308587654,
+      "tag": "0127_staff_group_chats",
+      "breakpoints": true
     }
   ]
 }

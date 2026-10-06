@@ -778,7 +778,8 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
   return createdLessons;
 };
 
-export const restoreArchivedGroupLessons = async (group: Row, actorId: number, reference = new Date()) => {
+export const restoreArchivedGroupLessons = async (group: Row, actorId: number, reference = new Date(), reason = 'Возвращение группы из архива') => {
+  if (group.status === 'frozen') return;
   const groupId = Number(group.id);
   const lessons = await query<Row>(
     `SELECT * FROM academy_lessons WHERE group_id = $1
@@ -830,7 +831,7 @@ export const restoreArchivedGroupLessons = async (group: Row, actorId: number, r
         lessonId: Number(lesson.id),
         previousScheduledAt: new Date(lesson.scheduledAt),
         nextScheduledAt: slot.scheduledAt,
-        reason: 'Возвращение группы из архива',
+        reason,
         changedBy: actorId,
       });
     }

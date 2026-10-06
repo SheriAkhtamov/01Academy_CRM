@@ -787,7 +787,7 @@ const syncCourseTeacherAssignments = async (courseId: number, selectedTeacherIds
        WHERE course_id = $1
          AND status = 'scheduled'
          AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
+           WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
          AND teacher_id IS NOT NULL
      ) assignment
      ORDER BY assignment.teacher_id`,

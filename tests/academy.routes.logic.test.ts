@@ -3830,6 +3830,43 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE "academy_lessons"'))).toBe(false);
   });
 
+  it('freezes a running group without changing its lessons or history', async () => {
+    const original = groupFixture({ is_archived: false });
+    let group = original;
+    mocks.poolQuery.mockResolvedValue({ rows: [original] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('UPDATE "academy_groups"')) { group = { ...original, status: 'frozen' }; return {rows:[group]}; }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) return {rows:[group]};
+      return emptyResult();
+    });
+    const response=await request(await createApp()).patch('/api/academy/groups/20').send({status:'frozen'});
+    expect(response.status).toBe(200); expect(response.body).toMatchObject({status:'frozen',isArchived:false});
+    expect(mocks.clientQuery.mock.calls.some(([sql])=>sql.includes('academy_lessons'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('resumes frozen group lessons in future timetable slots', async () => {
+    const original=groupFixture({status:'frozen',is_archived:false});
+    let group=original;
+    mocks.poolQuery.mockResolvedValue({rows:[original]});
+    mocks.clientQuery.mockImplementation(async(sql:string)=>{
+      if (sql.includes('UPDATE "academy_groups"')) {group={...group,status:'in_progress'};return {rows:[group]};}
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) return {rows:[group]};
+      if (sql.includes('SELECT * FROM academy_lessons WHERE group_id = $1')) return {rows:[lessonFixture({scheduled_at:new Date('2026-07-01')})]};
+      if (sql.includes('FROM academy_rooms room')) return {rows:[{id:3}]};
+      if (sql.includes('FROM academy_teachers WHERE id = $1')) return {rows:[{id:4,status:'active',course_ids:[1],school_ids:[2],availability:[{dayOfWeek:1,startTime:'09:00',endTime:'18:00',schoolId:2}]}]};
+      if (sql.includes('UPDATE "academy_lessons"') || sql.includes('INSERT INTO "academy_lesson_reschedules"')) return {rows:[{id:10}]};
+      return emptyResult();
+    });
+    const response=await request(await createApp()).patch('/api/academy/groups/20').send({status:'in_progress'});
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    const update=mocks.clientQuery.mock.calls.find(([sql])=>sql.includes('UPDATE "academy_lessons"'));
+    expect(update?.[1]?.[1].getTime()).toBeGreaterThan(Date.now());
+    const history=mocks.clientQuery.mock.calls.find(([sql])=>sql.includes('INSERT INTO "academy_lesson_reschedules"'));
+    expect(history?.[1]).toContain('Возобновление занятий после заморозки');
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('takes a reopened group off the shelf so its lessons stay visible', async () => {
     const archivedGroup = groupFixture({ status: 'completed', is_archived: true });
     mocks.poolQuery.mockImplementation(async (sql: string) => {

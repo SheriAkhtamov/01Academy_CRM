@@ -157,6 +157,7 @@ export const TARGET_ATTENDANCE_PERCENT = 70;
 export const GROUP_STATUSES = [
   { code: "open", translationKey: "groupStatusOpen", color: "#2563eb" },
   { code: "in_progress", translationKey: "groupStatusInProgress", color: "#16a34a" },
+  { code: "frozen", translationKey: "groupStatusFrozen", color: "#0284c7" },
   { code: "completed", translationKey: "groupStatusCompleted", color: "#64748b" },
 ] as const;
 

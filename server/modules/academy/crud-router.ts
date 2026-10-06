@@ -357,8 +357,12 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             });
           }
           const updatedGroup = await updateRow(table, id, values);
-          if (lockedRow.isArchived === true && values.isArchived === false && updatedGroup) {
-            await restoreArchivedGroupLessons(updatedGroup, req.user!.id);
+          if (updatedGroup && (
+            (lockedRow.isArchived === true && values.isArchived === false)
+            || (lockedRow.status === 'frozen' && ['open', 'in_progress'].includes(String(values.status)))
+          )) {
+            await restoreArchivedGroupLessons(updatedGroup, req.user!.id, new Date(),
+              lockedRow.status === 'frozen' ? 'Возобновление занятий после заморозки' : 'Возвращение группы из архива');
           } else if (prepareSchedule || (values.status !== undefined && values.status !== lockedRow.status)) {
             await materializeGroupLessons(id);
           }

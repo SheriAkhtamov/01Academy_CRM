@@ -31,6 +31,7 @@ export type TeacherLesson = {
   durationMinutes: number;
   status: string;
   groupIsArchived?: boolean;
+  groupStatus?: string | null;
 };
 
 export type TeacherGroupSchedule = {
@@ -98,18 +99,19 @@ export type TeacherLessonProgress = { conducted: number; total: number };
 export const lessonsOutsideArchivedGroups = <TLesson extends {
   groupId: number;
   groupIsArchived?: boolean;
+  groupStatus?: string | null;
 }>(
   lessons: TLesson[],
-  groups: Array<{ id: number; isArchived?: boolean }>,
+  groups: Array<{ id: number; isArchived?: boolean; status?: string }>,
 ): TLesson[] => {
   const archivedGroupIds = new Set(
-    groups.filter((group) => group.isArchived).map((group) => Number(group.id)),
+    groups.filter((group) => group.isArchived || group.status === 'frozen').map((group) => Number(group.id)),
   );
-  if (archivedGroupIds.size === 0 && !lessons.some((lesson) => lesson.groupIsArchived)) {
+  if (archivedGroupIds.size === 0 && !lessons.some((lesson) => lesson.groupIsArchived || lesson.groupStatus === 'frozen')) {
     return lessons;
   }
   return lessons.filter((lesson) => (
-    lesson.groupIsArchived !== true && !archivedGroupIds.has(Number(lesson.groupId))
+    lesson.groupIsArchived !== true && lesson.groupStatus !== 'frozen' && !archivedGroupIds.has(Number(lesson.groupId))
   ));
 };
 
@@ -181,6 +183,7 @@ export const GROUP_STATUS_TONE = {
 export const GROUP_STATUS_LABEL_KEYS = {
   open: 'groupStatusOpen',
   in_progress: 'groupStatusInProgress',
+  frozen: 'groupStatusFrozen',
   completed: 'groupStatusCompleted',
 } as const satisfies Record<string, TranslationKey>;
 

@@ -61,6 +61,7 @@ export interface SalesScheduleLesson {
   durationMinutes?: number | null;
   status?: string | null;
   groupIsArchived?: boolean;
+  groupStatus?: string | null;
 }
 
 export interface SalesScheduleCourse {
@@ -237,7 +238,8 @@ export function buildSalesScheduleEvents({
   }
 
   const actualEvents = lessons.flatMap((lesson) => {
-    if (lesson.status === 'cancelled' || lesson.groupIsArchived || groupById.get(lesson.groupId)?.isArchived) return [];
+    if (lesson.status === 'cancelled' || lesson.groupIsArchived || lesson.groupStatus === 'frozen'
+      || groupById.get(lesson.groupId)?.isArchived || groupById.get(lesson.groupId)?.status === 'frozen') return [];
     const event = toEvent(lesson, groupById.get(lesson.groupId));
     if (!event) return [];
     const offsetDays = academyDayDiff(academyDayKeyOf(event.startsAt), weekStartKey);
@@ -253,7 +255,7 @@ export function buildSalesScheduleEvents({
   );
 
   const recurringEvents = groups.flatMap((group) => {
-    if (group.isArchived || group.status === 'completed') return [];
+    if (group.isArchived || group.status === 'completed' || group.status === 'frozen') return [];
     // Once the whole course has dated lessons, those rows define the calendar.
     // Projecting extra weekly slots would bring vacated archive dates back.
     if (Number(group.lessonCount) > 0 && (lessonCounts.get(group.id) ?? 0) >= Number(group.lessonCount)) return [];
@@ -421,6 +423,7 @@ export function getGroupsWithSchedule(
     .filter((group) => (
       group.status !== 'completed'
       && !group.isArchived
+      && group.status !== 'frozen'
       && ((group.schedule?.length ?? 0) > 0 || lessonGroupIds.has(group.id))
     ))
     .sort((left, right) => left.name.localeCompare(right.name));

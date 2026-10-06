@@ -153,6 +153,17 @@ router.put('/:id/read', requireAuth, async (req, res) => {
     }
 });
 
+router.delete('/', requireAuth, async (req, res) => {
+    try {
+        const deletedCount = await storage.clearNotifications(req.user!.id);
+        publishRealtimeEvent({ type: 'NOTIFICATIONS_CLEARED', data: {}, audienceUserIds: [req.user!.id] });
+        res.json({ success: true, deletedCount });
+    } catch (error) {
+        logger.error('Failed to clear notifications', { error, userId: req.user?.id });
+        res.status(500).json({ error: 'deleteFailed' });
+    }
+});
+
 router.delete('/:id', requireAuth, async (req, res) => {
     try {
         const notificationId = parsePositiveId(req.params.id);

@@ -91,7 +91,11 @@ export function useWebSocket() {
           ) });
           break;
         case 'NEW_NOTIFICATION':
+        case 'NOTIFICATIONS_CLEARED':
           queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+          break;
+        case 'GROUP_CHAT_UPDATED':
+          queryClient.invalidateQueries({ queryKey: ['/api/chat-groups'] });
           break;
         case 'NEW_MESSAGE':
           if (message.data?.senderId && message.data?.receiverId) {

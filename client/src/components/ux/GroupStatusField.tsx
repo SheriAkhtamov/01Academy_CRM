@@ -21,6 +21,7 @@ export function GroupStatusField() {
             <SelectGroup>
               <SelectItem value="open">{t('groupStatusOpen')}</SelectItem>
               <SelectItem value="in_progress">{t('groupStatusInProgress')}</SelectItem>
+              <SelectItem value="frozen">{t('groupStatusFrozen')}</SelectItem>
               <SelectItem value="completed">{t('groupStatusCompleted')}</SelectItem>
             </SelectGroup>
           </SelectContent>

@@ -12,7 +12,7 @@ import { academyToday } from '@/lib/localeFormat';
 
 type FutureGroupValues = {
   startDate: string;
-  status: 'open' | 'in_progress' | 'completed';
+  status: 'open' | 'in_progress' | 'frozen' | 'completed';
 };
 
 interface FutureGroupStartDialogProps<T extends FutureGroupValues> {

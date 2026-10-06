@@ -54,7 +54,7 @@ export const getDemoResourceAvailability = async (
        FROM academy_lessons
        WHERE status <> 'cancelled'
          AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-           WHERE archived.id = academy_lessons.group_id AND archived.is_archived = true)
+           WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
          AND scheduled_at < $2
          AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $1`,
       [startsAt, endsAt],

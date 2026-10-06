@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   createAuditLog: vi.fn(),
   markNotificationAsRead: vi.fn(),
   deleteNotification: vi.fn(),
+  clearNotifications: vi.fn(),
   broadcast: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock('../server/storage', () => ({
     markAllNotificationsAsRead: vi.fn(async () => undefined),
     markNotificationAsRead: mocks.markNotificationAsRead,
     deleteNotification: mocks.deleteNotification,
+    clearNotifications: mocks.clearNotifications,
   },
 }));
 
@@ -82,6 +84,15 @@ describe('notification route boundaries', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual([{ id: 9, userId: 7 }]);
     expect(mocks.getNotificationsByUser).toHaveBeenCalledWith(7);
+  });
+
+  it('clears all notifications only for the authenticated user and updates their sessions', async () => {
+    mocks.clearNotifications.mockResolvedValue(143);
+    const response = await request(await createApp()).delete('/api/notifications').send({ userId: 99 });
+    expect(response.status).toBe(200);
+    expect(response.body.deletedCount).toBe(143);
+    expect(mocks.clearNotifications).toHaveBeenCalledWith(7);
+    expect(mocks.broadcast).toHaveBeenCalledWith({ type: 'NOTIFICATIONS_CLEARED', data: {}, audienceUserIds: [7] });
   });
 
   it('rejects partially numeric IDs instead of targeting another notification', async () => {

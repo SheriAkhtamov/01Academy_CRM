@@ -12,4 +12,5 @@ export const notificationsApi = {
   markRead: (id: number) => apiRequest('PUT', `/api/notifications/${id}/read`),
   markAllRead: () => apiRequest('PUT', '/api/notifications/read-all'),
   remove: (id: number) => apiRequest('DELETE', `/api/notifications/${id}`),
+  clear: () => apiRequest('DELETE', '/api/notifications'),
 };

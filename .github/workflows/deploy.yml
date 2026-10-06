@@ -31,7 +31,7 @@ jobs:
         run: cp config/app.config.example.json config/app.config.json
 
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit
 
       - name: Audit dependencies and tracked secrets
         run: npm run audit:security

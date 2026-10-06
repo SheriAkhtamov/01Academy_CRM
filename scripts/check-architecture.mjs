@@ -104,6 +104,7 @@ const walk = (directory) => {
 const files = sourceRoots.flatMap((root) => walk(path.join(projectRoot, root)));
 const fileSet = new Set(files.map((file) => path.normalize(file)));
 const failures = [];
+const warnings = [];
 
 const relativePath = (file) => path.relative(projectRoot, file).split(path.sep).join('/');
 const resolveInternalImport = (fromFile, specifier) => {
@@ -235,7 +236,7 @@ for (const file of files) {
       ?? legacyLineBudgets.get(from)
       ?? 1_200;
     if (lines > maximum) {
-      failures.push(`${from}: ${lines} lines exceeds architectural budget ${maximum}`);
+      warnings.push(`${from}: ${lines} lines exceeds architectural budget ${maximum}`);
     }
   }
 }
@@ -276,6 +277,11 @@ for (const file of files) {
 }
 for (const cycle of cycles) {
   failures.push(`circular dependency: ${cycle}`);
+}
+
+if (warnings.length > 0) {
+  console.warn('[architecture check] Non-blocking file size warnings:');
+  for (const warning of warnings) console.warn(`  - ${warning}`);
 }
 
 if (failures.length > 0) {

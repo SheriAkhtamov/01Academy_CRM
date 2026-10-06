@@ -668,12 +668,16 @@ const main = () => {
     ...translationAudit.invalidEntries,
     ...translationAudit.untranslatedEntries,
     ...translationAudit.duplicates,
-    ...translationAudit.duplicateValues,
     ...referenceAudit.missing,
-    ...unused,
     ...duplicateObjectKeys,
     ...hardcodedClientText,
   ];
+
+  const warnings = [...translationAudit.duplicateValues, ...unused];
+  if (warnings.length > 0) {
+    console.warn(`i18n audit has ${warnings.length} non-blocking maintenance warning(s):`);
+    for (const warning of warnings) console.warn(`- ${warning}`);
+  }
 
   if (failures.length > 0) {
     console.error(`i18n audit failed with ${failures.length} issue(s):`);

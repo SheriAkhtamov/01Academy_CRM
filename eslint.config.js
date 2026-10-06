@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
+import crmA11y from './scripts/eslint-a11y.mjs';
 
 export default tseslint.config(
   {
@@ -20,12 +21,15 @@ export default tseslint.config(
     plugins: {
       'jsx-a11y': jsxA11y,
       'react-hooks': reactHooks,
+      'crm-a11y': crmA11y,
     },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'jsx-a11y/alt-text': 'error',
       'jsx-a11y/aria-role': 'error',
+      'crm-a11y/icon-button-name': 'error',
+      'crm-a11y/clickable-element-role': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',

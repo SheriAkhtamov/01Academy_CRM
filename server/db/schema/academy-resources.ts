@@ -29,6 +29,7 @@ export const academyRooms = pgTable("academy_rooms", {
   capacity: integer("capacity").notNull().default(12),
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false),
+  archivedBySchool: boolean("archived_by_school").notNull().default(false),
   archivedPreviousIsActive: boolean("archived_previous_is_active"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -38,4 +39,3 @@ export const academyRooms = pgTable("academy_rooms", {
   capacityCheck: check("academy_rooms_capacity_check", sql`${table.capacity} > 0`),
   archivedInactive: check("academy_rooms_archived_inactive", sql`NOT ${table.isArchived} OR NOT ${table.isActive}`),
 }));
-

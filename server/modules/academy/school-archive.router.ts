@@ -34,16 +34,17 @@ export function registerSchoolArchiveRoutes(router: Router) {
             if (group) throw Object.assign(new Error('schoolArchiveHasActiveGroups'), { statusCode: 409 });
           }
           const oldRooms = await query<Row>(
-            'SELECT * FROM academy_rooms WHERE school_id = $1 AND is_archived = $2 FOR UPDATE',
+            `SELECT * FROM academy_rooms WHERE school_id = $1 AND is_archived = $2
+             ${archived ? '' : 'AND archived_by_school = true'} FOR UPDATE`,
             [schoolId, !archived],
           );
           const rooms = await query<Row>(archived
             ? `UPDATE academy_rooms SET archived_previous_is_active = is_active,
-                 is_active = false, is_archived = true, updated_at = NOW()
+                 is_active = false, is_archived = true, archived_by_school = true, updated_at = NOW()
                WHERE school_id = $1 AND is_archived = false RETURNING *`
             : `UPDATE academy_rooms SET is_active = COALESCE(archived_previous_is_active, false),
-                 is_archived = false, archived_previous_is_active = NULL, updated_at = NOW()
-               WHERE school_id = $1 AND is_archived = true RETURNING *`,
+                 is_archived = false, archived_previous_is_active = NULL, archived_by_school = false, updated_at = NOW()
+               WHERE school_id = $1 AND is_archived = true AND archived_by_school = true RETURNING *`,
           [schoolId]);
           const updated = await updateRow('academy_schools', schoolId, archived
             ? { isArchived: true, archivedPreviousIsActive: school.isActive, isActive: false }

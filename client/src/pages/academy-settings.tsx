@@ -1,5 +1,5 @@
-import { SchoolSettingsTable, RoomSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
-import type { School, Room } from '@/features/academy-resources/api';
+import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable, ArchiveSelect } from '@/features/academy-resources/ResourceSettingsTables';
+import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -106,15 +106,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { ACADEMY_TIME_ZONE, academyDateInputValue } from '@/lib/localeFormat';
-interface Course {
-  id: number;
-  name: string;
-  slug: string;
-  ageCategory: string;
-  description?: string | null;
-  basePriceUzs: number;
-  isActive: boolean;
-}
+
 
 interface PipelineStatus {
   id: number;
@@ -847,8 +839,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const teachers = configuration.data?.teachers ?? [];
   const groups = configuration.data?.groups ?? [];
   const isGroupArchive = requestedFilter === 'archive';
-  const activeGroupsCount = groups.filter((group) => !group.isArchived).length;
-  const archivedGroupsCount = groups.length - activeGroupsCount;
   const displayedGroups = useMemo(
     () => {
       if (requestedFilter === 'archive') {
@@ -942,50 +932,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
     [selectedGroupTeacherId, teachers],
   );
-  const courseColumns: DataTableColumn<Course>[] = [
-    {
-      key: 'name',
-      header: t('course'),
-      sortable: true,
-      accessor: (row) => row.name,
-      render: (row) => (
-        <div>
-          <p className="font-medium text-foreground">{row.name}</p>
-          <p className="text-xs text-muted-foreground">{row.ageCategory}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'basePrice',
-      header: t('basePrice'),
-      sortable: true,
-      accessor: (row) => row.basePriceUzs,
-      render: (row) => `${formatAcademyNumber(row.basePriceUzs, language)}${t('uzs')}`,
-    },
-    {
-      key: 'status',
-      header: t('status'),
-      accessor: (row) => row.isActive ? 1 : 0,
-      render: (row) => <Badge variant={row.isActive ? 'default' : 'secondary'}>{row.isActive ? t('active') : t('inactive')}</Badge>,
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (row) => (
-        <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => openCourse(row)}>
-            <Edit3 />
-            <span className="sr-only">{t('edit')}</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ resource: 'courses', id: row.id, name: row.name })}>
-            <Trash2 />
-            <span className="sr-only">{t('delete')}</span>
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   const groupColumns: DataTableColumn<Group>[] = [
     {
       key: 'name',
@@ -1132,18 +1078,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </>
             ) : (
               <Button
-                variant="outline"
-                size="sm"
-                className="min-h-11"
+                variant="ghost"
+                size="icon"
+                className="min-h-11 min-w-11"
+                title={t('archiveGroup')}
+                aria-label={isArchiving ? t('saving') : t('archiveGroup')}
                 disabled={archiveGroup.isPending}
                 onClick={() => setArchiveGroupTarget(row)}
               >
                 {isArchiving ? (
-                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Archive data-icon="inline-start" />
+                  <Archive />
                 )}
-                {isArchiving ? t('saving') : t('archiveGroup')}
               </Button>
             )}
           </div>
@@ -1249,31 +1196,15 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <TabsContent value="rooms" className="mt-0">
           <RoomSettingsTable data={rooms} schools={schools} archived={requestedFilter === 'archive'}
             onArchiveChange={(archived) => navigate(`${basePath}?tab=rooms${archived ? '&filter=archive' : ''}`)}
-            onAdd={() => openRoom()} onEdit={openRoom}
+            onAdd={() => openRoom()} onEdit={openRoom} onChanged={invalidate}
             onDelete={(row) => setDeleteTarget({ resource: 'rooms', id: row.id, name: row.name })} />
         </TabsContent>
 
         <TabsContent value="courses" className="mt-0">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle>{t('courses')}</CardTitle>
-              </div>
-              <Button onClick={() => openCourse()}>
-                <Plus data-icon="inline-start" />{t('addCourse')}
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                className="overflow-x-auto"
-                columns={courseColumns}
-                data={courses}
-                keyExtractor={(row) => `course-${row.id}`}
-                defaultSortKey="name"
-                emptyState={<EmptyTableState title={t('noCourses')}  />}
-              />
-            </CardContent>
-          </Card>
+          <CourseSettingsTable data={courses} archived={requestedFilter === 'archive'}
+            onArchiveChange={(archived) => navigate(`${basePath}?tab=courses${archived ? '&filter=archive' : ''}`)}
+            onAdd={() => openCourse()} onEdit={openCourse} onChanged={invalidate}
+            onDelete={(row) => setDeleteTarget({ resource: 'courses', id: row.id, name: row.name })} />
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0">
@@ -1283,40 +1214,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 <CardTitle>{t('navGroups')}</CardTitle>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div
-                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
-                  role="group"
-                  aria-label={t('groupListView')}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isGroupArchive ? 'ghost' : 'secondary'}
-                    className="min-h-11 gap-2"
-                    aria-pressed={!isGroupArchive}
-                    onClick={() => navigate(`${basePath}?tab=groups`)}
-                  >
-                    <UsersRound />
-                    {t('adminActiveGroups')}
-                    <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
-                      {activeGroupsCount}
-                    </Badge>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={isGroupArchive ? 'secondary' : 'ghost'}
-                    className="min-h-11 gap-2"
-                    aria-pressed={isGroupArchive}
-                    onClick={() => navigate(`${basePath}?tab=groups&filter=archive`)}
-                  >
-                    <Archive />
-                    {t('groupArchiveLabel')}
-                    <Badge variant="outline" className="min-w-6 justify-center bg-background tabular-nums">
-                      {archivedGroupsCount}
-                    </Badge>
-                  </Button>
-                </div>
+                <ArchiveSelect archived={isGroupArchive} label={t('groupListView')}
+                  currentFilterLabel={requestedFilter === 'without-teacher' ? t('adminGroupsWithoutTeacher') : undefined}
+                  onChange={(archived) => navigate(`${basePath}?tab=groups${archived ? '&filter=archive' : ''}`)} />
                 {!isGroupArchive ? (
                   <Button onClick={() => openGroup()}>
                     <Plus data-icon="inline-start" />{t('addGroup')}

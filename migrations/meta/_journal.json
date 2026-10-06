@@ -883,6 +883,13 @@
       "when": 1791237020807,
       "tag": "0125_user_profile_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1791284290166,
+      "tag": "0126_archive_courses_and_individual_rooms",
+      "breakpoints": true
     }
   ]
 }

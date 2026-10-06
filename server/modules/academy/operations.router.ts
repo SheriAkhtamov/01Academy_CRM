@@ -828,6 +828,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
     if (courseId && !oldCourse) {
       throw Object.assign(new Error('courses not found'), { statusCode: 404 });
     }
+    if (oldCourse?.isArchived) throw Object.assign(new Error('courseIsArchived'), { statusCode: 409 });
     if (courseId && oldCourse?.isActive !== false && courseValues.isActive === false) {
       const activeGroup = await queryOne(
         `SELECT id

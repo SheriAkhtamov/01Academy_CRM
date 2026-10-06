@@ -29,6 +29,7 @@ import { createSalesKpiRouter } from '../sales-kpi/http/kpi-router';
 import { registerLeadDemoParticipantRoutes } from './lead-demo-participants.router';
 import { registerAcademyLeadDistributionRoutes } from './lead-distribution.router';
 import { registerSchoolArchiveRoutes } from './school-archive.router';
+import { registerResourceArchiveRoutes } from './resource-archive.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -63,6 +64,7 @@ registerAcademyLeadSocialAccountRoutes(router);
 registerAcademyFunnelRoutes(router);
 registerAcademyLeadDistributionRoutes(router);
 registerSchoolArchiveRoutes(router);
+registerResourceArchiveRoutes(router);
 registerAcademyModuleRoutes(router);
 registerAcademyLeadRoutes(router);
 registerAcademyStudentProfileRoutes(router);

@@ -7,7 +7,7 @@ import { SchoolSettingsTable, RoomSettingsTable } from '../client/src/features/a
 import { i18n } from '../client/src/lib/i18n';
 
 const mocks = vi.hoisted(() => ({ archive: vi.fn(), restore: vi.fn(), toast: vi.fn() }));
-vi.mock('../client/src/features/academy-resources/api', () => ({ schoolArchiveApi: mocks }));
+vi.mock('../client/src/features/academy-resources/api', () => ({ schoolArchiveApi: mocks, roomArchiveApi: { archive: vi.fn(), restore: vi.fn() }, courseArchiveApi: { archive: vi.fn(), restore: vi.fn() } }));
 vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
 const school = { id: 3, name: 'School', code: 'SCH', address: 'Address', timezone: 'Asia/Tashkent', isActive: true };
 const props = { archived: false, onArchiveChange: vi.fn(), onAdd: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn(), onChanged: vi.fn() };

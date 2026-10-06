@@ -145,10 +145,13 @@ export const academyCourses = pgTable("academy_courses", {
   ltvTargetMaxUzs: integer("ltv_target_max_uzs").notNull().default(0),
   program: jsonb("program").$type<AcademyCourseProgramLesson[]>().notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedPreviousIsActive: boolean("archived_previous_is_active"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   slugUnique: uniqueIndex("academy_courses_slug_unique").on(table.slug),
+  archivedInactive: check("academy_courses_archived_inactive", sql`NOT ${table.isArchived} OR NOT ${table.isActive}`),
 }));
 
 export const academyLeadSources = pgTable("academy_lead_sources", {

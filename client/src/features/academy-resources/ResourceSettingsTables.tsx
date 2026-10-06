@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Archive, Building2, DoorOpen, Edit3, MapPin, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
+import { Archive, BookOpen, Building2, DoorOpen, Edit3, MapPin, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,8 +8,9 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useToast } from '@/hooks/use-toast';
-import { schoolArchiveApi, type Room, type School } from './api';
+import { type Course, type Room, type School } from './api';
+import { useResourceArchive } from './useResourceArchive';
+import { formatAcademyNumber } from '@/lib/localeFormat';
 
 interface ResourceTableProps<T> {
   data: T[];
@@ -19,13 +19,15 @@ interface ResourceTableProps<T> {
   onAdd: () => void;
   onEdit: (row: T) => void;
   onDelete: (row: T) => void;
+  onChanged: () => void | Promise<unknown>;
 }
 
-function ArchiveSelect({ archived, onChange }: { archived: boolean; onChange: (archived: boolean) => void }) {
+export function ArchiveSelect({ archived, onChange, label, currentFilterLabel }: { archived: boolean; onChange: (archived: boolean) => void; label?: string; currentFilterLabel?: string }) {
   const { t } = useTranslation();
-  return <Select value={archived ? 'archive' : 'current'} onValueChange={(value) => onChange(value === 'archive')}>
-    <SelectTrigger className="w-44" aria-label={t('resourceListSection')}><SelectValue /></SelectTrigger>
+  return <Select value={archived ? 'archive' : currentFilterLabel ? 'filtered' : 'current'} onValueChange={(value) => onChange(value === 'archive')}>
+    <SelectTrigger className="w-44" aria-label={label || t('resourceListSection')}><SelectValue /></SelectTrigger>
     <SelectContent>
+      {currentFilterLabel ? <SelectItem value="filtered">{currentFilterLabel}</SelectItem> : null}
       <SelectItem value="current">{t('resourcesNotArchived')}</SelectItem>
       <SelectItem value="archive">{t('taskArchive')}</SelectItem>
     </SelectContent>
@@ -39,25 +41,9 @@ function ResourceStatus({ row }: { row: { isActive: boolean; isArchived?: boolea
   </Badge>;
 }
 
-export function SchoolSettingsTable(props: ResourceTableProps<School> & { onChanged: () => void | Promise<unknown> }) {
+export function SchoolSettingsTable(props: ResourceTableProps<School>) {
   const { t } = useTranslation();
-  const { toast } = useToast();
-  const [target, setTarget] = useState<{ school: School; archived: boolean } | null>(null);
-  const mutation = useMutation({
-    mutationFn: ({ school, archived }: { school: School; archived: boolean }) => (
-      archived ? schoolArchiveApi.archive(school.id) : schoolArchiveApi.restore(school.id)
-    ),
-    onSuccess: async (_result, variables) => {
-      setTarget(null);
-      toast({ title: variables.archived ? t('schoolArchived') : t('schoolRestored') });
-      await props.onChanged();
-    },
-  });
-  const openArchive = (school: School) => {
-    mutation.reset();
-    setTarget({ school, archived: !school.isArchived });
-  };
-  const archiveActionLabel = (archived?: boolean) => archived ? t('restoreSchool') : t('archiveSchool');
+  const { mutation, openArchive, actionLabel: archiveActionLabel, dialogProps } = useResourceArchive<School>('schools', props.onChanged);
   const columns: DataTableColumn<School>[] = [
     { key: 'name', header: t('school'), sortable: true, accessor: (row) => row.name,
       render: (row) => <div className="min-w-0"><p className="truncate font-medium text-foreground">{row.name}</p><p className="truncate text-xs text-muted-foreground">{row.code}</p></div> },
@@ -83,16 +69,13 @@ export function SchoolSettingsTable(props: ResourceTableProps<School> & { onChan
         data={props.data.filter((row) => Boolean(row.isArchived) === props.archived)} keyExtractor={(row) => `school-${row.id}`}
         defaultSortKey="name" emptyState={<EmptyState icon={Building2} title={t('noSchools')} />} /></CardContent>
     </Card>
-    <ConfirmDialog open={target !== null} onOpenChange={(open) => { if (!open && !mutation.isPending) setTarget(null); }}
-      title={target?.archived ? t('archiveSchoolTitle') : t('restoreSchoolTitle')}
-      description={(target?.archived ? t('archiveSchoolConfirm') : t('restoreSchoolConfirm')).replace('{name}', target?.school.name ?? '')}
-      confirmLabel={archiveActionLabel(!target?.archived)} keepOpenOnConfirm isPending={mutation.isPending}
-      error={mutation.error?.message} onConfirm={() => { if (target) mutation.mutate(target); }} />
+    <ConfirmDialog {...dialogProps} />
   </>;
 }
 
 export function RoomSettingsTable(props: ResourceTableProps<Room> & { schools: School[] }) {
   const { t } = useTranslation();
+  const { mutation, openArchive, actionLabel, dialogProps } = useResourceArchive<Room>('rooms', props.onChanged);
   const schoolNames = useMemo(() => new Map(props.schools.map((school) => [school.id, school.name])), [props.schools]);
   const schoolName = (id: number) => schoolNames.get(id) ?? '—';
   const columns: DataTableColumn<Room>[] = [
@@ -104,10 +87,11 @@ export function RoomSettingsTable(props: ResourceTableProps<Room> & { schools: S
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}
+      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} title={actionLabel(row.isArchived)} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
       <Button variant="ghost" size="icon" onClick={() => props.onDelete(row)} aria-label={t('delete')}><Trash2 /></Button>
     </div> },
   ];
-  return <Card>
+  return <><Card>
     <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <div className="flex flex-wrap items-center gap-3"><CardTitle>{t('rooms')}</CardTitle><ArchiveSelect archived={props.archived} onChange={props.onArchiveChange} /></div>
       {!props.archived ? <Button onClick={props.onAdd}><Plus data-icon="inline-start" />{t('addRoom')}</Button> : null}
@@ -115,5 +99,32 @@ export function RoomSettingsTable(props: ResourceTableProps<Room> & { schools: S
     <CardContent className="p-0"><DataTable className="overflow-x-auto" columns={columns}
       data={props.data.filter((row) => Boolean(row.isArchived) === props.archived)} keyExtractor={(row) => `room-${row.id}`}
       defaultSortKey="name" emptyState={<EmptyState icon={DoorOpen} title={t('noRooms')} />} /></CardContent>
-  </Card>;
+  </Card><ConfirmDialog {...dialogProps} /></>;
+}
+
+
+export function CourseSettingsTable(props: ResourceTableProps<Course>) {
+  const { t, language } = useTranslation();
+  const { mutation, openArchive, actionLabel, dialogProps } = useResourceArchive<Course>('courses', props.onChanged);
+  const columns: DataTableColumn<Course>[] = [
+    { key: 'name', header: t('course'), sortable: true, accessor: (row) => row.name,
+      render: (row) => <div><p className="font-medium text-foreground">{row.name}</p><p className="text-xs text-muted-foreground">{row.ageCategory}</p></div> },
+    { key: 'basePrice', header: t('basePrice'), sortable: true, accessor: (row) => row.basePriceUzs,
+      render: (row) => `${formatAcademyNumber(row.basePriceUzs, language)}${t('uzs')}` },
+    { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
+    { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
+      {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}
+      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} title={actionLabel(row.isArchived)} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
+      <Button variant="ghost" size="icon" onClick={() => props.onDelete(row)} aria-label={t('delete')}><Trash2 /></Button>
+    </div> },
+  ];
+  return <><Card>
+    <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-wrap items-center gap-3"><CardTitle>{t('courses')}</CardTitle><ArchiveSelect archived={props.archived} onChange={props.onArchiveChange} /></div>
+      {!props.archived ? <Button onClick={props.onAdd}><Plus data-icon="inline-start" />{t('addCourse')}</Button> : null}
+    </CardHeader>
+    <CardContent className="p-0"><DataTable className="overflow-x-auto" columns={columns}
+      data={props.data.filter((row) => Boolean(row.isArchived) === props.archived)} keyExtractor={(row) => `course-${row.id}`}
+      defaultSortKey="name" emptyState={<EmptyState icon={BookOpen} title={t('noCourses')} />} /></CardContent>
+  </Card><ConfirmDialog {...dialogProps} /></>;
 }

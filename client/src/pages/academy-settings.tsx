@@ -41,7 +41,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
-import { buildUniqueCourseSlug, slugify } from '@/lib/slugify';
+import { buildUniqueCourseSlug } from '@/lib/slugify';
 import { formatLeadCount } from '@/lib/formatLeadCount';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -323,7 +323,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     resolver: zodResolver(schoolSchemaMemo),
     defaultValues: {
       name: '',
-      code: '',
       address: '',
       timezone: ACADEMY_TIME_ZONE,
       isActive: true,
@@ -713,13 +712,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setEditingSchool(school ?? null);
     schoolForm.reset(school ? {
       name: school.name,
-      code: school.code,
       address: school.address,
       timezone: school.timezone,
       isActive: school.isActive,
     } : {
       name: '',
-      code: '',
       address: '',
       timezone: ACADEMY_TIME_ZONE,
       isActive: true,
@@ -1357,18 +1354,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
               <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
               <FormField control={schoolForm.control} name="name" render={({ field }) => (
-                <FormItem>
+                <FormItem className="md:col-span-2">
                   <FormLabel required>{t('schoolName')}</FormLabel>
-                  <FormControl><Input {...field} onBlur={(event) => {
-                    field.onBlur();
-                    if (!schoolForm.getValues('code')) schoolForm.setValue('code', slugify(event.target.value));
-                  }} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={schoolForm.control} name="code" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('code')}</FormLabel>
                   <FormControl><Input {...field} /></FormControl>
                   <LocalizedFormMessage />
                 </FormItem>

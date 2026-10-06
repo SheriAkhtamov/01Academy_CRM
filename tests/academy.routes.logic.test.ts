@@ -168,6 +168,47 @@ describe('academy route logic boundaries', () => {
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
   });
 
+  it('creates schools without a client code and assigns distinct codes even for identical names', async () => {
+    const codes: string[] = [];
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('INSERT INTO "academy_schools"')) {
+        const code = String(readInsertValue(sql, values, 'code'));
+        codes.push(code);
+        return { rows: [{ id: codes.length, name: 'Новый филиал', code }] };
+      }
+      return emptyResult();
+    });
+    const app = await createApp();
+    for (let index = 0; index < 2; index += 1) {
+      const response = await request(app).post('/api/academy/schools').send({
+        name: 'Новый филиал', address: 'Ташкент', timezone: 'Asia/Tashkent', isActive: true,
+        ...(index ? { code: 'manually-supplied-code' } : {}),
+      });
+      expect(response.status).toBe(201);
+      expect(response.body.code).toBeTruthy();
+      expect(response.body.code).not.toBe('manually-supplied-code');
+    }
+    expect(new Set(codes).size).toBe(2);
+  });
+
+  it('preserves the school code when its name changes and ignores a manually supplied replacement', async () => {
+    const school = { id: 3, name: 'Cyber park', code: 'cyberpark', is_active: true };
+    mocks.poolQuery.mockResolvedValue({ rows: [school] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM "academy_schools"')) return { rows: [school] };
+      if (sql.includes('UPDATE "academy_schools"')) return { rows: [{ ...school, name: 'Cyberpark Campus' }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).patch('/api/academy/schools/3').send({
+      name: 'Cyberpark Campus', code: 'replacement',
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.code).toBe('cyberpark');
+    const update = mocks.clientQuery.mock.calls.find(([sql]) => sql.includes('UPDATE "academy_schools"'));
+    expect(update?.[0]).not.toContain('"code"');
+    expect(update?.[1]).not.toContain('replacement');
+  });
+
   it('returns unique demo attendees with real names and all visits through the SQL-to-JSON boundary', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[]) => {

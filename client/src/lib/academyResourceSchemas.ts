@@ -10,7 +10,6 @@ type Translate = (key: TranslationKey) => string;
 */
 export const createSchoolSchema = (t: Translate) => z.object({
   name: z.string().trim().min(1, t('fieldRequired')),
-  code: z.string().trim().min(1, t('fieldRequired')).regex(/^[a-z0-9_-]+$/, t('invalidDataFormat')),
   address: z.string().trim().min(1, t('fieldRequired')),
   timezone: z.string().trim().min(1, t('fieldRequired')),
   isActive: z.boolean(),

@@ -74,7 +74,7 @@ it('saves individual marks, edits a previous lesson, and confirms before clearin
   await user.click(screen.getByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendancePresent')) }));
   await waitFor(() => expect(screen.getByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendancePresent')) }).getAttribute('aria-pressed')).toBe('true'));
   expect(mocks.api.mark).toHaveBeenCalledWith(473, { studentId: 328, status: 'present', expectedRevision: null }, 'csrf');
-  await user.selectOptions(screen.getByLabelText(i18n.t('publicAttendanceLesson')), '455');
+  await user.selectOptions(screen.getByRole('combobox', { name: i18n.t('publicAttendanceLesson') }), '455');
   await waitFor(() => expect(mocks.api.roster).toHaveBeenCalledWith(455, expect.anything()));
   const clear = screen.getByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendanceClear')) });
   await waitFor(() => expect((clear as HTMLButtonElement).disabled).toBe(false));
@@ -105,4 +105,30 @@ it('selects the business-calendar date in Tashkent even before that lesson start
   const first = { ...lessons[0], scheduledAt: '2026-09-30T10:00:00Z' };
   const today = { ...lessons[1], scheduledAt: '2026-10-07T10:00:00Z', canMark: false };
   expect(pickDefaultAttendanceLesson([first, today], Date.parse('2026-10-06T22:30:00Z'))?.id).toBe(today.id);
+});
+
+
+it('filters the remaining students as marks are saved and restores the full list', async () => {
+  const user = await setup();
+  await user.click(screen.getByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendancePresent')) }));
+  await waitFor(() => expect(screen.getByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendancePresent')) }).getAttribute('aria-pressed')).toBe('true'));
+  await user.click(screen.getByRole('button', { name: new RegExp('^' + i18n.t('publicAttendancePending')) }));
+  expect(screen.queryByText('Adham Zokirov')).toBeNull();
+  expect(screen.getByText('Albert Aliyev')).toBeTruthy();
+  await user.click(screen.getByRole('button', { name: label('Albert Aliyev', i18n.t('publicAttendanceAbsent')) }));
+  await screen.findByText(i18n.t('publicAttendanceNoStudents'));
+  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('2');
+  await user.click(screen.getByRole('button', { name: i18n.t('publicAttendanceResetFilters') }));
+  expect(screen.getByText('Adham Zokirov')).toBeTruthy();
+  expect(screen.getByText('Albert Aliyev')).toBeTruthy();
+  await user.type(screen.getByRole('searchbox', { name: i18n.t('publicAttendanceSearch') }), 'Mikrokreditbank');
+  expect(screen.queryByText('Adham Zokirov')).toBeNull();
+  expect(screen.getByText('Albert Aliyev')).toBeTruthy();
+});
+
+it('navigates to a past lesson with one click on its date', async () => {
+  const user = await setup();
+  await user.click(screen.getByRole('button', { name: /^Урок 1 ·/ }));
+  await waitFor(() => expect(mocks.api.roster).toHaveBeenCalledWith(455, expect.anything()));
+  expect((screen.getByRole('combobox', { name: i18n.t('publicAttendanceLesson') }) as HTMLSelectElement).value).toBe('455');
 });

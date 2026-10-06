@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -93,10 +94,13 @@ import { createAcademyCrudRegistrar } from './crud-router';
 export const registerAcademyResourceRoutes = (router: ReturnType<typeof Router>) => {
   const registerSimpleCrud = createAcademyCrudRegistrar(router);
 registerSimpleCrud('schools', 'academy_schools', [
-  'name', 'code', 'address', 'timezone', 'isActive',
+  'name', 'address', 'timezone', 'isActive',
 ], {
   orderBy: 'is_active DESC, name',
   requireAdministration: true,
+  beforeCreate: async ({ values }) => {
+    values.code = `school-${randomUUID()}`;
+  },
   beforeUpdate: async ({ id, values, row }) => {
     if (row.isArchived) throw Object.assign(new Error('schoolIsArchived'), { statusCode: 409 });
     if (row.isActive !== false && values.isActive === false) {

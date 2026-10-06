@@ -46,7 +46,7 @@ export function SchoolSettingsTable(props: ResourceTableProps<School>) {
   const { mutation, openArchive, actionLabel: archiveActionLabel, dialogProps } = useResourceArchive<School>('schools', props.onChanged);
   const columns: DataTableColumn<School>[] = [
     { key: 'name', header: t('school'), sortable: true, accessor: (row) => row.name,
-      render: (row) => <div className="min-w-0"><p className="truncate font-medium text-foreground">{row.name}</p><p className="truncate text-xs text-muted-foreground">{row.code}</p></div> },
+      render: (row) => <p className="truncate font-medium text-foreground">{row.name}</p> },
     { key: 'address', header: t('address'), sortable: true, accessor: (row) => row.address,
       render: (row) => <div className="flex max-w-md items-center gap-2"><MapPin className="shrink-0 text-muted-foreground" /><span className="truncate">{row.address}</span></div> },
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },

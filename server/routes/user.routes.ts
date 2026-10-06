@@ -434,7 +434,6 @@ type UserUpdateData = {
     email?: string;
     dateOfBirth?: Date | null;
     module?: AcademyModule;
-    isActive?: boolean;
 };
 
 const userUpdateColumns: Record<keyof UserUpdateData, string> = {
@@ -447,7 +446,6 @@ const userUpdateColumns: Record<keyof UserUpdateData, string> = {
     email: 'email',
     dateOfBirth: 'date_of_birth',
     module: 'module',
-    isActive: 'is_active',
 };
 
 const updateUserWithExecutor = async (
@@ -488,7 +486,7 @@ router.get('/', requireAuth, async (req, res) => {
         const hasAdministrationAccess = getAssignedModules(req.user).includes('administration');
         const visibleUsers = hasAdministrationAccess
             ? users
-            : users.filter((user) => !user.isArchived);
+            : users.filter((user) => !user.isArchived && user.isActive);
         const sanitizedUsers = visibleUsers.map(u => authService.sanitizeUser(u));
         if (!hasAdministrationAccess || visibleUsers.length === 0) {
             return res.json(sanitizedUsers);
@@ -557,7 +555,10 @@ router.get('/:id/sales-lead-count', requireAdministration, async (req, res) => {
 registerUserPhotoRoutes(router);
 router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) => {
     try {
-        const { position, isActive } = req.body;
+        const { position } = req.body;
+        if (req.body.isActive !== undefined) {
+            return res.status(400).json({ error: 'employeeStatusManagedByArchive' });
+        }
         if (typeof req.body.fullName !== 'string' || !req.body.fullName.trim()) {
             return res.status(400).json({ error: 'Full name is required' });
         }
@@ -570,10 +571,6 @@ router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) =
         if (typeof position === 'string' && position.trim().length > 255) {
             return res.status(400).json({ error: 'invalidData' });
         }
-        if (isActive !== undefined && typeof isActive !== 'boolean') {
-            return res.status(400).json({ error: 'invalidData' });
-        }
-
         if (!moduleSet.has(req.body.module)) {
             return res.status(400).json({ error: 'A valid module is required' });
         }
@@ -629,7 +626,7 @@ router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) =
                         dateOfBirth ?? null,
                         typeof position === 'string' ? position.trim() || null : null,
                         module,
-                        isActive !== undefined ? isActive : true,
+                        true,
                         res.locals.userPhotoUrl ?? null,
                     ],
                 );
@@ -740,7 +737,7 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        if (user.isArchived) {
+        if (user.isArchived || !user.isActive) {
             return res.status(409).json({ error: 'employeeArchived' });
         }
 
@@ -859,7 +856,7 @@ router.post('/:id/reset-password', requireAdministration, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        if (user.isArchived) {
+        if (user.isArchived || !user.isActive) {
             return res.status(409).json({ error: 'employeeArchived' });
         }
 
@@ -925,12 +922,15 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
         if (currentUser?.id !== id && !hasLeadershipAccess(currentUser)) {
             return res.status(403).json({ error: 'Cannot update other users profile' });
         }
+        if (req.body.isActive !== undefined) {
+            return res.status(400).json({ error: 'employeeStatusManagedByArchive' });
+        }
 
         const existingUser = await storage.getUser(id);
         if (!existingUser) {
             return res.status(404).json({ error: 'User not found' });
         }
-        if (existingUser.isArchived) {
+        if (existingUser.isArchived || !existingUser.isActive) {
             return res.status(409).json({ error: 'employeeArchived' });
         }
 
@@ -994,12 +994,6 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
                     (updateData.module ?? existingUser.module) as AcademyModule,
                 );
             }
-            if (req.body.isActive !== undefined) {
-                if (typeof req.body.isActive !== 'boolean') {
-                    return res.status(400).json({ error: 'invalidData' });
-                }
-                updateData.isActive = req.body.isActive;
-            }
         }
 
         if (
@@ -1037,7 +1031,7 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
             if (!lockedUser) {
                 throw Object.assign(new Error('User not found'), { statusCode: 404 });
             }
-            if (lockedUser.is_archived) {
+            if (lockedUser.is_archived || !lockedUser.is_active) {
                 throw Object.assign(new Error('employeeArchived'), { statusCode: 409 });
             }
 
@@ -1053,7 +1047,7 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
             const nextModules = requestedModules
                 ? [...new Set([nextPrimaryModule, ...requestedModules])]
                 : [...new Set([nextPrimaryModule, ...currentModules])];
-            const nextIsActive = updateData.isActive ?? lockedUser.is_active;
+            const nextIsActive = lockedUser.is_active;
             const isRemovingActiveLeadershipAccess =
                 lockedUser.is_active
                 && currentModules.some(isLeadershipModule)

@@ -1,39 +1,42 @@
+import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
+
 interface FunnelStage {
   code: string;
-  count: number;
-  [key: string]: unknown;
+  count?: number;
+  sortOrder?: number;
+  funnelId?: number | null;
+  isActive?: boolean;
+  isPipeline?: boolean;
 }
 
 interface LeadForFunnel {
   sourceId?: number | null;
+  funnelId?: number | null;
   statusCode?: string | null;
+  demoAttended?: boolean;
+  hasPaidPayment?: boolean;
+  createdAt?: string | null;
+  firstPaidAt?: string | null;
 }
 
-const datePart = (value: unknown): string | null => {
-  const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
-  return match?.[1] ?? null;
-};
+export function leadsForFunnel<T extends LeadForFunnel>(leads: T[], funnelId: string, sourceId: string): T[] {
+  return leads.filter((lead) => String(lead.funnelId ?? '') === funnelId
+    && (sourceId === 'all' || String(lead.sourceId ?? '') === sourceId));
+}
 
-export function expenseOverlapsMonth(
-  expense: { periodStart?: unknown; periodEnd?: unknown; createdAt?: unknown },
-  month: string,
-): boolean {
-  if (!/^\d{4}-\d{2}$/.test(month)) return true;
-  const [year, monthNumber] = month.split('-').map(Number);
-  const nextMonthDate = new Date(Date.UTC(year, monthNumber, 1));
-  const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, '0')}-01`;
-  const monthStart = `${month}-01`;
-  const periodStart = datePart(expense.periodStart) ?? datePart(expense.createdAt);
-  if (!periodStart) return false;
-  const periodEnd = datePart(expense.periodEnd) ?? periodStart;
-  return periodStart < nextMonth && periodEnd >= monthStart;
+export function marketingFunnelStages<T extends FunnelStage>(
+  stages: T[],
+  selectedFunnel?: { id: number; workflowRole?: SalesFunnelRole | null } | null,
+): T[] {
+  if (!selectedFunnel) return [];
+  return salesFunnelStages(stages, selectedFunnel.workflowRole, selectedFunnel.id);
 }
 
 export function funnelForSource<T extends FunnelStage>(
   funnel: T[],
   leads: LeadForFunnel[],
   sourceId: string,
-): T[] {
+): Array<T & { count: number }> {
   const filtered = sourceId === 'all'
     ? leads
     : leads.filter((lead) => String(lead.sourceId ?? '') === sourceId);
@@ -47,8 +50,31 @@ export function funnelForSource<T extends FunnelStage>(
   }));
 }
 
+const percentage = (count: number, total: number) => total > 0
+  ? Number(((count / total) * 100).toFixed(1))
+  : 0;
+
+export function marketingFunnelMetrics(leads: LeadForFunnel[]) {
+  const demoLeads = leads.filter((lead) => lead.demoAttended
+    || ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(String(lead.statusCode)));
+  const paidLeads = leads.filter((lead) => lead.hasPaidPayment === true);
+  const cycleDays = paidLeads.flatMap((lead) => {
+    const createdAt = new Date(lead.createdAt ?? '').getTime();
+    const firstPaidAt = new Date(lead.firstPaidAt ?? '').getTime();
+    return Number.isFinite(createdAt) && Number.isFinite(firstPaidAt) && firstPaidAt >= createdAt
+      ? [(firstPaidAt - createdAt) / 86_400_000]
+      : [];
+  });
+  return {
+    leadToDemoConversion: percentage(demoLeads.length, leads.length),
+    demoToPaidConversion: percentage(demoLeads.filter((lead) => lead.hasPaidPayment === true).length, demoLeads.length),
+    leadToPaidConversion: percentage(paidLeads.length, leads.length),
+    avgDealCycleDays: cycleDays.length > 0
+      ? Number((cycleDays.reduce((sum, days) => sum + days, 0) / cycleDays.length).toFixed(1))
+      : null,
+  };
+}
+
 export function leadToPaidConversion(leads: LeadForFunnel[]): number {
-  if (leads.length === 0) return 0;
-  const paid = leads.filter((lead) => lead.statusCode === 'paid').length;
-  return Number(((paid / leads.length) * 100).toFixed(1));
+  return percentage(leads.filter((lead) => lead.hasPaidPayment === true).length, leads.length);
 }

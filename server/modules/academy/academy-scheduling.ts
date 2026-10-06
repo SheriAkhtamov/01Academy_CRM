@@ -35,7 +35,6 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -44,7 +43,6 @@ import {
   TARGET_ROAS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -61,8 +59,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -1189,4 +1185,4 @@ export const assertBookableOfflineSlot = async (options: {
 };
 
 // Template source prefixes from TZ 1.2: the suffix is filled from campaign/referrer name.
-export const TEMPLATE_SOURCE_PREFIXES = ['instagram_ad', 'blogger', 'school', 'event', 'referral'];
+export const TEMPLATE_SOURCE_PREFIXES = ['instagram_ad', 'blogger', 'school', 'event'];

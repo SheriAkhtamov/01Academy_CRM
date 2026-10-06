@@ -27,6 +27,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, queryFn: async ({ queryKey }) => (await fetch(String(queryKey[0]))).json() } } })}><Admin mode="employees" /></QueryClientProvider>);
 
+it('includes legacy inactive employees in the archive and restores them after confirmation', async () => {
+  const legacyEmployee = { ...employee, id: 8, fullName: 'Previously inactive employee', isActive: false };
+  let employees = [employee, legacyEmployee];
+  const requests: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (url, options) => {
+    const path = String(url);
+    if (path === '/api/users/8/restore' && options?.method === 'POST') {
+      requests.push(path);
+      employees = [employee, { ...legacyEmployee, isActive: true }];
+      return new Response(JSON.stringify({ ...legacyEmployee, isActive: true }), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify(path === '/api/users' ? employees : []), { headers: { 'content-type': 'application/json' } });
+  });
+
+  mount();
+  await screen.findByRole('tab', { name: `${i18n.t('archivedEmployees')} (1)` });
+  expect(screen.queryByText(legacyEmployee.fullName)).toBeNull();
+  fireEvent.mouseDown(screen.getByRole('tab', { name: `${i18n.t('archivedEmployees')} (1)` }), { button: 0 });
+  const row = (await screen.findByText(legacyEmployee.fullName)).closest('tr')!;
+  fireEvent.click(within(row).getByRole('button', { name: i18n.t('restoreEmployee') }));
+  const confirmation = screen.getByRole('alertdialog');
+  expect(requests).toEqual([]);
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('restoreEmployee') }));
+  await waitFor(() => expect(requests).toEqual(['/api/users/8/restore']));
+  await screen.findByRole('tab', { name: `${i18n.t('currentEmployees')} (2)` });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: `${i18n.t('currentEmployees')} (2)` }), { button: 0 });
+  expect(await screen.findByText(legacyEmployee.fullName)).toBeTruthy();
+});
+
 it('keeps changed credentials until closing is explicitly confirmed', async () => {
   mount(); fireEvent.click(await screen.findByRole('button', { name: i18n.t('viewCredentials') }));
   await screen.findByRole('dialog');

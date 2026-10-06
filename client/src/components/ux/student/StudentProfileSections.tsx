@@ -12,8 +12,7 @@ export function StudentLearningSection({ profile, student, management, dateTime,
     <dl className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-xl bg-muted/40 p-4 text-sm">
       <Detail label={t('age')} value={student.studentAge?.toString() ?? t('noData')} />
       {!teaching ? <><Detail label={t('managerLabel')} value={student.managerName || t('noData')} />
-      <Detail label={t('nextPaymentLabel')} value={student.nextPaymentAt ? dateTime(student.nextPaymentAt) : t('noData')} />
-      <Detail label={t('referralCodeField')} value={student.referralCode || t('noData')} /></> : null}
+      <Detail label={t('nextPaymentLabel')} value={student.nextPaymentAt ? dateTime(student.nextPaymentAt) : t('noData')} /></> : null}
     </dl>
     {profile?.groups.length ? <div className="space-y-3">{profile.groups.map((group) => <section key={group.groupId} className="space-y-3 rounded-xl border p-4">
       <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary"><BookOpen className="size-4" /></span><div className="min-w-0 flex-1"><h3 className="break-words text-sm font-semibold">{group.courseName || group.groupName}</h3><p className="mt-0.5 break-words text-xs text-muted-foreground">{group.groupName}{group.schoolName ? ` · ${group.schoolName}` : ''}</p></div>{group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}</div>

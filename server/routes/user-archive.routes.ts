@@ -246,15 +246,17 @@ export const registerUserArchiveRoutes = (
           id: number;
           full_name: string;
           module: AcademyModule;
+          is_active: boolean | null;
           is_archived: boolean;
-          archived_previous_is_active: boolean | null;
+          online_pbx_incoming_enabled: boolean | null;
           archived_previous_online_pbx_incoming_enabled: boolean | null;
         }>(
           `SELECT id,
                   full_name,
                   module,
+                  is_active,
                   is_archived,
-                  archived_previous_is_active,
+                  online_pbx_incoming_enabled,
                   archived_previous_online_pbx_incoming_enabled
            FROM users
            WHERE id = $1
@@ -266,13 +268,13 @@ export const registerUserArchiveRoutes = (
           throw Object.assign(new Error('User not found'), { statusCode: 404 });
         }
 
-        if (!lockedUser.is_archived) {
+        if (!lockedUser.is_archived && lockedUser.is_active) {
           alreadyRestored = true;
           await client.query('COMMIT');
         } else {
-          const nextIsActive = lockedUser.archived_previous_is_active === true;
-          const nextIncomingEnabled = nextIsActive
-            && lockedUser.archived_previous_online_pbx_incoming_enabled === true;
+          const nextIncomingEnabled = lockedUser.is_archived
+            ? lockedUser.archived_previous_online_pbx_incoming_enabled === true
+            : lockedUser.online_pbx_incoming_enabled === true;
           const assignedRows = await client.query<{ module: AcademyAccessModule }>(
             'SELECT module FROM user_modules WHERE user_id = $1',
             [id],
@@ -293,14 +295,14 @@ export const registerUserArchiveRoutes = (
                  archived_previous_online_pbx_incoming_enabled = NULL,
                  updated_at = NOW()
              WHERE id = $1`,
-            [id, nextIsActive, nextIncomingEnabled],
+            [id, true, nextIncomingEnabled],
           );
           await syncAcademyTeacherForUser({
             id,
             fullName: lockedUser.full_name,
             module: lockedUser.module,
             modules,
-            isActive: nextIsActive,
+            isActive: true,
           }, client);
           await client.query('COMMIT');
         }

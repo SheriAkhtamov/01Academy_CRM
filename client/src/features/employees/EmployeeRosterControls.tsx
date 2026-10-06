@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Clock, Edit, Key, Search, Trash2, UserCheck, UserX } from 'lucide-react';
+import { Archive, ArchiveRestore, Edit, Key, Search, Trash2, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -93,9 +93,7 @@ export function EmployeeRowActions({
 
 export function EmployeeRosterControls({
   activeCount,
-  inactiveCount,
   archivedCount,
-  snapshotTime,
   view,
   onViewChange,
   searchTerm,
@@ -105,9 +103,7 @@ export function EmployeeRosterControls({
   moduleOptions,
 }: {
   activeCount: number;
-  inactiveCount: number;
   archivedCount: number;
-  snapshotTime: string;
   view: EmployeeListView;
   onViewChange: (view: EmployeeListView) => void;
   searchTerm: string;
@@ -120,7 +116,7 @@ export function EmployeeRosterControls({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card className="hover-lift">
           <CardContent className="flex items-center space-x-3 p-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
@@ -129,17 +125,6 @@ export function EmployeeRosterControls({
             <div className="min-w-0">
               <p className="truncate text-sm text-muted-foreground">{t('activeUsers')}</p>
               <p className="text-lg font-bold tabular-nums text-foreground">{activeCount}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="hover-lift">
-          <CardContent className="flex items-center space-x-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/30">
-              <UserX className="h-5 w-5 text-amber-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm text-muted-foreground">{t('inactiveUsers')}</p>
-              <p className="text-lg font-bold tabular-nums text-foreground">{inactiveCount}</p>
             </div>
           </CardContent>
         </Card>
@@ -154,17 +139,6 @@ export function EmployeeRosterControls({
             </div>
           </CardContent>
         </Card>
-        <Card className="hover-lift">
-          <CardContent className="flex items-center space-x-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm text-muted-foreground">{t('lastUpdated')}</p>
-              <p className="text-lg font-bold tabular-nums text-foreground">{snapshotTime}</p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
@@ -173,7 +147,7 @@ export function EmployeeRosterControls({
             <Tabs className="w-full lg:w-auto" value={view} onValueChange={(value) => onViewChange(value as EmployeeListView)}>
               <TabsList className="grid w-full grid-cols-2 lg:w-auto">
                 <TabsTrigger value="current">
-                  {t('currentEmployees')} ({activeCount + inactiveCount})
+                  {t('currentEmployees')} ({activeCount})
                 </TabsTrigger>
                 <TabsTrigger value="archive">
                   {t('archivedEmployees')} ({archivedCount})

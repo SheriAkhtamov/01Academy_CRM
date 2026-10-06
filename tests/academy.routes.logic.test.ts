@@ -2852,7 +2852,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('records a first referral without granting a discount benefit', async () => {
+  it('records a payment without applying retired referral rewards', async () => {
     let insertedDiscount: unknown;
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -2880,7 +2880,7 @@ describe('academy route logic boundaries', () => {
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
     expect(insertedDiscount).toBe('none');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('INSERT INTO "academy_referral_benefits"')
+      String(sql).includes('academy_referral_benefits') || String(sql).includes('academy_referral_rewards')
     ))).toBe(false);
   });
 
@@ -4183,34 +4183,11 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('validates referrers and prevents self-referral under the lead lock', async () => {
-    const existing = leadFixture();
-    mocks.poolQuery.mockImplementation(async (sql: string) => {
-      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
-        return { rows: [existing] };
-      }
-      return emptyResult();
-    });
-    mocks.clientQuery.mockImplementation(async (sql: string) => {
-      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
-      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
-        return { rows: [existing] };
-      }
-      if (sql.includes('FROM academy_referral_rewards')) return emptyResult();
-      if (sql.includes('FROM academy_students') && sql.includes('FOR SHARE')) {
-        return { rows: [{ id: 5, student_name: 'Same student', lead_id: 42 }] };
-      }
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .patch('/api/academy/leads/42')
-      .send({ referrerStudentId: 5 });
-
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('leadCannotReferItself');
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_leads"'))).toBe(false);
+  it('rejects retired referral fields before any write: validates referrers and prevents self-referral under the lead lock', async () => {
+    const response = await request(await createApp()).patch('/api/academy/leads/42').send({ referrerStudentId: 5 });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('invalidData');
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -4300,35 +4277,16 @@ describe('academy route logic boundaries', () => {
       .send({ contactName: 'Parent', referrerStudentId: 999 });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe('referrerStudentNotFound');
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(response.body.error).toBe('invalidData');
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'))).toBe(false);
   });
 
-  it('does not change a referral link after a reward has been created', async () => {
-    const existing = leadFixture();
-    mocks.poolQuery.mockImplementation(async (sql: string) => {
-      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
-        return { rows: [existing] };
-      }
-      return emptyResult();
-    });
-    mocks.clientQuery.mockImplementation(async (sql: string) => {
-      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
-      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
-        return { rows: [existing] };
-      }
-      if (sql.includes('FROM academy_referral_rewards')) return { rows: [{ id: 100 }] };
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .patch('/api/academy/leads/42')
-      .send({ referrerStudentId: 8 });
-
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('referralAlreadyRewarded');
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  it('rejects retired referral fields before any write: does not change a referral link after a reward has been created', async () => {
+    const response = await request(await createApp()).patch('/api/academy/leads/42').send({ referrerStudentId: 5 });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('invalidData');
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
   it('uses case-insensitive messenger duplicate checks and excludes the same lead\'s student', async () => {

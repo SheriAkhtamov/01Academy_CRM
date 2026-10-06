@@ -150,9 +150,9 @@ export const metaMarketingApi = {
       `/api/academy/modules/marketing/meta-attribution/leads?${query.toString()}`,
     ) as Promise<MetaAttributionLeadsData>;
   },
-  events: () => apiRequest(
+  events: (reportingQuery: string) => apiRequest(
     'GET',
-    '/api/academy/modules/marketing/meta-events',
+    `/api/academy/modules/marketing/meta-events?${reportingQuery}`,
   ) as Promise<MetaEventsData>,
   retryEvent: (id: number) => apiRequest(
     'POST',

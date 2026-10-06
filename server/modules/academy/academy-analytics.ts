@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { buildMarketingSourceMetrics, marketingPaymentAttribution } from './marketing-source-metrics';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -35,14 +36,11 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_NPS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -59,8 +57,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -107,8 +103,7 @@ export const resolveTeacherId = async (userId: number): Promise<number | null> =
 export type AcademyDatasetSlice =
   | 'schools' | 'rooms' | 'courses' | 'sources' | 'statuses' | 'teachers' | 'groups'
   | 'leads' | 'archivedLeads' | 'students' | 'lessons' | 'attendance' | 'payments'
-  | 'tasks' | 'parentSurveys' | 'expenses' | 'projects'
-  | 'referrals' | 'referralBenefits';
+  | 'tasks' | 'parentSurveys' | 'expenses' | 'projects';
 
 interface AcademyDatasetOptions {
   /**
@@ -168,8 +163,6 @@ export const getAcademyDataset = async (
     parentSurveys,
     expenses,
     projects,
-    referrals,
-    referralBenefits,
   ] = await Promise.all([
     slice('schools', () => (
       query(`SELECT * FROM academy_schools ORDER BY is_active DESC, name`)
@@ -380,29 +373,6 @@ export const getAcademyDataset = async (
           ORDER BY p.created_at DESC`, managerParams)
         : query(`SELECT * FROM academy_portfolio_projects ORDER BY created_at DESC`)
     )),
-    slice('referrals', () => (
-      isManagerScoped
-      ? query(`SELECT rr.*
-        FROM academy_referral_rewards rr
-        LEFT JOIN academy_students referrer ON referrer.id = rr.referrer_student_id
-        LEFT JOIN academy_students referred ON referred.id = rr.referred_student_id
-        WHERE referrer.manager_id = $1 OR referred.manager_id = $1
-        ORDER BY rr.created_at DESC`, managerParams)
-      : isTeacherScoped
-        ? Promise.resolve([])
-        : query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`)
-    )),
-    slice('referralBenefits', () => (
-      isManagerScoped
-      ? query(`SELECT benefit.*
-        FROM academy_referral_benefits benefit
-        JOIN academy_students student ON student.id = benefit.student_id
-        WHERE student.manager_id = $1
-        ORDER BY benefit.created_at DESC`, managerParams)
-      : isTeacherScoped
-        ? Promise.resolve([])
-        : query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`)
-    ))
   ]);
 
   const [visibleLeads, visibleArchivedLeads] = await Promise.all([
@@ -427,8 +397,6 @@ export const getAcademyDataset = async (
     parentSurveys,
     expenses,
     projects,
-    referrals,
-    referralBenefits,
   };
 };
 
@@ -488,7 +456,10 @@ export const studentBelongsToCourse = (student: Row, courseId: number) => {
   return Number(student.courseId) === Number(courseId);
 };
 
-export const buildAnalytics = async (reportingRange: ReportingRange | null = null) => {
+export const buildAnalytics = async (
+  reportingRange: ReportingRange | null = null,
+  options: { includeArchivedLeads?: boolean } = {},
+) => {
   const data = await getAcademyDataset();
   const now = new Date();
   const weekStart = addDays(now, -7);
@@ -502,39 +473,27 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     const date = getValidDate(value);
     return date !== null && date >= metricStart && date < metricEnd;
   };
-  const periodLeads = data.leads.filter((lead) => valueInMetricRange(lead.createdAt));
+  const allLeads = [...data.leads, ...data.archivedLeads];
+  const cohortLeads = options.includeArchivedLeads ? allLeads : data.leads;
+  const periodLeads = cohortLeads.filter((lead) => valueInMetricRange(lead.createdAt));
   const periodLessons = data.lessons.filter((lesson) => valueInMetricRange(lesson.scheduledAt));
   const periodLessonIds = new Set(periodLessons.map((lesson) => Number(lesson.id)));
   const periodAttendance = data.attendance.filter((record) => periodLessonIds.has(Number(record.lessonId)));
   const periodParentSurveys = data.parentSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
 
-  const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid');
-  const periodPaidPayments = paidPayments.filter((payment) => valueInMetricRange(payment.paidAt));
+  const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid'
+    && Number(payment.amountUzs || 0) > 0);
+  const periodPaidPayments = paidPayments.filter((payment) => valueInMetricRange(payment.paidAt ?? payment.createdAt));
   const studentById = new Map(data.students.map((student) => [Number(student.id), student]));
-  const leadById = new Map(data.leads.map((lead) => [Number(lead.id), lead]));
-  const leadIdForPayment = (payment: Row): number | null => {
-    const directLeadId = Number(payment.leadId);
-    if (Number.isInteger(directLeadId) && directLeadId > 0) return directLeadId;
-    const studentId = Number(payment.studentId);
-    const studentLeadId = Number(studentById.get(studentId)?.leadId);
-    return Number.isInteger(studentLeadId) && studentLeadId > 0 ? studentLeadId : null;
-  };
-  const customerKeyForPayment = (payment: Row): string | null => {
-    const leadId = leadIdForPayment(payment);
-    if (leadId) return `lead:${leadId}`;
-    const studentId = Number(payment.studentId);
-    return Number.isInteger(studentId) && studentId > 0 ? `student:${studentId}` : null;
-  };
+  const leadById = new Map(allLeads.map((lead) => [Number(lead.id), lead]));
+  const { leadIdForPayment, customerKeyForPayment } = marketingPaymentAttribution(data.students);
   const firstPaidAtByCustomer = new Map<string, Date>();
   const paidLeadIds = new Set<number>();
-  const paidStudentIds = new Set<number>();
   for (const payment of paidPayments) {
     const leadId = leadIdForPayment(payment);
     if (leadId && leadById.has(leadId)) paidLeadIds.add(leadId);
-    const studentId = Number(payment.studentId);
-    if (Number.isInteger(studentId) && studentId > 0) paidStudentIds.add(studentId);
     const customerKey = customerKeyForPayment(payment);
-    const paidAt = getValidDate(payment.paidAt);
+    const paidAt = getValidDate(payment.paidAt ?? payment.createdAt);
     if (!customerKey || !paidAt) continue;
     const previous = firstPaidAtByCustomer.get(customerKey);
     if (!previous || paidAt < previous) firstPaidAtByCustomer.set(customerKey, paidAt);
@@ -645,7 +604,7 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
   const firstPaidAtByLead = new Map<number, Date>();
   for (const payment of paidPayments) {
     const leadId = leadIdForPayment(payment);
-    const paidAt = getValidDate(payment.paidAt);
+    const paidAt = getValidDate(payment.paidAt ?? payment.createdAt);
     if (!leadId || !paidAt) continue;
     const previous = firstPaidAtByLead.get(leadId);
     if (!previous || paidAt < previous) firstPaidAtByLead.set(leadId, paidAt);
@@ -721,9 +680,9 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
     summary: {
       newLeadsWeek: reportingRange
         ? periodLeads.length
-        : data.leads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
+        : cohortLeads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: newLeadsMonth.length,
-      activeLeads: periodLeads.filter((lead) => activePipelineStatusCodes.has(String(lead.statusCode))).length,
+      activeLeads: periodLeads.filter((lead) => !lead.isArchived && activePipelineStatusCodes.has(String(lead.statusCode))).length,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
       revenueMonth,
       revenueTotal,
@@ -794,33 +753,15 @@ export const buildAnalytics = async (reportingRange: ReportingRange | null = nul
         ltvTargetMaxUzs: course.ltvTargetMaxUzs,
         cac: calculateCac(courseExpenses, coursePaidCustomers.size) ?? 0 };
     }),
-    bySource: data.sources.map((source) => {
-      const sourceLeads = periodLeads.filter((lead) => Number(lead.sourceId) === Number(source.id));
-      const sourceLeadIds = new Set(sourceLeads.map((lead) => Number(lead.id)));
-      const sourceStudents = data.students.filter((student) => sourceLeadIds.has(Number(student.leadId)));
-      const paidSourceStudents = sourceStudents.filter((student) => paidStudentIds.has(Number(student.id)));
-      const paidSourceLeadIds = new Set([...paidLeadIds].filter((leadId) => sourceLeadIds.has(leadId)));
-      const sourceRevenue = periodPaidPayments
-        .filter((payment) => {
-          const leadId = leadIdForPayment(payment);
-          return leadId !== null && sourceLeadIds.has(leadId);
-        })
-        .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
-      const sourceExpenses = data.expenses
-        .filter((expense) => Number(expense.sourceId) === Number(source.id))
-        .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, metricStart, metricEnd), 0);
-      const sourceCac = calculateCac(sourceExpenses, paidSourceLeadIds.size) ?? 0;
-      return {
-        sourceId: source.id,
-        sourceName: source.name,
-        leads: sourceLeads.length,
-        paidStudents: paidSourceLeadIds.size,
-        revenue: sourceRevenue,
-        expenses: sourceExpenses,
-        cpl: sourceLeads.length > 0 ? Math.round(sourceExpenses / sourceLeads.length) : 0,
-        cac: sourceCac,
-        roas: calculateRoas(sourceRevenue, sourceExpenses) ?? 0,
-        ltvCac: sourceCac ? Number(((calculateAverage(paidSourceStudents.map((student) => ltvByStudent.find((item) => Number(item.studentId) === Number(student.id))?.ltv || 0)) ?? 0) / sourceCac).toFixed(2)) : 0 };
+    bySource: buildMarketingSourceMetrics({
+      sources: data.sources,
+      leads: [...data.leads, ...data.archivedLeads],
+      students: data.students,
+      paidPayments,
+      expenses: data.expenses,
+      periodStart: metricStart,
+      periodEnd: metricEnd,
+      recognizedExpense: (expense) => expenseAmountInsidePeriod(expense, metricStart, metricEnd),
     }),
     byTeacher,
     byGroupProgress,
@@ -1053,26 +994,30 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
   };
 };
 
-export const getMarketingModuleDataset = async () => {
-  const [sources, leads, students, expenses, referrals, referralBenefits] = await Promise.all([
+export const getMarketingModuleDataset = async (reportingRange: ReportingRange | null = null) => {
+  const defaultRange = getZonedMonthRange(new Date(), ACADEMY_TIME_ZONE);
+  const periodStart = reportingRange?.start ?? defaultRange.start;
+  const periodEnd = reportingRange?.end ?? defaultRange.end;
+  const [sources, leads, funnels, statuses] = await Promise.all([
     query(`SELECT * FROM academy_lead_sources WHERE is_active = true ORDER BY name`),
-    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel, u.full_name AS manager_name,
-        ${leadExpectedPaymentTotalSelect('l')}, ${leadTagsSelect('l')}
+    query(`SELECT l.*, c.name AS course_name, s.name AS source_name, s.channel AS source_channel,
+        payment.has_paid_payment, payment.first_paid_at
       FROM academy_leads l
       LEFT JOIN academy_courses c ON c.id = l.course_id
-      LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
-      LEFT JOIN users u ON u.id = l.manager_id
-      WHERE COALESCE(l.is_archived, false) = false
-      ORDER BY l.created_at DESC`),
-    query(`SELECT id, student_name, contact_name, referral_code, referral_level
-      FROM academy_students
-      ORDER BY created_at DESC`),
-    query(`SELECT * FROM academy_marketing_expenses ORDER BY period_start DESC`),
-    query(`SELECT * FROM academy_referral_rewards ORDER BY created_at DESC`),
-    query(`SELECT * FROM academy_referral_benefits ORDER BY created_at DESC`),
+      LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) > 0 AS has_paid_payment, MIN(COALESCE(p.paid_at, p.created_at)) AS first_paid_at
+        FROM academy_payments p
+        WHERE p.status = 'paid' AND p.amount_uzs > 0
+          AND (p.lead_id = l.id OR p.student_id IN (SELECT st.id FROM academy_students st WHERE st.lead_id = l.id))
+      ) payment ON true
+      WHERE l.created_at >= $1 AND l.created_at < $2
+      ORDER BY l.created_at DESC`, [periodStart, periodEnd]),
+    query(`SELECT * FROM academy_sales_funnels ORDER BY is_active DESC, is_default DESC, created_at, id`),
+    query(`SELECT * FROM academy_lead_statuses ORDER BY sort_order, code`),
   ]);
 
-  return { sources, leads, students, expenses, referrals, referralBenefits };
+  return { sources, leads, funnels, statuses };
 };
 
 export const buildMarketingAnalyticsPayload = (analytics: Row) => ({

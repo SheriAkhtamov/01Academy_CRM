@@ -110,7 +110,6 @@ function calculateSingleSalesKpi(
   (sale) => `${sale.studentId}:${sale.groupId ?? 0}:${sale.cycleKey}`);
   const renewals = extraSales.filter((sale) => sale.kind === 'renewal' && sale.closerId === employeeId && inMonth(sale.paidAt));
   const upsells = extraSales.filter((sale) => sale.kind === 'upsell' && sale.closerId === employeeId && inMonth(sale.paidAt));
-  const referrals = periodNew.filter((sale) => sale.referralInitiated);
   const paidByStudent = new Map(newSales.map((sale) => [sale.studentId, sale]));
   // Conversion follows the trial cohort, while the bonus follows the payment
   // month. A late payment can improve its cohort without becoming a second sale.
@@ -190,7 +189,6 @@ function calculateSingleSalesKpi(
     add('renewals', renewals.length, null, 'count', renewals.map(saleDetail));
     add('renewalConversion', ratio(expiring.filter(hasRenewed).length, expiring.length), config.renewalTargetPercent || null, 'percent', expiring.map((sale) => ({ ...saleDetail(sale), success: hasRenewed(sale) })), expiring.filter(hasRenewed).length, expiring.length);
     add('upsells', upsells.length, config.upsellTarget || null, 'count', upsells.map(saleDetail));
-    add('referrals', referrals.length, null, 'count', referrals.map(saleDetail));
     add('nps', nps, config.npsTarget, 'score', surveys.map((survey) => ({ id: survey.studentId, entity: 'student', name: survey.name, date: survey.createdAt, value: survey.score })));
   }
   add('crm', crmRate, config.crmTargetPercent, 'percent', crmLeads.map((lead) => leadDetail(lead, lead.crmCompletedAt, crmComplete(lead))), crmLeads.filter(crmComplete).length, crmLeads.length);
@@ -204,7 +202,7 @@ function calculateSingleSalesKpi(
   const payLines = calculateKpiPay(role, config, {
     volume, attendees: periodAttendance.length, conversion: mainConversion,
     reactivated: reactivatedAttendance.length, renewals: renewals.length,
-    upsells: upsells.length, referrals: referrals.length, baseConditions,
+    upsells: upsells.length, baseConditions,
   });
   return { metrics, payLines, baseConditions, totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0),
     reviewableSales: facts.sales.filter((sale) => sale.closerId === employeeId && sale.status === 'paid' && inMonth(sale.paidAt)),

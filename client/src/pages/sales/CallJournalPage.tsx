@@ -8,7 +8,6 @@ import {
   PhoneCall,
   PhoneIncoming,
   PhoneMissed,
-  RefreshCw,
   Search,
   UserRound,
 } from 'lucide-react';
@@ -140,17 +139,7 @@ export default function CallJournalPage() {
 
   return (
     <ModulePage contained className="pb-2 sm:pb-2 lg:pb-2">
-      <PageHeader
-        title={t('callJournal')}
-        actions={(
-          <>
-            <Button type="button" variant="outline" onClick={() => journalQuery.refetch()} disabled={journalQuery.isFetching}>
-              <RefreshCw className={cn(journalQuery.isFetching && 'animate-spin')} />
-              {t('callJournalRefresh')}
-            </Button>
-          </>
-        )}
-      />
+      <PageHeader title={t('callJournal')} />
 
       <ModulePageBody
         contained

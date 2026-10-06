@@ -1210,19 +1210,17 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         <TabsContent value="groups" className="mt-0">
           <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
+              <div className="flex flex-wrap items-center gap-3">
                 <CardTitle>{t('navGroups')}</CardTitle>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <ArchiveSelect archived={isGroupArchive} label={t('groupListView')}
                   currentFilterLabel={requestedFilter === 'without-teacher' ? t('adminGroupsWithoutTeacher') : undefined}
                   onChange={(archived) => navigate(`${basePath}?tab=groups${archived ? '&filter=archive' : ''}`)} />
-                {!isGroupArchive ? (
-                  <Button onClick={() => openGroup()}>
-                    <Plus data-icon="inline-start" />{t('addGroup')}
-                  </Button>
-                ) : null}
               </div>
+              {!isGroupArchive ? (
+                <Button onClick={() => openGroup()}>
+                  <Plus data-icon="inline-start" />{t('addGroup')}
+                </Button>
+              ) : null}
             </CardHeader>
             <CardContent className="p-0">
               <DataTable

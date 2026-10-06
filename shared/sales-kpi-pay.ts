@@ -12,7 +12,7 @@ export function calculateKpiTiers(quantity: number, tiers: KpiConfig['tiers']): 
 
 export type KpiPayInput = {
   volume: number; attendees: number; conversion: number | null;
-  reactivated: number; renewals: number; upsells: number; referrals: number;
+  reactivated: number; renewals: number; upsells: number;
   baseConditions: KpiCalculation['baseConditions'];
 };
 
@@ -37,7 +37,6 @@ export function calculateKpiPay(role: SingleKpiRole, config: KpiConfig, input: K
   } else {
     pay('renewal', input.renewals, config.renewalBonusUzs);
     pay('upsell', input.upsells, config.upsellBonusUzs);
-    pay('referral', input.referrals, config.referralBonusUzs);
   }
   return payLines;
 }

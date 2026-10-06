@@ -323,7 +323,6 @@ const paymentSchema = z.object({
 const paymentDiscountTranslationKeys = {
   promo_20: 'paymentDiscountPromo20',
   family_15: 'paymentDiscountFamily15',
-  referral_15: 'paymentDiscountReferral15',
   none: 'paymentDiscountNone',
 } as const satisfies Record<(typeof PAYMENT_DISCOUNTS)[number], TranslationKey>;
 

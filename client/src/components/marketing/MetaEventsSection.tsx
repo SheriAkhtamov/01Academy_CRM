@@ -34,25 +34,26 @@ function EventMetric({ label, value, icon: Icon }: { label: string; value: strin
   );
 }
 
-export function MetaEventsSection() {
+export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<MetaEventRow | null>(null);
-  const queryKey = metaMarketingQueryKeys.events;
+  const queryKey = [...metaMarketingQueryKeys.events, reportingQuery];
   const { data, isLoading, isError, error, refetch } = useQuery<MetaEventsData>({
     queryKey,
-    queryFn: metaMarketingApi.events,
+    queryFn: () => metaMarketingApi.events(reportingQuery),
+    placeholderData: (previous) => previous,
   });
   const retryEvent = useMutation({
     mutationFn: metaMarketingApi.retryEvent,
     onSuccess: async () => {
       toast({ title: t('metaRetryQueued') });
       setSelected(null);
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({ queryKey: metaMarketingQueryKeys.events });
     },
     onError: (retryError: any) => toast({
       title: t('error'),
-      description: retryError?.message === 'metaEventAlreadySent' ? t('metaEventAlreadySent') : retryError?.message,
+      description: retryError?.message === 'metaEventAlreadySent' ? t('metaEventAlreadySent') : t('metaDeliveryFailed'),
       variant: 'destructive',
     }),
   });
@@ -129,7 +130,7 @@ export function MetaEventsSection() {
       <Alert variant="destructive">
         <AlertTitle>{t('failedToLoadData')}</AlertTitle>
         <AlertDescription className="flex items-center justify-between gap-4">
-          <span>{error instanceof Error ? error.message : t('error')}</span>
+          <span>{t('failedToLoadData')}</span>
           <Button variant="outline" size="sm" onClick={() => refetch()}>{t('retry')}</Button>
         </AlertDescription>
       </Alert>
@@ -141,11 +142,6 @@ export function MetaEventsSection() {
 
   return (
     <div className="space-y-4">
-      {!data.integration.capiConfigured ? (
-        <Alert>
-          <AlertTitle>{t('metaCapiNotConfigured')}</AlertTitle>
-        </Alert>
-      ) : null}
       <div className="grid grid-cols-tile gap-3">
         <EventMetric label={t('metaEventsTotal')} value={data.summary.total} icon={ListChecks} />
         <EventMetric label={t('metaEventsPending')} value={data.summary.pending} icon={Clock3} />

@@ -1,18 +1,14 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useStickyState } from '@/hooks/useStickyState';
 import { useLocation, useSearch } from 'wouter';
 import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
-import { useAuth } from '@/hooks/useAuth';
-import { toast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,30 +18,21 @@ import { MetaAttributionSection } from '@/components/marketing/MetaAttributionSe
 import { MetaEventsSection } from '@/components/marketing/MetaEventsSection';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PageHeader } from '@/components/ux/PageHeader';
-import { DateRangeField } from '@/components/ux/DateRangeField';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
-import { CurrencyInput } from '@/components/ux/FormattedInputs';
-import {
-  UnsavedChangesDialog,
-  useUnsavedChangesGuard,
-} from '@/components/ux/UnsavedChangesGuard';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { canAccessAcademyModule, hasLeadershipAccess, TARGET_ROAS } from '@shared/academy';
-import { expenseOverlapsMonth, funnelForSource, leadToPaidConversion } from '@/lib/marketingLogic';
-import { submitOnEnter } from '@/lib/submitOnEnter';
+import { TARGET_ROAS } from '@shared/academy';
+import { funnelForSource, leadsForFunnel, marketingFunnelMetrics, marketingFunnelStages, leadToPaidConversion } from '@/lib/marketingLogic';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
-import { formatAcademyDate } from '@/lib/localeFormat';
 import {
   Megaphone,
   TrendingUp,
@@ -53,23 +40,11 @@ import {
   Users,
   DollarSign,
   Target,
-  HeartHandshake,
-  Wallet,
-  Plus,
   ArrowRight,
   Calculator,
 } from 'lucide-react';
 
-const EMPTY_EXPENSE_FORM = {
-  sourceId: '',
-  channel: '',
-  campaignName: '',
-  amountUzs: '',
-  periodStart: '',
-  periodEnd: '',
-};
-
-type MarketingSection = 'overview' | 'sources' | 'funnel' | 'referrals' | 'expenses' | 'meta-attribution' | 'meta-events';
+type MarketingSection = 'overview' | 'sources' | 'funnel' | 'meta-attribution' | 'meta-events';
 
 type OverviewSourcePerformance = {
   sourceName: string;
@@ -114,16 +89,9 @@ function KpiCard({ title, value, detail, icon: Icon, tone = 'blue' }: {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function RoasBadge({ value }: { value: number }) {
+function RoasBadge({ value }: { value: number | null }) {
+  const { t } = useTranslation();
+  if (value == null) return <span className="text-muted-foreground">{t('noData')}</span>;
   const rounded = Math.round(value * 100) / 100;
   if (rounded >= TARGET_ROAS) {
     return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200">{rounded}x</Badge>;
@@ -158,47 +126,21 @@ function ConversionBar({ label, value, total, color = '#2563eb' }: {
 export default function MarketingModule({ section = 'overview' }: { section?: MarketingSection }) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
   const [location, setLocation] = useLocation();
   const routeSearch = useSearch();
   const requestedSourceId = new URLSearchParams(routeSearch).get('source');
-  const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [funnelSourceFilter, setFunnelSourceFilter] = useStickyState('marketing-funnel-source', 'all');
-  const [expensePeriodFilter, setExpensePeriodFilter] = useStickyState('marketing-expense-period', '');
+  const [funnelFilter, setFunnelFilter] = useStickyState('marketing-funnel', '');
   const [reportingRange, setReportingRange] = useStickyState('marketing-reporting-range', reportingRangeForPreset('today'));
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
-
-  const dateOnly = (value: string | null | undefined) => {
-    if (!value) return t('noData');
-    return formatAcademyDate(value, language) || t('noData');
-  };
 
   const reportingQuery = reportingRangeQuery(reportingRange);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<any>({
     queryKey: ['/api/academy/modules/marketing', reportingQuery],
     queryFn: () => apiRequest('GET', `/api/academy/modules/marketing?${reportingQuery}`),
     placeholderData: (previousData: any) => previousData,
-  });
-
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] });
-
-  const createExpense = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/academy/expenses', {
-      ...expenseForm,
-      sourceId: expenseForm.sourceId ? Number(expenseForm.sourceId) : undefined,
-      amountUzs: Number(expenseForm.amountUzs),
-    }),
-    onSuccess: () => {
-      toast({ title: t('expenseSaved') });
-      setExpenseForm(EMPTY_EXPENSE_FORM);
-      setExpenseDialogOpen(false);
-      invalidate();
-    },
-    onError: (error: any) => toast({ title: t('error'), description: error.message, variant: 'destructive' }),
   });
 
   /* ─── derived data ─── */
@@ -213,72 +155,17 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     params.delete('source');
     setLocation(`${location}${params.size ? `?${params}` : ''}`, { replace: true });
   };
-  const leads = data?.leads ?? [];
-  const expenses = data?.expenses ?? [];
-  const referrals = data?.referrals ?? [];
-  const students = data?.students ?? [];
-  const canManageExpenses = canAccessAcademyModule(user, 'marketing') || hasLeadershipAccess(user);
-
-  const filteredExpenses = useMemo(() => {
-    if (!expensePeriodFilter) return expenses;
-    return expenses.filter((expense: any) => expenseOverlapsMonth(expense, expensePeriodFilter));
-  }, [expenses, expensePeriodFilter]);
-
-  const funnelData = useMemo(() => {
-    return funnelForSource(funnel, leads, funnelSourceFilter);
-  }, [funnel, funnelSourceFilter, leads]);
-
-  const expenseFormDirty = useMemo(
-    () => JSON.stringify(expenseForm) !== JSON.stringify(EMPTY_EXPENSE_FORM),
-    [expenseForm],
-  );
-  const expenseFormValid = Number(expenseForm.amountUzs) > 0
-    && Boolean(expenseForm.channel.trim())
-    && Boolean(expenseForm.periodStart)
-    && Boolean(expenseForm.periodEnd)
-    && expenseForm.periodEnd >= expenseForm.periodStart;
-  const handleExpenseDialogState = useCallback((open: boolean) => {
-    setExpenseDialogOpen(open);
-    if (!open) setExpenseForm(EMPTY_EXPENSE_FORM);
-  }, []);
-  const expenseDialogGuard = useUnsavedChangesGuard({
-    open: expenseDialogOpen,
-    isDirty: expenseFormDirty,
-    onOpenChange: handleExpenseDialogState,
-  });
-
-  const referralStats = useMemo(() => {
-    const totalReferrals = referrals.length;
-    const paidReferrals = referrals.filter((r: any) => r.status === 'applied').length;
-    const conversion = totalReferrals > 0 ? Math.round((paidReferrals / totalReferrals) * 100) : 0;
-    return { totalReferrals, paidReferrals, conversion };
-  }, [referrals]);
-
-  const topReferrers = useMemo(() => {
-    const map = new Map<number, any>();
-    referrals.forEach((ref: any) => {
-      const studentId = ref.referrerStudentId;
-      if (!map.has(studentId)) {
-        const student = students.find((s: any) => s.id === studentId);
-        map.set(studentId, {
-          studentId,
-          studentName: student?.studentName || t('unknown'),
-          code: ref.referralCode || '-',
-          referred: 0,
-          paid: 0,
-        });
-      }
-      const entry = map.get(studentId);
-      entry.referred += 1;
-      if (ref.status === 'applied') entry.paid += 1;
-    });
-    return Array.from(map.values())
-      .map((r: any) => ({
-        ...r,
-        level: r.paid >= 5 ? t('aiAmbassador') : r.paid >= 3 ? t('freeMonth') : '-',
-      }))
-      .sort((a: any, b: any) => b.referred - a.referred);
-  }, [referrals, students, t]);
+  const leads = useMemo(() => data?.leads ?? [], [data?.leads]);
+  const funnels = data?.funnels ?? [];
+  const selectedFunnel = funnels.find((item: any) => String(item.id) === funnelFilter) ?? funnels[0];
+  const selectedFunnelId = selectedFunnel ? String(selectedFunnel.id) : '';
+  const selectedFunnelLeads = useMemo(() => leadsForFunnel(leads, selectedFunnelId, funnelSourceFilter),
+    [leads, selectedFunnelId, funnelSourceFilter]);
+  const selectedFunnelStages = useMemo(() => marketingFunnelStages(data?.statuses ?? [], selectedFunnel),
+    [data?.statuses, selectedFunnel]);
+  const funnelData = useMemo(() => funnelForSource(selectedFunnelStages, selectedFunnelLeads, 'all'),
+    [selectedFunnelStages, selectedFunnelLeads]);
+  const funnelMetrics = useMemo(() => marketingFunnelMetrics(selectedFunnelLeads), [selectedFunnelLeads]);
 
   const contained = section !== 'overview';
 
@@ -289,7 +176,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
         <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
           <div className="mx-auto max-w-xl space-y-4 text-center">
             <p className="font-medium text-destructive">{t('error')}</p>
-            <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : t('failedToLoadData')}</p>
+            <p className="text-sm text-muted-foreground">{t('failedToLoadData')}</p>
             <Button variant="outline" onClick={() => refetch()}>{t('retry')}</Button>
           </div>
         </ModulePageBody>
@@ -327,8 +214,8 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     { key: 'paidStudents', header: t('marketingPaidStudents'), accessor: (row: any) => row.paidStudents, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'revenue', header: t('revenueLabel'), accessor: (row: any) => Number(row.revenue || 0), render: (row: any) => money(row.revenue), sortable: true, cellClassName: 'tabular-nums' },
     { key: 'expenses', header: t('expenses'), accessor: (row: any) => Number(row.expenses || 0), render: (row: any) => money(row.expenses), sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'cpl', header: t('cplColumn'), accessor: (row: any) => Number(row.cpl || 0), render: (row: any) => money(row.cpl), sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'cac', header: t('cacLabel'), accessor: (row: any) => Number(row.cac || 0), render: (row: any) => money(row.cac), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'cpl', header: t('cplColumn'), accessor: (row: any) => Number(row.cpl || 0), render: (row: any) => row.cpl == null ? t('noData') : money(row.cpl), sortable: true, cellClassName: 'tabular-nums' },
+    { key: 'cac', header: t('cacLabel'), accessor: (row: any) => Number(row.cac || 0), render: (row: any) => row.cac == null ? t('noData') : money(row.cac), sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'roas',
       header: t('roasLabel'),
@@ -341,41 +228,10 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       key: 'ltvCac',
       header: t('ltvCacLabel'),
       accessor: (row: any) => Number(row.ltvCac || 0),
-      render: (row: any) => `${Number.isFinite(Number(row.ltvCac)) ? Number(row.ltvCac) : 0}:1`,
+      render: (row: any) => row.ltvCac == null ? t('noData') : `${Number(row.ltvCac)}:1`,
       sortable: true,
       cellClassName: 'tabular-nums',
     },
-  ];
-
-  /* ─── tab: referrals ─── */
-  const referralColumns = [
-    { key: 'studentName', header: t('student'), accessor: (row: any) => row.studentName, sortable: true },
-    { key: 'code', header: t('referralCodeLabel'), accessor: (row: any) => row.code, sortable: true },
-    { key: 'referred', header: t('navReferrals'), accessor: (row: any) => row.referred, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'paid', header: t('paidReferrals'), accessor: (row: any) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
-    {
-      key: 'level',
-      header: t('status'),
-      accessor: (row: any) => row.level,
-      render: (row: any) => (
-        <Badge variant={row.level === t('aiAmbassador') ? 'default' : 'outline'}>{row.level}</Badge>
-      ),
-      sortable: true,
-    },
-  ];
-
-  /* ─── tab: expenses ─── */
-  const expenseColumns = [
-    { key: 'channel', header: t('channel'), accessor: (row: any) => row.channel || '-', sortable: true },
-    { key: 'campaignName', header: t('campaign'), accessor: (row: any) => row.campaignName || '-', sortable: true },
-    {
-      key: 'period',
-      header: t('period'),
-      accessor: (row: any) => new Date(row.periodStart || row.createdAt || 0).getTime(),
-      render: (row: any) => `${dateOnly(row.periodStart || row.createdAt)} – ${dateOnly(row.periodEnd || row.periodStart || row.createdAt)}`,
-      sortable: true,
-    },
-    { key: 'amount', header: t('amount'), accessor: (row: any) => Number(row.amountUzs || 0), render: (row: any) => money(row.amountUzs), sortable: true, cellClassName: 'tabular-nums font-medium' },
   ];
 
   const funnelStages = funnelData.map((stage: any) => ({
@@ -391,7 +247,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     expenses: Number(source.expenses || 0),
     roas: Number(source.roas || 0),
   }));
-  const overviewFunnel = funnelData.map((stage: any) => ({
+  const overviewFunnel: { code: string; name: string; count: number; color: string }[] = funnel.map((stage: any) => ({
     code: String(stage.code),
     name: String(stage.name || stage.code),
     count: Number(stage.count || 0),
@@ -404,35 +260,24 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const hasLeadCohort = overviewLeadCount > 0 || Number(summary.newLeadsMonth || 0) > 0;
   const hasPaidCohort = overviewPaidCount > 0 || Number(summary.newPaidStudents || 0) > 0;
 
-  const avgDealCycle = summary.avgDealCycleDays ?? t('noData');
+  const avgDealCycle = funnelMetrics.avgDealCycleDays ?? t('noData');
   const sectionTitle: Record<MarketingSection, string> = {
     overview: t(moduleSectionLabelKey('marketing', 'overview')),
     sources: t(moduleSectionLabelKey('marketing', 'sources')),
     funnel: t(moduleSectionLabelKey('marketing', 'funnel')),
-    referrals: t(moduleSectionLabelKey('marketing', 'referrals')),
-    expenses: t(moduleSectionLabelKey('marketing', 'expenses')),
     'meta-attribution': t(moduleSectionLabelKey('marketing', 'meta-attribution')),
     'meta-events': t(moduleSectionLabelKey('marketing', 'meta-events')),
   };
 
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'space-y-5'}>
-      <PageHeader
-        title={sectionTitle[section]}
-        actions={
-          canManageExpenses && (section === 'overview' || section === 'sources' || section === 'expenses') ? (
-            <Button onClick={() => setExpenseDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('addExpense')}
-            </Button>
-          ) : undefined
-        }
-      />
+      <PageHeader title={sectionTitle[section]} />
 
       <ReportingDateRangeFilter
         value={reportingRange}
         onChange={setReportingRange}
         isFetching={isFetching}
+        className="mb-5 shrink-0"
       />
 
       {/* ─── KPI cards ─── */}
@@ -489,7 +334,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       {section === 'meta-attribution' ? (
         <MetaAttributionSection reportingQuery={reportingQuery} />
       ) : section === 'meta-events' ? (
-        <MetaEventsSection />
+        <MetaEventsSection reportingQuery={reportingQuery} />
       ) : section !== 'overview' ? (
       <Tabs value={section} className="space-y-4">
         {/* ─── Tab: Sources ─── */}
@@ -497,12 +342,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           <Card>
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
               <CardTitle>{t('marketingBySources')}</CardTitle>
-              {canManageExpenses && (
-                <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('addExpense')}
-                </Button>
-              )}
             </CardHeader>
             <CardContent>
               <DataTable
@@ -523,17 +362,29 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
             <Card className="xl:col-span-2">
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
                 <CardTitle>{t('conversionFunnel')}</CardTitle>
-                <Select value={funnelSourceFilter} onValueChange={setFunnelSourceFilter}>
-                  <SelectTrigger aria-label={t('source')} className="w-52">
-                    <SelectValue placeholder={t('allSources')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('allSources')}</SelectItem>
-                    {sources.map((source: any) => (
-                      <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                  <Select value={selectedFunnelId} onValueChange={setFunnelFilter} disabled={funnels.length === 0}>
+                    <SelectTrigger aria-label={t('salesFunnel')} className="w-full sm:w-56">
+                      <SelectValue placeholder={t('salesFunnel')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {funnels.map((item: any) => (
+                        <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={funnelSourceFilter} onValueChange={setFunnelSourceFilter}>
+                    <SelectTrigger aria-label={t('source')} className="w-full sm:w-52">
+                      <SelectValue placeholder={t('allSources')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('allSources')}</SelectItem>
+                      {sources.map((source: any) => (
+                        <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {funnelStages.map((stage, index) => {
@@ -544,7 +395,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                     : count;
                   const conversion = index > 0 && prevCount > 0
                     ? Math.round((count / prevCount) * 100)
-                    : 100;
+                    : 0;
                   const maxCount = Math.max(...funnelData.map((f: any) => f.count || 1), 1);
 
                   return (
@@ -568,7 +419,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${Math.max((count / maxCount) * 100, 3)}%`,
+                            width: `${(count / maxCount) * 100}%`,
                             backgroundColor: stage.color,
                             opacity: 0.85,
                           }}
@@ -594,213 +445,32 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
 
                 <ConversionBar
                   label={t('conversionApplicationToDemo')}
-                  value={summary.leadToDemoConversion ?? 0}
+                  value={funnelMetrics.leadToDemoConversion}
                   total={100}
                   color="#8b5cf6"
                 />
                 <ConversionBar
                   label={t('conversionDemoToPayment')}
-                  value={summary.demoToPaidConversion ?? 0}
+                  value={funnelMetrics.demoToPaidConversion}
                   total={100}
                   color="#16a34a"
                 />
                 <ConversionBar
                   label={t('leadToPaidConversion')}
-                  value={summary.leadToPaidConversion ?? 0}
+                  value={funnelMetrics.leadToPaidConversion}
                   total={100}
                   color="#2563eb"
                 />
 
-                <div className="pt-3 border-t border-slate-100 space-y-2.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('cplLabel')}</span>
-                    <strong className="text-foreground tabular-nums">{money(summary.cpl)}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('cacLabel')}</span>
-                    <strong className="text-foreground tabular-nums">{money(summary.cac)}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('roasLabel')}</span>
-                    <strong className="text-emerald-600 tabular-nums">{summary.roas ?? 0}x</strong>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        {/* ─── Tab: Referrals ─── */}
-        <TabsContent value="referrals" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('totalReferrals')}</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.totalReferrals}</p>
-                  </div>
-                  <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-blue-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('paidReferrals')}</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.paidReferrals}</p>
-                  </div>
-                  <div className="h-11 w-11 rounded-xl bg-emerald-50 flex items-center justify-center">
-                    <HeartHandshake className="h-5 w-5 text-emerald-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t('conversionRate')}</p>
-                    <p className="text-2xl font-bold text-foreground tabular-nums">{referralStats.conversion}%</p>
-                  </div>
-                  <div className="h-11 w-11 rounded-xl bg-purple-50 flex items-center justify-center">
-                    <TrendingUp className="h-5 w-5 text-purple-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle>{t('topReferrers')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                className="overflow-x-auto"
-                columns={referralColumns}
-                data={topReferrers}
-                filterKey={reportingQuery}
-                keyExtractor={(row) => String(row.studentId)}
-                emptyState={<EmptyState title={t('marketingNoReferralsYet')} icon={HeartHandshake} />}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ─── Tab: Expenses ─── */}
-        <TabsContent value="expenses" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-4">
-              <CardTitle>{t('marketingExpenses')}</CardTitle>
-              {/* 160px of month picker plus two buttons is wider than a phone
-                  once the card padding is taken out, so the group wraps and the
-                  picker takes the full row on its own. */}
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                <Input
-                  type="month"
-                  value={expensePeriodFilter}
-                  onChange={(e) => setExpensePeriodFilter(e.target.value)}
-                  className="w-full sm:w-40"
-                  placeholder={t('period')}
-                />
-                <Button variant="outline" size="sm" onClick={() => setExpensePeriodFilter('')}>
-                  {t('reset')}
-                </Button>
-                {canManageExpenses && (
-                  <Button size="sm" onClick={() => setExpenseDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('addExpense')}
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                className="overflow-x-auto"
-                columns={expenseColumns}
-                data={filteredExpenses}
-                filterKey={JSON.stringify([expensePeriodFilter, reportingQuery])}
-                keyExtractor={(row, index) => String(row.id ?? index)}
-                emptyState={<EmptyState title={t('marketingNoExpensesYet')} icon={Wallet} />}
-              />
-            </CardContent>
-          </Card>
         </TabsContent>
 
       </Tabs>
       ) : null}
       </ModulePageBody>
 
-      {/* ─── Expense Dialog ─── */}
-      {canManageExpenses && (
-        <Dialog open={expenseDialogOpen} onOpenChange={expenseDialogGuard.handleOpenChange}>
-          <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0" aria-describedby={undefined}>
-            <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left">
-              <DialogTitle>{t('marketingExpenseTitle')}</DialogTitle>
-            </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label={t('source')}>
-                <Select value={expenseForm.sourceId} onValueChange={(sourceId) => setExpenseForm({ ...expenseForm, sourceId })}>
-                  <SelectTrigger aria-label={t('source')}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {sources.map((source: any) => (
-                      <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label={t('channel')}>
-                <Input
-                  aria-label={t('channel')}
-                  value={expenseForm.channel}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, channel: e.target.value })}
-                  onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
-                />
-              </Field>
-              <Field label={t('campaign')}>
-                <Input
-                  aria-label={t('campaign')}
-                  value={expenseForm.campaignName}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, campaignName: e.target.value })}
-                  onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !expenseFormValid || createExpense.isPending })}
-                />
-              </Field>
-              <Field label={t('amount')}>
-                <CurrencyInput aria-label={t('amount')} value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm({ ...expenseForm, amountUzs })} />
-              </Field>
-              <DateRangeField
-                idPrefix="marketing-expense-period"
-                className="md:col-span-2"
-                fromLabel={t('start')}
-                toLabel={t('end')}
-                value={{ from: expenseForm.periodStart, to: expenseForm.periodEnd }}
-                onChange={(range) => setExpenseForm({ ...expenseForm, periodStart: range.from, periodEnd: range.to })}
-              />
-              </div>
-            </div>
-            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
-              <Button variant="outline" onClick={() => expenseDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-              <Button
-                onClick={() => {
-                  if (!expenseFormValid) {
-                    toast({ title: t('invalidData'), variant: 'destructive' });
-                    return;
-                  }
-                  createExpense.mutate();
-                }}
-                disabled={createExpense.isPending}
-              >
-                {createExpense.isPending ? t('saving') : t('saveExpense')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
       <Dialog open={Boolean(selectedSource)} onOpenChange={(open) => { if (!open) closeSource(); }}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader><DialogTitle>{selectedSource?.name || t('leadSources')}</DialogTitle></DialogHeader>
@@ -813,12 +483,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
           <Button variant="outline" onClick={closeSource}>{t('close')}</Button>
         </DialogContent>
       </Dialog>
-      <UnsavedChangesDialog
-        open={expenseDialogGuard.confirmationOpen}
-        onOpenChange={expenseDialogGuard.setConfirmationOpen}
-        onDiscard={expenseDialogGuard.discardChanges}
-      />
-
     </ModulePage>
   );
 }

@@ -12,7 +12,7 @@ export const metricKeys = {
   attendance: 'kpiAttendanceMetric', crm: 'kpiCrmMetric', reactivation: 'kpiReactivationMetric',
   reactivatedAttendance: 'kpiReactivatedAttendanceMetric', newStudents: 'kpiNewStudentsMetric',
   trialConversion: 'kpiTrialConversionMetric', offer: 'kpiOfferMetric', renewals: 'kpiRenewalsMetric',
-  renewalConversion: 'kpiRenewalConversionMetric', upsells: 'kpiUpsellsMetric', referrals: 'kpiReferralsMetric', nps: 'kpiNpsMetric',
+  renewalConversion: 'kpiRenewalConversionMetric', upsells: 'kpiUpsellsMetric', nps: 'kpiNpsMetric',
 } satisfies Record<KpiMetricId, TranslationKey>;
 export const saleKindKeys = {
   new: 'kpiSaleNew', renewal: 'kpiSaleRenewal', upsell: 'kpiSaleUpsell', installment: 'kpiSaleInstallment', unclassified: 'kpiSaleUnclassified',

@@ -37,7 +37,6 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -46,7 +45,6 @@ import {
   TARGET_ROAS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -63,8 +61,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -129,7 +125,6 @@ import {
   withTransaction,
 } from './academy-core';
 import {
-  assertValidReferrerStudent,
   buildLeadStageDurations,
   createStageHistory,
   createStudentFromLead,
@@ -270,6 +265,9 @@ router.get('/leads', async (req, res) => {
 });
 
 router.post('/leads', async (req, res) => {
+  if (req.body.referrerStudentId != null || req.body.referralCode != null) {
+    return res.status(400).json({ error: 'invalidData' });
+  }
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const parsedInput = createAcademyLeadRequestSchema.safeParse(req.body);
@@ -281,7 +279,6 @@ router.post('/leads', async (req, res) => {
     const phones = normalizeLeadPhones(input.phoneNumbers ?? input.phone);
     const primaryPhone = phones[0]?.phone ?? null;
     const messenger = nullableText(input.messenger);
-    const requestedReferrerStudentId = toIdOrNull(input.referrerStudentId, 'referrerStudentId');
 
     if (!contactName) return res.status(400).json({ error: 'contactPersonRequired' });
 
@@ -309,10 +306,7 @@ router.post('/leads', async (req, res) => {
           duplicate: lockedDuplicate,
         });
       }
-      const referrer = requestedReferrerStudentId
-        ? await assertValidReferrerStudent(requestedReferrerStudentId)
-        : null;
-      const sourceId = await resolveSourceId(input, referrer);
+      const sourceId = await resolveSourceId(input);
       if (!sourceId) {
         throw Object.assign(new Error('sourceRequired'), { statusCode: 400 });
       }
@@ -380,8 +374,6 @@ router.post('/leads', async (req, res) => {
         language: languages[0] ?? '', languages,
         comment: initialComment ?? null,
         enrolledGroupId,
-        referralCode: nullableText(input.referralCode) ?? null,
-        referrerStudentId: requestedReferrerStudentId,
         createdBy: req.user!.id,
       });
       if (initialComment) {
@@ -953,6 +945,9 @@ router.post('/leads/:id/restore', async (req, res) => {
 });
 
 router.patch('/leads/:id', async (req, res) => {
+  if (req.body.referrerStudentId != null || req.body.referralCode != null) {
+    return res.status(400).json({ error: 'invalidData' });
+  }
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     if (
@@ -994,10 +989,6 @@ router.patch('/leads/:id', async (req, res) => {
     const hasRequestedOfferCourse = req.body.offerCourseId !== undefined;
     const requestedOfferCourseId = hasRequestedOfferCourse
       ? toIdOrNull(req.body.offerCourseId, 'offerCourseId')
-      : undefined;
-    const hasRequestedReferrer = req.body.referrerStudentId !== undefined;
-    const requestedReferrerStudentId = hasRequestedReferrer
-      ? toIdOrNull(req.body.referrerStudentId, 'referrerStudentId')
       : undefined;
     const hasRequestedSource = req.body.sourceId !== undefined;
     const requestedSourceId = hasRequestedSource
@@ -1113,8 +1104,7 @@ router.patch('/leads/:id', async (req, res) => {
       warmReason: nullableText(req.body.warmReason),
       warmMovedAt: nullableDate(req.body.warmMovedAt),
       noMailing: toBoolean(req.body.noMailing),
-      referralCode: nullableText(req.body.referralCode),
-      referrerStudentId: hasRequestedReferrer ? requestedReferrerStudentId : undefined };
+      };
 
     const manager = managerId ? await getActiveSalesManager(managerId) : null;
     const managerChanged = Boolean(manager && Number(oldLead.managerId) !== Number(manager.id));
@@ -1199,30 +1189,6 @@ router.patch('/leads/:id', async (req, res) => {
         );
         if (!activeOfferCourse) {
           throw Object.assign(new Error('courseNotFound'), { statusCode: 400 });
-        }
-      }
-      if (hasRequestedReferrer) {
-        const oldReferrerId = lockedLead.referrerStudentId == null
-          ? null
-          : Number(lockedLead.referrerStudentId);
-        const nextReferrerId = requestedReferrerStudentId == null
-          ? null
-          : Number(requestedReferrerStudentId);
-        if (oldReferrerId !== nextReferrerId) {
-          const existingReward = await queryOne(
-            `SELECT id
-             FROM academy_referral_rewards
-             WHERE referred_lead_id = $1
-             LIMIT 1
-             FOR UPDATE`,
-            [id],
-          );
-          if (existingReward) {
-            throw Object.assign(new Error('referralAlreadyRewarded'), { statusCode: 409 });
-          }
-        }
-        if (requestedReferrerStudentId) {
-          await assertValidReferrerStudent(requestedReferrerStudentId, id);
         }
       }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
@@ -1503,10 +1469,6 @@ router.post('/leads/:id/students', async (req, res) => {
       if (hasEnrollment && !primaryGroup) {
         throw Object.assign(new Error('Group not found'), { statusCode: 404 });
       }
-      const count = await queryOne<{ count: number }>(
-        `SELECT COUNT(*)::int AS count FROM academy_students WHERE lead_id = $1`,
-        [leadId],
-      );
       const createdStudent = await insertRow('academy_students', {
         leadId,
         contactName: lead.contactName,
@@ -1527,7 +1489,7 @@ router.post('/leads/:id/students', async (req, res) => {
         enrolledAt,
         enrollmentDate: enrolledAt,
         nextPaymentAt: enrolledAt ? addDays(enrolledAt, 30) : null,
-        referralCode: buildReferralCode(studentName, `${leadId}-${Number(count?.count ?? 0) + 1}`),
+        referralCode: '', // Compatibility with the legacy non-null column.
         marketingConsent: req.body.marketingConsent === true,
         riskFlags: [],
       });

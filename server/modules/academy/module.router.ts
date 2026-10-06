@@ -43,7 +43,6 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -52,7 +51,6 @@ import {
   TARGET_ROAS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -69,8 +67,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -151,7 +147,6 @@ router.get('/modules/administration', async (req, res) => {
 const SALES_MODULE_SLICES = [
   'schools', 'rooms', 'courses', 'groups', 'sources', 'statuses', 'leads',
   'archivedLeads', 'students', 'lessons', 'payments', 'tasks', 'projects',
-  'referrals', 'referralBenefits',
 ] as const satisfies readonly AcademyDatasetSlice[];
 
 const TEACHER_MODULE_SLICES = [
@@ -188,8 +183,6 @@ router.get('/modules/sales', async (req, res) => {
       payments: dataset.payments,
       tasks: dataset.tasks,
       projects: dataset.projects,
-      referrals: dataset.referrals,
-      referralBenefits: dataset.referralBenefits,
       constants: academyConstants(),
     });
   } catch (error) {
@@ -530,8 +523,8 @@ router.get('/modules/marketing', async (req, res) => {
   try {
     const reportingRange = parseReportingRange(req.query.from, req.query.to);
     const [dataset, analytics] = await Promise.all([
-      getMarketingModuleDataset(),
-      buildAnalytics(reportingRange),
+      getMarketingModuleDataset(reportingRange),
+      buildAnalytics(reportingRange, { includeArchivedLeads: true }),
     ]);
     res.json({
       ...dataset,
@@ -614,7 +607,7 @@ router.get('/modules/marketing/meta-events', async (req, res) => {
   try {
     const limit = Number(req.query.limit ?? 200);
     res.json({
-      ...(await getMetaConversionEventDataset(Number.isFinite(limit) ? limit : 200)),
+      ...(await getMetaConversionEventDataset(Number.isFinite(limit) ? limit : 200, parseReportingRange(req.query.from, req.query.to))),
       integration: getMetaMarketingIntegrationConfig(),
     });
   } catch (error: any) {

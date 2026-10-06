@@ -204,8 +204,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onOpenChange: handleUserModalState,
   });
 
-  const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers, dataUpdatedAt: usersUpdatedAt } = useQuery<any[]>({
+  const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers } = useQuery<any[]>({
     queryKey: ['/api/users'],
+    select: (employees) => employees.map((employee) => ({
+      ...employee,
+      isArchived: employee.isArchived === true || !employee.isActive,
+    })),
   });
   const {
     data: salesFunnels = [],
@@ -217,19 +221,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     enabled: isEmployeesPage,
   });
 
-  const activeUserCount = users.filter((candidate: any) => !candidate.isArchived && candidate.isActive).length;
-  const inactiveUserCount = users.filter((candidate: any) => !candidate.isArchived && !candidate.isActive).length;
+  const activeUserCount = users.filter((candidate: any) => !candidate.isArchived).length;
   const archivedUserCount = users.filter((candidate: any) => candidate.isArchived).length;
-  // A stable "as of" label: recomputing it on every render would turn it into
-  // a live clock that changes on every keystroke in the search box. It follows
-  // the last successful users fetch, not the moment the page was mounted.
-  const settingsSnapshotTime = useMemo(
-    () => formatAcademyDate(usersUpdatedAt ? new Date(usersUpdatedAt) : null, language, {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    }),
-    [language, usersUpdatedAt],
-  );
 
   const createUserMutation = useMutation({
     mutationFn: async (data: z.infer<ReturnType<typeof createUserSchema>>) => {
@@ -597,12 +590,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const getModuleLabel = (module: string) => formatUserModule(module, t);
   const getModuleLabels = (user: any) => getAssignedModules(user).map(getModuleLabel);
 
-  const getStatusColor = (isActive: boolean) => {
-    return isActive
-      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
-      : 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300';
-  };
-
   const moduleOptions = ACADEMY_MODULES.map((value) => ({
     value,
     label: t(MODULE_NAVIGATION[value].nameKey),
@@ -679,13 +666,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       key: 'status',
       header: t('status'),
       sortable: true,
-      accessor: (row) => row.isArchived ? t('employeeArchived') : row.isActive ? t('active') : t('inactive'),
+      accessor: (row) => row.isArchived ? t('employeeArchived') : t('active'),
       render: (row) => (
         <Badge
           variant={row.isArchived ? 'outline' : 'default'}
-          className={row.isArchived ? 'border-slate-300 text-slate-700 dark:text-slate-300' : getStatusColor(row.isActive)}
+          className={row.isArchived ? 'border-slate-300 text-slate-700 dark:text-slate-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'}
         >
-          {row.isArchived ? t('employeeArchived') : row.isActive ? t('active') : t('inactive')}
+          {row.isArchived ? t('employeeArchived') : t('active')}
         </Badge>
       ),
     },
@@ -1004,9 +991,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
           <EmployeeRosterControls
             activeCount={activeUserCount}
-            inactiveCount={inactiveUserCount}
             archivedCount={archivedUserCount}
-            snapshotTime={settingsSnapshotTime}
             view={employeeListView}
             onViewChange={setEmployeeListView}
             searchTerm={searchTerm}

@@ -97,11 +97,11 @@ describe('sales schedule teacher filter', () => {
     expect(container.querySelector('[aria-label$=", AI Kids — Morning"]')).toBeTruthy();
     expect(container.querySelector('[aria-label$=", Vibe Coding — Evening"]')).toBeNull();
     expect(screen.getByText(/Lessons this week: 1/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove teacher filter: Anna Karimova' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Teachers: Anna Karimova' })).toBeTruthy();
     expect(screen.getByText('Vibe Coding — Evening')).toBeTruthy();
   });
 
-  it('searches the teacher roster and can clear the active teacher chip', async () => {
+  it('searches the teacher roster and clears the active filter from the dropdown', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const { container } = renderSchedule();
 
@@ -113,7 +113,9 @@ describe('sales schedule teacher filter', () => {
     expect(screen.queryByRole('menuitemcheckbox', { name: /Anna Karimova/ })).toBeNull();
     await user.click(screen.getByRole('menuitemcheckbox', { name: /Boris Saidov/ }));
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Remove teacher filter: Boris Saidov' }));
+    await user.click(screen.getByRole('button', { name: 'Teachers: Boris Saidov' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Show all teachers' }));
+    await user.keyboard('{Escape}');
 
     expect(container.querySelector('[aria-label$=", AI Kids — Morning"]')).toBeTruthy();
     expect(container.querySelector('[aria-label$=", Vibe Coding — Evening"]')).toBeTruthy();

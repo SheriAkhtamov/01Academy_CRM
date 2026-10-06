@@ -22,7 +22,7 @@ const lead = (id: number, overrides: Partial<KpiLeadFact> = {}): KpiLeadFact => 
 });
 const facts = (overrides: Partial<KpiFacts> = {}): KpiFacts => ({ leads: [], trials: [], sales: [], surveys: [], ...overrides });
 const payInput = (overrides: Partial<KpiPayInput> = {}): KpiPayInput => ({
-  volume: 30, attendees: 30, conversion: 75, reactivated: 0, renewals: 0, upsells: 0, referrals: 0,
+  volume: 30, attendees: 30, conversion: 75, reactivated: 0, renewals: 0, upsells: 0,
   baseConditions: { volume: true, crm: true, timing: true }, ...overrides,
 });
 const sum = (lines: { amountUzs: number }[]) => lines.reduce((total, line) => total + line.amountUzs, 0);
@@ -48,7 +48,16 @@ describe('sales KPI pay rules', () => {
   });
   it('adds reactivation to attendance and sums all closer bonus types separately', () => {
     expect(sum(calculateKpiPay('hunter', defaultKpiConfig('hunter'), payInput({ attendees: 31, reactivated: 2 })))).toBe(6_300_000);
-    expect(sum(calculateKpiPay('closer', defaultKpiConfig('closer'), payInput({ volume: 28, renewals: 4, upsells: 3, referrals: 2 })))).toBe(9_475_000);
+    expect(sum(calculateKpiPay('closer', defaultKpiConfig('closer'), payInput({ volume: 28, renewals: 4, upsells: 3 })))).toBe(9_225_000);
+  });
+  it('reads legacy saved plans without exposing or paying referral bonuses', () => {
+    const parsed = kpiConfigSchema.parse({ ...defaultKpiConfig('closer'), referralBonusUzs: 125_000,
+      enabledMetrics: ['newStudents', 'referrals', 'upsells'] });
+    expect(parsed.enabledMetrics).toEqual(['newStudents', 'upsells']);
+    expect(kpiConfigSchema.parse({ ...defaultKpiConfig('closer'), enabledMetrics: ['referrals'] }).enabledMetrics).toEqual(['newStudents']);
+    expect(kpiConfigSchema.safeParse({ ...defaultKpiConfig('closer'), enabledMetrics: [] }).success).toBe(false);
+    const lines = calculateKpiPay('closer', parsed, payInput());
+    expect(lines.some((line) => line.key === 'referral')).toBe(false);
   });
   it('shows missing base conditions without withholding the guaranteed base', () => {
     const config = defaultKpiConfig('hunter');
@@ -129,7 +138,7 @@ describe('sales KPI attribution and month accounting', () => {
     const result = calc(facts({ sales: [sale(1, { amountUzs: 100_000 }), sale(2, { studentId: 1, kind: 'installment' }),
       sale(3, { status: 'refunded', referralInitiated: true }), sale(4, { status: 'pending' }), sale(5, { amountUzs: 0 })] }), 'closer');
     expect(metric(result, 'newStudents').value).toBe(1);
-    expect(metric(result, 'referrals').value).toBe(0);
+    expect(result.metrics.some((m) => String(m.id) === 'referrals')).toBe(false);
     expect(result.payLines.find((p) => p.key === 'tier')?.amountUzs).toBe(150_000);
   });
   it('counts one closer conversion per new student even if they tried two courses', () => {
@@ -151,13 +160,14 @@ describe('sales KPI attribution and month accounting', () => {
       sale(2, { paidAt: '2026-10-05T10:00:00+05:00' })] }), 'closer', '2026-10-06T10:00:00+05:00');
     expect(metric(result, 'trialConversion').value).toBe(0);
   });
-  it('deduplicates renewal/upsell cycles and pays the referral bonus in addition to the new sale', () => {
+  it('deduplicates renewal/upsell cycles and ignores retired referral flags', () => {
     const result = calc(facts({ sales: [sale(1, { referralInitiated: true }),
       sale(2, { kind: 'renewal', cycleKey: '2026-10' }), sale(3, { studentId: 2, kind: 'upsell', cycleKey: '2026-10', paidAt: at(5) }),
       sale(4, { kind: 'upsell', cycleKey: '2026-10' }), sale(5, { kind: 'unclassified' })] }), 'closer');
     expect(metric(result, 'renewals').value).toBe(1);
     expect(metric(result, 'upsells').value).toBe(1);
-    expect(metric(result, 'referrals').value).toBe(1);
+    expect(result.metrics.some((m) => String(m.id) === 'referrals')).toBe(false);
+    expect(result.payLines.some((line) => line.key === 'referral')).toBe(false);
     expect(result.unclassifiedSales.map((s) => s.id)).toEqual([5]);
   });
   it('counts renewal opportunities once across split payments', () => {

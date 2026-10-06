@@ -320,7 +320,7 @@ export const getMetaAttributionLeads = async (
   [reportingRange.start, reportingRange.end, attributionKey],
 );
 
-export const getMetaConversionEventDataset = async (limit = 200) => {
+export const getMetaConversionEventDataset = async (limit = 200, reportingRange: ReportingRange | null = null) => {
   const [events, statusCounts] = await Promise.all([
     query(
       `SELECT event.id, event.lead_id, lead.contact_name, event.event_id, event.event_name,
@@ -332,14 +332,17 @@ export const getMetaConversionEventDataset = async (limit = 200) => {
        FROM meta_conversion_events event
        LEFT JOIN academy_leads lead ON lead.id = event.lead_id
        LEFT JOIN meta_lead_attributions attribution ON attribution.id = event.attribution_id
+       ${reportingRange ? 'WHERE event.event_time >= $2 AND event.event_time < $3' : ''}
        ORDER BY event.event_time DESC, event.id DESC
        LIMIT $1`,
-      [Math.max(1, Math.min(limit, 500))],
+      [Math.max(1, Math.min(limit, 500)), ...(reportingRange ? [reportingRange.start, reportingRange.end] : [])],
     ),
     query<{ status: string; count: number }>(
       `SELECT status, COUNT(*)::int AS count
        FROM meta_conversion_events
+       ${reportingRange ? 'WHERE event_time >= $1 AND event_time < $2' : ''}
        GROUP BY status`,
+      reportingRange ? [reportingRange.start, reportingRange.end] : [],
     ),
   ]);
   const counts = Object.fromEntries(statusCounts.map((row) => [row.status, Number(row.count || 0)]));

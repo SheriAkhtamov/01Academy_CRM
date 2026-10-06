@@ -31,7 +31,6 @@ export const createAcademyLeadRequestSchema = z.object({
   managerId: optionalPositiveIdInput,
   courseId: optionalPositiveIdInput,
   enrolledGroupId: optionalPositiveIdInput,
-  referrerStudentId: optionalPositiveIdInput,
   studentName: z.string().trim().max(255).optional().nullable(),
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),
   statusCode: z.string().trim().max(80).optional().nullable(),
@@ -39,7 +38,6 @@ export const createAcademyLeadRequestSchema = z.object({
   languages: leadLanguagesSchema.optional(),
   comment: optionalTextInput,
   advertisingCampaign: optionalTextInput,
-  referralCode: z.string().trim().max(120).optional().nullable(),
   demoAt: z.unknown().optional(),
 }).passthrough();
 

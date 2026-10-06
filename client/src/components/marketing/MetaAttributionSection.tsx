@@ -149,13 +149,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       toast({ title: t('metaCatalogSynced') });
       await queryClient.invalidateQueries({ queryKey: metaMarketingQueryKeys.attribution });
     },
-    onError: (syncError: any) => toast({
-      title: t('error'),
-      description: syncError?.message === 'metaAttributionNotConfigured'
-        ? t('metaAttributionNotConfigured')
-        : syncError?.message,
-      variant: 'destructive',
-    }),
+    onError: () => toast({ title: t('error'), variant: 'destructive' }),
   });
   const visibleCreatives = useMemo(
     () => (onlyWithLeads ? (data?.creatives ?? []).filter((row) => row.leads > 0) : data?.creatives ?? []),
@@ -350,7 +344,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       <Alert variant="destructive">
         <AlertTitle>{t('failedToLoadData')}</AlertTitle>
         <AlertDescription className="flex items-center justify-between gap-4">
-          <span>{error instanceof Error ? error.message : t('error')}</span>
+          <span>{t('failedToLoadData')}</span>
           <Button variant="outline" size="sm" onClick={() => refetch()}>{t('retry')}</Button>
         </AlertDescription>
       </Alert>
@@ -363,11 +357,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
   const summary = data.summary;
   return (
     <div className="space-y-4">
-      {!data.integration.attributionConfigured ? (
-        <Alert>
-          <AlertTitle>{t('metaAttributionNotConfigured')}</AlertTitle>
-        </Alert>
-      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <AttributionMetric
           label={t('metaAdsWithLeads')}
@@ -513,7 +502,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
               <Alert variant="destructive" className="my-2">
                 <AlertTitle>{t('failedToLoadData')}</AlertTitle>
                 <AlertDescription className="flex items-center justify-between gap-3">
-                  <span>{attributedLeads.error instanceof Error ? attributedLeads.error.message : t('error')}</span>
+                  <span>{t('failedToLoadData')}</span>
                   <Button variant="outline" size="sm" onClick={() => attributedLeads.refetch()}>{t('retry')}</Button>
                 </AlertDescription>
               </Alert>

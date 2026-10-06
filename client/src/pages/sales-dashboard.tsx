@@ -1234,7 +1234,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             ? ceoCopy.student.overdueStudents
             : riskFilter === 'low-attendance'
               ? ceoCopy.student.lowAttendanceStudents
-              : sectionTitle.students}
+              : undefined}
           showManager={isAdministrationModule}
         />
       ) : null}
@@ -1403,7 +1403,7 @@ export function StudentsTab({
   onUpdateStudentStatus?: (id: number, status: string, exitReason?: string) => Promise<unknown>;
   onAddStudentGroup?: (id: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
   onRemoveStudentGroup?: (id: number, groupId: number) => Promise<unknown>;
-  title: string;
+  title?: string;
   showManager: boolean;
 }) {
   const columns = [
@@ -1486,9 +1486,11 @@ export function StudentsTab({
   return (
     <div className="h-full min-h-0">
       <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-        <CardHeader className="shrink-0 pb-4">
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
+        {title ? (
+          <CardHeader className="shrink-0 pb-4">
+            <CardTitle>{title}</CardTitle>
+          </CardHeader>
+        ) : null}
         <CardContent className="min-h-0 flex-1 p-0">
           <DataTable
             rootClassName="flex h-full min-h-0 flex-col"

@@ -1314,14 +1314,11 @@ export default function MessagesPage() {
         ? t('instagramSyncFailed')
         : t('instagramSyncComplete');
   const hasSyncProgress = Object.values(syncStatus?.stats ?? {}).some((value) => Number(value) > 0);
-  const syncStatusError = syncStatus?.error && syncStatus.error !== 'instagramSyncPartial'
-    ? syncStatus.error
-    : '';
   const syncStatusDescription = syncStatus?.status === 'running'
     ? hasSyncProgress
       ? syncSummaryText(syncStatus?.stats, t)
       : ''
-    : [syncSummaryText(syncStatus?.stats, t), syncStatusError].filter(Boolean).join(' ');
+    : syncSummaryText(syncStatus?.stats, t);
 
   if (conversationsQuery.isLoading) return <MessagesSkeleton />;
 
@@ -1345,7 +1342,7 @@ export default function MessagesPage() {
     <ModulePage contained className="[&>[data-page-header]]:mb-0">
       <PageHeader
         title={t('salesInbox')}
-        actions={(
+        titleActions={(
           <Button
             size="sm"
             variant="outline"

@@ -214,17 +214,9 @@ export function AppRouter() {
             <MarketingModule section="funnel" />
           </ModuleGuard>
         )} />
-        <Route path="/marketing-module/referrals" component={() => (
-          <ModuleGuard module="marketing">
-            <MarketingModule section="referrals" />
-          </ModuleGuard>
-        )} />
+        <Route path="/marketing-module/referrals" component={() => <Redirect to="/marketing-module" />} />
         <Route path="/marketing-module/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/marketing-module/expenses" component={() => (
-          <ModuleGuard module="marketing">
-            <MarketingModule section="expenses" />
-          </ModuleGuard>
-        )} />
+        <Route path="/marketing-module/expenses" component={() => <Redirect to="/marketing-module" />} />
         <Route path="/marketing-module/meta-attribution" component={() => (
           <ModuleGuard module="marketing">
             <MarketingModule section="meta-attribution" />

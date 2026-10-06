@@ -6,12 +6,11 @@ export async function reviewKpiSale(actor: KpiActor, paymentId: number, input: K
   return kpiTransaction(async (client) => {
     const { rows: [sale] } = await client.query<{
       closer_id: number | null; kind: string; cycle_key: string | null; referral_initiated: boolean;
-      student_id: number; group_id: number | null; status: string; paid_at: Date; referrer_student_id: number | null;
+      student_id: number; group_id: number | null; status: string; paid_at: Date;
     }>(`SELECT tracked.*, payment.student_id, payment.group_id, payment.status,
-        COALESCE(payment.paid_at, payment.created_at) AS paid_at, lead.referrer_student_id
+        COALESCE(payment.paid_at, payment.created_at) AS paid_at
        FROM academy_sales_kpi_sales tracked JOIN academy_payments payment ON payment.id = tracked.payment_id
        JOIN academy_students student ON student.id = payment.student_id
-       LEFT JOIN academy_leads lead ON lead.id = COALESCE(payment.lead_id, student.lead_id)
        WHERE tracked.payment_id = $1 FOR UPDATE OF tracked, payment`, [paymentId]);
     if (!sale) throw kpiError(new Error('resourceNotFound'), 404);
     if (!actor.isAdministration && sale.closer_id !== actor.id) throw kpiError(new Error('accessDenied'), 403);
@@ -22,7 +21,6 @@ export async function reviewKpiSale(actor: KpiActor, paymentId: number, input: K
     // from a user's checkbox. Review can only distinguish subsequent sales.
     if ((sale.kind === 'new') !== (input.kind === 'new')) throw kpiError(new Error('kpiFirstPaymentImmutable'));
     if (sale.kind === 'installment' && input.kind !== 'installment') throw kpiError(new Error('kpiInstallmentImmutable'));
-    if (input.referralInitiated && !sale.referrer_student_id) throw kpiError(new Error('kpiReferrerRequired'));
     if (['renewal', 'upsell'].includes(input.kind)) {
       const { rows: duplicates } = await client.query(
         `SELECT 1 FROM academy_sales_kpi_sales other

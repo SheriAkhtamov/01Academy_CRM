@@ -16,17 +16,16 @@ function SaleEditor({ sale, onClose }: { sale: KpiSaleFact; onClose: () => void 
   const mutation = useReviewKpiPayment();
   const [kind, setKind] = useState<KpiSaleReview['kind']>(sale.kind === 'unclassified' ? 'renewal' : sale.kind);
   const [cycleKey, setCycleKey] = useState(sale.cycleKey ?? '');
-  const [referralInitiated, setReferralInitiated] = useState(sale.referralInitiated);
   const [reason, setReason] = useState('');
   const [validationError, setValidationError] = useState(false);
-  const dirty = kind !== (sale.kind === 'unclassified' ? 'renewal' : sale.kind) || cycleKey !== (sale.cycleKey ?? '') || referralInitiated !== sale.referralInitiated || reason.length > 0;
+  const dirty = kind !== (sale.kind === 'unclassified' ? 'renewal' : sale.kind) || cycleKey !== (sale.cycleKey ?? '') || reason.length > 0;
   const guard = useUnsavedChangesGuard({ open: true, isDirty: dirty, onOpenChange: (open) => { if (!open && !mutation.isPending) onClose(); } });
   return <>
     <OverviewDialog title={`${t('kpiSalesReview')} · ${sale.name}`} onClose={() => { if (!mutation.isPending) guard.handleOpenChange(false); }}>
       <form className="space-y-4" onSubmit={async (event) => {
         event.preventDefault();
         if (mutation.isPending) return;
-        const parsed = kpiSaleReviewSchema.safeParse({ kind, cycleKey: cycleKey || null, referralInitiated: kind === 'new' && referralInitiated, reason });
+        const parsed = kpiSaleReviewSchema.safeParse({ kind, cycleKey: cycleKey || null, referralInitiated: false, reason });
         if (!parsed.success) { setValidationError(true); return; }
         try { await mutation.mutateAsync({ id: sale.id, input: parsed.data }); toast({ title: t('kpiReviewSaved') }); onClose(); } catch { /* Keep the draft. */ }
       }}>
@@ -37,7 +36,6 @@ function SaleEditor({ sale, onClose }: { sale: KpiSaleFact; onClose: () => void 
         </div>
         {['renewal', 'upsell'].includes(kind) ? <div className="space-y-1.5"><label htmlFor="kpi-sale-cycle">{t('kpiCycleKey')}</label>
           <input className={fieldClass} id="kpi-sale-cycle" maxLength={120} value={cycleKey} required placeholder={t('kpiCyclePlaceholder')} onChange={(event) => setCycleKey(event.target.value)} /></div> : null}
-        {kind === 'new' ? <div className="flex items-center justify-between gap-3"><label htmlFor="kpi-referral">{t('kpiReferralInitiated')}</label><input type="checkbox" id="kpi-referral" className="size-5 accent-primary" checked={referralInitiated} onChange={(event) => setReferralInitiated(event.target.checked)} /></div> : null}
         <div className="space-y-1.5"><label htmlFor="kpi-review-reason">{t('kpiReviewReason')}</label>
           <textarea className={`${fieldClass} min-h-24`} id="kpi-review-reason" required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></div>
         {validationError ? <p role="alert" className="text-sm text-destructive">{['renewal', 'upsell'].includes(kind) && !cycleKey.trim() ? t('kpiCycleRequired') : t('fillRequiredFields')}</p> : null}

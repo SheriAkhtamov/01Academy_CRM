@@ -4,7 +4,7 @@ import { useLocation, useSearch } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { useTranslation } from '@/hooks/useTranslation';
-import { MODULE_NAVIGATION, moduleSectionLabelKey } from '@/lib/moduleNavigation';
+import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -917,7 +917,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       title={sectionTitle[section]}
       subtitle={section === 'overview'
         ? t('teacherGreeting').replace('{name}', fullName)
-        : t(MODULE_NAVIGATION.teacher.nameKey)}
+        : undefined}
     />
   );
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ACADEMY_ACCESS_MODULES,
   ACADEMY_MODULES,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateCac,
   calculateLtv,
@@ -15,8 +14,6 @@ import {
   hasFinanceAccess,
   hasLeadershipAccess,
   normalizeMoney,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   resolveStudentRiskFlags,
   suggestAgeGroup,
   suggestCourseSlugByAge,
@@ -198,21 +195,6 @@ describe("01 Academy business rules", () => {
     expect(getComputedPaymentStatus("refunded", "2020-01-01")).toBe("refunded");
   });
 
-  it("generates a stable referral code shape", () => {
-    expect(buildReferralCode("Timur Aliyev", 7, 2026)).toBe("TIMURALI72026");
-  });
-
-  it("keeps referral rewards at the free-month and ambassador milestones", () => {
-    expect(resolveReferralLevel(1)).toBe("none");
-    expect(resolveReferralLevel(3)).toBe("free_month");
-    expect(resolveReferralLevel(5)).toBe("ai_ambassador");
-    expect(resolveReferralMilestone(1)).toBeNull();
-    expect(resolveReferralMilestone(2)).toBeNull();
-    expect(resolveReferralMilestone(3)).toBe("free_month");
-    expect(resolveReferralMilestone(4)).toBeNull();
-    expect(resolveReferralMilestone(5)).toBe("ai_ambassador_free_training");
-    expect(resolveReferralMilestone(6)).toBeNull();
-  });
 
   it("rejects fractional money instead of silently changing the paid amount", () => {
     expect(normalizeMoney(1_200_000)).toBe(1_200_000);

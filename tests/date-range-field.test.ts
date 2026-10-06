@@ -49,9 +49,10 @@ describe('period boundaries', () => {
   });
 
   it('renders every period through the shared field', () => {
-    for (const source of [reportingFilter, callJournal, audit, marketing]) {
+    for (const source of [reportingFilter, callJournal, audit]) {
       expect(source).toContain('<DateRangeField');
     }
+    expect(marketing).toContain('<ReportingDateRangeFilter');
   });
 });
 

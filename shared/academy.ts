@@ -138,12 +138,6 @@ export const FINAL_PROJECT_STATUSES = [
   { code: "presented", translationKey: "finalProjectStatusPresented", color: "#16a34a" },
 ] as const;
 
-// Referral tier thresholds: 3 → free month, 5+ → AI Ambassador.
-export const REFERRAL_TIERS = [
-  { minReferrals: 5, level: "ai_ambassador", rewardKey: "freeTrainingAiAmbassador" },
-  { minReferrals: 3, level: "free_month", rewardKey: "freeMonth" },
-] as const;
-
 export const REFERRAL_BENEFIT_TYPES = [
   "referred_first_payment_discount_15",
   "next_payment_discount_15",
@@ -197,7 +191,7 @@ export const CHURN_REASON_LABELS: Record<(typeof CHURN_REASONS)[number], string>
 
 export const PAYMENT_TYPES = ["full", "prepayment", "installment_1_2", "installment_2_2"] as const;
 export const PAYMENT_METHODS = ["cash", "transfer", "card"] as const;
-export const PAYMENT_DISCOUNTS = ["promo_20", "family_15", "referral_15", "none"] as const;
+export const PAYMENT_DISCOUNTS = ["promo_20", "family_15", "none"] as const;
 
 export const DEFAULT_COURSES = [
   {
@@ -366,36 +360,6 @@ export function calculateRoas(revenueUzs: number, expensesUzs: number): number |
 
 export function calculateLtv(paymentAmountsUzs: number[]): number {
   return paymentAmountsUzs.reduce((sum, amount) => sum + (Number.isFinite(amount) ? amount : 0), 0);
-}
-
-export function buildReferralCode(studentName: string, fallbackId: number | string, year = new Date().getFullYear()): string {
-  const normalized = studentName
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toUpperCase()
-    .slice(0, 8);
-
-  return `${normalized || "STUDENT"}${fallbackId}${year}`.slice(0, 24);
-}
-
-// Maps a paid-referral count to the corresponding tier from TZ 5.1.
-export function resolveReferralLevel(paidReferralsCount: number): string {
-  for (const tier of REFERRAL_TIERS) {
-    if (paidReferralsCount >= tier.minReferrals) {
-      return tier.level;
-    }
-  }
-  return "none";
-}
-
-/** One-time benefits are granted only when a referral milestone is first reached. */
-export function resolveReferralMilestone(
-  paidReferralsCount: number,
-): Extract<ReferralBenefitType, "free_month" | "ai_ambassador_free_training"> | null {
-  if (paidReferralsCount === 3) return "free_month";
-  if (paidReferralsCount === 5) return "ai_ambassador_free_training";
-  return null;
 }
 
 // Average deal cycle (days) from lead creation to first paid payment.

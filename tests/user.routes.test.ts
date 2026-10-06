@@ -37,7 +37,7 @@ vi.mock('../server/services/email', () => ({
 describe('user route validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStorage.getUser.mockResolvedValue(administrationUser);
+    mockStorage.getUser.mockReset().mockResolvedValue(administrationUser);
     mockStorage.createAuditLog.mockResolvedValue(undefined);
   });
 
@@ -170,14 +170,28 @@ describe('user route validation', () => {
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 
-  it('rejects string booleans instead of treating "false" as true', async () => {
+  it.each([false, true, 'false'])('rejects independent employee status %s', async (isActive) => {
     const app = await createApp();
     const agent = request.agent(app);
     await agent.post('/test/session');
 
-    const response = await agent.put('/api/users/7').send({ isActive: 'false' });
+    const response = await agent.put('/api/users/7').send({ isActive });
 
     expect(response.status).toBe(400);
+    expect(response.body.error).toBe('employeeStatusManagedByArchive');
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects creating an employee with an independent inactive status', async () => {
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+
+    const response = await agent.post('/api/users').send({ fullName: 'Employee', module: 'teacher', isActive: false });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('employeeStatusManagedByArchive');
+    expect(mockStorage.getUsers).not.toHaveBeenCalled();
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 
@@ -289,7 +303,6 @@ describe('user route validation', () => {
       fullName: 'Admin User',
       module: 'administration',
       modules: ['administration'],
-      isActive: true,
       leadTransferManagerId: 8,
     });
 
@@ -502,16 +515,16 @@ describe('user route validation', () => {
     expect(mockStorage.createAuditLog).not.toHaveBeenCalled();
   });
 
-  it('restores the employee previous inactive state without granting access', async () => {
+  it.each([true, false])('restores access for an employee whose archive flag is %s', async (isArchived) => {
     const archivedUser = {
       ...administrationUser,
       id: 16,
       module: 'sales',
       modules: ['sales'],
       isActive: false,
-      isArchived: true,
+      isArchived,
     };
-    const restoredUser = { ...archivedUser, isArchived: false };
+    const restoredUser = { ...archivedUser, isActive: true, isArchived: false };
     mockStorage.getUser
       .mockResolvedValueOnce(administrationUser)
       .mockResolvedValueOnce(archivedUser)
@@ -519,14 +532,15 @@ describe('user route validation', () => {
     const client = {
       release: vi.fn(),
       query: vi.fn(async (statement: string, _params?: unknown[]) => {
-        if (statement.includes('archived_previous_is_active')) {
+        if (statement.includes('SELECT id,') && statement.includes('archived_previous_online_pbx_incoming_enabled')) {
           return {
             rows: [{
               id: 16,
               full_name: 'Inactive Sales User',
               module: 'sales',
-              is_archived: true,
-              archived_previous_is_active: false,
+              is_active: false,
+              is_archived: isArchived,
+              online_pbx_incoming_enabled: true,
               archived_previous_online_pbx_incoming_enabled: true,
             }],
           };
@@ -544,10 +558,11 @@ describe('user route validation', () => {
     const response = await agent.post('/api/users/16/restore');
 
     expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ isActive: true, isArchived: false, alreadyRestored: false });
     const restoreCall = client.query.mock.calls.find(([statement]) => (
       String(statement).includes('SET is_archived = false')
     ));
-    expect(restoreCall?.[1]).toEqual([16, false, false]);
+    expect(restoreCall?.[1]).toEqual([16, true, true]);
     expect(client.release).toHaveBeenCalledOnce();
   });
 
@@ -627,7 +642,6 @@ describe('user route validation', () => {
       modules: ['sales'],
       salesFunnelIds: [1],
       onlinePbxExtension: '109',
-      isActive: true,
     });
 
     expect(response.status).toBe(200);

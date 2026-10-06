@@ -48,7 +48,6 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -57,7 +56,6 @@ import {
   TARGET_ROAS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -74,8 +72,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -120,7 +116,6 @@ import {
 } from './academy-core';
 import {
   advanceStudentNextPaymentAt,
-  applyReferralRewards,
   createStudentFromLead,
   getActiveSalesManager,
   handleLeadStatusEffects,
@@ -381,7 +376,6 @@ router.post('/payments', (req, res, next) => {
           Number(paidStudentId),
           payment.paidUntil ?? paidUntil,
         );
-        await applyReferralRewards(req, Number(paidStudentId), paymentLeadId, payment.id);
       }
 
       await createAudit(

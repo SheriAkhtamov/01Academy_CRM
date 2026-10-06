@@ -5,10 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Cell,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,7 +19,6 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
-  Clock3,
   GraduationCap,
   Layers3,
   ListTodo,
@@ -35,7 +31,6 @@ import {
   Wifi,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -86,25 +81,6 @@ interface DashboardCourseLoad {
   loadPercent: number;
 }
 
-interface DashboardActivityItem {
-  id: string;
-  type: 'payment' | 'lead' | 'student' | 'group';
-  occurredAt: string;
-  subject?: string | null;
-  meta?: string | null;
-  amountUzs?: number;
-}
-
-interface DashboardLesson {
-  id: number;
-  topic: string;
-  groupName?: string | null;
-  courseName?: string | null;
-  teacherName?: string | null;
-  schoolName?: string | null;
-  scheduledAt: string;
-}
-
 interface AdministrationDashboardData {
   summary: {
     activeStudents: number;
@@ -138,63 +114,14 @@ interface AdministrationDashboardData {
     longThinkingLeads: number;
     groupsWithoutTeacher: number;
   };
-  recentActivity: DashboardActivityItem[];
-  upcomingLessons: DashboardLesson[];
-  churnByReason: Record<string, number>;
   escalatedTasks: Array<{ id: number; title: string; responsibleName?: string | null }>;
-  generatedAt: string;
 }
-
-const CHURN_LABEL_KEYS: Record<string, TranslationKey> = {
-  relocation: 'studentChurnRelocation',
-  price: 'studentChurnPrice',
-  quality: 'studentChurnQuality',
-  schedule_conflict: 'studentChurnScheduleConflict',
-  lost_interest: 'studentChurnLostInterest',
-};
-
-const CHURN_COLORS = [
-  'var(--chart-2)',
-  'var(--chart-1)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-];
 
 const boundedPercent = (value: unknown) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue)
     ? Math.max(0, Math.min(100, Math.round(numericValue)))
     : 0;
-};
-
-const FUNNEL_STAGE_KEYS: Record<string, TranslationKey> = {
-  new_request: 'leadStatusNewRequest',
-  first_contact: 'leadStatusFirstContact',
-  demo_attended: 'leadStatusDemoAttended',
-  paid: 'leadStatusPaid',
-};
-
-const ACTIVITY_CONFIG: Record<
-  DashboardActivityItem['type'],
-  { icon: LucideIcon; tone: string }
-> = {
-  payment: {
-    icon: CircleDollarSign,
-    tone: 'bg-emerald-100 text-emerald-600',
-  },
-  lead: {
-    icon: UserRoundPlus,
-    tone: 'bg-primary-50 text-primary-600',
-  },
-  student: {
-    icon: GraduationCap,
-    tone: 'bg-purple-100 text-purple-600',
-  },
-  group: {
-    icon: Layers3,
-    tone: 'bg-amber-100 text-amber-600',
-  },
 };
 
 function ChangeBadge({ value }: { value: number }) {
@@ -262,20 +189,16 @@ function DashboardSkeleton() {
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-4 w-80 max-w-full" />
         </div>
-        <Skeleton className="h-10 w-32" />
       </div>
       <div className="grid grid-cols-tile gap-3">
         {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} className="h-28 rounded-xl" />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
-        <Skeleton className="h-[320px] rounded-xl xl:col-span-4 2xl:col-span-7" />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Skeleton className="h-[320px] rounded-xl xl:col-span-2" />
-        <Skeleton className="h-[320px] rounded-xl xl:col-span-3" />
+        <Skeleton className="h-[320px] rounded-xl" />
         <Skeleton className="h-[280px] rounded-xl xl:col-span-3" />
-        <Skeleton className="h-[280px] rounded-xl xl:col-span-4 2xl:col-span-6" />
-        <Skeleton className="h-[280px] rounded-xl xl:col-span-2 2xl:col-span-3" />
       </div>
       <div className="grid grid-cols-tile gap-4">
         {Array.from({ length: 4 }, (_, index) => (
@@ -294,9 +217,10 @@ export default function AdminDashboardPage() {
   const [, navigate] = useLocation();
   const [reportingRange, setReportingRange] = useState(() => reportingRangeForPreset('today'));
   const reportingQuery = reportingRangeQuery(reportingRange);
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<AdministrationDashboardData>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<AdministrationDashboardData>({
     queryKey: ['/api/academy/modules/administration', reportingQuery],
     queryFn: () => apiRequest('GET', `/api/academy/modules/administration?${reportingQuery}`),
+    refetchInterval: 30_000,
     placeholderData: (previousData) => previousData,
   });
 
@@ -305,7 +229,7 @@ export default function AdminDashboardPage() {
   const createAlertTask = useMutation({
     mutationFn: (key: string) => apiRequest('POST', `/api/academy/dashboard/alerts/${key}/task`),
     onSuccess: () => toast({ title: ceoCopy.dashboard.taskCreated }),
-    onError: (error: Error) => toast({ title: ceoCopy.dashboard.taskFailed, description: error.message, variant: 'destructive' }),
+    onError: () => toast({ title: ceoCopy.dashboard.taskFailed, variant: 'destructive' }),
     onSettled: () => setPendingAlertTaskKey(null),
   });
   const money = (value: number) =>
@@ -316,26 +240,6 @@ export default function AdminDashboardPage() {
 
   const fullMoney = (value: number) =>
     `${new Intl.NumberFormat(locale).format(value)}${t('uzs')}`;
-
-  const activityLabel = (type: DashboardActivityItem['type']) => {
-    switch (type) {
-      case 'payment': return t('adminActivityPayment');
-      case 'lead': return t('adminActivityLead');
-      case 'student': return t('adminActivityStudent');
-      case 'group': return t('adminActivityGroup');
-    }
-  };
-
-  const relativeTime = (value: string) => {
-    const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
-    const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-    if (Math.abs(seconds) < 60) return formatter.format(seconds, 'second');
-    const minutes = Math.round(seconds / 60);
-    if (Math.abs(minutes) < 60) return formatter.format(minutes, 'minute');
-    const hours = Math.round(minutes / 60);
-    if (Math.abs(hours) < 24) return formatter.format(hours, 'hour');
-    return formatter.format(Math.round(hours / 24), 'day');
-  };
 
   const chartData = useMemo(
     () => (data?.trends ?? []).map((point) => ({
@@ -360,7 +264,7 @@ export default function AdminDashboardPage() {
           <AlertTriangle />
           <AlertTitle>{t('failedToLoadData')}</AlertTitle>
           <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span>{error instanceof Error ? error.message : t('adminDashboardLoadError')}</span>
+            <span>{t('adminDashboardLoadError')}</span>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw data-icon="inline-start" />
               {t('retry')}
@@ -372,22 +276,7 @@ export default function AdminDashboardPage() {
   }
 
   const summary = data.summary;
-  const selectedFunnel = ['new_request', 'first_contact', 'demo_attended', 'paid']
-    .map((code) => data.funnel.find((item) => item.code === code))
-    .filter((item): item is DashboardFunnelItem => Boolean(item));
   const demoInvitedFunnelCount = data.funnel.find((item) => item.code === 'demo_invited')?.count ?? 0;
-  const maxFunnelValue = Math.max(...selectedFunnel.map((item) => item.count), 1);
-  const generatedAt = new Intl.DateTimeFormat(locale, {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(data.generatedAt));
-  const churnData = Object.entries(data.churnByReason ?? {}).map(([reason, value], index) => ({
-    name: CHURN_LABEL_KEYS[reason] ? t(CHURN_LABEL_KEYS[reason]) : reason,
-    value,
-    color: CHURN_COLORS[index % CHURN_COLORS.length],
-  }));
   const healthMetrics = [
     ...(Number(summary.attendanceMarks || 0) > 0
       ? [{
@@ -515,24 +404,6 @@ export default function AdminDashboardPage() {
     <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <PageHeader
         title={t('adminDashboardTitle')}
-        actions={(
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Badge variant="outline">
-              <Clock3 data-icon="inline-start" />
-              {t('lastUpdated')}: {generatedAt}
-            </Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              aria-label={t('adminRefreshDashboard')}
-            >
-              <RefreshCw data-icon="inline-start" className={cn(isFetching && 'animate-spin')} />
-              {t('adminRefresh')}
-            </Button>
-          </div>
-        )}
       />
 
       <ReportingDateRangeFilter
@@ -587,8 +458,8 @@ export default function AdminDashboardPage() {
         />
       </StaggerGroup>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-6 2xl:grid-cols-12">
-        <Card className="min-w-0 self-start border-border/60 shadow-sm xl:col-span-4 2xl:col-span-7">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="min-w-0 self-start border-border/60 shadow-sm xl:col-span-2">
           <CardHeader className="flex flex-col items-start gap-2 px-4 pb-2 pt-3.5 sm:flex-row sm:justify-between">
             <div>
               <CardTitle className="text-[15px]">{t('adminBusinessDynamics')}</CardTitle>
@@ -692,54 +563,7 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start border-border/60 shadow-sm xl:col-span-2">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-base">{t('pipeline')}</CardTitle>
-            <CardDescription>{t('adminCurrentPipeline')}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 px-4 pb-4 pt-0">
-            {selectedFunnel.map((item, index) => {
-              const width = Math.max(0, Math.min(100, Math.round((item.count / maxFunnelValue) * 100)));
-              return (
-                <div key={item.code} className="flex flex-col gap-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs text-slate-500">
-                      {t(FUNNEL_STAGE_KEYS[item.code])}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums">{item.count}</span>
-                  </div>
-                  <div className="h-6 rounded-lg bg-muted p-1">
-                    <div
-                      className={cn(
-                        'flex h-full items-center justify-end rounded-md px-2 text-xs font-semibold text-primary-foreground',
-                        index === selectedFunnel.length - 1 ? 'bg-emerald-500' : 'bg-primary-600',
-                      )}
-                      style={{ width: `${width}%` }}
-                    >
-                      {width > 45 ? item.count : null}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-2 text-center">
-              <div>
-                <p className="text-xs text-slate-500">{t('conversionApplicationToDemo')}</p>
-                <p className="mt-1 font-semibold tabular-nums">
-                  {summary.newLeadsMonth > 0 ? `${summary.leadToDemoConversion}%` : t('noData')}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">{t('conversionDemoToPayment')}</p>
-                <p className="mt-1 font-semibold tabular-nums">
-                  {demoInvitedFunnelCount > 0 ? `${summary.demoToPaidConversion}%` : t('noData')}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
+        <Card className="self-start border-border/60 shadow-sm">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">{t('adminOperationalAlerts')}</CardTitle>
           </CardHeader>
@@ -796,35 +620,7 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="self-start border-border/60 shadow-sm xl:col-span-3">
-          <CardHeader className="px-4 pb-2 pt-3.5">
-            <CardTitle className="text-base">{ceoCopy.dashboard.churnReasons}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            {churnData.length > 0 ? (
-              <div className="grid grid-cols-[120px_1fr] items-center gap-3">
-                <ResponsiveContainer width="100%" height={120}>
-                  <PieChart>
-                    <Pie data={churnData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={54} paddingAngle={2} isAnimationActive={chartEntrance}>
-                      {churnData.map((item) => <Cell key={item.name} fill={item.color} />)}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => [value, ceoCopy.dashboard.students]} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2">
-                  {churnData.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /> <span className="truncate">{item.name}</span></span>
-                      <span className="font-semibold tabular-nums">{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : <p className="py-8 text-center text-sm text-slate-500">{ceoCopy.dashboard.noChurn}</p>}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/60 shadow-sm xl:col-span-4 2xl:col-span-6">
+        <Card className="border-border/60 shadow-sm xl:col-span-3">
           <CardHeader className="px-4 pb-2 pt-3.5">
             <CardTitle className="text-[15px]">{t('adminCourseLoad')}</CardTitle>
           </CardHeader>
@@ -858,39 +654,6 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/60 shadow-sm xl:col-span-2 2xl:col-span-3">
-          <CardHeader className="px-4 pb-2 pt-3.5">
-            <CardTitle className="text-base">{t('adminRecentActivity')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-1 px-4 pb-4 pt-0">
-            {data.recentActivity.length > 0 ? data.recentActivity.map((item) => {
-              const config = ACTIVITY_CONFIG[item.type];
-              const Icon = config.icon;
-              return (
-                <div key={item.id} className="flex items-start gap-3 rounded-lg px-2 py-2.5 hover:bg-muted/70">
-                  <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', config.tone)}>
-                    <Icon className="size-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{activityLabel(item.type)}</p>
-                    <p className="truncate text-xs text-slate-500">
-                      {item.subject || t('noData')}
-                      {item.amountUzs != null ? ` · ${fullMoney(item.amountUzs)}` : ''}
-                      {item.amountUzs == null && item.meta ? ` · ${item.meta}` : ''}
-                    </p>
-                  </div>
-                  <time className="shrink-0 text-xs text-muted-foreground" dateTime={item.occurredAt}>
-                    {relativeTime(item.occurredAt)}
-                  </time>
-                </div>
-              );
-            }) : (
-              <div className="flex min-h-48 items-center justify-center text-sm text-slate-500">
-                {t('adminNoRecentActivity')}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </section>
 
       <section aria-labelledby="project-pulse-title" className="flex flex-col gap-3">
@@ -925,33 +688,6 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      {data.upcomingLessons.length > 0 ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>{t('adminNextLessons')}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-tile gap-3">
-            {data.upcomingLessons.map((lesson) => (
-              <div key={lesson.id} className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                <div className="flex items-center gap-2 text-xs font-medium text-primary-600">
-                  <CalendarClock className="size-4" />
-                  {new Intl.DateTimeFormat(locale, {
-                    weekday: 'short',
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  }).format(new Date(lesson.scheduledAt))}
-                </div>
-                <p className="mt-2 truncate text-sm font-semibold">{lesson.topic}</p>
-                <p className="mt-1 truncate text-xs text-slate-500">
-                  {[lesson.groupName, lesson.teacherName].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
     </div>
   );
 }

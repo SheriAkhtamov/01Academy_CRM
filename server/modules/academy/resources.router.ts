@@ -36,7 +36,6 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -45,7 +44,6 @@ import {
   TARGET_ROAS,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -62,8 +60,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
   validateLeadStatusTransition } from '@shared/academy';
@@ -358,27 +354,4 @@ registerSimpleCrud('tasks', 'academy_tasks', [
   'title', 'description', 'responsibleId', 'deadlineAt', 'status', 'entityType', 'entityId', 'completedAt',
 ], { orderBy: 'COALESCE(deadline_at, created_at)' });
 
-registerSimpleCrud('expenses', 'academy_marketing_expenses', [
-  'sourceId', 'channel', 'campaignName', 'periodStart', 'periodEnd', 'amountUzs', 'createdBy',
-], {
-  orderBy: 'period_start DESC',
-  requireMarketing: true,
-  beforeCreate: async ({ values }) => {
-    if (!values.channel || Number(values.amountUzs) <= 0 || !values.periodStart || !values.periodEnd) {
-      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-    }
-    if (new Date(values.periodEnd).getTime() < new Date(values.periodStart).getTime()) {
-      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-    }
-  },
-  beforeUpdate: async ({ values, row }) => {
-    const channel = values.channel ?? row.channel;
-    const amount = Number(values.amountUzs ?? row.amountUzs);
-    const start = values.periodStart ?? row.periodStart;
-    const end = values.periodEnd ?? row.periodEnd;
-    if (!channel || amount <= 0 || !start || !end || new Date(end).getTime() < new Date(start).getTime()) {
-      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-    }
-  },
-});
 };

@@ -2,14 +2,11 @@ import { assertSalesFunnelAssignment } from './sales-funnel-policy';
 import {
   LEAD_STATUSES,
   addDays,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateProgressPercent,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   validateLeadForStatusChange,
 } from '@shared/academy';
@@ -20,10 +17,8 @@ import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
 import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
 import {
-  ACADEMY_REFERRAL_ADVISORY_LOCK,
   ACADEMY_TIME_ZONE,
   NormalizedLeadPhone,
-  ReferralBenefitType,
   Row,
   canAccessLeadRow,
   canMutateLeadRow,
@@ -71,26 +66,6 @@ export const buildTemplateSourceCode = (prefix: string, suffix: string) => {
   return slug ? `${prefix}_${slug}` : prefix;
 };
 
-export const assertValidReferrerStudent = async (
-  referrerStudentId: number,
-  referredLeadId?: number | null,
-) => {
-  const referrer = await queryOne(
-    `SELECT id, student_name, lead_id
-     FROM academy_students
-     WHERE id = $1
-     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
-    [referrerStudentId],
-  );
-  if (!referrer) {
-    throw Object.assign(new Error('referrerStudentNotFound'), { statusCode: 400 });
-  }
-  if (referredLeadId && Number(referrer.leadId) === referredLeadId) {
-    throw Object.assign(new Error('leadCannotReferItself'), { statusCode: 409 });
-  }
-  return referrer;
-};
-
 export const findOrCreateActiveSource = async (values: {
   code: string;
   name: string;
@@ -118,7 +93,7 @@ export const findOrCreateActiveSource = async (values: {
   return source;
 };
 
-export const resolveSourceId = async (body: Row, validatedReferrer?: Row | null) => {
+export const resolveSourceId = async (body: Row) => {
   const explicitSourceId = toIdOrNull(body.sourceId, 'sourceId');
   if (explicitSourceId) {
     const source = await queryOne(
@@ -132,21 +107,6 @@ export const resolveSourceId = async (body: Row, validatedReferrer?: Row | null)
       throw Object.assign(new Error('invalidLeadSource'), { statusCode: 400 });
     }
     return explicitSourceId;
-  }
-
-  // Referral leads: tag becomes referral_<referrer name> (TZ 1.2 / 5.1).
-  const referrerStudentId = toIdOrNull(body.referrerStudentId, 'referrerStudentId');
-  if (referrerStudentId) {
-    const referrer = validatedReferrer
-      ?? await assertValidReferrerStudent(referrerStudentId);
-    const referrerName = nullableText(referrer.studentName) ?? `id${referrerStudentId}`;
-    const code = buildTemplateSourceCode('referral', referrerName);
-    const source = await findOrCreateActiveSource({
-      code,
-      name: `Реферал: ${referrerName}`,
-      channel: 'referral',
-    });
-    return Number(source.id);
   }
 
   const rawSourceCode = nullableText(body.sourceCode);
@@ -1476,7 +1436,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [lead.courseId])
     : await resolveCourseByAge(lead.studentAge);
 
-  const referralCode = buildReferralCode(lead.studentName || lead.contactName, lead.id);
   const student = await insertRow('academy_students', {
     leadId: lead.id,
     contactName: lead.contactName,
@@ -1492,7 +1451,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     status: 'studying',
     enrolledAt: new Date(),
     nextPaymentAt,
-    referralCode,
+    referralCode: '', // Compatibility with the legacy non-null column.
     riskFlags: [] });
 
   await query(
@@ -1528,213 +1487,8 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     });
   }
 
-  if (lead.referrerStudentId && Number(lead.referrerStudentId) !== Number(student.id)) {
-    await insertRow('academy_referral_rewards', {
-      referrerStudentId: Number(lead.referrerStudentId),
-      referredLeadId: lead.id,
-      referredStudentId: student.id,
-      rewardType: 'referral',
-      rewardValue: '1',
-      status: 'pending' });
-  }
-
   await createAudit(actor, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
   return student;
-};
-
-export const ensureReferralBenefit = async (options: {
-  studentId: number;
-  benefitType: ReferralBenefitType;
-  status?: 'pending' | 'consumed' | 'superseded';
-  milestone?: 1 | 3 | 5 | null;
-  sourceReferralCount?: number | null;
-  sourceReferralRewardId?: number | null;
-  sourcePaymentId?: number | null;
-  consumedByPaymentId?: number | null;
-  consumedAt?: Date | null;
-}) => {
-  const created = await queryOne(
-    `INSERT INTO academy_referral_benefits
-       (student_id, benefit_type, status, milestone, source_referral_count,
-        source_referral_reward_id, source_payment_id, consumed_by_payment_id, consumed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     ON CONFLICT (student_id, benefit_type) DO NOTHING
-     RETURNING *`,
-    [
-      options.studentId,
-      options.benefitType,
-      options.status ?? 'pending',
-      options.milestone ?? null,
-      options.sourceReferralCount ?? null,
-      options.sourceReferralRewardId ?? null,
-      options.sourcePaymentId ?? null,
-      options.consumedByPaymentId ?? null,
-      options.consumedAt ?? null,
-    ],
-  );
-  if (created) return { benefit: created, created: true };
-  const existing = await queryOne(
-    `SELECT *
-     FROM academy_referral_benefits
-     WHERE student_id = $1 AND benefit_type = $2
-     FOR UPDATE`,
-    [options.studentId, options.benefitType],
-  );
-  if (!existing) {
-    throw Object.assign(new Error('referralBenefitGrantFailed'), { statusCode: 409 });
-  }
-  return { benefit: existing, created: false };
-};
-
-export const consumeReferralBenefit = async (
-  benefitId: number,
-  paymentId: number,
-  status: 'consumed' | 'superseded' = 'consumed',
-) => {
-  const benefit = await queryOne(
-    `UPDATE academy_referral_benefits
-     SET status = $2,
-         consumed_by_payment_id = $3,
-         consumed_at = NOW(),
-         updated_at = NOW()
-     WHERE id = $1 AND status = 'pending'
-     RETURNING *`,
-    [benefitId, status, paymentId],
-  );
-  if (!benefit) {
-    throw Object.assign(new Error('referralBenefitAlreadyConsumed'), { statusCode: 409 });
-  }
-  return benefit;
-};
-
-export const ensureFreeMonthBenefit = async (source: ActorSource, options: {
-  referrerId: number;
-  paidReferrals: number;
-  sourceReferralRewardId: number;
-  sourcePaymentId: number;
-}) => {
-  const actor = actorContextFrom(source);
-  const grant = await ensureReferralBenefit({
-    studentId: options.referrerId,
-    benefitType: 'free_month',
-    milestone: 3,
-    sourceReferralCount: options.paidReferrals,
-    sourceReferralRewardId: options.sourceReferralRewardId,
-    sourcePaymentId: options.sourcePaymentId,
-  });
-  if (grant.benefit.status !== 'pending') return grant.benefit;
-
-  const referrer = await queryOne(
-    `SELECT students.*,
-        GREATEST(COALESCE(students.next_payment_at, NOW()), NOW()) AS coverage_start,
-        GREATEST(COALESCE(students.next_payment_at, NOW()), NOW()) + INTERVAL '30 days' AS coverage_end
-     FROM academy_students students
-     WHERE students.id = $1
-     FOR UPDATE`,
-    [options.referrerId],
-  );
-  if (!referrer) {
-    throw Object.assign(new Error('referrerStudentNotFound'), { statusCode: 409 });
-  }
-
-  let freePayment = await queryOne(
-    `SELECT *
-     FROM academy_payments
-     WHERE student_id = $1
-       AND amount_uzs = 0
-       AND comment = 'Бесплатный месяц по реферальной программе'
-     ORDER BY created_at, id
-     LIMIT 1
-     FOR UPDATE`,
-    [options.referrerId],
-  );
-  if (!freePayment) {
-    freePayment = await insertRow('academy_payments', {
-      studentId: options.referrerId,
-      groupId: referrer.groupId ?? null,
-      amountUzs: 0,
-      type: 'full',
-      method: 'transfer',
-      paidAt: new Date(),
-      period: 'referral_bonus',
-      discount: 'none',
-      status: 'paid',
-      paidUntil: referrer.coverageEnd,
-      comment: 'Бесплатный месяц по реферальной программе',
-      confirmedBy: actor.userId,
-    });
-  } else if (!freePayment.paidUntil) {
-    freePayment = await updateRow('academy_payments', Number(freePayment.id), {
-      paidUntil: referrer.coverageEnd,
-    });
-  }
-  if (!freePayment) {
-    throw Object.assign(new Error('referralFreeMonthPaymentFailed'), { statusCode: 500 });
-  }
-  await consumeReferralBenefit(Number(grant.benefit.id), Number(freePayment.id));
-  await advanceStudentNextPaymentAt(options.referrerId, freePayment.paidUntil ?? referrer.coverageEnd);
-  return freePayment;
-};
-
-// A reward row records that one referred student qualified. Benefits are a
-// separate one-time ledger: milestone 3 is consumed by one free-month payment,
-// and milestone 5 remains a pending AI Ambassador training entitlement.
-export const applyReferralRewards = async (source: ActorSource, studentId: number, leadId: number | null, paymentId: number) => {
-  const actor = actorContextFrom(source);
-  const lead = leadId
-    ? await queryOne(`SELECT id, referrer_student_id FROM academy_leads WHERE id = $1`, [leadId])
-    : null;
-  const referrerId = lead?.referrerStudentId ? Number(lead.referrerStudentId) : null;
-  if (!referrerId || referrerId === studentId) return;
-
-  await query(`SELECT pg_advisory_xact_lock($1, $2)`, [ACADEMY_REFERRAL_ADVISORY_LOCK, referrerId]);
-
-  const newlyApplied = await query<{ id: number }>(
-    `UPDATE academy_referral_rewards
-     SET status = 'applied',
-         applied_at = COALESCE(applied_at, NOW()),
-         qualified_by_payment_id = COALESCE(qualified_by_payment_id, $3)
-     WHERE referred_student_id = $1
-       AND referrer_student_id = $2
-       AND status = 'pending'
-     RETURNING id`,
-    [studentId, referrerId, paymentId],
-  );
-  if (newlyApplied.length === 0) return;
-
-  const paidCountRow = await queryOne<{ count: string }>(
-    `SELECT COUNT(DISTINCT referred_student_id)::text AS count
-     FROM academy_referral_rewards
-     WHERE referrer_student_id = $1
-       AND referred_student_id IS NOT NULL
-       AND status = 'applied'`,
-    [referrerId],
-  );
-  const paidReferrals = Number(paidCountRow?.count ?? 0);
-  const level = resolveReferralLevel(paidReferrals);
-  const referrer = await updateRow('academy_students', referrerId, { referralLevel: level });
-  if (!referrer) return;
-  const sourceReferralRewardId = Number(newlyApplied[0].id);
-  const milestoneBenefit = resolveReferralMilestone(paidReferrals);
-
-  if (milestoneBenefit === 'free_month') {
-    await ensureFreeMonthBenefit(actor, {
-      referrerId,
-      paidReferrals,
-      sourceReferralRewardId,
-      sourcePaymentId: paymentId,
-    });
-  }
-  if (milestoneBenefit === 'ai_ambassador_free_training') {
-    await ensureReferralBenefit({
-      studentId: referrerId,
-      benefitType: 'ai_ambassador_free_training',
-      milestone: 5,
-      sourceReferralCount: paidReferrals,
-      sourceReferralRewardId,
-      sourcePaymentId: paymentId,
-    });
-  }
 };
 
 export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, previousStatus?: string | null) => {

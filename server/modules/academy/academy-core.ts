@@ -36,11 +36,9 @@ import {
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   REFERRAL_BENEFIT_TYPES,
-  REFERRAL_TIERS,
   STUDENT_STATUSES,
   addDays,
   addMinutes,
-  buildReferralCode,
   calculateAttendancePercent,
   calculateAverage,
   calculateAvgDealCycleDays,
@@ -57,8 +55,6 @@ import {
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
-  resolveReferralLevel,
-  resolveReferralMilestone,
   suggestCourseSlugByAge,
   type AcademyAccessModule,
   validateLeadForStatusChange,
@@ -90,7 +86,6 @@ import {
 
 export type DbValue = string | number | boolean | Date | null | unknown[] | Record<string, unknown>;
 export type Row = Record<string, any>;
-export type ReferralBenefitType = (typeof REFERRAL_BENEFIT_TYPES)[number];
 export const transactionContext = new AsyncLocalStorage<PoolClient>();
 export type AfterCommitTask = () => Promise<void>;
 export const afterCommitContext = new AsyncLocalStorage<AfterCommitTask[]>();
@@ -105,7 +100,6 @@ export const SOURCE_MANAGEMENT_MODULES = new Set(['administration', 'marketing']
 // checking room/teacher availability. It closes the race where two requests
 // checked the same free slot in different rooms and assigned one teacher twice.
 export const ACADEMY_SCHEDULING_ADVISORY_LOCK = 7_315_001;
-export const ACADEMY_REFERRAL_ADVISORY_LOCK = 7_315_002;
 export const ACADEMY_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 export const salesUserAccessSql = `
   (
@@ -795,7 +789,6 @@ export const academyConstants = () => ({
   paymentTypes: PAYMENT_TYPES,
   paymentMethods: PAYMENT_METHODS,
   finalProjectStatuses: FINAL_PROJECT_STATUSES,
-  referralTiers: REFERRAL_TIERS,
 });
 
 export const isValidLeadArchiveReason = (value: string | null | undefined) =>

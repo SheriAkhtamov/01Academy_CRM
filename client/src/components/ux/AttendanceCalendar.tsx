@@ -338,19 +338,47 @@ export function AttendanceCalendar({
   return (
     <Card className="overflow-hidden border-border/70" ref={scopeRef}>
       <CardHeader className="gap-3 border-b border-border/70 bg-muted/20 pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="size-5 text-primary" />
-              {t('attendanceCalendarTitle')}
-            </CardTitle>
+        <div className="flex flex-wrap items-center gap-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarDays className="size-5 text-primary" />
+            {t('attendanceCalendarTitle')}
+          </CardTitle>
+          <div className="flex flex-wrap gap-1.5">
+            {(['pending', 'upcoming', 'conducted'] as const).map((state) => {
+              const active = !hiddenStates.has(state);
+              return (
+                <button
+                  key={state}
+                  type="button"
+                  data-testid={`attendance-filter-${state}`}
+                  aria-pressed={active}
+                  onClick={() => toggleState(state)}
+                  className={cn(
+                    'inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    'max-md:min-h-11 max-md:px-4',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    active
+                      ? 'border-border bg-card text-foreground'
+                      : 'border-dashed border-border bg-transparent text-muted-foreground line-through',
+                  )}
+                >
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: STATE_TONES[state].solid }}
+                    aria-hidden="true"
+                  />
+                  {t(STATE_LABEL_KEYS[state])}
+                  <span className="tabular-nums opacity-70">{counts[state]}</span>
+                </button>
+              );
+            })}
           </div>
           {nextPending ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="min-h-11 gap-1.5"
+              className="ml-auto min-h-11 gap-1.5"
               disabled={disabled}
               onClick={jumpToPending}
             >
@@ -372,37 +400,6 @@ export function AttendanceCalendar({
           view={effectiveView}
           onViewChange={setView}
         />
-
-        <div className="flex flex-wrap gap-1.5">
-          {(['pending', 'upcoming', 'conducted'] as const).map((state) => {
-            const active = !hiddenStates.has(state);
-            return (
-              <button
-                key={state}
-                type="button"
-                data-testid={`attendance-filter-${state}`}
-                aria-pressed={active}
-                onClick={() => toggleState(state)}
-                className={cn(
-                  'inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                  'max-md:min-h-11 max-md:px-4',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  active
-                    ? 'border-border bg-card text-foreground'
-                    : 'border-dashed border-border bg-transparent text-muted-foreground line-through',
-                )}
-              >
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: STATE_TONES[state].solid }}
-                  aria-hidden="true"
-                />
-                {t(STATE_LABEL_KEYS[state])}
-                <span className="tabular-nums opacity-70">{counts[state]}</span>
-              </button>
-            );
-          })}
-        </div>
       </CardHeader>
 
       <CardContent className="relative p-0">

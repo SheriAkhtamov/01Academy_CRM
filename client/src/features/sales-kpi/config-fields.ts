@@ -11,7 +11,6 @@ export const kpiPayFields: Field[] = [
   { name: 'reactivationBonusUzs', translationKey: 'kpiReactivationBonus', role: 'hunter' },
   { name: 'renewalBonusUzs', translationKey: 'kpiRenewalBonus', role: 'closer' },
   { name: 'upsellBonusUzs', translationKey: 'kpiUpsellBonus', role: 'closer' },
-  { name: 'referralBonusUzs', translationKey: 'kpiReferralBonus', role: 'closer' },
 ];
 export const kpiTargetFields: Field[] = [
   { name: 'minimumVolume', translationKey: 'kpiMinimumVolume' }, { name: 'volumeTarget', translationKey: 'kpiVolumeTarget', min: 1 },

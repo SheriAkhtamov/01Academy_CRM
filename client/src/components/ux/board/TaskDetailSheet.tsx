@@ -45,6 +45,8 @@ import {
 } from '@/lib/attachments';
 import { academyDateInputValue, academyInstant, academyTimeOfDay } from '@/lib/localeFormat';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
+import { useTaskCommentReads } from '@/features/board/useTaskCommentReads';
+import { UnreadTaskCommentDot } from './UnreadTaskCommentDot';
 import { TaskColorPicker } from './TaskColorPicker';
 import { TaskPhotoPreview } from './TaskPhotoPreview';
 import { ALLOWED_ATTACHMENT_EXTENSIONS, isPhotoAttachment } from '@shared/board-attachments';
@@ -52,7 +54,7 @@ import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import { canFinalizeBoardTask, canManageBoardTask, isSelfAssignedBoardTask } from '@shared/board-permissions';
+import { canCommentOnBoardTask, canEditBoardTask, canFinalizeBoardTask, canManageBoardTask, isSelfAssignedBoardTask } from '@shared/board-permissions';
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
@@ -162,6 +164,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     const [activeTab, setActiveTab] = useState('comments');
     const userId = user?.id;
     const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+    const commentReads = useTaskCommentReads(task, userId, open, activeTab === 'comments');
 
     useEffect(() => {
         setEditing(false);
@@ -191,17 +194,19 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     };
 
     const canManage = canManageBoardTask(user, task);
+    const canEdit = canEditBoardTask(user, task);
+    const canComment = canCommentOnBoardTask(user, task);
     const canFinalize = canFinalizeBoardTask(user, task);
     const selfAssigned = isSelfAssignedBoardTask(task);
-    const canDelete = canManage;
+    const canDelete = canEdit;
 
     useEffect(() => {
-        if (!canManage) {
+        if (!canEdit) {
             setEditing(false);
             setConfirmDelete(false);
-            setPendingDelete(null);
         }
-    }, [canManage]);
+        if (!canComment) setPendingDelete(null);
+    }, [canEdit, canComment]);
 
     const onError = (error: Error) => { hapticNotify('error'); toast({ title: error.message, variant: 'destructive' }); };
 
@@ -244,8 +249,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     });
 
     const commentMutation = useMutation({
-        mutationFn: (draft: string) => apiRequest('POST', `/api/board/tasks/${taskId}/comments`, { body: draft.trim() }),
-        onSuccess: (_result, draft) => { setCommentText((current) => current === draft ? '' : current); invalidate(); },
+        mutationFn: ({ draft, throughCommentId }: { draft: string; throughCommentId: number }) => apiRequest('POST', `/api/board/tasks/${taskId}/comments`, { body: draft.trim(), readThroughCommentId: throughCommentId }),
+        onSuccess: (_result, { draft, throughCommentId }) => { setCommentText((current) => current === draft ? '' : current); commentReads.acknowledgeReply(throughCommentId); invalidate(); },
         onError,
         onSettled: () => { submittingComment.current = false; },
     });
@@ -266,7 +271,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     const sendComment = () => {
         if (!commentText.trim() || submittingComment.current) return;
         submittingComment.current = true;
-        commentMutation.mutate(commentText);
+        commentMutation.mutate({ draft: commentText, throughCommentId: commentReads.getSeenCommentId() });
     };
     const addChecklistItem = () => {
         if (!checklistText.trim() || submittingChecklist.current) return;
@@ -345,6 +350,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     );
     const unsavedGuard = useUnsavedChangesGuard({
         open, isPending: saveMutation.isPending || deleteMutation.isPending || deleteCommentMutation.isPending || deleteChecklistMutation.isPending || deleteAttachmentMutation.isPending, onOpenChange: (nextOpen) => {
+            if (!nextOpen) commentReads.markSeen();
             if (!nextOpen && userId && taskId) clearPendingAttachment(userId, taskId);
             onOpenChange(nextOpen);
         },
@@ -377,7 +383,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                         <SheetHeader className="space-y-0 border-b border-border p-4 pr-12 sm:p-5 sm:pr-14">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
-                                    {editing && canManage ? (
+                                    {editing && canEdit ? (
                                         <><SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle><Input disabled={saveMutation.isPending} aria-label={t('taskTitle')} value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="text-base font-semibold" /></>
                                     ) : (
                                         <SheetTitle className="text-base leading-snug">{task.title}</SheetTitle>
@@ -402,7 +408,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
-                                    {canManage ? (
+                                    {canEdit ? (
                                         editing ? (
                                             <>
                                                 <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>{saveMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('saveChanges')}</Button>
@@ -471,7 +477,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                             {/* Meta + edit form */}
                             <div className="space-y-4 border-b border-border p-5">
-                                {editing && canManage ? (
+                                {editing && canEdit ? (
                                     <>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
@@ -492,7 +498,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label htmlFor="task-detail-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
-                                                {canManage ? (
+                                                {canEdit ? (
                                                     <Select disabled={saveMutation.isPending} value={draftAssignee} onValueChange={setDraftAssignee}>
                                                         <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
@@ -542,7 +548,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             {/* Tabs */}
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
                                 <TabsList className={cn('grid h-auto w-full grid-cols-4 gap-1', tasksOnly && 'flex justify-start overflow-x-auto')}>
-                                    <TabsTrigger value="comments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}</TabsTrigger>
+                                    <TabsTrigger value="comments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}{task.comments.some((comment) => comment.isUnread) ? <UnreadTaskCommentDot /> : null}</TabsTrigger>
                                     <TabsTrigger value="checklist" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
                                     <TabsTrigger value="attachments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('attachmentsLabel')}{task.attachments.length ? ` (${task.attachments.length})` : ''}</TabsTrigger>
                                     <TabsTrigger value="activity" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('activityTab')}</TabsTrigger>
@@ -550,7 +556,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                                 {/* Comments */}
                                 <TabsContent value="comments" className="mt-4 space-y-3">
-                                    {canManage ? (
+                                    {canComment ? (
                                         <>
                                             <div className="flex gap-2">
                                                 <Textarea
@@ -577,9 +583,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                                 <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">{getInitials(c.author?.fullName ?? '?')}</AvatarFallback>
                                                             </Avatar>
                                                             <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
+                                                            {c.isUnread ? <UnreadTaskCommentDot /> : null}
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt, language)}</span>
                                                         </div>
-                                                        {canManage && user?.id === c.author?.id ? (
+                                                        {canComment && user?.id === c.author?.id ? (
                                                             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t('delete')} onClick={() => { setDeleteError(''); setPendingDelete({ kind: 'comment', id: c.id }); } }><Trash2 className="size-3.5" /></Button>
                                                         ) : null}
                                                     </div>

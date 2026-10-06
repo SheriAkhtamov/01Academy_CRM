@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { GraduationCap, Loader2, LogOut } from 'lucide-react';
+import { AlertTriangle, GraduationCap, LogOut } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,48 @@ import { PublicAttendanceApiError } from '@/features/public-attendance/api';
 import { AttendanceLogin } from '@/features/public-attendance/components/AttendanceLogin';
 import { AttendanceNavigation } from '@/features/public-attendance/components/AttendanceNavigation';
 import { AttendanceOverview } from '@/features/public-attendance/components/AttendanceOverview';
-import { AttendanceRoster } from '@/features/public-attendance/components/AttendanceRoster';
+import { AttendanceRoster, AttendanceRosterSkeleton } from '@/features/public-attendance/components/AttendanceRoster';
 import type { AttendanceFilter } from '@/features/public-attendance/presentation';
 import type { PublicAttendanceStudent, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
 import '@/features/public-attendance/public-attendance.css';
 
 const errorKey = (error: unknown, fallback: TranslationKey): TranslationKey => error instanceof PublicAttendanceApiError && error.code in translations ? error.code as TranslationKey : fallback;
+
+/*
+  A failed request and its way out are one object everywhere on the page, so the
+  stream list, the roster and the save action all look like the same product
+  instead of three different alerts. The button appears only when there is
+  something to retry: a failed mark is retried by pressing the mark again, and
+  an offer to "retry" that merely hides the message would be a lie.
+*/
+function AttendanceError({ message, onRetry }: { message: TranslationKey; onRetry?: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="pa-error-banner">
+      <span className="pa-error-icon"><AlertTriangle /></span>
+      <p role="alert">{t(message)}</p>
+      {onRetry ? <Button variant="outline" size="sm" onClick={onRetry}>{t('retry')}</Button> : null}
+    </div>
+  );
+}
+
+/*
+  Placeholders keep the page's height while the first response is in flight, so
+  the stream list does not shove the lesson card down the screen when it lands.
+*/
+function AttendanceSkeleton() {
+  return (
+    <>
+      <div className="pa-flow-cards" aria-hidden="true">
+        {Array.from({ length: 3 }, (_, index) => <span key={index} className="pa-skeleton pa-skeleton-card" />)}
+      </div>
+      <div className="pa-skeleton-strip" aria-hidden="true">
+        {Array.from({ length: 8 }, (_, index) => <span key={index} className="pa-skeleton pa-skeleton-pill" />)}
+      </div>
+      <span className="pa-skeleton pa-skeleton-overview" aria-hidden="true" />
+    </>
+  );
+}
 
 export default function PublicAttendancePage() {
   const { t } = useTranslation();
@@ -48,7 +84,10 @@ export default function PublicAttendancePage() {
   return (
     <div className="pa-canvas">
       <header className="pa-topbar"><div className="pa-topbar-inner">
-        <div className="pa-brand"><span className="pa-brand-icon"><GraduationCap /></span><span>{t('platformName')}</span></div>
+        <div className="pa-brand">
+          <span className="pa-brand-icon"><GraduationCap /></span>
+          <span className="pa-brand-text"><span className="pa-brand-name">{t('platformName')}</span><span className="pa-brand-caption">{t('publicAttendanceCourse')}</span></span>
+        </div>
         <div className="pa-topbar-actions"><LanguageSwitcher />{state.authenticated ? <Button variant="ghost" className="pa-exit" disabled={busy} onClick={() => state.close.mutate()}><LogOut /><span>{t('publicAttendanceExit')}</span></Button> : null}</div>
       </div></header>
       <main className={`pa-shell ${!state.authenticated ? 'pa-login-shell' : ''}`}>
@@ -56,15 +95,15 @@ export default function PublicAttendancePage() {
           unavailable={state.session.data?.available === false} pending={state.open.isPending} error={state.open.error ? t(errorKey(state.open.error, 'publicAttendanceSaveFailed')) : undefined}
           onPasswordChange={(value) => { setPassword(value); state.open.reset(); }} onSubmit={(event) => void open(event)} onRetry={() => void state.session.refetch()} />
           : <>
-            <div className="pa-page-heading"><div><p className="pa-eyebrow">{t('publicAttendanceCourse')}</p><h1>{t('publicAttendanceJournal')}</h1></div></div>
-            {state.close.error ? <p role="alert" className="pa-error-banner">{t(errorKey(state.close.error, 'publicAttendanceSaveFailed'))}</p> : null}
-            {state.groups.isPending ? <p role="status" className="pa-loading"><Loader2 className="animate-spin" />{t('loading')}</p>
-              : state.groups.error ? <div className="pa-error-banner"><p role="alert">{t(errorKey(state.groups.error, 'publicAttendanceLoadFailed'))}</p><Button variant="outline" onClick={state.refresh}>{t('retry')}</Button></div>
+            <div className="pa-page-heading"><p className="pa-eyebrow">{state.group?.name ?? t('publicAttendanceCourse')}</p><h1>{t('publicAttendanceJournal')}</h1></div>
+            {state.close.error ? <AttendanceError message={errorKey(state.close.error, 'publicAttendanceSaveFailed')} /> : null}
+            {state.groups.isPending ? <AttendanceSkeleton />
+              : state.groups.error ? <AttendanceError message={errorKey(state.groups.error, 'publicAttendanceLoadFailed')} onRetry={state.refresh} />
                 : <AttendanceNavigation groups={state.groups.data?.groups ?? []} group={state.group} lesson={state.lesson} busy={busy} onGroup={state.chooseGroup} onLesson={state.chooseLesson} />}
             {roster ? <AttendanceOverview roster={roster} busy={busy} refreshing={state.roster.isFetching} saving={state.mark.isPending} saved={savedStudent !== null} onRefresh={state.refresh} /> : null}
-            {state.mark.error ? <p role="alert" className="pa-error-banner">{t(errorKey(state.mark.error, 'publicAttendanceSaveFailed'))}</p> : null}
-            {state.roster.isPending && state.lesson ? <div role="status" className="pa-loading pa-roster-loading"><Loader2 className="animate-spin" />{t('loading')}</div>
-              : state.roster.error ? <div className="pa-error-banner"><p role="alert">{t(errorKey(state.roster.error, 'publicAttendanceLoadFailed'))}</p><Button variant="outline" onClick={state.refresh}>{t('retry')}</Button></div>
+            {state.mark.error ? <AttendanceError message={errorKey(state.mark.error, 'publicAttendanceSaveFailed')} /> : null}
+            {state.roster.isPending && state.lesson ? <><span className="pa-skeleton pa-skeleton-overview" aria-hidden="true" /><AttendanceRosterSkeleton /></>
+              : state.roster.error ? <AttendanceError message={errorKey(state.roster.error, 'publicAttendanceLoadFailed')} onRetry={state.refresh} />
                 : roster ? <AttendanceRoster students={roster.students} search={search} filter={filter} canMark={roster.lesson.canMark} busy={busy}
                   pendingStudentId={state.mark.isPending ? state.mark.variables?.studentId : undefined} onSearch={setSearch} onFilter={setFilter}
                   onMark={(student, status) => void save(student, status)} onClear={(student) => { state.mark.reset(); setClearStudent(student); }} /> : null}

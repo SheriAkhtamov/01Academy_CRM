@@ -10,6 +10,7 @@ import { CalendarClock, CheckCircle2, CheckSquare, MessageSquare, Paperclip, Use
 import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
+import { UnreadTaskCommentDot } from './UnreadTaskCommentDot';
 import {
     PRIORITY_META,
     TASK_COLOR_META,
@@ -51,6 +52,9 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                 <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3">
                     {task.title}
                 </span>
+                {task.status === 'done' && task.awaitingAcceptance ? (
+                    <span role="img" aria-label={t('taskAwaitingAcceptance')} title={t('taskAwaitingAcceptance')} className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />
+                ) : null}
             </div>
 
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -98,6 +102,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                         <span className="flex items-center gap-1">
                             <MessageSquare className="size-3.5" />
                             {task.commentCount}
+                            {(task.unreadCommentCount ?? 0) > 0 ? <UnreadTaskCommentDot /> : null}
                         </span>
                     ) : null}
                     {task.attachmentCount > 0 ? (

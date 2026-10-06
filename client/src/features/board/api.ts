@@ -22,6 +22,9 @@ export const boardApi = {
     apiRequest('GET', '/api/board/tasks/pending-acceptance/count') as Promise<{ count: number }>
   ),
   getTask: <T>(id: number) => apiRequest('GET', `/api/board/tasks/${id}`) as Promise<T>,
+  markCommentsRead: (taskId: number, throughCommentId: number) => (
+    apiRequest('POST', `/api/board/tasks/${taskId}/comments/read`, { throughCommentId })
+  ),
   listTasks: <T>(archived = false) => (
     apiRequest('GET', `/api/board/tasks${archived ? '?archived=true' : ''}`) as Promise<T>
   ),

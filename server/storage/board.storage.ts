@@ -18,6 +18,8 @@ import {
 } from '../db/schema';
 import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { isBoardTaskAwaitingAcceptance } from '@shared/board-permissions';
+import { COMMENT_READ_ACTIVITY, unreadBoardCommentIds, saveBoardCommentRead, markBoardCommentsRead } from './board-comment-reads';
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
 // any alias of it (creator/assignee/author/...), hence the loose column type.
@@ -91,7 +93,7 @@ class BoardStorage {
         return row?.count ?? 0;
     }
 
-    async getTasks(boardId: number, visibleToUserId?: number, archived = false) {
+    async getTasks(boardId: number, visibleToUserId?: number, archived = false, viewerId?: number) {
         const visibilityWhere = and(
             eq(boardTasks.boardId, boardId),
             archived
@@ -140,7 +142,7 @@ class BoardStorage {
             );
 
         const ids = rows.map((r) => r.id);
-        const counts = await this.getTaskCounts(ids);
+        const [counts, unread] = await Promise.all([this.getTaskCounts(ids), unreadBoardCommentIds(ids, viewerId)]);
 
         return rows.map((r) => ({
             ...r,
@@ -148,6 +150,8 @@ class BoardStorage {
             assignee: r.assignee?.id ? r.assignee : null,
             lead: r.lead?.id ? r.lead : null,
             ...(counts.get(r.id) ?? { commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 }),
+            unreadCommentCount: unread.get(r.id)?.length ?? 0,
+            awaitingAcceptance: isBoardTaskAwaitingAcceptance(viewerId ? { id: viewerId } : null, r),
         }));
     }
 
@@ -266,7 +270,7 @@ class BoardStorage {
     }
 
     // -- Task detail (with comments, checklist, attachments, activity) -----
-    async getTaskDetail(id: number) {
+    async getTaskDetail(id: number, viewerId?: number) {
         const [task] = await db
             .select({
                 id: boardTasks.id,
@@ -347,16 +351,17 @@ class BoardStorage {
                 })
                 .from(boardTaskActivity)
                 .leftJoin(actor, eq(boardTaskActivity.actorId, actor.id))
-                .where(eq(boardTaskActivity.taskId, id))
+                .where(and(eq(boardTaskActivity.taskId, id), ne(boardTaskActivity.type, COMMENT_READ_ACTIVITY)))
                 .orderBy(asc(boardTaskActivity.createdAt)),
         ]);
 
+        const unreadIds = new Set((await unreadBoardCommentIds([id], viewerId)).get(id) ?? []);
         return {
             ...task,
             creator: task.creator?.id ? task.creator : null,
             assignee: task.assignee?.id ? task.assignee : null,
             lead: task.lead?.id ? task.lead : null,
-            comments: comments.map((c) => ({ ...c, author: c.author?.id ? c.author : null })),
+            comments: comments.map((c) => ({ ...c, author: c.author?.id ? c.author : null, isUnread: unreadIds.has(c.id) })),
             checklist,
             attachments: attachments.map((a) => ({ ...a, uploadedBy: a.uploadedBy?.id ? a.uploadedBy : null })),
             activity: activity.map((a) => ({ ...a, actor: a.actor?.id ? a.actor : null })),
@@ -445,17 +450,18 @@ class BoardStorage {
         });
     }
 
-    async deleteTask(id: number, assigneeId?: number): Promise<void> {
+    async deleteTask(id: number, creatorId?: number): Promise<void> {
         const deleted = await db.delete(boardTasks).where(and(
             eq(boardTasks.id, id),
-            assigneeId === undefined ? undefined : eq(boardTasks.assigneeId, assigneeId),
+            creatorId === undefined ? undefined : eq(boardTasks.creatorId, creatorId),
         )).returning({ id: boardTasks.id });
-        if (!deleted.length && assigneeId !== undefined) {
-            throw Object.assign(new Error('onlyAssigneeCanManageTask'), { statusCode: 403 });
+        if (!deleted.length && creatorId !== undefined) {
+            throw Object.assign(new Error('onlyCreatorCanManageTask'), { statusCode: 403 });
         }
     }
 
     // -- Comments ----------------------------------------------------------
+    markCommentsRead = markBoardCommentsRead;
     async createComment(data: InsertBoardTaskComment) {
         const [row] = await db.insert(boardTaskComments).values(data).returning();
         return row;
@@ -464,10 +470,14 @@ class BoardStorage {
     async createCommentWithActivity(
         data: InsertBoardTaskComment,
         activity: Omit<InsertBoardTaskActivity, 'taskId'>,
+        readThroughCommentId?: number,
     ) {
         return db.transaction(async (tx) => {
             const [row] = await tx.insert(boardTaskComments).values(data).returning();
             await tx.insert(boardTaskActivity).values({ ...activity, taskId: data.taskId });
+            if (data.authorId && readThroughCommentId) {
+                await saveBoardCommentRead(tx, data.taskId, data.authorId, readThroughCommentId);
+            }
             return row;
         });
     }

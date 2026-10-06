@@ -23,6 +23,7 @@ const mockStorage = {
     deleteTask: vi.fn(),
     createActivity: vi.fn(),
     createComment: vi.fn(),
+    markCommentsRead: vi.fn(),
     getComment: vi.fn(),
     updateComment: vi.fn(),
     deleteComment: vi.fn(),
@@ -121,6 +122,8 @@ describe("board routes", () => {
     });
     mockStorage.board.getMaxPosition.mockResolvedValue(0);
     mockStorage.board.createActivity.mockResolvedValue({});
+    mockStorage.board.createComment.mockImplementation(async (data: any) => ({ id: 11, ...data }));
+    mockStorage.board.markCommentsRead.mockResolvedValue(undefined);
     mockStorage.board.createAttachmentWithActivity.mockImplementation((data: unknown) => mockStorage.board.createAttachment(data));
     mockStorage.board.createTask.mockImplementation(async (data: any) => ({
       id: 100,
@@ -163,7 +166,7 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false, staffUser.id);
   });
 
   it("counts delegated tasks awaiting their creator's acceptance", async () => {
@@ -187,7 +190,7 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, false, adminUser.id);
   });
 
   it("lists accepted tasks only when the archive is requested", async () => {
@@ -198,7 +201,7 @@ describe("board routes", () => {
     const response = await agent.get("/api/board/tasks?archived=true");
 
     expect(response.status).toBe(200);
-    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, true);
+    expect(mockStorage.board.getTasks).toHaveBeenCalledWith(defaultBoard.id, undefined, true, staffUser.id);
   });
 
   it("rejects an invalid archive filter", async () => {
@@ -213,8 +216,8 @@ describe("board routes", () => {
     expect(mockStorage.board.getTasks).not.toHaveBeenCalled();
   });
 
-  it.each([staffUser, adminUser])('makes other employees tasks read-only for $module, even when the actor created them', async (actor) => {
-    const task = { id: 100, boardId: 1, title: 'Delegated work', creatorId: actor.id, assigneeId: 8, status: 'todo' };
+  it.each([staffUser, adminUser])('makes unrelated employees tasks read-only for $module', async (actor) => {
+    const task = { id: 100, boardId: 1, title: 'Delegated work', creatorId: 8, assigneeId: 8, status: 'todo' };
     mockStorage.board.getTask.mockResolvedValue(task);
     mockStorage.board.getTaskDetail.mockResolvedValue(task);
     mockStorage.board.getComment.mockResolvedValue({ id: 10, taskId: 100, authorId: actor.id });
@@ -248,16 +251,63 @@ describe("board routes", () => {
     }
   });
 
-  it.each([staffUser, adminUser])('lets an assignee edit and delete their own task without creator or module privileges: $module', async (actor) => {
+  it.each([staffUser, adminUser])('lets an assignee change status but forbids editing or deleting delegated work: $module', async (actor) => {
     const task = { id: 100, boardId: 1, title: 'Assigned to me', creatorId: 8, assigneeId: actor.id, status: 'todo' };
     mockStorage.board.getTask.mockResolvedValue(task);
     mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...task, ...updates }));
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: actor.id });
-    expect((await agent.patch('/api/board/tasks/100').send({ title: 'My change', dueAt: '2026-10-06T12:00:00Z' })).status).toBe(200);
+    expect((await agent.patch('/api/board/tasks/100').send({ title: 'My change', dueAt: '2026-10-06T12:00:00Z', creatorId: actor.id })).status).toBe(403);
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(200);
+    expect((await agent.delete('/api/board/tasks/100')).status).toBe(403);
+    expect(mockStorage.board.deleteTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.updateTask).toHaveBeenCalledOnce();
+    expect(mockStorage.board.updateTask).toHaveBeenCalledWith(100, expect.objectContaining({ status: 'in_progress' }));
+  });
+
+  it.each([staffUser, adminUser])('lets the creator edit and comment on work assigned to another employee: $module', async (actor) => {
+    const task = { id: 100, boardId: 1, title: 'Delegated work', creatorId: actor.id, assigneeId: 8, status: 'todo' };
+    mockStorage.board.getTask.mockResolvedValue(task);
+    mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...task, ...updates }));
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor.id });
+    expect((await agent.patch('/api/board/tasks/100').send({ title: 'New instructions', assigneeId: 8 })).status).toBe(200);
+    expect((await agent.post('/api/board/tasks/100/comments').send({ body: 'My reply' })).status).toBe(200);
+    expect(mockStorage.board.createComment).toHaveBeenCalledWith({ taskId: 100, authorId: actor.id, body: 'My reply' });
     expect((await agent.delete('/api/board/tasks/100')).status).toBe(200);
     expect(mockStorage.board.deleteTask).toHaveBeenCalledWith(100, actor.id);
+  });
+
+  it.each([7, 8])('marks only the viewed comments read for participant %s', async (actorId) => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8 });
+    mockStorage.board.getTaskDetail.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8 });
+    mockStorage.board.getComment.mockResolvedValue({ id: 10, taskId: 100, authorId: actorId === 7 ? 8 : 7 });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actorId });
+    expect((await agent.get('/api/board/tasks/100')).status).toBe(200);
+    expect(mockStorage.board.markCommentsRead).not.toHaveBeenCalled();
+    expect((await agent.post('/api/board/tasks/100/comments/read').send({ throughCommentId: 10 })).status).toBe(200);
+    expect(mockStorage.board.markCommentsRead).toHaveBeenCalledWith(100, actorId, 10);
+  });
+
+  it('acknowledges viewed comments when their recipient replies', async () => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8 });
+    mockStorage.board.getComment.mockResolvedValue({ id: 10, taskId: 100, authorId: 8 });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.post('/api/board/tasks/100/comments').send({ body: 'Reply', readThroughCommentId: 10 })).status).toBe(200);
+    expect(mockStorage.board.markCommentsRead).toHaveBeenCalledWith(100, 7, 10);
+  });
+
+  it('rejects marking a foreign comment or another participant\'s receipt read', async () => {
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, boardId: 1, creatorId: 7, assigneeId: 8 });
+    mockStorage.board.getComment.mockResolvedValue({ id: 10, taskId: 999, authorId: 8 });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    expect((await agent.post('/api/board/tasks/100/comments/read').send({ throughCommentId: 10 })).status).toBe(400);
+    await agent.post('/test/session').send({ userId: 1 });
+    expect((await agent.post('/api/board/tasks/100/comments/read').send({ throughCommentId: 10, userId: 7 })).status).toBe(403);
+    expect(mockStorage.board.markCommentsRead).not.toHaveBeenCalled();
   });
 
   it("assigns new staff-created tasks to the current employee", async () => {
@@ -532,19 +582,19 @@ describe("board routes", () => {
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
   });
 
-  it.each([staffUser, adminUser])('lets only the author accept delegated work without granting other changes: $module', async (actor) => {
+  it.each([staffUser, adminUser])('lets the author edit and accept delegated work while preserving assignee-only progress: $module', async (actor) => {
     const task = { id: 100, boardId: 1, creatorId: actor.id, assigneeId: 8, status: 'done' };
     mockStorage.board.getTask.mockResolvedValue(task);
     mockStorage.board.updateTask.mockImplementation(async (_id, updates) => ({ ...task, ...updates }));
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: actor.id });
-    expect((await agent.patch('/api/board/tasks/100').send({ title: 'Changed' })).status).toBe(403);
+    expect((await agent.patch('/api/board/tasks/100').send({ title: 'Changed' })).status).toBe(200);
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'in_progress' })).status).toBe(403);
-    expect((await agent.delete('/api/board/tasks/100')).status).toBe(403);
-    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.updateTask).toHaveBeenCalledOnce();
     expect((await agent.patch('/api/board/tasks/100/status').send({ status: 'accepted' })).status).toBe(200);
     expect(mockStorage.board.updateTask).toHaveBeenCalledWith(100, expect.objectContaining({ status: 'accepted', acceptedBy: actor.id }));
-    expect(mockStorage.board.deleteTask).not.toHaveBeenCalled();
+    expect((await agent.delete('/api/board/tasks/100')).status).toBe(200);
+    expect(mockStorage.board.deleteTask).toHaveBeenCalledWith(100, actor.id);
   });
 
   it('does not let an author skip the done stage when accepting delegated work', async () => {

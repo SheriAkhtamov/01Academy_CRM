@@ -14,6 +14,32 @@ export const attendanceTime = (value: string, language: Language) => new Intl.Da
   timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: false,
 }).format(new Date(value));
 
+/*
+  The lesson strip labels a date the way a person reads a calendar cell: the
+  weekday first, then the day, then a short month — "ср, 7 окт.". `attendanceDate`
+  stays as it is because the lesson's accessible name is built from it, and the
+  list of lessons in the phone's picker reads better with a long month.
+*/
+export const attendanceWeekdayDate = (value: string, language: Language) => new Intl.DateTimeFormat(locale(language), {
+  timeZone: 'Asia/Tashkent', weekday: 'short', day: 'numeric', month: 'short',
+}).format(new Date(value));
+
+export const attendanceWeekday = (value: string, language: Language) => new Intl.DateTimeFormat(locale(language), {
+  timeZone: 'Asia/Tashkent', weekday: 'short',
+}).format(new Date(value));
+
+/*
+  A calendar leaf needs the day and the month as two separate lines, so they are
+  formatted separately rather than sliced out of one string: "окт." and "7".
+*/
+export const attendanceDayNumber = (value: string) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tashkent', day: 'numeric',
+}).format(new Date(value));
+
+export const attendanceMonthShort = (value: string, language: Language) => new Intl.DateTimeFormat(locale(language), {
+  timeZone: 'Asia/Tashkent', month: 'short',
+}).format(new Date(value));
+
 export const attendanceTimeRange = (lesson: PublicAttendanceLesson, language: Language) => `${attendanceTime(lesson.scheduledAt, language)}–${attendanceTime(new Date(new Date(lesson.scheduledAt).getTime() + lesson.durationMinutes * 60000).toISOString(), language)}`;
 
 export const attendanceLessonLabel = (lesson: PublicAttendanceLesson, language: Language, t: AttendanceTranslate) => t('publicAttendanceLessonLabel')

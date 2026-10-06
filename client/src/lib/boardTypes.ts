@@ -31,6 +31,8 @@ export interface TaskSummary {
     creator: UserMini | null;
     assignee: UserMini | null;
     commentCount: number;
+    unreadCommentCount?: number;
+    awaitingAcceptance?: boolean;
     attachmentCount: number;
     checklistTotal: number;
     checklistDone: number;
@@ -43,6 +45,7 @@ export interface TaskComment {
     createdAt: string;
     updatedAt: string;
     author: UserMini | null;
+    isUnread?: boolean;
 }
 
 export interface TaskChecklistItem {

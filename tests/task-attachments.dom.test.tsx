@@ -182,7 +182,7 @@ describe('task finalization actions', () => {
     expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('taskCompletedAndArchived') });
   });
 
-  it('lets an author accept delegated work while hiding editing and deletion', async () => {
+  it('lets an author edit and accept delegated work while keeping progress with the assignee', async () => {
     const task: TaskDetail = { id: 100, boardId: 1, title: 'Delegated task', description: null, status: 'done', priority: 'normal', color: null,
       position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
       dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
@@ -193,8 +193,8 @@ describe('task finalization actions', () => {
     const close = vi.fn();
     render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={[employee]} />, client));
     expect(screen.queryByRole('button', { name: i18n.t('finishOwnTask') })).toBeNull();
-    expect(screen.queryByRole('button', { name: i18n.t('edit') })).toBeNull();
-    expect(screen.queryByRole('button', { name: i18n.t('deleteTaskTitle') })).toBeNull();
+    expect(screen.getByRole('button', { name: i18n.t('edit') })).toBeTruthy();
+    expect(screen.getByRole('button', { name: i18n.t('deleteTaskTitle') })).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
     await userEvent.setup().click(screen.getByRole('button', { name: i18n.t('acceptTask') }));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/board/tasks/100/status', { status: 'accepted' }));
@@ -207,7 +207,7 @@ describe('read-only task details', () => {
   it.each([{ id: 7, module: 'sales' }, { id: 1, module: 'administration' }])('keeps foreign tasks readable without changing or deleting them for $module', async ({ id, module }) => {
     Object.assign(mocks.user, { id, module, modules: [module] });
     const task: TaskDetail = { id: 100, boardId: 1, title: 'Foreign task', description: 'Task details', status: 'todo', priority: 'normal', color: null,
-      position: 0, creatorId: 7, assigneeId: 8, creator: employee, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
+      position: 0, creatorId: 8, assigneeId: 8, creator: { ...employee, id: 8 }, assignee: { ...employee, id: 8 }, leadId: null, lead: null,
       dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
       comments: [{ id: 2, taskId: 100, author: employee, body: 'Existing comment', createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z' }],
       checklist: [{ id: 3, taskId: 100, content: 'Existing item', isDone: false, position: 0, createdBy: 7, createdAt: '2026-09-03T10:00:00Z' }],

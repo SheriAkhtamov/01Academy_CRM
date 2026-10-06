@@ -14,7 +14,7 @@ import {
     type User,
 } from '../db/schema';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { canFinalizeBoardTask, canManageBoardTask } from '@shared/board-permissions';
+import { canCommentOnBoardTask, canEditBoardTask, canFinalizeBoardTask, canManageBoardTask } from '@shared/board-permissions';
 import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
@@ -32,7 +32,7 @@ router.use(authorize);
 const canReadTask = (user: User, task: BoardTask | { creatorId: number | null; assigneeId: number | null }) =>
     Boolean(user && task);
 
-// Can edit core fields (title, description, priority, assignee, due date).
+// The assignee manages execution; the creator edits the task's core fields.
 const canManageTask = (user: User, task: BoardTask) =>
     canManageBoardTask(user, task);
 
@@ -233,7 +233,7 @@ router.get('/tasks', async (req, res) => {
         }
         const [board, tasks] = await Promise.all([
             storage.board.getBoard(boardId),
-            storage.board.getTasks(boardId, undefined, archived),
+            storage.board.getTasks(boardId, undefined, archived, req.user!.id),
         ]);
         if (!board) return res.status(404).json({ error: 'Board not found' });
         res.json({ board, tasks });
@@ -247,7 +247,7 @@ router.get('/tasks/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ error: 'Invalid task id' });
-        const task = await storage.board.getTaskDetail(id);
+        const task = await storage.board.getTaskDetail(id, req.user!.id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
         if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         res.json(task);
@@ -375,8 +375,8 @@ router.patch('/tasks/:id', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canManageTask(req.user!, task)) {
-            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (!canEditBoardTask(req.user!, task)) {
+            return res.status(403).json({ error: 'onlyCreatorCanManageTask' });
         }
 
         const updates: Record<string, unknown> = {};
@@ -449,7 +449,7 @@ router.patch('/tasks/:id', async (req, res) => {
         }
         const atomicUpdate = (storage.board as any).updateTaskWithActivities;
         const updated = atomicUpdate
-            ? await atomicUpdate.call(storage.board, id, task.status, updates, activities, req.user!.id)
+            ? await atomicUpdate.call(storage.board, id, task.status, updates, activities, undefined, req.user!.id)
             : await storage.board.updateTask(id, updates);
         if (!atomicUpdate) {
             for (const activity of activities) {
@@ -559,8 +559,8 @@ router.delete('/tasks/:id', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canManageTask(req.user!, task)) {
-            return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (!canEditBoardTask(req.user!, task)) {
+            return res.status(403).json({ error: 'onlyCreatorCanManageTask' });
         }
 
         await storage.board.deleteTask(id, req.user!.id);
@@ -574,6 +574,32 @@ router.delete('/tasks/:id', async (req, res) => {
 
 // --- Comments ---------------------------------------------------------------
 
+const readCommentId = async (value: unknown, taskId: number) => {
+    if (value === undefined || value === 0) return 0;
+    const commentId = parseId(value);
+    if (!commentId) return null;
+    const comment = await storage.board.getComment(commentId);
+    return comment?.taskId === taskId ? commentId : null;
+};
+
+router.post('/tasks/:id/comments/read', async (req, res) => {
+    try {
+        const id = parseId(req.params.id);
+        if (!id) return res.status(400).json({ error: 'Invalid task id' });
+        const task = await storage.board.getTask(id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canCommentOnBoardTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        const throughCommentId = await readCommentId(req.body.throughCommentId, id);
+        if (!throughCommentId) return res.status(400).json({ error: 'invalidData' });
+        await storage.board.markCommentsRead(id, req.user!.id, throughCommentId);
+        publishRealtimeEvent({ type: 'BOARD_TASK_UPDATED', data: { id, boardId: task.boardId }, audienceUserIds: [req.user!.id] });
+        res.json({ throughCommentId });
+    } catch (error) {
+        logger.error('Failed to mark task comments read', { error, taskId: req.params.id });
+        res.status(500).json({ error: 'errorOccurred' });
+    }
+});
+
 router.post('/tasks/:id/comments', async (req, res) => {
     try {
         const id = parseId(req.params.id);
@@ -583,7 +609,9 @@ router.post('/tasks/:id/comments', async (req, res) => {
 
         const task = await storage.board.getTask(id);
         if (!task) return res.status(404).json({ error: 'Task not found' });
-        if (!canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (!canCommentOnBoardTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        const throughCommentId = await readCommentId(req.body.readThroughCommentId, id);
+        if (throughCommentId === null) return res.status(400).json({ error: 'invalidData' });
 
         const commentValues = {
             taskId: id,
@@ -599,10 +627,11 @@ router.post('/tasks/:id/comments', async (req, res) => {
         };
         const atomicComment = (storage.board as any).createCommentWithActivity;
         const comment = atomicComment
-            ? await atomicComment.call(storage.board, commentValues, activityValues)
+            ? await atomicComment.call(storage.board, commentValues, activityValues, throughCommentId)
             : await storage.board.createComment(commentValues);
         if (!atomicComment) {
             await storage.board.createActivity({ taskId: id, ...activityValues });
+            if (throughCommentId) await storage.board.markCommentsRead(id, req.user!.id, throughCommentId);
         }
 
         broadcastTask('BOARD_TASK_UPDATED', task);
@@ -623,7 +652,7 @@ router.patch('/comments/:id', async (req, res) => {
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
         const task = await storage.board.getTask(comment.taskId);
-        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (!task || !canCommentOnBoardTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         if (req.user!.id !== comment.authorId) {
             return res.status(403).json({ error: 'You can only edit your own comments' });
         }
@@ -645,7 +674,7 @@ router.delete('/comments/:id', async (req, res) => {
         const comment = await storage.board.getComment(id);
         if (!comment) return res.status(404).json({ error: 'Comment not found' });
         const task = await storage.board.getTask(comment.taskId);
-        if (!task || !canManageTask(req.user!, task)) return res.status(403).json({ error: 'onlyAssigneeCanManageTask' });
+        if (!task || !canCommentOnBoardTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
         if (req.user!.id !== comment.authorId) {
             return res.status(403).json({ error: 'You can only delete your own comments' });
         }

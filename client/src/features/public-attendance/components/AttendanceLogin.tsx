@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowRight, CalendarDays, Check, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarDays, Check, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,16 @@ interface Props {
   onRetry: () => void;
 }
 
+/*
+  Everything before the register is this one screen, and a visitor reaches it
+  from a link someone sent them — so it introduces the page instead of asking
+  for a secret in the void. The cover carries the name and a drawing of what is
+  behind the door; the panel holds a single field.
+
+  The field deliberately does not ask for a numeric keypad: the password is set
+  by an operator and may well contain letters, and a phone that only offers
+  digits would strand that visitor entirely.
+*/
 export function AttendanceLogin(props: Props) {
   const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
@@ -42,12 +52,12 @@ export function AttendanceLogin(props: Props) {
       <section className="pa-login-form-panel">
         <div className="pa-login-form-heading"><span className="pa-lock"><LockKeyhole /></span><h2>{t('publicAttendanceLoginTitle')}</h2></div>
         {props.loading ? <p role="status" className="pa-loading"><Loader2 className="animate-spin" />{t('loading')}</p>
-          : props.initialError ? <div className="pa-login-error"><p role="alert">{t('publicAttendanceLoadFailed')}</p><Button variant="outline" onClick={props.onRetry}>{t('retry')}</Button></div>
+          : props.initialError ? <div className="pa-login-error"><AlertTriangle /><p role="alert">{t('publicAttendanceLoadFailed')}</p><Button variant="outline" onClick={props.onRetry}>{t('retry')}</Button></div>
             : props.unavailable ? <p role="status" className="pa-muted">{t('publicAttendanceUnavailable')}</p>
               : <form onSubmit={props.onSubmit} className="pa-login-form">
                 <Label htmlFor="attendance-password">{t('publicAttendancePassword')}</Label>
                 <div className="pa-password-field">
-                  <Input id="attendance-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" inputMode="numeric" required maxLength={256}
+                  <Input id="attendance-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required maxLength={256} autoFocus
                     value={props.password} onChange={(event) => props.onPasswordChange(event.target.value)} className="pa-password-input" aria-invalid={Boolean(props.error)} aria-describedby={props.error ? 'attendance-password-error' : undefined} />
                   <Button type="button" variant="ghost" className="pa-password-toggle" aria-label={showPassword ? t('publicAttendanceHidePassword') : t('publicAttendanceShowPassword')}
                     onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</Button>

@@ -20,7 +20,7 @@ import { useStickyState } from '@/hooks/useStickyState';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { AcademyModule } from '@shared/academy';
-import { canManageBoardTask } from '@shared/board-permissions';
+import { canEditBoardTask, canManageBoardTask } from '@shared/board-permissions';
 import type { TranslationKey } from '@/lib/i18n';
 import {
     TASK_OWNER_ALL,
@@ -204,7 +204,7 @@ export default function TasksPage() {
     };
 
     const handleReschedule = async (taskId: number, dueAt: string | null): Promise<boolean> => {
-        if (!canManageBoardTask(user, tasks.find((task) => task.id === taskId))) return false;
+        if (!canEditBoardTask(user, tasks.find((task) => task.id === taskId))) return false;
         try {
             await boardApi.updateTaskDueAt(taskId, dueAt);
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
@@ -442,7 +442,7 @@ export default function TasksPage() {
                                 tasks={visibleTasks}
                                 onTaskClick={openTask}
                                 onReschedule={handleReschedule}
-                                canRescheduleTask={(task) => canManageBoardTask(user, task)}
+                                canRescheduleTask={(task) => canEditBoardTask(user, task)}
                             />
                         ) : (
                             <TaskBoard

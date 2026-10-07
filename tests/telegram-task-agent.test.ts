@@ -52,6 +52,7 @@ const baseMessage = (updateId = 1) => ({
 
 const decision = (overrides: Record<string, unknown> = {}) => ({
   action: 'create',
+  transcript: null,
   title: 'Подготовить отчёт',
   description: null,
   assigneeRequested: true,
@@ -108,7 +109,7 @@ beforeEach(() => {
 
 describe('Telegram task agent', () => {
   it('sends Telegram voice directly to the configured multimodal model and creates an idempotent task', async () => {
-    const transport = installFetch([decision()]);
+    const transport = installFetch([decision({ transcript: 'Создай задачу для Хонзоды подготовить отчёт до завтра.' })]);
     await processTelegramTaskAgentMessage({
       ...baseMessage(),
       voice: { fileId: 'voice-file', fileSize: 1024, duration: 300 },
@@ -137,7 +138,7 @@ describe('Telegram task agent', () => {
       .toBe('https://crm.example.test/miniapp/tasks');
   });
 
-  it('keeps a short-lived structured draft and merges the employee reply', async () => {
+  it('keeps a structured draft and merges the employee reply', async () => {
     const transport = installFetch([
       decision({ action: 'clarify', title: null, deadlineRequested: false, dueAt: null, clarification: 'title' }),
       decision({ deadlineRequested: false, dueAt: null }),
@@ -155,6 +156,248 @@ describe('Telegram task agent', () => {
     });
     expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
     expect(transport.openRouterBodies[1].messages[0].content).toContain('"assigneeId":9');
+  });
+
+  it('uses voice transcripts and clarification questions across several text and voice replies', async () => {
+    const transcript = 'Поручи Хонзоде подготовить отчёт по новым заявкам к встрече.';
+    const partial = {
+      title: 'Подготовить отчёт по новым заявкам',
+      description: 'Включить заявки за октябрь',
+      dueAt: null,
+      priority: 'urgent',
+    };
+    const transport = installFetch([
+      decision({ ...partial, action: 'clarify', transcript, title: null, clarification: 'title' }),
+      decision({ ...partial, action: 'clarify', clarification: 'deadline' }),
+      decision({ ...partial, transcript: 'Завтра к одиннадцати.', dueAt: '2026-09-23T11:00:00+05:00' }),
+    ]);
+
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(10), voice: { fileId: 'initial-voice', duration: 10 },
+    }, { fetchImpl: mocks.fetch, now: () => now });
+    const titleQuestion = transport.sentMessages.at(-1).text;
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(11), text: 'Подготовить отчёт по новым заявкам',
+    }, { fetchImpl: mocks.fetch, now: () => new Date(now.getTime() + 60_000) });
+    const deadlineQuestion = transport.sentMessages.at(-1).text;
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(transport.openRouterBodies[1].messages.slice(1)).toEqual([
+      { role: 'user', content: expect.stringContaining(transcript) },
+      { role: 'assistant', content: titleQuestion },
+      { role: 'user', content: expect.stringContaining('Подготовить отчёт по новым заявкам') },
+    ]);
+    expect(JSON.stringify(transport.openRouterBodies[1])).not.toContain('input_audio');
+    expect(transport.openRouterBodies[1].messages[1].content).toContain(now.toISOString());
+
+    await processTelegramTaskAgentMessage({
+      ...baseMessage(12), voice: { fileId: 'deadline-voice', duration: 5 },
+    }, { fetchImpl: mocks.fetch, now: () => new Date(now.getTime() + 120_000) });
+    expect(transport.openRouterBodies[2].messages.slice(1, -1)).toEqual([
+      { role: 'user', content: expect.stringContaining(transcript) },
+      { role: 'assistant', content: titleQuestion },
+      { role: 'user', content: expect.stringContaining('Подготовить отчёт по новым заявкам') },
+      { role: 'assistant', content: deadlineQuestion },
+    ]);
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
+    expect(mocks.createTaskAsActor).toHaveBeenCalledWith(expect.objectContaining({
+      title: partial.title,
+      description: partial.description,
+      assigneeId: 9,
+      dueAt: new Date('2026-09-23T06:00:00.000Z'),
+      priority: 'urgent',
+    }));
+  });
+
+  it('bounds the conversation to 10 messages including the newest input and clears it after creation', async () => {
+    const transport = installFetch([
+      ...Array.from({ length: 6 }, () => decision({ action: 'clarify', dueAt: null, clarification: 'deadline' })),
+      decision(),
+      decision({ title: 'Другая задача', assigneeRequested: false, assigneeId: null, deadlineRequested: false, dueAt: null }),
+    ]);
+    for (let index = 0; index < 6; index += 1) {
+      await processTelegramTaskAgentMessage({ ...baseMessage(index + 1), text: `Деталь-${index}` }, {
+        fetchImpl: mocks.fetch,
+        now: () => now,
+      });
+    }
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    await processTelegramTaskAgentMessage({ ...baseMessage(7), text: 'Завтра к 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    const messages = transport.openRouterBodies[6].messages;
+    expect(messages).toHaveLength(11); // One system message plus 10 conversation messages.
+    expect(messages.slice(1).map((entry: any) => entry.role)).toEqual([
+      'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user',
+    ]);
+    expect(JSON.stringify(messages)).not.toContain('Деталь-0');
+    expect(JSON.stringify(messages)).not.toContain('Деталь-1');
+    expect(JSON.stringify(messages)).toContain('Деталь-2');
+    expect(messages[0].content).toContain('"title":"Подготовить отчёт"');
+
+    await processTelegramTaskAgentMessage({ ...baseMessage(8), text: 'Создай другую задачу' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(transport.openRouterBodies[7].messages).toHaveLength(2);
+    expect(transport.openRouterBodies[7].messages[0].content).toContain('Pending task draft, if any: null');
+    expect(JSON.stringify(transport.openRouterBodies[7])).not.toContain('Деталь-');
+  });
+
+  it('keeps an incomplete task after a long pause', async () => {
+    const transport = installFetch([
+      decision({ action: 'clarify', dueAt: null, clarification: 'deadline' }),
+      decision(),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Подготовить отчёт к встрече' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await processTelegramTaskAgentMessage({ ...baseMessage(11), text: 'Завтра в 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => new Date(now.getTime() + 3 * 60 * 60_000),
+    });
+    expect(transport.openRouterBodies[1].messages).toHaveLength(4);
+    expect(transport.openRouterBodies[1].messages[0].content).toContain('"title":"Подготовить отчёт"');
+    expect(transport.openRouterBodies[1].messages[1].content).toContain('Подготовить отчёт к встрече');
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/cancel', 'Отмени создание'])('clears the task dialogue on cancellation via %s', async (text) => {
+    const transport = installFetch([
+      decision({ action: 'clarify', dueAt: null, clarification: 'deadline' }),
+      ...(text === '/cancel' ? [] : [decision({ action: 'cancel' })]),
+      decision(),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Первоначальная задача' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await processTelegramTaskAgentMessage({ ...baseMessage(11), text }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    await processTelegramTaskAgentMessage({ ...baseMessage(12), text: 'Новая задача' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    const request = transport.openRouterBodies.at(-1);
+    expect(request.messages).toHaveLength(2);
+    expect(request.messages[0].content).toContain('Pending task draft, if any: null');
+    expect(JSON.stringify(request)).not.toContain('Первоначальная задача');
+  });
+
+  it.each([
+    { botId: 'other-bot' },
+    { telegramUserId: 'another-account', chatId: 123456 },
+    { actor: { ...actor, id: 9 } },
+  ])('isolates task dialogue by bot, Telegram account and verified CRM actor: %j', async (otherIdentity) => {
+    const transport = installFetch([
+      decision({ action: 'clarify', title: 'Конфиденциальный отчёт', dueAt: null, clarification: 'deadline' }),
+      decision(),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Конфиденциальный отчёт' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await processTelegramTaskAgentMessage({ ...baseMessage(11), ...otherIdentity, text: 'Моя задача' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(transport.openRouterBodies[1].messages).toHaveLength(2);
+    expect(transport.openRouterBodies[1].messages[0].content).toContain('Pending task draft, if any: null');
+    expect(JSON.stringify(transport.openRouterBodies[1])).not.toContain('Конфиденциальный отчёт');
+  });
+
+  it('preserves the pending dialogue through task listing and unrelated messages without leaking task data', async () => {
+    mocks.ownTasks.mockResolvedValue([
+      { id: 21, title: 'Существующая секретная задача', status: 'todo', priority: 'normal', dueAt: null },
+    ]);
+    const transport = installFetch([
+      decision({ action: 'clarify', dueAt: null, clarification: 'deadline' }),
+      decision({ action: 'out_of_scope' }),
+      decision(),
+    ]);
+    for (const [index, text] of ['Нужно подготовить отчёт к встрече', '/tasks', 'Расскажи анекдот', 'Завтра к 18:00'].entries()) {
+      await processTelegramTaskAgentMessage({ ...baseMessage(index + 1), text }, {
+        fetchImpl: mocks.fetch, now: () => now,
+      });
+    }
+    const finalRequest = transport.openRouterBodies[2];
+    expect(finalRequest.messages).toHaveLength(4);
+    expect(finalRequest.messages[1].content).toContain('Нужно подготовить отчёт к встрече');
+    expect(JSON.stringify(finalRequest)).not.toContain('Существующая секретная задача');
+    expect(JSON.stringify(finalRequest)).not.toContain('Расскажи анекдот');
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
+  });
+
+  it('retains the draft and completed reply when task creation fails', async () => {
+    mocks.createTaskAsActor.mockRejectedValueOnce(new Error('Storage unavailable'));
+    const transport = installFetch([
+      decision({ action: 'clarify', dueAt: null, clarification: 'deadline' }),
+      decision(),
+      decision(),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Подготовить отчёт к встрече' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await expect(processTelegramTaskAgentMessage({ ...baseMessage(11), text: 'Завтра к 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    })).rejects.toThrow('Storage unavailable');
+    await processTelegramTaskAgentMessage({ ...baseMessage(12), text: 'Попробуй ещё' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(transport.openRouterBodies[2].messages).toHaveLength(5);
+    expect(transport.openRouterBodies[2].messages[0].content).toContain('"dueAt":"2026-09-23T18:00:00+05:00"');
+    expect(transport.openRouterBodies[2].messages[3].content).toContain('Завтра к 18:00');
+    expect(mocks.createTaskAsActor).toHaveBeenCalledTimes(2);
+    expect(mocks.publish).toHaveBeenCalledOnce();
+  });
+
+  it('retains the pending dialogue after an invalid model response', async () => {
+    const transport = installFetch([
+      decision({ action: 'clarify', dueAt: null, clarification: 'deadline' }),
+      { action: 'invalid' },
+      decision(),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Подготовить отчёт к встрече' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await expect(processTelegramTaskAgentMessage({ ...baseMessage(11), text: 'Завтра к 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    })).rejects.toThrow();
+    await processTelegramTaskAgentMessage({ ...baseMessage(12), text: 'Завтра к 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(transport.openRouterBodies[2].messages).toHaveLength(4);
+    expect(transport.openRouterBodies[2].messages[1].content).toContain('Подготовить отчёт к встрече');
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
+  });
+
+  it('does not create a task while the model still requests command clarification', async () => {
+    const transport = installFetch([decision({ clarification: 'command' })]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(), text: 'Сделай это' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).reply_markup).toEqual({ force_reply: true });
+  });
+
+  it('does not overwrite the pending draft or create a task from an unintelligible voice message', async () => {
+    const transport = installFetch([
+      decision({ action: 'clarify', title: 'Подготовить исходный отчёт', dueAt: null, clarification: 'deadline' }),
+      decision({ title: 'Выдуманное действие', transcript: null }),
+      decision({ title: 'Подготовить исходный отчёт' }),
+    ]);
+    await processTelegramTaskAgentMessage({ ...baseMessage(10), text: 'Подготовить исходный отчёт к встрече' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    await processTelegramTaskAgentMessage({ ...baseMessage(11), voice: { fileId: 'unintelligible-voice' } }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(mocks.createTaskAsActor).not.toHaveBeenCalled();
+    expect(transport.sentMessages.at(-1).reply_markup).toEqual({ force_reply: true });
+    await processTelegramTaskAgentMessage({ ...baseMessage(12), text: 'Завтра к 18:00' }, {
+      fetchImpl: mocks.fetch, now: () => now,
+    });
+    expect(transport.openRouterBodies[2].messages[0].content).toContain('"title":"Подготовить исходный отчёт"');
+    expect(JSON.stringify(transport.openRouterBodies[2])).not.toContain('Выдуманное действие');
+    expect(JSON.stringify(transport.openRouterBodies[2])).not.toContain('input_audio');
+    expect(mocks.createTaskAsActor).toHaveBeenCalledOnce();
   });
 
   it('accepts ordinary text, defaults the assignee to the sender and allows an omitted deadline', async () => {

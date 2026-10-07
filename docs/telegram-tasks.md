@@ -51,8 +51,21 @@ Configure `integrations.telegramTasks.openRouterApiKey` in the untracked
 - The task creator is always taken from the verified Telegram binding. The AI
   response has no creator field, so a command cannot impersonate another
   employee; assigning the new task to somebody else remains supported.
-- `/cancel` discards the pending draft. Structured drafts expire after 15
-  minutes and are kept only in process memory; a restart safely discards them.
+- Until task creation succeeds, the model receives up to 10 recent messages
+  from that task-creation dialogue (employee messages and the bot's clarification
+  questions), in addition to the merged structured draft. A short answer can
+  complete an earlier text or voice request without repeating it. Established
+  details remain in the draft even when older messages leave the 10-message
+  window. Voice messages are retained as transcripts, not audio; each audio
+  attachment is sent to the model only on its initial turn. Message timestamps
+  anchor relative dates; a later reply does not shift an established deadline.
+- A successful task creation or `/cancel` clears the draft and conversation.
+  Incomplete task drafts do not expire after an idle period. They are isolated
+  by bot, Telegram account and verified CRM employee, and kept only in process
+  memory; a server restart discards them. Listing tasks or an out-of-scope
+  message preserves the pending task dialogue; task-list results never enter
+  the model's context. Employee-list target clarifications still expire after
+  15 minutes. Failed model or task-creation requests do not clear the draft.
 - Telegram update IDs become deterministic task request keys, so a retried
   webhook cannot create a second task. Each verified employee is limited to 20
   agent requests per hour. Voice messages are limited to five minutes and 10 MB.

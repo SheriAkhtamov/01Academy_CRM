@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useWatch, type UseFormReturn } from 'react-hook-form';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   FormControl,
   FormField,
@@ -9,7 +10,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { PhoneInput } from '@/components/ux/FormattedInputs';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { UserFormValues } from './employeeFormSchema';
 
@@ -61,12 +61,12 @@ export function EmployeePhoneFields({ form }: EmployeePhoneFieldsProps) {
               <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
               <div className="flex gap-2">
                 <FormControl>
-                  <PhoneInput
-                    ref={field.ref}
-                    name={field.name}
+                  <Input
+                    {...field}
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
                     value={field.value ?? ''}
-                    onBlur={field.onBlur}
-                    onValueChange={field.onChange}
                     placeholder={t('phonePlaceholder')}
                   />
                 </FormControl>

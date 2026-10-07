@@ -14,7 +14,7 @@ import { allowNavigation } from '../client/src/lib/navigationGuard';
 import { MAX_USER_PHOTO_BYTES } from '../shared/user-photo';
 const mocks = vi.hoisted(() => ({ setUser: vi.fn() }));
 const account = { id: 7, fullName: 'Current User', email: 'current@example.com', position: 'Administrator', module: 'administration', modules: ['administration'], avatarUrl: null };
-const employee = { id: 20, fullName: 'Selected Employee', email: 'employee@example.com', module: 'sales', modules: ['sales'], salesFunnelIds: [1], isActive: true, isArchived: false, avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa' };
+const employee = { id: 20, fullName: 'Selected Employee', email: 'employee@example.com', module: 'sales', modules: ['sales'], salesFunnelIds: [1], phoneNumbers: ['+49 30 123456789'], isActive: true, isArchived: false, avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa' };
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: account, setUser: mocks.setUser }) }));
 const funnels = [
   { id: 1, name: 'Main', isActive: true, workflowRole: 'hunter' as const },
@@ -104,20 +104,32 @@ describe('employee forms and funnel dropdown', () => {
     expect(screen.getByRole('menuitemcheckbox', { name: /^Old/ }).getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('menuitemcheckbox', { name: /^Old/ }).getAttribute('data-disabled')).toBe('');
   });
-  it('includes a photo and selected funnels when creating an employee', async () => {
+  it('includes a photo, international phones and selected funnels when creating an employee', async () => {
     employees(); await userEvent.click(await screen.findByRole('button', { name: i18n.t('createEmployee') }));
     const dialog = within(screen.getByRole('dialog', { name: i18n.t('addNewUser') }));
     fireEvent.change(document.querySelector('input[name=fullName]')!, { target: { value: 'New Employee' } }); upload();
+    const primaryPhone = dialog.getByRole('textbox', { name: i18n.t('phone') });
+    await userEvent.type(primaryPhone, '+1 (415) 555-0123');
+    expect((primaryPhone as HTMLInputElement).value).toBe('+1 (415) 555-0123');
+    await userEvent.click(dialog.getByRole('button', { name: i18n.t('addPhone') }));
+    const additionalPhone = dialog.getByRole('textbox', { name: `${i18n.t('phone')} 2` });
+    await userEvent.type(additionalPhone, '+44 20 7946 0958');
+    expect((additionalPhone as HTMLInputElement).value).toBe('+44 20 7946 0958');
     await userEvent.click(dialog.getByRole('button', { name: /Sales funnels/ })); await userEvent.click(screen.getByRole('menuitemcheckbox', { name: /^Main/ }));
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' }); await userEvent.click(dialog.getByRole('button', { name: i18n.t('createUser') }));
     await waitFor(() => expect(sent).toHaveLength(1)); expect(sent[0].url).toBe('/api/users');
-    expect(JSON.parse(String(sent[0].body.get('profile')))).toMatchObject({ fullName: 'New Employee', salesFunnelIds: [1] }); expect(sent[0].body.get('photo')).toBeInstanceOf(File);
+    expect(JSON.parse(String(sent[0].body.get('profile')))).toMatchObject({ fullName: 'New Employee', salesFunnelIds: [1], phoneNumbers: ['+1 (415) 555-0123', '+44 20 7946 0958'] }); expect(sent[0].body.get('photo')).toBeInstanceOf(File);
   });
-  it('includes a new photo when editing an employee and retains funnel assignments', async () => {
+  it('updates an international phone and photo when editing an employee and retains funnel assignments', async () => {
     allowNavigation(() => history.replaceState(null, '', '/employees?employee=20')); employees();
     const dialog = within(await screen.findByRole('dialog', { name: i18n.t('editUser') })); upload();
+    const phone = dialog.getByRole('textbox', { name: i18n.t('phone') });
+    expect((phone as HTMLInputElement).value).toBe(employee.phoneNumbers[0]);
+    await userEvent.clear(phone);
+    await userEvent.type(phone, '+7 (999) 123-45-67');
     await userEvent.click(dialog.getByRole('button', { name: i18n.t('updateUser') }));
     await waitFor(() => expect(sent).toHaveLength(1)); expect(sent[0].url).toBe('/api/users/20');
     const profile = JSON.parse(String(sent[0].body.get('profile'))); expect(profile.salesFunnelIds).toEqual([1]); expect(profile.email).toBeUndefined();
+    expect(profile.phoneNumbers).toEqual(['+7 (999) 123-45-67']);
   });
 });

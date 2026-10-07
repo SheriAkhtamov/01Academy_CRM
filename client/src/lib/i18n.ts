@@ -2132,7 +2132,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   integrationWebsiteRotateTitle: { en: 'Replace the website token?', ru: 'Заменить токен сайта?' },
   integrationWebsiteRotateDescription: { en: 'The current token will stop working. Update the website with the new token after replacing it.', ru: 'Текущий токен перестанет работать. После замены обновите токен на сайте.' },
   integrationWebsiteToken: { en: 'Website token', ru: 'Токен сайта' },
-  integrationWebsiteTokenConfigured: { en: 'Token issued', ru: 'Токен выдан' },
   integrationWebsiteTokenIssued: { en: 'Website token created', ru: 'Токен сайта создан' },
   integrationWebsiteTokenCopied: { en: 'Token copied', ru: 'Токен скопирован' },
   integrationWebsiteCopyToken: { en: 'Copy token', ru: 'Скопировать токен' },

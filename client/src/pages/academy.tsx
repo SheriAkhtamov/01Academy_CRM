@@ -472,7 +472,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           const statusText = integration.requiresReconnect
             ? t('integrationStatusReconnectRequired')
             : integration.connected
-              ? integration.siteDomain ? t('integrationWebsiteTokenConfigured') : t('integrationStatusConnected')
+              ? t('integrationStatusConnected')
               : t('integrationStatusNotConfigured');
           const lastLogTime = formatLogTime(integration.lastLog?.createdAt ?? integration.lastLog?.updatedAt, language);
           const Icon = integration.siteDomain || integration.provider === 'website'
@@ -490,20 +490,19 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           return (
             <Card
               key={`${integration.provider}:${integration.accountId ?? integration.siteDomain ?? ''}`}
-              className={integration.connected ? 'border-emerald-200 bg-emerald-50/40' : ''}
             >
               <CardHeader>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                       <Icon className="h-6 w-6" />
                     </div>
                     <div className="min-w-0">
                       <CardTitle>{copy.title}</CardTitle>
-                      <p className={`mt-3 text-sm ${integration.connected ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}`}>
+                      <p className={`mt-3 text-sm ${integration.connected ? 'text-muted-foreground' : 'text-amber-700'}`}>
                         {statusText}
                       </p>
-                      <div className="mt-3 inline-flex rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+                      <div className="mt-3 inline-flex max-w-full rounded-lg border border-border/70 bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                         {integration.provider === 'telegram_tasks' && integration.accountUsername ? (
                           <span>{t('telegramTasksBotLabel')}: @{integration.accountUsername}</span>
                         ) : lastLogTime ? (
@@ -570,7 +569,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       <Settings2 data-icon="inline-start" />
                       {t('integrationConfigure')}
                     </Button>
-                    <Badge variant={integration.connected ? 'success' : 'warning'}>
+                    <Badge className="w-fit shrink-0" variant={integration.connected ? 'success' : 'warning'}>
                       {integration.connected ? (
                         <CheckCircle2 className="h-3.5 w-3.5" />
                       ) : (

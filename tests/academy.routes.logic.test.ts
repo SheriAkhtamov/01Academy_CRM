@@ -1001,7 +1001,7 @@ describe('academy route logic boundaries', () => {
         expect(sql).toContain('WHERE demo.teacher_id = $1');
         expect(values).toEqual([4]);
         return { rows: [{ id: 23, teacher_id: 4, course_name: 'Coding', status: 'scheduled', participants: [
-          { id: 77, studentId: 155, leadId: 2640, managerId: 18, status: 'invited', studentName: 'Demo student', contactName: 'Parent' },
+          { id: 77, studentId: 155, leadId: 2640, managerId: 18, status: 'invited', studentName: 'Demo student', contactName: 'Parent', leadName: 'Sales contact', leadPhone: '+998901234567' },
           { id: 78, studentId: 156, status: 'cancelled', studentName: 'Removed student' },
         ] }] };
       }
@@ -1015,6 +1015,28 @@ describe('academy route logic boundaries', () => {
     expect(response.body[0].participants).toEqual([{
       id: 77, studentId: 155, status: 'invited', studentName: 'Demo student', contactName: 'Parent', canManage: true,
     }]);
+  });
+
+  it('exposes report contacts only for demo participants the sales manager may manage', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_demo_lessons demo')) {
+        return { rows: [{ id: 23, status: 'scheduled', participants: [
+          { id: 77, studentId: 155, managerId: 7, status: 'invited', studentName: 'Own student', contactName: 'Own contact', leadName: 'Own lead', leadPhone: '+998901234567' },
+          { id: 78, studentId: 156, managerId: 18, status: 'invited', studentName: 'Other student', contactName: 'Other contact', leadName: 'Other lead', leadPhone: '+998909876543' },
+        ] }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp())
+      .get('/api/academy/demo-lessons?from=2026-10-07&to=2026-10-08');
+    expect(response.status).toBe(200);
+    expect(response.body[0].canManage).toBe(false);
+    expect(response.body[0].participants).toEqual([
+      expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', canManage: true }),
+      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, canManage: false }),
+    ]);
   });
 
   it('fails closed for demo lessons when a teacher profile is missing or inactive', async () => {

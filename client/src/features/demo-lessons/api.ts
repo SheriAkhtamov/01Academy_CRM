@@ -20,6 +20,8 @@ export interface DemoLessonParticipant {
   noShowReasonCode?: DemoNoShowReasonCode | null;
   noShowReasonNote?: string | null;
   contactName?: string | null;
+  leadName?: string | null;
+  leadPhone?: string | null;
   studentName?: string | null;
   managerId?: number | null;
   attendanceManagerId?: number | null;

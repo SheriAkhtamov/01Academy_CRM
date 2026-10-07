@@ -53,6 +53,8 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
             'contactName', COALESCE(student.contact_name, lead.contact_name),
+            'leadName', lead.contact_name,
+            'leadPhone', CASE WHEN lead.phone NOT LIKE 'instagram:%' THEN NULLIF(BTRIM(lead.phone), '') END,
             'studentName', student.student_name,
             'managerId', COALESCE(student.manager_id, lead.manager_id),
             'attendanceManagerId', ${demoAttendanceManagerSql()},
@@ -132,7 +134,7 @@ const presentDemoLesson = (req: any, demo: Row) => {
       const participantCanManage = canManageParticipant(req, participant);
       return participantCanManage
         ? { ...participant, canManage: true }
-        : { ...participant, contactName: null, studentName: null, canManage: false };
+        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, canManage: false };
     }),
   };
 };
@@ -327,6 +329,8 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
                   'noShowReasonCode', participant.no_show_reason_code,
                   'noShowReasonNote', participant.no_show_reason_note,
                   'contactName', COALESCE(student.contact_name, lead.contact_name),
+                  'leadName', lead.contact_name,
+                  'leadPhone', CASE WHEN lead.phone NOT LIKE 'instagram:%' THEN NULLIF(BTRIM(lead.phone), '') END,
                   'studentName', student.student_name,
                   'managerId', COALESCE(student.manager_id, lead.manager_id),
                   'attendanceManagerId', ${demoAttendanceManagerSql()},

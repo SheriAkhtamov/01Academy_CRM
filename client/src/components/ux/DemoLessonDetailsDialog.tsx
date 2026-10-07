@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   CalendarClock,
   CircleAlert,
+  Copy,
   LoaderCircle,
   MapPin,
   Pencil,
@@ -66,6 +67,7 @@ import {
   formatAcademyDate,
 } from '@/lib/localeFormat';
 import { submitOnEnter } from '@/lib/submitOnEnter';
+import { primaryVisibleLeadPhone } from '@/lib/leadContact';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
@@ -141,6 +143,7 @@ export function DemoLessonDetailsDialog({
   const [changeTeacherOpen, setChangeTeacherOpen] = useState(false);
   const [teacherDraftId, setTeacherDraftId] = useState('');
   const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
+  const [copyingReport, setCopyingReport] = useState(false);
 
   const teacherOptions = useQuery({
     queryKey: [...demoLessonQueryKeys.teacherOptions, demo?.id ?? 0],
@@ -417,6 +420,38 @@ export function DemoLessonDetailsDialog({
     reason === 'inactive' ? t('demoResourceInactive') : t('demoResourceBusyShort')
   );
 
+  const copyDemoReport = async () => {
+    const reportValue = (value?: string | null) => (
+      value?.replace(/\s+/g, ' ').trim() || t('demoReportNotSpecified')
+    );
+    const report = demo.participants.map((participant, index) => {
+      const status = attendance[participant.id] || participant.status;
+      const attendanceLabel = status === 'attended'
+        ? t('demoParticipantAttended')
+        : status === 'no_show'
+          ? t('demoParticipantNoShow')
+          : status === 'cancelled'
+            ? t('demoReportAttendanceCancelled')
+            : t('studentAttendanceUnmarked');
+      return [
+        `${index + 1}. ${t('demoReportLeadName')}: ${reportValue(participant.leadName || participant.contactName)}`,
+        `${t('demoReportStudentName')}: ${reportValue(participant.studentName)}`,
+        `${t('demoReportLeadPhone')}: ${reportValue(primaryVisibleLeadPhone({ phone: participant.leadPhone }))}`,
+        `${t('demoAttendance')}: ${attendanceLabel}`,
+      ].join('\n');
+    }).join('\n\n');
+
+    setCopyingReport(true);
+    try {
+      await navigator.clipboard.writeText(report);
+      toast({ title: t('demoReportCopied') });
+    } catch {
+      toast({ title: t('copyFailed'), variant: 'destructive' });
+    } finally {
+      setCopyingReport(false);
+    }
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={(nextOpen) => {
@@ -622,51 +657,69 @@ export function DemoLessonDetailsDialog({
             </div>
           ) : null}
 
-          {canManageScheduledDemo ? (
+          {canManageScheduledDemo || context === 'sales' ? (
             <div className="space-y-3 rounded-xl border border-border p-4">
               <p className="text-sm font-semibold">{t('demoLessonActions')}</p>
               <div className="flex flex-wrap gap-2">
                 {context === 'sales' ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setTeacherDraftId(String(demo.teacherId));
-                        setChangeTeacherOpen(true);
-                      }}
-                    >
-                      {t('changeDemoTeacher')}
-                    </Button>
-                    <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
-                      {t('rescheduleDemoLesson')}
-                    </Button>
-                  </>
-                ) : null}
-                <Button
-                  type="button"
-                  disabled={!canMarkConducted || finalizeDemo.isPending}
-                  onClick={() => setConductedConfirmOpen(true)}
-                >
-                  {t('markDemoConducted')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={finalizeDemo.isPending}
-                  onClick={() => setNotConductedOpen(true)}
-                >
-                  {t('markDemoNotConducted')}
-                </Button>
-                {context === 'sales' ? (
-                  <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
-                    {t('cancelDemoLesson')}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto min-h-10 max-w-full whitespace-normal"
+                    disabled={demo.participants.length === 0 || copyingReport}
+                    onClick={copyDemoReport}
+                  >
+                    {copyingReport
+                      ? <LoaderCircle aria-hidden="true" className="mr-2 size-4 shrink-0 animate-spin" />
+                      : <Copy aria-hidden="true" className="mr-2 size-4 shrink-0" />}
+                    {t('copyDemoReport')}
                   </Button>
                 ) : null}
+                {canManageScheduledDemo ? (
+                  <>
+                    {context === 'sales' ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setTeacherDraftId(String(demo.teacherId));
+                            setChangeTeacherOpen(true);
+                          }}
+                        >
+                          {t('changeDemoTeacher')}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
+                          {t('rescheduleDemoLesson')}
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button
+                      type="button"
+                      disabled={!canMarkConducted || finalizeDemo.isPending}
+                      onClick={() => setConductedConfirmOpen(true)}
+                    >
+                      {t('markDemoConducted')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={finalizeDemo.isPending}
+                      onClick={() => setNotConductedOpen(true)}
+                    >
+                      {t('markDemoNotConducted')}
+                    </Button>
+                    {context === 'sales' ? (
+                      <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
+                        {t('cancelDemoLesson')}
+                      </Button>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
-              {!attendanceComplete ? (
+              {canManageScheduledDemo && !attendanceComplete ? (
                 <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>
-              ) : dirtyParticipantIds.size > 0 ? (
+              ) : canManageScheduledDemo && dirtyParticipantIds.size > 0 ? (
                 <p className="text-xs text-muted-foreground">{t('demoSaveAttendanceBeforeConducted')}</p>
               ) : null}
             </div>

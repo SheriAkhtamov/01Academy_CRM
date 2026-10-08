@@ -19,7 +19,7 @@ export async function readKpiFacts(employeeIds: number[], month: string, asOf: s
         tracked.crm_completed_at AS "crmCompletedAt", tracked.offer_at AS "offerAt",
         tracked.reactivated_at AS "reactivatedAt",
         COALESCE((SELECT activity.kind = 'cold' FROM academy_sales_kpi_activity activity
-          WHERE activity.lead_id = lead.id AND activity.kind IN ('cold', 'reactivated')
+          WHERE activity.lead_id = lead.id AND activity.kind IN ('cold', 'reactivated', 'cold_reset')
             AND activity.occurred_at <= $2 ORDER BY activity.occurred_at DESC, activity.id DESC LIMIT 1), false) AS "isCold",
         (SELECT MAX(activity.occurred_at) FROM academy_sales_kpi_activity activity
           WHERE activity.lead_id = lead.id AND activity.kind = 'contact' AND activity.occurred_at <= $2) AS "lastContactAt"

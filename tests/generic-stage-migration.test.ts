@@ -32,4 +32,18 @@ describe('generic stage migration invariants', () => {
     expect(capture).not.toContain('status_code');
     expect(capture).not.toContain('qualified_at');
   });
+  it('repairs legacy cold labels and proven clone identities without changing custom activation or lead state', () => {
+    const repair = readFileSync(new URL('../migrations/0131_restore_legacy_cold_stage_visibility.sql', import.meta.url), 'utf8');
+    expect(repair).toContain("WHERE code = 'not_now'");
+    expect(repair).toContain("'^not_now_f' || candidate.funnel_id || '_s' || legacy.id");
+    expect(repair).toContain('candidate.created_at > legacy.created_at');
+    expect(repair).toContain('intake.code = funnel.initial_stage_code');
+    expect(repair).toContain("source.code IN ('new_request', 'demo_attended')");
+    expect(repair).toContain('candidate.created_at IN (SELECT created_at FROM conversion_times)');
+    expect(repair).toContain('candidate.name = legacy.name AND candidate.color = legacy.color');
+    expect(repair).toContain('candidate.is_active = legacy.is_active');
+    expect(repair).toContain('AND stage.is_pipeline = false');
+    expect(repair).not.toMatch(/SET\s+(?:is_active|is_archived|name)\b/i);
+    expect(repair).not.toContain('UPDATE academy_leads');
+  });
 });

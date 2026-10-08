@@ -918,6 +918,20 @@
       "when": 1791457212060,
       "tag": "0130_preserve_salary_accrual_cutoff",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1791461930000,
+      "tag": "0131_restore_legacy_cold_stage_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1791461930001,
+      "tag": "0132_reset_legacy_stage_only_kpi_cold_state",
+      "breakpoints": true
     }
   ]
 }

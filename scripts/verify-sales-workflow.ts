@@ -19,10 +19,29 @@ const { registerAcademyDemoLessonRoutes } = await import('../server/modules/acad
 const { registerAcademyOperationsRoutes } = await import('../server/modules/academy/operations.router');
 const { createSalesKpiRouter } = await import('../server/modules/sales-kpi/http/kpi-router');
 const { kpiMonth } = await import('../shared/sales-kpi-time');
+const { readKpiFacts } = await import('../server/infrastructure/sales-kpi/kpi-facts');
+const { calculateSalesKpi } = await import('../shared/sales-kpi-calculation');
+const { defaultKpiConfig } = await import('../shared/sales-kpi');
 
 try {
   assert(await queryOne("SELECT to_regclass('academy_lead_funnel_qualifications') AS ledger").then((row) => row?.ledger),
     'Apply all registered migrations, including 0128, before this verifier');
+  const legacyReset = await queryOne(`SELECT reset.lead_id, reset.occurred_at, tracked.hunter_id,
+      (SELECT MAX(activity.occurred_at) FROM academy_sales_kpi_activity activity
+        WHERE activity.lead_id=reset.lead_id AND activity.kind='cold' AND activity.occurred_at < reset.occurred_at) AS previous_cold_at
+    FROM academy_sales_kpi_activity reset JOIN academy_sales_kpi_leads tracked ON tracked.lead_id=reset.lead_id
+    WHERE reset.kind='cold_reset' AND tracked.hunter_id IS NOT NULL ORDER BY reset.id LIMIT 1`);
+  if (legacyReset) {
+    const historicalCutoff = new Date(new Date(legacyReset.occurredAt).getTime() - 1);
+    assert(new Date(legacyReset.previousColdAt).getTime() <= historicalCutoff.getTime(), 'Fixture has a distinct historical cutoff');
+    const historic = await readKpiFacts([legacyReset.hunterId], kpiMonth(historicalCutoff), historicalCutoff.toISOString());
+    const current = await readKpiFacts([legacyReset.hunterId], kpiMonth(), new Date().toISOString());
+    assert.equal(historic.leads.find(fact => fact.id === legacyReset.leadId)?.isCold, true,
+      'The actual KPI reader preserves historical cold state before policy cutover');
+    const cleared = current.leads.find(fact => fact.id === legacyReset.leadId);
+    assert.equal(cleared?.isCold, false, 'The actual current KPI reader clears legacy stage-only cold state');
+    assert.equal(cleared?.reactivatedAt, null, 'Maintenance cannot impersonate a restoration');
+  }
   const suffix = randomUUID().slice(0, 8);
   await query('UPDATE academy_company_settings SET auto_lead_distribution_enabled = false');
   const source = await insertRow('academy_lead_sources', { code: `workflow_${suffix}`, name: 'Test source' });
@@ -80,6 +99,12 @@ try {
     leadId: Number(fact.leadId), funnelId: Number(fact.funnelId),
   })));
   const checkResponse = (response: { status: number; body: unknown }, status = 200) => assert.equal(response.status, status, JSON.stringify(response.body));
+  const currentKpiFact = async () => (await readKpiFacts([employee.id], kpiMonth(), new Date().toISOString())).leads.find(fact => fact.id === lead.id);
+  const assertActiveKpi = async () => {
+    const fact = await currentKpiFact();
+    assert.equal(fact?.isCold, false, 'An ordinary active lead is not cold');
+    assert.equal(fact?.reactivatedAt, null, 'Stages, transfers, demos and payments cannot fabricate restoration');
+  };
   const patch = async (statusCode: string) => {
     const current = await readLead();
     checkResponse(await request(apps[0]).patch(`/api/academy/leads/${lead.id}`)
@@ -96,6 +121,11 @@ try {
   assert.equal((await queryOne('SELECT manager_id FROM academy_students WHERE id=$1', [student.id]))?.managerId, employee.id);
   await insertRow('academy_payments', { studentId: student.id, leadId: lead.id, amountUzs: 500000, status: 'paid', paidAt: new Date() });
   assert.equal((await readLead())?.statusCode, funnelA.initialStageCode, 'Payment is an independent fact');
+  await assertActiveKpi();
+  const beforeRestorationFacts = await readKpiFacts([employee.id], kpiMonth(), new Date().toISOString());
+  const beforeRestorationPay = calculateSalesKpi('hunter', employee.id, kpiMonth(), defaultKpiConfig('hunter'), beforeRestorationFacts);
+  assert.equal(beforeRestorationPay.payLines.find(line => line.key === 'reactivation')?.amountUzs, 0,
+    'A demo and payment for an active lead earn no fictitious restoration bonus');
   assert.equal((await ledger()).length, 0, 'Creation, demo and payment do not qualify');
   await patch(funnelA.nextStageCode);
   const firstFact = await ledger();
@@ -104,13 +134,18 @@ try {
     [funnelA.id, employee.id, funnelA.initialStageCode, funnelA.nextStageCode]);
   await patch(funnelA.nextStageCode); await patch(funnelA.initialStageCode); await patch(funnelA.nextStageCode);
   assert.deepEqual(await ledger(), firstFact, 'Repeated manual moves keep one original fact per lead/funnel');
+  await assertActiveKpi();
   checkResponse(await request(apps[0]).post(`/api/academy/sales-kpi/leads/${lead.id}/handoff`).send({ targetFunnelId: funnelB.id }));
   assert.deepEqual([(await readLead())?.funnelId, (await readLead())?.statusCode, (await readLead())?.managerId],
     [funnelB.id, funnelB.initialStageCode, employee.id], 'Explicit transfer enters the chosen intake and preserves owner');
+  await assertActiveKpi();
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/archive`).send({ reason: 'not_interested' }));
+  assert.equal((await currentKpiFact())?.isCold, true, 'Actual archive still captures cold state');
   assert.deepEqual(await ledger(), firstFact, 'Qualified in A, transferred to B then archived at intake: B is unqualified');
   assert.deepEqual(await qualificationSummary(), { total: 1, byFunnel: { [String(funnelA.id)]: 1 } });
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/restore`).send({ statusCode: funnelB.initialStageCode }));
+  assert.equal((await currentKpiFact())?.isCold, false, 'Explicit restoration still clears cold state');
+  assert((await currentKpiFact())?.reactivatedAt, 'Explicit restoration still records its real time');
   assert.deepEqual(await ledger(), firstFact, 'Restoration at the first stage does not qualify');
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/archive`).send({ reason: 'not_interested' }));
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/restore`).send({ statusCode: funnelB.nextStageCode }));

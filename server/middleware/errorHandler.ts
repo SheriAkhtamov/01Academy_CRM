@@ -63,7 +63,7 @@ export const errorHandler = (
   err: any,
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ) => {
   const status = getHttpErrorStatus(err);
   const internalMessage = err?.message || "Internal Server Error";
@@ -78,6 +78,10 @@ export const errorHandler = (
     method: req.method,
     stack: err.stack,
   });
+
+  if (res.headersSent) {
+    return next(err);
+  }
 
   res.status(status).json({ message: publicMessage });
 };

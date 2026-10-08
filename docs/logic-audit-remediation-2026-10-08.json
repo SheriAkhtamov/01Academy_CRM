@@ -461,14 +461,40 @@
   "releaseStatus": "All changes passed local and isolated PostgreSQL validation. Production deployment is tracked separately.",
   "validation": {
     "vitest": {
-      "files": 256,
-      "tests": 2055,
+      "files": 257,
+      "tests": 2059,
       "passed": true
     },
     "check": "passed",
     "build": "passed",
-    "postgres": "All 131 registered migrations and populated conversion passed on isolated PostgreSQL 17.",
+    "postgres": "All 133 registered migrations, populated conversion and historical cold-state cutover passed on isolated PostgreSQL 17.",
     "http": "Actual manual-move, attendance, transfer, archive, restore, sibling payment and concurrent claim handlers passed on isolated PostgreSQL 17.",
     "secrets": "passed"
-  }
+  },
+  "additionalReleaseChecks": [
+    {
+      "problem": "Legacy non-pipeline cold stage could hide active leads after conversion",
+      "status": "verified_locally",
+      "evidence": [
+        "migrations/0131_restore_legacy_cold_stage_visibility.sql",
+        "scripts/verify-sales-workflow-migration.mjs"
+      ]
+    },
+    {
+      "problem": "Legacy stage-only cold state persisted for active leads in current KPI facts",
+      "status": "verified_locally",
+      "evidence": [
+        "migrations/0132_reset_legacy_stage_only_kpi_cold_state.sql",
+        "scripts/verify-sales-workflow-migration.mjs",
+        "scripts/verify-sales-workflow.ts"
+      ]
+    },
+    {
+      "problem": "Late HTTP errors attempted to send a completed response again",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/error-handler.test.ts"
+      ]
+    }
+  ]
 }

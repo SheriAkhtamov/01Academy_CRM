@@ -49,7 +49,7 @@ export function createSalesKpiTables(ref: {
     occurredAt: timestamp('occurred_at').notNull().default(sql`timezone('UTC', now())`),
   }, (t) => [
     index('academy_sales_kpi_activity_lead_idx').on(t.leadId, t.occurredAt.desc(), t.id.desc()),
-    check('academy_sales_kpi_activity_kind_check', sql`${t.kind} IN ('contact', 'cold', 'reactivated')`),
+    check('academy_sales_kpi_activity_kind_check', sql`${t.kind} IN ('contact', 'cold', 'reactivated', 'cold_reset')`),
   ]);
   const academySalesKpiTrials = pgTable('academy_sales_kpi_trials', {
     participantId: integer('participant_id').primaryKey().references(() => ref.participant, { onDelete: 'cascade' }),

@@ -24,7 +24,6 @@ const pool = new Pool({
 try {
   const summary = await importLeadRecords(pool, records, {
     provider,
-    providerLabel: 'Meta Lead Ads · июль 2026',
     sourceCode: 'meta_lead_ads',
     sourceName: 'Meta Lead Ads',
   });

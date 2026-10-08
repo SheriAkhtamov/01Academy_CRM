@@ -391,7 +391,7 @@ const linkMetaLeadAttribution = async (record: LeadImportRecord) => {
       JSON.stringify({
         lead: record.rawMetaLead,
         webhook: record.rawWebhookValue,
-        comment: buildLeadImportComment(record, 'Meta Instant Forms'),
+        comment: buildLeadImportComment(record),
       }),
       record.adId ? 'pending' : 'not_required',
       capturedAt,
@@ -429,7 +429,6 @@ const importMetaLeadValue = async (
   const record = mapMetaLeadToImportRecord(lead, value, formName);
   const imported = await importLeadRecords(pool, [record], {
     provider: 'meta_lead_ads_live',
-    providerLabel: 'Meta Instant Forms',
     sourceCode: 'meta_lead_ads',
     sourceName: 'Meta Lead Ads',
     allowMissingPhone: true,
@@ -497,7 +496,6 @@ export const importHistoricalMetaLeadAds = async (options: {
     }
     const imported = await importLeadRecords(pool, leadRecords, {
       provider: 'meta_lead_ads_live',
-      providerLabel: 'Meta Instant Forms',
       sourceCode: 'meta_lead_ads',
       sourceName: 'Meta Lead Ads',
       allowMissingPhone: true,

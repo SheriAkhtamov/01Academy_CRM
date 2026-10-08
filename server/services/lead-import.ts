@@ -49,7 +49,6 @@ export type LeadImportSummary = {
 
 type LeadImportOptions = {
   provider: string;
-  providerLabel?: string;
   sourceCode?: string;
   sourceName?: string;
   allowMissingPhone?: boolean;
@@ -69,58 +68,44 @@ export const normalizeLeadImportPhone = (value: unknown): string | null => {
   return `+${digits}`;
 };
 
-export const buildLeadImportComment = (
-  record: LeadImportRecord,
-  providerLabel = 'Meta Lead Ads',
-) => {
-  const externalId = text(record.externalId);
-  const lines = [`[Импорт ${providerLabel} · ${text(record.sheet) || 'лист без названия'} · #${externalId}]`];
+const answerText = (value: unknown): string => {
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+  return typeof value === 'string' || typeof value === 'number' ? text(value) : '';
+};
+
+const answerLabel = (value: unknown): string => {
+  const name = text(value).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  const key = name.toLowerCase();
+  if (/^(external id|leadgen id|page id|campaign (id|name)|adset (id|name)|ad (id|name)|form (id|name)|created time|platform|is organic|source sheet|row|sheet)$/.test(key)) return '';
+  const labels: Record<string, string> = {
+    'full name': 'Имя', 'contact name': 'Имя', 'parent name': 'Имя',
+    'first name': 'Имя', 'last name': 'Фамилия',
+    phone: 'Телефон', 'phone number': 'Телефон', 'mobile phone': 'Телефон', 'mobile number': 'Телефон',
+    email: 'Электронная почта', city: 'Город', 'child age': 'Возраст ребёнка',
+    'learning format': 'Формат обучения', occupation: 'Сфера деятельности',
+  };
+  return labels[key] ?? name;
+};
+
+export const buildLeadImportComment = (record: LeadImportRecord) => {
+  const lines: string[] = [];
+  const addAnswer = (label: string, value: unknown) => {
+    const normalized = answerText(value);
+    const line = `${label}: ${normalized}`;
+    if (label && normalized && !lines.includes(line)) lines.push(line);
+  };
+  for (const answer of Array.isArray(record.answers) ? record.answers : []) {
+    const values = Array.isArray(answer?.values) ? answer.values.map(answerText).filter(Boolean) : [];
+    addAnswer(answerLabel(answer?.name), values.join(', '));
+  }
   const details: Array<[string, unknown]> = [
-    ['Дата заявки', record.createdTime],
-    ['Кампания', record.campaignName],
-    ['ID кампании', record.campaignId],
-    ['Группа объявлений', record.adsetName],
-    ['ID группы объявлений', record.adsetId],
-    ['Объявление', record.adName],
-    ['ID объявления', record.adId],
-    ['Форма', record.formName],
-    ['ID формы', record.formId],
-    ['Платформа', record.platform],
-    ['Органическая заявка', record.isOrganic === true ? 'Да' : record.isOrganic === false ? 'Нет' : null],
     ['Возраст ребёнка', record.childAgeAnswer],
     ['Город', record.cityAnswer],
     ['Формат обучения', record.offlineAnswer],
     ['Сфера деятельности', record.occupationAnswer],
     ['Заметка', record.note],
   ];
-  for (const [label, value] of details) {
-    const normalized = text(value).replace(/_/g, ' ');
-    if (normalized) lines.push(`${label}: ${normalized}`);
-  }
-  const answers = Array.isArray(record.answers) ? record.answers : [];
-  if (answers.length > 0) {
-    lines.push('Ответы формы:');
-    for (const answer of answers) {
-      const name = text(answer?.name).replace(/_/g, ' ');
-      const values = Array.isArray(answer?.values)
-        ? answer.values.map((value) => (
-          value && typeof value === 'object' ? JSON.stringify(value) : text(value)
-        )).filter(Boolean)
-        : [];
-      if (name && values.length > 0) lines.push(`• ${name}: ${values.join(', ')}`);
-    }
-  }
-  const disclaimerResponses = Array.isArray(record.disclaimerResponses) ? record.disclaimerResponses : [];
-  if (disclaimerResponses.length > 0) {
-    lines.push('Согласия формы:');
-    for (const response of disclaimerResponses) {
-      const name = text(response?.name).replace(/_/g, ' ');
-      const value = response?.value && typeof response.value === 'object'
-        ? JSON.stringify(response.value)
-        : text(response?.value);
-      if (name && value) lines.push(`• ${name}: ${value}`);
-    }
-  }
+  for (const [label, value] of details) addAnswer(label, value);
   return lines.join('\n');
 };
 
@@ -291,7 +276,7 @@ export const importLeadRecords = async (
         continue;
       }
 
-      const comment = buildLeadImportComment(normalizedRecord, options.providerLabel);
+      const comment = buildLeadImportComment(normalizedRecord);
       const commentCreatedAt = record.createdTime && !Number.isNaN(new Date(record.createdTime).getTime())
         ? new Date(record.createdTime)
         : new Date();
@@ -299,7 +284,7 @@ export const importLeadRecords = async (
       let outcome: 'created' | 'merged' | 'merged_archived';
       if (!matchedLead) {
         const contactName = text(record.contactName)
-          || (phone ? `Новый контакт ${phone}` : `Новый лид Meta #${externalId}`);
+          || (phone ? `Новый контакт ${phone}` : 'Новый контакт');
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
              contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
@@ -307,14 +292,14 @@ export const importLeadRecords = async (
           )
            VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), '', ARRAY[]::text[], $6, 'instagram', $7, NOW())
            RETURNING id`,
-          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment, commentCreatedAt],
+          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment || null, commentCreatedAt],
         );
         matchedLead = { id: created.rows[0].id, isArchived: false };
         await client.query(
           `INSERT INTO academy_lead_stage_history
-           (lead_id, from_status_code, to_status_code, entered_at, comment)
-           VALUES ($1, NULL, (SELECT status_code FROM academy_leads WHERE id = $1), $2, $3)`,
-          [matchedLead.id, commentCreatedAt, `Импортирован из ${options.providerLabel ?? 'Meta Lead Ads'}`],
+           (lead_id, from_status_code, to_status_code, entered_at)
+           VALUES ($1, NULL, (SELECT status_code FROM academy_leads WHERE id = $1), $2)`,
+          [matchedLead.id, commentCreatedAt],
         );
         outcome = 'created';
         createdLeadIds.push(Number(matchedLead.id));
@@ -326,14 +311,15 @@ export const importLeadRecords = async (
         await client.query(
           `UPDATE academy_leads
            SET comment = CASE
-                 WHEN COALESCE(comment, '') LIKE $2 THEN comment
-                 WHEN NULLIF(BTRIM(comment), '') IS NULL THEN $3
-                 ELSE comment || E'\\n\\n' || $3
+                 WHEN NULLIF(BTRIM($2::text), '') IS NULL THEN comment
+                 WHEN NULLIF(BTRIM(comment), '') IS NULL THEN $2
+                 WHEN POSITION($2 IN comment) > 0 THEN comment
+                 ELSE comment || E'\\n\\n' || $2
                END,
-               advertising_campaign = COALESCE(NULLIF(BTRIM(advertising_campaign), ''), $4),
+               advertising_campaign = COALESCE(NULLIF(BTRIM(advertising_campaign), ''), $3),
                updated_at = NOW()
            WHERE id = $1`,
-          [matchedLead.id, `%#${externalId}]%`, comment, text(record.campaignName) || null],
+          [matchedLead.id, comment, text(record.campaignName) || null],
         );
         if (matchedLead.isArchived) {
           outcome = 'merged_archived';
@@ -361,14 +347,9 @@ export const importLeadRecords = async (
         );
       }
 
-      await client.query(
+      if (comment) await client.query(
         `INSERT INTO academy_lead_comments (lead_id, author_id, body, created_at)
-         SELECT $1, NULL, $2, $3
-         WHERE NOT EXISTS (
-           SELECT 1
-           FROM academy_lead_comments existing
-           WHERE existing.lead_id = $1 AND existing.body = $2
-         )`,
+         VALUES ($1, NULL, $2, $3)`,
         [matchedLead.id, comment, commentCreatedAt],
       );
       if (phone) {

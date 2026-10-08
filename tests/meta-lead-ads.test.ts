@@ -41,13 +41,14 @@ describe('Meta Instant Form lead ingestion', () => {
     });
     expect(record.answers).toHaveLength(4);
 
-    const comment = buildLeadImportComment(record, 'Meta Instant Forms');
-    expect(comment).toContain('Кампания: August leads');
-    expect(comment).toContain('Объявление: [РОБОТОТЕХНИКА] Reel');
-    expect(comment).toContain('Форма: AI Kids form');
-    expect(comment).toContain('• full name: Ali Valiyev');
-    expect(comment).toContain('• Любимый предмет: Математика, Информатика');
-    expect(comment).toContain('• marketing consent: 1');
+    const comment = buildLeadImportComment(record);
+    expect(comment).toContain('Имя: Ali Valiyev');
+    expect(comment).toContain('Телефон: +998 90 123 45 67');
+    expect(comment).toContain('Любимый предмет: Математика, Информатика');
+    expect(comment).not.toMatch(/Импорт|August leads|Reel|AI Kids form|campaign-1|adset-1|ad-1|form-1|lead-123|instagram|marketing consent|2026-/);
+    // Complete technical attribution and consent data stay available internally.
+    expect(record.campaignId).toBe('campaign-1');
+    expect(record.disclaimerResponses).toEqual([{ name: 'marketing_consent', value: '1' }]);
   });
 
   it('recognizes named Meta test leads when the API omits a test flag', () => {

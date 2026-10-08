@@ -1,6 +1,5 @@
 import type { PoolClient } from 'pg';
 import type { AcademyAccessModule } from '@shared/academy';
-import { isFullCycleKpiRole } from '@shared/sales-kpi';
 
 type QueryExecutor = Pick<PoolClient, 'query'>;
 
@@ -49,12 +48,6 @@ export const syncUserSalesFunnels = async (
     return [];
   }
 
-  const latestAssignment = await executor.query<{ role: string | null }>(
-    `SELECT role FROM academy_sales_kpi_assignments
-     WHERE user_id = $1 ORDER BY effective_month DESC LIMIT 1`,
-    [userId],
-  );
-  const fullCycle = isFullCycleKpiRole(latestAssignment.rows[0]?.role);
   let funnelIds = requestedFunnelIds;
   if (funnelIds === undefined) {
     const existing = await executor.query<{ funnel_id: number }>(
@@ -62,28 +55,15 @@ export const syncUserSalesFunnels = async (
       [userId],
     );
     if (existing.rows.length > 0) {
-      if (!fullCycle) return existing.rows.map((row) => Number(row.funnel_id));
-      funnelIds = existing.rows.map((row) => Number(row.funnel_id));
+      return existing.rows.map((row) => Number(row.funnel_id));
     } else {
       const defaults = await executor.query<{ id: number }>(
         `SELECT id FROM academy_sales_funnels
-         WHERE is_active = true AND (workflow_role IS NULL
-           OR academy_kpi_employee_role($1) IN ('full_cycle', 'full_cycle_3500')
-           OR workflow_role = CASE WHEN academy_kpi_employee_role($1) = 'closer' THEN 'closer' ELSE 'hunter' END)
+         WHERE is_active = true AND is_default = true
          ORDER BY is_default DESC, id`,
-        [userId],
       );
       funnelIds = defaults.rows.map((row) => Number(row.id));
     }
-  }
-
-  if (fullCycle) {
-    const workflowFunnels = await executor.query<{ id: number }>(
-      `SELECT id FROM academy_sales_funnels
-       WHERE is_active = true AND workflow_role IN ('hunter', 'closer')
-       ORDER BY id FOR SHARE`,
-    );
-    funnelIds = [...new Set([...funnelIds, ...workflowFunnels.rows.map((row) => Number(row.id))])];
   }
 
   if (funnelIds.length === 0) throw Object.assign(new Error('salesFunnelRequired'), { statusCode: 400 });
@@ -134,9 +114,6 @@ export const getActiveSalesManagerForFunnelTransfer = async (
          WHERE lead.manager_id = $2 AND NOT (
            EXISTS (SELECT 1 FROM academy_sales_funnel_users assignment
              WHERE assignment.user_id = u.id AND assignment.funnel_id = lead.funnel_id)
-           AND (funnel.workflow_role IS NULL
-             OR (funnel.workflow_role = 'closer' AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle', 'full_cycle_3500'))
-             OR (funnel.workflow_role = 'hunter' AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'))
          )
        ))
      FOR UPDATE OF u`,

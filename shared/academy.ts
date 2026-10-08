@@ -272,9 +272,8 @@ export function validateLeadForStatusChange(input: {
   courseId?: number | null;
   enrolledGroupId?: number | null;
 }): string | null {
-  // Student data belongs to academy_students now. A lead can be qualified on
-  // contact/deal data alone; enrollment and payment endpoints validate the
-  // concrete student and group instead of legacy columns on academy_leads.
+  // Stages impose no data requirements. Student, enrollment and payment
+  // commands validate their own concrete entities independently.
   void input;
   return null;
 }

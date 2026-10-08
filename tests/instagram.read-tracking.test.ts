@@ -65,12 +65,43 @@ describe('Instagram per-user read tracking', () => {
     const result = await markInstagramConversationRead(
       9,
       { id: 7, module: 'sales', modules: ['sales'] },
+      31,
     );
 
     expect(result).toMatchObject({ id: 9, unreadCount: 0 });
     const [sql, params] = mocks.poolQuery.mock.calls[1];
     expect(String(sql)).toContain('INSERT INTO instagram_conversation_reads');
     expect(String(sql)).not.toContain('SET unread_count = 0');
-    expect(params).toEqual([9, 7]);
+    expect(String(sql)).toContain('conversation_id = $1 AND id = $3');
+    expect(String(sql)).not.toContain('MAX(id)');
+    expect(params).toEqual([9, 7, 31]);
+  });
+
+  it('keeps a newer, unreceived message unread instead of acknowledging the current maximum', async () => {
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 9, manager_id: 7, account_status: 'connected' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 9, last_read_message_id: 31, unread_count: 1 }] });
+
+    await expect(markInstagramConversationRead(9, { id: 7, module: 'sales' }, 31))
+      .resolves.toMatchObject({ lastReadMessageId: 31, unreadCount: 1 });
+    const [sql] = mocks.poolQuery.mock.calls[1];
+    expect(sql).toContain('unread_message.id > read_cursor.last_read_message_id');
+    expect(sql).toContain('GREATEST(');
+  });
+
+  it('rejects an absent, optimistic or invalid message cursor before changing state', async () => {
+    for (const id of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(markInstagramConversationRead(9, { id: 7, module: 'sales' }, id as number))
+        .rejects.toMatchObject({ statusCode: 400, message: 'invalidData' });
+    }
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
+  it('rejects a message that does not belong to the authorized conversation', async () => {
+    mocks.poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 9, manager_id: 7, account_status: 'connected' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(markInstagramConversationRead(9, { id: 7, module: 'sales' }, 99))
+      .rejects.toMatchObject({ statusCode: 400 });
   });
 });

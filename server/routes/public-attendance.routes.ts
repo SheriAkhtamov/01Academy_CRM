@@ -9,7 +9,10 @@ import {
 } from '../services/public-attendance';
 
 const ACCESS_DURATION_MS = 12 * 60 * 60 * 1000;
+const MAX_BULK_STUDENTS = 200;
 const parseId = (raw: string) => /^[1-9]\d*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
+const parseStudentIds = (raw: unknown) => Array.isArray(raw) && raw.length > 0 && raw.length <= MAX_BULK_STUDENTS
+  && raw.every((id) => Number.isSafeInteger(id) && id > 0) && new Set(raw).size === raw.length ? raw as number[] : null;
 const saveSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
 const regenerateSession = (req: Request) => new Promise<void>((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
 
@@ -113,6 +116,19 @@ export const createPublicAttendanceRouter = ({ settings, service }: RouterOption
     } catch (error) {
       if (error instanceof PublicAttendanceError) return res.status(error.status).json({ error: error.code });
       logger.error('Failed to save public attendance mark', { error });
+      res.status(500).json({ error: 'publicAttendanceSaveFailed' });
+    }
+  });
+  router.patch('/lessons/:id/attendance/bulk', async (req, res) => {
+    const id = parseId(req.params.id);
+    const studentIds = parseStudentIds(req.body?.studentIds);
+    const status = req.body?.status;
+    if (!id || !studentIds || (status !== 'present' && status !== 'absent')) return res.status(400).json({ error: 'publicAttendanceInvalid' });
+    try {
+      res.json(await service.markMany(id, settings()!.groupIds, { studentIds, status }));
+    } catch (error) {
+      if (error instanceof PublicAttendanceError) return res.status(error.status).json({ error: error.code });
+      logger.error('Failed to save public attendance marks', { error });
       res.status(500).json({ error: 'publicAttendanceSaveFailed' });
     }
   });

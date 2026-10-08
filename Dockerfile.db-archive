@@ -3,10 +3,12 @@ FROM postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441
 RUN apk add --no-cache util-linux zip unzip
 
 COPY scripts/create-production-backup.sh /usr/local/bin/create-production-backup
+COPY scripts/prune-retained-uploads.sh /usr/local/bin/prune-retained-uploads
 COPY scripts/run-backup-scheduler.sh /usr/local/bin/run-backup-scheduler
 
 RUN chmod 0555 \
     /usr/local/bin/create-production-backup \
+    /usr/local/bin/prune-retained-uploads \
     /usr/local/bin/run-backup-scheduler
 
 ENTRYPOINT ["/usr/local/bin/run-backup-scheduler"]

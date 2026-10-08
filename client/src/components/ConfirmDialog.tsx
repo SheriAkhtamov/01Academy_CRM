@@ -26,6 +26,8 @@ interface ConfirmDialogProps {
     children?: ReactNode;
     error?: string;
     confirmDisabled?: boolean;
+    /** Where focus goes once the dialog has closed; call `event.preventDefault()` to place it yourself. */
+    onCloseAutoFocus?: (event: Event) => void;
 }
 
 export default function ConfirmDialog({
@@ -42,6 +44,7 @@ export default function ConfirmDialog({
     children,
     error,
     confirmDisabled = false,
+    onCloseAutoFocus,
 }: ConfirmDialogProps) {
     const { t } = useTranslation();
     const finalConfirmLabel = confirmLabel || t('ok');
@@ -49,7 +52,7 @@ export default function ConfirmDialog({
 
     return (
         <AlertDialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next); }}>
-            <AlertDialogContent>
+            <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
                 <AlertDialogHeader>
                     <AlertDialogTitle>{title}</AlertDialogTitle>
                     <AlertDialogDescription>{description}</AlertDialogDescription>

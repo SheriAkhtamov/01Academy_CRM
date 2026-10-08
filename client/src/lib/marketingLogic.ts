@@ -40,13 +40,9 @@ export function funnelForSource<T extends FunnelStage>(
   const filtered = sourceId === 'all'
     ? leads
     : leads.filter((lead) => String(lead.sourceId ?? '') === sourceId);
-  const stageIndex = new Map(funnel.map((stage, index) => [stage.code, index]));
-  return funnel.map((stage, index) => ({
+  return funnel.map((stage) => ({
     ...stage,
-    count: filtered.filter((lead) => {
-      const currentIndex = stageIndex.get(String(lead.statusCode ?? ''));
-      return currentIndex !== undefined && currentIndex >= index;
-    }).length,
+    count: filtered.filter((lead) => lead.statusCode === stage.code).length,
   }));
 }
 
@@ -55,8 +51,6 @@ const percentage = (count: number, total: number) => total > 0
   : 0;
 
 export function marketingFunnelMetrics(leads: LeadForFunnel[]) {
-  const demoLeads = leads.filter((lead) => lead.demoAttended
-    || ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(String(lead.statusCode)));
   const paidLeads = leads.filter((lead) => lead.hasPaidPayment === true);
   const cycleDays = paidLeads.flatMap((lead) => {
     const createdAt = new Date(lead.createdAt ?? '').getTime();
@@ -66,8 +60,6 @@ export function marketingFunnelMetrics(leads: LeadForFunnel[]) {
       : [];
   });
   return {
-    leadToDemoConversion: percentage(demoLeads.length, leads.length),
-    demoToPaidConversion: percentage(demoLeads.filter((lead) => lead.hasPaidPayment === true).length, demoLeads.length),
     leadToPaidConversion: percentage(paidLeads.length, leads.length),
     avgDealCycleDays: cycleDays.length > 0
       ? Number((cycleDays.reduce((sum, days) => sum + days, 0) / cycleDays.length).toFixed(1))

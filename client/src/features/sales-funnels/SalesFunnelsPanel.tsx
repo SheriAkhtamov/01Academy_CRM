@@ -126,7 +126,7 @@ export function SalesFunnelsPanel() {
     [funnels.data],
   );
   const activeTransferTargets = useMemo(
-    () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id && funnel.workflowRole !== 'closer'),
+    () => activeFunnels.filter((funnel) => funnel.id !== deleteTarget?.id),
     [activeFunnels, deleteTarget?.id],
   );
   const deleteNeedsTransfer = Boolean(
@@ -281,9 +281,8 @@ export function SalesFunnelsPanel() {
             variant="ghost"
             size="icon"
             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            disabled={Boolean(funnel.workflowRole)}
             onClick={() => {
-              const firstTarget = (funnels.data ?? []).find((candidate) => candidate.isActive && candidate.id !== funnel.id && candidate.workflowRole !== 'closer');
+              const firstTarget = (funnels.data ?? []).find((candidate) => candidate.isActive && candidate.id !== funnel.id);
               setDeleteTarget(funnel);
               setTransferTargetId(firstTarget ? String(firstTarget.id) : '');
             }}
@@ -366,7 +365,7 @@ export function SalesFunnelsPanel() {
               <Switch
                 id="sales-funnel-active"
                 checked={draft.isActive}
-                disabled={Boolean(editing?.workflowRole) || editing?.isDefault === true || draft.integrations.length > 0}
+                disabled={editing?.isDefault === true || draft.integrations.length > 0}
                 onCheckedChange={(isActive) => setDraft((current) => ({ ...current, isActive }))}
               />
             </div>
@@ -377,7 +376,7 @@ export function SalesFunnelsPanel() {
               <Switch
                 id="sales-funnel-default"
                 checked={draft.isDefault}
-                disabled={editing?.isDefault === true || (funnels.data ?? []).some((funnel) => funnel.workflowRole === 'hunter')}
+                disabled={editing?.isDefault === true}
                 onCheckedChange={(isDefault) => setDraft((current) => ({
                   ...current,
                   isDefault,
@@ -417,7 +416,7 @@ export function SalesFunnelsPanel() {
                       <Switch
                         id={`sales-funnel-source-${provider}`}
                         checked={isSelected}
-                        disabled={isLockedToDefault || editing?.workflowRole === 'closer'}
+                        disabled={isLockedToDefault}
                         onCheckedChange={(checked) => setDraft((current) => ({
                           ...current,
                           isActive: checked ? true : current.isActive,

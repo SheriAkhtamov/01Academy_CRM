@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArchiveRestore, Loader2 } from 'lucide-react';
-import { LEAD_ARCHIVE_REASONS, validateLeadStatusTransition } from '@shared/academy';
+import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import type { ArchiveLeadRequest, RestoreLeadRequest } from '@shared/contracts/academy-leads';
 import { leadQueryKeys, leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
@@ -60,11 +60,9 @@ export function LeadArchiveActions({
   const [assignmentRequired, setAssignmentRequired] = useState(false);
   const isArchived = Boolean(lead.isArchived);
   const needsManager = !lead.managerId || assignmentRequired;
-  const paidArchiveBlocked = !isArchived && lead.statusCode === 'paid';
   const restoreStatuses = statuses.filter((status) => (
     status.isActive !== false
     && status.isPipeline !== false
-    && !validateLeadStatusTransition(lead.statusCode, status.code)
   ));
 
   const mutation = useMutation({
@@ -100,8 +98,7 @@ export function LeadArchiveActions({
 
   const valid = isArchived
     ? restoreStatuses.some((status) => status.code === restoreStatus)
-    : !paidArchiveBlocked
-      && LEAD_ARCHIVE_REASONS.some((option) => option.code === reason)
+    : LEAD_ARCHIVE_REASONS.some((option) => option.code === reason)
       && (reason !== 'other' || Boolean(customReason.trim()))
       && (!needsManager || canClaimUnassignedLead);
 
@@ -124,7 +121,6 @@ export function LeadArchiveActions({
         setReason('');
         setCustomReason('');
         setRestoreStatus(restoreStatuses.find((status) => status.code === lead.statusCode)?.code
-          ?? restoreStatuses.find((status) => status.code === 'new_request')?.code
           ?? restoreStatuses[0]?.code ?? '');
       }
       setOpen(nextOpen);
@@ -135,8 +131,7 @@ export function LeadArchiveActions({
           size="sm"
           variant="outline"
           className="min-w-0 px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
-          disabled={mutation.isPending || paidArchiveBlocked}
-          title={paidArchiveBlocked ? t('paidLeadCannotArchive') : undefined}
+          disabled={mutation.isPending}
         >
           {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
             : isArchived ? <ArchiveRestore data-icon="inline-start" /> : <Archive data-icon="inline-start" />}

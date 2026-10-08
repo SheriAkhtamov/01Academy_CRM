@@ -5,7 +5,6 @@ import { buildSalesDailySeries } from '@/lib/salesMetricCharts';
 import { TrendBadge } from './parts';
 import { SalesOverviewTrends } from './SalesOverviewTrends';
 import { SalesDailySparkChart } from './SalesDailySparkChart';
-import { SalesMetricGauge } from './SalesMetricGauge';
 import type { MoneyFormatter, SalesDashboardMetrics, SalesOverviewPayment, SalesOverviewStats, SalesOverviewStudent } from './types';
 
 type PaymentRecord = SalesOverviewPayment & { status?: string | null; paidAt?: string | null; createdAt?: string | null };
@@ -31,10 +30,8 @@ export function SalesOverviewHero({ stats, metrics, payments, students, reportin
     { title: t('newLeads'), value: metrics ? number.format(metrics.newLeads) : '—', delta: metrics ? metrics.newLeads - metrics.previous.newLeads : null, points: leads, kind: 'area' as const, color: 'text-blue-500 dark:text-blue-400', format: (value: number) => number.format(value) },
     { title: t('adminNewStudents'), value: number.format(stats.totalStudents), delta: previousRange ? stats.totalStudents - stats.totalStudentsPrevious : null, points: enrolled, kind: 'stems' as const, color: 'text-violet-500 dark:text-violet-400', format: (value: number) => number.format(value) },
   ];
-  const conversion = stats.newLeadsPeriod > 0 ? stats.conversionRate : null;
-  const conversionLabel = conversion === null ? '—' : `${number.format(conversion)}%`;
   return <div className="min-w-0 xl:col-span-12">
-    <div className="grid grid-cols-1 gap-10 pb-8 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
+    <div className="grid grid-cols-1 gap-10 pb-8 ">
       <section className="min-w-0" aria-label={t('revenue')}>
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">{t('revenue')}</h2>
@@ -45,19 +42,7 @@ export function SalesOverviewHero({ stats, metrics, payments, students, reportin
           <SalesDailySparkChart points={revenue} title={t('revenue')} formatValue={(value) => money(value)} kind="bars" expanded className="text-emerald-600 dark:text-emerald-400" />
         </SalesOverviewTrends>
       </section>
-      <section className="flex min-w-0 flex-col justify-center border-t border-border/50 pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0" aria-label={t('salesPrimaryConversion')}>
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-muted-foreground">{t('salesPrimaryConversion')}</h2>
-          {conversion !== null && previousRange && conversion !== stats.conversionRatePrevious ? <TrendBadge delta={conversion - stats.conversionRatePrevious} suffix={t('percentagePointsShort')} className="text-[10px]" /> : null}
-        </header>
-        <div className="mx-auto w-full max-w-[330px] pb-2 pt-10">
-          <SalesMetricGauge value={conversion} semicircle label={`${t('salesPrimaryConversion')}: ${conversionLabel}`} className="text-amber-500">
-            <p className="text-[clamp(2.5rem,4.5vw,4rem)] font-semibold leading-none tracking-tight tabular-nums">{conversionLabel}</p>
-          </SalesMetricGauge>
-          <div className="mt-2 flex justify-between text-xs tabular-nums text-muted-foreground"><span>{number.format(0)}%</span><span>{number.format(100)}%</span></div>
-        </div>
-        <p className="mt-4 text-center text-xs text-muted-foreground">{t('salesLeadToPayment')}</p>
-      </section>
+
     </div>
     <div className="grid grid-cols-1 gap-x-10 border-t border-border/60 lg:grid-cols-2">
       {items.map((item) => <section key={item.title} className="grid min-w-0 grid-cols-1 items-center gap-3 py-6 min-[420px]:grid-cols-[minmax(90px,0.65fr)_minmax(0,1.4fr)] min-[420px]:gap-5" aria-label={item.title}>

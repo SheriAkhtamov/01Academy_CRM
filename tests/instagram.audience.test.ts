@@ -49,7 +49,7 @@ describe("Instagram realtime audience", () => {
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(String(sql)).toContain('academy_sales_funnel_users assignment');
     expect(String(sql)).toContain('assignment.funnel_id = $1');
-    expect(params).toEqual([4]);
+    expect(params).toEqual([4, null]);
   });
 
   it("hides an unassigned new lead from sales when automatic distribution is enabled", async () => {
@@ -60,7 +60,7 @@ describe("Instagram realtime audience", () => {
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
     expect(String(sql)).toContain('distribution_funnel.is_default = true');
-    expect(params).toEqual([4]);
+    expect(params).toEqual([4, 'new_request']);
   });
 
   it("fails closed when audience resolution cannot reach the database", async () => {

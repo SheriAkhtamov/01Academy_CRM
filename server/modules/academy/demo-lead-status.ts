@@ -1,12 +1,6 @@
-import {
-  canAdvanceLeadFromDemo,
-  DEMO_ATTENDED_STAGE,
-  demoAttendanceStage,
-  isDemoPipelineStage,
-} from '@shared/demo-pipeline';
 import type { ActorSource } from '../leads/domain/actor-context';
 import { createAudit, query, type Row } from './academy-core';
-import { transitionDemoLead } from './demo-lead-transition';
+import { recordDemoLeadAttendance } from './demo-lead-transition';
 
 // Call inside the demo transaction, BEFORE locking students. Payments and lead
 // lifecycle commands also lock parents before their children.
@@ -29,7 +23,6 @@ export const syncDemoLeadStatuses = async (
   includePendingChangedDemo = false,
 ) => {
   for (const lead of lockedLeads) {
-    if (!canAdvanceLeadFromDemo({ isArchived: lead.isArchived, statusCode: String(lead.statusCode) })) continue;
 
     const demos = await query<{ id: number; status: string; statuses: string[] }>(
       `SELECT demo.id, demo.status, array_agg(participant.status ORDER BY participant.id) AS statuses
@@ -49,13 +42,9 @@ export const syncDemoLeadStatuses = async (
     // A later booking with no marks does not erase an earlier result. A reset
     // of the changed demo does, and an old edit cannot overrule a newer result.
     const latest = demos[0];
-    const resultStage = latest ? demoAttendanceStage(latest.statuses, latest.status) : null;
-    const resultStatus = resultStage ?? (isDemoPipelineStage(lead.statusCode) ? 'demo_invited' : null);
-    if (!resultStatus) continue;
-    const demoAttended = resultStatus === DEMO_ATTENDED_STAGE;
-    const updated = await transitionDemoLead(source, lead, resultStatus, demoAttended,
-      latest?.id ?? changedDemoId,
-      `Автоматически по посещаемости учеников на демо #${latest?.id ?? changedDemoId}`);
+    const demoAttended = Boolean(latest && latest.status !== 'not_conducted' && latest.statuses.includes('attended'));
+    if (lead.demoAttended === demoAttended) continue;
+    const updated = await recordDemoLeadAttendance(source, lead, demoAttended);
     if (lead.statusCode === updated.statusCode && lead.funnelId === updated.funnelId
       && lead.demoAttended === updated.demoAttended) continue;
     await createAudit(source, 'SYNC_ACADEMY_DEMO_LEAD_STATUS', 'academy_lead', Number(lead.id),

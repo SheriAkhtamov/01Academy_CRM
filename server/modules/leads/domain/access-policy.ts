@@ -1,5 +1,4 @@
 import type { AcademyAccessModule } from '@shared/academy';
-import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import type { ActorContext } from './actor-context';
 
 export type LeadAccessRecord = {
@@ -9,17 +8,10 @@ export type LeadAccessRecord = {
   statusCode?: string | null;
 };
 
-export const leadWorkflowRole = (actor: ActorContext, lead: LeadAccessRecord) => lead.funnelRole
-  ?? (lead.funnelId && Number(lead.funnelId) === actor.salesWorkflow?.closerFunnelId ? 'closer'
-    : lead.funnelId && Number(lead.funnelId) === actor.salesWorkflow?.hunterFunnelId ? 'hunter' : null);
-
 export const canActorAccessFunnel = (actor: ActorContext, lead: LeadAccessRecord): boolean => {
   if (!lead.funnelId) return true;
-  const role = leadWorkflowRole(actor, lead);
-  const employeeRole = actor.salesWorkflow?.role;
   const assigned = actor.salesWorkflow?.assignedFunnelIds?.includes(Number(lead.funnelId)) === true;
-  return actor.isLeadership || Number(lead.managerId) === actor.userId || (assigned && (!role || (role === 'closer'
-    ? employeeRole === 'closer' || isFullCycleKpiRole(employeeRole) : employeeRole !== 'closer')));
+  return actor.isLeadership || Number(lead.managerId) === actor.userId || assigned;
 };
 
 export const actorHasModule = (
@@ -37,14 +29,13 @@ export const canActorViewLead = (
   if (lead.managerId) return Number(lead.managerId) === actor.userId;
 
   const hidesSharedNewLead = actor.salesWorkflow?.autoLeadDistributionEnabled === true
-    && lead.statusCode === 'new_request'
+    && lead.statusCode === actor.salesWorkflow.defaultInitialStageCode
     && Number(lead.funnelId) === Number(actor.salesWorkflow.defaultFunnelId);
   return !hidesSharedNewLead;
 };
 
 export const canActorMutateLead = (actor: ActorContext, lead?: LeadAccessRecord | null): boolean =>
-  canActorViewLead(actor, lead) && Boolean(lead && (actor.isLeadership
-    || leadWorkflowRole(actor, lead) !== 'closer' || Number(lead.managerId) === actor.userId));
+  canActorViewLead(actor, lead);
 
 // Taking a free lead is not editing an already-owned lead. Repeat assignment
 // to oneself is harmless, but employees may never transfer or take another's lead.

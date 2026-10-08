@@ -264,4 +264,18 @@ describe("auth session routes", () => {
     expect(response.body.error).toBe("currentPasswordRequired");
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
+  it('labels a wrong current password as form validation while leaving the session valid', async () => {
+    const password = 'Secret123';
+    const user = { id: 7, email: 'owner@example.com', password: await bcrypt.hash(password, 1), fullName: 'Owner', module: 'sales', isActive: true };
+    mockStorage.getUserByLoginOrEmail.mockResolvedValue(user);
+    mockStorage.getUser.mockResolvedValue(user);
+    const agent = request.agent(await createApp());
+    await agent.post('/api/auth/login').send({ login: user.email, password });
+    const response = await agent.put('/api/auth/me/settings').send({ fullName: user.fullName, email: 'changed@example.com', currentPassword: 'Wrong123' });
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: 'currentPasswordInvalid', code: 'CREDENTIAL_VALIDATION_FAILED' });
+    expect((await agent.get('/api/auth/session')).body.kind).toBe('user');
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
 });

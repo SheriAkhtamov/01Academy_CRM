@@ -54,3 +54,18 @@ export const replaceUserPhones = async (
         [userId, phoneNumbers],
     );
 };
+
+/** Updates the ordered primary contact without discarding additional employee numbers. */
+export const syncPrimaryUserPhone = async (executor: QueryExecutor, userId: number, phone: string | null) => {
+    const existing = await executor.query<{ phone: string }>(
+        'SELECT phone FROM user_phones WHERE user_id = $1 ORDER BY sort_order, id FOR UPDATE',
+        [userId],
+    );
+    const normalized = phone?.replace(/\D/g, '') || phone?.toLowerCase();
+    const additional = existing.rows.slice(1).map((row) => row.phone).filter((value) => (
+        (value.replace(/\D/g, '') || value.toLowerCase()) !== normalized
+    ));
+    const numbers = phone ? [phone, ...additional] : additional;
+    await replaceUserPhones(executor, userId, numbers);
+    await executor.query('UPDATE users SET phone = $2 WHERE id = $1', [userId, numbers[0] ?? null]);
+};

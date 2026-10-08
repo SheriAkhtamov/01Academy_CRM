@@ -1,4 +1,5 @@
 import type { Router } from 'express';
+import { assertResourceHasNoScheduledDemos } from './academy-route-support';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import {
@@ -32,6 +33,7 @@ export function registerSchoolArchiveRoutes(router: Router) {
               [schoolId],
             );
             if (group) throw Object.assign(new Error('schoolArchiveHasActiveGroups'), { statusCode: 409 });
+            await assertResourceHasNoScheduledDemos('school', schoolId);
           }
           const oldRooms = await query<Row>(
             `SELECT * FROM academy_rooms WHERE school_id = $1 AND is_archived = $2

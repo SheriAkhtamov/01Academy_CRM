@@ -32,7 +32,10 @@ const enter = async (agent: ReturnType<typeof request.agent>) => {
 };
 beforeEach(() => {
   settings = { passwordHash: hash, groupIds: [55, 56, 57] };
-  service = { listGroups: vi.fn().mockResolvedValue([]), loadRoster: vi.fn().mockResolvedValue({ lesson: {}, students: [] }), mark: vi.fn().mockResolvedValue({ lesson: {}, students: [] }) };
+  service = {
+    listGroups: vi.fn().mockResolvedValue([]), loadRoster: vi.fn().mockResolvedValue({ lesson: {}, students: [] }),
+    mark: vi.fn().mockResolvedValue({ lesson: {}, students: [] }), markMany: vi.fn().mockResolvedValue({ lesson: {}, students: [] }),
+  };
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -66,6 +69,27 @@ describe('public attendance access', () => {
     expect((await agent.patch(url).set('X-Attendance-CSRF', token).send(mark)).status).toBe(200);
     expect(service.mark).toHaveBeenCalledWith(455, [55, 56, 57], { ...mark, clearConfirmed: false });
     expect((await agent.patch(url).set('X-Attendance-CSRF', token).send({ ...mark, status: null, clearConfirmed: true })).status).toBe(200);
+  });
+  it('marks the rest of a lesson in one write only with a CSRF token and a valid, duplicate-free student list', async () => {
+    const agent = request.agent(createApp());
+    const token = await enter(agent);
+    const url = '/api/public/attendance/lessons/455/attendance/bulk';
+    const body = { studentIds: [328, 329], status: 'present' };
+    expect((await agent.patch(url).send(body)).status).toBe(403);
+    for (const invalid of [
+      { ...body, studentIds: [] }, { ...body, studentIds: [328, 328] }, { ...body, studentIds: [0] }, { ...body, studentIds: ['328'] },
+      { ...body, studentIds: Array.from({ length: 201 }, (_, index) => index + 1) }, { ...body, status: null }, { ...body, status: 'late' }, { status: 'present' },
+    ]) {
+      expect((await agent.patch(url).set('X-Attendance-CSRF', token).send(invalid)).status).toBe(400);
+    }
+    expect((await agent.patch('/api/public/attendance/lessons/0/attendance/bulk').set('X-Attendance-CSRF', token).send(body)).status).toBe(400);
+    expect(service.markMany).not.toHaveBeenCalled();
+    expect((await agent.patch(url).set('X-Attendance-CSRF', token).send(body)).status).toBe(200);
+    expect(service.markMany).toHaveBeenCalledWith(455, [55, 56, 57], body);
+    vi.mocked(service.markMany).mockRejectedValueOnce(new PublicAttendanceError('publicAttendanceLessonNotStarted', 409));
+    const notStarted = await agent.patch(url).set('X-Attendance-CSRF', token).send(body);
+    expect(notStarted.status).toBe(409);
+    expect(notStarted.body).toEqual({ error: 'publicAttendanceLessonNotStarted' });
   });
   it('revokes access after expiration, config changes, or closing the temporary page', async () => {
     const agent = request.agent(createApp());

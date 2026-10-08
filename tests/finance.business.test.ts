@@ -4,6 +4,7 @@ import {
   calculateAccruedPayrollExpense,
   calculatePayrollAmount,
   calculatePercentageChange,
+  financeDateKey,
   isFinanceDate,
   isFinancePeriod,
 } from '../shared/finance';
@@ -56,5 +57,23 @@ describe('financial center business rules', () => {
     expect(isFinancePeriod('2026-13')).toBe(false);
     expect(isFinanceDate('2026-07-01')).toBe(true);
     expect(isFinanceDate('2026-7-1')).toBe(false);
+    expect(isFinanceDate('2026-02-29')).toBe(false);
+    expect(isFinanceDate('2024-02-29')).toBe(true);
+    expect(isFinanceDate('2026-04-31')).toBe(false);
+    expect(financeDateKey(new Date('invalid'))).toBe('');
+  });
+
+  it('counts deleted salary snapshots separately and replaces only their matching paid rate', () => {
+    const salaryRates = [
+      { id: 10, employeeUserId: null, amountUzs: 2_000_000, effectiveFrom: '2026-07-01', effectiveTo: '2026-10-08' },
+      { id: 11, employeeUserId: null, amountUzs: 3_000_000, effectiveFrom: '2026-07-01', effectiveTo: '2026-10-08' },
+      { id: 12, employeeUserId: 8, amountUzs: 4_000_000, effectiveFrom: '2026-07-01', effectiveTo: '2026-10-08' },
+      { id: 13, employeeUserId: null, amountUzs: 9_000_000, effectiveFrom: '2026-12-01', effectiveTo: '2026-10-08' },
+    ];
+    expect(calculateAccruedPayrollExpense({
+      period: '2026-07', payouts: [{ employeeUserId: null, salaryRateId: 10, amountUzs: 2_200_000 }], salaryRates,
+    })).toBe(9_200_000);
+    expect(calculateAccruedPayrollExpense({ period: '2026-11', payouts: [], salaryRates })).toBe(0);
+    expect(calculateAccruedPayrollExpense({ period: '2026-12', payouts: [], salaryRates })).toBe(0);
   });
 });

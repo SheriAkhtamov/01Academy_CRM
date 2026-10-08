@@ -133,7 +133,7 @@ export const createMetaMarketingTables = (references: {
     attributionId: integer('attribution_id').references(() => metaLeadAttributions.id, { onDelete: 'set null' }),
     eventId: varchar('event_id', { length: 255 }).notNull(),
     eventName: varchar('event_name', { length: 120 }).notNull(),
-    crmStage: varchar('crm_stage', { length: 80 }).notNull(),
+    crmStage: varchar('crm_stage', { length: 80 }),
     eventTime: timestamp('event_time').notNull(),
     actionSource: varchar('action_source', { length: 80 }).notNull().default('business_messaging'),
     // Null for events that did not happen in a conversation (lead-form or phone match).
@@ -154,7 +154,7 @@ export const createMetaMarketingTables = (references: {
     eventUnique: uniqueIndex('meta_conversion_events_event_unique').on(table.eventId),
     leadIdx: index('meta_conversion_events_lead_idx').on(table.leadId, table.eventTime),
     dispatchIdx: index('meta_conversion_events_dispatch_idx').on(table.status, table.nextAttemptAt),
-    statusCheck: check('meta_conversion_events_status_check', sql`${table.status} IN ('pending', 'processing', 'sent', 'failed')`),
+    statusCheck: check('meta_conversion_events_status_check', sql`${table.status} IN ('pending', 'processing', 'sent', 'failed', 'cancelled')`),
     attemptCountCheck: check('meta_conversion_events_attempt_count_check', sql`${table.attemptCount} >= 0`),
   }));
 

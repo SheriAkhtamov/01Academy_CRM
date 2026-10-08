@@ -1,4 +1,5 @@
 import type { Router } from 'express';
+import { assertResourceHasNoScheduledDemos } from './academy-route-support';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { ACADEMY_SCHEDULING_ADVISORY_LOCK, createAudit, ensureAdministrationModuleAccess, parseId, query, queryOne, updateRow, withTransaction, type Row } from './academy-core';
@@ -22,6 +23,7 @@ export function registerResourceArchiveRoutes(router: Router) {
               const group = await queryOne(`SELECT id FROM academy_groups
                 WHERE ${groupColumn} = $1 AND status IN ('open', 'in_progress') AND is_archived = false LIMIT 1`, [id]);
               if (group) throw Object.assign(new Error(resource === 'rooms' ? 'roomHasActiveGroups' : 'courseHasActiveGroups'), { statusCode: 409 });
+              await assertResourceHasNoScheduledDemos(resource === 'rooms' ? 'room' : 'course', id);
             } else if (resource === 'rooms') {
               const school = await queryOne<Row>('SELECT * FROM academy_schools WHERE id = $1 FOR SHARE', [row.schoolId]);
               if (!school || school.isArchived) throw Object.assign(new Error('schoolIsArchived'), { statusCode: 409 });

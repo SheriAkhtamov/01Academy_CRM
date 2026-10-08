@@ -1,37 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({ queryOne: vi.fn(), handleLeadStatusEffects: vi.fn() }));
+const mocks = vi.hoisted(() => ({ queryOne: vi.fn() }));
 vi.mock('../server/modules/academy/academy-core', () => mocks);
-vi.mock('../server/modules/academy/academy-leads', () => mocks);
-import { transitionDemoLead } from '../server/modules/academy/demo-lead-transition';
-
-const lead = { id: 12, managerId: 18, funnelId: 1, statusCode: 'demo_invited' };
-const teacher = { id: 4, module: 'teacher' };
-
-describe('shared atomic demo transition', () => {
+import { recordDemoLeadAttendance } from '../server/modules/academy/demo-lead-transition';
+const lead = { id: 12, managerId: 18, funnelId: 1, statusCode: 'custom' };
+describe('demo attendance records facts independently of funnel stages', () => {
   beforeEach(() => vi.clearAllMocks());
-
-  it('passes the recorder as history author, never as the new manager', async () => {
-    mocks.queryOne.mockResolvedValue({ ...lead, statusCode: 'demo_attended', funnelId: 3 });
-    await expect(transitionDemoLead(teacher, lead, 'demo_attended', true, 9, 'Attendance'))
-      .resolves.toMatchObject({ managerId: 18, funnelId: 3 });
-    expect(mocks.queryOne).toHaveBeenCalledWith(expect.stringContaining('academy_transition_demo_lead'),
-      [12, 'demo_attended', true, 9, 4, 'Attendance']);
-    expect(mocks.handleLeadStatusEffects).toHaveBeenCalledWith(teacher,
-      expect.objectContaining({ managerId: 18 }), 'demo_invited');
+  it.each([true, false])('records attendance %s without selecting a stage, funnel or manager', async (attended) => {
+    mocks.queryOne.mockResolvedValue({ ...lead, demoAttended: attended });
+    await expect(recordDemoLeadAttendance({ id: 4, module: 'teacher' }, lead, attended))
+      .resolves.toMatchObject({ ...lead, demoAttended: attended });
+    const [sql, values] = mocks.queryOne.mock.calls[0];
+    expect(values).toEqual([12, attended]);
+    expect(sql).toContain('SET demo_attended = $2');
+    expect(sql).not.toMatch(/SET\s+(?:status_code|funnel_id|manager_id)|academy_transition_demo_lead/);
   });
-
-  it('does not repeat stage side effects for an idempotent result', async () => {
-    mocks.queryOne.mockResolvedValue(lead);
-    await transitionDemoLead(teacher, lead, 'demo_invited', false, 9, 'Reset');
-    expect(mocks.handleLeadStatusEffects).not.toHaveBeenCalled();
+  it('reports a missing parent without inventing a stage transition', async () => {
+    mocks.queryOne.mockResolvedValue(undefined);
+    await expect(recordDemoLeadAttendance({ id: 4, module: 'teacher' }, lead, true))
+      .rejects.toMatchObject({ message: 'resourceNotFound', statusCode: 404 });
   });
-
-  it.each([['invalidLeadStatus', 409], ['salesFunnelRequired', 409], ['resourceNotFound', 404], ['accessDenied', 403]])
-    ('preserves the HTTP status for database error %s', async (message, statusCode) => {
-      mocks.queryOne.mockRejectedValue(Object.assign(new Error(message), { code: 'P0001' }));
-      await expect(transitionDemoLead(teacher, lead, 'demo_attended', true, 9, 'Attendance'))
-        .rejects.toMatchObject({ message, statusCode });
-      expect(mocks.handleLeadStatusEffects).not.toHaveBeenCalled();
-    });
 });

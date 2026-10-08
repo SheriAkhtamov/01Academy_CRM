@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db';
+import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 
 type QueryExecutor = Pick<Pool | PoolClient, 'query'>;
 
@@ -41,4 +42,6 @@ export const revokeUserAuthenticationArtifacts = async (
     executor,
   );
   await revokeSavedAccountTokens(userId, executor);
+  // Transaction callers disconnect only after COMMIT, so a rollback keeps valid clients alive.
+  if (executor === pool) disconnectRealtimeUser(userId, options.exceptSessionId ?? null);
 };

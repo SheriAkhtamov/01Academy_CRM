@@ -163,7 +163,8 @@ const createTaskOnce = async (
   const { rows } = await executor.query(
     `INSERT INTO academy_tasks (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
      SELECT $1,$2,$3,$4,$5,$6,'new'
-     WHERE NOT EXISTS (
+     WHERE EXISTS (SELECT 1 FROM users WHERE id = $3 AND is_active = true AND is_archived = false)
+       AND NOT EXISTS (
        SELECT 1
        FROM academy_tasks
        WHERE title = $1

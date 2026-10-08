@@ -238,6 +238,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [isRingtoneMuted, setIsRingtoneMuted] = useState(readStoredRingtoneMuted);
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
+  const outgoingSetupRef = useRef(false);
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -439,7 +440,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           const state = dialog.state?.name ?? 'unknown';
           const direction = dialog.direction?.name === 'inbound' ? 'incoming' : 'outgoing';
           const callId = String(dialog.callID || `call-${Date.now()}`);
-          sessionRef.current = dialog;
 
           if (direction === 'incoming' && ['new', 'requesting', 'trying', 'ringing'].includes(state)) {
             const existing = activeCallRef.current;
@@ -447,6 +447,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
               dialog.hangup({ cause: 'USER_BUSY' });
               return;
             }
+            if (existing?.clientCallId === callId) sessionRef.current = dialog;
             if (!existing || existing.clientCallId !== callId) {
               const showIncomingCall = () => {
                 incomingPresentationTimersRef.current.delete(callId);
@@ -459,6 +460,9 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
                     && !terminalStatuses.includes(currentCall.status)
                   )
                 ) {
+                  if (currentCall && currentCall.clientCallId !== callId && !terminalStatuses.includes(currentCall.status)) {
+                    dialog.hangup({ cause: 'USER_BUSY' });
+                  }
                   return;
                 }
                 const phone = dialogPhone(dialog);
@@ -476,6 +480,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
                   held: false,
                   errorCode: null,
                 };
+                sessionRef.current = dialog;
                 setActiveCall(incoming);
                 void reportCall(incoming);
                 void lookupContact(phone).then((contact) => {
@@ -515,6 +520,20 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             return;
           }
 
+          if (direction === 'outgoing' && outgoingSetupRef.current && !sessionRef.current) {
+            patchActiveCall({ clientCallId: callId });
+          }
+          if (activeCallRef.current?.clientCallId !== callId) {
+            if (['hangup', 'destroy', 'purge'].includes(state)) {
+              const timer = incomingPresentationTimersRef.current.get(callId);
+              if (timer !== undefined) window.clearTimeout(timer);
+              incomingPresentationTimersRef.current.delete(callId);
+              incomingAuthorizationRef.current.delete(callId);
+            }
+            return;
+          }
+          sessionRef.current = dialog;
+
           if (['requesting', 'trying'].includes(state)) {
             patchActiveCall({ status: 'dialing' });
           } else if (state === 'early' || state === 'ringing') {
@@ -535,10 +554,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
               incomingPresentationTimersRef.current.delete(callId);
             }
             incomingAuthorizationRef.current.delete(callId);
-            if (activeCallRef.current?.clientCallId !== callId) {
-              if (sessionRef.current === dialog) sessionRef.current = null;
-              return;
-            }
             clearCallSetupTimer();
             finishSession(dialog.cause || null);
           }
@@ -665,6 +680,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     setActiveCall(started);
 
     try {
+      outgoingSetupRef.current = true;
       const session = manager.newCall({
         destination_number: digits,
         caller_id_name: user?.fullName || credentials.extension,
@@ -683,6 +699,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         const cause = error instanceof Error ? error.name : 'CALL_SETUP_FAILED';
         finishSession(cause);
       });
+      outgoingSetupRef.current = false;
       if (!session) throw new Error('onlinePbxWebPhoneOffline');
       sessionRef.current = session;
       const withSessionId = { ...activeCallRef.current!, clientCallId: session.callID };
@@ -718,6 +735,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       void reportCall(failed);
       throw error;
     } finally {
+      outgoingSetupRef.current = false;
       setPendingPhone(null);
     }
   }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);

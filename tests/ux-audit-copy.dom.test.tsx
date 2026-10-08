@@ -25,6 +25,8 @@ beforeEach(() => {
     integrationLogs: [{ id: 3, provider: 'instagram', status: 'failed', errorMessage: 'Graph API internal error 987654',
       payload: { access_token: 'secret-value', error: 'webhook_payload' }, createdAt: '2026-10-03T05:00:00Z' }],
     employees: [{ id: 7, fullName: 'Previous manager', module: 'sales' }, { id: 8, fullName: 'New manager', module: 'sales' }],
+    statuses: [{ code: 'new_request', name: 'Incoming enquiries' }],
+    teachers: [],
     pagination: { audit: pagination, integrations: pagination },
   });
 });
@@ -41,7 +43,7 @@ describe('audit copy and diagnostics', () => {
     expect(within(dialog).getByText('New contact')).toBeTruthy();
     expect(within(dialog).getByText('Previous manager')).toBeTruthy();
     expect(within(dialog).getByText('New manager')).toBeTruthy();
-    expect(within(dialog).getByText(translations.leadStatusNewRequest.en)).toBeTruthy();
+    expect(within(dialog).getByText('Incoming enquiries')).toBeTruthy();
     for (const technicalValue of ['contact_name', 'manager_id', 'internal_version', 'webhook_payload', 'secret-value', '987654']) {
       expect(document.body.textContent).not.toContain(technicalValue);
     }

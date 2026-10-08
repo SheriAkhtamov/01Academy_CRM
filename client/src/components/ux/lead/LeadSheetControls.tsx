@@ -4,8 +4,6 @@ import { translations, type TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useFormField } from '@/components/ui/form';
-import { CheckCircle2 } from 'lucide-react';
-import { LEAD_STATUSES } from '@shared/academy';
 
 export function LocalizedFormMessage() {
   const { t } = useTranslation();
@@ -117,17 +115,7 @@ export function LeadStageStepper({
   const { t } = useTranslation();
 
   const stages = useMemo(() => {
-    const source: StepperStageSource[] = statuses.length > 0
-      ? statuses
-      : LEAD_STATUSES.map((status) => ({
-          code: status.code,
-          name: status.name,
-          color: status.color,
-          sortOrder: status.sortOrder,
-          isActive: true,
-          isPipeline: status.activePipeline,
-        }));
-    return [...source]
+    return [...statuses]
       .filter((status) => status.isActive !== false && status.isPipeline !== false)
       .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0));
   }, [statuses]);
@@ -148,7 +136,6 @@ export function LeadStageStepper({
         className="flex w-full items-center gap-1"
       >
         {stages.map((stage, index) => {
-          const reached = currentIndex >= 0 && index <= currentIndex;
           const isCurrent = index === currentIndex;
           const color = HEX_COLOR_PATTERN.test(stage.color ?? '') ? stage.color! : '#64748b';
           const stageName = leadStatusName(stage.code);
@@ -160,9 +147,9 @@ export function LeadStageStepper({
               className={cn(
                 'min-w-3 flex-1 rounded-full transition-all',
                 isCurrent ? 'h-2' : 'h-1.5',
-                !reached && 'bg-border/70',
+                !isCurrent && 'bg-border/70',
               )}
-              style={reached ? { backgroundColor: color } : undefined}
+              style={isCurrent ? { backgroundColor: color } : undefined}
             >
               <span className="sr-only">{stageName}</span>
             </div>
@@ -191,9 +178,6 @@ export function LeadStageStepper({
         ) : (
           <Badge variant="secondary">{leadStatusName(currentStatusCode)}</Badge>
         )}
-        {currentStatusCode === 'paid' ? (
-          <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden="true" />
-        ) : null}
       </div>
     </div>
   );

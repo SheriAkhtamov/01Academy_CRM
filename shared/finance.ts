@@ -25,17 +25,29 @@ export const FINANCE_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]
 export const isFinancePeriod = (value: unknown): value is string =>
   typeof value === "string" && FINANCE_PERIOD_PATTERN.test(value);
 
-export const isFinanceDate = (value: unknown): value is string =>
-  typeof value === "string" && FINANCE_DATE_PATTERN.test(value);
+export const isFinanceDate = (value: unknown): value is string => {
+  if (typeof value !== "string" || !FINANCE_DATE_PATTERN.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const marker = new Date(0);
+  marker.setUTCFullYear(year, month - 1, day);
+  return marker.getUTCFullYear() === year
+    && marker.getUTCMonth() + 1 === month
+    && marker.getUTCDate() === day;
+};
 
 const safeMoney = (value: unknown) => {
   const amount = Number(value);
   return Number.isSafeInteger(amount) && amount >= 0 ? amount : 0;
 };
 
-const financeDateKey = (value: unknown) => value instanceof Date
-  ? value.toISOString().slice(0, 10)
-  : String(value ?? '').slice(0, 10);
+// pg's default DATE parser constructs local midnight. Preserve that calendar
+// date rather than moving it to UTC (which changes the day on positive offsets).
+export const financeDateKey = (value: unknown) => {
+  const key = value instanceof Date && !Number.isNaN(value.getTime())
+    ? `${String(value.getFullYear()).padStart(4, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+    : String(value ?? '').slice(0, 10);
+  return isFinanceDate(key) ? key : '';
+};
 
 export const calculatePayrollAmount = (
   baseSalaryUzs: unknown,
@@ -91,8 +103,9 @@ export const calculateAccruedPayrollExpense = ({
   salaryRates,
 }: {
   period: string;
-  payouts: Array<{ employeeUserId?: unknown; amountUzs?: unknown }>;
+  payouts: Array<{ employeeUserId?: unknown; salaryRateId?: unknown; amountUzs?: unknown }>;
   salaryRates: Array<{
+    id?: unknown;
     employeeUserId?: unknown;
     amountUzs?: unknown;
     effectiveFrom?: unknown;
@@ -105,26 +118,31 @@ export const calculateAccruedPayrollExpense = ({
       .map((payout) => Number(payout.employeeUserId))
       .filter((employeeId) => Number.isSafeInteger(employeeId) && employeeId > 0),
   );
+  const paidSalaryRateIds = new Set(payouts.map((payout) => Number(payout.salaryRateId)).filter((id) => id > 0));
   const periodStart = `${period}-01`;
-  const accruedRates = new Map<number, { effectiveFrom: string; amountUzs: number }>();
+  const accruedRates = new Map<string, { effectiveFrom: string; amountUzs: number }>();
 
   for (const rate of salaryRates) {
     const employeeId = Number(rate.employeeUserId);
+    const hasEmployee = Number.isSafeInteger(employeeId) && employeeId > 0;
+    const salaryRateId = Number(rate.id);
+    const hasSalaryRate = Number.isSafeInteger(salaryRateId) && salaryRateId > 0;
     const effectiveFrom = financeDateKey(rate.effectiveFrom);
     const effectiveTo = rate.effectiveTo === null || rate.effectiveTo === undefined
       ? null
       : financeDateKey(rate.effectiveTo);
     if (
-      !Number.isSafeInteger(employeeId)
-      || employeeId <= 0
+      (!hasEmployee && !hasSalaryRate)
       || paidEmployeeIds.has(employeeId)
+      || paidSalaryRateIds.has(salaryRateId)
       || !isFinanceDate(effectiveFrom)
       || effectiveFrom > periodStart
       || (effectiveTo !== null && effectiveTo < periodStart)
     ) continue;
-    const current = accruedRates.get(employeeId);
+    const employeeKey = hasEmployee ? `user:${employeeId}` : `rate:${salaryRateId}`;
+    const current = accruedRates.get(employeeKey);
     if (!current || effectiveFrom > current.effectiveFrom) {
-      accruedRates.set(employeeId, { effectiveFrom, amountUzs: safeMoney(rate.amountUzs) });
+      accruedRates.set(employeeKey, { effectiveFrom, amountUzs: safeMoney(rate.amountUzs) });
     }
   }
 

@@ -122,6 +122,7 @@ import {
   toIdOrNull,
   toIntegerOrNull,
   updateRow,
+  transactionContext,
   withTransaction,
 } from './academy-core';
 import {
@@ -133,7 +134,8 @@ import {
   getActiveSalesManager,
   getLead,
   getLockedLeadWithSource,
-  handleLeadStatusEffects,
+  notifyLeadIntake,
+  recordManualLeadStageMove,
   leadContactSummary,
   reassignLead,
   recalculateStudentMetrics,
@@ -329,7 +331,7 @@ router.post('/leads', async (req, res) => {
         courseId = Number((await resolveCourseByAge(studentAge))?.id ?? 0) || null;
       }
 
-      const statusCode = await resolveInitialLeadStatusCode(nullableText(input.statusCode));
+      const statusCode = await resolveInitialLeadStatusCode(nullableText(input.statusCode), Number(funnel.id));
       const managerId = await resolveLeadManagerId(req.actor!, input.managerId, funnel.workflowRole, Number(funnel.id));
       await getActiveSalesManager(managerId, true);
       await assertSalesFunnelAssignment(funnel.id, managerId);
@@ -409,7 +411,7 @@ router.post('/leads', async (req, res) => {
       return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone) };
     });
 
-    await handleLeadStatusEffects(req.actor!, lead);
+    await notifyLeadIntake(req.actor!, lead);
     await createAudit(req.actor!, 'CREATE_ACADEMY_LEAD', 'academy_lead', lead.id, lead);
     res.status(201).json(lead);
   } catch (error: any) {
@@ -543,13 +545,16 @@ router.post('/leads/:id/view', async (req, res) => {
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    const lead = await queryOne<Row>(`SELECT id, manager_id FROM academy_leads WHERE id = $1`, [id]);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadRowAccess(req, res, lead)) return;
-    res.json(await markLeadViewed(id, req.user!.id));
-  } catch (error) {
+    const viewed = await withTransaction(async () => {
+      const lead = await queryOne<Row>(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (!canMutateLeadRow(req.actor!, lead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      return markLeadViewed(id, req.user!.id, transactionContext.getStore());
+    });
+    res.json(viewed);
+  } catch (error: any) {
     logger.error('Failed to mark lead as viewed', { error, leadId: req.params.id });
-    res.status(500).json({ error: 'Failed to mark lead as viewed' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to mark lead as viewed') });
   }
 });
 
@@ -764,19 +769,6 @@ router.delete('/leads/:id/groups/:groupId', async (req, res) => {
       if (!reservation) {
         throw Object.assign(new Error('Lead group reservation not found'), { statusCode: 404 });
       }
-      const reservationCount = await queryOne<{ count: number }>(
-        `SELECT COUNT(*)::int AS count
-         FROM academy_lead_group_reservations
-         WHERE lead_id = $1`,
-        [leadId],
-      );
-      if (
-        ['enrolled', 'paid'].includes(String(lockedLead.statusCode))
-        && Number(reservationCount?.count ?? 0) <= 1
-      ) {
-        throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
-      }
-
       await query(
         `DELETE FROM academy_lead_group_reservations WHERE id = $1`,
         [reservation.id],
@@ -819,7 +811,6 @@ router.post('/leads/:id/archive', async (req, res) => {
     if (!ensureLeadMutationAccess(req, res, oldLead)) return;
 
     if (oldLead.isArchived) return res.json(oldLead);
-    if (oldLead.statusCode === 'paid') return res.status(400).json({ error: 'paidLeadCannotArchive' });
 
     const archiveReasonCode = nullableText(req.body.reason);
     if (!isValidLeadArchiveReason(archiveReasonCode)) {
@@ -840,7 +831,12 @@ router.post('/leads/:id/archive', async (req, res) => {
     let archived: Row | undefined;
 
     await withTransaction(async () => {
-      let leadBeforeArchive = oldLead;
+      if (assignToSelf) await getActiveSalesManager(req.user!.id, true);
+      const lockedLead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      if (!lockedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (!canMutateLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      if (lockedLead.isArchived) { archived = lockedLead; return; }
+      let leadBeforeArchive = lockedLead;
 
       if (!leadBeforeArchive.managerId) {
         if (!assignToSelf) {
@@ -911,31 +907,28 @@ router.post('/leads/:id/restore', async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError });
 
     const restored = await withTransaction(async () => {
-      await assertSalesFunnelStage(oldLead.funnelId, targetStatusCode);
-      if (targetStatusCode !== 'not_now' && oldLead.enrolledGroupId) {
-        await validateLeadSelectedGroups(id, Number(oldLead.enrolledGroupId));
+      if (!await getActiveLeadStatus(targetStatusCode, true)) {
+        throw Object.assign(new Error('invalidData'), { statusCode: 400 });
       }
-      return updateRow('academy_leads', id, {
-        statusCode: targetStatusCode,
-        isArchived: false,
-        archiveReason: null,
-        archivedAt: null,
-        archivedBy: null,
+      const lockedLead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      if (!lockedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (!canMutateLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      if (!lockedLead.isArchived) return lockedLead;
+      await assertSalesFunnelStage(lockedLead.funnelId, targetStatusCode);
+      if (lockedLead.enrolledGroupId) {
+        await validateLeadSelectedGroups(id, Number(lockedLead.enrolledGroupId));
+      }
+      const restored = await updateRow('academy_leads', id, {
+        statusCode: targetStatusCode, isArchived: false, archiveReason: null, archivedAt: null, archivedBy: null,
       });
+      if (!restored) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (lockedLead.statusCode !== targetStatusCode) {
+        await createStageHistory(restored.id, lockedLead.statusCode, targetStatusCode, req.user!.id,
+          `Восстановлен из архива${lockedLead.archiveReason ? `: ${lockedLead.archiveReason}` : ''}`);
+        await recordManualLeadStageMove(req.actor!, lockedLead, restored);
+      }
+      return restored;
     });
-    if (!restored) return res.status(404).json({ error: 'Lead not found' });
-
-    if (oldLead.statusCode !== targetStatusCode) {
-      await createStageHistory(
-        restored.id,
-        oldLead.statusCode,
-        targetStatusCode,
-        req.user!.id,
-        `Восстановлен из архива${oldLead.archiveReason ? `: ${oldLead.archiveReason}` : ''}`,
-      );
-      await handleLeadStatusEffects(req.actor!, restored, oldLead.statusCode);
-    }
-
     await createAudit(req.actor!, 'RESTORE_ACADEMY_LEAD', 'academy_lead', restored.id, restored, oldLead);
     res.json(await getLead(id) ?? restored);
   } catch (error: any) {
@@ -1192,8 +1185,7 @@ router.patch('/leads/:id', async (req, res) => {
         }
       }
       const groupToReserve = Number(merged.enrolledGroupId || 0);
-      const activatesReservations = oldLead.statusCode === 'not_now' && nextStatus !== 'not_now';
-      const mustValidateCapacity = Boolean(requestedGroupId) || activatesReservations;
+      const mustValidateCapacity = Boolean(requestedGroupId);
       if (mustValidateCapacity && groupToReserve) {
         let lockedGroup: Row | null;
         if (lockedStudent) {
@@ -1286,6 +1278,7 @@ router.patch('/leads/:id', async (req, res) => {
           req.user!.id,
           nullableText(req.body.statusComment),
         );
+        await recordManualLeadStageMove(req.actor!, lockedLead, updated);
       }
       if (updated && requestedPhones !== undefined) {
         await syncLeadPhones(id, requestedPhones);
@@ -1299,9 +1292,6 @@ router.patch('/leads/:id', async (req, res) => {
     });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
-    if (oldLead.statusCode !== lead.statusCode) {
-      await handleLeadStatusEffects(req.actor!, lead, oldLead.statusCode);
-    }
 
     if (manager && managerChanged && didChangeManager) {
       await createNotification(
@@ -1329,43 +1319,37 @@ router.post('/leads/:id/contact', async (req, res) => {
   try {
     const id = parseId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid lead id' });
-    const lead = await getLead(id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, lead)) return;
-
-    const communication = await insertRow('academy_communications', {
-      leadId: id,
-      channel: nullableText(req.body.channel) ?? 'call',
-      result: nullableText(req.body.result) ?? null,
-      comment: nullableText(req.body.comment) ?? null,
-      createdBy: req.user!.id });
-
-    const updates: Row = {
-      firstContactAt: lead.firstContactAt ?? new Date(),
-      firstContactChannel: nullableText(req.body.channel) ?? lead.firstContactChannel ?? 'call',
-      firstContactResult: nullableText(req.body.result) ?? lead.firstContactResult ?? null };
-    if (lead.statusCode === 'new_request') {
-      updates.statusCode = 'first_contact';
-    }
-
-    const updatedLead = await updateRow('academy_leads', id, updates);
-    if (!updatedLead) return res.status(404).json({ error: 'Lead not found' });
-    if (lead.statusCode !== updatedLead.statusCode) {
-      await createStageHistory(id, lead.statusCode, updatedLead.statusCode, req.user!.id, 'Первый контакт зафиксирован');
-    }
-
-    if (String(req.body.result || '').toLowerCase().includes('не отвечает')) {
-      await createTask('Повторный контакт', {
-        responsibleId: updatedLead.managerId ?? req.user!.id,
-        deadlineAt: addDays(new Date(), 1),
-        entityType: 'lead',
-        entityId: id });
-    }
+    const { communication, updatedLead } = await withTransaction(async () => {
+      const lead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (!canMutateLeadRow(req.actor!, lead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      if (lead.isArchived) throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeUpdate'), { statusCode: 409 });
+      const communication = await insertRow('academy_communications', {
+        leadId: id,
+        channel: nullableText(req.body.channel) ?? 'call',
+        result: nullableText(req.body.result) ?? null,
+        comment: nullableText(req.body.comment) ?? null,
+        createdBy: req.user!.id,
+      });
+      const updatedLead = await updateRow('academy_leads', id, {
+        firstContactAt: lead.firstContactAt ?? new Date(),
+        firstContactChannel: nullableText(req.body.channel) ?? lead.firstContactChannel ?? 'call',
+        firstContactResult: nullableText(req.body.result) ?? lead.firstContactResult ?? null,
+      });
+      if (!updatedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (String(req.body.result || '').toLowerCase().includes('не отвечает')) {
+        await createTask('Повторный контакт', {
+          responsibleId: updatedLead.managerId ?? req.user!.id,
+          deadlineAt: addDays(new Date(), 1), entityType: 'lead', entityId: id,
+        });
+      }
+      return { communication, updatedLead };
+    });
 
     res.status(201).json({ communication, lead: await applyLeadVisibilityForRequest(req, updatedLead) });
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Failed to add lead contact', { error });
-    res.status(500).json({ error: 'Failed to add lead contact' });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to add lead contact') });
   }
 });
 
@@ -1516,27 +1500,9 @@ router.post('/leads/:id/students', async (req, res) => {
       if (hasEnrollment) {
         await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
       }
-      if (hasEnrollment && !['enrolled', 'paid'].includes(String(lead.statusCode))) {
-        await assertSalesFunnelStage(lead.funnelId, 'enrolled');
-        const enrolledStatus = await getActiveLeadStatus('enrolled');
-        if (!enrolledStatus) {
-          throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });
-        }
-        await updateRow('academy_leads', leadId, { statusCode: 'enrolled' });
-        await createStageHistory(
-          leadId,
-          String(lead.statusCode),
-          'enrolled',
-          req.user!.id,
-          `Создан ученик: ${studentName}`,
-        );
-      }
       return createdStudent;
     });
     const updatedLead = await getLead(leadId);
-    if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
-      await handleLeadStatusEffects(req.actor!, updatedLead, String(initialLead.statusCode));
-    }
     const enriched = await queryOne(
       `SELECT student.*,
               course.name AS course_name,

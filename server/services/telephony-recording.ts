@@ -62,6 +62,7 @@ export const resolveOnlinePbxRecording = async (
         history: null,
       };
     }
+    return { state: 'pending' };
   }
 
   const startedAt = new Date(call.startedAt).getTime();

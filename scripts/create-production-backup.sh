@@ -36,7 +36,7 @@ case "$BACKUP_LOCK_WAIT_SECONDS" in
     ;;
 esac
 
-for required_command in pg_dump pg_restore zip unzip sha256sum; do
+for required_command in pg_dump pg_restore zip unzip sha256sum cp find sort; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     echo "Required command is unavailable: $required_command" >&2
     exit 1
@@ -84,6 +84,8 @@ partial_path="${BACKUP_DIR}/.${archive_name}.partial"
 work_dir="$(mktemp -d "${BACKUP_DIR}/.academy-backup-work.XXXXXX")"
 dump_path="${work_dir}/database.dump"
 manifest_path="${work_dir}/manifest.json"
+uploads_snapshot="${work_dir}/uploads"
+uploads_checksums="${work_dir}/uploads.sha256"
 backup_completed=0
 
 cleanup() {
@@ -120,10 +122,61 @@ unset PGPASSWORD password
 # pg_restore must be able to read the archive before any backup is published.
 pg_restore --list "$dump_path" >/dev/null
 
-dump_sha256="$(sha256sum "$dump_path" | awk '{print $1}')"
+# Upload bytes and names are immutable once committed. The CRM retains every
+# committed deletion before unlinking it. Capture live files FIRST, then merge
+# retained originals: a reference in the dump must exist in one of these sets.
+# A vanished/unreadable source aborts this backup rather than publishing a
+# possibly incomplete archive. Retention garbage collection is not permitted
+# concurrently with this operation.
+echo "[$created_at] Capturing immutable uploads"
+mkdir "$uploads_snapshot"
+for source in "$UPLOADS_DIR"/* "$UPLOADS_DIR"/.[!.]* "$UPLOADS_DIR"/..?*; do
+  [ -e "$source" ] || [ -L "$source" ] || continue
+  case "$(basename "$source")" in
+    .retained|.retention-work) continue ;;
+  esac
+  cp -pR "$source" "$uploads_snapshot/"
+done
+
+retained_directory="${UPLOADS_DIR}/.retained"
+if [ -L "$retained_directory" ]; then
+  echo "Upload retention directory must not be a symbolic link" >&2
+  exit 1
+fi
+if [ -d "$retained_directory" ]; then
+  # Explicitly skip existing names. cp -n reports a skipped file as an error on
+  # some platforms. Retention only publishes complete regular files atomically.
+  find "$retained_directory" -type f -exec /bin/sh -c '
+    set -eu
+    snapshot_root="$1"
+    retained_root="$2"
+    shift 2
+    for source do
+      relative="${source#"$retained_root/"}"
+      destination="$snapshot_root/$relative"
+      if [ -e "$destination" ] || [ -L "$destination" ]; then continue; fi
+      mkdir -p "$(dirname "$destination")"
+      cp -p "$source" "$destination"
+    done
+  ' sh "$uploads_snapshot" "$retained_directory" {} +
+fi
+
+# Hash only the stable capture, never the changing live uploads directory.
+(
+  cd "$work_dir"
+  find uploads -type f -exec sha256sum {} + > uploads.sha256.unsorted
+  LC_ALL=C sort uploads.sha256.unsorted > uploads.sha256
+  rm uploads.sha256.unsorted
+)
+dump_checksum="$(sha256sum "$dump_path")"
+dump_sha256="$(printf '%s\n' "$dump_checksum" | awk '{print $1}')"
 dump_size_bytes="$(wc -c < "$dump_path" | tr -d '[:space:]')"
-uploads_file_count="$(find "$UPLOADS_DIR" -type f | wc -l | tr -d '[:space:]')"
-uploads_size_kib="$(du -sk "$UPLOADS_DIR" | awk '{print $1}')"
+find "$uploads_snapshot" -type f > "${work_dir}/uploads-file-list"
+uploads_file_count="$(wc -l < "${work_dir}/uploads-file-list" | tr -d '[:space:]')"
+uploads_disk_usage="$(du -sk "$uploads_snapshot")"
+uploads_size_kib="$(printf '%s\n' "$uploads_disk_usage" | awk '{print $1}')"
+uploads_inventory_checksum="$(sha256sum "$uploads_checksums")"
+uploads_checksums_sha256="$(printf '%s\n' "$uploads_inventory_checksum" | awk '{print $1}')"
 
 printf '%s\n' \
   '{' \
@@ -137,6 +190,8 @@ printf '%s\n' \
   '  },' \
   '  "uploads": {' \
   '    "directory": "uploads",' \
+  '    "checksumsFile": "uploads.sha256",' \
+  "    \"checksumsSha256\": \"${uploads_checksums_sha256}\"," \
   "    \"fileCount\": ${uploads_file_count}," \
   "    \"sizeKiB\": ${uploads_size_kib}" \
   '  }' \
@@ -145,15 +200,8 @@ printf '%s\n' \
 echo "[$created_at] Packaging database.dump and uploads/"
 (
   cd "$work_dir"
-  zip -q "$partial_path" database.dump manifest.json
-)
-
-uploads_parent="$(dirname "$UPLOADS_DIR")"
-uploads_name="$(basename "$UPLOADS_DIR")"
-(
-  cd "$uploads_parent"
   # Store symbolic links as links instead of following them outside uploads/.
-  zip -q -r -y "$partial_path" "$uploads_name"
+  zip -q -r -y "$partial_path" database.dump manifest.json uploads.sha256 uploads
 )
 
 # Verify the complete ZIP before publishing it under its final name.

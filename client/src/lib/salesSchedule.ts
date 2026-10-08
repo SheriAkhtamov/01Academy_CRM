@@ -1,9 +1,4 @@
-import {
-  addDays,
-  addMinutes,
-  startOfDay,
-  startOfWeek,
-} from 'date-fns';
+import { addMinutes } from 'date-fns';
 import type { AcademyScheduleItem } from '@shared/scheduling';
 import { assignCalendarLanes } from '@/lib/calendarLanes';
 import { academyDateInputValue, academyInstant, academyMinutesOfDay } from '@/lib/localeFormat';
@@ -14,6 +9,17 @@ const DAY_MS = 86_400_000;
 const academyDayKeyOf = (instant: Date) => academyDateInputValue(instant);
 
 const dayKeyToUtcMs = (key: string) => Date.parse(`${key}T00:00:00Z`);
+
+/** A calendar column's local fields are a date marker, not an instant. */
+export const salesScheduleColumnDateKey = (date: Date) => (
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+);
+const columnDayKey = (value: Date | string) => typeof value === 'string' ? value : salesScheduleColumnDateKey(value);
+
+export const salesScheduleRangeBounds = (startKey: string, dayCount: number) => ({
+  from: academyInstant(startKey, '00:00').toISOString(),
+  to: academyInstant(shiftDayKey(startKey, Math.max(1, dayCount)), '00:00').toISOString(),
+});
 
 /** Whole days between two academy date keys. */
 export const academyDayDiff = (fromKey: string, toKey: string) => (
@@ -128,10 +134,9 @@ export interface SalesScheduleEvent {
 
 export function buildSalesDemoScheduleEvents(
   demos: SalesScheduleDemoLesson[],
-  weekStart: Date,
+  weekStart: Date | string,
 ): SalesScheduleEvent[] {
-  const normalizedWeekStart = startOfDay(weekStart);
-  const weekStartKey = academyDayKeyOf(normalizedWeekStart);
+  const weekStartKey = columnDayKey(weekStart);
   return demos.flatMap((demo) => {
     const startsAt = new Date(demo.scheduledAt);
     if (Number.isNaN(startsAt.getTime())) return [];
@@ -177,13 +182,10 @@ const parseTimeToMinutes = (value: unknown): number | null => {
   return hours * 60 + minutes;
 };
 
-const dayKeyToColumnDate = (key: string) => new Date(`${key}T12:00:00`);
-
-const isDateInsideGroupRange = (date: Date, group: SalesScheduleGroup) => {
-  const value = startOfDay(date).getTime();
-  const start = group.startDate ? startOfDay(new Date(group.startDate)).getTime() : Number.NEGATIVE_INFINITY;
-  const end = group.endDate ? startOfDay(new Date(group.endDate)).getTime() : Number.POSITIVE_INFINITY;
-  return value >= start && value <= end;
+const isDateInsideGroupRange = (dateKey: string, group: SalesScheduleGroup) => {
+  const start = group.startDate?.slice(0, 10);
+  const end = group.endDate?.slice(0, 10);
+  return (!start || dateKey >= start) && (!end || dateKey <= end);
 };
 
 const toEvent = (
@@ -227,10 +229,9 @@ export function buildSalesScheduleEvents({
 }: {
   groups: SalesScheduleGroup[];
   lessons: SalesScheduleLesson[];
-  weekStart: Date;
+  weekStart: Date | string;
 }): SalesScheduleEvent[] {
-  const normalizedWeekStart = startOfDay(weekStart);
-  const weekStartKey = academyDayKeyOf(normalizedWeekStart);
+  const weekStartKey = columnDayKey(weekStart);
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const lessonCounts = new Map<number, number>();
   for (const lesson of lessons) {
@@ -267,9 +268,8 @@ export function buildSalesScheduleEvents({
       if (dayOfWeek < 1 || dayOfWeek > 7 || startMinutes === null) return [];
 
       const columnKey = shiftDayKey(weekStartKey, dayOfWeek - 1);
-      // Noon keeps the range check on the intended calendar day regardless of
-      // the device time zone.
-      if (!isDateInsideGroupRange(dayKeyToColumnDate(columnKey), group)) return [];
+      // Date-only group boundaries use the same keys as the calendar columns.
+      if (!isDateInsideGroupRange(columnKey, group)) return [];
       if (actualGroupDays.has(`${group.id}:${columnKey}`)) return [];
 
       const parsedEnd = parseTimeToMinutes(item.endTime);
@@ -335,19 +335,18 @@ export function buildSalesScheduleRangeEvents({
   groups: SalesScheduleGroup[];
   lessons: SalesScheduleLesson[];
   demos: SalesScheduleDemoLesson[];
-  rangeStart: Date;
+  rangeStart: Date | string;
   dayCount: number;
 }): SalesScheduleEvent[] {
-  const start = startOfDay(rangeStart);
-  const startKey = academyDayKeyOf(start);
+  const startKey = columnDayKey(rangeStart);
   const endKey = shiftDayKey(startKey, Math.max(1, dayCount));
-  const gridStart = startOfWeek(start, { weekStartsOn: 1 });
-  const gridStartKey = academyDayKeyOf(gridStart);
+  const startWeekday = new Date(dayKeyToUtcMs(startKey)).getUTCDay();
+  const gridStartKey = shiftDayKey(startKey, -(startWeekday === 0 ? 6 : startWeekday - 1));
   const weeks = Math.max(1, Math.ceil(academyDayDiff(endKey, gridStartKey) / 7));
 
   const expanded: SalesScheduleEvent[] = [];
   for (let index = 0; index < weeks; index += 1) {
-    const weekStart = addDays(gridStart, index * 7);
+    const weekStart = shiftDayKey(gridStartKey, index * 7);
     expanded.push(
       ...buildSalesScheduleEvents({ groups, lessons, weekStart }),
       ...buildSalesDemoScheduleEvents(demos, weekStart),

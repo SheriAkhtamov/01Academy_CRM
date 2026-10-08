@@ -45,8 +45,6 @@ interface CreateTaskDialogProps {
     miniMode?: boolean;
 }
 
-const UNASSIGNED = 'unassigned';
-
 const dueInputToInstant = (value: string): string | null => {
     const [dateKey, timePart] = value.split('T');
     if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
@@ -66,7 +64,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
     const { t } = useTranslation();
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const defaultAssigneeId = currentUser ? String(currentUser.id) : UNASSIGNED;
+    const defaultAssigneeId = currentUser ? String(currentUser.id) : '';
     const assignableUsers = useMemo(() => (
         canAssignUsers
             ? users
@@ -111,9 +109,10 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
 
     const mutation = useMutation({
         mutationFn: async () => {
+            if (!assigneeId || !currentUser) throw new Error(t('taskAssigneeRequired'));
             requestKey.current ??= crypto.randomUUID();
             const targetAssigneeId = canAssignUsers
-                ? assigneeId === UNASSIGNED ? null : Number(assigneeId)
+                ? assigneeId ? Number(assigneeId) : null
                 : currentUser?.id ?? null;
             const needsHandover = files.length > 0 && targetAssigneeId !== null
                 && targetAssigneeId !== currentUser?.id;
@@ -173,6 +172,10 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             toast({ title: t('titleRequired'), variant: 'destructive' });
             return;
         }
+        if (!assigneeId || !Number.isSafeInteger(Number(assigneeId)) || Number(assigneeId) <= 0) {
+            toast({ title: t('taskAssigneeRequired'), variant: 'destructive' });
+            return;
+        }
         const dueInstant = dueAt ? dueInputToInstant(dueAt) : null;
         if (!attempted && dueAt && (!dueInstant || new Date(dueInstant).getTime() <= Date.now())) {
             toast({ title: t('taskDueDateInPast'), variant: 'destructive' });
@@ -217,8 +220,8 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
     const assigneeField = <div className="space-y-1.5">
         <Label htmlFor="create-task-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
         {canAssignUsers ? <Select value={assigneeId} onValueChange={setAssigneeId} disabled={attempted || mutation.isPending}>
-            <SelectTrigger id="create-task-assignee"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>{assignableUsers.map((person) => <SelectItem key={person.id} value={String(person.id)}>{person.fullName}</SelectItem>)}</SelectContent>
+            <SelectTrigger id="create-task-assignee"><SelectValue placeholder={t('taskAssigneeRequired')} /></SelectTrigger>
+            <SelectContent>{assignableUsers.map((person) => <SelectItem key={person.id} value={String(person.id)}>{person.fullName}</SelectItem>)}</SelectContent>
         </Select> : <Input id="create-task-assignee" value={currentUser?.fullName ?? ''} disabled />}
     </div>;
     const dueField = <div className="space-y-1.5">
@@ -282,7 +285,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                             {t('cancel')}
                         </Button>
-                        <Button type="submit" disabled={!title.trim() || mutation.isPending}>
+                        <Button type="submit" disabled={!title.trim() || !assigneeId || mutation.isPending}>
                             {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                             {mutation.isPending ? activeFile ? t('attachmentUploading') : t('saving') : mutation.isError ? t('attachmentRetry') : t('createTask')}
                         </Button>

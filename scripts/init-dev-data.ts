@@ -216,14 +216,19 @@ async function seedCourses() {
 }
 
 // 4. Statuses and Lead Sources
+const seededStageCodes = new Map<string, string>();
 async function seedStatusesAndSources() {
-  for (const s of LEAD_STATUSES) {
+  const { rows: [funnel] } = await exec(`SELECT id, initial_stage_code FROM academy_sales_funnels WHERE is_active = true ORDER BY is_default DESC, id LIMIT 1`);
+  if (!funnel?.initial_stage_code) throw new Error('A migrated funnel with an initial stage is required before seeding');
+  for (const [index, s] of LEAD_STATUSES.entries()) {
+    const code = index === 0 ? funnel.initial_stage_code : `dev_${funnel.id}_${s.code}`;
+    seededStageCodes.set(s.code, code);
+    if (index === 0) continue;
     await exec(
-      `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_pipeline, is_system, is_active)
-       VALUES ($1,$2,$3,$4,$5,true,true)
-       ON CONFLICT (code) DO UPDATE
-       SET name = EXCLUDED.name, color = EXCLUDED.color, sort_order = EXCLUDED.sort_order, is_pipeline = EXCLUDED.is_pipeline, is_system = true`,
-      [s.code, s.name, s.color, s.sortOrder, s.activePipeline],
+      `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_pipeline, is_system, is_active, funnel_id)
+       VALUES ($1,$2,$3,$4,true,false,true,$5)
+       ON CONFLICT (code) DO NOTHING`,
+      [code, s.name, s.color, (index + 1) * 10, Number(funnel.id)],
     );
   }
 
@@ -471,6 +476,8 @@ async function seedLeads(
     throw new Error('Active sales funnel is required before seeding leads');
   }
 
+  await exec(`INSERT INTO academy_sales_funnel_users (user_id, funnel_id)
+    SELECT user_id, $2 FROM unnest($1::int[]) AS managers(user_id) ON CONFLICT DO NOTHING`, [[azizId, madinaId], funnelId]);
   const STAGE_DISTRIBUTION: { status: string; count: number; note: string }[] = [
     { status: 'new_request', count: 20, note: 'Новая заявка с таргетированной рекламы' },
     { status: 'first_contact', count: 15, note: 'Первый контакт установлен, уточняются детали' },
@@ -520,7 +527,7 @@ async function seedLeads(
             schoolId,
             sourceId,
             funnelId,
-            dist.status,
+            seededStageCodes.get(dist.status),
             managerId,
             dist.note,
             expectedPayment,
@@ -549,7 +556,7 @@ async function seedLeads(
         await exec(
           `INSERT INTO academy_lead_stage_history (lead_id, to_status_code, changed_by, entered_at)
            VALUES ($1, $2, $3, now() - ($4 || ' days')::interval)`,
-          [lid, dist.status, managerId, String(daysAgo)],
+          [lid, seededStageCodes.get(dist.status), managerId, String(daysAgo)],
         );
       }
       leadIds.push(lid);

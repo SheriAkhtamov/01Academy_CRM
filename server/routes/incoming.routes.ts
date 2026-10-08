@@ -1,3 +1,4 @@
+import { enqueueMetaLeadIntakeSafely } from '../services/meta-marketing';
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
@@ -372,14 +373,14 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
           (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by, languages)
-         VALUES ($1,$2,$3,$4,$5,$6,'new_request',NULL,$7,$8,$9,$10) RETURNING *`,
+         VALUES ($1,$2,$3,$4,$5,$6,(SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $5),NULL,$7,$8,$9,$10) RETURNING *`,
         [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId, language ? [language] : []],
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
-         VALUES ($1,NULL,'new_request',$2,'Заявка с сайта')`,
+         VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,'Заявка с сайта')`,
         [lead.id, systemUserId],
       );
       return { duplicate: null, lead };
@@ -390,6 +391,7 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
     }
 
+    await enqueueMetaLeadIntakeSafely(Number(result.lead.id));
     await logIntegration(integrationProvider, 'inbound', 'received', integrationPayload);
     publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: result.lead.id } });
     return res.status(201).json(result.lead);

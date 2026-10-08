@@ -48,6 +48,8 @@ interface AuditData {
     createdAt: string;
   }>;
   employees: Array<{ id: number; fullName: string; module: AcademyModule }>;
+  teachers: Array<{ id: number; fullName: string }>;
+  statuses: Array<{ code: string; name: string }>;
   pagination: {
     audit: PaginationMeta;
     integrations: PaginationMeta;
@@ -71,8 +73,8 @@ const actionLabel = (action: string, copy: AuditCopy, t: Translate) => {
   if (action === 'PUBLIC_ATTENDANCE_MARKED') return t('publicAttendanceMarked');
   if (action === 'PUBLIC_ATTENDANCE_CLEARED') return t('publicAttendanceCleared');
   if (action === 'PUBLIC_ATTENDANCE_LESSON_COMPLETED') return t('publicAttendanceConducted');
-  if (action.startsWith('UNARCHIVE')) return t('auditActionRestored');
-  if (action.startsWith('ARCHIVE')) return t('auditActionArchived');
+  if (/(^|_)UNARCHIVE(_|$)/.test(action)) return t('auditActionRestored');
+  if (/(^|_)ARCHIVE(_|$)/.test(action)) return t('auditActionArchived');
   if (action.startsWith('CREATE')) return copy.created;
   if (action.startsWith('DELETE')) return copy.deleted;
   if (action.includes('REFUND')) return copy.refund;
@@ -176,7 +178,7 @@ export default function AuditPage() {
   const newValues = selected ? jsonObject(selected.newValues) : {};
   const changedFields = auditVisibleFields(oldValues, newValues);
   const presentValue = (field: string, value: unknown) => auditValue(field, value, {
-    t, language, entity: selected?.entityType || '', employees: data?.employees ?? [],
+    t, language, entity: selected?.entityType || '', employees: data?.employees ?? [], teachers: data?.teachers ?? [], statuses: data?.statuses ?? [],
   });
   const auditPagination = data?.pagination.audit ?? {
     page: auditPage,

@@ -1,3 +1,5 @@
+import { enqueueMetaLeadIntakeSafely } from '../../services/meta-marketing';
+import { qualifiesManualLeadStageMove } from '@shared/lead-qualification';
 import { assertSalesFunnelAssignment } from './sales-funnel-policy';
 import {
   LEAD_STATUSES,
@@ -14,7 +16,6 @@ import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { selectedLeadLanguages } from '@shared/lead-languages';
 import { logger } from '../../lib/logger';
 import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
-import { enqueueMetaConversionForLead } from '../../services/meta-marketing';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
 import {
   ACADEMY_TIME_ZONE,
@@ -446,6 +447,21 @@ export const mergeLeadRecords = async (
   );
   await query(`UPDATE academy_communications SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_assignment_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(
+    `INSERT INTO academy_lead_funnel_qualifications
+       (lead_id, funnel_id, funnel_name, qualified_at, qualified_by, from_stage_code, to_stage_code)
+     SELECT $1, funnel_id, funnel_name, qualified_at, qualified_by, from_stage_code, to_stage_code
+     FROM academy_lead_funnel_qualifications WHERE lead_id = $2
+     ON CONFLICT (lead_id, funnel_id) DO UPDATE SET
+       funnel_name = EXCLUDED.funnel_name,
+       qualified_at = EXCLUDED.qualified_at,
+       qualified_by = EXCLUDED.qualified_by,
+       from_stage_code = EXCLUDED.from_stage_code,
+       to_stage_code = EXCLUDED.to_stage_code
+     WHERE EXCLUDED.qualified_at < academy_lead_funnel_qualifications.qualified_at`,
+    [retainedLeadId, duplicateLeadId],
+  );
+  await query(`DELETE FROM academy_lead_funnel_qualifications WHERE lead_id = $1`, [duplicateLeadId]);
   await query(`UPDATE academy_lead_stage_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_comments SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(
@@ -919,12 +935,13 @@ export const getLockedLeadWithSource = (id: number) =>
     [id],
   );
 
-export const createStageHistory = async (leadId: number, fromStatusCode: string | null, toStatusCode: string, changedBy: number, comment?: string | null) =>
+export const createStageHistory = async (leadId: number, fromStatusCode: string | null, toStatusCode: string, changedBy: number, comment?: string | null, context?: { fromFunnelId: number | null; toFunnelId: number }) =>
   insertRow('academy_lead_stage_history', {
     leadId,
     fromStatusCode,
     toStatusCode,
     changedBy,
+    ...(context ?? {}),
     comment: comment ?? null });
 
 export const leadContactSummary = (lead: Row) =>
@@ -1151,7 +1168,6 @@ export const ensureGroupCapacity = async (
       ON reserved_membership.group_id = g.id
      LEFT JOIN academy_leads reserved
       ON reserved.id = reserved_membership.lead_id
-      AND reserved.status_code <> 'not_now'
       AND COALESCE(reserved.is_archived, false) = false
       AND ($2::int IS NULL OR reserved.id <> $2)
       AND NOT EXISTS (
@@ -1379,7 +1395,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
   }
   if (sourcePayment?.leadId && Number(sourcePayment.leadId) !== Number(leadId)) {
-    throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+    throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
   }
   const nextPaymentAt = sourcePayment?.type === 'prepayment'
     ? null
@@ -1399,7 +1415,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
         [leadId],
       );
   if (sourcePayment?.studentId && existingStudents.length === 0) {
-    throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+    throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
   }
   if (!sourcePayment?.studentId && existingStudents.length > 1) {
     throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
@@ -1491,60 +1507,30 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
   return student;
 };
 
-export const handleLeadStatusEffects = async (source: ActorSource, lead: Row, previousStatus?: string | null) => {
+/** Only intake has an automatic notification; subsequent stages are plain labels. */
+export const notifyLeadIntake = async (source: ActorSource, lead: Row) => {
   const actor = actorContextFrom(source);
-  const managerId = lead.managerId ?? actor.userId;
-  const now = new Date();
+  await createNotification(lead.managerId ?? actor.userId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
+  await runAfterTransactionCommit(() => enqueueMetaLeadIntakeSafely(Number(lead.id)).then(() => undefined));
+};
 
-  await runAfterTransactionCommit(async () => {
-    try {
-      await enqueueMetaConversionForLead(lead, previousStatus);
-    } catch (error) {
-      logger.error('Failed to enqueue Meta CAPI event for lead stage', {
-        leadId: lead.id,
-        statusCode: lead.statusCode,
-        error,
-      });
-    }
-  });
-
-  if (lead.statusCode === 'new_request') {
-    await createNotification(managerId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
-  }
-
-  if (lead.statusCode === 'first_contact' && !lead.firstContactAt) {
-    await updateRow('academy_leads', lead.id, { firstContactAt: now });
-  }
-
-  if (lead.statusCode === 'enrolled' && previousStatus !== 'enrolled') {
-    const students = await query(
-      `SELECT id, group_id, expected_payment_uzs FROM academy_students WHERE lead_id = $1 ORDER BY id`,
-      [lead.id],
-    );
-    const forecasts: Row[] = students.length > 0 ? students : [{
-      expectedPaymentUzs: lead.expectedPaymentUzs ?? lead.offerPriceUzs,
-      groupId: lead.enrolledGroupId,
-    }];
-    for (const forecast of forecasts) {
-      if (students.length > 0 && forecast.expectedPaymentUzs == null) continue;
-      await insertRow('academy_payments', {
-        leadId: lead.id,
-        studentId: forecast.id ?? null,
-        groupId: forecast.groupId ?? null,
-        amountUzs: normalizeMoney(forecast.expectedPaymentUzs),
-        type: 'full',
-        method: lead.paymentMethod || 'transfer',
-        status: 'pending',
-        dueAt: addDays(now, 3),
-        period: 'month_1',
-        discount: 'none',
-        comment: 'Ожидаемая оплата после записи на курс' });
-    }
-  }
-
-  if (lead.statusCode === 'not_now') {
-    await updateRow('academy_leads', lead.id, {
-      warmMovedAt: lead.warmMovedAt ?? now,
-      warmReason: lead.warmReason ?? 'Перенесён в тёплую базу' });
-  }
+/** Called only by explicit manual stage moves, while the lead is locked. */
+export const recordManualLeadStageMove = async (source: ActorSource, previous: Row, updated: Row) => {
+  const actor = actorContextFrom(source);
+  if (actor.userId <= 0 || updated.isArchived
+    || Number(previous.funnelId) !== Number(updated.funnelId)
+    || previous.statusCode === updated.statusCode) return;
+  const funnel = await queryOne<{ initialStageCode: string }>(
+    `SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $1`, [Number(updated.funnelId)],
+  );
+  if (!funnel || !qualifiesManualLeadStageMove(previous, updated, funnel.initialStageCode)) return;
+  await query(
+    `INSERT INTO academy_lead_funnel_qualifications
+      (lead_id, funnel_id, funnel_name, qualified_by, from_stage_code, to_stage_code)
+     SELECT $1, funnel.id, funnel.name, $2, $3::varchar(80), $4::varchar(80) FROM academy_sales_funnels funnel
+     JOIN academy_lead_statuses destination ON destination.code = $4::varchar(80) AND destination.funnel_id = funnel.id
+     WHERE funnel.id = $5 AND funnel.initial_stage_code = $3::varchar(80) AND destination.is_active AND destination.is_pipeline
+     ON CONFLICT (lead_id, funnel_id) DO NOTHING`,
+    [Number(updated.id), actor.userId, previous.statusCode, updated.statusCode, Number(updated.funnelId)],
+  );
 };

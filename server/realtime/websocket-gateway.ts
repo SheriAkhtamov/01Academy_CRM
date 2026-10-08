@@ -1,5 +1,5 @@
 import type { IncomingMessage, Server } from 'node:http';
-import type { Session, SessionData } from 'express-session';
+import type { Session, SessionData, Store } from 'express-session';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { isWebSocketEventVisibleToUser, type WebSocketEvent } from '@shared/websocket';
 import { pool } from '../db';
@@ -13,7 +13,7 @@ import {
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
 import type { SessionMiddleware } from '../infrastructure/session';
-import { setRealtimeTransport, setRealtimeUserDisconnect } from './realtime-hub';
+import { setRealtimeTransport, setRealtimeUserDisconnect, setRealtimeSessionDisconnect } from './realtime-hub';
 
 const WS_OPEN_STATE = 1;
 const MAX_TOTAL_WEBSOCKET_CONNECTIONS = 1_000;
@@ -22,10 +22,15 @@ const WEBSOCKET_AUTH_TIMEOUT_MS = 5_000;
 
 type WsSessionRequest = IncomingMessage & {
   session?: Session & Partial<SessionData>;
+  sessionID?: string;
+  sessionStore?: Store;
 };
 
 type SocketContext = {
   userId: number;
+  sessionId: string;
+  sessionStore: Store;
+  delivery: Promise<void>;
 };
 
 export type WebSocketGateway = {
@@ -58,6 +63,15 @@ export const attachWebSocketGateway = async (
     }
   };
 
+  const isSessionAuthorized = async (context: SocketContext): Promise<boolean> => {
+    const session = await new Promise<SessionData | null | undefined>((resolve, reject) => {
+      context.sessionStore.get(context.sessionId, (error, value) => error ? reject(error) : resolve(value));
+    });
+    if (session?.userId !== context.userId) return false;
+    const expires = session.cookie?.expires;
+    return !expires || new Date(expires).getTime() > Date.now();
+  };
+
   const broadcastToClients = (event: WebSocketEvent) => {
     const message = JSON.stringify(event);
     clients.forEach((client) => {
@@ -69,20 +83,34 @@ export const attachWebSocketGateway = async (
         return;
       }
 
-      try {
-        client.send(message);
-      } catch (error) {
+      // Check the stored session for every delivery, including revocations from another process.
+      context.delivery = context.delivery.then(async () => {
+        if (client.readyState !== WS_OPEN_STATE || !clients.has(client)) return;
+        const authorized = await isSessionAuthorized(context);
+        if (!authorized) {
+          client.close(1008, 'Access revoked');
+          return;
+        }
+        if (client.readyState === WS_OPEN_STATE && clients.has(client)) client.send(message);
+      }).catch((error) => {
+        client.close(1011, 'Session error');
         logger.error('Failed to send WebSocket event', { error, eventType: event.type });
-      }
+      });
     });
   };
 
   const resetRealtimeTransport = setRealtimeTransport(broadcastToClients);
-  const resetRealtimeUserDisconnect = setRealtimeUserDisconnect((userId) => {
+  const resetRealtimeUserDisconnect = setRealtimeUserDisconnect((userId, exceptSessionId) => {
     for (const client of clients) {
-      if (clientContexts.get(client)?.userId === userId) {
+      const context = clientContexts.get(client);
+      if (context?.userId === userId && context.sessionId !== exceptSessionId) {
         client.close(1008, 'Access revoked');
       }
+    }
+  });
+  const resetRealtimeSessionDisconnect = setRealtimeSessionDisconnect((sessionId) => {
+    for (const client of clients) {
+      if (clientContexts.get(client)?.sessionId === sessionId) client.close(1008, 'Access revoked');
     }
   });
   const presenceTracker = createPresenceTracker({
@@ -115,7 +143,7 @@ export const attachWebSocketGateway = async (
 
       const sessionUserId = request.session?.userId;
       const lifecycle = socketClosedState.get(ws);
-      if (!sessionUserId) {
+      if (!sessionUserId || !request.sessionID || !request.sessionStore) {
         ws.close(1008, 'Unauthorized');
         return;
       }
@@ -156,7 +184,7 @@ export const attachWebSocketGateway = async (
         return;
       }
 
-      clientContexts.set(ws, { userId: user.id });
+      clientContexts.set(ws, { userId: user.id, sessionId: request.sessionID, sessionStore: request.sessionStore, delivery: Promise.resolve() });
       connectionReserved = false;
       clients.add(ws);
     } catch (error) {
@@ -170,14 +198,13 @@ export const attachWebSocketGateway = async (
   };
 
   httpServer.on('upgrade', (request, socket, head) => {
-    if (allSockets.size >= MAX_TOTAL_WEBSOCKET_CONNECTIONS) {
-      socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
-      socket.destroy();
+    const requestUrl = request.url ? new URL(request.url, 'http://localhost') : null;
+    if (requestUrl?.pathname !== '/ws') {
       return;
     }
 
-    const requestUrl = request.url ? new URL(request.url, 'http://localhost') : null;
-    if (requestUrl?.pathname !== '/ws') {
+    if (allSockets.size >= MAX_TOTAL_WEBSOCKET_CONNECTIONS) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -228,6 +255,10 @@ export const attachWebSocketGateway = async (
 
   const heartbeat = setInterval(() => {
     for (const client of clients) {
+      const context = clientContexts.get(client);
+      if (context) void isSessionAuthorized(context).then((authorized) => {
+        if (!authorized) client.close(1008, 'Access revoked');
+      }).catch(() => client.close(1011, 'Session error'));
       if (!socketAliveState.get(client)) {
         client.terminate();
         continue;
@@ -251,6 +282,7 @@ export const attachWebSocketGateway = async (
     clearInterval(telephonyRoutingHeartbeat);
     resetRealtimeTransport();
     resetRealtimeUserDisconnect();
+    resetRealtimeSessionDisconnect();
     for (const socket of allSockets) {
       socket.terminate();
     }

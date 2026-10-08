@@ -162,7 +162,8 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     resolver: zodResolver(settingsSchema),
     defaultValues: buildSettingsValues(user),
   });
-  const baselineValues = React.useMemo(() => buildSettingsValues(user), [user]);
+  const [baselineValues, setBaselineValues] = React.useState(() => buildSettingsValues(user));
+  const seededAccount = React.useRef<{ open: boolean; userId: number | null }>({ open: false, userId: null });
   // Subscribing to the values, not to `formState.isDirty` — see
   // `hasSettingsChanges` for why the flag answers the wrong question here.
   const currentValues = form.watch();
@@ -172,13 +173,27 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     onOpenChange: (nextOpen) => { if (!nextOpen) setPhoto(null); onOpenChange(nextOpen); },
   });
 
-  // Reset form when user data changes or modal opens
   React.useEffect(() => {
-    if (user && open) {
-      form.reset(buildSettingsValues(user));
-      setPhoto(null);
+    if (!open) {
+      seededAccount.current.open = false;
+      return;
     }
-  }, [user, open, form]);
+    if (!user) return;
+    const nextBaseline = buildSettingsValues(user);
+    const accountChanged = seededAccount.current.userId !== user.id;
+    const newlyOpened = !seededAccount.current.open;
+    seededAccount.current = { open: true, userId: user.id };
+    if (newlyOpened || accountChanged) {
+      form.reset(nextBaseline);
+      setBaselineValues(nextBaseline);
+      setPhoto(null);
+    } else if (!photo
+      && !hasSettingsChanges(form.getValues(), baselineValues)
+      && hasSettingsChanges(nextBaseline, baselineValues)) {
+      form.reset(nextBaseline);
+      setBaselineValues(nextBaseline);
+    }
+  }, [user, open, form, baselineValues, photo]);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: z.infer<typeof settingsSchema>) => {

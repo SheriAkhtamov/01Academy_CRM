@@ -263,7 +263,6 @@ export const prepareGroupMutation = async (options: {
          ON reserved_membership.group_id = g.id
        LEFT JOIN academy_leads reserved
          ON reserved.id = reserved_membership.lead_id
-        AND reserved.status_code <> 'not_now'
         AND COALESCE(reserved.is_archived, false) = false
         AND NOT EXISTS (
           SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
@@ -493,7 +492,6 @@ export const prepareGroupMetadataMutation = async (
        ON reserved_membership.group_id = g.id
      LEFT JOIN academy_leads reserved
        ON reserved.id = reserved_membership.lead_id
-      AND reserved.status_code <> 'not_now'
       AND COALESCE(reserved.is_archived, false) = false
       AND NOT EXISTS (
         SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
@@ -546,7 +544,6 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
          FROM academy_lead_group_reservations reservation
          JOIN academy_leads reserved ON reserved.id = reservation.lead_id
          WHERE reservation.group_id = $1
-           AND reserved.status_code <> 'not_now'
            AND COALESCE(reserved.is_archived, false) = false
            AND NOT EXISTS (
              SELECT 1
@@ -566,6 +563,22 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
   }
   if (lifecycle?.hasReservedLeads) {
     throw Object.assign(new Error('groupHasReservedLeads'), { statusCode: 409 });
+  }
+};
+
+export const assertLessonHistoryUpdateAllowed = async (id: number, values: Row, row: Row, autoAssign = false) => {
+  const historyFields = ['groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'scheduledAt', 'durationMinutes'];
+  const changesHistory = autoAssign || historyFields.some((field) => {
+    if (!(field in values)) return false;
+    if (field === 'scheduledAt') return new Date(values[field]).getTime() !== new Date(row[field]).getTime();
+    return Number(values[field]) !== Number(row[field]);
+  });
+  if (!changesHistory) return;
+  const attendance = row.status === 'conducted' ? null : await queryOne(
+    `SELECT id FROM academy_attendance WHERE lesson_id = $1 LIMIT 1`, [id],
+  );
+  if (row.status === 'conducted' || attendance) {
+    throw Object.assign(new Error('lessonHistoryLocked'), { statusCode: 409 });
   }
 };
 
@@ -882,9 +895,35 @@ export const reconcileAutomaticTeacherAssignments = async (teacherId?: number | 
         const nextTeacherId = Number(values.teacherId) || null;
         if (previousTeacherId === nextTeacherId) return false;
 
+        const futureLessons = await query(
+          `SELECT * FROM academy_lessons
+           WHERE group_id = $1 AND status = 'scheduled' AND scheduled_at >= NOW()
+             AND NOT EXISTS (SELECT 1 FROM academy_attendance mark WHERE mark.lesson_id = academy_lessons.id)
+           ORDER BY scheduled_at, id FOR UPDATE`,
+          [lockedGroup.id],
+        );
+        const futureLessonIds = futureLessons.map((lesson) => Number(lesson.id));
+        if (nextTeacherId) {
+          // Dated lessons may have been moved outside the group's weekly slots.
+          // Validate their actual times before assigning the replacement teacher.
+          for (const lesson of futureLessons) {
+            await assertTeacherCanLeadLesson({
+              teacherId: nextTeacherId,
+              courseId: Number(lesson.courseId),
+              schoolId: Number(lesson.schoolId),
+              scheduledAt: new Date(lesson.scheduledAt),
+              durationMinutes: Number(lesson.durationMinutes),
+              excludeGroupId: Number(lockedGroup.id),
+              excludeLessonIds: futureLessonIds,
+            });
+          }
+        }
         await updateRow('academy_groups', Number(lockedGroup.id), {
           teacherId: nextTeacherId,
         });
+        for (const lesson of futureLessons) {
+          await updateRow('academy_lessons', Number(lesson.id), { teacherId: nextTeacherId });
+        }
         if (nextTeacherId) {
           await materializeGroupLessons(Number(lockedGroup.id));
         }
@@ -901,6 +940,16 @@ export const reconcileAutomaticTeacherAssignments = async (teacherId?: number | 
   }
 
   return updatedCount;
+};
+
+export const assertResourceHasNoScheduledDemos = async (resource: 'school' | 'room' | 'course', id: number) => {
+  const demo = await queryOne(
+    `SELECT id FROM academy_demo_lessons
+     WHERE ${resource}_id = $1 AND status = 'scheduled'
+       AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > NOW()
+     LIMIT 1`, [id],
+  );
+  if (demo) throw Object.assign(new Error('resourceHasScheduledDemos'), { statusCode: 409 });
 };
 
 export const getLeadCountForStatusCode = async (statusCode: string) => {

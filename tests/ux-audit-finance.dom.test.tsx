@@ -50,3 +50,46 @@ it('preserves a cash expense method and keeps the confirmation through pending a
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   client.clear();
 });
+
+it('selects separate deleted employees and shows only the matching salary snapshot history', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => response({
+    entries: [
+      { employeeUserId: null, employeeKey: 'rate:10', employeeName: 'Deleted Alice', salaryRateId: 10, baseSalaryUzs: 2_000_000, amountUzs: 2_000_000, status: 'paid', canConfigureSalary: false },
+      { employeeUserId: null, employeeKey: 'rate:11', employeeName: 'Deleted Bob', salaryRateId: 11, baseSalaryUzs: 3_000_000, amountUzs: 3_000_000, status: 'paid', canConfigureSalary: false },
+    ],
+    salaryHistory: [
+      { id: 10, employeeUserId: null, amountUzs: 2_000_000, effectiveFrom: '2026-07-01', note: 'Alice salary history' },
+      { id: 11, employeeUserId: null, amountUzs: 3_000_000, effectiveFrom: '2026-07-01', note: 'Bob salary history' },
+    ],
+    summary: { payrollFundUzs: 5_000_000, paidAmountUzs: 5_000_000, pendingAmountUzs: 0, pendingCount: 0, unconfiguredCount: 0 },
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><FinanceCenter section="payroll" /></QueryClientProvider>);
+  await screen.findByText('Alice salary history');
+  expect(screen.queryByText('Bob salary history')).toBeNull();
+  fireEvent.click(within(screen.getByRole('table')).getByText('Deleted Bob'));
+  expect(screen.getByText('Bob salary history')).toBeTruthy();
+  expect(screen.queryByText('Alice salary history')).toBeNull();
+  expect(screen.getByRole('button', { name: financeCopy(i18n.t.bind(i18n)).configureSalary }).hasAttribute('disabled')).toBe(true);
+  client.clear();
+});
+
+it('pages through the complete monthly journal and finds an early expense after applying the outgoing filter', async () => {
+  const rows = [
+    ...Array.from({ length: 301 }, (_, index) => ({ id: `income-${index}`, title: `Income ${index}`, category: 'student_payments', status: 'paid', amountUzs: 100_000, occurredAt: '2026-10-07T06:00:00Z', direction: 'in' })),
+    { id: 'expense-1', title: 'Earlier rent payment', category: 'rent', status: 'paid', amountUzs: 50_000, occurredAt: '2026-10-01T06:00:00Z', direction: 'out' },
+  ];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => response({ period: '2026-10', rows }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><FinanceCenter section="transactions" /></QueryClientProvider>);
+  await screen.findByText('Income 0');
+  for (let page = 1; page < 13; page += 1) fireEvent.click(screen.getByRole('button', { name: i18n.t('nextPage') }));
+  expect(screen.getByText('Earlier rent payment')).toBeTruthy();
+  const copy = financeCopy(i18n.t.bind(i18n));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: copy.transactions }), { key: 'ArrowDown' });
+  fireEvent.click(await screen.findByRole('option', { name: copy.outgoing }));
+  expect(screen.getByText('Earlier rent payment')).toBeTruthy();
+  expect(screen.queryByText('Income 300')).toBeNull();
+  expect(screen.getByRole('button', { name: i18n.t('nextPage') }).hasAttribute('disabled')).toBe(true);
+  client.clear();
+});

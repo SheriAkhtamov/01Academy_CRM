@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_SESSION_QUERY_KEY, type AuthSession } from '../shared/auth';
-import { queryClient } from '../client/src/lib/queryClient';
+import { queryClient, apiRequest } from '../client/src/lib/queryClient';
 
 const userSession = {
   kind: 'user',
@@ -72,4 +72,17 @@ describe('expired session handling', () => {
 
     expect(queryClient.getQueryData(AUTH_SESSION_QUERY_KEY)).toEqual(userSession);
   });
+  it.each(['/api/auth/me/settings', '/api/auth/accounts', '/api/auth/switch-account'])('keeps the active session when credential validation fails on %s', async (url) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: 'currentPasswordInvalid', code: 'CREDENTIAL_VALIDATION_FAILED',
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+    queryClient.setQueryData<AuthSession>(AUTH_SESSION_QUERY_KEY, userSession);
+    queryClient.setQueryData(['/api/academy/leads'], [{ id: 1 }]);
+    const mutation = queryClient.getMutationCache().build(queryClient, { mutationFn: () => apiRequest('POST', url, {}) });
+    await mutation.execute(undefined).catch(() => undefined);
+    await flush();
+    expect(queryClient.getQueryData(AUTH_SESSION_QUERY_KEY)).toEqual(userSession);
+    expect(queryClient.getQueryData(['/api/academy/leads'])).toEqual([{ id: 1 }]);
+  });
+
 });

@@ -39,9 +39,44 @@ describe("getAcademyDataset slice gating", () => {
 
   it("does not add payment amounts to teacher-scoped data", async () => {
     await (await loadDataset())({ userId: 7, module: 'teacher', modules: ['teacher'], scopeModule: 'teacher' }, { include: ['students'] });
-    const studentQuery = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('SELECT st.*'))!;
+    const studentQuery = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('FROM academy_students st'))!;
+    expect(studentQuery[0]).not.toContain('SELECT st.*');
+    expect(studentQuery[0]).not.toContain('academy_payments');
+    expect(studentQuery[0]).toContain('AND membership_group.teacher_id = $1');
     expect(studentQuery[0]).toContain('NULL AS paid_amount_uzs');
     expect(studentQuery[0]).not.toContain('confirmed_payment');
+  });
+
+  it("returns an academic allowlist and only teacher-scoped membership context", async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM academy_teachers')) return { rows: [{ id: 4 }] };
+      if (sql.includes('FROM academy_students st')) return { rows: [{
+        id: 12, student_name: 'Student', contact_name: 'Parent', attendance_percent: 85,
+        group_id: 99, group_name: 'Other teacher group', course_name: 'Other course',
+        lead_id: 42, manager_id: 7, manager_name: 'Manager', phone: '+998901234567',
+        expected_payment_uzs: 1_000_000, paid_amount_uzs: 300_000,
+        next_payment_at: '2026-10-15', payment_status: 'overdue',
+        groups: [{ groupId: 54, groupName: 'My group', courseId: 1, courseName: 'My course', schoolId: 2, isPrimary: false }],
+      }] };
+      return { rows: [] };
+    });
+    const dataset = await (await loadDataset())({ userId: 9, module: 'teacher', modules: ['teacher'], scopeModule: 'teacher' }, { include: ['students'] });
+    expect(dataset.students[0]).toMatchObject({ id: 12, studentName: 'Student', attendancePercent: 85,
+      groupId: 54, groupName: 'My group', courseName: 'My course', groupIds: [54], groupNames: ['My group'] });
+    for (const key of ['expectedPaymentUzs', 'paidAmountUzs', 'nextPaymentAt', 'paymentStatus', 'leadId', 'managerId', 'managerName', 'phone']) {
+      expect(dataset.students[0]).not.toHaveProperty(key);
+    }
+  });
+
+  it("excludes missing NPS responses while retaining a real zero rating", async () => {
+    const surveys: Array<number | null | undefined | string> = [10, null, undefined, ''];
+    mocks.poolQuery.mockImplementation(async (sql: string) => sql.includes('SELECT * FROM academy_parent_surveys')
+      ? { rows: surveys.map((npsScore, id) => ({ id, nps_score: npsScore, created_at: new Date().toISOString() })) }
+      : { rows: [] });
+    const { buildAnalytics } = await import('../server/modules/academy/academy-analytics');
+    expect((await buildAnalytics()).summary.nps).toBe(100);
+    surveys.push(0);
+    expect((await buildAnalytics()).summary.nps).toBe(0);
   });
 
   it("queries every slice when no include list is given", async () => {

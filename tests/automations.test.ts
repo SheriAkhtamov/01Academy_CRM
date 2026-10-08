@@ -81,7 +81,8 @@ describe("academy automations", () => {
     expect(task).toBeGreaterThan(begin);
     expect(status).toBeGreaterThan(task);
     expect(commit).toBeGreaterThan(status);
-    expect(sql[task]).toContain("WHERE NOT EXISTS");
+    expect(sql[task]).toContain("NOT EXISTS");
+    expect(sql[task]).toContain("WHERE EXISTS (SELECT 1 FROM users WHERE id = $3 AND is_active = true AND is_archived = false)");
   });
 
   it("skips immediately when another automation runner holds the lock", async () => {

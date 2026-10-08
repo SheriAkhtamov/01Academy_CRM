@@ -6,7 +6,7 @@ import { refreshExpiringInstagramTokens } from "./instagram";
 import { runEscalations } from "./escalations";
 import { syncRecentMetaLeadAds } from "./meta-lead-ads";
 import {
-  enqueueRecentMetaCrmHistory,
+  enqueueRecentMetaLeadIntakes,
   processMetaAttributionEnrichment,
   processMetaConversionEvents,
   syncMetaAdCatalog,
@@ -40,17 +40,12 @@ let started = false;
 export const startScheduler = () => {
   if (started) return;
   started = true;
-
-  const syncRecentMetaCrmHistory = async () => {
-    try {
-      const queued = await enqueueRecentMetaCrmHistory();
-      if (queued > 0) logger.info(`[scheduler] queued ${queued} recent Meta CRM events`);
-    } catch (error) {
-      logger.error("[scheduler] Meta CRM history sync error", { error });
-    }
+  const recoverIntakes = async () => {
+    try { await enqueueRecentMetaLeadIntakes(); }
+    catch (error) { logger.error('[scheduler] Meta lead intake recovery failed', { error }); }
   };
+  void recoverIntakes();
 
-  void syncRecentMetaCrmHistory();
 
   cron.schedule("* * * * *", async () => {
     try {
@@ -115,10 +110,7 @@ export const startScheduler = () => {
     }
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
-  cron.schedule("5 * * * *", syncRecentMetaCrmHistory, {
-    timezone: SCHEDULER_TIME_ZONE,
-    noOverlap: true,
-  });
+  cron.schedule('5 * * * *', recoverIntakes, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {

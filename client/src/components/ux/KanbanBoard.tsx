@@ -163,7 +163,6 @@ function LeadCardContent({
   const visiblePhone = primaryVisibleLeadPhone(lead);
   const canCall = Boolean(visiblePhone);
   const canMessage = Boolean(leadMessageTarget(lead));
-  const canArchive = currentStatus.code !== 'paid';
   const stopCardInteraction = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -244,7 +243,7 @@ function LeadCardContent({
                   {statuses.map((stage) => <DropdownMenuItem key={stage.code} disabled={isPending || stage.code === currentStatus.code} onSelect={() => onMove(lead.id, stage.code)}>{stage.name}</DropdownMenuItem>)}
                 </DropdownMenuSubContent>
               </DropdownMenuSub> : null}
-              {onArchiveLead && canArchive ? (
+              {onArchiveLead ? (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
@@ -276,7 +275,7 @@ function LeadCardContent({
         onTouchStart={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
-        {canArchive && onEnrollDemo ? (
+        {onEnrollDemo ? (
           <Button
             variant="outline"
             size="sm"

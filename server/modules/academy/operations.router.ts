@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -111,6 +110,7 @@ import {
   parseOptionalDate,
   query,
   queryOne,
+  lockSalesFunnelsForStages,
   updateRow,
   withTransaction,
 } from './academy-core';
@@ -118,7 +118,6 @@ import {
   advanceStudentNextPaymentAt,
   createStudentFromLead,
   getActiveSalesManager,
-  handleLeadStatusEffects,
   recalculateStudentMetrics,
   reassignLead,
   validateEnrollmentGroup,
@@ -219,7 +218,7 @@ router.post('/payments', (req, res, next) => {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }
       if (lead && existingStudent && Number(existingStudent.leadId) !== Number(lead.id)) {
-        throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
+        throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
       }
       if (isScopedSalesUser) {
         const currentUserId = Number(req.user!.id);
@@ -297,13 +296,6 @@ router.post('/payments', (req, res, next) => {
           if (!['pending', 'overdue'].includes(String(pendingPayment.status))) {
             throw Object.assign(new Error('paymentAlreadyFinalized'), { statusCode: 409 });
           }
-          const sameLead = !pendingPayment.leadId
-            || Number(pendingPayment.leadId) === Number(paymentLeadId);
-          const sameStudent = !pendingPayment.studentId
-            || Number(pendingPayment.studentId) === Number(resolvedStudentId);
-          if (!sameLead || !sameStudent) {
-            throw Object.assign(new Error('Payment lead and student do not match'), { statusCode: 400 });
-          }
         } else {
           pendingPayment = await queryOne(
             `SELECT *
@@ -311,14 +303,23 @@ router.post('/payments', (req, res, next) => {
              WHERE status IN ('pending', 'overdue')
                AND COALESCE(period, '') = $1
                AND (
-                 ($2::int IS NOT NULL AND lead_id = $2)
-                 OR ($3::int IS NOT NULL AND student_id = $3)
+                 ($3::int IS NOT NULL AND student_id = $3)
+                 OR ($3::int IS NULL AND $2::int IS NOT NULL AND lead_id = $2 AND student_id IS NULL)
                )
              ORDER BY due_at NULLS LAST, created_at, id
              LIMIT 1
              FOR UPDATE`,
             [paymentPeriod, paymentLeadId, resolvedStudentId],
           );
+        }
+        if (pendingPayment) {
+          const sameLead = !pendingPayment.leadId
+            || Number(pendingPayment.leadId) === Number(paymentLeadId);
+          const sameStudent = !pendingPayment.studentId
+            || Number(pendingPayment.studentId) === Number(resolvedStudentId);
+          if (!sameLead || !sameStudent) {
+            throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
+          }
         }
       }
 
@@ -542,10 +543,6 @@ router.get('/integrations/status', async (req, res) => {
          LIMIT 1`,
       ),
     ]);
-    // Read live: adding or renaming a stage in the CRM changes what Meta is offered.
-    const conversionStages = await query<{ code: string; name: string }>(
-      `SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code`,
-    );
     const configuredWebsiteDomains = (integ.website?.allowedFormOrigins ?? [])
       .map(normalizeWebsiteIntegrationDomain)
       .filter((domain): domain is string => Boolean(domain));
@@ -592,7 +589,7 @@ router.get('/integrations/status', async (req, res) => {
         accountUsername: metaMarketing.pageId,
         siteDomain: null,
         // Surfaced on the Integrations page so the marketing report stays free of admin diagnostics.
-        details: { ...metaMarketing, conversionStages },
+        details: metaMarketing,
         lastLog: null,
       },
       {
@@ -991,6 +988,7 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
     }
 
     const result = await withTransaction(async () => {
+      await lockSalesFunnelsForStages([id, targetStatusId], 'id');
       const lockedStatuses = await query(
         `SELECT *
          FROM academy_lead_statuses
@@ -1006,8 +1004,8 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
       if (source.isPipeline !== true) {
         throw Object.assign(new Error('sourcePipelineStageRequired'), { statusCode: 400 });
       }
-      if (source.isSystem === true || isDemoPipelineStage(source.code)) {
-        throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), { statusCode: 409 });
+      if (await queryOne(`SELECT id FROM academy_sales_funnels WHERE initial_stage_code = $1`, [String(source.code)])) {
+        throw Object.assign(new Error('pipelineInitialStageCannotBeDeleted'), { statusCode: 409 });
       }
 
       const target = lockedStatuses.find(
@@ -1057,22 +1055,6 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
         }
       }
 
-      const enrollmentGroupIds = [...new Set(
-        leads
-          .filter(() => ['enrolled', 'paid'].includes(String(target.code)))
-          .map((lead) => Number(lead.enrolledGroupId))
-          .filter((groupId) => Number.isInteger(groupId) && groupId > 0),
-      )].sort((left, right) => left - right);
-      for (const groupId of enrollmentGroupIds) {
-        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
-        const leadsInGroup = leads.filter(
-          (lead) => Number(lead.enrolledGroupId) === Number(groupId),
-        );
-        for (const lead of leadsInGroup) {
-          await validateEnrollmentGroup(groupId, Number(lead.id));
-        }
-      }
-
       if (leadIds.length > 0) {
         await query(
           `INSERT INTO academy_lead_stage_history
@@ -1096,13 +1078,6 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
            WHERE id = ANY($2::int[])`,
           [target.code, leadIds],
         );
-        for (const lead of leads) {
-          await handleLeadStatusEffects(
-            req,
-            { ...lead, statusCode: target.code },
-            String(source.code),
-          );
-        }
       }
 
       await query(`DELETE FROM academy_lead_statuses WHERE id = $1`, [id]);

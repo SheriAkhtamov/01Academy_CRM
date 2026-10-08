@@ -82,20 +82,15 @@ describe('employee sales funnel assignments', () => {
     expect(query.mock.calls.some(([statement]) => statement.startsWith('DELETE'))).toBe(false);
   });
 
-  it('always assigns both protected workflow funnels to a full-cycle employee', async () => {
+  it('honors explicit funnel selection independently of the employee KPI role', async () => {
     const query = vi.fn(async (statement: string) => {
-      if (statement.includes('FROM academy_sales_kpi_assignments')) return { rows: [{ role: 'full_cycle_3500' }] };
-      if (statement.includes("workflow_role IN ('hunter', 'closer')")) return { rows: [{ id: 1 }, { id: 2 }] };
-      if (statement.includes('id = ANY')) return { rows: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+      if (statement.includes('id = ANY')) return { rows: [{ id: 3 }] };
       if (statement.includes('COUNT(*)::int AS count')) return { rows: [{ count: 0 }] };
       return { rows: [], rowCount: 1 };
     });
-
-    await expect(syncUserSalesFunnels({ query } as never, 7, ['sales'], [3])).resolves.toEqual([3, 1, 2]);
-    expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO academy_sales_funnel_users'),
-      [7, [3, 1, 2]],
-    );
+    await expect(syncUserSalesFunnels({ query } as never, 7, ['sales'], [3])).resolves.toEqual([3]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO academy_sales_funnel_users'), [7, [3]]);
+    expect(query.mock.calls.some(([sql]) => sql.includes('workflow_role') || sql.includes('sales_kpi_assignments'))).toBe(false);
   });
 
   it('keeps the funnel checklist inside the employee dialog and removes obsolete panels', () => {

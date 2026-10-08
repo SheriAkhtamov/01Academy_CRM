@@ -19,6 +19,7 @@ import { attachmentUploadLimiter } from '../middleware/rateLimiter';
 import { sendHttpError } from '../lib/http-errors';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { notifyTelegramTaskProgress } from '../services/telegram-task-reminders';
+import { removeCommittedUpload } from '../lib/retained-uploads';
 
 export function createBoardRouter(authorize: RequestHandler) {
 const router = Router();
@@ -66,6 +67,15 @@ const removeUploadedFile = async (filePath?: string) => {
         await fs.promises.unlink(filePath);
     } catch (error: any) {
         if (error?.code !== 'ENOENT') logger.error('Failed to remove orphaned board upload', { error, filePath });
+    }
+};
+
+const removeCommittedAttachment = async (filePath: string) => {
+    try {
+        await removeCommittedUpload(filePath, path.dirname(BOARD_UPLOAD_DIR));
+    } catch (error) {
+        // A failed retention leaves the live file intact for an in-flight dump.
+        logger.error('Failed to retain and remove deleted board attachment', { error, filePath });
     }
 };
 
@@ -144,17 +154,18 @@ const resolveAssignee = async (
     actor: User,
     options: { forceSelfForStaff: boolean },
 ): Promise<AssigneeResolution> => {
-    if (!hasAssigneeValue(rawAssigneeId) && options.forceSelfForStaff) {
+    if (rawAssigneeId === undefined && options.forceSelfForStaff) {
         return { assigneeId: actor.id };
     }
 
+    if (!hasAssigneeValue(rawAssigneeId)) return { error: { code: 400, message: 'taskAssigneeRequired' } };
     const requestedAssigneeId = parseAssigneeId(rawAssigneeId);
     if (hasAssigneeValue(rawAssigneeId) && requestedAssigneeId === null) {
         return { error: { code: 400, message: 'Invalid assignee' } };
     }
     if (requestedAssigneeId !== null) {
         const assignee = await storage.getUser(requestedAssigneeId);
-        if (!assignee || assignee.isActive === false) {
+        if (!assignee || !assignee.isActive || assignee.isArchived) {
             return { error: { code: 400, message: 'Assignee not found' } };
         }
     }
@@ -254,6 +265,19 @@ router.get('/tasks/:id', async (req, res) => {
     } catch (error) {
         logger.error('Failed to fetch task detail', { error, taskId: req.params.id });
         res.status(500).json({ error: 'Failed to fetch task' });
+    }
+});
+
+router.get('/academy-tasks/:id', async (req, res) => {
+    try {
+        const id = parseId(req.params.id);
+        if (!id) return res.status(400).json({ error: 'Invalid task id' });
+        const task = await storage.board.getTaskByAcademyTaskId(id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (!canReadTask(req.user!, task)) return res.status(403).json({ error: 'accessDenied' });
+        res.json({ id: task.id });
+    } catch (error) {
+        return sendHttpError(res, error, 'Failed to fetch task');
     }
 });
 
@@ -563,7 +587,11 @@ router.delete('/tasks/:id', async (req, res) => {
             return res.status(403).json({ error: 'onlyCreatorCanManageTask' });
         }
 
-        await storage.board.deleteTask(id, req.user!.id);
+        const fileNames = await storage.board.deleteTask(id, req.user!.id);
+        for (const fileName of fileNames ?? []) {
+            const filePath = resolveStoredAttachmentPath(fileName);
+            if (filePath) await removeCommittedAttachment(filePath);
+        }
         broadcastTask('BOARD_TASK_DELETED', task);
         res.json({ success: true });
     } catch (error) {
@@ -850,13 +878,7 @@ router.delete('/attachments/:id', async (req, res) => {
 
         await storage.board.deleteAttachment(id);
         const filePath = resolveStoredAttachmentPath(attachment.fileName);
-        if (filePath) {
-            await fs.promises.unlink(filePath).catch((error: any) => {
-                if (error?.code !== 'ENOENT') {
-                    logger.error('Failed to delete attachment file', { error, attachmentId: id });
-                }
-            });
-        }
+        if (filePath) await removeCommittedAttachment(filePath);
         if (task) broadcastTask('BOARD_TASK_UPDATED', task);
         res.json({ success: true });
     } catch (error) {

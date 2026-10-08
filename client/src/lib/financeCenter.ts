@@ -76,7 +76,7 @@ export const financeCopy = (t: Translate) => ({
   pending: t('financeCenterPending'),
   unconfigured: t('financeCenterUnconfigured'),
   approved: t('financeCenterApproved'),
-  cancelled: t('financeCenterCancelled'),
+  cancelled: t('cancelled'),
   refunded: t('financeCenterRefunded'),
   recorded: t('financeCenterRecorded'),
   marketingSource: t('financeCenterMarketingSource'),

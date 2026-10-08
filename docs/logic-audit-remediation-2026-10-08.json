@@ -1,0 +1,474 @@
+{
+  "date": "2026-10-08",
+  "sourceAuditCommit": "b00f4df45f6f4ad1e7042f4d02b91bef005def64",
+  "goal": "Исправить все 48 находок и убрать бизнес-логику этапов, кроме приёма на первых этапах.",
+  "userDecisions": {
+    "qualification": "Первый ручной выход с первого этапа внутри той же воронки. Учитывается по паре lead/funnel; межворонковый перевод не квалифицирует; агрегаты distinct lead.",
+    "dashboards": "Удалить показатели, привязанные к конкретным этапам/воронкам; оставить факты реальных действий и сущностей.",
+    "tasks": "Создание требует назначенного исполнителя."
+  },
+  "findings": [
+    {
+      "id": "IDENTITY-01",
+      "priority": "P1",
+      "title": "Отзыв сессий и смена пароля не прекращают доставку закрытых данных в уже открытый WebSocket",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/websocket-revocation.test.ts",
+        "tests/auth.session.test.ts"
+      ]
+    },
+    {
+      "id": "INT-1",
+      "priority": "P1",
+      "title": "Проверка доступа к записи/заметке обходит видимость чужой воронки",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/telephony-recording-access.test.ts"
+      ]
+    },
+    {
+      "id": "UI-1",
+      "priority": "P1",
+      "title": "Рефетч сессии размонтирует страницы и теряет незаписанные изменения",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/router-draft-preservation.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "F1",
+      "priority": "P1",
+      "title": "Оплата одного ребёнка подтверждает счёт другого ребёнка того же лида",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/payment-party-integrity.test.ts"
+      ]
+    },
+    {
+      "id": "METRIC-1",
+      "priority": "P2",
+      "title": "Переход в «Не сейчас» ошибочно считается квалификацией и целевым отказом",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/generic-stage-qualification.test.ts",
+        "tests/generic-stage-migration.test.ts",
+        "tests/sales-dashboard-metrics.test.ts"
+      ]
+    },
+    {
+      "id": "METRIC-2",
+      "priority": "P2",
+      "title": "График «Обработано» считает действия вместо уникальных лидов",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/sales-operational-series.test.ts",
+        "tests/sales-dashboard-metrics.test.ts"
+      ]
+    },
+    {
+      "id": "METRIC-3",
+      "priority": "P2",
+      "title": "Пустая оценка NPS становится оценкой 0",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-dataset-slices.test.ts"
+      ]
+    },
+    {
+      "id": "DATA-1",
+      "priority": "P2",
+      "title": "Миграции и runtime используют разные подключения при DATABASE_URL",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/migration-connection.test.ts"
+      ]
+    },
+    {
+      "id": "DATA-2",
+      "priority": "P2",
+      "title": "Резервная копия может успешно публиковаться с отсутствующими файлами, на которые ссылается её дамп",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/backup-upload-consistency.test.ts",
+        "tests/retained-uploads.test.ts",
+        "tests/deploy-backup-consistency.test.ts"
+      ]
+    },
+    {
+      "id": "DATA-3",
+      "priority": "P2",
+      "title": "Удаление задачи удаляет метаданные вложений, но навсегда оставляет сами файлы",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/board-task-delete-storage.test.ts",
+        "tests/board-task-file-cleanup.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-02",
+      "priority": "P2",
+      "title": "Неверный текущий пароль или пароль добавляемого аккаунта разлогинивает действующего пользователя",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/session-expiry.dom.test.ts",
+        "tests/auth.session.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-03",
+      "priority": "P2",
+      "title": "Архивирование/удаление сотрудника не передаёт его задачи действующей доски",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/user.routes.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-04",
+      "priority": "P2",
+      "title": "Сохранение своего телефона рассинхронизирует профиль и карточку сотрудника",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/user-phone-sync.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-05",
+      "priority": "P2",
+      "title": "Выбранное «Не назначен» при создании задачи превращается в назначение на себя",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/board.routes.test.ts",
+        "tests/payment-party-integrity.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-06",
+      "priority": "P2",
+      "title": "Уведомление об academy_task открывает другую задачу board_tasks с тем же числовым id",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/notification-destination.test.ts"
+      ]
+    },
+    {
+      "id": "IDENTITY-07",
+      "priority": "P2",
+      "title": "После создания группового чата или первого сообщения сотрудника невозможно удалить через UI",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/chat-group.storage.test.ts",
+        "tests/user.routes.test.ts"
+      ]
+    },
+    {
+      "id": "INT-2",
+      "priority": "P2",
+      "title": "Второй входящий звонок лишает управления текущим разговором",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/telephony-session-isolation.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "INT-3",
+      "priority": "P2",
+      "title": "Для известного UUID без записи возвращается запись другого звонка",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/telephony-recording.test.ts"
+      ]
+    },
+    {
+      "id": "INT-4",
+      "priority": "P2",
+      "title": "Instagram помечает сообщения прочитанными до загрузки переписки",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/instagram-read-boundary.dom.test.tsx",
+        "tests/instagram-read.routes.test.ts"
+      ]
+    },
+    {
+      "id": "UI-2",
+      "priority": "P2",
+      "title": "Форма настроек аккаунта стирает черновик при фоновом обновлении пользователя",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/settings-draft-preservation.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "UI-3",
+      "priority": "P2",
+      "title": "Глобальный поиск скрывает собственные новые лиды при автоматическом распределении",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/search-owned-leads.test.ts"
+      ]
+    },
+    {
+      "id": "UI-4",
+      "priority": "P2",
+      "title": "«Сегодня» в маркетинге остаётся вчерашним после повторного открытия",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/marketing-admin-alerts.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "UI-5",
+      "priority": "P2",
+      "title": "Аудит показывает чужое имя вместо назначенного преподавателя",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/audit-teacher-identity.test.ts"
+      ]
+    },
+    {
+      "id": "UI-6",
+      "priority": "P2",
+      "title": "Фильтр дат истории использует UTC сутки вместо суток академии",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/audit-route-filter.test.ts"
+      ]
+    },
+    {
+      "id": "UI-8",
+      "priority": "P2",
+      "title": "Кнопки проблем на dashboard администрации ведут в запрещённый модуль",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/marketing-admin-alerts.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "S1",
+      "priority": "P2",
+      "title": "Повторный вход в стадию «Записан на курс» дублирует задолженность",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/generic-stage-migration.test.ts",
+        "tests/academy.routes.logic.test.ts"
+      ]
+    },
+    {
+      "id": "S2",
+      "priority": "P2",
+      "title": "Архивирование использует устаревшие права и стадию лида",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy.routes.logic.test.ts"
+      ]
+    },
+    {
+      "id": "S3",
+      "priority": "P2",
+      "title": "Первый контакт откатывает конкурентно изменённую стадию",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy.routes.logic.test.ts"
+      ]
+    },
+    {
+      "id": "S4",
+      "priority": "P2",
+      "title": "Массовая реактивация резервов переполняет учебную группу",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy.routes.logic.test.ts",
+        "tests/academy-scheduling-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "S5",
+      "priority": "P2",
+      "title": "Можно сбросить отметку нового лида в недоступной очереди",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy.routes.logic.test.ts"
+      ]
+    },
+    {
+      "id": "S6",
+      "priority": "P2",
+      "title": "Архив предлагает стадии восстановления от другой воронки",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/generic-funnel-ui.dom.test.tsx",
+        "tests/archive-lead-filters.test.ts"
+      ]
+    },
+    {
+      "id": "PA-1",
+      "priority": "P2",
+      "title": "Восстановленная массовая отметка перезаписывает чужую посещаемость",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/public-attendance.queue.test.ts"
+      ]
+    },
+    {
+      "id": "PA-2",
+      "priority": "P2",
+      "title": "Коррекция после потерянного ответа конфликтует с собственным сохранением и теряется",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/public-attendance.queue.test.ts"
+      ]
+    },
+    {
+      "id": "PA-3",
+      "priority": "P2",
+      "title": "Две вкладки стирают сохранённые очереди посещаемости друг друга",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/public-attendance.queue.test.ts",
+        "tests/public-attendance.dom.test.tsx"
+      ]
+    },
+    {
+      "id": "L1",
+      "priority": "P2",
+      "title": "Собственные уроки группы блокируют сохранение расписания и мешают назначению преподавателя",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-scheduling-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L2",
+      "priority": "P2",
+      "title": "Возобновление ученика проверяет только основную группу и может переполнить дополнительные",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-learning-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L3",
+      "priority": "P2",
+      "title": "Изменение статуса ученика в разделе продаж всегда заканчивается 403 для обычного менеджера",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-learning-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L4",
+      "priority": "P2",
+      "title": "Generic PATCH lesson обходит безопасный перенос проведённого занятия и оставляет attendance на будущей дате",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-learning-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L5",
+      "priority": "P2",
+      "title": "Teacher module выдаёт финансовые поля ученика, которые teacher profile намеренно скрывает",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-dataset-slices.test.ts"
+      ]
+    },
+    {
+      "id": "L6",
+      "priority": "P2",
+      "title": "Архивирование ресурсов игнорирует будущие демо-уроки и оставляет их на неактивных филиалах/курсах/кабинетах",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-resource-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L7",
+      "priority": "P2",
+      "title": "Кабинет с существующим демо-уроком можно перевести в другой филиал, нарушив связь demo.schoolId/room.schoolId",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/academy-resource-audit-fixes.test.ts"
+      ]
+    },
+    {
+      "id": "L8",
+      "priority": "P2",
+      "title": "Sales calendar зависит от часового пояса устройства: сдвигает колонку урока и исключает часть демо из API диапазона",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/sales-schedule-timezone.test.ts"
+      ]
+    },
+    {
+      "id": "F2",
+      "priority": "P2",
+      "title": "Изменение уже назначенного оклада всегда отклоняется",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/finance.routes.test.ts"
+      ]
+    },
+    {
+      "id": "F3",
+      "priority": "P2",
+      "title": "Параллельное редактирование меняет сумму уже оплаченного расхода",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/finance.routes.test.ts"
+      ]
+    },
+    {
+      "id": "F4",
+      "priority": "P2",
+      "title": "Архивирование сотрудника скрывает его прошлые зарплаты и меняет начисленные расходы",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/finance-history.test.ts",
+        "tests/finance.routes.test.ts"
+      ]
+    },
+    {
+      "id": "F5",
+      "priority": "P2",
+      "title": "Журнал финансов обрезается до250 операций без загрузки остальных",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/ux-audit-finance.dom.test.tsx",
+        "tests/finance.routes.test.ts"
+      ]
+    },
+    {
+      "id": "DATA-4",
+      "priority": "P3",
+      "title": "CRM WebSocket gateway уничтожает подключение Vite HMR",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/websocket-revocation.test.ts"
+      ]
+    },
+    {
+      "id": "UI-7",
+      "priority": "P3",
+      "title": "Фильтр «Архивирование» включает восстановление из архива",
+      "status": "verified_locally",
+      "evidence": [
+        "tests/audit-route-filter.test.ts"
+      ]
+    }
+  ],
+  "releaseStatus": "All changes passed local and isolated PostgreSQL validation. Production deployment is tracked separately.",
+  "validation": {
+    "vitest": {
+      "files": 256,
+      "tests": 2055,
+      "passed": true
+    },
+    "check": "passed",
+    "build": "passed",
+    "postgres": "All 131 registered migrations and populated conversion passed on isolated PostgreSQL 17.",
+    "http": "Actual manual-move, attendance, transfer, archive, restore, sibling payment and concurrent claim handlers passed on isolated PostgreSQL 17.",
+    "secrets": "passed"
+  }
+}

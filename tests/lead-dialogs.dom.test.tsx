@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConfirmDialog from '../client/src/components/ConfirmDialog';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
+import { i18n } from '../client/src/lib/i18n';
 
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
@@ -194,9 +195,9 @@ describe('lead modal behavior', () => {
 
     await screen.findByRole('heading', { name: 'Alexandra Zadorozhnaya' });
     fireEvent.click(await screen.findByRole('button', {
-      name: /Record another payment|Зафиксировать следующую оплату/,
+      name: i18n.t('recordPayment'),
     }));
-    expect(await screen.findByRole('dialog', { name: /Record another payment|Зафиксировать следующую оплату/ })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: i18n.t('recordPayment') })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', {
       name: /Confirm Payment|Подтвердить оплату/,
     }));
@@ -232,7 +233,7 @@ it('preselects the student whose profile opened the lead payment form', async ()
       managers={[{ id: 1, fullName: 'Manager' }]} currentUserId={1}
       leadStatusName={(code) => code} dateTime={(value) => value ?? ''} money={(value) => String(value ?? '')} onChanged={vi.fn()} />
   </QueryClientProvider>);
-  fireEvent.click(await screen.findByRole('button', { name: /Record another payment|Зафиксировать следующую оплату/ }));
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('recordPayment') }));
   const studentPicker = await screen.findByRole('combobox', { name: /Student receiving the payment|Ученик, за которого вносится оплата/ });
   expect(studentPicker.textContent).toBe('Second child');
   const amount = screen.getByRole('textbox', { name: /^(Amount|Сумма)$/ }) as HTMLInputElement;

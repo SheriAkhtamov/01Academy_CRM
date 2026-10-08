@@ -16,6 +16,7 @@ export type ActorContext = {
     hunterFunnelId: number | null;
     closerFunnelId: number | null;
     defaultFunnelId?: number | null;
+    defaultInitialStageCode?: string | null;
     assignedFunnelIds: number[];
     autoLeadDistributionEnabled?: boolean;
   };

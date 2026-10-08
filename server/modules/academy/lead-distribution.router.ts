@@ -27,7 +27,6 @@ const eligibleManagersSql = `
   JOIN users employee ON employee.id = assignment.user_id
   WHERE funnel.is_default = true
     AND funnel.is_active = true
-    AND funnel.workflow_role = 'hunter'
     AND employee.is_active = true
     AND employee.is_archived = false
     AND (
@@ -39,7 +38,6 @@ const eligibleManagersSql = `
           AND access.module = 'sales'
       )
     )
-    AND academy_kpi_employee_role(employee.id) IN ('hunter', 'full_cycle', 'full_cycle_3500')
   ORDER BY employee.id`;
 
 export const readLeadDistributionSettings = async (): Promise<LeadDistributionSettings> => {
@@ -52,11 +50,10 @@ export const readLeadDistributionSettings = async (): Promise<LeadDistributionSe
      LEFT JOIN academy_sales_funnels funnel
        ON funnel.is_default = true
       AND funnel.is_active = true
-      AND funnel.workflow_role = 'hunter'
      LEFT JOIN academy_leads lead
        ON lead.funnel_id = funnel.id
       AND lead.manager_id IS NULL
-      AND lead.status_code = 'new_request'
+      AND lead.status_code = funnel.initial_stage_code
       AND lead.is_archived = false
      GROUP BY company.auto_lead_distribution_enabled, funnel.id, funnel.name`,
   );
@@ -127,11 +124,10 @@ export const registerAcademyLeadDistributionRoutes = (router: ReturnType<typeof 
                FROM academy_leads lead
                JOIN academy_sales_funnels funnel ON funnel.id = lead.funnel_id
                WHERE lead.manager_id IS NULL
-                 AND lead.status_code = 'new_request'
+                 AND lead.status_code = funnel.initial_stage_code
                  AND lead.is_archived = false
                  AND funnel.is_default = true
                  AND funnel.is_active = true
-                 AND funnel.workflow_role = 'hunter'
                ORDER BY lead.created_at, lead.id
                FOR UPDATE OF lead
              ), assigned AS (

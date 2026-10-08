@@ -12,3 +12,9 @@ it('opens the related lead, student and task while respecting module access', ()
   expect(notificationDestination({ ...base, relatedEntityType: 'lead' }, { ...user, module: 'teacher', modules: ['teacher'] })).toBeNull();
   expect(notificationDestination({ ...base, relatedEntityType: 'lead', relatedEntityId: -1 }, user)).toBeNull();
 });
+
+it('preserves the task namespace for legacy academy notifications', () => {
+  const notification = { id: 1, title: 'Escalation', isRead: false, message: null, relatedEntityId: 55 };
+  expect(notificationDestination({ ...notification, relatedEntityType: 'academy_task' }, user)).toBe('/tasks?academyTask=55');
+  expect(notificationDestination({ ...notification, relatedEntityType: 'board_task' }, user)).toBe('/tasks?task=55');
+});

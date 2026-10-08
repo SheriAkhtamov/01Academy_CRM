@@ -22,8 +22,9 @@ import { sendHttpError } from '../lib/http-errors';
 import { registerUserArchiveRoutes } from './user-archive.routes';
 import { parseUserPhotoUpload, retainUploadedUserPhoto, cleanupUploadedUserPhoto } from '../middleware/user-photo.middleware';
 import { registerUserPhotoRoutes } from './user-photo.routes';
-import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
+import { closeEmployeeSalaryAccrual } from '../services/finance-history';
+import { disconnectRealtimeUser } from '../realtime/realtime-hub';
 import { parseEmployeeKpiRole, readEmployeeKpiAssignments, setEmployeeKpiAssignment } from '../infrastructure/sales-kpi/employee-assignments';
 import {
     getActiveSalesManagerForFunnelTransfer as getActiveSalesManagerForTransfer,
@@ -320,24 +321,39 @@ const getAssignedWorkload = async (managerId: number, executor: QueryExecutor = 
         lead_count: number | string;
         student_count: number | string;
         open_task_count: number | string;
+        board_task_count: number | string;
     }>(
         `SELECT
            (SELECT COUNT(*)::int FROM academy_leads WHERE manager_id = $1) AS lead_count,
            (SELECT COUNT(*)::int FROM academy_students WHERE manager_id = $1) AS student_count,
-           (SELECT COUNT(*)::int FROM academy_tasks WHERE responsible_id = $1 AND status <> 'done') AS open_task_count`,
+           (SELECT COUNT(*)::int FROM academy_tasks WHERE responsible_id = $1 AND status <> 'done') AS open_task_count,
+           (SELECT COUNT(*)::int FROM board_tasks WHERE (creator_id = $1 OR assignee_id = $1) AND status <> 'accepted') AS board_task_count`,
         [managerId],
     );
     const row = result.rows[0];
     const leadCount = Number(row?.lead_count ?? 0);
     const studentCount = Number(row?.student_count ?? 0);
-    const openTaskCount = Number(row?.open_task_count ?? 0);
+    const boardTaskCount = Number(row?.board_task_count ?? 0);
+    const openTaskCount = Number(row?.open_task_count ?? 0) + boardTaskCount;
     return {
         leadCount,
         studentCount,
         openTaskCount,
+        boardTaskCount,
         salesResponsibilityCount: leadCount + studentCount,
         offboardingResponsibilityCount: leadCount + studentCount + openTaskCount,
     };
+};
+
+const getActiveEmployeeForWorkTransfer = async (userId: number, executor: QueryExecutor, fromUserId?: number) => {
+    if (fromUserId && (await getAssignedWorkload(fromUserId, executor)).salesResponsibilityCount > 0) {
+        return getActiveSalesManagerForTransfer(userId, executor, fromUserId);
+    }
+    const result = await executor.query<{ id: number; full_name: string }>(
+        'SELECT id, full_name FROM users WHERE id = $1 AND is_active = true AND is_archived = false FOR UPDATE',
+        [userId],
+    );
+    return result.rows[0] ?? null;
 };
 
 const transferAssignedSalesLeads = async ({
@@ -403,6 +419,26 @@ const transferAssignedSalesLeads = async ({
             `,
             [toManagerId, leadIds, fromManagerId, transferAllOpenTasks, studentIds],
         );
+    let boardTaskCount = 0;
+    if (transferAllOpenTasks) {
+        const transferredBoardTasks = await client.query<{ id: number }>(
+            `UPDATE board_tasks
+             SET creator_id = CASE WHEN creator_id = $1 THEN $2 ELSE creator_id END,
+                 assignee_id = CASE WHEN assignee_id = $1 THEN $2 ELSE assignee_id END,
+                 updated_at = NOW()
+             WHERE status <> 'accepted' AND (creator_id = $1 OR assignee_id = $1)
+             RETURNING id`,
+            [fromManagerId, toManagerId],
+        );
+        boardTaskCount = transferredBoardTasks.rowCount ?? 0;
+        if (boardTaskCount > 0) await client.query(
+            `INSERT INTO board_task_activity (task_id, actor_id, type, from_value, to_value, meta)
+             SELECT id, $3, 'assigned', $1::text, $2::text,
+                    jsonb_build_object('fromUserId', $1::int, 'toUserId', $2::int)
+             FROM board_tasks WHERE id = ANY($4::int[])`,
+            [fromManagerId, toManagerId, changedBy, transferredBoardTasks.rows.map((task) => task.id)],
+        );
+    }
     if (leadIds.length > 0) await client.query(
             `INSERT INTO academy_lead_assignment_history
               (lead_id, from_manager_id, to_manager_id, changed_by, comment)
@@ -420,7 +456,7 @@ const transferAssignedSalesLeads = async ({
     return {
         leadCount: leadIds.length,
         studentCount: studentIds.length,
-        taskCount: taskUpdate.rowCount ?? 0,
+        taskCount: (taskUpdate.rowCount ?? 0) + boardTaskCount,
     };
 };
 
@@ -905,7 +941,7 @@ registerUserArchiveRoutes(router, {
     parsePositiveId,
     userAccessAdvisoryLock: USER_ACCESS_ADVISORY_LOCK,
     getAssignedWorkload,
-    getActiveSalesManagerForTransfer,
+    getActiveSalesManagerForTransfer: getActiveEmployeeForWorkTransfer,
     transferAssignedSalesLeads,
     syncAcademyTeacherForUser,
 });
@@ -1090,7 +1126,7 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
                             leadCount: responsibilityCount,
                         });
                     }
-                    const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
+                    const transferTarget = await getActiveEmployeeForWorkTransfer(transferManagerId, client, id);
                     if (!transferTarget) {
                         throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
                     }
@@ -1246,7 +1282,7 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                         leadCount: workload.offboardingResponsibilityCount,
                     });
                 }
-                const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
+                const transferTarget = await getActiveEmployeeForWorkTransfer(transferManagerId, client, id);
                 if (!transferTarget) {
                     throw Object.assign(new Error('Active sales manager is required'), { statusCode: 400 });
                 }
@@ -1264,6 +1300,14 @@ router.delete('/:id', requireAdministration, async (req, res) => {
                 "UPDATE academy_teachers SET status = 'dismissed', updated_at = NOW() WHERE user_id = $1",
                 [id],
             );
+            await revokeUserAuthenticationArtifacts(id, { executor: client });
+            await client.query(
+                'UPDATE chat_groups SET creator_name = (SELECT full_name FROM users WHERE id = $1) WHERE created_by = $1', [id],
+            );
+            await client.query(
+                'UPDATE chat_group_messages SET sender_name = (SELECT full_name FROM users WHERE id = $1) WHERE sender_id = $1', [id],
+            );
+            await closeEmployeeSalaryAccrual(client, id);
             await client.query('DELETE FROM users WHERE id = $1', [id]);
             await client.query('COMMIT');
         } catch (error) {
@@ -1273,6 +1317,7 @@ router.delete('/:id', requireAdministration, async (req, res) => {
             client.release();
         }
 
+        disconnectRealtimeUser(id);
         await storage.createAuditLog({
             userId: req.user!.id,
             action: 'DELETE_USER',

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ broadcast: vi.fn() }));
 
+vi.mock('../server/services/meta-marketing', () => ({ enqueueMetaLeadIntakeSafely: vi.fn() }));
+
 vi.mock('../server/realtime/realtime-hub', () => ({
   publishRealtimeEvent: mocks.broadcast,
 }));
@@ -109,7 +111,7 @@ describe('lead import normalization', () => {
     });
 
     expect(summary).toMatchObject({ alreadyImported: 1, mergedArchived: 1 });
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("SET status_code = 'new_request'"), [42]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('SET status_code = (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = lead.funnel_id)'), [42]);
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining("SET outcome = 'merged'"),
       [7],

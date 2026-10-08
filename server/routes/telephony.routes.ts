@@ -1,3 +1,4 @@
+import { enqueueMetaLeadIntakeSafely } from '../services/meta-marketing';
 import { timingSafeEqual } from 'crypto';
 import { Router, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -198,6 +199,7 @@ const ensureContactByPhone = async (
   const normalized = normalizeOnlinePbxPhone(phone)!;
   const digits = digitsOnly(normalized);
   const client = await pool.connect();
+  let committedIntakeId: number | null = null;
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`telephony-lead:${digits}`]);
@@ -244,7 +246,7 @@ const ensureContactByPhone = async (
          contact_name, phone, source_id, funnel_id, status_code, manager_id, language, languages,
          first_contact_channel, created_by
        )
-       VALUES ($1,$2,$3,$4,'new_request',$5,'',ARRAY[]::text[],'call',$6)
+       VALUES ($1,$2,$3,$4,(SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4),$5,'',ARRAY[]::text[],'call',$6)
        RETURNING id, contact_name AS "contactName"`,
       [
         contactName,
@@ -266,10 +268,11 @@ const ensureContactByPhone = async (
     await client.query(
       `INSERT INTO academy_lead_stage_history
          (lead_id, from_status_code, to_status_code, changed_by, comment)
-       VALUES ($1,NULL,'new_request',$2,$3)`,
+       VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,$3)`,
       [lead.id, actorId, `Автоматически из ${directionLabel} звонка`],
     );
     await client.query('COMMIT');
+    committedIntakeId = Number(lead.id);
     return {
       type: 'lead',
       id: lead.id,
@@ -284,6 +287,7 @@ const ensureContactByPhone = async (
     throw error;
   } finally {
     client.release();
+    if (committedIntakeId) await enqueueMetaLeadIntakeSafely(committedIntakeId);
   }
 };
 
@@ -1293,9 +1297,7 @@ export const parseTelephonyCallNote = (value: unknown): string | null | undefine
 };
 
 /**
- * A note is written by whoever handled the conversation, so the same rule that
- * decides who may listen to the recording decides who may annotate it: the
- * manager on the call, leadership, or the sales owner of an unclaimed lead.
+ * Notes use the same visibility boundary as the journal and recordings.
  */
 router.put('/calls/:id/note', requireAuth, asyncRoute(async (req, res) => {
   const callId = Number(req.params.id);

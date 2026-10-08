@@ -887,172 +887,68 @@ const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
   };
 };
 
-/**
- * Every pipeline stage becomes its own Meta event, so a campaign can be optimised for
- * whichever stage matters. Stage names are read live from the CRM, so adding or removing
- * a stage changes what Meta offers without a code change.
- */
-export const enqueueMetaConversionForLead = async (lead: JsonObject, previousStatus?: string | null) => {
-  const leadId = Number(lead?.id);
-  const statusCode = cleanText(lead?.statusCode ?? lead?.status_code, 80);
+const deliveredLegacyIntakeSql = `EXISTS (
+ SELECT 1 FROM meta_conversion_events delivered
+ JOIN academy_lead_stage_history initial ON initial.lead_id = delivered.lead_id
+ WHERE delivered.lead_id = lead.id AND delivered.status = 'sent' AND initial.from_status_code IS NULL
+   AND delivered.crm_stage = initial.to_status_code
+   AND delivered.event_id = 'crm:' || lead.id || ':' || initial.to_status_code
+)`;
+
+/** The first intake emits one stable creation fact, independently of current stage labels. */
+export const enqueueMetaLeadIntake = async (leadId: number) => {
   if (!Number.isSafeInteger(leadId) || leadId <= 0) return null;
-  if (!statusCode || previousStatus === statusCode) return null;
-
-  const { rows } = await pool.query<MetaLeadIdentityRow & {
-    stage_name: string | null;
-    meta_event_value: string | number | null;
-    paid_amount: string | number | null;
-  }>(
-    `SELECT attribution.id AS attribution_id,
-            attribution.leadgen_id,
-            attribution.ad_id,
-            attribution.campaign_id,
-            attribution.hook_name,
-            lead.phone,
-            lead.contact_name,
-            status.name AS stage_name,
-            status.meta_event_value,
-            paid.amount_uzs AS paid_amount
+  const { rows: [row] } = await pool.query<MetaLeadIdentityRow & { created_at: Date | string }>(
+    `SELECT lead.created_at, lead.phone, lead.contact_name, attribution.id AS attribution_id,
+      attribution.leadgen_id, attribution.ad_id, attribution.campaign_id, attribution.hook_name
      FROM academy_leads lead
-     LEFT JOIN academy_lead_statuses status ON status.code = lead.status_code
-     LEFT JOIN LATERAL (
-       SELECT inner_attribution.id, inner_attribution.leadgen_id, inner_attribution.ad_id,
-              inner_attribution.campaign_id, inner_attribution.hook_name
-       FROM meta_lead_attributions inner_attribution
-       WHERE inner_attribution.lead_id = lead.id
-       ORDER BY inner_attribution.captured_at, inner_attribution.id
-       LIMIT 1
-     ) attribution ON true
-     LEFT JOIN LATERAL (
-       SELECT SUM(payment.amount_uzs)::bigint AS amount_uzs
-       FROM academy_payments payment
-       WHERE payment.lead_id = lead.id AND payment.status = 'paid'
-     ) paid ON true
-     WHERE lead.id = $1`,
-    [leadId],
+     JOIN LATERAL (
+       SELECT id, leadgen_id, ad_id, campaign_id, hook_name FROM meta_lead_attributions
+       WHERE lead_id = lead.id AND leadgen_id IS NOT NULL
+       ORDER BY captured_at, id LIMIT 1
+     ) attribution ON true WHERE lead.id = $1 AND NOT ${deliveredLegacyIntakeSql}`, [leadId],
   );
-  const row = rows[0];
   if (!row) return null;
-
   const identity = resolveMetaLeadIdentity(row);
   if (!identity) return null;
-
-  const eventName = cleanText(row.stage_name, 60) ?? statusCode;
-  const eventId = `crm:${leadId}:${statusCode}`;
-  const paidAmount = Number(row.paid_amount ?? 0);
-  const stageValue = Number(row.meta_event_value ?? 0);
-  const conversionValue = paidAmount > 0 ? paidAmount : (stageValue > 0 ? stageValue : null);
   const customData = buildMetaCrmCustomData(metaConfig().partnerAgent, {
-    crm_stage: statusCode,
-    ...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {}),
-    ...(row.stage_name ? { crm_stage_name: cleanText(row.stage_name, 200) } : {}),
     ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
     ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),
     ...(row.hook_name ? { creative_hook: String(row.hook_name) } : {}),
   });
-
-  const { rows: inserted } = await pool.query(
+  const { rows } = await pool.query(
     `INSERT INTO meta_conversion_events
-       (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
-        action_source, messaging_channel, match_key, user_data, custom_data, status, next_attempt_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',NOW())
-     ON CONFLICT (event_id) DO NOTHING
-     RETURNING *`,
-    [
-      leadId,
-      row.attribution_id ?? null,
-      eventId,
-      eventName,
-      statusCode,
-      new Date(),
-      identity.actionSource,
-      identity.messagingChannel,
-      identity.matchKey,
-      JSON.stringify(identity.userData),
-      JSON.stringify(customData),
-    ],
+      (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
+       action_source, messaging_channel, match_key, user_data, custom_data, status, next_attempt_at)
+     VALUES ($1,$2,$3,'Lead',NULL,$4,$5,$6,$7,$8,$9,'pending',NOW())
+     ON CONFLICT (event_id) DO NOTHING RETURNING *`,
+    [leadId, row.attribution_id, `lead-intake:${leadId}`, row.created_at,
+      identity.actionSource, identity.messagingChannel, identity.matchKey,
+      JSON.stringify(identity.userData), JSON.stringify(customData)],
   );
-  return inserted[0] ?? null;
+  return rows[0] ?? null;
 };
 
-export const enqueueRecentMetaCrmHistory = async () => {
+export const enqueueMetaLeadIntakeSafely = async (leadId: number) => {
+  try { return await enqueueMetaLeadIntake(leadId); }
+  catch (error) { logger.error('Failed to enqueue Meta lead intake', { leadId, error }); return null; }
+};
+
+/** Repairs an interrupted intake using creation facts, never editable stage history. */
+export const enqueueRecentMetaLeadIntakes = async () => {
   const config = metaConfig();
   if (!config.capiAccessToken || !config.datasetId) return 0;
-
-  const { rows } = await pool.query<{ count: number }>(
-    `WITH eligible AS (
-       SELECT history.id AS history_id,
-              history.lead_id,
-              history.to_status_code,
-              history.entered_at,
-              status.name AS stage_name,
-              attribution.id AS attribution_id,
-              attribution.leadgen_id,
-              attribution.ad_id,
-              attribution.campaign_id,
-              attribution.hook_name
-       FROM academy_lead_stage_history history
-       JOIN academy_lead_statuses status ON status.code = history.to_status_code
-       JOIN LATERAL (
-         SELECT inner_attribution.id,
-                inner_attribution.leadgen_id,
-                inner_attribution.ad_id,
-                inner_attribution.campaign_id,
-                inner_attribution.hook_name,
-                inner_attribution.captured_at
-         FROM meta_lead_attributions inner_attribution
-         WHERE inner_attribution.lead_id = history.lead_id
-           AND inner_attribution.leadgen_id ~ '^[0-9]{15,16}$'
-         ORDER BY inner_attribution.captured_at, inner_attribution.id
-         LIMIT 1
-       ) attribution ON true
-       WHERE history.entered_at >= NOW() - INTERVAL '7 days'
-         AND history.entered_at <= NOW()
-         AND history.entered_at >= attribution.captured_at
-         AND NOT EXISTS (
-           SELECT 1
-           FROM meta_conversion_events existing
-           WHERE existing.lead_id = history.lead_id
-             AND existing.crm_stage = history.to_status_code
-             AND existing.custom_data ->> 'event_source' = 'crm'
-             AND NULLIF(BTRIM(existing.custom_data ->> 'lead_event_source'), '') IS NOT NULL
-             AND existing.event_time BETWEEN history.entered_at - INTERVAL '2 minutes'
-                                         AND history.entered_at + INTERVAL '2 minutes'
-         )
-     ), inserted AS (
-       INSERT INTO meta_conversion_events
-         (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
-          action_source, messaging_channel, match_key, user_data, custom_data,
-          status, next_attempt_at)
-       SELECT eligible.lead_id,
-              eligible.attribution_id,
-              'crm-history:' || eligible.history_id,
-              LEFT(COALESCE(NULLIF(BTRIM(eligible.stage_name), ''), eligible.to_status_code), 60),
-              eligible.to_status_code,
-              eligible.entered_at,
-              'system_generated',
-              NULL,
-              'leadgen_id',
-              jsonb_build_object('lead_id', eligible.leadgen_id),
-              jsonb_strip_nulls(jsonb_build_object(
-                'event_source', 'crm',
-                'lead_event_source', $1::text,
-                'crm_stage', eligible.to_status_code,
-                'crm_stage_name', eligible.stage_name,
-                'source_ad_id', eligible.ad_id,
-                'source_campaign_id', eligible.campaign_id,
-                'creative_hook', eligible.hook_name
-              )),
-              'pending',
-              NOW()
-       FROM eligible
-       ON CONFLICT (event_id) DO NOTHING
-       RETURNING id
-     )
-     SELECT COUNT(*)::int AS count FROM inserted`,
-    [config.partnerAgent],
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT lead.id FROM academy_leads lead
+     WHERE lead.created_at >= NOW() - INTERVAL '7 days' AND lead.created_at <= NOW()
+       AND EXISTS (SELECT 1 FROM meta_lead_attributions WHERE lead_id = lead.id AND leadgen_id IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM meta_conversion_events WHERE event_id = 'lead-intake:' || lead.id)
+       AND NOT ${deliveredLegacyIntakeSql}
+     ORDER BY lead.created_at, lead.id LIMIT 500`,
   );
-  return Number(rows[0]?.count ?? 0);
+  let count = 0;
+  for (const row of rows) if (await enqueueMetaLeadIntakeSafely(Number(row.id))) count += 1;
+  return count;
 };
 
 const claimMetaConversionEvents = async (limit: number): Promise<MetaConversionRow[]> => {
@@ -1073,6 +969,7 @@ const claimMetaConversionEvents = async (limit: number): Promise<MetaConversionR
          SELECT id
          FROM meta_conversion_events
          WHERE status IN ('pending', 'failed')
+           AND crm_stage IS NULL
            AND next_attempt_at <= NOW()
            AND attempt_count < $1
          ORDER BY next_attempt_at, id
@@ -1164,7 +1061,7 @@ export const retryMetaConversionEvent = async (id: number) => {
          last_attempt_at = NULL,
          error_message = NULL,
          updated_at = NOW()
-     WHERE id = $1 AND status <> 'sent'
+     WHERE id = $1 AND status IN ('pending', 'failed') AND crm_stage IS NULL
      RETURNING *`,
     [id],
   );

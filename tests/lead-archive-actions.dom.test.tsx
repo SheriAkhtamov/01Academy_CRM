@@ -220,13 +220,18 @@ describe('lead sheet archive quick actions', () => {
     await waitFor(() => expect(requests[1]?.body).toEqual({ reason: 'no_answer', assignToSelf: true }));
   });
 
-  it('keeps the existing paid-lead archive restriction', async () => {
+  it('allows an ordinary stage named paid to archive with an explicit confirmation', async () => {
     lead = { ...lead, statusCode: 'paid' };
     renderSheet();
     const button = await screen.findByRole('button', { name: i18n.t('archiveLeadShort') }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.title).toBe(i18n.t('paidLeadCannotArchive'));
+    expect(button.disabled).toBe(false);
+    expect(button.title).toBe('');
     expect(requests).toHaveLength(0);
+    const dialog = await openAction();
+    await choose(dialog, 'archiveReason', i18n.t('archiveReasonNoAnswer'));
+    expect(requests).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('sendToArchive') }));
+    await waitFor(() => expect(requests).toEqual([{ url: '/api/academy/leads/15/archive', body: { reason: 'no_answer' } }]));
   });
 
   it('does not lose the archive reason on API failure and can retry', async () => {

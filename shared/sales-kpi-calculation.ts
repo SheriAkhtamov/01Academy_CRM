@@ -151,7 +151,6 @@ function calculateSingleSalesKpi(
     return Boolean(at && timestamp(at) >= timestamp(trial.scheduledAt) && timestamp(at) <= deadline && timestamp(at) <= cutoff);
   };
   const offerRate = ratio(offerTrials.filter((trial) => offerOnTime(trial)).length, offerTrials.length);
-  const qualified = ownedLeads.filter((lead) => inMonth(lead.qualifiedAt));
   const coldLeads = ownedLeads.filter((lead) => lead.isCold && timestamp(lead.trackedAt) <= cutoff);
   const recentContact = (lead: KpiLeadFact) => Boolean(lead.lastContactAt
     && timestamp(lead.lastContactAt) <= cutoff && timestamp(lead.lastContactAt) >= cutoff - config.reactivationDays * 86_400_000);
@@ -177,7 +176,6 @@ function calculateSingleSalesKpi(
   };
   if (role === 'hunter') {
     add('response', responseRate, 100, 'percent', responseDue.map((lead) => leadDetail(lead, lead.firstResponseAt, replied(lead, config.responseTargetMinutes), replyMinutes(lead))), responseDue.filter((lead) => replied(lead, config.responseTargetMinutes)).length, responseDue.length);
-    add('qualified', qualified.length, config.qualifiedTarget || null, 'count', qualified.map((lead) => leadDetail(lead, lead.qualifiedAt)));
     add('bookings', bookings.length, config.volumeTarget, 'count', bookings.map((trial) => trialDetail(trial)));
     add('attendance', attendanceRate, config.conversionTargetPercent, 'percent', dueTrials.map((trial) => trialDetail(trial, attendedAsBooked(trial))), cohortAttendance.length, dueTrials.length);
     add('reactivation', ratio(coldLeads.filter(recentContact).length, coldLeads.length), 100, 'percent', coldLeads.map((lead) => leadDetail(lead, lead.lastContactAt, recentContact(lead))), coldLeads.filter(recentContact).length, coldLeads.length);

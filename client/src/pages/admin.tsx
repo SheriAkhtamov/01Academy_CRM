@@ -85,7 +85,6 @@ import {
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
-import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import {
   createCredentialsSchema,
   createUserSchema,
@@ -129,6 +128,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     action: 'update' | 'delete' | 'archive';
     data?: UserFormValues;
     leadCount: number;
+    requiresSales?: boolean;
   } | null>(null);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
   const [searchTerm, setSearchTerm] = useStickyState('employees-search', '');
@@ -414,9 +414,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       candidate.isActive !== false
       && !candidate.isArchived
       && Number(candidate.id) !== Number(salesModuleTransfer?.user.id ?? selectedUser?.id)
-      && getAssignedModules(candidate).includes('sales')
+      && (salesModuleTransfer?.requiresSales !== false || salesModuleTransfer?.action === 'update' ? getAssignedModules(candidate).includes('sales') : true)
     )),
-    [salesModuleTransfer?.user.id, selectedUser?.id, users],
+    [salesModuleTransfer?.user.id, salesModuleTransfer?.requiresSales, salesModuleTransfer?.action, selectedUser?.id, users],
   );
 
   const openLeadTransferDialog = (pending: typeof salesModuleTransfer) => {
@@ -425,7 +425,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       candidate.isActive !== false
       && !candidate.isArchived
       && Number(candidate.id) !== Number(pending?.user.id)
-      && getAssignedModules(candidate).includes('sales')
+      && (pending?.requiresSales !== false || pending?.action === 'update' ? getAssignedModules(candidate).includes('sales') : true)
     ));
     setSalesLeadTransferManagerId(firstEligibleManager ? String(firstEligibleManager.id) : '');
   };
@@ -433,16 +433,17 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const getAssignedResponsibilityCount = async (employee: any, includeAllOpenTasks = false) => {
     const impact = await getEmployeeResponsibilityImpact(employee.id);
     const fallback = Number(impact?.leadCount ?? 0);
-    return Number(includeAllOpenTasks
-      ? impact?.offboardingResponsibilityCount ?? fallback
-      : impact?.salesResponsibilityCount ?? fallback);
+    return {
+      leadCount: Number(includeAllOpenTasks ? impact?.offboardingResponsibilityCount ?? fallback : impact?.salesResponsibilityCount ?? fallback),
+      requiresSales: Number(impact?.salesResponsibilityCount ?? fallback) > 0,
+    };
   };
 
   const archiveEmployeeAfterImpactCheck = (employee: any) => {
     void getAssignedResponsibilityCount(employee, true)
-      .then((leadCount) => {
+      .then(({ leadCount, requiresSales }) => {
         if (leadCount > 0) {
-          openLeadTransferDialog({ user: employee, action: 'archive', leadCount });
+          openLeadTransferDialog({ user: employee, action: 'archive', leadCount, requiresSales });
           return;
         }
         archiveUserMutation.mutate({ id: employee.id });
@@ -486,7 +487,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       const losesSalesEligibility = !modules.includes('sales');
       if (losesSalesEligibility) {
         try {
-          const leadCount = await getAssignedResponsibilityCount(selectedUser);
+          const { leadCount } = await getAssignedResponsibilityCount(selectedUser);
           if (leadCount > 0) {
             openLeadTransferDialog({ user: selectedUser, action: 'update', data: payload, leadCount });
             return;
@@ -914,16 +915,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
                         {assignedModuleValues.includes('sales') ? (
                           <>
-                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi}
-                              onRoleChange={(role) => {
-                                if (!isFullCycleKpiRole(role)) return;
-                                const workflowFunnelIds = salesFunnels.filter((funnel) => funnel.isActive && funnel.workflowRole)
-                                  .map((funnel) => funnel.id);
-                                userForm.setValue('salesFunnelIds', [...new Set([
-                                  ...userForm.getValues('salesFunnelIds'),
-                                  ...workflowFunnelIds,
-                                ])], { shouldDirty: true, shouldValidate: true });
-                              }} />
+                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} />
                             <FormField
                               control={userForm.control}
                               name="salesFunnelIds"
@@ -1124,7 +1116,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t('salesModuleLeadsTransferTitle')}</DialogTitle>
+            <DialogTitle>{salesModuleTransfer?.requiresSales === false ? t('employeeWorkTransferTitle') : t('salesModuleLeadsTransferTitle')}</DialogTitle>
             <DialogDescription>
               {salesModuleTransfer
                 ? t('salesModuleLeadsTransferDescription')
@@ -1135,7 +1127,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="sales-lead-transfer-manager">
-              {t('responsibleManager')}
+              {salesModuleTransfer?.requiresSales === false ? t('assigneeLabel') : t('responsibleManager')}
             </label>
             <Select
               value={salesLeadTransferManagerId}
@@ -1143,7 +1135,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               disabled={updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending || salesTransferManagers.length === 0}
             >
               <SelectTrigger id="sales-lead-transfer-manager">
-                <SelectValue placeholder={t('selectResponsibleManager')} />
+                <SelectValue placeholder={salesModuleTransfer?.requiresSales === false ? t('employeeWorkTransferRequired') : t('selectResponsibleManager')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -1154,7 +1146,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               </SelectContent>
             </Select>
             {salesTransferManagers.length === 0 ? (
-              <p className="text-sm text-destructive">{t('salesModuleLeadsTransferRequired')}</p>
+              <p className="text-sm text-destructive">{salesModuleTransfer?.requiresSales === false ? t('employeeWorkTransferRequired') : t('salesModuleLeadsTransferRequired')}</p>
             ) : null}
           </div>
 
@@ -1407,9 +1399,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           if (userToDelete) {
             const employee = userToDelete;
             void getAssignedResponsibilityCount(employee, true)
-              .then((leadCount) => {
+              .then(({ leadCount, requiresSales }) => {
                 if (leadCount > 0) {
-                  openLeadTransferDialog({ user: employee, action: 'delete', leadCount });
+                  openLeadTransferDialog({ user: employee, action: 'delete', leadCount, requiresSales });
                   return;
                 }
                 deleteUserMutation.mutate({ id: employee.id });

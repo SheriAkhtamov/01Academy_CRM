@@ -23,13 +23,10 @@ export type SalesDashboardCoreMetrics = {
   newLeads: number;
   processedLeads: number;
   reachedLeads: number;
-  qualifiedLeads: number;
   demoBookings: number;
   demoAttendees: number;
   repeatCallLeads: number;
   repeatCallDistribution: Array<{ attempts: number; count: number }>;
-  targetRefusals: number;
-  targetRefusalReasons: SalesDashboardMetricReason[];
 };
 
 export type SalesDashboardDailyPoint = {
@@ -52,17 +49,7 @@ const countValue = (value: unknown) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 };
 
-/**
- * Builds event-based sales KPIs for the selected reporting period.
- *
- * Metric grain is one unique lead:
- * - processed: any persisted action in the period;
- * - reached: at least one call with an answer or positive talk time;
- * - qualified: reached the configured "qualified" stage or anything after it;
- * - demo booking: entered the "demo_invited" stage;
- * - repeat calls: two to five phone attempts in the period;
- * - target refusal: archived in the period after ever reaching qualification.
- */
+/** Counts actual persisted actions and unique leads, independently of sales labels. */
 const buildSalesDashboardPeriodMetrics = async (
   managerId: number | null,
   start: Date,
@@ -145,51 +132,14 @@ const buildSalesDashboardPeriodMetrics = async (
          AND lead.updated_at < $2
          AND lead.updated_at > lead.created_at
      ),
-     quality_stage AS (
-       SELECT status.sort_order
-       FROM academy_lead_statuses status
-       WHERE status.code = 'qualified'
-       LIMIT 1
-     ),
-     qualified_lead_ids AS (
-       SELECT DISTINCT stage.lead_id
-       FROM period_stage_events stage
-       JOIN academy_lead_statuses reached_status
-         ON reached_status.code = stage.to_status_code
-       CROSS JOIN quality_stage
-       WHERE reached_status.sort_order >= quality_stage.sort_order
-     ),
      demo_booking_lead_ids AS (
-       SELECT DISTINCT stage.lead_id
-       FROM period_stage_events stage
-       WHERE stage.to_status_code = 'demo_invited'
-     ),
-     target_refusal_leads AS (
-       SELECT lead.id, COALESCE(NULLIF(BTRIM(lead.archive_reason), ''), 'other') AS reason
-       FROM visible_leads lead
-       CROSS JOIN quality_stage
-       LEFT JOIN academy_lead_statuses current_status
-         ON current_status.code = lead.status_code
-       WHERE lead.archived_at >= $1
-         AND lead.archived_at < $2
-         AND (
-           current_status.sort_order >= quality_stage.sort_order
-           OR EXISTS (
-             SELECT 1
-             FROM academy_lead_stage_history history
-             JOIN academy_lead_statuses reached_status
-               ON reached_status.code = history.to_status_code
-             WHERE history.lead_id = lead.id
-               AND reached_status.sort_order >= quality_stage.sort_order
-               AND history.entered_at <= lead.archived_at
-           )
-         )
-     ),
-     target_refusal_reason_counts AS (
-       SELECT refusal.reason, COUNT(*)::int AS count
-       FROM target_refusal_leads refusal
-       GROUP BY refusal.reason
-       ORDER BY count DESC, refusal.reason
+       SELECT DISTINCT student.lead_id
+       FROM academy_demo_lesson_participants participant
+       JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+       JOIN academy_students student ON student.id = participant.student_id
+       JOIN visible_leads lead ON lead.id = student.lead_id
+       WHERE participant.created_at >= $1 AND participant.created_at < $2
+         AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
      )
      SELECT
        (
@@ -199,7 +149,6 @@ const buildSalesDashboardPeriodMetrics = async (
        ) AS new_leads,
        (SELECT COUNT(*)::int FROM processed_lead_ids) AS processed_leads,
        (SELECT COUNT(*)::int FROM period_calls calls WHERE calls.was_reached) AS reached_leads,
-       (SELECT COUNT(*)::int FROM qualified_lead_ids) AS qualified_leads,
        (SELECT COUNT(*)::int FROM demo_booking_lead_ids) AS demo_bookings,
        (
          SELECT COUNT(*)::int
@@ -210,43 +159,20 @@ const buildSalesDashboardPeriodMetrics = async (
          SELECT JSON_AGG(JSON_BUILD_OBJECT('attempts', buckets.attempts, 'count', buckets.count) ORDER BY buckets.attempts)
          FROM (SELECT calls.attempts, COUNT(*)::int AS count FROM period_calls calls
                WHERE calls.attempts BETWEEN 2 AND 5 GROUP BY calls.attempts) buckets
-       ), '[]'::json) AS repeat_call_distribution,
-       (SELECT COUNT(*)::int FROM target_refusal_leads) AS target_refusals,
-       COALESCE(
-         (
-           SELECT JSON_AGG(
-             JSON_BUILD_OBJECT('reason', reason_counts.reason, 'count', reason_counts.count)
-             ORDER BY reason_counts.count DESC, reason_counts.reason
-           )
-           FROM target_refusal_reason_counts reason_counts
-         ),
-         '[]'::json
-       ) AS target_refusal_reasons`,
+       ), '[]'::json) AS repeat_call_distribution`,
     values,
   );
-
-  const targetRefusalReasons = Array.isArray(row?.targetRefusalReasons)
-    ? row.targetRefusalReasons.flatMap((item: unknown) => {
-        if (!item || typeof item !== 'object') return [];
-        const reason = String((item as Row).reason ?? '').trim();
-        if (!reason) return [];
-        return [{ reason, count: countValue((item as Row).count) }];
-      })
-    : [];
 
   return {
     newLeads: countValue(row?.newLeads),
     processedLeads: countValue(row?.processedLeads),
     reachedLeads: countValue(row?.reachedLeads),
-    qualifiedLeads: countValue(row?.qualifiedLeads),
     demoBookings: countValue(row?.demoBookings),
     repeatCallLeads: countValue(row?.repeatCallLeads),
     repeatCallDistribution: Array.isArray(row?.repeatCallDistribution) ? row.repeatCallDistribution.flatMap((item: Row) => {
       const attempts = countValue(item?.attempts);
       return attempts >= 2 && attempts <= 5 ? [{ attempts, count: countValue(item.count) }] : [];
     }) : [],
-    targetRefusals: countValue(row?.targetRefusals),
-    targetRefusalReasons,
   };
 };
 
@@ -336,7 +262,7 @@ const buildSalesDashboardDailySeries = async (
            AND source_lead.updated_at < $2
            AND source_lead.updated_at > source_lead.created_at
        )
-       SELECT processed_events.happened_at
+       SELECT processed_events.happened_at, processed_events.lead_id
        FROM processed_events`,
       values,
     ),
@@ -356,13 +282,15 @@ const buildSalesDashboardDailySeries = async (
       values,
     ),
     query<Row>(
-      `SELECT MIN(history.entered_at) AS happened_at
-       FROM academy_lead_stage_history history
-       JOIN academy_leads lead ON lead.id = history.lead_id
-       WHERE history.entered_at >= $1 AND history.entered_at < $2
-         AND history.to_status_code = 'demo_invited'
+      `SELECT MIN(participant.created_at) AS happened_at
+       FROM academy_demo_lesson_participants participant
+       JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+       JOIN academy_students student ON student.id = participant.student_id
+       JOIN academy_leads lead ON lead.id = student.lead_id
+       WHERE participant.created_at >= $1 AND participant.created_at < $2
+         AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
          ${managerFilter}
-       GROUP BY history.lead_id`,
+       GROUP BY student.lead_id`,
       values,
     ),
   ]);
@@ -377,7 +305,7 @@ const buildSalesDashboardDailySeries = async (
   }
 
   const newCounts = new Map<string, number>();
-  const processedCounts = new Map<string, number>();
+  const processedKeysByDay = new Map<string, Set<string>>();
   const bookingCounts = new Map<string, number>();
   const reachedKeysByDay = new Map<string, Set<string>>();
   const bump = (map: Map<string, number>, key: string) => {
@@ -395,7 +323,12 @@ const buildSalesDashboardDailySeries = async (
   }
   for (const eventRow of processedRows) {
     if (!eventRow.happenedAt) continue;
-    bump(processedCounts, academyDateOnlyKey(new Date(eventRow.happenedAt as string)));
+    const key = academyDateOnlyKey(new Date(eventRow.happenedAt as string));
+    const leadKey = String(eventRow.leadId ?? '');
+    if (!leadKey) continue;
+    const bucket = processedKeysByDay.get(key) ?? new Set<string>();
+    bucket.add(leadKey);
+    processedKeysByDay.set(key, bucket);
   }
   for (const eventRow of reachedRows) {
     if (!eventRow.happenedAt) continue;
@@ -411,7 +344,7 @@ const buildSalesDashboardDailySeries = async (
   return dayKeys.map((date) => ({
     date,
     newLeads: newCounts.get(date) ?? 0,
-    processedLeads: processedCounts.get(date) ?? 0,
+    processedLeads: processedKeysByDay.get(date)?.size ?? 0,
     reachedLeads: reachedKeysByDay.get(date)?.size ?? 0,
     demoBookings: bookingCounts.get(date) ?? 0,
   }));

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { CheckCircle2, Copy, ExternalLink, Loader2, MessageSquare, Phone } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, MessageSquare, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,12 +46,6 @@ export function LeadWorkspaceHeader({
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <SheetTitle className="break-words text-lg leading-tight sm:text-xl">{lead.contactName}</SheetTitle>
-            {lead.statusCode === 'paid' ? (
-              <Badge variant="success">
-                <CheckCircle2 className="size-3" aria-hidden="true" />
-                {leadStatusName('paid')}
-              </Badge>
-            ) : null}
             {lead.isArchived ? (
               <Badge variant="outline">{t('leadInArchive')}</Badge>
             ) : null}

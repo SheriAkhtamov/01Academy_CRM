@@ -6,14 +6,14 @@
 export const unassignedLeadVisibleToSalesSql = (leadAlias: string) => `(
   ${leadAlias}.manager_id IS NULL
   AND NOT (
-    ${leadAlias}.status_code = 'new_request'
-    AND EXISTS (
+    EXISTS (
       SELECT 1
       FROM academy_company_settings distribution_settings
       JOIN academy_sales_funnels distribution_funnel
         ON distribution_funnel.id = ${leadAlias}.funnel_id
       WHERE distribution_settings.auto_lead_distribution_enabled = true
         AND distribution_funnel.is_default = true
+        AND distribution_funnel.initial_stage_code = ${leadAlias}.status_code
     )
   )
 )`;

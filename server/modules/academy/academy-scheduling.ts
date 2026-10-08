@@ -423,8 +423,9 @@ export const findTeacherForGroupSchedule = async (options: {
            WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
          AND status <> 'cancelled'
          AND scheduled_at >= $2
-         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-      [teacherIds, rangeStart, rangeEnd],
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)
+         AND ($4::int IS NULL OR group_id <> $4)`,
+      [teacherIds, rangeStart, rangeEnd, options.excludeGroupId ?? null],
     ), query(
       `SELECT teacher_id, scheduled_at, duration_minutes
        FROM academy_demo_lessons
@@ -589,8 +590,9 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
            WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
          AND status <> 'cancelled'
          AND scheduled_at >= $2
-         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-      [options.teacherId, rangeStart, rangeEnd],
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)
+         AND ($4::int IS NULL OR group_id <> $4)`,
+      [options.teacherId, rangeStart, rangeEnd, options.excludeGroupId ?? null],
     ),
     query(
       `SELECT scheduled_at, duration_minutes
@@ -792,8 +794,9 @@ export const assertRoomScheduleAvailable = async (options: {
            WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
          AND status <> 'cancelled'
          AND scheduled_at >= $2
-         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-      [options.roomId, rangeStart, rangeEnd],
+         AND ($3::timestamp IS NULL OR scheduled_at < $3)
+         AND ($4::int IS NULL OR group_id <> $4)`,
+      [options.roomId, rangeStart, rangeEnd, options.excludeGroupId ?? null],
     ),
     query(
       `SELECT scheduled_at, duration_minutes
@@ -998,7 +1001,6 @@ export const listAvailableSchoolSlots = async (options: {
          AND l.demo_at >= $2
          AND l.demo_at < $3
          AND COALESCE(l.demo_attended, false) = false
-         AND l.status_code <> 'not_now'
          AND COALESCE(l.is_archived, false) = false
          AND NOT EXISTS (
            SELECT 1

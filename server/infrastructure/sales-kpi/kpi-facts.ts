@@ -15,7 +15,7 @@ export async function readKpiFacts(employeeIds: number[], month: string, asOf: s
       `SELECT tracked.lead_id AS id, COALESCE(lead.student_name, lead.contact_name) AS name,
         tracked.hunter_id AS "hunterId", tracked.closer_id AS "closerId",
         tracked.received_at AS "receivedAt", tracked.tracked_at AS "trackedAt",
-        tracked.first_response_at AS "firstResponseAt", tracked.qualified_at AS "qualifiedAt",
+        tracked.first_response_at AS "firstResponseAt", (SELECT MIN(qualification.qualified_at) FROM academy_lead_funnel_qualifications qualification WHERE qualification.lead_id = tracked.lead_id) AS "qualifiedAt",
         tracked.crm_completed_at AS "crmCompletedAt", tracked.offer_at AS "offerAt",
         tracked.reactivated_at AS "reactivatedAt",
         COALESCE((SELECT activity.kind = 'cold' FROM academy_sales_kpi_activity activity

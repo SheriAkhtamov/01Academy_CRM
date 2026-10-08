@@ -37,6 +37,7 @@ const salesActor = (autoLeadDistributionEnabled: boolean): ActorContext => ({
     hunterFunnelId: 1,
     closerFunnelId: 2,
     defaultFunnelId: 1,
+    defaultInitialStageCode: 'intake_a',
     assignedFunnelIds: [1],
     autoLeadDistributionEnabled,
   },
@@ -53,7 +54,7 @@ describe('automatic lead distribution contract and visibility', () => {
     expect(canActorViewLead(salesActor(false), {
       funnelId: 1,
       managerId: null,
-      statusCode: 'new_request',
+      statusCode: 'intake_a',
     })).toBe(true);
   });
 
@@ -62,17 +63,17 @@ describe('automatic lead distribution contract and visibility', () => {
     expect(canActorViewLead(actor, {
       funnelId: 1,
       managerId: null,
-      statusCode: 'new_request',
+      statusCode: 'intake_a',
     })).toBe(false);
     expect(canActorViewLead(actor, {
       funnelId: 1,
       managerId: 7,
-      statusCode: 'new_request',
+      statusCode: 'intake_a',
     })).toBe(true);
     expect(canActorViewLead(actor, {
       funnelId: 1,
       managerId: 8,
-      statusCode: 'new_request',
+      statusCode: 'intake_a',
     })).toBe(false);
     expect(canActorViewLead(actor, {
       funnelId: 1,
@@ -82,14 +83,14 @@ describe('automatic lead distribution contract and visibility', () => {
   });
 
   it('keeps leadership and marketing visibility unchanged', () => {
-    const lead = { funnelId: 1, managerId: null, statusCode: 'new_request' };
+    const lead = { funnelId: 1, managerId: null, statusCode: 'intake_a' };
     expect(canActorViewLead(actorContextFrom({ id: 1, module: 'administration' }), lead)).toBe(true);
     expect(canActorViewLead(actorContextFrom({ id: 2, module: 'marketing' }), lead)).toBe(true);
   });
 
   it('uses the same unassigned-new-lead rule in SQL notification scopes', () => {
     const sql = unassignedLeadVisibleToSalesSql('lead');
-    expect(sql).toContain("lead.status_code = 'new_request'");
+    expect(sql).toContain('distribution_funnel.initial_stage_code = lead.status_code');
     expect(sql).toContain('auto_lead_distribution_enabled = true');
     expect(sql).toContain('distribution_funnel.is_default = true');
   });
@@ -135,9 +136,8 @@ describe('automatic lead distribution persistence', () => {
   });
 
   it('distributes the current queue on enable and exposes the admin toggle', () => {
-    expect(route).toContain(
-      "academy_kpi_employee_role(employee.id) IN ('hunter', 'full_cycle', 'full_cycle_3500')",
-    );
+    expect(route).not.toContain('academy_kpi_employee_role(employee.id)');
+    expect(route).not.toContain('funnel.workflow_role');
     expect(route).toContain('WITH candidates AS MATERIALIZED');
     expect(route).toContain('ORDER BY lead.created_at, lead.id');
     expect(route).toContain('academy_next_auto_lead_manager(lead.funnel_id)');

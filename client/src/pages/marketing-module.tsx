@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useStickyState } from '@/hooks/useStickyState';
+import { restoreReportingRange } from '@/lib/persistedReportingRange';
 import { useLocation, useSearch } from 'wouter';
 import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,19 +29,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { TARGET_ROAS } from '@shared/academy';
-import { funnelForSource, leadsForFunnel, marketingFunnelMetrics, marketingFunnelStages, leadToPaidConversion } from '@/lib/marketingLogic';
+import { leadsForFunnel, marketingFunnelMetrics, leadToPaidConversion } from '@/lib/marketingLogic';
 import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
 import {
   Megaphone,
-  TrendingUp,
-  TrendingDown,
   Users,
   DollarSign,
   Target,
-  ArrowRight,
   Calculator,
 } from 'lucide-react';
 
@@ -131,7 +129,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const requestedSourceId = new URLSearchParams(routeSearch).get('source');
   const [funnelSourceFilter, setFunnelSourceFilter] = useStickyState('marketing-funnel-source', 'all');
   const [funnelFilter, setFunnelFilter] = useStickyState('marketing-funnel', '');
-  const [reportingRange, setReportingRange] = useStickyState('marketing-reporting-range', reportingRangeForPreset('today'));
+  const [reportingRange, setReportingRange] = useStickyState('marketing-reporting-range', reportingRangeForPreset('today'), restoreReportingRange);
 
   const money = (value: number | string | null | undefined) =>
     `${Number(value || 0).toLocaleString(locale)}${t('uzs')}`;
@@ -146,7 +144,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   /* ─── derived data ─── */
   const analytics = data?.analytics;
   const bySource = analytics?.bySource ?? [];
-  const funnel = analytics?.funnel ?? [];
   const sources = data?.sources ?? [];
   const selectedSource = sources.find((source: any) => String(source.id) === requestedSourceId);
   const selectedSourceMetrics = bySource.find((source: any) => String(source.sourceId) === requestedSourceId);
@@ -161,10 +158,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
   const selectedFunnelId = selectedFunnel ? String(selectedFunnel.id) : '';
   const selectedFunnelLeads = useMemo(() => leadsForFunnel(leads, selectedFunnelId, funnelSourceFilter),
     [leads, selectedFunnelId, funnelSourceFilter]);
-  const selectedFunnelStages = useMemo(() => marketingFunnelStages(data?.statuses ?? [], selectedFunnel),
-    [data?.statuses, selectedFunnel]);
-  const funnelData = useMemo(() => funnelForSource(selectedFunnelStages, selectedFunnelLeads, 'all'),
-    [selectedFunnelStages, selectedFunnelLeads]);
   const funnelMetrics = useMemo(() => marketingFunnelMetrics(selectedFunnelLeads), [selectedFunnelLeads]);
 
   const contained = section !== 'overview';
@@ -234,11 +227,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     },
   ];
 
-  const funnelStages = funnelData.map((stage: any) => ({
-    code: String(stage.code),
-    label: String(stage.name || stage.code),
-    color: String(stage.color || '#64748b'),
-  }));
   const overviewSourcePerformance: OverviewSourcePerformance[] = bySource.map((source: any) => ({
     sourceName: String(source.sourceName || t('unknownSource')),
     leads: Number(source.leads || 0),
@@ -247,16 +235,9 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
     expenses: Number(source.expenses || 0),
     roas: Number(source.roas || 0),
   }));
-  const overviewFunnel: { code: string; name: string; count: number; color: string }[] = funnel.map((stage: any) => ({
-    code: String(stage.code),
-    name: String(stage.name || stage.code),
-    count: Number(stage.count || 0),
-    color: String(stage.color || '#64748b'),
-  }));
   const overviewLeadCount = overviewSourcePerformance.reduce((sum, source) => sum + source.leads, 0);
   const overviewPaidCount = overviewSourcePerformance.reduce((sum, source) => sum + source.paidStudents, 0);
   const overviewMarketingSpend = overviewSourcePerformance.reduce((sum, source) => sum + source.expenses, 0);
-  const overviewDemoCohortCount = overviewFunnel.find((stage) => stage.code === 'demo_invited')?.count ?? 0;
   const hasLeadCohort = overviewLeadCount > 0 || Number(summary.newLeadsMonth || 0) > 0;
   const hasPaidCohort = overviewPaidCount > 0 || Number(summary.newPaidStudents || 0) > 0;
 
@@ -282,28 +263,12 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
 
       {/* ─── KPI cards ─── */}
       {section === 'overview' ? (
-        <StaggerGroup count={7} className="grid grid-cols-tile gap-3">
+        <StaggerGroup count={5} className="grid grid-cols-tile gap-3">
           <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('leadsForPeriod')} value={summary.newLeadsMonth ?? 0} icon={Users} tone="blue" />
           </StaggerItem>
           <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('paidCustomersForPeriod')} value={summary.newPaidStudents ?? 0} icon={Megaphone} tone="green" />
-          </StaggerItem>
-          <StaggerItem preset="pop" className="h-full">
-            <KpiCard
-              title={t('conversionApplicationToDemo')}
-              value={hasLeadCohort ? `${summary.leadToDemoConversion ?? 0}%` : t('noData')}
-              icon={TrendingUp}
-              tone={hasLeadCohort ? 'green' : 'slate'}
-            />
-          </StaggerItem>
-          <StaggerItem preset="pop" className="h-full">
-            <KpiCard
-              title={t('conversionDemoToPayment')}
-              value={overviewDemoCohortCount > 0 ? `${summary.demoToPaidConversion ?? 0}%` : t('noData')}
-              icon={TrendingDown}
-              tone={overviewDemoCohortCount > 0 ? 'green' : 'slate'}
-            />
           </StaggerItem>
           <StaggerItem preset="pop" className="h-full">
             <KpiCard title={t('cplLabel')} value={hasLeadCohort ? money(summary.cpl) : t('noData')} detail={t('cplTarget')} icon={Calculator} tone={hasLeadCohort ? 'amber' : 'slate'} />
@@ -320,10 +285,7 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       {section === 'overview' ? (
         <MarketingAnalyticsCharts
           sources={overviewSourcePerformance}
-          funnel={overviewFunnel}
           conversions={{
-            leadToDemo: Number(summary.leadToDemoConversion || 0),
-            demoToPaid: Number(summary.demoToPaidConversion || 0),
             leadToPaid: Number(summary.leadToPaidConversion || 0),
           }}
           money={(value) => money(value)}
@@ -387,47 +349,17 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {funnelStages.map((stage, index) => {
-                  const item = funnelData.find((f: any) => f.code === stage.code);
-                  const count = item?.count ?? 0;
-                  const prevCount = index > 0
-                    ? (funnelData.find((f: any) => f.code === funnelStages[index - 1].code)?.count ?? 1)
-                    : count;
-                  const conversion = index > 0 && prevCount > 0
-                    ? Math.round((count / prevCount) * 100)
-                    : 0;
-                  const maxCount = Math.max(...funnelData.map((f: any) => f.count || 1), 1);
-
-                  return (
-                    <div key={stage.code} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: stage.color }} />
-                          <span className="text-sm font-medium text-foreground">{stage.label}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-foreground tabular-nums">{count}</span>
-                          {index > 0 && (
-                            <Badge variant="outline" className="text-xs">
-                              <ArrowRight className="h-3 w-3 mr-1" />
-                              {conversion}%
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="h-4 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${(count / maxCount) * 100}%`,
-                            backgroundColor: stage.color,
-                            opacity: 0.85,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                <ConversionBar
+                  label={t('navLeads')}
+                  value={selectedFunnelLeads.length}
+                  total={selectedFunnelLeads.length}
+                />
+                <ConversionBar
+                  label={t('paidCustomersForPeriod')}
+                  value={selectedFunnelLeads.filter((lead: any) => lead.hasPaidPayment === true).length}
+                  total={selectedFunnelLeads.length}
+                  color="#16a34a"
+                />
               </CardContent>
             </Card>
 
@@ -443,18 +375,6 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
                   </p>
                 </div>
 
-                <ConversionBar
-                  label={t('conversionApplicationToDemo')}
-                  value={funnelMetrics.leadToDemoConversion}
-                  total={100}
-                  color="#8b5cf6"
-                />
-                <ConversionBar
-                  label={t('conversionDemoToPayment')}
-                  value={funnelMetrics.demoToPaidConversion}
-                  total={100}
-                  color="#16a34a"
-                />
                 <ConversionBar
                   label={t('leadToPaidConversion')}
                   value={funnelMetrics.leadToPaidConversion}

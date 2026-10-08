@@ -352,6 +352,7 @@ describe('user route validation', () => {
           return { rows: [{ id: 20 }] };
         }
         if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
+        if (statement.includes('UPDATE board_tasks')) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -375,6 +376,9 @@ describe('user route validation', () => {
     expect(taskTransferIndex).toBeGreaterThan(studentTransferIndex);
     expect(historyIndex).toBeGreaterThan(taskTransferIndex);
     expect(deleteIndex).toBeGreaterThan(historyIndex);
+    expect(statements.findIndex((statement) => statement.includes('UPDATE chat_groups SET creator_name'))).toBeLessThan(deleteIndex);
+    expect(statements.findIndex((statement) => statement.includes('UPDATE chat_group_messages SET sender_name'))).toBeLessThan(deleteIndex);
+    expect(statements.findIndex((statement) => statement.includes('employment_ended_on'))).toBeLessThan(deleteIndex);
     expect(commitIndex).toBeGreaterThan(deleteIndex);
     expect(client.release).toHaveBeenCalledOnce();
   });
@@ -427,6 +431,7 @@ describe('user route validation', () => {
           return { rows: [{ id: 20 }] };
         }
         if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
+        if (statement.includes('UPDATE board_tasks')) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -650,4 +655,52 @@ describe('user route validation', () => {
     );
     expect(insertCall?.[1]?.[5]).toBeNull();
   });
+  it('includes author and assignee board duties in offboarding and transfers them to an active teacher', async () => {
+    const departing = { ...administrationUser, id: 16, module: 'teacher', modules: ['teacher'], isArchived: false };
+    const tasks = [
+      { id: 100, creatorId: 16, assigneeId: 8, status: 'done' },
+      { id: 101, creatorId: 8, assigneeId: 16, status: 'todo' },
+      { id: 102, creatorId: 16, assigneeId: 16, status: 'in_progress' },
+      { id: 103, creatorId: 16, assigneeId: 16, status: 'accepted' },
+    ];
+    mockStorage.getUser.mockResolvedValueOnce(administrationUser).mockResolvedValueOnce(departing)
+      .mockResolvedValueOnce({ ...departing, isActive: false, isArchived: true });
+    const client = { release: vi.fn(), query: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
+      if (sql.includes('AS lead_count')) {
+        expect(sql).toContain('FROM board_tasks WHERE (creator_id = $1 OR assignee_id = $1)');
+        return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0, board_task_count: 3 }] };
+      }
+      if (sql.includes('SELECT id, full_name FROM users')) return { rows: [{ id: 30, full_name: 'Teacher replacement' }] };
+      if (sql.includes('UPDATE board_tasks')) {
+        expect(params).toEqual([16, 30]);
+        expect(sql).toContain('creator_id = CASE WHEN creator_id = $1 THEN $2 ELSE creator_id END');
+        expect(sql).toContain('assignee_id = CASE WHEN assignee_id = $1 THEN $2 ELSE assignee_id END');
+        const transferred = tasks.filter((task) => task.status !== 'accepted' && (task.creatorId === 16 || task.assigneeId === 16));
+        for (const task of transferred) {
+          if (task.creatorId === 16) task.creatorId = 30;
+          if (task.assigneeId === 16) task.assigneeId = 30;
+        }
+        return { rows: transferred.map((task) => ({ id: task.id })), rowCount: transferred.length };
+      }
+      return { rows: [], rowCount: 0 };
+    }) };
+    mockPool.connect.mockResolvedValue(client);
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive').send({ leadTransferManagerId: 30 });
+    expect(response.status).toBe(200);
+    expect(response.body.transferredResponsibilityCount).toBe(3);
+    expect(tasks).toEqual([
+      { id: 100, creatorId: 30, assigneeId: 8, status: 'done' },
+      { id: 101, creatorId: 8, assigneeId: 30, status: 'todo' },
+      { id: 102, creatorId: 30, assigneeId: 30, status: 'in_progress' },
+      { id: 103, creatorId: 16, assigneeId: 16, status: 'accepted' },
+    ]);
+    const { canFinalizeBoardTask, canManageBoardTask } = await import('../shared/board-permissions');
+    expect(canFinalizeBoardTask({ id: 30 }, tasks[0])).toBe(true);
+    expect(canManageBoardTask({ id: 30 }, tasks[1])).toBe(true);
+    expect(client.query).toHaveBeenCalledWith('COMMIT');
+  });
+
 });

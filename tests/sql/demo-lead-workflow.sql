@@ -1,147 +1,118 @@
--- Run after all migrations, only in a disposable database:
--- psql -X -v ON_ERROR_STOP=1 -d crm_demo_workflow_test_... -f tests/sql/demo-lead-workflow.sql
+-- Current-schema check: apply all registered migrations first. Test data rolls back.
+-- Qualification is written by the explicit manual-move application handler;
+-- scripts/verify-sales-workflow.ts verifies that handler and cross-funnel deduplication.
+-- psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -f tests/sql/demo-lead-workflow.sql
 \set ON_ERROR_STOP on
 BEGIN;
-DO $$ BEGIN
-  IF current_database() NOT LIKE 'crm_demo_workflow_test_%' THEN
-    RAISE EXCEPTION 'Disposable demo workflow database required';
+DO $$
+DECLARE
+  employee_key integer; peer_key integer; extra_module_employee integer; funnel_a integer; funnel_b integer;
+  intake_a text := 'verify_a_' || txid_current(); intake_b text := 'verify_b_' || txid_current();
+  ordinary_a text := 'verify_next_' || txid_current(); source_key integer; course_key integer;
+  school_key integer; teacher_key integer; lead_key integer; student_key integer;
+  sibling_key integer; demo_key integer; participant_key integer; sibling_participant integer; task_key integer;
+  month_key text := to_char(now() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM'); rejected boolean;
+  first_intake_owner integer; second_intake_owner integer; ordinary_owner integer;
+BEGIN
+  IF current_database() NOT LIKE '%\_test' ESCAPE '\' AND current_database() NOT LIKE 'crm_demo_workflow_test_%' THEN
+    RAISE EXCEPTION 'Use a disposable workflow test database';
   END IF;
-END $$;
+  ASSERT to_regclass('academy_lead_funnel_qualifications') IS NOT NULL, 'Apply migration 0128 first';
+  INSERT INTO users(email,password,full_name,module) VALUES
+    ('workflow-' || txid_current() || '@example.test','disabled-test-hash','Two-funnel employee','sales') RETURNING id INTO employee_key;
+  INSERT INTO users(email,password,full_name,module) VALUES
+    ('workflow-peer-' || txid_current() || '@example.test','disabled-test-hash','Unassigned peer','sales') RETURNING id INTO peer_key;
+  INSERT INTO academy_sales_kpi_assignments(user_id,effective_month,role,created_at)
+    VALUES(employee_key,month_key,'hunter',now() - interval '1 day');
+  INSERT INTO academy_sales_funnels(name) VALUES ('Workflow A ' || txid_current()) RETURNING id INTO funnel_a;
+  INSERT INTO academy_sales_funnels(name) VALUES ('Workflow B ' || txid_current()) RETURNING id INTO funnel_b;
+  INSERT INTO academy_lead_statuses(code,name,color,sort_order,funnel_id,is_pipeline) VALUES
+    (intake_a,'Intake A','#112233',0,funnel_a,true),(ordinary_a,'Any label','#445566',10,funnel_a,true),
+    (intake_b,'Intake B','#112233',0,funnel_b,true);
+  UPDATE academy_sales_funnels SET initial_stage_code = intake_a WHERE id = funnel_a;
+  UPDATE academy_sales_funnels SET initial_stage_code = intake_b WHERE id = funnel_b;
+  INSERT INTO academy_sales_funnel_users(user_id,funnel_id) VALUES(employee_key,funnel_a),(employee_key,funnel_b);
+  INSERT INTO academy_lead_sources(code,name) VALUES('workflow_' || txid_current(),'Test source') RETURNING id INTO source_key;
+  INSERT INTO academy_courses(name,slug,age_category) VALUES('Test course','workflow-' || txid_current(),'kids') RETURNING id INTO course_key;
+  INSERT INTO academy_schools(name,code,address) VALUES('Test school','WF' || txid_current(),'Test') RETURNING id INTO school_key;
+  INSERT INTO academy_teachers(full_name) VALUES('Test teacher') RETURNING id INTO teacher_key;
+  INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code,manager_id)
+    VALUES('Test parent','workflow-' || txid_current(),source_key,funnel_a,intake_a,employee_key) RETURNING id INTO lead_key;
+  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id,referral_code)
+    VALUES('Test parent','Student',lead_key,course_key,employee_key,'workflow-' || txid_current()) RETURNING id INTO student_key;
+  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id,referral_code)
+    VALUES('Test parent','Sibling',lead_key,course_key,employee_key,'workflow-sibling-' || txid_current()) RETURNING id INTO sibling_key;
+  INSERT INTO academy_tasks(title,entity_type,entity_id,responsible_id)
+    VALUES('Follow up','lead',lead_key,employee_key) RETURNING id INTO task_key;
+  INSERT INTO academy_demo_lessons(course_id,school_id,teacher_id,scheduled_at,format)
+    VALUES(course_key,school_key,teacher_key,timezone('UTC',now()) - interval '1 hour','online') RETURNING id INTO demo_key;
+  INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id)
+    VALUES(demo_key,student_key) RETURNING id INTO participant_key;
+  INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id)
+    VALUES(demo_key,sibling_key) RETURNING id INTO sibling_participant;
 
-CREATE FUNCTION pg_temp.check_result(ok boolean, message text) RETURNS void LANGUAGE plpgsql AS $$
-BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION '%', message; END IF; END $$;
+  UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = participant_key;
+  UPDATE academy_demo_lesson_participants SET status = 'no_show', no_show_reason_code = 'forgot' WHERE id = sibling_participant;
+  UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = participant_key;
+  ASSERT (SELECT status_code = intake_a AND funnel_id = funnel_a AND manager_id = employee_key FROM academy_leads WHERE id = lead_key),
+    'Attendance, no-show and retry must preserve the chosen stage/funnel/owner';
+  ASSERT (SELECT responsible_id = employee_key FROM academy_tasks WHERE id = task_key), 'Attendance must keep the task executor';
+  ASSERT (SELECT bool_and(manager_id = employee_key) FROM academy_students WHERE lead_id = lead_key), 'Attendance must keep student owners';
+  ASSERT (SELECT count(*) = 2 FROM academy_sales_kpi_trials WHERE participant_id IN (participant_key,sibling_participant)),
+    'Bookings remain actual participant facts';
+  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_stage_history WHERE lead_id = lead_key), 'Attendance must not fabricate a manual stage move';
+  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key), 'Automatic facts must not qualify intake';
 
-INSERT INTO users(id, email, password, full_name, module) VALUES
-  (90001, 'demo-hunter@example.test', 'not-a-login', 'Hunter', 'sales'),
-  (90002, 'demo-full-cycle@example.test', 'not-a-login', 'Full cycle', 'sales'),
-  (90003, 'demo-teacher@example.test', 'not-a-login', 'Teacher', 'teacher'),
-  (90004, 'demo-admin@example.test', 'not-a-login', 'Admin', 'administration');
-INSERT INTO academy_sales_kpi_assignments(user_id, effective_month, role, created_at) VALUES
-  (90001, to_char(now() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM'), 'hunter', now() - interval '1 day'),
-  (90002, to_char(now() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM'), 'full_cycle', now() - interval '1 day');
-INSERT INTO academy_sales_funnel_users(funnel_id, user_id)
-  SELECT id, 90001 FROM academy_sales_funnels WHERE workflow_role = 'hunter';
-INSERT INTO academy_sales_funnel_users(funnel_id, user_id)
-  SELECT id, 90002 FROM academy_sales_funnels WHERE workflow_role IN ('hunter', 'closer');
-INSERT INTO academy_lead_statuses(code, name, color, sort_order) VALUES
-  ('demo_invited', 'Invited', '#000000', 40), ('qualified', 'Qualified', '#000000', 30),
-  ('offer', 'Offer', '#000000', 60), ('custom_closer_test', 'Custom closer', '#000000', 65)
-  ON CONFLICT (code) DO NOTHING;
-INSERT INTO academy_courses(id, name, slug, age_category) VALUES (90001, 'Demo test', 'demo-test', 'kids');
-INSERT INTO academy_schools(id, name, code, address) VALUES (90001, 'Test office', 'TEST', 'Test');
-INSERT INTO academy_teachers(id, full_name, user_id) VALUES (90001, 'Test teacher', 90003);
-INSERT INTO academy_demo_lessons(id, course_id, school_id, teacher_id, scheduled_at, format)
-  VALUES (90001, 90001, 90001, 90001, now() - interval '1 hour', 'online');
-INSERT INTO academy_leads(id, contact_name, source_id, funnel_id, status_code, manager_id, is_archived)
-SELECT 90000 + n, 'Demo lead ' || n, (SELECT min(id) FROM academy_lead_sources),
-  (SELECT id FROM academy_sales_funnels WHERE workflow_role = CASE WHEN n = 8 THEN 'closer' ELSE 'hunter' END),
-  CASE WHEN n = 8 THEN 'offer' ELSE 'demo_invited' END,
-  CASE WHEN n = 5 THEN NULL WHEN n IN (6,7,8,9) THEN 90002 ELSE 90001 END, n = 9
-FROM generate_series(1,9) n;
-INSERT INTO academy_students(id, contact_name, student_name, referral_code, lead_id, course_id, manager_id)
-SELECT 91000 + n * 2 + sibling, 'Parent ' || n, 'Student ' || n || '/' || sibling,
-  'demo-test-' || n || '-' || sibling, 90000 + n, 90001,
-  CASE WHEN n = 5 THEN NULL WHEN n IN (6,7,8,9) THEN 90002 ELSE 90001 END
-FROM generate_series(1,9) n CROSS JOIN generate_series(0,1) sibling;
-INSERT INTO academy_demo_lesson_participants(id, demo_lesson_id, student_id)
-  SELECT id, 90001, id FROM academy_students WHERE id BETWEEN 91002 AND 91019;
-INSERT INTO academy_tasks(id, title, entity_type, entity_id, responsible_id)
-  VALUES (90001, 'Test task', 'lead', 90001, 90001);
-
-DO $$ DECLARE moved academy_leads; history_count integer; BEGIN
-  -- One attended sibling is sufficient; the other student stays unmarked.
-  UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = 91002;
-  SELECT * INTO moved FROM academy_transition_demo_lead(90001, 'demo_attended', true, 90001, 90003, 'Teacher mark');
-  PERFORM pg_temp.check_result(moved.status_code = 'demo_attended' AND moved.manager_id = 90001
-    AND moved.funnel_id = (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'closer'), 'Attendance handoff lost owner');
-  PERFORM pg_temp.check_result((SELECT status = 'invited' FROM academy_demo_lesson_participants WHERE id = 91003), 'Sibling attendance was fabricated');
-  PERFORM pg_temp.check_result((SELECT count(*) = 2 FROM academy_sales_kpi_trials trial
-    JOIN academy_demo_lesson_participants participant ON participant.id = trial.participant_id
-    JOIN academy_students student ON student.id = participant.student_id WHERE student.lead_id = 90001), 'Bookings must count both students');
-  PERFORM pg_temp.check_result((SELECT count(*) = 1 FROM academy_sales_kpi_trials trial
-    JOIN academy_demo_lesson_participants participant ON participant.id = trial.participant_id
-    JOIN academy_students student ON student.id = participant.student_id
-    WHERE student.lead_id = 90001 AND participant.status = 'attended'), 'Attendance must count only the attending student');
-  SELECT count(*) INTO history_count FROM academy_lead_stage_history WHERE lead_id = 90001;
-  UPDATE academy_demo_lesson_participants SET status = 'no_show', no_show_reason_code = 'forgot' WHERE id = 91003;
-  PERFORM academy_transition_demo_lead(90001, 'demo_attended', true, 90001, 90003, 'Mixed marks');
-  PERFORM academy_transition_demo_lead(90001, 'demo_attended', true, 90001, 90003, 'Repeated marks');
-  PERFORM pg_temp.check_result((SELECT count(*) = history_count FROM academy_lead_stage_history WHERE lead_id = 90001), 'Repeated/mixed marks duplicated history');
-  -- A flag-only correction for a retained hunter needs no closer membership.
-  UPDATE academy_leads SET demo_attended = false WHERE id = 90001;
-  PERFORM academy_transition_demo_lead(90001, 'demo_attended', true, 90001, 90003, 'Flag correction');
-  PERFORM pg_temp.check_result((SELECT demo_attended AND manager_id = 90001 FROM academy_leads WHERE id = 90001), 'Flag correction requires new assignment');
-  PERFORM pg_temp.check_result((SELECT responsible_id = 90001 FROM academy_tasks WHERE id = 90001)
-    AND (SELECT bool_and(manager_id = 90001) FROM academy_students WHERE lead_id = 90001), 'Child owners changed');
-
-  -- Reverse order: a single no-show moves immediately, attendance wins later.
-  UPDATE academy_demo_lesson_participants SET status = 'no_show', no_show_reason_code = 'forgot' WHERE id = 91004;
-  PERFORM academy_transition_demo_lead(90002, 'ne_prishli_na_vstrechu', false, 90001, 90003, 'Absent first');
-  PERFORM pg_temp.check_result((SELECT status_code = 'ne_prishli_na_vstrechu' AND manager_id = 90001
-    AND funnel_id = (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter') FROM academy_leads WHERE id = 90002), 'Single no-show waited for sibling');
-  UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = 91005;
-  PERFORM academy_transition_demo_lead(90002, 'demo_attended', true, 90001, 90003, 'Attended second');
-  PERFORM pg_temp.check_result((SELECT status_code = 'demo_attended' AND manager_id = 90001 FROM academy_leads WHERE id = 90002), 'Attendance priority lost in reverse order');
-
-  -- Correcting the only attendee returns to the original funnel, same owner.
-  UPDATE academy_demo_lesson_participants SET status = 'no_show', no_show_reason_code = 'forgot' WHERE id = 91005;
-  PERFORM academy_transition_demo_lead(90002, 'ne_prishli_na_vstrechu', false, 90001, 90003, 'Correction');
-  PERFORM pg_temp.check_result((SELECT status_code = 'ne_prishli_na_vstrechu' AND manager_id = 90001
-    AND NOT demo_attended AND funnel_id = (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter')
-    FROM academy_leads WHERE id = 90002), 'Correction lost owner or original funnel');
-
-  -- Admin continuation is not reassignment and does not invent attendance.
-  PERFORM academy_transition_demo_lead(90003, 'demo_attended', NULL, NULL, 90004, 'Manual continuation');
-  PERFORM academy_transition_demo_lead(90003, 'demo_invited', false, 90001, 90003, 'Pending booking');
-  PERFORM pg_temp.check_result((SELECT status_code = 'demo_attended' AND manager_id = 90001 AND NOT demo_attended
-    FROM academy_leads WHERE id = 90003), 'Pending booking undid manual continuation');
-  PERFORM pg_temp.check_result((SELECT bool_and(status = 'invited') FROM academy_demo_lesson_participants
-    WHERE student_id IN (91006,91007)), 'Manual continuation fabricated attendance');
-
-  -- Transaction failure rolls back both the participant and lead.
-  BEGIN
-    UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = 91008;
-    PERFORM academy_transition_demo_lead(90004, 'demo_attended', true, 90001, -1, 'Invalid history author');
-    RAISE EXCEPTION 'Expected history FK failure';
-  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
-  PERFORM pg_temp.check_result((SELECT status = 'invited' FROM academy_demo_lesson_participants WHERE id = 91008)
-    AND (SELECT status_code = 'demo_invited' FROM academy_leads WHERE id = 90004), 'Attendance failure was not atomic');
-
-  PERFORM academy_transition_demo_lead(90005, 'demo_attended', true, 90001, 90003, 'Unassigned');
-  PERFORM pg_temp.check_result((SELECT manager_id IS NULL FROM academy_leads WHERE id = 90005), 'Teacher took an unassigned lead');
-  BEGIN
-    UPDATE academy_leads SET manager_id = 90001 WHERE id = 90005;
-    RAISE EXCEPTION 'Expected new assignment denial';
+  INSERT INTO academy_payments(lead_id,student_id,amount_uzs,status,paid_at)
+    VALUES(lead_key,student_key,100000,'paid',timezone('UTC',now()));
+  ASSERT (SELECT status_code = intake_a AND funnel_id = funnel_a AND manager_id = employee_key FROM academy_leads WHERE id = lead_key),
+    'Payment must preserve the selected stage/funnel/owner';
+  UPDATE academy_leads SET status_code = ordinary_a WHERE id = lead_key;
+  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+    'Bare SQL/integration moves cannot invent a manual qualification';
+  UPDATE academy_leads SET funnel_id = funnel_b, status_code = intake_b WHERE id = lead_key;
+  UPDATE academy_leads SET is_archived = true WHERE id = lead_key;
+  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+    'Transfer and archive on the destination intake must not qualify';
+  ASSERT (SELECT count(*) = 2 FROM academy_sales_funnel_users WHERE user_id = employee_key), 'Both selected funnel memberships remain';
+  rejected := false;
+  BEGIN UPDATE academy_leads SET manager_id = peer_key WHERE id = lead_key;
   EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM NOT IN ('salesFunnelCloserOnly', 'salesFunnelNotAssigned') THEN RAISE; END IF;
+    IF SQLERRM <> 'salesFunnelNotAssigned' THEN RAISE; END IF;
+    rejected := true;
   END;
-  PERFORM pg_temp.check_result((SELECT manager_id IS NULL FROM academy_leads WHERE id = 90005), 'New assignment bypassed restrictions');
-
-  -- Later stages, including custom closer stages, are never regressed.
-  UPDATE academy_leads SET status_code = 'custom_closer_test' WHERE id = 90003;
-  PERFORM academy_transition_demo_lead(90003, 'ne_prishli_na_vstrechu', false, 90001, 90003, 'Late correction');
-  PERFORM pg_temp.check_result((SELECT status_code = 'custom_closer_test' FROM academy_leads WHERE id = 90003), 'Custom closer stage regressed');
+  ASSERT rejected, 'An unselected funnel cannot be assigned to an employee';
+  rejected := false;
+  BEGIN UPDATE academy_leads SET status_code = ordinary_a WHERE id = lead_key;
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'salesFunnelStageUnavailable' THEN RAISE; END IF;
+    rejected := true;
+  END;
+  ASSERT rejected, 'The destination must use a stage owned by its own funnel';
+  -- Distribution follows explicit intake metadata and the selected sales roster,
+  -- including an employee whose sales access is an additional module with no KPI plan.
+  INSERT INTO users(email,password,full_name,module) VALUES
+    ('workflow-extra-' || txid_current() || '@example.test','disabled-test-hash','Extra sales access','finance')
+    RETURNING id INTO extra_module_employee;
+  INSERT INTO user_modules(user_id,module) VALUES(extra_module_employee,'sales');
+  INSERT INTO academy_sales_funnel_users(user_id,funnel_id) VALUES(extra_module_employee,funnel_a);
+  UPDATE academy_sales_funnels SET is_default = false WHERE is_default;
+  UPDATE academy_sales_funnels SET is_default = true WHERE id = funnel_a;
+  UPDATE academy_company_settings SET auto_lead_distribution_enabled = true, auto_lead_distribution_cursor = 0;
+  UPDATE academy_lead_statuses SET name = 'Renamed first stage' WHERE code = intake_a;
+  INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code)
+    VALUES('First intake','first-' || txid_current(),source_key,funnel_a,intake_a) RETURNING manager_id INTO first_intake_owner;
+  INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code)
+    VALUES('Second intake','second-' || txid_current(),source_key,funnel_a,intake_a) RETURNING manager_id INTO second_intake_owner;
+  ASSERT first_intake_owner IS NOT NULL AND second_intake_owner IS NOT NULL
+    AND first_intake_owner <> second_intake_owner
+    AND first_intake_owner IN(employee_key,extra_module_employee) AND second_intake_owner IN(employee_key,extra_module_employee),
+    'Explicit intake must distribute across both selected sales employees regardless of primary module or KPI role';
+  INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code)
+    VALUES('Ordinary label','ordinary-' || txid_current(),source_key,funnel_a,ordinary_a) RETURNING manager_id INTO ordinary_owner;
+  ASSERT ordinary_owner IS NULL, 'Ordinary stages must not trigger automatic intake distribution';
+  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+    'Intake distribution cannot change the original unqualified lead';
+  RAISE NOTICE 'PASS: demo and payment facts keep ownership/stages; transfer and archive do not qualify; both selected funnels remain available';
 END $$;
-
--- Historical fixtures include partial attendance and a partially marked no-show.
-UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id IN (91012,91016,91018);
-UPDATE academy_demo_lesson_participants SET status = 'no_show', no_show_reason_code = 'forgot' WHERE id = 91014;
-CREATE TEMP TABLE owner_snapshot AS SELECT id, manager_id FROM academy_leads;
-CREATE TEMP TABLE participant_snapshot AS SELECT id, status FROM academy_demo_lesson_participants;
-\ir ../../migrations/0115_demo_attendance_workflow.sql
-SELECT pg_temp.check_result((SELECT status_code = 'demo_attended' AND manager_id = 90002
-  AND funnel_id = (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'closer') FROM academy_leads WHERE id = 90006), 'Backfill omitted partial attendee');
-SELECT pg_temp.check_result((SELECT status_code = 'ne_prishli_na_vstrechu' AND manager_id = 90002 FROM academy_leads WHERE id = 90007), 'Backfill omitted partial no-show');
-SELECT pg_temp.check_result((SELECT status_code = 'offer' FROM academy_leads WHERE id = 90008)
-  AND (SELECT is_archived AND status_code = 'demo_invited' FROM academy_leads WHERE id = 90009), 'Backfill regressed later/archived lead');
-SELECT pg_temp.check_result(NOT EXISTS (SELECT 1 FROM owner_snapshot saved JOIN academy_leads lead USING(id)
-  WHERE saved.manager_id IS DISTINCT FROM lead.manager_id), 'Backfill changed owners');
-SELECT pg_temp.check_result(NOT EXISTS (SELECT 1 FROM participant_snapshot saved JOIN academy_demo_lesson_participants participant USING(id)
-  WHERE saved.status <> participant.status), 'Backfill changed student marks');
-CREATE TEMP TABLE history_snapshot AS SELECT count(*) AS count FROM academy_lead_stage_history;
-CREATE TEMP TABLE trials_snapshot AS SELECT count(*) AS count FROM academy_sales_kpi_trials;
-\ir ../../migrations/0115_demo_attendance_workflow.sql
-SELECT pg_temp.check_result((SELECT count(*) = (SELECT count FROM history_snapshot) FROM academy_lead_stage_history), 'Second backfill duplicated history');
-SELECT pg_temp.check_result((SELECT count(*) = (SELECT count FROM trials_snapshot) FROM academy_sales_kpi_trials), 'Second backfill duplicated student facts');
 ROLLBACK;
-\echo Demo workflow SQL regression checks passed; test data rolled back.

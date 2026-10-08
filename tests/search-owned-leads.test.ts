@@ -1,0 +1,31 @@
+import {Router} from 'express';
+import {expect,it,vi} from 'vitest';
+import {canActorViewLead} from '../server/modules/leads/domain/access-policy';
+import {actorContextFrom} from '../server/modules/leads/domain/actor-context';
+const mocks=vi.hoisted(()=>({query:vi.fn(),visibility:vi.fn()}));
+vi.mock('../server/modules/academy/academy-core',()=>({query:mocks.query,leadPhoneNumbersSelect:()=> 'l.phone',applyLeadVisibilityForActor:mocks.visibility}));
+vi.mock('../server/modules/academy/academy-analytics',()=>({resolveTeacherId:async()=>77}));
+vi.mock('../server/modules/academy/academy-scheduling',()=>({}));
+vi.mock('../server/modules/academy/meta-marketing-analytics',()=>({}));
+vi.mock('../server/modules/academy/sales-dashboard-metrics',()=>({}));
+vi.mock('../server/services/meta-marketing',()=>({}));
+vi.mock('../server/lib/logger',()=>({logger:{error:vi.fn()}}));
+import {registerAcademyModuleRoutes} from '../server/modules/academy/module.router';
+it('search includes ownership so domain access preserves a manager-owned new lead',async()=>{
+ const actor={...actorContextFrom({id:7,module:'sales'}),salesWorkflow:{role:'hunter',hunterFunnelId:1,closerFunnelId:2,defaultFunnelId:1,assignedFunnelIds:[1],autoLeadDistributionEnabled:true}};
+ const ownLead={id:10,contactName:'Parent',phone:'+998901234567',studentName:'Student',isArchived:false,funnelId:1,statusCode:'new_request',managerId:7};
+ expect(canActorViewLead(actor,ownLead)).toBe(true);
+ mocks.query.mockImplementation(async(sql:string)=>{
+  expect(sql).toContain('FROM academy_leads l');
+  const selection=sql.split('FROM academy_leads l')[0];
+  expect(selection).toContain('l.manager_id');
+  return [ownLead];
+ });
+ mocks.visibility.mockImplementation(async(_request:unknown,rows:any[])=> rows.filter(lead=>canActorViewLead(actor,lead)));
+ const router=Router();registerAcademyModuleRoutes(router);
+ const route=router.stack.find((layer:any)=>layer.route?.path==='/search')!.route!;
+ const json=vi.fn(),status=vi.fn().mockReturnThis();
+ await route.stack[0].handle({query:{q:'Parent',type:'lead',grouped:'1',limit:'3'},user:{id:7,module:'sales',modules:['sales']}} as any,{json,status} as any,vi.fn());
+ expect(status).not.toHaveBeenCalled();
+ expect(json.mock.calls[0][0]).toMatchObject({items:[{id:'lead-10',href:'/sales/pipeline?lead=10'}],hasMore:false});
+});

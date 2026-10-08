@@ -83,6 +83,7 @@ import {
   LEAD_MODULES,
   OPERATIONS_MODULES,
   Row,
+  canMutateLeadRow,
   createAudit,
   createNotification,
   createTask,
@@ -102,7 +103,6 @@ import {
 import {
   createStageHistory,
   getLead,
-  handleLeadStatusEffects,
   recalculateStudentMetrics,
   validateEnrollmentGroup,
 } from './academy-leads';
@@ -790,23 +790,7 @@ router.post('/students/:id/groups', async (req, res) => {
             courseId: Number(group.courseId),
             schoolId: Number(group.schoolId),
           };
-          if (activatesTrialStudent && lockedLead && !['enrolled', 'paid'].includes(String(lockedLead.statusCode))) {
-            const enrolledStatus = await getActiveLeadStatus('enrolled');
-            if (!enrolledStatus) {
-              throw Object.assign(new Error('enrolledLeadStatusUnavailable'), { statusCode: 409 });
-            }
-            leadUpdates.statusCode = 'enrolled';
-          }
           await updateRow('academy_leads', Number(lockedStudent.leadId), leadUpdates);
-          if (leadUpdates.statusCode === 'enrolled' && lockedLead) {
-            await createStageHistory(
-              Number(lockedStudent.leadId),
-              String(lockedLead.statusCode),
-              'enrolled',
-              req.user!.id,
-              `Ученик зачислен в группу: ${String(group.name ?? groupId)}`,
-            );
-          }
         }
         if (previousGroupId !== groupId) {
           await insertRow('academy_student_transfers', {
@@ -831,12 +815,6 @@ router.post('/students/:id/groups', async (req, res) => {
       }
       return lockedStudent;
     });
-    if (initialLead) {
-      const updatedLead = await getLead(Number(initialLead.id));
-      if (updatedLead && String(updatedLead.statusCode) !== String(initialLead.statusCode)) {
-        await handleLeadStatusEffects(req.actor!, updatedLead, String(initialLead.statusCode));
-      }
-    }
     res.status(201).json(student);
   } catch (error: any) {
     logger.error('Failed to add student group', { error });
@@ -946,7 +924,7 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
 });
 
 router.patch('/students/:id/status', async (req, res) => {
-  if (!ensureOperationsAccess(req, res)) return;
+  if (!ensureModuleAccess(req, res, new Set([...OPERATIONS_MODULES, 'teacher', 'sales']), 'Student update access required')) return;
   try {
     const id = parseId(req.params.id);
     const status = nullableText(req.body.status);
@@ -958,13 +936,37 @@ router.patch('/students/:id/status', async (req, res) => {
     if (['paused', 'expelled'].includes(status) && (!exitReason || !CHURN_REASONS.includes(exitReason as typeof CHURN_REASONS[number]))) {
       return res.status(400).json({ error: 'Churn reason is required for paused or expelled students' });
     }
+    const modules = getAssignedModules(req.user);
+    const salesOnly = modules.includes('sales') && !hasLeadershipAccess(req.user)
+      && !modules.includes('administration') && !modules.includes('teacher');
+    const initialStudent = salesOnly ? await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [id]) : null;
+    if (salesOnly) {
+      if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
+      if (Number(initialStudent.managerId) !== Number(req.user!.id)) {
+        return res.status(403).json({ error: 'Student update access required' });
+      }
+      const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
+      if (initialStudent.leadId && !lead) return res.status(404).json({ error: 'Lead not found' });
+      if (lead && !ensureLeadMutationAccess(req, res, lead)) return;
+    }
     const { current, student } = await withTransaction(async () => {
+      // Match the lead -> student lock order used by enrollment and payment changes.
+      const lockedLead = salesOnly && initialStudent?.leadId ? await queryOne(
+        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId],
+      ) : null;
       const lockedStudent = await queryOne(
         `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
         [id],
       );
       if (!lockedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      }
+      if (salesOnly && (
+        Number(lockedStudent.managerId) !== Number(req.user!.id)
+        || lockedStudent.leadId !== initialStudent?.leadId
+        || (lockedStudent.leadId && (!lockedLead || !canMutateLeadRow(req, lockedLead)))
+      )) {
+        throw Object.assign(new Error('Student update access required'), { statusCode: 403 });
       }
       if (getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
         const teacherId = await resolveTeacherId(req.user!.id);
@@ -991,11 +993,18 @@ router.patch('/students/:id/status', async (req, res) => {
         if (!lockedStudent.groupId) {
           throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
         }
-        await queryOne(
-          `SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`,
-          [lockedStudent.groupId],
+        const memberships = await query<{ groupId: number }>(
+          `SELECT group_id FROM academy_student_group_enrollments
+           WHERE student_id = $1 AND status = 'active'
+           ORDER BY group_id FOR UPDATE`, [id],
         );
-        await validateEnrollmentGroup(Number(lockedStudent.groupId));
+        const groupIds = [...new Set([
+          Number(lockedStudent.groupId), ...memberships.map((membership) => Number(membership.groupId)),
+        ])].sort((left, right) => left - right);
+        for (const groupId of groupIds) {
+          await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+          await validateEnrollmentGroup(groupId, null, id);
+        }
       }
       const updatedStudent = await updateRow('academy_students', id, {
         status,

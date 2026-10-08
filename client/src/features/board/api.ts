@@ -18,6 +18,7 @@ export const boardQueryKeys = {
 };
 
 export const boardApi = {
+  resolveAcademyTask: (academyTaskId: number) => apiRequest('GET', `/api/board/academy-tasks/${academyTaskId}`) as Promise<{ id: number }>,
   getPendingAcceptanceCount: () => (
     apiRequest('GET', '/api/board/tasks/pending-acceptance/count') as Promise<{ count: number }>
   ),

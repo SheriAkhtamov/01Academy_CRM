@@ -23,7 +23,7 @@ describe('board retry transactions', () => {
   const key = '9cc5e86c-45f9-43bc-94ea-a91d4ce30e5b';
   beforeEach(() => { vi.clearAllMocks(); matches = []; inserted.length = 0; filters.length = 0; mocks.transaction.mockImplementation((fn) => fn(tx)); });
   it('locks and creates the task and its retry key together', async () => {
-    await boardStorage.createTaskWithActivity({ boardId: 1, title: 'Task', creatorId: 7 }, { actorId: 7, type: 'created' }, key);
+    await boardStorage.createTaskWithActivity({ boardId: 1, title: 'Task', creatorId: 7, assigneeId: 7 }, { actorId: 7, type: 'created' }, key);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(inserted.map((row) => row.table)).toEqual([boardTasks, boardTaskActivity]);
     expect(inserted[1].values.meta).toEqual({ requestKey: key });
@@ -33,7 +33,7 @@ describe('board retry transactions', () => {
   });
   it('returns the original task on retry without another insert', async () => {
     matches = [{ task: { id: 50, creatorId: 7 } }];
-    expect(await boardStorage.createTaskWithActivity({ boardId: 1, title: 'Task', creatorId: 7 }, { actorId: 7, type: 'created' }, key)).toEqual({ id: 50, creatorId: 7 });
+    expect(await boardStorage.createTaskWithActivity({ boardId: 1, title: 'Task', creatorId: 7, assigneeId: 7 }, { actorId: 7, type: 'created' }, key)).toEqual({ id: 50, creatorId: 7 });
     expect(inserted).toEqual([]);
   });
   it('stores long filenames safely with upload history in one transaction', async () => {
@@ -51,4 +51,11 @@ describe('board retry transactions', () => {
     const query = new PgDialect().sqlToQuery(filters[0] as Parameters<PgDialect['sqlToQuery']>[0]);
     expect(query.params).toEqual([50, 7, 'attachment_added', key]);
   });
+});
+
+it.each([undefined, null, 0, -1, Number.NaN])('rejects new board tasks without a valid assignee: %s', async (assigneeId) => {
+  mocks.transaction.mockClear();
+  await expect(boardStorage.createTaskWithActivity({ boardId: 1, title: 'Task', assigneeId }, { actorId: 7, type: 'created' })).rejects.toThrow('taskAssigneeRequired');
+  await expect(boardStorage.createTask({ boardId: 1, title: 'Task', assigneeId })).rejects.toThrow('taskAssigneeRequired');
+  expect(mocks.transaction).not.toHaveBeenCalled();
 });

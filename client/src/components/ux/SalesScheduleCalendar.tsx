@@ -61,6 +61,8 @@ import {
   getGroupsWithSchedule,
   groupSalesScheduleEventsByDate,
   positionOverlappingScheduleEvents,
+  salesScheduleColumnDateKey,
+  salesScheduleRangeBounds,
   type SalesScheduleCourse,
   type SalesScheduleEvent,
   type SalesScheduleGroup,
@@ -90,9 +92,7 @@ const STEP_LABEL_KEYS = {
   { previousKey: TranslationKey; nextKey: TranslationKey }
 >;
 
-const dateKey = (day: Date) => (
-  `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
-);
+const dateKey = salesScheduleColumnDateKey;
 const timeValue = (minutes: number) => (
   `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 );
@@ -147,14 +147,12 @@ export function SalesScheduleCalendar({
     () => Array.from({ length: range.days }, (_, index) => addDays(range.start, index)),
     [range],
   );
-  const rangeEnd = useMemo(() => addDays(range.start, range.days), [range]);
+  const rangeStartKey = dateKey(range.start);
+  const demoRange = useMemo(() => salesScheduleRangeBounds(rangeStartKey, range.days), [range.days, rangeStartKey]);
 
   const demosQuery = useQuery<DemoLesson[]>({
-    queryKey: [...demoLessonQueryKeys.all, range.start.toISOString(), rangeEnd.toISOString()],
-    queryFn: () => demoLessonsApi.list({
-      from: range.start.toISOString(),
-      to: rangeEnd.toISOString(),
-    }),
+    queryKey: [...demoLessonQueryKeys.all, demoRange.from, demoRange.to],
+    queryFn: () => demoLessonsApi.list(demoRange),
   });
   const demos = useMemo(() => demosQuery.data ?? [], [demosQuery.data]);
   const selectedDemo = useMemo(
@@ -228,10 +226,10 @@ export function SalesScheduleCalendar({
       groups: scheduleGroups,
       lessons: scheduleLessons,
       demos,
-      rangeStart: range.start,
+      rangeStart: rangeStartKey,
       dayCount: range.days,
     }),
-    [demos, range, scheduleGroups, scheduleLessons],
+    [demos, range.days, rangeStartKey, scheduleGroups, scheduleLessons],
   );
   const groupFilteredEvents = useMemo(
     () => rangeEvents.filter((event) => (

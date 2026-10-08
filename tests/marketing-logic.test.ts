@@ -8,10 +8,10 @@ import {
 } from '../client/src/lib/marketingLogic';
 
 const stages = [
-  { code: 'new_request', sortOrder: 0 },
-  { code: 'demo_invited', sortOrder: 40 },
-  { code: 'demo_attended', sortOrder: 50 },
-  { code: 'paid', sortOrder: 90 },
+  { code: 'new_request', sortOrder: 0, funnelId: 1 },
+  { code: 'demo_invited', sortOrder: 40, funnelId: 1 },
+  { code: 'demo_attended', sortOrder: 50, funnelId: 3 },
+  { code: 'paid', sortOrder: 90, funnelId: 3 },
   { code: 'custom_hunter', sortOrder: 20, funnelId: 1 },
   { code: 'other_custom_hunter', sortOrder: 20, funnelId: 2 },
   { code: 'inactive', sortOrder: 30, funnelId: 1, isActive: false },
@@ -19,17 +19,17 @@ const stages = [
 ];
 
 describe('marketing funnel selection', () => {
-  it('uses the selected funnel workflow and its own custom stages', () => {
+  it('uses only the selected funnel stages irrespective of old roles', () => {
     expect(marketingFunnelStages(stages, { id: 1, workflowRole: 'hunter' }).map((stage) => stage.code))
       .toEqual(['new_request', 'custom_hunter', 'demo_invited']);
     expect(marketingFunnelStages(stages, { id: 2, workflowRole: 'hunter' }).map((stage) => stage.code))
-      .toEqual(['new_request', 'other_custom_hunter', 'demo_invited']);
+      .toEqual(['other_custom_hunter']);
     expect(marketingFunnelStages(stages, { id: 3, workflowRole: 'closer' }).map((stage) => stage.code))
       .toEqual(['demo_attended', 'paid']);
     expect(marketingFunnelStages(stages)).toEqual([]);
   });
 
-  it('keeps funnel and source counts isolated even when funnels share system stages', () => {
+  it('keeps funnel and source counts isolated without treating stage order as conversion', () => {
     const funnel = [{ code: 'new_request', count: 10 }, { code: 'paid', count: 5 }];
     const leads = [
       { sourceId: 1, funnelId: 1, statusCode: 'new_request' },
@@ -37,9 +37,9 @@ describe('marketing funnel selection', () => {
       { sourceId: 2, funnelId: 1, statusCode: 'paid' },
       { sourceId: 1, funnelId: 2, statusCode: 'paid' },
     ];
-    expect(funnelForSource(funnel, leadsForFunnel(leads, '1', '1'), 'all').map((stage) => stage.count)).toEqual([2, 1]);
-    expect(funnelForSource(funnel, leadsForFunnel(leads, '1', 'all'), 'all').map((stage) => stage.count)).toEqual([3, 2]);
-    expect(funnelForSource(funnel, leadsForFunnel(leads, '2', '1'), 'all').map((stage) => stage.count)).toEqual([1, 1]);
+    expect(funnelForSource(funnel, leadsForFunnel(leads, '1', '1'), 'all').map((stage) => stage.count)).toEqual([1, 1]);
+    expect(funnelForSource(funnel, leadsForFunnel(leads, '1', 'all'), 'all').map((stage) => stage.count)).toEqual([1, 2]);
+    expect(funnelForSource(funnel, leadsForFunnel(leads, '2', '1'), 'all').map((stage) => stage.count)).toEqual([0, 1]);
     expect(funnelForSource(funnel, [], 'all').map((stage) => stage.count)).toEqual([0, 0]);
   });
 
@@ -50,8 +50,6 @@ describe('marketing funnel selection', () => {
       { funnelId: 2, sourceId: 1, statusCode: 'new_request', hasPaidPayment: false },
     ];
     expect(marketingFunnelMetrics(leadsForFunnel(leads, '1', '1'))).toEqual({
-      leadToDemoConversion: 100,
-      demoToPaidConversion: 50,
       leadToPaidConversion: 50,
       avgDealCycleDays: 2,
     });

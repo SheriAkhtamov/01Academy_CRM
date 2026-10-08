@@ -73,7 +73,7 @@ import {
 } from '@/lib/reportingDateRange';
 import { useStickyState } from '@/hooks/useStickyState';
 import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
-import type { ExpenseRegistryRow, Row } from '@/lib/financeRows';
+import { payrollEntryKey, type ExpenseRegistryRow, type Row } from '@/lib/financeRows';
 
 interface DashboardData {
   period: string;
@@ -167,7 +167,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const [payMethod, setPayMethod] = useState('transfer');
   const [batchMethod, setBatchMethod] = useState('transfer');
   const [actionError, setActionError] = useState('');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [selectedEmployeeKey, setSelectedEmployeeKey] = useState<string | null>(null);
   const [transactionFilter, setTransactionFilter] = useState('all');
   const defaultExpenseForm = useMemo(() => ({
     category: 'other', title: '', vendor: '', description: '', amountUzs: '',
@@ -253,7 +253,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   });
   const savePayout = useMutation({
     mutationFn: () => apiRequest('POST', '/api/finance/payroll/payout', {
-      period, employeeUserId: payoutTarget!.employeeUserId, bonusUzs: Number(payoutForm.bonusUzs || 0),
+      period, employeeUserId: payoutTarget!.employeeUserId, salaryRateId: payoutTarget!.salaryRateId, bonusUzs: Number(payoutForm.bonusUzs || 0),
       deductionUzs: Number(payoutForm.deductionUzs || 0), method: payoutForm.method, note: payoutForm.note,
     }),
     onSuccess: () => { toast({ title: copy.payoutSaved }); setPayoutTarget(null); setInitialPayoutForm(payoutForm); invalidateFinance(); },
@@ -275,12 +275,14 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     onError: (error: Error) => setActionError(error.message),
   });
 
-  const selectedPayrollEntry = payroll.data?.entries.find((entry) => entry.employeeUserId === selectedEmployeeId)
+  const selectedPayrollEntry = payroll.data?.entries.find((entry) => payrollEntryKey(entry) === selectedEmployeeKey)
     ?? payroll.data?.entries[0]
     ?? null;
   const selectedSalaryHistory = useMemo(
-    () => payroll.data?.salaryHistory.filter((rate) => rate.employeeUserId === selectedPayrollEntry?.employeeUserId) ?? [],
-    [payroll.data?.salaryHistory, selectedPayrollEntry?.employeeUserId],
+    () => payroll.data?.salaryHistory.filter((rate) => selectedPayrollEntry?.employeeUserId
+      ? rate.employeeUserId === selectedPayrollEntry.employeeUserId
+      : rate.id === selectedPayrollEntry?.salaryRateId) ?? [],
+    [payroll.data?.salaryHistory, selectedPayrollEntry],
   );
   const filteredTransactions = useMemo(() => {
     const rows = transactions.data?.rows ?? [];
@@ -293,8 +295,11 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     overview: copy.module, income: copy.income, expenses: copy.expenses, payroll: copy.payroll, transactions: copy.transactions,
   }[section];
 
+  const salaryCandidates = payroll.data?.entries.filter((entry) => entry.employeeUserId && entry.canConfigureSalary !== false) ?? [];
   const openSalaryDialog = (entry?: Row | null) => {
-    const target = entry ?? selectedPayrollEntry ?? payroll.data?.entries[0];
+    const preferred = entry ?? selectedPayrollEntry;
+    const target = preferred?.employeeUserId && preferred.canConfigureSalary !== false
+      ? preferred : salaryCandidates[0];
     const form = {
       employeeUserId: target ? String(target.employeeUserId) : '',
       amountUzs: target?.baseSalaryUzs ? String(target.baseSalaryUzs) : '',
@@ -357,7 +362,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               }}><Plus data-icon="inline-start" />{copy.addExpense}</Button>
             ) : null}
             {section === 'payroll' ? (
-              <Button onClick={() => openSalaryDialog()}><Settings2 data-icon="inline-start" />{copy.configureSalary}</Button>
+              <Button disabled={!salaryCandidates.length} onClick={() => openSalaryDialog()}><Settings2 data-icon="inline-start" />{copy.configureSalary}</Button>
             ) : null}
           </>
         )}
@@ -689,9 +694,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                   ] satisfies DataTableColumn<Row>[]}
                   data={payroll.data.entries}
                   filterKey={period}
-                  keyExtractor={(row) => String(row.employeeUserId)}
-                  onRowClick={(row) => setSelectedEmployeeId(row.employeeUserId)}
-                  rowClassName={(row) => (selectedPayrollEntry?.employeeUserId === row.employeeUserId ? 'bg-accent/40' : '')}
+                  keyExtractor={payrollEntryKey}
+                  onRowClick={(row) => setSelectedEmployeeKey(payrollEntryKey(row))}
+                  rowClassName={(row) => (selectedPayrollEntry && payrollEntryKey(selectedPayrollEntry) === payrollEntryKey(row) ? 'bg-accent/40' : '')}
                   emptyState={<div className="py-12 text-center text-sm text-muted-foreground">{copy.noData}</div>}
                 />
               </CardContent>
@@ -750,7 +755,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle></DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <FieldGroup className="gap-4">
-            <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{payroll.data?.entries.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}>{entry.employeeName}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+            <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}>{entry.employeeName}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
             <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
             <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
             <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>

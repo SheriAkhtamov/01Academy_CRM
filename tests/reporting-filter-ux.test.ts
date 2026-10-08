@@ -81,7 +81,8 @@ describe('dashboard period filters and simplified actions', () => {
     expect(salesCharts).toContain('<PieChart');
     expect(teacherCharts).toContain('<ComposedChart');
     expect(teacherCharts).toContain('<PieChart');
-    expect(marketingCharts).toContain('<FunnelChart');
+    expect(marketingCharts).toContain('<BarChart');
+    expect(marketingCharts).not.toContain('<FunnelChart');
     expect(marketingCharts).toContain('<RadialBarChart');
     expect(financeCharts).toContain('<AreaChart');
     expect(financeCharts).toContain('<BarChart');
@@ -116,9 +117,9 @@ describe('dashboard period filters and simplified actions', () => {
     expect(salesCharts).toContain('hasPaymentRevenue ? (');
     expect(marketingCharts).toContain('hasConversionCohort ? (');
     expect(financeCharts).toContain('hasContributionData ? (');
-    expect(salesOverviewHero).toContain('stats.newLeadsPeriod > 0');
+    expect(salesOverviewHero).toContain("metrics ? number.format(metrics.newLeads) : '—'");
     expect(teacherOverview).toContain("data.avgAttendance == null ? t('noData')");
-    expect(marketing).toContain("overviewFunnel.find((stage) => stage.code === 'demo_invited')");
+    expect(marketing).not.toContain("stage.code === 'demo_invited'");
     expect(marketing).toContain("overviewMarketingSpend > 0 ? `${summary.roas ?? 0}x` : t('noData')");
     expect(finance).toContain("dashboard.data.summary.revenue > 0 ? `${dashboard.data.summary.marginPercent}%` : t('noData')");
     expect(administration).toContain('Number(summary.attendanceMarks || 0) > 0');
@@ -128,7 +129,7 @@ describe('dashboard period filters and simplified actions', () => {
   it('keeps exact chart data understandable when labels are constrained', () => {
     expect(salesCharts).toContain('rankWithRemainder');
     expect(marketingCharts).toContain('rankWithRemainder');
-    expect(marketingCharts).toContain('<ol className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">');
+    expect(marketingCharts).toContain('<LabelList dataKey="paidStudents"');
     expect(financeCharts).toContain('layout="vertical"');
     expect(adminHealthChart).toContain('dataKey="shortLabel"');
   });

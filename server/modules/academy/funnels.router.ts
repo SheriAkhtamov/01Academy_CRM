@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { canActorAccessFunnel } from '../leads/domain/access-policy';
-import { assertSalesFunnelStage } from './sales-funnel-policy';
 import {
   isLeadIntegrationProvider,
   type LeadIntegrationProvider,
@@ -15,13 +14,13 @@ import {
   parseId,
   query,
   queryOne,
+  resolveInitialLeadStatusCode,
   withTransaction,
 } from './academy-core';
 
 const funnelListSql = `
   SELECT funnel.*,
-         (funnel.workflow_role = academy_kpi_employee_role($1)
-           OR academy_kpi_employee_role($1) IN ('full_cycle', 'full_cycle_3500') AND funnel.workflow_role IS NOT NULL) AS is_preferred,
+         funnel.is_default AS is_preferred,
          COUNT(DISTINCT lead.id) FILTER (WHERE lead.manager_id = $1)::int AS own_lead_count,
          COUNT(DISTINCT lead.id)::int AS lead_count,
          COUNT(DISTINCT assignment.user_id)::int AS employee_count,
@@ -145,9 +144,6 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         await query(`SELECT pg_advisory_xact_lock(hashtext('academy-sales-funnels'))`);
         const current = await query(`SELECT id FROM academy_sales_funnels ORDER BY id FOR UPDATE`);
         const isDefault = current.length === 0 || req.body.isDefault === true;
-        if (isDefault && await queryOne(`SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter'`)) {
-          throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
-        }
         const isActive = isDefault || req.body.isActive !== false;
         if (!isActive && integrations && integrations.length > 0) {
           throw Object.assign(new Error('salesFunnelInUseMustRemainActive'), { statusCode: 409 });
@@ -162,6 +158,14 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           [name, isActive, isDefault],
         );
         if (!created) return undefined;
+        const initialStageCode = `funnel_${created.id}_intake`;
+        await query(
+          `INSERT INTO academy_lead_statuses (code, name, color, sort_order, is_active, is_pipeline, is_system, funnel_id)
+           VALUES ($1, $2, '#2563eb', 0, true, true, false, $3)`,
+          [initialStageCode, name, Number(created.id)],
+        );
+        await query(`UPDATE academy_sales_funnels SET initial_stage_code = $2 WHERE id = $1`, [Number(created.id), initialStageCode]);
+        created.initialStageCode = initialStageCode;
         await syncFunnelIntegrations(Number(created.id), integrations, req.user!.id);
         const savedIntegrations = await getFunnelIntegrations(Number(created.id));
         return {
@@ -206,14 +210,6 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
 
         const name = req.body.name === undefined ? String(current.name) : validateFunnelName(req.body.name);
         const makeDefault = req.body.isDefault === true;
-        if ((current.workflowRole && req.body.isActive === false)
-          || (makeDefault && current.workflowRole !== 'hunter'
-            && await queryOne(`SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter'`))) {
-          throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
-        }
-        if (current.workflowRole === 'closer' && integrations?.length) {
-          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
-        }
         const isActive = makeDefault
           || (req.body.isActive === undefined ? current.isActive === true : req.body.isActive === true);
         if (current.isDefault === true && !isActive) {
@@ -293,7 +289,6 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           [id],
         );
         if (!funnel) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-        if (funnel.workflowRole) throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
         if (funnel.isDefault === true || Number(funnel.leadCount) > 0
           || Number(funnel.employeeCount) > 0 || Number(funnel.integrationCount) > 0) {
           throw Object.assign(new Error('salesFunnelTransferRequired'), { statusCode: 409 });
@@ -332,18 +327,11 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
         const source = funnels.find((funnel) => Number(funnel.id) === id);
         const target = funnels.find((funnel) => Number(funnel.id) === targetFunnelId);
         if (!source) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-        if (source.workflowRole) throw Object.assign(new Error('salesWorkflowFunnelProtected'), { statusCode: 409 });
-        if (target?.workflowRole === 'closer') {
-          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
-        }
         if (!target || target.isActive !== true) {
           throw Object.assign(new Error('salesFunnelTransferTargetRequired'), { statusCode: 400 });
         }
 
-        const sourceStages = await query<{ statusCode: string }>(
-          `SELECT DISTINCT status_code FROM academy_leads WHERE funnel_id = $1`, [id],
-        );
-        for (const stage of sourceStages) await assertSalesFunnelStage(targetFunnelId, stage.statusCode);
+        const targetStageCode = await resolveInitialLeadStatusCode(null, targetFunnelId);
         const movedEmployees = await queryOne<{ count: number }>(
           `WITH moved AS (
              INSERT INTO academy_sales_funnel_users (user_id, funnel_id)
@@ -360,15 +348,21 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
            SELECT COUNT(*)::int AS count FROM moved`,
           [id, targetFunnelId],
         );
+        await query(
+          `INSERT INTO academy_lead_stage_history
+            (lead_id, from_status_code, to_status_code, changed_by, comment, from_funnel_id, to_funnel_id)
+           SELECT id, status_code, $3, $4, 'Перенос перед удалением воронки', $1, $2
+           FROM academy_leads WHERE funnel_id = $1`, [id, targetFunnelId, targetStageCode, req.user!.id],
+        );
         const movedLeads = await queryOne<{ count: number }>(
           `WITH moved AS (
              UPDATE academy_leads
-             SET funnel_id = $2, updated_at = NOW()
+             SET funnel_id = $2, status_code = $3, first_viewed_at = NULL, first_viewed_by = NULL, updated_at = NOW()
              WHERE funnel_id = $1
              RETURNING id
            )
            SELECT COUNT(*)::int AS count FROM moved`,
-          [id, targetFunnelId],
+          [id, targetFunnelId, targetStageCode],
         );
         const movedIntegrations = await queryOne<{ count: number }>(
           `WITH moved AS (
@@ -430,9 +424,6 @@ export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) =
           [funnelId],
         );
         if (!funnel) throw Object.assign(new Error('salesFunnelRequired'), { statusCode: 400 });
-        if (funnel.workflowRole === 'closer') {
-          throw Object.assign(new Error('salesCloserFunnelIncomingNotAllowed'), { statusCode: 409 });
-        }
         const saved = await queryOne(
           `INSERT INTO academy_integration_funnel_settings (provider, funnel_id, updated_by)
            VALUES ($1, $2, $3)

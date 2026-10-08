@@ -15,12 +15,19 @@ import { pool } from '../db';
 import { getPasswordPolicyError, isPasswordWithinBcryptLimit } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
+import { disconnectRealtimeSession, disconnectRealtimeUser } from '../realtime/realtime-hub';
+import { syncPrimaryUserPhone } from './user-phone-support';
 
 const router = Router();
 
 const destroySessionAsync = (req: Request) =>
-    new Promise<void>((resolve) => {
-        req.session.destroy(() => resolve());
+    new Promise<void>((resolve, reject) => {
+        const sessionId = req.sessionID;
+        req.session.destroy((error) => {
+            if (error) return reject(error);
+            disconnectRealtimeSession(sessionId);
+            resolve();
+        });
     });
 
 // Rate limiting configurations
@@ -101,10 +108,12 @@ router.post('/login', loginIpLimiter, loginAccountLimiter, async (req, res) => {
         }
 
         const sanitizedUser = authService.sanitizeUser(user);
+        const oldSessionId = req.sessionID;
         req.session.regenerate((regenErr: Error | null) => {
             if (regenErr) {
                 return res.status(500).json({ error: 'Session regeneration failed' });
             }
+            disconnectRealtimeSession(oldSessionId);
 
             req.session.userId = sanitizedUser.id;
 
@@ -136,7 +145,10 @@ router.get('/session', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-    req.session.destroy(() => {
+    const sessionId = req.sessionID;
+    req.session.destroy((error) => {
+        if (error) return res.status(500).json({ error: 'Session destruction failed' });
+        disconnectRealtimeSession(sessionId);
         res.clearCookie('academy.sid', {
             path: '/',
             httpOnly: true,
@@ -181,7 +193,7 @@ router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Reques
         if (credentialsChanged) {
             if (!currentPassword) return res.status(400).json({ error: 'currentPasswordRequired' });
             if (!await authService.verifyPassword(currentPassword, currentUser.password)) {
-                return res.status(401).json({ error: 'currentPasswordInvalid' });
+                return res.status(401).json({ error: 'currentPasswordInvalid', code: 'CREDENTIAL_VALIDATION_FAILED' });
             }
         }
         if (passwordChanged) {
@@ -235,6 +247,7 @@ router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Reques
                     res.locals.userPhotoUrl ?? null,
                 ],
             );
+            await syncPrimaryUserPhone(client, currentUser.id, phone);
             await client.query(
                 `UPDATE academy_teachers
                  SET full_name = $2, updated_at = NOW()
@@ -248,6 +261,7 @@ router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Reques
                 });
             }
             await client.query('COMMIT');
+            if (credentialsChanged) disconnectRealtimeUser(currentUser.id, req.sessionID);
             retainUploadedUserPhoto(res);
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
@@ -335,7 +349,7 @@ router.patch('/me/credentials', requireAuth, async (req: Request, res: Response)
 
             const currentPasswordValid = await authService.verifyPassword(currentPassword, currentUser.password);
             if (!currentPasswordValid) {
-                return res.status(401).json({ error: 'currentPasswordInvalid' });
+                return res.status(401).json({ error: 'currentPasswordInvalid', code: 'CREDENTIAL_VALIDATION_FAILED' });
             }
         }
 
@@ -427,7 +441,7 @@ router.post('/accounts', requireAuth, accountLimiter, async (req: Request, res: 
 
         const user = await authService.authenticateUser(login, password);
         if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials' });
+            return res.status(401).json({ error: 'Invalid credentials', code: 'CREDENTIAL_VALIDATION_FAILED' });
         }
 
         if (!user.isActive || user.isArchived) {
@@ -512,7 +526,7 @@ router.post('/switch-account', requireAuth, accountLimiter, async (req: Request,
         }
 
         if (!matchedAccount) {
-            return res.status(401).json({ error: 'Invalid or expired token' });
+            return res.status(401).json({ error: 'Invalid or expired token', code: 'CREDENTIAL_VALIDATION_FAILED' });
         }
 
         if (!matchedAccount.accountUser.isActive || matchedAccount.accountUser.isArchived) {
@@ -521,11 +535,13 @@ router.post('/switch-account', requireAuth, accountLimiter, async (req: Request,
 
         const sanitizedUser = authService.sanitizeUser(matchedAccount.accountUser);
 
+        const oldSessionId = req.sessionID;
         req.session.regenerate((regenErr: Error | null) => {
             if (regenErr) {
                 return res.status(500).json({ error: 'Session regeneration failed' });
             }
 
+            disconnectRealtimeSession(oldSessionId);
             req.session.userId = sanitizedUser.id;
 
             req.session.save((err: Error | null) => {

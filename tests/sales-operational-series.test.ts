@@ -12,7 +12,7 @@ const range = { from: '2026-08-01', to: '2026-08-03', start: new Date('2026-07-3
 beforeEach(() => {
   vi.resetAllMocks();
   db.queryOne.mockResolvedValue({ demoBookings: 3, repeatCallLeads: 4, repeatCallDistribution: [{ attempts: 2, count: 3 }, { attempts: 5, count: 1 }] });
-  db.query.mockImplementation(async (sql: string) => sql.includes('MIN(history.entered_at)') ? [
+  db.query.mockImplementation(async (sql: string) => sql.includes('MIN(participant.created_at)') ? [
     { happenedAt: '2026-07-31T19:00:00Z' }, { happenedAt: '2026-08-01T08:00:00Z' }, { happenedAt: '2026-08-03T18:59:59Z' },
   ] : sql.includes('MIN(scheduled_at)') ? [
     { studentId: 1, happenedAt: '2026-07-31T19:00:00Z' }, { studentId: 2, happenedAt: '2026-08-03T18:59:59Z' },
@@ -20,6 +20,19 @@ beforeEach(() => {
 });
 
 describe('operational chart series', () => {
+  it('counts a processed lead once per academy day even after several actions', async () => {
+    db.query.mockImplementation(async (sql: string) => sql.includes('processed_events.happened_at') ? [
+      { leadId: 1, happenedAt: '2026-07-31T19:01:00Z' },
+      { leadId: 1, happenedAt: '2026-08-01T10:00:00Z' },
+      { leadId: 2, happenedAt: '2026-08-01T11:00:00Z' },
+      { leadId: 1, happenedAt: '2026-08-01T19:01:00Z' },
+    ] : []);
+    const result = await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range);
+    expect(result.daily.map((day) => day.processedLeads)).toEqual([2, 1, 0]);
+    const sql = db.query.mock.calls.find(([sql]) => sql.includes('processed_events.happened_at'))![0];
+    expect(sql).toContain('processed_events.lead_id');
+  });
+
   it('aligns unique-lead booking days and call-attempt buckets with the headline totals', async () => {
     const result = await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range, 999);
     expect(result.daily.map(({ date, demoBookings }) => ({ date, demoBookings }))).toEqual([
@@ -30,9 +43,9 @@ describe('operational chart series', () => {
     expect(result.daily.map(day => day.demoAttendees)).toEqual([1, 0, 1]);
     expect(result.daily.reduce((sum, day) => sum + day.demoAttendees, 0)).toBe(result.demoAttendees);
     expect(result.repeatCallDistribution.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(result.repeatCallLeads);
-    const bookingRead = db.query.mock.calls.find(([sql]) => sql.includes('MIN(history.entered_at)'))!;
-    expect(bookingRead[0]).toContain('GROUP BY history.lead_id');
-    expect(bookingRead[0]).toContain("history.to_status_code = 'demo_invited'");
+    const bookingRead = db.query.mock.calls.find(([sql]) => sql.includes('MIN(participant.created_at)'))!;
+    expect(bookingRead[0]).toContain('GROUP BY student.lead_id');
+    expect(bookingRead[0]).toContain("participant.status <> 'cancelled'");
     for (const [sql, values] of [...db.query.mock.calls, ...db.queryOne.mock.calls]) {
       expect(sql).toContain(sql.includes('attended_demos') ? 'END = $3' : 'THEN tracked.closer_id ELSE tracked.hunter_id');
       expect(values[2]).toBe(7);

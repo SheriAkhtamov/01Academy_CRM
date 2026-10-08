@@ -90,6 +90,24 @@ describe('OnlinePBX recording resolution', () => {
     expect(getCallRecordingUrl).toHaveBeenCalledWith('nearest-call');
   });
 
+  it('waits for audio for the known UUID even if a neighboring call already has a recording', async () => {
+    const getCallRecordingUrl = vi.fn().mockImplementation(async (uuid: string) => (
+      uuid === 'neighbor-call' ? 'https://api2.onlinepbx.ru/calls-records/download/neighbor.mp3' : null
+    ));
+    const getCallHistory = vi.fn().mockResolvedValue([historyItem({
+      uuid: 'neighbor-call',
+      startStamp: Date.parse('2026-07-28T10:00:30.000Z') / 1000,
+    })]);
+
+    await expect(resolveOnlinePbxRecording({
+      providerCallId: 'known-call',
+      phone: '+998901234567',
+      startedAt: '2026-07-28T10:00:00.000Z',
+    }, { getCallHistory, getCallRecordingUrl })).resolves.toEqual({ state: 'pending' });
+    expect(getCallRecordingUrl).toHaveBeenCalledExactlyOnceWith('known-call');
+    expect(getCallHistory).not.toHaveBeenCalled();
+  });
+
   it('reports a pending recording when OnlinePBX history has no matching call', async () => {
     const getCallRecordingUrl = vi.fn();
     const getCallHistory = vi.fn().mockResolvedValue([]);

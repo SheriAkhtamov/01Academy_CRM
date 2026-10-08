@@ -22,7 +22,6 @@ export const EmployeeFunnelSelect = forwardRef<HTMLButtonElement, Props>(({ funn
       {funnels.map((funnel) => <DropdownMenuCheckboxItem key={funnel.id} checked={value.includes(funnel.id)} disabled={!funnel.isActive && !value.includes(funnel.id)}
         onSelect={(event) => event.preventDefault()} onCheckedChange={(checked) => onChange(checked ? [...new Set([...value, funnel.id])] : value.filter((id) => id !== funnel.id))}>
         <span className="min-w-0 flex-1 break-words">{funnel.name}</span>
-        {funnel.workflowRole ? <Badge variant="outline" className="ml-2 shrink-0">{t(funnel.workflowRole === 'closer' ? 'kpiCloser' : 'kpiHunter')}</Badge> : null}
         {!funnel.isActive ? <Badge variant="secondary" className="ml-2 shrink-0">{t('inactive')}</Badge> : null}
       </DropdownMenuCheckboxItem>)}
     </DropdownMenuContent>

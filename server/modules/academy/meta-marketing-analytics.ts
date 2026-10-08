@@ -22,41 +22,11 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        WHERE payment.lead_id IS NOT NULL
        GROUP BY payment.lead_id
      ),
-     stage_thresholds AS (
-       SELECT
-         COALESCE(MAX(sort_order) FILTER (WHERE code = 'qualified'), 30) AS qualified_sort,
-         COALESCE(MAX(sort_order) FILTER (WHERE code = 'demo_invited'), 40) AS demo_sort
-       FROM academy_lead_statuses
-     ),
      enriched AS (
-       SELECT attribution.*,
-              lead.status_code,
-              current_status.sort_order AS current_sort,
-              current_status.is_pipeline AS current_is_pipeline,
-              COALESCE(payment.revenue, 0)::bigint AS revenue,
-              thresholds.qualified_sort,
-              thresholds.demo_sort,
-              EXISTS (
-                SELECT 1
-                FROM academy_lead_stage_history history
-                JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
-                WHERE history.lead_id = attribution.lead_id
-                  AND history_status.is_pipeline = true
-                  AND history_status.sort_order >= thresholds.qualified_sort
-              ) AS reached_qualified,
-              EXISTS (
-                SELECT 1
-                FROM academy_lead_stage_history history
-                JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
-                WHERE history.lead_id = attribution.lead_id
-                  AND history_status.is_pipeline = true
-                  AND history_status.sort_order >= thresholds.demo_sort
-              ) AS reached_demo
+       SELECT attribution.*, COALESCE(payment.revenue, 0)::bigint AS revenue
        FROM period_attribution attribution
        JOIN academy_leads lead ON lead.id = attribution.lead_id
-       LEFT JOIN academy_lead_statuses current_status ON current_status.code = lead.status_code
        LEFT JOIN paid_by_lead payment ON payment.lead_id = attribution.lead_id
-       CROSS JOIN stage_thresholds thresholds
      ),
      stats AS (
      SELECT
@@ -82,17 +52,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        MAX(utm_term) AS utm_term,
        BOOL_OR(utm_derived) AS utm_derived,
        COUNT(*)::int AS leads,
-       COUNT(DISTINCT lead_id) FILTER (
-         WHERE lead_rank = 1
-           AND (reached_qualified OR (current_is_pipeline = true AND current_sort >= qualified_sort))
-       )::int AS qualified,
-       COUNT(DISTINCT lead_id) FILTER (
-         WHERE lead_rank = 1
-           AND (reached_demo OR (current_is_pipeline = true AND current_sort >= demo_sort))
-       )::int AS demo_invited,
-       COUNT(DISTINCT lead_id) FILTER (
-         WHERE lead_rank = 1 AND (revenue > 0 OR status_code = 'paid')
-       )::int AS paid,
+       COUNT(DISTINCT lead_id) FILTER (WHERE lead_rank = 1 AND revenue > 0)::int AS paid,
        COALESCE(SUM(revenue) FILTER (WHERE lead_rank = 1), 0)::bigint AS revenue,
        COUNT(*) FILTER (WHERE enrichment_status = 'failed')::int AS enrichment_failures,
        MIN(captured_at) AS first_captured_at,
@@ -138,8 +98,6 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        stats.utm_source, stats.utm_medium, stats.utm_campaign, stats.utm_content, stats.utm_term,
        COALESCE(stats.utm_derived, false) AS utm_derived,
        COALESCE(stats.leads, 0)::int AS leads,
-       COALESCE(stats.qualified, 0)::int AS qualified,
-       COALESCE(stats.demo_invited, 0)::int AS demo_invited,
        COALESCE(stats.paid, 0)::int AS paid,
        COALESCE(stats.revenue, 0)::bigint AS revenue,
        COALESCE(stats.enrichment_failures, 0)::int AS enrichment_failures,
@@ -168,19 +126,15 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
 
   const normalizedCreatives = creatives.map((creative) => {
     const leads = Number(creative.leads || 0);
-    const qualified = Number(creative.qualified || 0);
     const paid = Number(creative.paid || 0);
     const spend = toDisplaySpend(Number(creative.spend || 0));
     return {
       ...creative,
       leads,
-      qualified,
-      demoInvited: Number(creative.demoInvited || 0),
       paid,
       revenue: Number(creative.revenue || 0),
       spend,
       costPerLead: leads > 0 ? toDisplaySpend(Number(creative.spend || 0) / leads) : null,
-      qualificationRate: leads > 0 ? Number(((qualified / leads) * 100).toFixed(1)) : 0,
       paymentRate: leads > 0 ? Number(((paid / leads) * 100).toFixed(1)) : 0,
     };
   });
@@ -188,13 +142,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
   // Which Instant Form a lead filled in is a separate question from which ad showed it,
   // so the forms are counted on their own rather than folded into the ad rows.
   const forms = await query(
-    `WITH stage_thresholds AS (
-       SELECT
-         COALESCE(MAX(sort_order) FILTER (WHERE code = 'qualified'), 30) AS qualified_sort,
-         COALESCE(MAX(sort_order) FILTER (WHERE code = 'demo_invited'), 40) AS demo_sort
-       FROM academy_lead_statuses
-     ),
-     selected AS (
+    `WITH selected AS (
        SELECT attribution.id,
               attribution.lead_id,
               attribution.form_id,
@@ -214,31 +162,10 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        MAX(record.source_sheet) AS form_name,
        COUNT(*)::int AS leads,
        COUNT(DISTINCT selected.lead_id) FILTER (
-         WHERE selected.lead_rank = 1
-           AND EXISTS (
-           SELECT 1 FROM academy_lead_stage_history history
-           JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
-           WHERE history.lead_id = selected.lead_id
-             AND history_status.is_pipeline = true
-             AND history_status.sort_order >= thresholds.qualified_sort
-         )
-       )::int AS qualified,
-       COUNT(DISTINCT selected.lead_id) FILTER (
-         WHERE selected.lead_rank = 1
-           AND EXISTS (
-           SELECT 1 FROM academy_lead_stage_history history
-           JOIN academy_lead_statuses history_status ON history_status.code = history.to_status_code
-           WHERE history.lead_id = selected.lead_id
-             AND history_status.is_pipeline = true
-             AND history_status.sort_order >= thresholds.demo_sort
-         )
-       )::int AS demo_invited,
-       COUNT(DISTINCT selected.lead_id) FILTER (
          WHERE selected.lead_rank = 1 AND payment.revenue > 0
        )::int AS paid,
        COALESCE(SUM(payment.revenue) FILTER (WHERE selected.lead_rank = 1), 0)::bigint AS revenue
      FROM selected
-     CROSS JOIN stage_thresholds thresholds
      LEFT JOIN LATERAL (
        SELECT record_inner.source_sheet
        FROM academy_lead_import_records record_inner
@@ -264,12 +191,10 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
       creatives: summary.creatives + (creative.leads > 0 ? 1 : 0),
       totalAds: summary.totalAds + 1,
       leads: summary.leads + creative.leads,
-      qualified: summary.qualified + creative.qualified,
-      demoInvited: summary.demoInvited + creative.demoInvited,
       paid: summary.paid + creative.paid,
       revenue: summary.revenue + creative.revenue,
       spend: summary.spend + creative.spend,
-    }), { creatives: 0, totalAds: 0, leads: 0, qualified: 0, demoInvited: 0, paid: 0, revenue: 0, spend: 0 }),
+    }), { creatives: 0, totalAds: 0, leads: 0, paid: 0, revenue: 0, spend: 0 }),
     creatives: normalizedCreatives,
     spendCurrency: convertsToUzs ? 'UZS' : 'USD',
     reportingRange: { from: reportingRange.from, to: reportingRange.to },
@@ -346,7 +271,7 @@ export const getMetaConversionEventDataset = async (limit = 200, reportingRange:
     ),
   ]);
   const counts = Object.fromEntries(statusCounts.map((row) => [row.status, Number(row.count || 0)]));
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const total = Object.entries(counts).reduce((sum, [status, count]) => sum + (status === 'cancelled' ? 0 : count), 0);
   const sent = counts.sent ?? 0;
   return {
     summary: {

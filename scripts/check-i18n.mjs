@@ -23,6 +23,7 @@ const nonLocalizedValueKeys = new Set([
   'npsTab',
   'passwordMinLengthPlaceholder',
   'platformName',
+  'publicAttendanceBrand',
   'roasLabel',
   'sessionTimeoutPlaceholder',
   'smtpHostPlaceholder',

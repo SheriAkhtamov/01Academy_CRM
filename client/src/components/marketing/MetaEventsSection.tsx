@@ -69,18 +69,20 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
   };
   const statusLabel = (status: MetaEventRow['status']) => {
     if (status === 'sent') return t('messageDelivered');
+    if (status === 'cancelled') return t('cancelled');
     if (status === 'failed') return t('error');
     if (status === 'processing') return t('metaEventStatusProcessing');
     return t('metaEventStatusPending');
   };
   const statusVariant = (status: MetaEventRow['status']) => {
     if (status === 'sent') return 'success' as const;
+    if (status === 'cancelled') return 'secondary' as const;
     if (status === 'failed') return 'destructive' as const;
     if (status === 'processing') return 'purple' as const;
     return 'outline' as const;
   };
-  const stageLabel = (row: MetaEventRow) => data?.integration.conversionStages?.find((stage) => stage.code === row.crmStage)?.name || t('noData');
-  const eventLabel = (row: MetaEventRow) => row.eventName === 'Purchase' ? t('payment') : t('lead');
+  const canRetry = (row: MetaEventRow) => row.crmStage == null && (row.status === 'failed' || row.status === 'pending');
+  const eventLabel = (row: MetaEventRow) => row.eventName === 'Lead' ? t('newApplication') : row.eventName === 'Purchase' ? t('payment') : t('lead');
   const columns = [
     {
       key: 'event',
@@ -107,7 +109,6 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
       render: (row: MetaEventRow) => row.hookName || row.adName || t('noData'),
       sortable: true,
     },
-    { key: 'crmStage', header: t('metaCrmStage'), accessor: stageLabel, sortable: true },
     {
       key: 'status',
       header: t('status'),
@@ -115,7 +116,6 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
       render: (row: MetaEventRow) => <Badge variant={statusVariant(row.status)}>{statusLabel(row.status)}</Badge>,
       sortable: true,
     },
-    { key: 'attempts', header: t('metaAttempts'), accessor: (row: MetaEventRow) => row.attemptCount, sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'eventTime',
       header: t('metaEventTime'),
@@ -180,16 +180,12 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
           {selected ? (
             <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
               <EventDetail label={t('status')} value={statusLabel(selected.status)} />
-              <EventDetail label={t('metaCrmStage')} value={stageLabel(selected)} />
-              <EventDetail label={t('metaAttempts')} value={String(selected.attemptCount)} />
               <EventDetail label={t('metaEventTime')} value={dateTime(selected.eventTime)} />
-              <EventDetail label={t('metaLastAttempt')} value={dateTime(selected.lastAttemptAt)} />
-              <EventDetail label={t('metaNextAttempt')} value={dateTime(selected.nextAttemptAt)} />
               <EventDetail label={t('metaSentAt')} value={dateTime(selected.sentAt)} />
               {selected.status === 'failed' ? <EventDetail label={t('error')} value={t('metaDeliveryFailed')} /> : null}
             </div>
           ) : null}
-          {selected && selected.status !== 'sent' ? (
+          {selected && canRetry(selected) ? (
             <DialogFooter>
               <Button onClick={() => retryEvent.mutate(selected.id)} disabled={retryEvent.isPending}>
                 <RotateCcw className="mr-2 size-4" />

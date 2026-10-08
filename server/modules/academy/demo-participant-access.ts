@@ -17,5 +17,5 @@ export function canManageDemoParticipant(source: ActorSource, participant: {
   return hasLeadershipAccess(actor)
     || Number(participant.managerId) === actor.userId
     || Number(participant.attendanceManagerId) === actor.userId
-    || (!participant.managerId && participant.funnelRole !== 'closer');
+    || !participant.managerId;
 }

@@ -256,11 +256,22 @@ jobs:
           backup_started_at="$(date +%s)"
           docker compose up -d --no-build postgres
           docker compose stop backup >/dev/null 2>&1 || true
-          rm -f backups/.backup.lock
+          # Older CRM images did not retain committed upload deletions. Stop
+          # that image for the rollout snapshot; later backups can stay online.
+          crm_backup_legacy_stopped=0
+          if docker container inspect crm-pro >/dev/null 2>&1 \
+            && ! docker exec crm-pro test -f /app/migrations/0128_generic_funnel_stages_and_qualification.sql; then
+            docker compose stop crm
+            crm_backup_legacy_stopped=1
+          fi
+          # The persistent lock also coordinates operator retention pruning.
           if ! docker compose run --rm --no-deps -T \
             --entrypoint /usr/local/bin/create-production-backup \
             backup </dev/null; then
             docker compose up -d --no-build backup || true
+            if [ "$crm_backup_legacy_stopped" -eq 1 ]; then
+              docker start crm-pro || true
+            fi
             exit 1
           fi
           docker compose up -d --no-build --remove-orphans

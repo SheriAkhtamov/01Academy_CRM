@@ -15,7 +15,7 @@ import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
-import { createLeadFunnelHandoffTable, createSalesFunnelTables } from "./sales-funnels";
+import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
 export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -48,7 +48,7 @@ export const users = pgTable("users", {
   moduleCheck: check("users_module_check", sql`${table.module} IN (${sql.raw(ACADEMY_MODULES.map((module) => `'${module}'`).join(', '))})`),
 }));
 
-export const { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers } = createSalesFunnelTables(users.id);
+export const { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers } = createSalesFunnelTables(users.id, (): AnyPgColumn => academyLeadStatuses.code);
 
 export const userPhones = createUserPhonesTable(users.id);
 
@@ -194,7 +194,7 @@ export const academyLeadTags = pgTable("academy_lead_tags", {
 
 export const academyLeadStatuses = pgTable("academy_lead_statuses", {
   id: serial("id").primaryKey(),
-  funnelId: integer("funnel_id"),
+  funnelId: integer("funnel_id").notNull().references(() => academySalesFunnels.id, { onDelete: "cascade" }),
   code: varchar("code", { length: 80 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   color: varchar("color", { length: 40 }).notNull(),
@@ -267,7 +267,7 @@ export const academyLeads = pgTable("academy_leads", {
   funnelId: integer("funnel_id").references(() => academySalesFunnels.id, { onDelete: "restrict" }).notNull(),
   advertisingCampaign: varchar("advertising_campaign", { length: 255 }),
   acquisitionCostUzs: integer("acquisition_cost_uzs").notNull().default(0),
-  statusCode: varchar("status_code", { length: 80 }).notNull().default("new_request"),
+  statusCode: varchar("status_code", { length: 80 }).notNull(),
   managerId: integer("manager_id").references(() => users.id, { onDelete: "set null" }),
   language: varchar("language", { length: 20 }).notNull().default("ru"), languages: text("languages").array(),
   comment: text("comment"),
@@ -388,6 +388,10 @@ export const academyLeadGroupReservations = pgTable("academy_lead_group_reservat
 export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
+  fromFunnelId: integer("from_funnel_id"),
+  toFunnelId: integer("to_funnel_id"),
+  fromStatusName: text("from_status_name"),
+  toStatusName: text("to_status_name"),
   fromStatusCode: varchar("from_status_code", { length: 80 }),
   toStatusCode: varchar("to_status_code", { length: 80 }).notNull(),
   enteredAt: timestamp("entered_at").defaultNow(),
@@ -420,6 +424,10 @@ export const academyLeadComments = pgTable("academy_lead_comments", {
   leadCreatedIdx: index("academy_lead_comments_lead_created_idx").on(table.leadId, table.createdAt),
   authorIdx: index("academy_lead_comments_author_idx").on(table.authorId),
 }));
+
+export const academyLeadFunnelQualifications = createLeadFunnelQualificationTable({
+  lead: academyLeads.id, funnel: academySalesFunnels.id, user: users.id,
+});
 
 export const academyStudents = pgTable("academy_students", {
   id: serial("id").primaryKey(),
@@ -766,6 +774,7 @@ export const academySalaryRates = pgTable("academy_salary_rates", {
   amountUzs: integer("amount_uzs").notNull(),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
+  employmentEndedOn: date("employment_ended_on"),
   note: text("note"),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),

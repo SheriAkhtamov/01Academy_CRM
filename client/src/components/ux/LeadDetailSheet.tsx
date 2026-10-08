@@ -178,6 +178,7 @@ interface LeadDetails {
     id: number;
     fromStatusCode?: string | null;
     toStatusCode: string;
+    toStatusName?: string | null;
     enteredAt?: string | null;
     comment?: string | null;
   }>;
@@ -422,9 +423,8 @@ export function LeadDetailSheet({
     queryKey: ['/api/academy/sales-funnels'],
     enabled: open,
   });
-  const funnelStatuses = useMemo(() => salesFunnelStages(statuses, leadQuery.data?.funnelRole, leadQuery.data?.funnelId)
-    .map((status) => leadQuery.data?.funnelRole === 'closer' && status.code === 'demo_attended'
-      ? { ...status, name: t('closerQueueStage') } : status), [statuses, leadQuery.data?.funnelId, leadQuery.data?.funnelRole, t]);
+  const funnelStatuses = useMemo(() => salesFunnelStages(statuses, undefined, leadQuery.data?.funnelId),
+    [statuses, leadQuery.data?.funnelId]);
 
   const leadForm = useForm<LeadFormValues>({
     resolver: zodResolver(leadSchema),
@@ -831,9 +831,8 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
-  const paymentActionLabel = lead?.statusCode === 'paid' ? t('recordAnotherPayment') : t('recordPayment');
+  const paymentActionLabel = lead?.payments?.some((payment) => payment.status === 'paid') ? t('recordAnotherPayment') : t('recordPayment');
   const paymentNeedsStudent = (lead?.students?.length ?? 0) === 0;
-  const waitingForCloser = lead?.funnelRole === 'closer' && !lead.managerId && !canTransferLeads;
   const canClaimLead = canClaimUnassignedLead && Boolean(currentUserId) && Boolean(lead && !lead.managerId && !lead.isArchived);
   const confirmingSelfClaim = canClaimLead && pendingManagerId === currentUserId;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
@@ -1011,7 +1010,6 @@ export function LeadDetailSheet({
           <>
             <LeadWorkspaceHeader
               lead={lead}
-              actionsDisabled={waitingForCloser}
               visiblePhoneNumbers={visiblePhoneNumbers}
               primaryPhone={primaryPhone}
               messageTarget={messageTarget}
@@ -1057,7 +1055,7 @@ export function LeadDetailSheet({
                       {t('sendToAnotherFunnel')}
                     </Button>
                   ) : null}
-                  {!lead.isArchived && lead.statusCode !== 'paid' ? (
+                  {!lead.isArchived ? (
                     <Button type="button" size="sm" variant="outline" onClick={() => setDemoEnrollmentOpen(true)}>
                       <CalendarPlus2 data-icon="inline-start" />
                       {t('bookDemoLesson')}
@@ -1067,7 +1065,7 @@ export function LeadDetailSheet({
               )}
             />
 
-            <fieldset disabled={waitingForCloser} className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <fieldset className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Tabs
               value={activeTab}
               onValueChange={(value) => navigateTo(value as LeadSheetTab)}

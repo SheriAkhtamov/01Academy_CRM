@@ -88,6 +88,22 @@ export default function TasksPage() {
         queryFn: () => boardApi.listTasks<BoardTasksResponse>(isArchiveView),
     });
 
+    const academyTaskId = Number(new URLSearchParams(routeSearch).get('academyTask'));
+    const { data: mappedTask, isError: mappingError, error: mappingFailure } = useQuery<{ id: number }>({
+        queryKey: ['/api/board/academy-tasks', academyTaskId],
+        queryFn: () => boardApi.resolveAcademyTask(academyTaskId),
+        enabled: Number.isSafeInteger(academyTaskId) && academyTaskId > 0,
+    });
+    useEffect(() => {
+        if (!academyTaskId || (!mappedTask && !mappingError)) return;
+        const params = new URLSearchParams(routeSearch);
+        params.delete('academyTask');
+        params.delete('task');
+        if (mappedTask) params.set('task', String(mappedTask.id));
+        if (mappingError) toast({ title: mappingFailure instanceof Error ? mappingFailure.message : t('failedToLoadData'), variant: 'destructive' });
+        setLocation(params.size ? `/tasks?${params.toString()}` : '/tasks', { replace: true });
+    }, [academyTaskId, mappedTask, mappingError, mappingFailure, routeSearch, setLocation, toast, t]);
+
     const { data: usersData } = useQuery<ApiUser[]>({
         queryKey: ['/api/users'],
         enabled: Boolean(user),
@@ -120,7 +136,7 @@ export default function TasksPage() {
     // browser Back closes the sheet instead of leaving it. A Back that only
     // switches between tasks syncs state without touching history.
     useEffect(() => {
-        if (isLoading) return;
+        if (isLoading || new URLSearchParams(routeSearch).has('academyTask')) return;
         const requested = Number(new URLSearchParams(routeSearch).get('task'));
         const isValid = Number.isSafeInteger(requested) && requested > 0;
         if (!isValid) {

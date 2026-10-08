@@ -1,4 +1,5 @@
 export type PublicAttendanceStatus = 'present' | 'absent' | null;
+export type PublicAttendanceMarkedStatus = Exclude<PublicAttendanceStatus, null>;
 
 export interface PublicAttendanceLesson {
   id: number;
@@ -8,6 +9,8 @@ export interface PublicAttendanceLesson {
   durationMinutes: number;
   status: string;
   canMark: boolean;
+  /** Every student on the lesson's roster has a mark — true even while the lesson waits for an earlier one to be completed. */
+  fullyMarked: boolean;
 }
 
 export interface PublicAttendanceGroup {
@@ -40,4 +43,10 @@ export interface PublicAttendanceMark {
   status: PublicAttendanceStatus;
   expectedRevision: string | null;
   clearConfirmed?: boolean;
+}
+
+/** Fills every listed student who is still unmarked; existing marks are left as they are. */
+export interface PublicAttendanceBulkMark {
+  studentIds: number[];
+  status: PublicAttendanceMarkedStatus;
 }

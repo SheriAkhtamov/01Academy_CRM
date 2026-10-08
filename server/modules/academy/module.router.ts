@@ -178,6 +178,7 @@ router.get('/modules/sales', async (req, res) => {
       statuses: dataset.statuses,
       leads: dataset.leads,
       archivedLeads: dataset.archivedLeads,
+      qualificationSummary: dataset.qualificationSummary,
       students: dataset.students,
       lessons: dataset.lessons,
       payments: dataset.payments,
@@ -399,13 +400,21 @@ router.get('/audit', async (req, res) => {
     const userId = parseId(req.query.userId);
     const action = nullableText(req.query.action);
     const entityType = nullableText(req.query.entityType);
-    const from = nullableDate(req.query.from);
-    const to = nullableDate(req.query.to);
+    const from = req.query.from ? parseDateOnly(req.query.from) : null;
+    const to = req.query.to ? parseDateOnly(req.query.to) : null;
+    if ((req.query.from && !from) || (req.query.to && !to) || (from && to && to < from)) {
+      return res.status(400).json({ error: 'invalidReportingPeriod' });
+    }
     if (userId) filters.push(`a.user_id = ${add(userId)}`);
-    if (action) filters.push(`a.action ILIKE ${add(`%${action}%`)}`);
+    if (action) {
+      const normalizedAction = action.toUpperCase();
+      filters.push(['ARCHIVE', 'UNARCHIVE'].includes(normalizedAction)
+        ? `a.action ~* ${add(`(^|_)${normalizedAction}(_|$)`)}`
+        : `a.action ILIKE ${add(`%${action}%`)}`);
+    }
     if (entityType) filters.push(`a.entity_type ILIKE ${add(`%${entityType}%`)}`);
     if (from instanceof Date) filters.push(`a.created_at >= ${add(from)}`);
-    if (to instanceof Date) filters.push(`a.created_at < ${add(addDays(to, 1))}`);
+    if (to instanceof Date) filters.push(`a.created_at < ${add(getZonedDayRange(to, ACADEMY_TIME_ZONE).end)}`);
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const auditLimitPlaceholder = `$${params.length + 1}`;
     const auditOffsetPlaceholder = `$${params.length + 2}`;
@@ -415,7 +424,7 @@ router.get('/audit', async (req, res) => {
       (auditPage - 1) * auditLimit,
     ];
 
-    const [logs, auditCountRows, integrationLogs, integrationCountRows, employees] = await Promise.all([
+    const [logs, auditCountRows, integrationLogs, integrationCountRows, employees, teachers, statuses] = await Promise.all([
       query(
         `SELECT a.*, u.full_name AS user_name, u.module AS user_module
          FROM audit_logs a
@@ -440,8 +449,12 @@ router.get('/audit', async (req, res) => {
         `SELECT COUNT(*)::int AS total FROM academy_integration_logs`,
       ),
       query(
-        `SELECT id, full_name, module FROM users WHERE is_active = true ORDER BY full_name`,
+        `SELECT id, full_name, module FROM users ORDER BY full_name`,
       ),
+      query(
+        `SELECT id, full_name FROM academy_teachers ORDER BY full_name`,
+      ),
+      query(`SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, id`),
     ]);
     const auditTotal = Number(auditCountRows[0]?.total ?? 0);
     const integrationTotal = Number(integrationCountRows[0]?.total ?? 0);
@@ -449,6 +462,8 @@ router.get('/audit', async (req, res) => {
       logs,
       integrationLogs,
       employees,
+      teachers,
+      statuses,
       pagination: {
         audit: {
           page: auditPage,
@@ -692,7 +707,7 @@ router.get('/search', async (req, res) => {
       queryParams.push(grouped ? offset : 0);
 
       const rows = await query(
-        `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, l.funnel_id, l.status_code,
+        `SELECT l.id, l.contact_name, l.phone, l.student_name, l.is_archived, l.funnel_id, l.status_code, l.manager_id,
             c.name AS course_name,
             ${leadPhoneNumbersSelect('l')}
          FROM academy_leads l

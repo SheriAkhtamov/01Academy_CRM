@@ -58,36 +58,20 @@ describe('sales dashboard operational metrics', () => {
     expect(metrics).not.toContain('SELECT lead.archived_at AS happened_at');
   });
 
-  it('distinguishes conversations, repeat attempts, qualification, and demo bookings', () => {
+  it('counts conversations, repeat attempts and actual demo bookings without stage-derived indicators', () => {
     expect(metrics).toContain('const SUCCESSFUL_CALL_MIN_TALK_SECONDS = 3 * 60;');
     expect(metrics).toContain('BOOL_OR(phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS})');
-    expect(metrics).toContain('AND phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}');
-    expect(metrics).not.toContain('phone_call.answered_at IS NOT NULL OR phone_call.talk_seconds > 0');
     expect(metrics).toContain('calls.attempts BETWEEN 2 AND 5');
-    expect(metrics).toContain("status.code = 'qualified'");
-    expect(metrics).toContain('reached_status.sort_order >= quality_stage.sort_order');
-    expect(metrics).toContain("stage.to_status_code = 'demo_invited'");
-  });
-
-  it('shows refusal reasons in a modal instead of flattening them into the dashboard', () => {
-    expect(metrics).toContain('target_refusal_reason_counts AS');
-    expect(metrics).toContain('history.entered_at <= lead.archived_at');
-    expect(salesOverviewMetrics).toContain('targetRefusalDialogOpen ? <OverviewDialog');
-    expect(salesOverviewMetrics).toContain("t('targetRefusalReasonsTitle')");
-    expect(salesOverviewMetrics).toContain('metrics.targetRefusalReasons.map');
-  });
-  // The overview used to draw two funnels as two identical lists of horizontal
-  // bars a few hundred pixels apart: one counting persisted events in the
-  // window, the other counting where deals stand in the pipeline now. They
-  // legitimately disagree, which read as a bug. Both readings survive — as tabs
-  // of one card, so only one is ever on screen to be misread against the other.
-  it('offers both funnel readings as tabs of a single card', () => {
-    expect(overviewFunnel).toContain("t('funnelProcessTab')");
-    expect(overviewFunnel).toContain("t('funnelStageTab')");
-    expect(overviewFunnel).toContain('aria-pressed={!stages}');
-    expect(overviewFunnel).toContain('aria-pressed={stages}');
-    expect(salesCharts).not.toContain("t('conversionFunnel')");
-    expect(salesCharts).not.toContain('funnel = []');
+    expect(metrics).toContain('participant.created_at >= $1 AND participant.created_at < $2');
+    expect(metrics).not.toContain("status.code = 'qualified'");
+    expect(metrics).not.toContain("stage.to_status_code = 'demo_invited'");
+    expect(metrics).not.toContain('target_refusal_reason_counts AS');
+    expect(salesOverviewMetrics).not.toContain('targetRefusalDialogOpen');
+    expect(overviewFunnel).not.toContain("t('qualifiedLeads')");
+    expect(overviewFunnel).not.toContain("t('funnelStageTab')");
+    expect(overviewFunnel).toContain("t('processedLeads')");
+    expect(salesCharts).not.toContain("lead.statusCode === 'paid'");
+    expect(overviewHero).not.toContain("t('salesPrimaryConversion')");
   });
 
   it('compares sales revenue against the same server-supplied period', () => {

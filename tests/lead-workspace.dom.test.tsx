@@ -25,7 +25,7 @@ const initialLead = {
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
   students: [{ id: 50, studentName: 'Test student', status: 'studying', expectedPaymentUzs: 100_000, updatedAt: '2026-08-01T08:00:00.000Z' }],
-  payments: [], comments: [],
+  payments: [] as Array<{ id: number; status: string; amountUzs: number; paidAt: string }>, comments: [],
   tasks: [
     { id: 1, title: 'Future task', status: 'todo', dueAt: '2099-08-02T08:00:00.000Z' },
     { id: 2, title: 'Overdue callback', status: 'todo', dueAt: '2020-08-01T08:00:00.000Z' },
@@ -192,8 +192,8 @@ describe('lead workspace navigation and drafts', () => {
     expect(screen.getByRole('tab', { name: i18n.t('dealTab') }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('opens the next payment for a paid lead in another funnel in the same dialog', async () => {
-    lead = { ...lead, funnelId: 3, funnelRole: null, statusCode: 'paid' };
+  it('opens the next payment based on paid records regardless of a stage name', async () => {
+    lead = { ...lead, funnelId: 3, funnelRole: null, statusCode: 'custom_stage', payments: [{ id: 700, status: 'paid', amountUzs: 500000, paidAt: '2026-09-01T08:00:00Z' }] };
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));

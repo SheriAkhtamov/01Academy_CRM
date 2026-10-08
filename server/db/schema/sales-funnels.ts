@@ -2,12 +2,14 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, primaryKey, serial, timestamp, uniqueIndex, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { SalesFunnelRole } from '../../../shared/sales-funnel-workflow';
 
-export function createSalesFunnelTables(user: AnyPgColumn) {
+export function createSalesFunnelTables(user: AnyPgColumn, initialStage: () => AnyPgColumn) {
   const academySalesFunnels = pgTable('academy_sales_funnels', {
     id: serial('id').primaryKey(),
     name: varchar('name', { length: 120 }).notNull(),
     isActive: boolean('is_active').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),
+    // Nullable during atomic funnel creation; migration uses a deferred foreign key.
+    initialStageCode: varchar('initial_stage_code', { length: 80 }).references(initialStage, { onDelete: 'no action' }),
     workflowRole: varchar('workflow_role', { length: 20 }).$type<SalesFunnelRole>(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -54,10 +56,25 @@ export function createLeadFunnelHandoffTable(ref: {
 }) {
   return pgTable('academy_lead_funnel_handoffs', {
     leadId: integer('lead_id').primaryKey().references(() => ref.lead, { onDelete: 'cascade' }),
-    fromFunnelId: integer('from_funnel_id').notNull().references(() => ref.funnel, { onDelete: 'restrict' }),
+    fromFunnelId: integer('from_funnel_id').notNull(),
     fromManagerId: integer('from_manager_id').references(() => ref.user, { onDelete: 'set null' }),
     demoLessonId: integer('demo_lesson_id').references(() => ref.demo, { onDelete: 'set null' }),
     handedOffAt: timestamp('handed_off_at').notNull().default(sql`timezone('UTC', now())`),
     returnedAt: timestamp('returned_at'),
   });
+}
+
+export function createLeadFunnelQualificationTable(ref: { lead: AnyPgColumn; funnel: AnyPgColumn; user: AnyPgColumn }) {
+  return pgTable('academy_lead_funnel_qualifications', {
+    leadId: integer('lead_id').notNull().references(() => ref.lead, { onDelete: 'cascade' }),
+    funnelId: integer('funnel_id').notNull(),
+    funnelName: varchar('funnel_name', { length: 120 }).notNull(),
+    qualifiedAt: timestamp('qualified_at').notNull().default(sql`timezone('UTC', now())`),
+    qualifiedBy: integer('qualified_by').references(() => ref.user, { onDelete: 'set null' }),
+    fromStageCode: varchar('from_stage_code', { length: 80 }).notNull(),
+    toStageCode: varchar('to_stage_code', { length: 80 }).notNull(),
+  }, (table) => ({
+    pk: primaryKey({ columns: [table.leadId, table.funnelId] }),
+    funnelDateIdx: index('academy_lead_funnel_qualifications_funnel_date_idx').on(table.funnelId, table.qualifiedAt),
+  }));
 }

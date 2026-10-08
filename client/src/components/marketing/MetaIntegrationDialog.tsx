@@ -9,7 +9,6 @@ export function MetaIntegrationDialog({ open, onOpenChange, integration }: {
   integration?: MetaIntegrationState | null;
 }) {
   const { t } = useTranslation();
-  const stages = integration?.conversionStages ?? [];
   const statuses = [
     { label: t('metaAttribution'), ready: Boolean(integration?.attributionConfigured) },
     { label: t('metaEventManager'), ready: Boolean(integration?.capiConfigured) },
@@ -22,10 +21,6 @@ export function MetaIntegrationDialog({ open, onOpenChange, integration }: {
           <dt className="text-sm">{label}</dt><dd><Badge variant={ready ? 'success' : 'outline'}>{ready ? t('metaConfigured') : t('metaNotConfigured')}</Badge></dd>
         </div>)}
       </dl>
-      {stages.length ? <div className="space-y-3 rounded-xl border p-4">
-        <p className="text-sm font-medium">{t('metaStageEventsTitle')}</p>
-        <div className="flex flex-wrap gap-1.5">{stages.map((stage) => <Badge key={stage.code} variant="outline">{stage.name}</Badge>)}</div>
-      </div> : null}
     </DialogContent>
   </Dialog>;
 }

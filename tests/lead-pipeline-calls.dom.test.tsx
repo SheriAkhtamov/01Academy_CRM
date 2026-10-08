@@ -41,7 +41,7 @@ async function openCallMenu(phoneNumbers = phones) {
   queryClient.setQueryData(salesQueryKeys.module, {
     leads: [{ id: 15, contactName: 'Pipeline parent', statusCode: 'new_request', funnelId: 1,
       managerId: 7, phoneNumbers, createdAt: '2026-10-01T08:00:00Z' }],
-    statuses: [{ code: 'new_request', name: 'New request', color: '#2563eb', sortOrder: 1 }],
+    statuses: [{ code: 'new_request', funnelId: 1, name: 'New request', color: '#2563eb', sortOrder: 1 }],
   });
   render(<QueryClientProvider client={queryClient}>
     <TooltipProvider><SalesDashboard section="pipeline" /></TooltipProvider>

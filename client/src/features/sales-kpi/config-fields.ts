@@ -15,7 +15,6 @@ export const kpiPayFields: Field[] = [
 export const kpiTargetFields: Field[] = [
   { name: 'minimumVolume', translationKey: 'kpiMinimumVolume' }, { name: 'volumeTarget', translationKey: 'kpiVolumeTarget', min: 1 },
   { name: 'conversionTargetPercent', translationKey: 'kpiConversionTarget', max: 100 }, { name: 'crmTargetPercent', translationKey: 'kpiCrmTarget', max: 100 },
-  { name: 'qualifiedTarget', translationKey: 'kpiQualifiedTarget', role: 'hunter' },
   { name: 'responseTargetMinutes', translationKey: 'kpiResponseTarget', min: 1, max: 1440, role: 'hunter' },
   { name: 'responseBaseMinutes', translationKey: 'kpiResponseBase', min: 1, max: 1440, role: 'hunter' },
   { name: 'reactivationDays', translationKey: 'kpiReactivationDays', min: 1, max: 365, role: 'hunter' },

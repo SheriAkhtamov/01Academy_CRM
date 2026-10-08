@@ -25,6 +25,9 @@ const router = Router();
 const messageSchema = z.object({
   content: z.string().trim().min(1).max(1000),
 });
+const readCursorSchema = z.object({
+  lastReadMessageId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
 
 router.use(requireAuth);
 
@@ -364,12 +367,14 @@ router.post('/conversations/:id/read', async (req, res) => {
   if (!ensureMessagingAccess(req, res)) return;
   const conversationId = parseId(req.params.id);
   if (!conversationId) return res.status(400).json({ error: 'invalidData' });
+  const parsed = readCursorSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalidData' });
   try {
     res.json(await markInstagramConversationRead(conversationId, {
       id: req.user!.id,
       module: req.user!.module,
       modules: getAssignedModules(req.user),
-    }));
+    }, parsed.data.lastReadMessageId));
   } catch (error: any) {
     logger.error('Failed to mark Instagram conversation read', { conversationId, error });
     return sendHttpError(res, error, 'failedToUpdateResource');

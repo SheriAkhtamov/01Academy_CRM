@@ -15,6 +15,7 @@ import {
 import { upsertLeadChannel } from './lead-channels';
 import {
   captureInstagramMetaAttribution,
+  enqueueMetaLeadIntakeSafely,
   extractMetaReferral,
   linkMetaAttributionToLead,
 } from './meta-marketing';
@@ -1378,7 +1379,7 @@ const ensureLeadForConversation = async (
   const inserted = await client.query(
     `INSERT INTO academy_leads
       (contact_name, phone, messenger, source_id, funnel_id, status_code, manager_id, language, languages, comment, created_by)
-     VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'',ARRAY[]::text[],$5,$6)
+     VALUES ($1,NULL,$2,$3,$4,(SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4),NULL,'',ARRAY[]::text[],$5,$6)
      RETURNING id, manager_id, funnel_id, status_code, contact_name, messenger, true AS created_lead`,
     [
       contactName,
@@ -1398,21 +1399,21 @@ const ensureLeadForConversation = async (
   await client.query(
     `INSERT INTO academy_lead_stage_history
       (lead_id, from_status_code, to_status_code, changed_by, comment)
-     VALUES ($1,NULL,'new_request',$2,$3)`,
+     VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,$3)`,
     [lead.id, systemUserId, options.stageComment ?? 'Instagram Direct'],
   );
   await client.query(
     `INSERT INTO academy_tasks
        (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-     VALUES (
+     SELECT
        'Первый контакт по новой заявке',
        'Ответить на новый диалог Instagram в течение 15 минут.',
-       NULL,
+       lead.manager_id,
        NOW() + INTERVAL '15 minutes',
        'lead',
        $1,
        'new'
-     )`,
+      FROM academy_leads lead WHERE lead.id = $1 AND lead.manager_id IS NOT NULL`,
     [lead.id],
   );
 
@@ -1712,6 +1713,7 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
       audienceUserIds,
     });
     if (!outbound && result.lead?.createdLead) {
+      await enqueueMetaLeadIntakeSafely(Number(result.lead.id));
       publishRealtimeEvent({
         type: 'ACADEMY_LEAD_CREATED',
         data: { id: result.lead.id },
@@ -2478,14 +2480,22 @@ export const listInstagramMessages = async (conversationId: number, user: Instag
   });
 };
 
-export const markInstagramConversationRead = async (conversationId: number, user: InstagramUser) => {
+export const markInstagramConversationRead = async (
+  conversationId: number,
+  user: InstagramUser,
+  lastReadMessageId: number,
+) => {
+  if (!Number.isSafeInteger(lastReadMessageId) || lastReadMessageId <= 0) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
   await assertConversationAccess(conversationId, user);
   const { rows } = await pool.query(
-    `INSERT INTO instagram_conversation_reads
+    `WITH read_cursor AS (
+     INSERT INTO instagram_conversation_reads
        (conversation_id, user_id, last_read_message_id, last_read_at, created_at, updated_at)
-     SELECT $1, $2, COALESCE(MAX(id), 0), NOW(), NOW(), NOW()
+     SELECT $1, $2, id, NOW(), NOW(), NOW()
      FROM instagram_messages
-     WHERE conversation_id = $1
+     WHERE conversation_id = $1 AND id = $3
      ON CONFLICT (conversation_id, user_id)
      DO UPDATE SET
        last_read_message_id = GREATEST(
@@ -2494,9 +2504,18 @@ export const markInstagramConversationRead = async (conversationId: number, user
        ),
        last_read_at = NOW(),
        updated_at = NOW()
-     RETURNING conversation_id AS id, 0::int AS unread_count, updated_at`,
-    [conversationId, user.id],
+     RETURNING conversation_id, last_read_message_id, updated_at
+     )
+     SELECT conversation_id AS id, last_read_message_id,
+       (SELECT COUNT(*)::int FROM instagram_messages unread_message
+        WHERE unread_message.conversation_id = read_cursor.conversation_id
+          AND unread_message.direction = 'inbound'
+          AND unread_message.id > read_cursor.last_read_message_id) AS unread_count,
+       updated_at
+     FROM read_cursor`,
+    [conversationId, user.id, lastReadMessageId],
   );
+  if (!rows[0]) throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   return camelize(rows[0]);
 };
 

@@ -78,8 +78,6 @@ import {
   WeekScheduleEditor,
   type WeekScheduleItem,
 } from '@/components/ux/WeekScheduleEditor';
-import { validateLeadStatusTransition } from '@shared/academy';
-import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { stagesForSalesFunnel } from '@shared/sales-funnel-workflow';
 import {
   getGroupScheduleValidationError,
@@ -627,9 +625,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const preparePipelineStatusDelete = useMutation({
     mutationFn: async (status: PipelineStatus) => {
-      if (status.isSystem || isDemoPipelineStage(status.code)) {
-        throw new Error(t(isDemoPipelineStage(status.code)
-          ? 'demoPipelineStageProtected' : 'systemPipelineStageCannotBeDeleted'));
+      if (selectedStageFunnel?.initialStageCode === status.code) {
+        throw new Error(t('pipelineInitialStageCannotBeDeleted'));
       }
       const usage = await apiRequest('GET', `/api/academy/pipeline-statuses/${status.id}/usage`);
       return {
@@ -643,9 +640,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         return;
       }
 
-      const defaultTarget = stagesForSalesFunnel(configuration.data?.statuses ?? [], selectedStageFunnel?.workflowRole, selectedStageFunnel?.id)
-        .filter((item) => item.id !== status.id && item.isActive !== false)
-        .filter((item) => !validateLeadStatusTransition(status.code, item.code))
+      const defaultTarget = stagesForSalesFunnel(configuration.data?.statuses ?? [], undefined, selectedStageFunnel?.id)
+        .filter((item) => item.id !== status.id && item.isActive !== false && item.isPipeline !== false)
         .sort((left, right) => left.sortOrder - right.sortOrder)[0];
       setPipelineDeleteTarget({ status, leadCount });
       setPipelineTransferTargetId(defaultTarget ? String(defaultTarget.id) : '');
@@ -689,7 +685,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       );
       const index = funnelStatuses.findIndex((item) => item.id === status.id);
       const neighbor = funnelStatuses[index + direction];
-      if (!neighbor) return;
+      if (!neighbor || status.code === selectedStageFunnel?.initialStageCode || neighbor.code === selectedStageFunnel?.initialStageCode) return;
       const orderedStatusIds = allStatuses.map((item) => item.id);
       const fromIndex = orderedStatusIds.indexOf(status.id);
       const toIndex = orderedStatusIds.indexOf(neighbor.id);
@@ -821,14 +817,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const selectedStageFunnel = salesFunnels.data?.find((funnel) => funnel.id === selectedStageFunnelId);
   const funnelStatuses = useMemo(
     () => selectedStageFunnel
-      ? stagesForSalesFunnel(statuses, selectedStageFunnel.workflowRole, selectedStageFunnel.id)
+      ? stagesForSalesFunnel(statuses, undefined, selectedStageFunnel.id)
       : [],
     [selectedStageFunnel, statuses],
   );
   const availableTransferStatuses = useMemo(
     () => pipelineDeleteTarget
-      ? funnelStatuses.filter((status) => status.id !== pipelineDeleteTarget.status.id && status.isActive !== false)
-        .filter((status) => !validateLeadStatusTransition(pipelineDeleteTarget.status.code, status.code))
+      ? funnelStatuses.filter((status) => status.id !== pipelineDeleteTarget.status.id && status.isActive !== false && status.isPipeline !== false)
       : [],
     [pipelineDeleteTarget, funnelStatuses],
   );
@@ -1246,7 +1241,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{funnel.name}</span>
                     <span className="text-sm text-muted-foreground">
-                      {t('pipelineFunnelStageCount').replace('{count}', String(stagesForSalesFunnel(statuses, funnel.workflowRole, funnel.id).length))}
+                      {t('pipelineFunnelStageCount').replace('{count}', String(stagesForSalesFunnel(statuses, undefined, funnel.id).length))}
                     </span>
                   </span>
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
@@ -1286,8 +1281,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <span className="mt-2 size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
                   <div className="min-w-0 flex-1">
                     <p className="break-words font-medium text-foreground">{status.name}</p>
-                    {status.isSystem || isDemoPipelineStage(status.code) ? (
-                      <Badge variant="secondary" className="mt-1">{t('requiredPipelineStage')}</Badge>
+                    {selectedStageFunnel?.initialStageCode === status.code ? (
+                      <Badge variant="secondary" className="mt-1">{t('salesFunnelInitialStage')}</Badge>
                     ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -1298,7 +1293,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={preparePipelineStatusDelete.isPending || status.isSystem || isDemoPipelineStage(status.code)}
+                      disabled={preparePipelineStatusDelete.isPending || selectedStageFunnel?.initialStageCode === status.code}
                       onClick={() => preparePipelineStatusDelete.mutate(status)}
                     >
                       <Trash2 />
@@ -1319,7 +1314,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index === 0 || updateStatusOrder.isPending}
+                      disabled={index <= 1 || updateStatusOrder.isPending}
                       onClick={() => updateStatusOrder.mutate({ status, direction: -1 })}
                     >
                       <ArrowUp />
@@ -1328,7 +1323,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index === funnelStatuses.length - 1 || updateStatusOrder.isPending}
+                      disabled={index === 0 || index === funnelStatuses.length - 1 || updateStatusOrder.isPending}
                       onClick={() => updateStatusOrder.mutate({ status, direction: 1 })}
                     >
                       <ArrowDown />
@@ -1745,27 +1740,23 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <FormField control={statusForm.control} name="sortOrder" render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('sortOrder')}</FormLabel>
-                  <FormControl><Input type="number" min="0" step="10" {...field} /></FormControl>
+                  <FormControl><Input type="number" min="0" step="10" {...field} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
                   <LocalizedFormMessage />
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="isPipeline" render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
                   <FormLabel>{t('shownInPipeline')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isDemoPipelineStage(editingStatus?.code)} /></FormControl>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
                 </FormItem>
               )} />
               <FormField control={statusForm.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
                   <FormLabel>{t('active')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isDemoPipelineStage(editingStatus?.code)} /></FormControl>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
                 </FormItem>
               )} />
-              {isDemoPipelineStage(editingStatus?.code) ? (
-                <Alert className="md:col-span-2">
-                  <AlertDescription>{t('requiredPipelineStage')}</AlertDescription>
-                </Alert>
-              ) : null}
+
               </div>
               <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>

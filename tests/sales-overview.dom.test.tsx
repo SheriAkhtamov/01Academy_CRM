@@ -15,13 +15,13 @@ vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.f
 import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSaleReviewDialog';
 import { SalesOverviewMetrics } from '../client/src/components/ux/SalesOverviewMetrics';
 import { SalesOverviewEmployeeFilter } from '../client/src/components/ux/SalesOverviewEmployeeFilter';
-import { SalesActiveLeadsChart, SalesRepeatCallsChart } from '../client/src/components/ux/sales-overview/SalesOperationalCharts';
+import { SalesRepeatCallsChart } from '../client/src/components/ux/sales-overview/SalesOperationalCharts';
 import { SalesOverviewPeriodFilter } from '../client/src/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '../client/src/features/sales/useSalesReportingRange';
 import { salesMonthRange, salesPlanMonth } from '../client/src/lib/salesReportingRange';
 import { reportingRangeForPreset, isInReportingRange } from '../client/src/lib/reportingDateRange';
 
-const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, qualifiedLeads: 4, demoBookings: 2, demoAttendees: 1, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }], targetRefusals: 0, targetRefusalReasons: [] };
+const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2, demoAttendees: 1, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }] };
 const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2, demoAttendees: 1 }] };
 const employee = (id = 1): KpiOverviewEmployee => ({
   id, name: id === 1 ? 'Alice' : 'Bob', role: 'hunter', assignedAt: '2026-08-01T00:00:00Z',
@@ -58,8 +58,8 @@ function Harness() {
     <SalesOverviewPeriodFilter value={reportingRange} onChange={setReportingRange} />
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
     <SalesOverviewMetrics key={`${reportingRange.from}-${reportingRange.to}-${manager}`} month={month} reportingRange={reportingRange} managerId={manager === 'all' ? null : Number(manager)}
-      stats={{ newLeadsPeriod: 10, conversionRate: 20, conversionRatePrevious: 10, activeLeads: 8, activeLeadStages: [{ code: 'new', count: 5 }, { code: 'qualified', count: 3 }], activeLeadsPrevious: 6, totalStudents: students.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)).length, totalStudentsPrevious: 1 }}
-      payments={payments} students={students} funnel={[]} leadStatusName={(value) => value} statusColor={() => ''} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))} />
+      stats={{ newLeadsPeriod: 10, activeLeads: 8, activeLeadsPrevious: 6, totalStudents: students.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)).length, totalStudentsPrevious: 1 }}
+      payments={payments} students={students} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))} />
   </>;
 }
 function mount(children: ReactNode = <Harness />) {
@@ -175,7 +175,7 @@ describe('unified sales overview', () => {
     await user.click(revenue.getByRole('button', { name: translations.activityTab.en }));
     expect(revenue.queryByRole('slider')).toBeNull();
     expect(revenue.getByText('150000')).toBeTruthy();
-    expect(screen.getByRole('region', { name: translations.salesPrimaryConversion.en })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: "Lead-to-payment conversion" })).toBeNull();
     expect(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).toBeTruthy();
     await user.click(revenue.getByRole('button', { name: translations.revenue.en }));
     expect(revenue.getByRole('slider')).toBeTruthy();
@@ -213,12 +213,15 @@ describe('unified sales overview', () => {
     expect(bookings.getByText('66.7% of target')).toBeTruthy();
   });
 
-  it('visualizes all four operational counters with actual stage, daily and call-attempt data', async () => {
+  it('shows active leads and plots actual attendance, payments and call attempts', async () => {
     const user = userEvent.setup();
     mount();
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     const active = within(screen.getByRole('region', { name: translations.taskInProgress.en }));
-    expect(active.getByRole('img').getAttribute('aria-label')).toBe('Active leads by stage: new: 5; qualified: 3');
+    expect(active.getByText('8')).toBeTruthy();
+    expect(active.queryByRole('img')).toBeNull();
+    expect(screen.queryByText("Qualified leads")).toBeNull();
+    expect(screen.queryByText("Qualified refusals")).toBeNull();
     const trials = within(screen.getByRole('region', { name: translations.demoStudentsModalTitle.en })).getByRole('slider');
     act(() => trials.focus());
     await user.keyboard('{Home}');
@@ -235,10 +238,8 @@ describe('unified sales overview', () => {
     expect(repeat.getAttribute('aria-label')).toBe('Leads by number of call attempts: 2 attempts: 2; 3 attempts: 0; 4 attempts: 0; 5 attempts: 1');
   });
 
-  it('keeps an empty work queue and a single repeatedly-called lead visually distinct', () => {
-    mount(<><SalesActiveLeadsChart stages={[]} leadStatusName={(value) => value} statusColor={() => ''} /><SalesRepeatCallsChart distribution={[{ attempts: 2, count: 1 }]} /></>);
-    expect(screen.getByText(translations.salesNoActiveLeads.en)).toBeTruthy();
-    expect(screen.getByRole('img', { name: 'Active leads by stage: No active leads' })).toBeTruthy();
+  it('represents a single repeatedly called lead with all attempt buckets', () => {
+    mount(<SalesRepeatCallsChart distribution={[{ attempts: 2, count: 1 }]} />);
     expect(screen.getByRole('img', { name: 'Leads by number of call attempts: 2 attempts: 1; 3 attempts: 0; 4 attempts: 0; 5 attempts: 0' })).toBeTruthy();
     expect(screen.queryByText(translations.salesPlanReached.en)).toBeNull();
   });

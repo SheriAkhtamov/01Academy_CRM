@@ -22,3 +22,20 @@ describe('group chat creation and read cursors',()=>{
     expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 });
+
+it('retains messages and unread counts after their sender is deleted', async () => {
+  const message = { id: 12, groupId: 4, senderId: null, senderName: 'Former teacher', content: 'Lesson notes', attachments: [] };
+  mocks.query.mockResolvedValue({ rows: [message] });
+  expect(await chatGroupStorage.messages(4)).toEqual([message]);
+  const messageSql = mocks.query.mock.calls.at(-1)![0];
+  expect(messageSql).toContain('LEFT JOIN users');
+  expect(messageSql).toContain('COALESCE(u.full_name, m.sender_name)');
+  await chatGroupStorage.list(7);
+  expect(mocks.query.mock.calls.at(-1)![0]).toContain('m.sender_id IS DISTINCT FROM $1');
+});
+it('captures the sender name when saving a message', async () => {
+  mocks.query.mockResolvedValue({ rows: [{ id: 12, senderId: 7, senderName: 'Teacher' }] });
+  await chatGroupStorage.send(4, 7, 'Hello', []);
+  expect(mocks.query.mock.calls.at(-1)![0]).toContain('sender_name');
+  expect(mocks.query.mock.calls.at(-1)![0]).toContain('SELECT $1, id, full_name');
+});

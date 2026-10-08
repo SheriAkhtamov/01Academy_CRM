@@ -8,7 +8,7 @@ export const roleKeys = {
   full_cycle_3500: 'kpiFullCycle3500',
 } satisfies Record<KpiRole, TranslationKey>;
 export const metricKeys = {
-  response: 'kpiResponseMetric', qualified: 'kpiQualifiedMetric', bookings: 'kpiBookingsMetric',
+  response: 'kpiResponseMetric', bookings: 'kpiBookingsMetric',
   attendance: 'kpiAttendanceMetric', crm: 'kpiCrmMetric', reactivation: 'kpiReactivationMetric',
   reactivatedAttendance: 'kpiReactivatedAttendanceMetric', newStudents: 'kpiNewStudentsMetric',
   trialConversion: 'kpiTrialConversionMetric', offer: 'kpiOfferMetric', renewals: 'kpiRenewalsMetric',

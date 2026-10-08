@@ -7,8 +7,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Check, Languages } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-export default function LanguageSwitcher() {
+export default function LanguageSwitcher({ className }: { className?: string }) {
   const { t, currentLanguage, setLanguage } = useTranslation();
 
   const languages = [
@@ -21,7 +22,7 @@ export default function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 px-2" aria-label={t('switchLanguage')}>
+        <Button variant="ghost" size="sm" className={cn('h-8 px-2', className)} aria-label={t('switchLanguage')}>
           <Languages className="h-4 w-4 mr-1" />
           <span className="text-sm">{currentLang?.flag}</span>
           <span className="sr-only">{t('switchLanguage')}</span>
@@ -35,7 +36,7 @@ export default function LanguageSwitcher() {
               key={lang.code}
               onClick={() => setLanguage(lang.code)}
               aria-current={isActive ? 'true' : undefined}
-              className={`flex items-center gap-2 ${isActive ? 'bg-slate-100' : ''}`}
+              className={`flex items-center gap-2 ${isActive ? 'bg-accent text-accent-foreground' : ''}`}
             >
               <span>{lang.flag}</span>
               <span className="text-sm">{lang.name}</span>

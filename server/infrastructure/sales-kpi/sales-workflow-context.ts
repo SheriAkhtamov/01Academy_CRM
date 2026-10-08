@@ -8,6 +8,7 @@ export async function attachSalesWorkflow(actor: ActorContext): Promise<ActorCon
       (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'hunter') AS "hunterFunnelId",
       (SELECT id FROM academy_sales_funnels WHERE workflow_role = 'closer') AS "closerFunnelId",
       (SELECT id FROM academy_sales_funnels WHERE is_default = true) AS "defaultFunnelId",
+      (SELECT initial_stage_code FROM academy_sales_funnels WHERE is_default = true) AS "defaultInitialStageCode",
       COALESCE((
         SELECT auto_lead_distribution_enabled
         FROM academy_company_settings

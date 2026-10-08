@@ -36,6 +36,12 @@ const author = alias(users, 'author');
 const uploader = alias(users, 'uploader');
 const actor = alias(users, 'actor');
 
+const requireTaskAssignee = (assigneeId: number | null | undefined) => {
+    if (!Number.isSafeInteger(assigneeId) || (assigneeId ?? 0) <= 0) {
+        throw Object.assign(new Error('taskAssigneeRequired'), { statusCode: 400 });
+    }
+};
+
 class BoardStorage {
     // -- Boards ------------------------------------------------------------
     async getBoards(): Promise<Board[]> {
@@ -77,6 +83,11 @@ class BoardStorage {
             .from(academyLeads)
             .where(eq(academyLeads.id, id));
         return lead;
+    }
+
+    async getTaskByAcademyTaskId(academyTaskId: number) {
+        const [task] = await db.select().from(boardTasks).where(eq(boardTasks.legacyAcademyTaskId, academyTaskId));
+        return task;
     }
 
     // -- Tasks (list with embedded users + counts) -------------------------
@@ -382,6 +393,7 @@ class BoardStorage {
     }
 
     async createTask(data: InsertBoardTask): Promise<BoardTask> {
+        requireTaskAssignee(data.assigneeId);
         const [row] = await db.insert(boardTasks).values(data).returning();
         return row;
     }
@@ -391,6 +403,7 @@ class BoardStorage {
         activity: Omit<InsertBoardTaskActivity, 'taskId'>,
         requestKey?: string,
     ): Promise<BoardTask> {
+        requireTaskAssignee(data.assigneeId);
         return db.transaction(async (tx) => {
             // A retry after a lost response returns the original task. The lock
             // also serializes simultaneous retries across app instances.
@@ -450,14 +463,22 @@ class BoardStorage {
         });
     }
 
-    async deleteTask(id: number, creatorId?: number): Promise<void> {
-        const deleted = await db.delete(boardTasks).where(and(
-            eq(boardTasks.id, id),
-            creatorId === undefined ? undefined : eq(boardTasks.creatorId, creatorId),
-        )).returning({ id: boardTasks.id });
-        if (!deleted.length && creatorId !== undefined) {
-            throw Object.assign(new Error('onlyCreatorCanManageTask'), { statusCode: 403 });
-        }
+    async deleteTask(id: number, creatorId?: number): Promise<string[]> {
+        return db.transaction(async (tx) => {
+            // Lock the parent before collecting files; a concurrent upload cannot slip past deletion.
+            const [task] = await tx.select({ id: boardTasks.id }).from(boardTasks).where(and(
+                eq(boardTasks.id, id),
+                creatorId === undefined ? undefined : eq(boardTasks.creatorId, creatorId),
+            )).for('update');
+            if (!task && creatorId !== undefined) {
+                throw Object.assign(new Error('onlyCreatorCanManageTask'), { statusCode: 403 });
+            }
+            if (!task) return [];
+            const attachments = await tx.select({ fileName: boardTaskAttachments.fileName })
+                .from(boardTaskAttachments).where(eq(boardTaskAttachments.taskId, id));
+            await tx.delete(boardTasks).where(eq(boardTasks.id, id));
+            return attachments.map((attachment) => attachment.fileName);
+        });
     }
 
     // -- Comments ----------------------------------------------------------

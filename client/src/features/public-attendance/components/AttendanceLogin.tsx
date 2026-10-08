@@ -1,15 +1,18 @@
-import { useState, type FormEvent } from 'react';
-import { AlertTriangle, ArrowRight, CalendarDays, Check, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { AlertCircle, ArrowBigUp, ArrowRight, ClipboardCheck, Clock3, DoorClosed, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 
 interface Props {
   password: string;
   loading: boolean;
   unavailable: boolean;
-  initialError: boolean;
+  /** The first check of the session failed: what to say instead of the form. */
+  initialError?: string;
+  /** Access ended on its own (time limit or a changed password), not because the visitor signed out. */
+  expired: boolean;
+  /** Marks that wait to be sent once the visitor is signed in again. */
+  unsent: number;
   error?: string;
   pending: boolean;
   onPasswordChange: (password: string) => void;
@@ -18,56 +21,92 @@ interface Props {
 }
 
 /*
-  Everything before the register is this one screen, and a visitor reaches it
-  from a link someone sent them — so it introduces the page instead of asking
-  for a secret in the void. The cover carries the name and a drawing of what is
-  behind the door; the panel holds a single field.
+  A visitor arrives here from a link someone sent them, so the screen says what
+  is behind it and asks for exactly one thing. Everything that can go wrong is
+  said next to the field in plain words: a wrong password, too many attempts,
+  no connection, Caps Lock, or access that simply ran out — and how many marks
+  are waiting to go out once the visitor is back in.
 
-  The field deliberately does not ask for a numeric keypad: the password is set
-  by an operator and may well contain letters, and a phone that only offers
-  digits would strand that visitor entirely.
+  The field does not ask for a numeric keypad: the shared password is set by an
+  operator and may contain letters.
 */
 export function AttendanceLogin(props: Props) {
   const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+  // The notice region is there from the first paint and filled right after it, so a screen reader announces the notice.
+  const [announce, setAnnounce] = useState(false);
+  useEffect(() => { setAnnounce(true); }, []);
+  // A refused password leaves the field focused with its text selected, ready to be typed over.
+  useEffect(() => {
+    if (!props.error) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [props.error]);
+  const watchCapsLock = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState?.('CapsLock') ?? false);
+  const described = [props.error ? 'attendance-password-error' : '', capsLock ? 'attendance-caps-lock' : ''].filter(Boolean).join(' ') || undefined;
+  const unsent = props.unsent > 0 ? t('publicAttendanceUnsentAfterLogin').replace('{count}', String(props.unsent)) : '';
   return (
-    <div className="pa-login-layout">
-      <section className="pa-login-cover">
-        <div className="pa-login-title">
-          <span className="pa-cover-tag">{t('publicAttendanceCourse')}</span>
-          <h1>{t('publicAttendanceJournal')}</h1>
+    <div className="pa-login">
+      <div className="pa-login-card">
+        <div className="pa-login-top">
+          <span className="pa-login-mark" aria-hidden="true"><ClipboardCheck /></span>
+          <LanguageSwitcher className="h-10 w-10 gap-0 px-0" />
         </div>
-        <div className="pa-login-art" aria-hidden="true">
-          <div className="pa-art-calendar"><CalendarDays /><div className="pa-art-line" /></div>
-          <div className="pa-art-days">{Array.from({ length: 8 }, (_, index) => <span key={index} className={index === 2 ? 'is-active' : ''} />)}</div>
-          <div className="pa-art-rows">{Array.from({ length: 4 }, (_, index) => (
-            <div className="pa-art-row" key={index}>
-              <div className="pa-art-avatar" /><div className="pa-art-name"><span /><span /></div>
-              <span className={`pa-art-check ${index === 2 ? 'is-pending' : ''}`}>{index === 2 ? null : <Check />}</span>
+        <h1 className="pa-login-title">{t('publicAttendanceJournal')}</h1>
+        <p className="pa-login-caption">{t('publicAttendanceBrand')} · {t('publicAttendanceCourse')}</p>
+
+        <div aria-live="polite">
+          {announce && (props.expired || unsent) ? (
+            <div className="pa-login-notice">
+              <Clock3 aria-hidden="true" />
+              <div className="pa-login-notice-text">
+                {props.expired ? <p>{t('publicAttendanceAccessExpired')}</p> : null}
+                {unsent ? <p>{unsent}</p> : null}
+              </div>
             </div>
-          ))}</div>
-          <div className="pa-art-float"><Check /></div>
+          ) : null}
         </div>
-      </section>
-      <section className="pa-login-form-panel">
-        <div className="pa-login-form-heading"><span className="pa-lock"><LockKeyhole /></span><h2>{t('publicAttendanceLoginTitle')}</h2></div>
-        {props.loading ? <p role="status" className="pa-loading"><Loader2 className="animate-spin" />{t('loading')}</p>
-          : props.initialError ? <div className="pa-login-error"><AlertTriangle /><p role="alert">{t('publicAttendanceLoadFailed')}</p><Button variant="outline" onClick={props.onRetry}>{t('retry')}</Button></div>
-            : props.unavailable ? <p role="status" className="pa-muted">{t('publicAttendanceUnavailable')}</p>
-              : <form onSubmit={props.onSubmit} className="pa-login-form">
-                <Label htmlFor="attendance-password">{t('publicAttendancePassword')}</Label>
-                <div className="pa-password-field">
-                  <Input id="attendance-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required maxLength={256} autoFocus
-                    value={props.password} onChange={(event) => props.onPasswordChange(event.target.value)} className="pa-password-input" aria-invalid={Boolean(props.error)} aria-describedby={props.error ? 'attendance-password-error' : undefined} />
-                  <Button type="button" variant="ghost" className="pa-password-toggle" aria-label={showPassword ? t('publicAttendanceHidePassword') : t('publicAttendanceShowPassword')}
-                    onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</Button>
-                </div>
-                {props.error ? <p id="attendance-password-error" role="alert" className="pa-error-text">{props.error}</p> : null}
-                <Button type="submit" className="pa-enter-button" disabled={props.pending || !props.password}>
-                  {props.pending ? <Loader2 className="animate-spin" /> : null}{t('publicAttendanceEnter')}{!props.pending ? <ArrowRight /> : null}
-                </Button>
-              </form>}
-      </section>
+
+        {props.loading ? (
+          <div className="pa-login-loading" role="status" aria-label={t('loading')}>
+            <span className="pa-skeleton pa-skeleton-label" /><span className="pa-skeleton pa-skeleton-field" /><span className="pa-skeleton pa-skeleton-field" />
+          </div>
+        ) : props.initialError ? (
+          <div className="pa-login-state">
+            <span className="pa-login-state-icon is-error"><AlertCircle /></span>
+            <p role="alert">{props.initialError}</p>
+            <button type="button" className="pa-secondary" onClick={props.onRetry}>{t('retry')}</button>
+          </div>
+        ) : props.unavailable ? (
+          <div className="pa-login-state">
+            <span className="pa-login-state-icon"><DoorClosed /></span>
+            <p role="status">{t('publicAttendanceUnavailable')}</p>
+          </div>
+        ) : (
+          <form onSubmit={props.onSubmit} className="pa-login-form" noValidate>
+            <label htmlFor="attendance-password" className="pa-field-label">{t('publicAttendancePassword')}</label>
+            <div className={`pa-password${props.error ? ' is-invalid' : ''}`}>
+              <LockKeyhole className="pa-password-icon" aria-hidden="true" />
+              <input ref={inputRef} id="attendance-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required maxLength={256}
+                autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} value={props.password}
+                onChange={(event) => props.onPasswordChange(event.target.value)} onKeyDown={watchCapsLock} onKeyUp={watchCapsLock}
+                onBlur={() => setCapsLock(false)} aria-invalid={Boolean(props.error)} aria-describedby={described} />
+              <button type="button" className="pa-password-toggle" aria-pressed={showPassword}
+                aria-label={showPassword ? t('publicAttendanceHidePassword') : t('publicAttendanceShowPassword')}
+                onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button>
+            </div>
+            {capsLock ? <p id="attendance-caps-lock" className="pa-field-hint"><ArrowBigUp aria-hidden="true" />{t('publicAttendanceCapsLock')}</p> : null}
+            {props.error ? <p id="attendance-password-error" role="alert" className="pa-field-error"><AlertCircle aria-hidden="true" />{props.error}</p> : null}
+            <button type="submit" className="pa-primary pa-login-submit" disabled={props.pending || !props.password}>
+              {props.pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+              {t('publicAttendanceEnter')}
+              {!props.pending ? <ArrowRight aria-hidden="true" /> : null}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   calculateFinanceSummary,
   calculatePayrollAmount,
   calculatePercentageChange,
+  financeDateKey,
   isFinanceDate,
   isFinancePeriod,
 } from '@shared/finance';
@@ -36,7 +37,12 @@ router.use(requireFinanceAccess);
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 const camelize = (row: Row) => Object.fromEntries(
-  Object.entries(row).map(([key, value]) => [toCamel(key), value]),
+  Object.entries(row).map(([key, value]) => [
+    toCamel(key),
+    (key === 'effective_from' || key === 'effective_to' || key === 'employment_ended_on') && value !== null
+      ? financeDateKey(value)
+      : value,
+  ]),
 );
 
 const query = async <T = Row>(executor: Executor, sql: string, values: unknown[] = []) => {
@@ -190,12 +196,15 @@ const createAudit = async (
 
 const getPayrollDataset = async (executor: Executor, period: string) => {
   const periodDate = `${period}-01`;
-  const [entries, salaryHistory] = await Promise.all([
+  const [entries, deletedEntries, salaryHistory] = await Promise.all([
     query<Row>(
       executor,
-      `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.position, u.module,
-              rate.id AS salary_rate_id, COALESCE(rate.amount_uzs, 0) AS base_salary_uzs,
-              rate.effective_from, rate.effective_to, rate.note AS salary_note,
+      `SELECT u.id AS employee_user_id, COALESCE(payout.employee_name, rate.employee_name, u.full_name) AS employee_name,
+              CASE WHEN payout.id IS NOT NULL THEN payout.position ELSE u.position END AS position, u.module,
+              u.is_active AS can_configure_salary,
+              COALESCE(payout.salary_rate_id, rate.id) AS salary_rate_id,
+              COALESCE(payout.base_salary_uzs, rate.amount_uzs, 0) AS base_salary_uzs,
+              rate.effective_from::text, rate.effective_to::text, rate.note AS salary_note,
               payout.id AS payout_id, COALESCE(payout.bonus_uzs, 0) AS bonus_uzs,
               COALESCE(payout.deduction_uzs, 0) AS deduction_uzs,
               payout.amount_uzs, payout.method, payout.note AS payout_note,
@@ -214,20 +223,54 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
          ON payout.employee_user_id = u.id AND payout.period = $2
        LEFT JOIN users payer ON payer.id = payout.paid_by
        WHERE u.is_active = true
+          OR payout.id IS NOT NULL
+          OR (rate.id IS NOT NULL AND $1::date <=
+              (COALESCE(u.archived_at, u.updated_at) AT TIME ZONE 'UTC' AT TIME ZONE $3)::date)
        ORDER BY u.full_name`,
+      [periodDate, period, ACADEMY_TIME_ZONE],
+    ),
+    query<Row>(
+      executor,
+      `SELECT NULL::integer AS employee_user_id, payout.employee_name, payout.position,
+              NULL::varchar AS module, false AS can_configure_salary,
+              payout.salary_rate_id, payout.base_salary_uzs,
+              rate.effective_from::text, rate.effective_to::text, rate.note AS salary_note,
+              payout.id AS payout_id, payout.bonus_uzs, payout.deduction_uzs,
+              payout.amount_uzs, payout.method, payout.note AS payout_note,
+              payout.status, payout.paid_at, payer.full_name AS paid_by_name
+       FROM academy_payroll_payouts payout
+       LEFT JOIN academy_salary_rates rate ON rate.id = payout.salary_rate_id
+       LEFT JOIN users payer ON payer.id = payout.paid_by
+       WHERE payout.employee_user_id IS NULL AND payout.period = $2
+       UNION ALL
+       SELECT NULL::integer, rate.employee_name, NULL::varchar, NULL::varchar, false,
+              rate.id, rate.amount_uzs, rate.effective_from::text, rate.effective_to::text, rate.note,
+              NULL::integer, 0, 0, NULL::integer, NULL::varchar, NULL::text,
+              NULL::varchar, NULL::timestamp, NULL::varchar
+       FROM academy_salary_rates rate
+       WHERE rate.employee_user_id IS NULL
+         AND rate.effective_from <= $1::date
+         AND (rate.effective_to IS NULL OR rate.effective_to >= $1::date)
+         AND (rate.employment_ended_on IS NULL OR rate.employment_ended_on >= $1::date)
+         AND NOT EXISTS (SELECT 1 FROM academy_payroll_payouts payout
+                         WHERE payout.salary_rate_id = rate.id AND payout.period = $2)
+       ORDER BY employee_name, payout_id`,
       [periodDate, period],
     ),
     query<Row>(
       executor,
-      `SELECT sr.*, creator.full_name AS created_by_name
+      `SELECT sr.*, sr.effective_from::text AS effective_from, sr.effective_to::text AS effective_to,
+              creator.full_name AS created_by_name
        FROM academy_salary_rates sr
        LEFT JOIN users creator ON creator.id = sr.created_by
        ORDER BY sr.employee_user_id, sr.effective_from DESC, sr.id DESC`,
     ),
   ]);
 
-  const normalizedEntries = entries.map((entry) => ({
+  const normalizedEntries = [...entries, ...deletedEntries].map<Row>((entry) => ({
     ...entry,
+    employeeKey: entry.employeeUserId ? `user:${entry.employeeUserId}`
+      : entry.salaryRateId ? `rate:${entry.salaryRateId}` : `payout:${entry.payoutId}`,
     baseSalaryUzs: Number(entry.baseSalaryUzs || 0),
     bonusUzs: Number(entry.bonusUzs || 0),
     deductionUzs: Number(entry.deductionUzs || 0),
@@ -263,7 +306,7 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
 const getTransactions = async (
   executor: Executor,
   range: ZonedDateRange,
-  limit = 250,
+  limit?: number,
 ) => {
   const [income, operating, marketing, payroll] = await Promise.all([
     query<Row>(
@@ -325,9 +368,11 @@ const getTransactions = async (
     ...marketing.map((item) => ({ ...item, id: `marketing-${item.id}`, kind: 'marketing_expense', category: 'marketing', direction: 'out', method: null })),
     ...payroll.map((item) => ({ ...item, id: `payroll-${item.id}`, kind: 'payroll', category: 'payroll', direction: 'out' })),
   ];
-  return transactions
-    .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
-    .slice(0, limit);
+  const sorted = transactions.sort((left, right) => (
+    new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime()
+    || String(left.id).localeCompare(String(right.id))
+  ));
+  return limit === undefined ? sorted : sorted.slice(0, limit);
 };
 
 const loadDashboardRows = async (executor: Executor, ranges: FinanceDateRange[]) => {
@@ -352,20 +397,24 @@ const loadDashboardRows = async (executor: Executor, ranges: FinanceDateRange[])
     ),
     query<Row>(
       executor,
-      `SELECT employee_user_id, amount_uzs, period
+      `SELECT employee_user_id, salary_rate_id, amount_uzs, period
        FROM academy_payroll_payouts
        WHERE status = 'paid' AND period >= $1 AND period <= $2`,
       [firstMonth.key, lastMonth.key],
     ),
     query<Row>(
       executor,
-      `SELECT sr.employee_user_id, sr.amount_uzs, sr.effective_from, sr.effective_to
+      `SELECT sr.id, sr.employee_user_id, sr.amount_uzs, sr.effective_from::text,
+              CASE WHEN u.is_active = false THEN
+                LEAST(sr.effective_to,
+                  (COALESCE(u.archived_at, u.updated_at) AT TIME ZONE 'UTC' AT TIME ZONE $3)::date)
+                ELSE LEAST(sr.effective_to, sr.employment_ended_on) END::text AS effective_to
        FROM academy_salary_rates sr
-       JOIN users u ON u.id = sr.employee_user_id AND u.is_active = true
+       LEFT JOIN users u ON u.id = sr.employee_user_id
        WHERE sr.effective_from <= $2::date
          AND (sr.effective_to IS NULL OR sr.effective_to >= $1::date)
        ORDER BY sr.employee_user_id, sr.effective_from DESC`,
-      [`${firstMonth.key}-01`, `${lastMonth.key}-01`],
+      [`${firstMonth.key}-01`, `${lastMonth.key}-01`, ACADEMY_TIME_ZONE],
     ),
     query<Row>(
       executor,
@@ -638,40 +687,44 @@ router.patch('/expenses/:id', async (req, res) => {
   try {
     const id = parsePositiveId(req.params.id);
     if (!id) throw httpError('invalidExpenseId');
-    const current = await queryOne<Row>(pool, `SELECT * FROM academy_operating_expenses WHERE id = $1`, [id]);
-    if (!current) throw httpError('expenseNotFound', 404);
-    if (current.status !== 'planned') throw httpError('onlyPlannedExpenseEditable', 409);
-    const category = String(req.body.category ?? current.category);
-    const method = String(req.body.method ?? current.method);
-    if (!FINANCE_EXPENSE_CATEGORIES.includes(category as any)) throw httpError('invalidExpenseCategory');
-    if (!FINANCE_PAYMENT_METHODS.includes(method as any)) throw httpError('invalidPaymentMethod');
-    const title = req.body.title === undefined ? current.title : nullableText(req.body.title, 255);
-    if (!title) throw httpError('expenseTitleRequired');
-    const amountUzs = req.body.amountUzs === undefined
-      ? Number(current.amountUzs)
-      : parseMoney(req.body.amountUzs, 'amountUzs', { allowZero: false });
-    const expenseDate = req.body.expenseDate === undefined
-      ? current.expenseDate
-      : parseExpenseDate(req.body.expenseDate);
-    const updated = await queryOne<Row>(
-      pool,
-      `UPDATE academy_operating_expenses
-       SET category = $2, title = $3, vendor = $4, description = $5, amount_uzs = $6,
-           expense_date = $7, method = $8, updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [
-        id,
-        category,
-        title,
-        req.body.vendor === undefined ? current.vendor : nullableText(req.body.vendor, 255),
-        req.body.description === undefined ? current.description : nullableText(req.body.description),
-        amountUzs,
-        expenseDate,
-        method,
-      ],
-    );
-    await createAudit(pool, req.user!.id, 'UPDATE_FINANCE_EXPENSE', 'academy_operating_expense', id, updated, current);
+    const updated = await withTransaction(async (client) => {
+      const current = await queryOne<Row>(client, `SELECT * FROM academy_operating_expenses WHERE id = $1 FOR UPDATE`, [id]);
+      if (!current) throw httpError('expenseNotFound', 404);
+      if (current.status !== 'planned') throw httpError('onlyPlannedExpenseEditable', 409);
+      const category = String(req.body.category ?? current.category);
+      const method = String(req.body.method ?? current.method);
+      if (!FINANCE_EXPENSE_CATEGORIES.includes(category as any)) throw httpError('invalidExpenseCategory');
+      if (!FINANCE_PAYMENT_METHODS.includes(method as any)) throw httpError('invalidPaymentMethod');
+      const title = req.body.title === undefined ? current.title : nullableText(req.body.title, 255);
+      if (!title) throw httpError('expenseTitleRequired');
+      const amountUzs = req.body.amountUzs === undefined
+        ? Number(current.amountUzs)
+        : parseMoney(req.body.amountUzs, 'amountUzs', { allowZero: false });
+      const expenseDate = req.body.expenseDate === undefined
+        ? current.expenseDate
+        : parseExpenseDate(req.body.expenseDate);
+      const updated = await queryOne<Row>(
+        client,
+        `UPDATE academy_operating_expenses
+         SET category = $2, title = $3, vendor = $4, description = $5, amount_uzs = $6,
+             expense_date = $7, method = $8, updated_at = NOW()
+         WHERE id = $1 AND status = 'planned'
+         RETURNING *`,
+        [
+          id,
+          category,
+          title,
+          req.body.vendor === undefined ? current.vendor : nullableText(req.body.vendor, 255),
+          req.body.description === undefined ? current.description : nullableText(req.body.description),
+          amountUzs,
+          expenseDate,
+          method,
+        ],
+      );
+      if (!updated) throw httpError('onlyPlannedExpenseEditable', 409);
+      await createAudit(client, req.user!.id, 'UPDATE_FINANCE_EXPENSE', 'academy_operating_expense', id, updated, current);
+      return updated;
+    });
     res.json(updated);
   } catch (error: any) {
     logger.error('Failed to update finance expense', { error });
@@ -823,78 +876,92 @@ router.post('/salary-rates', async (req, res) => {
   }
 });
 
+const createPayrollPayout = async (
+  client: PoolClient,
+  actorId: number,
+  period: string,
+  employeeUserId: number | null,
+  salaryRateId: number | null,
+  bonusUzs: number,
+  deductionUzs: number,
+  method: string,
+  note: string | null,
+) => {
+  const reference = employeeUserId ? `user:${employeeUserId}` : `rate:${salaryRateId}`;
+  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`payroll-payout:${reference}:${period}`]);
+  const existing = await queryOne<Row>(
+    client,
+    employeeUserId
+      ? `SELECT * FROM academy_payroll_payouts WHERE employee_user_id = $1 AND period = $2`
+      : `SELECT * FROM academy_payroll_payouts WHERE employee_user_id IS NULL AND salary_rate_id = $1 AND period = $2`,
+    [employeeUserId ?? salaryRateId, period],
+  );
+  if (existing) return { row: existing, created: false };
+  const employee = employeeUserId
+    ? await queryOne<Row>(
+      client,
+      `SELECT u.id, u.full_name, u.position, rate.id AS salary_rate_id, rate.amount_uzs
+       FROM users u
+       LEFT JOIN LATERAL (
+         SELECT sr.id, sr.amount_uzs FROM academy_salary_rates sr
+         WHERE sr.employee_user_id = u.id AND sr.effective_from <= $2::date
+           AND (sr.effective_to IS NULL OR sr.effective_to >= $2::date)
+         ORDER BY sr.effective_from DESC, sr.id DESC LIMIT 1
+       ) rate ON TRUE
+       WHERE u.id = $1
+         AND (u.is_active = true OR $2::date <=
+              (COALESCE(u.archived_at, u.updated_at) AT TIME ZONE 'UTC' AT TIME ZONE $3)::date)
+       FOR UPDATE OF u`,
+      [employeeUserId, `${period}-01`, ACADEMY_TIME_ZONE],
+    )
+    : await queryOne<Row>(
+      client,
+      `SELECT NULL::integer AS id, sr.employee_name AS full_name, NULL::varchar AS position,
+              sr.id AS salary_rate_id, sr.amount_uzs
+       FROM academy_salary_rates sr
+       WHERE sr.id = $1 AND sr.employee_user_id IS NULL AND sr.effective_from <= $2::date
+         AND (sr.effective_to IS NULL OR sr.effective_to >= $2::date)
+         AND (sr.employment_ended_on IS NULL OR sr.employment_ended_on >= $2::date)
+       FOR UPDATE`,
+      [salaryRateId, `${period}-01`],
+    );
+  if (!employee) throw httpError('employeeNotFound', 404);
+  if (!employee.salaryRateId) throw httpError('salaryNotConfigured', 409);
+  const baseSalaryUzs = Number(employee.amountUzs || 0);
+  if (deductionUzs > baseSalaryUzs + bonusUzs) throw httpError('deductionExceedsPayroll', 409);
+  const amountUzs = calculatePayrollAmount(baseSalaryUzs, bonusUzs, deductionUzs);
+  const inserted = await queryOne<Row>(
+    client,
+    `INSERT INTO academy_payroll_payouts
+       (period, employee_user_id, employee_name, position, salary_rate_id,
+        base_salary_uzs, bonus_uzs, deduction_uzs, amount_uzs, method, note, paid_by, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+     RETURNING *`,
+    [period, employee.id, employee.fullName, employee.position, employee.salaryRateId,
+      baseSalaryUzs, bonusUzs, deductionUzs, amountUzs, method, note, actorId],
+  );
+  await createAudit(client, actorId, 'PAY_EMPLOYEE_SALARY', 'academy_payroll_payout', inserted.id, inserted);
+  return { row: inserted, created: true };
+};
+
 router.post('/payroll/payout', async (req, res) => {
   try {
     const { period } = parsePeriod(req.body.period);
     const employeeUserId = parsePositiveId(req.body.employeeUserId);
-    if (!employeeUserId) throw httpError('employeeRequired');
+    const salaryRateId = parsePositiveId(req.body.salaryRateId);
+    if (!employeeUserId && !salaryRateId) throw httpError('employeeRequired');
     const bonusUzs = parseMoney(req.body.bonusUzs ?? 0, 'bonusUzs');
     const deductionUzs = parseMoney(req.body.deductionUzs ?? 0, 'deductionUzs');
     const method = String(req.body.method ?? 'transfer');
     if (!FINANCE_PAYMENT_METHODS.includes(method as any)) throw httpError('invalidPaymentMethod');
-    const row = await withTransaction(async (client) => {
-      await client.query(
-        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-        [`payroll-payout:${employeeUserId}:${period}`],
-      );
-      const existing = await queryOne<Row>(
-        client,
-        `SELECT * FROM academy_payroll_payouts WHERE employee_user_id = $1 AND period = $2`,
-        [employeeUserId, period],
-      );
-      if (existing) return existing;
-      const employee = await queryOne<Row>(
-        client,
-        `SELECT u.id, u.full_name, u.position, rate.id AS salary_rate_id, rate.amount_uzs
-         FROM users u
-         LEFT JOIN LATERAL (
-           SELECT sr.id, sr.amount_uzs
-           FROM academy_salary_rates sr
-           WHERE sr.employee_user_id = u.id
-             AND sr.effective_from <= $2::date
-             AND (sr.effective_to IS NULL OR sr.effective_to >= $2::date)
-           ORDER BY sr.effective_from DESC, sr.id DESC LIMIT 1
-         ) rate ON TRUE
-         WHERE u.id = $1 AND u.is_active = true
-         FOR UPDATE OF u`,
-        [employeeUserId, `${period}-01`],
-      );
-      if (!employee) throw httpError('employeeNotFound', 404);
-      if (!employee.salaryRateId) throw httpError('salaryNotConfigured', 409);
-      const baseSalaryUzs = Number(employee.amountUzs || 0);
-      if (deductionUzs > baseSalaryUzs + bonusUzs) throw httpError('deductionExceedsPayroll', 409);
-      const amountUzs = calculatePayrollAmount(baseSalaryUzs, bonusUzs, deductionUzs);
-      const inserted = await queryOne<Row>(
-        client,
-        `INSERT INTO academy_payroll_payouts
-           (period, employee_user_id, employee_name, position, salary_rate_id,
-            base_salary_uzs, bonus_uzs, deduction_uzs, amount_uzs, method, note, paid_by, paid_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-         RETURNING *`,
-        [
-          period,
-          employeeUserId,
-          employee.fullName,
-          employee.position,
-          employee.salaryRateId,
-          baseSalaryUzs,
-          bonusUzs,
-          deductionUzs,
-          amountUzs,
-          method,
-          nullableText(req.body.note),
-          req.user!.id,
-        ],
-      );
-      await createAudit(client, req.user!.id, 'PAY_EMPLOYEE_SALARY', 'academy_payroll_payout', inserted.id, inserted);
-      return inserted;
-    });
-    res.status(201).json(row);
+    const result = await withTransaction((client) => createPayrollPayout(
+      client, req.user!.id, period, employeeUserId, salaryRateId, bonusUzs, deductionUzs,
+      method, nullableText(req.body.note),
+    ));
+    res.status(201).json(result.row);
   } catch (error: any) {
     logger.error('Failed to create payroll payout', { error });
-    if (error?.code === '23505') {
-      return res.status(409).json({ error: 'payrollPayoutAlreadyExists' });
-    }
+    if (error?.code === '23505') return res.status(409).json({ error: 'payrollPayoutAlreadyExists' });
     return sendHttpError(res, error, 'Failed to create payroll payout');
   }
 });
@@ -906,52 +973,16 @@ router.post('/payroll/payout-all', async (req, res) => {
     if (!FINANCE_PAYMENT_METHODS.includes(method as any)) throw httpError('invalidPaymentMethod');
     const result = await withTransaction(async (client) => {
       await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`payroll-batch:${period}`]);
-      const candidates = await query<Row>(
-        client,
-        `SELECT u.id AS employee_user_id, u.full_name AS employee_name, u.position,
-                rate.id AS salary_rate_id, rate.amount_uzs AS base_salary_uzs
-         FROM users u
-         JOIN LATERAL (
-           SELECT sr.id, sr.amount_uzs
-           FROM academy_salary_rates sr
-           WHERE sr.employee_user_id = u.id
-             AND sr.effective_from <= $1::date
-             AND (sr.effective_to IS NULL OR sr.effective_to >= $1::date)
-           ORDER BY sr.effective_from DESC, sr.id DESC LIMIT 1
-         ) rate ON TRUE
-         WHERE u.is_active = true
-           AND NOT EXISTS (
-             SELECT 1 FROM academy_payroll_payouts payout
-             WHERE payout.employee_user_id = u.id AND payout.period = $2
-           )
-         ORDER BY u.id
-         FOR UPDATE OF u`,
-        [`${period}-01`, period],
-      );
+      const dataset = await getPayrollDataset(client, period);
+      const candidates = dataset.entries.filter((entry) => entry.status === 'pending')
+        .sort((left, right) => left.employeeKey.localeCompare(right.employeeKey));
       const payouts: Row[] = [];
       for (const candidate of candidates) {
-        const amountUzs = Number(candidate.baseSalaryUzs || 0);
-        const payout = await queryOne<Row>(
-          client,
-          `INSERT INTO academy_payroll_payouts
-             (period, employee_user_id, employee_name, position, salary_rate_id,
-              base_salary_uzs, bonus_uzs, deduction_uzs, amount_uzs, method, note, paid_by, paid_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $6, $7, $8, $9, NOW())
-           RETURNING *`,
-          [
-            period,
-            candidate.employeeUserId,
-            candidate.employeeName,
-            candidate.position,
-            candidate.salaryRateId,
-            amountUzs,
-            method,
-            nullableText(req.body.note),
-            req.user!.id,
-          ],
+        const payout = await createPayrollPayout(
+          client, req.user!.id, period, parsePositiveId(candidate.employeeUserId),
+          parsePositiveId(candidate.salaryRateId), 0, 0, method, nullableText(req.body.note),
         );
-        await createAudit(client, req.user!.id, 'PAY_EMPLOYEE_SALARY', 'academy_payroll_payout', payout.id, payout);
-        payouts.push(payout);
+        if (payout.created) payouts.push(payout.row);
       }
       return payouts;
     });

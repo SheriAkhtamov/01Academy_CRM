@@ -1,0 +1,30 @@
+// @vitest-environment jsdom
+import React from 'react';
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
+import {afterEach,expect,it,vi} from 'vitest';
+import SettingsModal from '../client/src/components/modals/SettingsModal';
+import {MotionProvider} from '../client/src/components/ux/motion';
+const auth=vi.hoisted(()=>({user:{id:7,fullName:'Test',email:'test@example.com',position:'Manager',phone:'',module:'sales',modules:['sales'],lastSeenAt:'2026-10-08T00:00:00Z'},setUser:vi.fn()}));
+vi.mock('../client/src/hooks/useAuth',()=>({useAuth:()=>auth}));
+globalThis.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}} as any;
+afterEach(()=>cleanup());
+it('preserves dirty profile and password drafts during a presence refresh',async()=>{
+ const client=new QueryClient();
+ const tree=()=> <QueryClientProvider client={client}><MotionProvider><SettingsModal open onOpenChange={vi.fn()}/></MotionProvider></QueryClientProvider>;
+ const view=render(tree()); await screen.findByRole('dialog');
+ const field=()=>document.querySelector('input[name="fullName"]') as HTMLInputElement;
+ const password=()=>document.querySelector('input[name="newPassword"]') as HTMLInputElement;
+ fireEvent.change(field(),{target:{value:'Unsaved new name'}});
+ fireEvent.change(password(),{target:{value:'UnsavedStrongPassword'}});
+ expect(field().value).toBe('Unsaved new name');
+ auth.user={...auth.user,lastSeenAt:'2026-10-08T00:01:00Z'};
+ view.rerender(tree());
+ await waitFor(()=>expect(field().value).toBe('Unsaved new name'));
+ expect(password().value).toBe('UnsavedStrongPassword');
+ view.rerender(<QueryClientProvider client={client}><MotionProvider><SettingsModal open={false} onOpenChange={vi.fn()}/></MotionProvider></QueryClientProvider>);
+ view.rerender(tree());
+ await waitFor(()=>expect(field().value).toBe('Test'));
+ expect(password().value).toBe('');
+ client.clear();
+});

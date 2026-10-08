@@ -504,13 +504,11 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     ?? activeSalesFunnels[0]
     ?? null
   ), [activeSalesFunnels, requestedSalesFunnelId]);
-  const incomingSalesFunnels = useMemo(() => activeSalesFunnels.filter((funnel) => funnel.workflowRole !== 'closer'), [activeSalesFunnels]);
+  const incomingSalesFunnels = activeSalesFunnels;
 
   const leadStatusName = (code: string) => {
     return data?.statuses?.find((status: any) => status.code === code)?.name ?? code;
   };
-  const leadStatusColor = (code: string) =>
-    data?.statuses?.find((status: PipelineStatus) => status.code === code)?.color ?? '#64748b';
 
   const archiveReasonName = (code: string | null | undefined) => {
     if (!code) return t('noData');
@@ -523,9 +521,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const currentSalesManagerId = hasSalesModule && user?.id ? String(user.id) : '';
   const leadFormDefaults = useMemo<CreateLeadFormValues>(() => ({
     ...EMPTY_LEAD_FORM,
-    funnelId: String((selectedSalesFunnel?.workflowRole !== 'closer' ? selectedSalesFunnel?.id : incomingSalesFunnels.find((funnel) => funnel.isDefault)?.id) ?? ''),
+    funnelId: String(selectedSalesFunnel?.id ?? ''),
     managerId: currentSalesManagerId,
-  }), [currentSalesManagerId, incomingSalesFunnels, selectedSalesFunnel]);
+  }), [currentSalesManagerId, selectedSalesFunnel]);
 
   const leadForm = useForm<CreateLeadFormValues>({
     resolver: zodResolver(createLeadSchema),
@@ -609,10 +607,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     : Number(overviewManagerId);
 
   const activePipelineStatuses = useMemo(
-    (): PipelineStatus[] => salesFunnelStages<PipelineStatus>(data?.statuses ?? [], selectedSalesFunnel?.workflowRole, selectedSalesFunnel?.id)
-      .map((status) => selectedSalesFunnel?.workflowRole === 'closer' && status.code === 'demo_attended'
-        ? { ...status, name: t('closerQueueStage') } : status),
-    [data?.statuses, selectedSalesFunnel?.id, selectedSalesFunnel?.workflowRole, t],
+    (): PipelineStatus[] => salesFunnelStages<PipelineStatus>(data?.statuses ?? [], undefined, selectedSalesFunnel?.id),
+    [data?.statuses, selectedSalesFunnel?.id],
   );
 
   const activePipelineCodes = useMemo(
@@ -698,40 +694,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     [overviewPayments, reportingRange],
   );
 
-  const managerStats = useMemo(() => {
-    const newLeadsPeriod = periodLeads.length;
-    const activePeriodLeads = periodLeads.filter(
-      (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
-    );
-    const activeLeads = activePeriodLeads.length;
-    const activeLeadStages = Array.from(activePipelineCodes).filter((code) => code !== 'paid')
-      .map((code) => ({ code, count: activePeriodLeads.filter((lead) => lead.statusCode === code).length }));
-    const totalStudents = periodStudents.length;
-
-    const paidLeads = periodLeads.filter((lead) => lead.statusCode === 'paid').length;
-    const totalManagedLeads = periodLeads.length;
-    const conversionRate = totalManagedLeads > 0 ? Math.round((paidLeads / totalManagedLeads) * 100) : 0;
-
-    const previousActiveLeads = previousPeriodLeads.filter(
-      (lead) => !lead.isArchived && lead.statusCode !== 'paid' && activePipelineCodes.has(lead.statusCode),
-    ).length;
-    const previousTotalStudents = previousPeriodStudents.length;
-    const previousPaidLeads = previousPeriodLeads.filter((lead) => lead.statusCode === 'paid').length;
-    const previousConversionRate = previousPeriodLeads.length > 0
-      ? Math.round((previousPaidLeads / previousPeriodLeads.length) * 100)
-      : 0;
-
-    return {
-      newLeadsPeriod,
-      activeLeads,
-      activeLeadStages,
-      totalStudents,
-      conversionRate,
-      activeLeadsPrevious: previousActiveLeads,
-      totalStudentsPrevious: previousTotalStudents,
-      conversionRatePrevious: previousConversionRate,
-    };
-  }, [activePipelineCodes, periodLeads, periodStudents, previousPeriodLeads, previousPeriodStudents]);
+  const managerStats = useMemo(() => ({
+    newLeadsPeriod: periodLeads.length,
+    activeLeads: periodLeads.filter((lead) => !lead.isArchived).length,
+    totalStudents: periodStudents.length,
+    activeLeadsPrevious: previousPeriodLeads.filter((lead) => !lead.isArchived).length,
+    totalStudentsPrevious: previousPeriodStudents.length,
+  }), [periodLeads, periodStudents, previousPeriodLeads, previousPeriodStudents]);
 
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => leadsApi.create(createLeadPayload(values)),
@@ -1015,23 +984,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     onOpenChange: handleLeadDialogState,
   });
 
-  const managerFunnel = useMemo(() => {
-    const overviewStatuses = salesFunnelStages<PipelineStatus>(data?.statuses ?? []);
-    const statusIndex = new Map(overviewStatuses.map((status, index) => [status.code, index]));
-    const visibleLeads = periodLeads.filter((lead) => !lead.isArchived);
-    return overviewStatuses.map((status, index) => {
-      const count = visibleLeads.filter((lead) => {
-        const currentIndex = statusIndex.get(lead.statusCode);
-        return currentIndex !== undefined && currentIndex >= index;
-      }).length;
-      return {
-        code: status.code,
-        count,
-        color: status.color,
-      };
-    });
-  }, [data?.statuses, periodLeads]);
-
   const contained = section !== 'overview';
 
   if (isLoading) {
@@ -1106,7 +1058,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
                 </SelectContent>
               </Select>
               <SalesBulkActionsButton selectedCount={pipelineBulkActions.selectedLeadIds.size} onClick={() => pipelineBulkActions.setDialogOpen(true)} />
-              {selectedSalesFunnel?.workflowRole !== 'closer' ? <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
+              {selectedSalesFunnel ? <Button size="sm" onClick={() => setLeadDialogOpen(true)}>
                 <Plus data-icon="inline-start" />{t('newApplication')}
               </Button> : null}
               <LeadFiltersDialog
@@ -1147,9 +1099,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               stats={managerStats}
               payments={overviewPayments}
               students={overviewStudents}
-              funnel={managerFunnel}
-              leadStatusName={leadStatusName}
-              statusColor={leadStatusColor}
               money={money}
               onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
               onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))}
@@ -1189,7 +1138,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           t={t}
           leads={archivedLeads}
           funnels={salesFunnels}
-          activePipelineStatuses={activePipelineStatuses}
+          activePipelineStatuses={data.statuses ?? []}
           leadStatusName={leadStatusName}
           archiveReasonName={archiveReasonName}
           dateTime={dateTime}

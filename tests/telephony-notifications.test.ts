@@ -43,7 +43,7 @@ describe('missed call notification state', () => {
     expect(statement).toContain('academy_sales_funnel_users assignment');
     expect(statement).toContain('assignment.funnel_id = lead.funnel_id');
     expect(statement).toContain('auto_lead_distribution_enabled = true');
-    expect(statement).toContain("lead.status_code = 'new_request'");
+    expect(statement).toContain('distribution_funnel.initial_stage_code = lead.status_code');
     expect(params).toEqual([7]);
   });
 

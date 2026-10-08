@@ -7,6 +7,7 @@ import { logger } from '../lib/logger';
 import { requireAuth } from '../middleware/auth.middleware';
 import { OnlinePbxError } from '../services/onlinepbx';
 import { resolveOnlinePbxRecording } from '../services/telephony-recording';
+import { telephonyCallVisibilityCondition } from '../services/telephony-notifications';
 
 const router = Router();
 const ONLINE_PBX_RECORDING_MAX_BYTES = 100 * 1024 * 1024;
@@ -42,13 +43,15 @@ export type RecordingCallRow = {
 };
 
 /**
- * Recordings and call notes answer to the same question — was this manager on
- * this conversation — so both routes gate on this one lookup.
+ * Direct recording and note access follows the journal's lead visibility.
  */
 export const loadAuthorizedRecordingCall = async (
   callId: number,
   user: NonNullable<Request['user']>,
 ): Promise<RecordingCallRow | null> => {
+  const visibility = hasLeadershipAccess(user) || canAccessAcademyModule(user, 'sales')
+    ? telephonyCallVisibilityCondition(user, '$2')
+    : 'call.user_id = $2';
   const result = await pool.query(
     `SELECT call.id, call.user_id AS "userId", call.provider_call_id AS "providerCallId",
             call.direction, call.phone, call.started_at AS "startedAt",
@@ -57,20 +60,10 @@ export const loadAuthorizedRecordingCall = async (
             lead_id AS "leadId", lead.manager_id AS "leadManagerId"
      FROM telephony_calls call
      LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-     WHERE call.id = $1`,
-    [callId],
+     WHERE call.id = $1 AND ${visibility}`,
+    hasLeadershipAccess(user) ? [callId] : [callId, user.id],
   );
-  const call = result.rows[0] as RecordingCallRow | undefined;
-  const canReadRecording = Boolean(call) && (
-    Number(call!.userId) === user.id
-    || hasLeadershipAccess(user)
-    || (
-      canAccessAcademyModule(user, 'sales')
-      && call!.leadId
-      && (call!.leadManagerId == null || Number(call!.leadManagerId) === user.id)
-    )
-  );
-  return call && canReadRecording ? call : null;
+  return result.rows[0] as RecordingCallRow | undefined ?? null;
 };
 
 const resolveAndStoreOnlinePbxRecording = async (
@@ -105,15 +98,17 @@ const resolveAndStoreOnlinePbxRecording = async (
       : recording;
   }
 
-  await pool.query(
+  const stored = await pool.query(
     `UPDATE telephony_calls
-     SET provider_call_id = COALESCE(provider_call_id, $2),
+     SET provider_call_id = COALESCE(NULLIF(BTRIM(provider_call_id), ''), $2),
          duration_seconds = GREATEST(duration_seconds, $3),
          talk_seconds = GREATEST(talk_seconds, $4),
          hangup_cause = COALESCE(NULLIF($5, ''), hangup_cause),
          recording_url = $6,
          updated_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1
+       AND (NULLIF(BTRIM(provider_call_id), '') IS NULL OR BTRIM(provider_call_id) = $2)
+     RETURNING id`,
     [
       call.id,
       recording.providerCallId,
@@ -123,6 +118,7 @@ const resolveAndStoreOnlinePbxRecording = async (
       recording.url,
     ],
   );
+  if (!stored.rows[0]) return { state: 'pending' as const };
   return recording;
 };
 

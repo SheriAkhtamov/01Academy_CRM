@@ -282,7 +282,7 @@ export function LeadAssignmentContent() {
       sortable: true,
       accessor: (lead) => statusName(lead.statusCode),
       render: (lead) => (
-        <Badge variant={lead.statusCode === 'paid' ? 'success' : 'secondary'}>
+        <Badge variant="secondary">
           {statusName(lead.statusCode)}
         </Badge>
       ),

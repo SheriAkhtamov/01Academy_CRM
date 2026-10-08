@@ -17,6 +17,7 @@ const mockStorage = {
     getPendingAcceptanceCount: vi.fn(),
     getTask: vi.fn(),
     getTaskDetail: vi.fn(),
+    getTaskByAcademyTaskId: vi.fn(),
     getMaxPosition: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
@@ -746,4 +747,29 @@ describe("board routes", () => {
 
     expect(response.status).toBe(404);
   });
+  it.each([staffUser, adminUser])('rejects explicit unassigned creation and clearing an assignee: $module', async (actor) => {
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: actor.id });
+    for (const assigneeId of [null, '']) {
+      const response = await agent.post('/api/board/tasks').send({ title: 'Unassigned task', assigneeId });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('taskAssigneeRequired');
+    }
+    mockStorage.board.getTask.mockResolvedValue({ id: 100, creatorId: actor.id, assigneeId: 8 });
+    expect((await agent.patch('/api/board/tasks/100').send({ assigneeId: null })).body.error).toBe('taskAssigneeRequired');
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+    expect(mockStorage.board.updateTask).not.toHaveBeenCalled();
+  });
+
+  it('resolves legacy academy task IDs through the mapping and never through a coinciding board ID', async () => {
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 7 });
+    mockStorage.board.getTaskByAcademyTaskId.mockResolvedValue({ id: 900, boardId: 1 });
+    expect((await agent.get('/api/board/academy-tasks/55')).body).toEqual({ id: 900 });
+    expect(mockStorage.board.getTaskByAcademyTaskId).toHaveBeenCalledWith(55);
+    expect(mockStorage.board.getTask).not.toHaveBeenCalled();
+    mockStorage.board.getTaskByAcademyTaskId.mockResolvedValue(undefined);
+    expect((await agent.get('/api/board/academy-tasks/55')).status).toBe(404);
+  });
+
 });

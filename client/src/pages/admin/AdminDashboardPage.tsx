@@ -47,6 +47,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { StaggerGroup, StaggerItem, useChartEntrance } from '@/components/ux/motion';
 import { ReportingDateRangeFilter } from '@/components/ux/ReportingDateRangeFilter';
+import { DataTable } from '@/components/ux/DataTable';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { formatAcademyDate } from '@/lib/localeFormat';
 import {
   AdminOperationalHealthChart,
 } from '@/components/ux/analytics/AdminOperationalHealthChart';
@@ -67,9 +70,16 @@ interface DashboardTrendPoint {
   leads: number;
 }
 
-interface DashboardFunnelItem {
-  code: string;
-  count: number;
+interface DashboardRiskRow {
+  id: number;
+  studentName?: string | null;
+  contactName?: string | null;
+  leadName?: string | null;
+  courseName?: string | null;
+  managerName?: string | null;
+  attendancePercent?: number | null;
+  dueAt?: string | null;
+  amountUzs?: number | string | null;
 }
 
 interface DashboardCourseLoad {
@@ -101,18 +111,18 @@ interface AdministrationDashboardData {
     leadsChangePercent: number;
     studentsChangePercent: number;
     overdueAmount: number;
-    leadToDemoConversion: number;
-    demoToPaidConversion: number;
   };
   trends: DashboardTrendPoint[];
-  funnel: DashboardFunnelItem[];
   courseLoad: DashboardCourseLoad[];
   alerts: {
     overduePayments: number;
     lowAttendanceStudents: number;
     overdueTasks: number;
-    longThinkingLeads: number;
     groupsWithoutTeacher: number;
+  };
+  alertDetails?: {
+    overduePayments: DashboardRiskRow[];
+    lowAttendanceStudents: DashboardRiskRow[];
   };
   escalatedTasks: Array<{ id: number; title: string; responsibleName?: string | null }>;
 }
@@ -226,6 +236,7 @@ export default function AdminDashboardPage() {
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const [pendingAlertTaskKey, setPendingAlertTaskKey] = useState<string | null>(null);
+  const [riskDialog, setRiskDialog] = useState<'payments' | 'attendance' | null>(null);
   const createAlertTask = useMutation({
     mutationFn: (key: string) => apiRequest('POST', `/api/academy/dashboard/alerts/${key}/task`),
     onSuccess: () => toast({ title: ceoCopy.dashboard.taskCreated }),
@@ -276,7 +287,6 @@ export default function AdminDashboardPage() {
   }
 
   const summary = data.summary;
-  const demoInvitedFunnelCount = data.funnel.find((item) => item.code === 'demo_invited')?.count ?? 0;
   const healthMetrics = [
     ...(Number(summary.attendanceMarks || 0) > 0
       ? [{
@@ -292,22 +302,6 @@ export default function AdminDashboardPage() {
         shortLabel: t('adminGroupLoad'),
         value: boundedPercent(summary.groupLoadPercent),
         display: `${Math.round(Number(summary.groupLoadPercent || 0))}%`,
-      }]
-      : []),
-    ...(Number(summary.newLeadsMonth || 0) > 0
-      ? [{
-        label: t('conversionApplicationToDemo'),
-        shortLabel: t('leadStatusDemoAttended'),
-        value: boundedPercent(summary.leadToDemoConversion),
-        display: `${Math.round(Number(summary.leadToDemoConversion || 0))}%`,
-      }]
-      : []),
-    ...(demoInvitedFunnelCount > 0
-      ? [{
-        label: t('conversionDemoToPayment'),
-        shortLabel: t('payment'),
-        value: boundedPercent(summary.demoToPaidConversion),
-        display: `${Math.round(Number(summary.demoToPaidConversion || 0))}%`,
       }]
       : []),
     ...(Number(summary.activeUsers || 0) > 0
@@ -340,7 +334,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.overduePayments,
       icon: Banknote,
       tone: 'bg-destructive/10 text-destructive',
-      href: '/sales/clients?risk=overdue',
+      href: null,
     },
     {
       key: 'attendance',
@@ -348,7 +342,7 @@ export default function AdminDashboardPage() {
       value: data.alerts.lowAttendanceStudents,
       icon: UserRoundX,
       tone: 'bg-amber-100 text-amber-600',
-      href: '/sales/clients?risk=low-attendance',
+      href: null,
     },
     {
       key: 'teachers',
@@ -580,7 +574,10 @@ export default function AdminDashboardPage() {
                 >
                   <button
                     type="button"
-                    onClick={() => navigate(item.href)}
+                    onClick={() => {
+                      if (item.key === 'payments' || item.key === 'attendance') setRiskDialog(item.key);
+                      else if (item.href) navigate(item.href);
+                    }}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label={`${ceoCopy.dashboard.open} ${item.title}`}
                   >
@@ -687,6 +684,33 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </section>
+
+      <Dialog open={riskDialog !== null} onOpenChange={(open) => { if (!open) setRiskDialog(null); }}>
+        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <DialogTitle>{riskDialog === 'payments' ? t('overduePayments') : t('adminLowAttendance')}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+            <DataTable
+              columns={[
+                { key: 'studentName', header: t('studentName'), accessor: (row: DashboardRiskRow) => row.studentName || row.contactName || row.leadName || t('noData'), sortable: true },
+                { key: 'contactName', header: t('contactPersonName'), accessor: (row: DashboardRiskRow) => row.contactName || row.leadName || t('noData') },
+                ...(riskDialog === 'payments' ? [
+                  { key: 'dueAt', header: t('adminRiskPaymentDue'), accessor: (row: DashboardRiskRow) => row.dueAt, render: (row: DashboardRiskRow) => formatAcademyDate(row.dueAt, language) || t('noData'), sortable: true },
+                  { key: 'amountUzs', header: t('amount'), accessor: (row: DashboardRiskRow) => Number(row.amountUzs || 0), render: (row: DashboardRiskRow) => fullMoney(Number(row.amountUzs || 0)), sortable: true },
+                ] : [
+                  { key: 'courseName', header: t('course'), accessor: (row: DashboardRiskRow) => row.courseName || t('noData') },
+                  { key: 'managerName', header: t('manager'), accessor: (row: DashboardRiskRow) => row.managerName || t('notAssigned') },
+                  { key: 'attendancePercent', header: t('attendanceLabel'), accessor: (row: DashboardRiskRow) => Number(row.attendancePercent || 0), render: (row: DashboardRiskRow) => `${Number(row.attendancePercent || 0)}%`, sortable: true },
+                ]),
+              ]}
+              data={riskDialog === 'payments' ? data.alertDetails?.overduePayments ?? [] : data.alertDetails?.lowAttendanceStudents ?? []}
+              keyExtractor={(row: DashboardRiskRow) => String(row.id)}
+              emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{t('adminNoIssues')}</p>}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

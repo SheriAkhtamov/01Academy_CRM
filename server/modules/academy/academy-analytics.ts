@@ -1,3 +1,4 @@
+import { summarizeLeadQualifications, type LeadQualificationFact } from '@shared/lead-qualification';
 import { Router } from 'express';
 import { buildMarketingSourceMetrics, marketingPaymentAttribution } from './marketing-source-metrics';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -116,6 +117,39 @@ interface AcademyDatasetOptions {
   include?: readonly AcademyDatasetSlice[];
 }
 
+const teacherStudentMembershipsSelect = `COALESCE((
+  SELECT json_agg(json_build_object(
+    'groupId', membership.group_id, 'groupName', membership_group.name,
+    'courseId', membership_group.course_id, 'courseName', membership_course.name,
+    'schoolId', membership_group.school_id, 'isPrimary', membership.is_primary,
+    'enrolledAt', membership.enrolled_at
+  ) ORDER BY membership.is_primary DESC, membership_group.name, membership.group_id)
+  FROM academy_student_group_enrollments membership
+  JOIN academy_groups membership_group ON membership_group.id = membership.group_id
+  LEFT JOIN academy_courses membership_course ON membership_course.id = membership_group.course_id
+  WHERE membership.student_id = st.id AND membership.status = 'active'
+    AND membership_group.teacher_id = $1
+), '[]'::json) AS groups`;
+
+const academicStudentFields = [
+  'id', 'studentName', 'contactName', 'studentAge', 'status', 'createdAt', 'updatedAt',
+  'enrolledAt', 'enrollmentDate', 'attendancePercent', 'progressPercent', 'finalProjectStatus',
+] as const;
+
+const teacherStudentRecord = (student: Row): Row => {
+  const academic = Object.fromEntries(academicStudentFields.map((field) => [field, student[field]]));
+  const memberships: Row[] = Array.isArray(student.groups) ? student.groups : [];
+  const primary = memberships.find((membership) => membership.isPrimary) ?? memberships[0];
+  return {
+    ...academic, groups: memberships,
+    groupIds: memberships.map((membership) => Number(membership.groupId)),
+    groupNames: memberships.map((membership) => membership.groupName),
+    groupId: primary?.groupId ?? null, groupName: primary?.groupName ?? null,
+    courseId: primary?.courseId ?? null, courseName: primary?.courseName ?? null,
+    schoolId: primary?.schoolId ?? null,
+  };
+};
+
 export const getAcademyDataset = async (
   actor?: DatasetActor,
   options?: AcademyDatasetOptions,
@@ -199,7 +233,6 @@ export const getAcademyDataset = async (
            FROM academy_lead_group_reservations reservation
            JOIN academy_leads l ON l.id = reservation.lead_id
            WHERE reservation.group_id = g.id
-             AND l.status_code <> 'not_now'
              AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
           FROM academy_groups g
@@ -223,7 +256,6 @@ export const getAcademyDataset = async (
            FROM academy_lead_group_reservations reservation
            JOIN academy_leads l ON l.id = reservation.lead_id
            WHERE reservation.group_id = g.id
-             AND l.status_code <> 'not_now'
              AND COALESCE(l.is_archived, false) = false
              AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
           FROM academy_groups g
@@ -265,10 +297,13 @@ export const getAcademyDataset = async (
         ORDER BY l.archived_at DESC NULLS LAST, l.updated_at DESC`, managerParams)
     )),
     slice('students', () => (
-      query(`SELECT st.*, c.name AS course_name, g.name AS group_name, u.full_name AS manager_name,
+      query(`SELECT ${isTeacherScoped ? `st.id, st.student_name, st.contact_name, st.student_age,
+        st.status, st.created_at, st.updated_at, st.enrolled_at, st.enrollment_date,
+        st.attendance_percent, st.progress_percent, st.final_project_status` : 'st.*'},
+        c.name AS course_name, g.name AS group_name, ${isTeacherScoped ? 'NULL' : 'u.full_name'} AS manager_name,
         sc.name AS school_name, ${isTeacherScoped ? 'NULL AS paid_amount_uzs' : studentPaidAmountSelect('st')},
-        ${studentGroupMembershipsSelect('st')},
-        (
+        ${isTeacherScoped ? teacherStudentMembershipsSelect : studentGroupMembershipsSelect('st')},
+        ${isTeacherScoped ? 'NULL' : `(
           SELECT CASE
             WHEN p.status = 'pending' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
             ELSE p.status
@@ -277,7 +312,7 @@ export const getAcademyDataset = async (
           WHERE p.student_id = st.id
           ORDER BY p.created_at DESC
           LIMIT 1
-        ) AS payment_status
+        )`} AS payment_status
       FROM academy_students st
       LEFT JOIN academy_courses c ON c.id = st.course_id
       LEFT JOIN academy_groups g ON g.id = st.group_id
@@ -379,7 +414,14 @@ export const getAcademyDataset = async (
     applyLeadVisibilityForActor(actor, leads),
     applyLeadVisibilityForActor(actor, archivedLeads),
   ]);
+  const visibleLeadIds = [...new Set([...visibleLeads, ...visibleArchivedLeads].map((lead) => Number(lead.id)))];
+  const qualificationFacts = actor?.scopeModule === 'sales' && visibleLeadIds.length > 0
+    ? await query<LeadQualificationFact>(
+      `SELECT lead_id, funnel_id FROM academy_lead_funnel_qualifications WHERE lead_id = ANY($1::int[])`,
+      [visibleLeadIds],
+    ) : [];
   return {
+    qualificationSummary: summarizeLeadQualifications(qualificationFacts, [...visibleLeads, ...visibleArchivedLeads].map((lead) => Number(lead.funnelId))),
     schools,
     rooms,
     courses,
@@ -389,7 +431,7 @@ export const getAcademyDataset = async (
     groups,
     leads: visibleLeads,
     archivedLeads: visibleArchivedLeads,
-    students,
+    students: isTeacherScoped ? students.map(teacherStudentRecord) : students,
     lessons,
     attendance,
     payments,
@@ -533,10 +575,10 @@ export const buildAnalytics = async (
       || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT)
     )
   ));
-  const longThinkingLeads = data.leads.filter((lead) =>
-    lead.statusCode === 'thinking' && lead.updatedAt && new Date(lead.updatedAt) < addDays(now, -7)
-  );
-  const nps = calculateNps(periodParentSurveys.map((survey) => Number(survey.npsScore)).filter(Number.isFinite)) ?? 0;
+  const nps = calculateNps(periodParentSurveys
+    .filter((survey) => survey.npsScore !== null && survey.npsScore !== undefined && survey.npsScore !== '')
+    .map((survey) => Number(survey.npsScore))
+    .filter((score) => Number.isFinite(score) && score >= 0 && score <= 10)) ?? 0;
   const churnByReason = data.students
     .filter((student) => ['paused', 'expelled'].includes(String(student.status))
       && student.exitReason
@@ -548,31 +590,6 @@ export const buildAnalytics = async (
       acc[reason] = (acc[reason] ?? 0) + 1;
       return acc;
     }, {});
-
-  const activePipelineStatuses = [...data.statuses]
-    .filter((status) => status.isActive !== false && status.isPipeline !== false)
-    .sort((left, right) => Number(left.sortOrder) - Number(right.sortOrder));
-  const activePipelineStatusCodes = new Set(activePipelineStatuses.map((status) => String(status.code)));
-  const activePipelineStatusIndex = new Map(
-    activePipelineStatuses.map((status, index) => [String(status.code), index]),
-  );
-  const reachedStageCount = (leads: Row[], stageIndex: number) => leads.filter((lead) => {
-    const currentIndex = activePipelineStatusIndex.get(String(lead.statusCode));
-    return currentIndex !== undefined && currentIndex >= stageIndex;
-  }).length;
-  // A conversion funnel is cumulative: every lead at a later stage has also
-  // reached all earlier stages. Exact-status counts could make a later stage
-  // larger than the preceding one and produce conversion above 100%.
-  const funnel = activePipelineStatuses.map((status, stageIndex) => ({
-    ...status,
-    count: reachedStageCount(periodLeads, stageIndex) }));
-  const funnelBySource = Object.fromEntries(data.sources.map((source) => {
-    const sourceLeads = periodLeads.filter((lead) => Number(lead.sourceId) === Number(source.id));
-    return [String(source.id), activePipelineStatuses.map((status, stageIndex) => ({
-      ...status,
-      count: reachedStageCount(sourceLeads, stageIndex),
-    }))];
-  }));
 
   const groupsWithCapacity = data.groups.map((group) => ({
     ...group,
@@ -586,16 +603,6 @@ export const buildAnalytics = async (
 
   // --- Marketing metrics (TZ 4.2): conversions, CPL, deal cycle, warm-base conversion. ---
   const newRequestCount = periodLeads.length;
-  const invitedToDemoCount = periodLeads.filter((lead) =>
-    ['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
-    || lead.demoAttended).length;
-  const paidAfterDemoCount = periodLeads.filter((lead) =>
-    paidLeadIds.has(Number(lead.id))
-    && (['demo_invited', 'demo_attended', 'offer', 'thinking', 'enrolled', 'paid'].includes(lead.statusCode)
-      || lead.demoAttended),
-  ).length;
-  const leadToDemoConversion = newRequestCount > 0 ? Number(((invitedToDemoCount / newRequestCount) * 100).toFixed(1)) : 0;
-  const demoToPaidConversion = invitedToDemoCount > 0 ? Number(((paidAfterDemoCount / invitedToDemoCount) * 100).toFixed(1)) : 0;
   const paidPeriodLeadCount = periodLeads.filter((lead) => paidLeadIds.has(Number(lead.id))).length;
   const leadToPaidConversion = newRequestCount > 0 ? Number(((paidPeriodLeadCount / newRequestCount) * 100).toFixed(1)) : 0;
   const newLeadsMonth = periodLeads;
@@ -682,7 +689,7 @@ export const buildAnalytics = async (
         ? periodLeads.length
         : cohortLeads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: newLeadsMonth.length,
-      activeLeads: periodLeads.filter((lead) => !lead.isArchived && activePipelineStatusCodes.has(String(lead.statusCode))).length,
+      activeLeads: periodLeads.filter((lead) => !lead.isArchived).length,
       activeStudents: data.students.filter((student) => student.status === 'studying').length,
       revenueMonth,
       revenueTotal,
@@ -702,19 +709,14 @@ export const buildAnalytics = async (
       npsBelowTarget: nps < TARGET_NPS,
       teacherHours,
       avgDealCycleDays,
-      leadToDemoConversion,
-      demoToPaidConversion,
       leadToPaidConversion,
       overduePayments: overduePayments.length,
       overdueTasks: overdueTasks.length,
       newPaidStudents: newPaidCustomersThisMonth.size },
-    funnel,
-    funnelBySource,
     groups: groupsWithCapacity,
     risks: {
       lowAttendanceStudents,
       overduePayments,
-      longThinkingLeads,
       overdueTasks },
     byCourse: data.courses.map((course) => {
       const coursePaidCustomers = new Set(periodPaidPayments
@@ -976,14 +978,16 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
       groupsWithoutTeacher,
     },
     trends,
-    funnel: analytics.funnel,
     courseLoad,
     alerts: {
       overduePayments: analytics.risks.overduePayments.length,
       lowAttendanceStudents: analytics.risks.lowAttendanceStudents.length,
       overdueTasks: escalatedTasks.length,
-      longThinkingLeads: analytics.risks.longThinkingLeads.length,
       groupsWithoutTeacher,
+    },
+    alertDetails: {
+      overduePayments: analytics.risks.overduePayments,
+      lowAttendanceStudents: analytics.risks.lowAttendanceStudents,
     },
     recentActivity,
     upcomingLessons,
@@ -1024,8 +1028,6 @@ export const buildMarketingAnalyticsPayload = (analytics: Row) => ({
   summary: {
     newLeadsWeek: analytics.summary.newLeadsWeek,
     newLeadsMonth: analytics.summary.newLeadsMonth,
-    leadToDemoConversion: analytics.summary.leadToDemoConversion,
-    demoToPaidConversion: analytics.summary.demoToPaidConversion,
     leadToPaidConversion: analytics.summary.leadToPaidConversion,
     cpl: analytics.summary.cpl,
     cac: analytics.summary.cac,
@@ -1033,11 +1035,7 @@ export const buildMarketingAnalyticsPayload = (analytics: Row) => ({
     avgDealCycleDays: analytics.summary.avgDealCycleDays,
     newPaidStudents: analytics.summary.newPaidStudents,
   },
-  funnel: analytics.funnel,
-  funnelBySource: analytics.funnelBySource,
   bySource: analytics.bySource,
-  leadToDemoConversion: analytics.summary.leadToDemoConversion,
-  demoToPaidConversion: analytics.summary.demoToPaidConversion,
   leadToPaidConversion: analytics.summary.leadToPaidConversion,
   cpl: analytics.summary.cpl,
   avgDealCycleDays: analytics.summary.avgDealCycleDays,

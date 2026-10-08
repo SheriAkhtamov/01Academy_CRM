@@ -1,28 +1,24 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, CalendarRange } from 'lucide-react';
-import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import { useTranslation } from '@/hooks/useTranslation';
 import { apiRequest } from '@/lib/queryClient';
-import type { TranslationKey } from '@/lib/i18n';
 import {
   isInReportingRange,
   reportingRangeQuery,
   reportingRangeForPreset,
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
-import { OverviewDialog, overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
+import { overviewButton, overviewPanel } from '@/components/ux/sales-overview/OverviewDialog';
 import { DemoStudentsDialog } from '@/components/ux/sales-overview/DemoStudentsDialog';
 import { SalesKpiOverview } from '@/features/sales-kpi/ui/SalesKpiOverview';
 import { useKpiOverview } from '@/features/sales-kpi/hooks';
 import { SalesOverviewFunnel } from '@/components/ux/sales-overview/SalesOverviewFunnel';
 import { SalesOverviewHero } from '@/components/ux/sales-overview/SalesOverviewHero';
 import { SalesOverviewKpiGrid } from '@/components/ux/sales-overview/SalesOverviewKpiGrid';
-import { SalesOverviewRefusals } from '@/components/ux/sales-overview/SalesOverviewRefusals';
 import type {
   MoneyFormatter,
   SalesDashboardMetrics,
-  SalesOverviewFunnelStage,
   SalesOverviewNavTarget,
   SalesOverviewStats,
   SalesOverviewStudent,
@@ -44,18 +40,11 @@ type SalesOverviewMetricsProps = {
   /** Every payment in scope; the hero windows them itself. */
   payments: PaymentRecord[];
   students: SalesOverviewStudent[];
-  funnel: SalesOverviewFunnelStage[];
-  leadStatusName: (code: string) => string;
-  statusColor: (code: string) => string;
   money: MoneyFormatter;
   onNavigate: (target: SalesOverviewNavTarget) => void;
   onExpandPeriod: () => void;
   onOpenLead?: (leadId: number) => void;
 };
-
-const archiveReasonTranslationKeys = Object.fromEntries(
-  LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
-) as Record<string, TranslationKey>;
 
 export function SalesOverviewMetrics({
   month,
@@ -64,16 +53,12 @@ export function SalesOverviewMetrics({
   stats,
   payments,
   students,
-  funnel,
-  leadStatusName,
-  statusColor,
   money,
   onNavigate,
   onExpandPeriod,
   onOpenLead,
 }: SalesOverviewMetricsProps) {
   const { t } = useTranslation();
-  const [targetRefusalDialogOpen, setTargetRefusalDialogOpen] = useState(false);
   const [demoStudentsDialogOpen, setDemoStudentsDialogOpen] = useState(false);
   const reportingQuery = reportingRangeQuery(reportingRange);
   const metricsQueryString = managerId
@@ -83,16 +68,10 @@ export function SalesOverviewMetrics({
     queryKey: ['/api/academy/modules/sales/metrics', reportingQuery, managerId],
     queryFn: () => apiRequest('GET', `/api/academy/modules/sales/metrics?${metricsQueryString}`),
   });
-  const archiveReasonName = (code: string) => {
-    const key = archiveReasonTranslationKeys[code];
-    return key ? t(key) : code;
-  };
-
   const kpiQuery = useKpiOverview(month, managerId);
   const employees = kpiQuery.data?.employees ?? [];
   const metrics = metricsQuery.data;
   const isLoading = metricsQuery.isPending;
-  const targetRefusals = metrics?.targetRefusals ?? 0;
   const thisMonth = reportingRangeForPreset('thisMonth');
 
   const hasPeriodPayments = payments.some((payment) => (
@@ -142,52 +121,14 @@ export function SalesOverviewMetrics({
           reportingRange={reportingRange}
           onNavigate={onNavigate}
           onOpenDemoStudents={() => setDemoStudentsDialogOpen(true)}
-          leadStatusName={leadStatusName}
-          statusColor={statusColor}
         />
         <SalesKpiOverview month={month} employees={employees} loading={kpiQuery.isPending} failed={kpiQuery.isError} onRetry={() => kpiQuery.refetch()} />
         <SalesOverviewFunnel
           metrics={metrics}
           isLoading={isLoading}
-          funnel={funnel}
-          leadStatusName={leadStatusName}
-          statusColor={statusColor}
         />
 
-        <SalesOverviewRefusals
-          metrics={metrics}
-          isLoading={isLoading}
-          archiveReasonName={archiveReasonName}
-          onOpen={() => setTargetRefusalDialogOpen(true)}
-        />
       </div>
-
-      {targetRefusalDialogOpen ? <OverviewDialog title={t('targetRefusalReasonsTitle')} onClose={() => setTargetRefusalDialogOpen(false)}>
-          {metrics?.targetRefusalReasons.length ? (
-            <div className="space-y-4">
-              {metrics.targetRefusalReasons.map((item) => {
-                const share = targetRefusals > 0 ? Math.round((item.count / targetRefusals) * 100) : 0;
-                return (
-                  <div key={item.reason} className="space-y-2">
-                    <div className="flex items-center justify-between gap-4 text-sm">
-                      <span className="min-w-0 truncate font-medium" title={archiveReasonName(item.reason)}>
-                        {archiveReasonName(item.reason)}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {item.count} · {share}%
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} /></div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="py-5 text-center text-sm text-muted-foreground">
-              {t('targetRefusalReasonsEmpty')}
-            </p>
-          )}
-      </OverviewDialog> : null}
 
       {demoStudentsDialogOpen ? (
         <DemoStudentsDialog key={`${reportingQuery}-${managerId}`}

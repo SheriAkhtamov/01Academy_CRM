@@ -2,10 +2,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
-  Funnel,
-  FunnelChart,
   LabelList,
   Line,
   PolarAngleAxis,
@@ -18,7 +15,6 @@ import {
 } from 'recharts';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
-  percentage,
   rankWithRemainder,
   shortenChartLabel,
 } from '@/lib/analyticsCharts';
@@ -38,13 +34,6 @@ type SourcePerformance = {
   revenue: number;
   expenses: number;
   roas: number;
-};
-
-type FunnelStage = {
-  code: string;
-  name: string;
-  count: number;
-  color: string;
 };
 
 const boundedPercent = (value: unknown) => {
@@ -78,15 +67,11 @@ const mergeSources = (
 
 export function MarketingAnalyticsCharts({
   sources,
-  funnel,
   conversions,
   money,
 }: {
   sources: SourcePerformance[];
-  funnel: FunnelStage[];
   conversions: {
-    leadToDemo: number;
-    demoToPaid: number;
     leadToPaid: number;
   };
   money: (value: number) => string;
@@ -112,16 +97,8 @@ export function MarketingAnalyticsCharts({
     chartRoas: Number(source.expenses || 0) > 0 ? Number(source.roas || 0) : null,
   }));
   const conversionRings = [
-    { name: t('conversionApplicationToDemo'), value: boundedPercent(conversions.leadToDemo), fill: 'var(--chart-2)' },
-    { name: t('conversionDemoToPayment'), value: boundedPercent(conversions.demoToPaid), fill: 'var(--chart-1)' },
     { name: t('leadToPaidConversion'), value: boundedPercent(conversions.leadToPaid), fill: 'var(--chart-4)' },
   ];
-  const funnelSteps = funnel.map((stage, index) => ({
-    ...stage,
-    conversion: index === 0
-      ? (stage.count > 0 ? 100 : 0)
-      : percentage(stage.count, funnel[index - 1]?.count || 0),
-  }));
   const totalLeads = acquisitionSources.reduce((sum, source) => sum + Number(source.leads || 0), 0);
   const totalPaid = acquisitionSources.reduce((sum, source) => sum + Number(source.paidStudents || 0), 0);
   const hasSourceEconomics = sourceEconomics.some((source) => (
@@ -130,8 +107,7 @@ export function MarketingAnalyticsCharts({
   ));
   const hasRoasData = economicsChartData.some((source) => source.chartRoas != null);
   const hasConversionCohort = sources.some((source) => Number(source.leads || 0) > 0)
-    || funnel.some((stage) => Number(stage.count || 0) > 0);
-  const hasFunnelData = funnel.some((stage) => Number(stage.count || 0) > 0);
+;
   const hasAcquisitionData = totalLeads > 0;
 
   return (
@@ -242,57 +218,9 @@ export function MarketingAnalyticsCharts({
       </AnalyticsChartCard>
 
       <AnalyticsChartCard
-        title={t('conversionFunnel')}
-        summary={`${t('conversionFunnel')}. ${funnel.map((stage) => `${stage.name}: ${stage.count}`).join(', ')}`}
-        className="xl:col-span-7"
-        chartClassName="h-[252px]"
-        footer={hasFunnelData ? (
-          <ol className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-            {funnelSteps.map((stage, index) => (
-              <li key={stage.code} className="flex min-w-0 items-center gap-2 text-xs">
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-semibold tabular-nums">
-                  {index + 1}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={stage.name}>{stage.name}</span>
-                <span className="font-semibold tabular-nums">{stage.count}</span>
-                <span
-                  className="w-10 text-right tabular-nums text-muted-foreground"
-                  aria-label={`${t('conversionRate')}: ${stage.conversion}%`}
-                >
-                  {stage.conversion}%
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : undefined}
-      >
-        {hasFunnelData ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <FunnelChart>
-              <Tooltip formatter={(value: number) => [value, t('navLeads')]} contentStyle={analyticsTooltipStyle} />
-              <Funnel dataKey="count" data={funnel} isAnimationActive={chartEntrance}>
-                {funnel.map((stage) => <Cell key={stage.code} fill={stage.color} />)}
-                <LabelList
-                  position="center"
-                  fill="var(--foreground)"
-                  stroke="var(--card)"
-                  strokeWidth={3}
-                  dataKey="count"
-                  className="text-xs font-semibold"
-                  style={{ paintOrder: 'stroke' }}
-                />
-              </Funnel>
-            </FunnelChart>
-          </ResponsiveContainer>
-        ) : (
-          <AnalyticsChartEmpty title={t('noFunnelData')}  />
-        )}
-      </AnalyticsChartCard>
-
-      <AnalyticsChartCard
         title={t('marketingAcquisitionBySource')}
         summary={`${t('marketingAcquisitionBySource')}. ${acquisitionSources.map((source) => `${source.sourceName}: ${source.leads}/${source.paidStudents}`).join(', ')}`}
-        className="xl:col-span-5"
+        className="xl:col-span-12"
         chartClassName="h-[260px]"
         footer={hasAcquisitionData ? (
           <AnalyticsChartLegend items={[

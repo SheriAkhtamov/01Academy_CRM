@@ -6,6 +6,7 @@ export interface SalesFunnel {
   name: string;
   isActive: boolean;
   isDefault: boolean;
+  initialStageCode?: string;
   workflowRole?: SalesFunnelRole | null;
   isPreferred?: boolean;
   leadCount: number;

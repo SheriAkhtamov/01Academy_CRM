@@ -92,6 +92,7 @@ import {
   parseOptionalDate,
   query,
   queryOne,
+  lockSalesFunnelsForStages,
   quoteIdent,
   safeJson,
   toBoolean,
@@ -101,6 +102,7 @@ import {
   withTransaction,
 } from './academy-core';
 import {
+  assertLessonHistoryUpdateAllowed,
   buildCrudScope,
   GROUP_SCHEDULE_PREPARATION_FIELDS,
   groupLessonBackedFieldChanged,
@@ -200,6 +202,14 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         }
       }
 
+      if (table === 'academy_tasks') {
+        if (Object.prototype.hasOwnProperty.call(req.body, 'responsibleId') && !parseId(req.body.responsibleId)) {
+          return res.status(400).json({ error: 'taskAssigneeRequired' });
+        }
+        if (hasLeadershipAccess(req.user) && !parseId(values.responsibleId)) {
+          return res.status(400).json({ error: 'taskAssigneeRequired' });
+        }
+      }
       if (table === 'academy_tasks' && !hasLeadershipAccess(req.user)) {
         const hasRequestedResponsible = req.body.responsibleId !== undefined
           && req.body.responsibleId !== null
@@ -308,6 +318,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           values[column] = nullableText(value);
         }
       }
+      if (table === 'academy_tasks'
+        && Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
+        && !parseId(values.responsibleId)) {
+        return res.status(400).json({ error: 'taskAssigneeRequired' });
+      }
       if (
         table === 'academy_tasks'
         && !hasLeadershipAccess(req.user)
@@ -381,6 +396,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             if (options.beforeUpdate) {
               await options.beforeUpdate({ id, values, row: lockedRow, req });
             }
+            await assertLessonHistoryUpdateAllowed(id, values, lockedRow, req.body.autoAssign === true);
             await prepareLessonMutation({
               values,
               oldRow: lockedRow,
@@ -420,7 +436,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           })
         : options.beforeUpdate
           ? await withTransaction(async () => {
-            if (table === 'academy_rooms') {
+            if (table === 'academy_lead_statuses') await lockSalesFunnelsForStages([id], 'id');
+            if (table === 'academy_rooms' || table === 'academy_schools') {
               await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
             }
             const lockedRow = await queryOne(
@@ -468,6 +485,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!row) return res.status(404).json({ error: `${path} not found` });
       if (table === 'academy_lead_statuses') {
         await withTransaction(async () => {
+          await lockSalesFunnelsForStages([id], 'id');
           const lockedRow = await queryOne(
             `SELECT * FROM academy_lead_statuses WHERE id = $1 FOR UPDATE`,
             [id],

@@ -1,39 +1,4 @@
-import { Layers } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
-
-const stageColors = ['var(--chart-2)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-3)', 'var(--chart-5)'];
-
-export function SalesActiveLeadsChart({ stages, leadStatusName, statusColor }: {
-  stages: Array<{ code: string; count: number }>; leadStatusName: (code: string) => string; statusColor: (code: string) => string;
-}) {
-  const { t, language } = useTranslation();
-  const number = new Intl.NumberFormat(language);
-  const ranked = stages.map((stage, index) => ({ code: stage.code, label: leadStatusName(stage.code), count: stage.count, color: statusColor(stage.code) || stageColors[index % stageColors.length] }))
-    .filter((stage) => stage.count > 0).sort((a, b) => b.count - a.count);
-  const total = ranked.reduce((sum, stage) => sum + stage.count, 0);
-  const rows = ranked.length > 4 ? [...ranked.slice(0, 3), { code: '__remainder', label: t('other'), count: ranked.slice(3).reduce((sum, stage) => sum + stage.count, 0), color: 'var(--chart-6)' }] : ranked;
-  let offset = 0;
-  const segments = rows.map((row) => {
-    const share = total ? row.count / total * 100 : 0;
-    const segment = { ...row, share, offset };
-    offset += share;
-    return segment;
-  });
-  return <div className="flex min-h-28 flex-wrap items-center gap-3">
-    <div className="relative w-[96px] shrink-0 sm:w-[112px]">
-      <svg viewBox="0 0 100 100" className="w-full" role="img" aria-label={`${t('salesActiveStageDistribution')}: ${ranked.length ? ranked.map((stage) => `${stage.label}: ${stage.count}`).join('; ') : t('salesNoActiveLeads')}`}>
-        <circle cx={50} cy={50} r={38} fill="none" stroke="var(--muted)" strokeWidth={12} />
-        <g transform="rotate(-90 50 50)">{segments.map((segment) => <circle key={segment.code} cx={50} cy={50} r={38} fill="none" stroke={segment.color} strokeWidth={12} pathLength={100}
-          strokeDasharray={`${segment.share} ${100 - segment.share}`} strokeDashoffset={-segment.offset}><title>{segment.label}: {number.format(segment.count)}</title></circle>)}</g>
-      </svg>
-      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground/60"><Layers className="size-5" aria-hidden="true" /></span>
-    </div>
-    {rows.length ? <ul className="min-w-[80px] flex-1 space-y-2.5">{rows.map((row) => <li key={row.code} className="flex items-center gap-1.5 text-[10px] sm:text-[11px]">
-      <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-muted-foreground" title={row.label}>{row.label}</span><span className="tabular-nums">{number.format(row.count)}</span>
-    </li>)}</ul> : <p className="min-w-[80px] flex-1 text-xs leading-relaxed text-muted-foreground">{t('salesNoActiveLeads')}</p>}
-  </div>;
-}
 
 export function SalesRepeatCallsChart({ distribution }: { distribution: Array<{ attempts: number; count: number }> | undefined }) {
   const { t, language } = useTranslation();

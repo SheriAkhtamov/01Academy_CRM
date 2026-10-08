@@ -43,8 +43,7 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     [selectedLeads, statuses],
   );
   const archiveNeedsManagerAssignment = selectedLeads.some((lead) => !lead.managerId);
-  const canArchiveSelected = selectedLeads.length > 0
-    && selectedLeads.every((lead) => lead.statusCode !== 'paid');
+  const canArchiveSelected = selectedLeads.length > 0;
 
   useEffect(() => {
     const visibleLeadIds = new Set(leads.map((lead) => lead.id));

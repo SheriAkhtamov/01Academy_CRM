@@ -4,7 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  LabelList,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -32,7 +31,6 @@ interface DashboardChartsProps {
   payments?: any[];
   leads?: Array<{
     sourceName?: string | null;
-    statusCode?: string | null;
   }>;
   money: (value: number) => string;
   reportingRange?: { from: string; to: string };
@@ -40,14 +38,6 @@ interface DashboardChartsProps {
 
 const PAYMENT_METHOD_COLORS = ['var(--chart-2)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-6)'];
 
-/**
- * The money-and-source half of the sales overview.
- *
- * The pipeline funnel used to live here as a fourth card, directly below a
- * second, differently-computed funnel in the metrics block above. It is now a
- * tab of that one card, which is why this file no longer takes `funnel`,
- * `leadStatusName` or `statusColor`.
- */
 export function DashboardCharts({
   payments = [],
   leads = [],
@@ -58,33 +48,27 @@ export function DashboardCharts({
   const { t } = useTranslation();
 
   const sourceData = useMemo(() => {
-    const sources = new Map<string, { name: string; leads: number; paid: number; conversion: number }>();
+    const sources = new Map<string, { name: string; leads: number }>();
     for (const lead of leads) {
       const name = String(lead.sourceName || t('unknownSource'));
-      const current = sources.get(name) ?? { name, leads: 0, paid: 0, conversion: 0 };
+      const current = sources.get(name) ?? { name, leads: 0 };
       current.leads += 1;
-      if (lead.statusCode === 'paid') current.paid += 1;
       sources.set(name, current);
     }
     return rankWithRemainder(
-      [...sources.values()].map((item) => ({
-        ...item,
-        conversion: percentage(item.paid, item.leads),
-      })),
+      [...sources.values()],
       (item) => item.leads,
       6,
       (items) => {
         const combined = items.reduce(
           (total, item) => ({
             leads: total.leads + item.leads,
-            paid: total.paid + item.paid,
           }),
-          { leads: 0, paid: 0 },
+          { leads: 0 },
         );
         return {
           name: t('other'),
           ...combined,
-          conversion: percentage(combined.paid, combined.leads),
         };
       },
     );
@@ -123,13 +107,12 @@ export function DashboardCharts({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 mx-5 border-t border-border/60 pb-4 sm:mx-8 xl:mx-10">
       <AnalyticsChartCard
         title={t('salesSourcePerformance')}
-        summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}/${item.paid}`).join(', ')}`}
+        summary={`${t('salesSourcePerformance')}. ${sourceData.map((item) => `${item.name}: ${item.leads}`).join(', ')}`}
         className="px-0 sm:px-0 xl:col-span-8 xl:pr-8"
         chartClassName="h-[270px]"
         footer={hasSourceData ? (
           <AnalyticsChartLegend items={[
             { label: t('navLeads'), color: 'var(--chart-2)' },
-            { label: t('paidCustomersForPeriod'), color: 'var(--chart-1)' },
           ]} />
         ) : undefined}
       >
@@ -149,16 +132,14 @@ export function DashboardCharts({
               />
               <Tooltip
                 cursor={{ fill: 'var(--muted)' }}
-                formatter={(value: number, name: string) => [
+                formatter={(value: number) => [
                   value,
-                  name === 'leads' ? t('navLeads') : t('paidCustomersForPeriod'),
+                  t('navLeads'),
                 ]}
                 contentStyle={analyticsTooltipStyle}
               />
               <Bar dataKey="leads" fill="var(--chart-2)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={chartEntrance} />
-              <Bar dataKey="paid" fill="var(--chart-1)" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive={chartEntrance}>
-                <LabelList dataKey="conversion" position="right" formatter={(value: number) => `${value}%`} className="fill-muted-foreground text-xs" />
-              </Bar>
+
             </BarChart>
           </ResponsiveContainer>
         ) : (

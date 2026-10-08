@@ -40,6 +40,7 @@ export type LeadActivityData = {
   history?: Array<{
     id: number;
     toStatusCode: string;
+    toStatusName?: string | null;
     enteredAt?: string | null;
     comment?: string | null;
   }>;
@@ -259,7 +260,7 @@ export function ActivityTimeline({
       id: `history-${item.id}`,
       kind: 'status',
       at: item.enteredAt,
-      title: leadStatusName(item.toStatusCode),
+      title: item.toStatusName || leadStatusName(item.toStatusCode),
       text: item.comment,
       callId: null,
       hasRecording: false,

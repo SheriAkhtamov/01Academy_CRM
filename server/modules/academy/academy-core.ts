@@ -8,7 +8,6 @@ import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
-import { isFullCycleKpiRole } from '@shared/sales-kpi';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -456,8 +455,8 @@ export const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
   } catch (error) {
     const failure = error as { code?: string; message?: string; statusCode?: number };
     if (failure.code === 'P0001' && ['salesFunnelStageUnavailable', 'salesFunnelCloserOnly',
-      'salesFunnelHunterOnly', 'salesFunnelNotAssigned', 'salesWorkflowFunnelProtected'].includes(failure.message ?? '')) {
-      failure.statusCode = 409;
+      'salesFunnelHunterOnly', 'salesFunnelNotAssigned', 'salesWorkflowFunnelProtected', 'pipelineInitialStageProtected', 'pipelineInitialStageCannotBeDeleted', 'invalidData'].includes(failure.message ?? '')) {
+      failure.statusCode = failure.message === 'invalidData' ? 400 : 409;
     }
     throw error;
   }
@@ -514,33 +513,39 @@ export const queryOne = async <T = Row>(sql: string, values: DbValue[] = []) => 
   return rows[0] as T | undefined;
 };
 
-export const getActiveLeadStatus = async (code: string, pipelineOnly = false) => queryOne<{ code: string }>(
-  `SELECT code
-   FROM academy_lead_statuses
-   WHERE code = $1
-     AND is_active = true
-     ${pipelineOnly ? 'AND is_pipeline = true' : ''}
-     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
-  [code],
-);
+/** Parent funnels precede stages and leads in the lock order, including deletion. */
+export const lockSalesFunnelsForStages = async (values: readonly (number | string)[], field: 'id' | 'code' = 'code') => {
+  if (!transactionContext.getStore() || values.length === 0) return;
+  await query(
+    `SELECT funnel.id FROM academy_sales_funnels funnel
+     WHERE EXISTS (SELECT 1 FROM academy_lead_statuses stage
+       WHERE stage.funnel_id = funnel.id AND stage.${field} = ANY($1::${field === 'id' ? 'int' : 'text'}[]))
+     ORDER BY funnel.id FOR SHARE OF funnel`, [values as any[]],
+  );
+};
 
-export const resolveInitialLeadStatusCode = async (requestedCode: string | null | undefined) => {
-  if (requestedCode) {
-    const status = await getActiveLeadStatus(requestedCode);
-    if (status) return status.code;
+export const getActiveLeadStatus = async (code: string, pipelineOnly = false) => {
+  await lockSalesFunnelsForStages([code]);
+  return queryOne<{ code: string }>(
+    `SELECT code FROM academy_lead_statuses WHERE code = $1 AND is_active = true
+     ${pipelineOnly ? 'AND is_pipeline = true' : ''}
+     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`, [code],
+  );
+};
+
+export const resolveInitialLeadStatusCode = async (requestedCode: string | null | undefined, funnelId: number) => {
+  if (transactionContext.getStore()) await query(`SELECT id FROM academy_sales_funnels WHERE id = $1 FOR SHARE`, [funnelId]);
+  const firstStage = await queryOne<{ code: string }>(
+    `SELECT stage.code FROM academy_sales_funnels funnel
+     JOIN academy_lead_statuses stage ON stage.code = funnel.initial_stage_code AND stage.funnel_id = funnel.id
+     WHERE funnel.id = $1 AND funnel.is_active = true AND stage.is_active = true AND stage.is_pipeline = true
+     ${transactionContext.getStore() ? 'FOR SHARE OF stage' : ''}`, [funnelId],
+  );
+  if (!firstStage) throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
+  if (requestedCode && requestedCode !== firstStage.code) {
     throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 400 });
   }
-
-  const firstPipelineStatus = await queryOne<{ code: string }>(
-    `SELECT code
-     FROM academy_lead_statuses
-     WHERE is_active = true AND is_pipeline = true
-     ORDER BY sort_order, id
-     LIMIT 1
-     ${transactionContext.getStore() ? 'FOR SHARE' : ''}`,
-  );
-  if (firstPipelineStatus) return firstPipelineStatus.code;
-  throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
+  return firstStage.code;
 };
 
 export const normalizeDbValue = (value: DbValue, table?: string, column?: string) => {
@@ -555,7 +560,7 @@ export const normalizeDbValue = (value: DbValue, table?: string, column?: string
 export const resolveLeadManagerId = async (
   source: ActorSource,
   requestedValue: unknown,
-  funnelRole?: string | null,
+  _funnelRole?: string | null,
   funnelId?: number | null,
 ): Promise<number> => {
   const actor = actorContextFrom(source);
@@ -598,8 +603,7 @@ export const resolveLeadManagerId = async (
        WHERE u.id = $1 AND ${salesUserAccessSql} AND u.is_active = true`,
       [actor.userId],
     );
-    if (currentManager && (!funnelRole || actor.salesWorkflow?.role === funnelRole
-      || isFullCycleKpiRole(actor.salesWorkflow?.role))) {
+    if (currentManager) {
       return Number(currentManager.id);
     }
   }
@@ -609,15 +613,12 @@ export const resolveLeadManagerId = async (
      FROM users u
      LEFT JOIN academy_leads l
        ON l.manager_id = u.id
-      AND l.status_code NOT IN ('paid', 'not_now')
       AND COALESCE(l.is_archived, false) = false
      WHERE ${salesUserAccessSql} AND u.is_active = true
        ${funnelId ? `AND EXISTS (
          SELECT 1 FROM academy_sales_funnel_users assignment
          WHERE assignment.user_id = u.id AND assignment.funnel_id = $1
        )` : ''}
-       ${funnelRole === 'hunter' ? "AND academy_kpi_employee_role(u.id) IS DISTINCT FROM 'closer'"
-         : funnelRole === 'closer' ? "AND academy_kpi_employee_role(u.id) IN ('closer', 'full_cycle', 'full_cycle_3500')" : ''}
      GROUP BY u.id
      ORDER BY COUNT(l.id), u.id
      LIMIT 1`,
@@ -828,14 +829,21 @@ export const createTask = async (title: string, options: {
   deadlineAt?: Date | null;
   entityType?: string | null;
   entityId?: number | null;
-}) => insertRow('academy_tasks', {
-  title,
-  description: options.description ?? null,
-  responsibleId: options.responsibleId ?? null,
-  deadlineAt: options.deadlineAt ?? null,
-  entityType: options.entityType ?? null,
-  entityId: options.entityId ?? null,
-  status: 'new' });
+}) => {
+  const responsibleId = Number(options.responsibleId);
+  if (!Number.isInteger(responsibleId) || responsibleId <= 0) {
+    throw Object.assign(new Error('taskAssigneeRequired'), { statusCode: 400 });
+  }
+  return insertRow('academy_tasks', {
+    title,
+    description: options.description ?? null,
+    responsibleId,
+    deadlineAt: options.deadlineAt ?? null,
+    entityType: options.entityType ?? null,
+    entityId: options.entityId ?? null,
+    status: 'new',
+  });
+};
 
 export const createTaskOnce = async (title: string, options: {
   responsibleId?: number | null;

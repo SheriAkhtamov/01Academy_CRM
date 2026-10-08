@@ -237,7 +237,7 @@ describe('external lead ownership', () => {
     expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
-  it('keeps native Meta Instagram leads and tasks unassigned', () => {
+  it('uses the destination intake for Meta Instagram and creates follow-up tasks only when assigned', () => {
     const incomingSource = fs.readFileSync(
       path.join(repositoryRoot, 'server/routes/incoming.routes.ts'),
       'utf8',
@@ -249,9 +249,7 @@ describe('external lead ownership', () => {
 
     expect(incomingSource).not.toContain('getLeadAssigneeId');
     expect(instagramSource).not.toContain('getLeadAssigneeId');
-    expect(instagramSource).toContain("VALUES ($1,NULL,$2,$3,$4,'new_request',NULL,'',ARRAY[]::text[],$5,$6)");
-    expect(instagramSource).toMatch(
-      /INSERT INTO academy_tasks[\s\S]+?'Ответить на новый диалог Instagram[^`]+?NULL/,
-    );
+    expect(instagramSource).toContain('SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4');
+    expect(instagramSource).toContain('lead.manager_id IS NOT NULL');
   });
 });

@@ -12,16 +12,11 @@ export interface SalesDashboardCoreMetrics {
   newLeads: number;
   processedLeads: number;
   reachedLeads: number;
-  qualifiedLeads: number;
   demoBookings: number;
   demoAttendees: number;
   repeatCallLeads: number;
   repeatCallDistribution: Array<{ attempts: number; count: number }>;
-  targetRefusals: number;
-  targetRefusalReasons: Array<{
-    reason: string;
-    count: number;
-  }>;
+
 }
 
 export interface SalesDashboardDailyPoint {
@@ -43,12 +38,9 @@ export interface SalesDashboardMetrics extends SalesDashboardCoreMetrics {
 export interface SalesOverviewStats {
   newLeadsPeriod: number;
   activeLeads: number;
-  activeLeadStages: Array<{ code: string; count: number }>;
   totalStudents: number;
-  conversionRate: number;
   activeLeadsPrevious: number;
   totalStudentsPrevious: number;
-  conversionRatePrevious: number;
 }
 
 /** Where a KPI tile hands the operator off to. */
@@ -62,12 +54,6 @@ export interface SalesOverviewPayment {
 export interface SalesOverviewStudent {
   enrolledAt?: string | null;
   createdAt?: string | null;
-}
-
-export interface SalesOverviewFunnelStage {
-  code: string;
-  count: number;
-  color?: string | null;
 }
 
 export type MoneyFormatter = (value: number | string | null | undefined) => string;

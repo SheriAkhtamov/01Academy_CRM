@@ -225,13 +225,6 @@ export function BulkLeadActionsDialog({
             ) : null}
 
             <TabsContent value="archive" className="space-y-4 pt-3">
-              {!canArchiveSelected ? (
-                <Alert variant="destructive">
-                  <AlertCircle />
-                  <AlertTitle>{t('bulkArchiveUnavailable')}</AlertTitle>
-                  <AlertDescription>{t('paidLeadCannotArchive')}</AlertDescription>
-                </Alert>
-              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="bulk-archive-reason">{t('archiveReason')}</Label>
                 <Select value={archiveReason} onValueChange={setArchiveReason} disabled={!canArchiveSelected}>

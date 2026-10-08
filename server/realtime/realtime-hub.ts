@@ -1,19 +1,32 @@
 import type { WebSocketEvent } from '@shared/websocket';
 
 export type RealtimeTransport = (event: WebSocketEvent) => void;
-export type RealtimeUserDisconnect = (userId: number) => void;
+export type RealtimeUserDisconnect = (userId: number, exceptSessionId?: string | null) => void;
+export type RealtimeSessionDisconnect = (sessionId: string) => void;
 
 const noopTransport: RealtimeTransport = () => undefined;
 const noopUserDisconnect: RealtimeUserDisconnect = () => undefined;
 let activeTransport: RealtimeTransport = noopTransport;
 let activeUserDisconnect: RealtimeUserDisconnect = noopUserDisconnect;
+let activeSessionDisconnect: RealtimeSessionDisconnect = () => undefined;
 
 export const publishRealtimeEvent = (event: WebSocketEvent): void => {
   activeTransport(event);
 };
 
-export const disconnectRealtimeUser = (userId: number): void => {
-  activeUserDisconnect(userId);
+export const disconnectRealtimeUser = (userId: number, exceptSessionId?: string | null): void => {
+  activeUserDisconnect(userId, exceptSessionId);
+};
+
+export const disconnectRealtimeSession = (sessionId: string): void => {
+  activeSessionDisconnect(sessionId);
+};
+
+export const setRealtimeSessionDisconnect = (disconnect: RealtimeSessionDisconnect): (() => void) => {
+  activeSessionDisconnect = disconnect;
+  return () => {
+    if (activeSessionDisconnect === disconnect) activeSessionDisconnect = () => undefined;
+  };
 };
 
 /**

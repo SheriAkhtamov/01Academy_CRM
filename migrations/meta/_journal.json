@@ -897,6 +897,27 @@
       "when": 1791308587654,
       "tag": "0127_staff_group_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1791457212058,
+      "tag": "0128_generic_funnel_stages_and_qualification",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1791457212059,
+      "tag": "0129_preserve_group_chat_history_on_user_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1791457212060,
+      "tag": "0130_preserve_salary_accrual_cutoff",
+      "breakpoints": true
     }
   ]
 }

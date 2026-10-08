@@ -36,6 +36,18 @@ describe('task creation with attachments', () => {
     const view = render(provider(<CreateTaskDialog open onOpenChange={close} users={[employee]} currentUser={employee} canAssignUsers />));
     return { ...view, close, input: view.container.ownerDocument.querySelector('input[type=file]') as HTMLInputElement };
   };
+  it('offers only assigned employees and disables creation when no assignee is available', async () => {
+    const user = userEvent.setup();
+    const view = setup();
+    await user.click(screen.getByRole('combobox', { name: i18n.t('assigneeLabel') }));
+    expect(screen.queryByRole('option', { name: i18n.t('unassigned') })).toBeNull();
+    expect(screen.getByRole('option', { name: employee.fullName })).toBeTruthy();
+    view.unmount();
+    render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[]} currentUser={null} canAssignUsers />));
+    await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'No assignee');
+    expect((screen.getByRole('button', { name: 'Create task' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
   it('saves multiple files and keeps the dialog open until every upload finishes', async () => {
     const { close, input } = setup();
     const user = userEvent.setup();

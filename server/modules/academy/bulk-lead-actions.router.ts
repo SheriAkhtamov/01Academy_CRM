@@ -24,7 +24,7 @@ import {
 import {
   createStageHistory,
   getActiveSalesManager,
-  handleLeadStatusEffects,
+  recordManualLeadStageMove,
   reassignLead,
 } from './academy-leads';
 
@@ -77,9 +77,6 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
         }
 
         const activeLeads = leads.filter((lead) => !lead.isArchived);
-        if (activeLeads.some((lead) => lead.statusCode === 'paid')) {
-          throw Object.assign(new Error('paidLeadCannotArchive'), { statusCode: 409 });
-        }
         const unassignedLeads = activeLeads.filter((lead) => !lead.managerId);
         if (unassignedLeads.length > 0 && input.data.assignToSelf !== true) {
           throw Object.assign(new Error('leadRequiresResponsibleManager'), { statusCode: 409 });
@@ -221,6 +218,7 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
             req.user!.id,
             'Массовый перенос в воронке',
           );
+          await recordManualLeadStageMove(req.actor!, lead, updatedById.get(Number(lead.id))!);
         }
         return changedLeads.map((previous) => ({
           previous,
@@ -229,7 +227,6 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
       });
 
       for (const change of changes) {
-        await handleLeadStatusEffects(req.actor!, change.updated, String(change.previous.statusCode));
         await createAudit(
           req.actor!,
           'BULK_UPDATE_ACADEMY_LEAD_STATUS',

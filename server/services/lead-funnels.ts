@@ -22,7 +22,6 @@ export const resolveLeadFunnelId = async (
        JOIN academy_sales_funnels funnel ON funnel.id = setting.funnel_id
        WHERE setting.provider = $1
          AND funnel.is_active = true
-         AND funnel.workflow_role IS DISTINCT FROM 'closer'
        LIMIT 1`,
       [provider],
     );
@@ -34,7 +33,6 @@ export const resolveLeadFunnelId = async (
     `SELECT id
      FROM academy_sales_funnels
      WHERE is_active = true
-       AND workflow_role IS DISTINCT FROM 'closer'
      ORDER BY is_default DESC, id
      LIMIT 1`,
   );
@@ -43,4 +41,17 @@ export const resolveLeadFunnelId = async (
     throw Object.assign(new Error('salesFunnelRequired'), { statusCode: 409 });
   }
   return fallbackId;
+};
+
+/** Intake always uses the configured first stage of the destination funnel. */
+export const resolveLeadInitialStageCode = async (executor: QueryExecutor, funnelId: number): Promise<string> => {
+  const { rows: [stage] } = await executor.query<{ code: string }>(
+    `SELECT stage.code
+     FROM academy_sales_funnels funnel
+     JOIN academy_lead_statuses stage ON stage.code = funnel.initial_stage_code AND stage.funnel_id = funnel.id
+     WHERE funnel.id = $1 AND funnel.is_active = true AND stage.is_active = true AND stage.is_pipeline = true`,
+    [funnelId],
+  );
+  if (!stage) throw Object.assign(new Error('noActivePipelineStages'), { statusCode: 409 });
+  return stage.code;
 };

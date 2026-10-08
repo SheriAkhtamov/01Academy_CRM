@@ -212,6 +212,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
     const saveMutation = useMutation({
         mutationFn: () => {
+            if (draftAssignee === UNASSIGNED || !draftAssignee) throw new Error(t('taskAssigneeRequired'));
             const payload: Record<string, unknown> = {
                 title: draftTitle.trim(),
                 description: draftDescription.trim() || null,
@@ -219,7 +220,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                 color: draftColor,
                 dueAt: draftDue ? dueInputToInstant(draftDue) : null,
             };
-            payload.assigneeId = draftAssignee === UNASSIGNED ? null : Number(draftAssignee);
+            payload.assigneeId = Number(draftAssignee);
             return apiRequest('PATCH', `/api/board/tasks/${taskId}`, payload);
         },
         onSuccess: () => { hapticNotify('success'); invalidate(); setEditing(false); toast({ title: t('taskUpdated') }); },
@@ -502,7 +503,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                     <Select disabled={saveMutation.isPending} value={draftAssignee} onValueChange={setDraftAssignee}>
                                                         <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
-                                                            <SelectItem value={UNASSIGNED}>{t('unassigned')}</SelectItem>
+                                                            {draftAssignee === UNASSIGNED ? <SelectItem value={UNASSIGNED} disabled>{t('taskAssigneeRequired')}</SelectItem> : null}
                                                             {users.map((u) => (<SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>))}
                                                         </SelectContent>
                                                     </Select>

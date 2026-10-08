@@ -1,118 +1,204 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { AlertTriangle, GraduationCap, LogOut } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/useTranslation';
-import { translations, type TranslationKey } from '@/lib/i18n';
-import { Button } from '@/components/ui/button';
-import LanguageSwitcher from '@/components/LanguageSwitcher';
+import type { TranslationKey } from '@/lib/i18n';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { usePublicAttendance } from '@/features/public-attendance/usePublicAttendance';
-import { PublicAttendanceApiError } from '@/features/public-attendance/api';
+import { usePublicAttendance, type AttendanceStudentView } from '@/features/public-attendance/usePublicAttendance';
+import { isAttendanceOffline, PublicAttendanceApiError } from '@/features/public-attendance/api';
+import { attendanceErrorKey, type AttendanceFilter } from '@/features/public-attendance/presentation';
+import { attendanceRosterKey, type AttendanceMarkNotice } from '@/features/public-attendance/markQueue';
 import { AttendanceLogin } from '@/features/public-attendance/components/AttendanceLogin';
-import { AttendanceNavigation } from '@/features/public-attendance/components/AttendanceNavigation';
-import { AttendanceOverview } from '@/features/public-attendance/components/AttendanceOverview';
+import { AttendanceNavigation, AttendancePageMenu } from '@/features/public-attendance/components/AttendanceNavigation';
 import { AttendanceRoster, AttendanceRosterSkeleton } from '@/features/public-attendance/components/AttendanceRoster';
-import type { AttendanceFilter } from '@/features/public-attendance/presentation';
-import type { PublicAttendanceStudent, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
+import { AttendanceSnackbar, type AttendanceNotice } from '@/features/public-attendance/components/AttendanceSnackbar';
+import type { PublicAttendanceMarkedStatus, PublicAttendanceRoster, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
 import '@/features/public-attendance/public-attendance.css';
 
-const errorKey = (error: unknown, fallback: TranslationKey): TranslationKey => error instanceof PublicAttendanceApiError && error.code in translations ? error.code as TranslationKey : fallback;
+const bulkKeys = {
+  present: { restKey: 'publicAttendanceBulkRestPresentTitle', allKey: 'publicAttendanceBulkAllPresentTitle', confirmKey: 'publicAttendanceBulkConfirmPresent' },
+  absent: { restKey: 'publicAttendanceBulkRestAbsentTitle', allKey: 'publicAttendanceBulkAllAbsentTitle', confirmKey: 'publicAttendanceBulkConfirmAbsent' },
+} satisfies Record<PublicAttendanceMarkedStatus, { restKey: TranslationKey; allKey: TranslationKey; confirmKey: TranslationKey }>;
+const clearErrorKeys = { offline: 'publicAttendanceOffline', failed: 'publicAttendanceClearFailed' } satisfies Record<string, TranslationKey>;
+const isAccessError = (error: unknown) => error instanceof PublicAttendanceApiError && (error.status === 401 || error.status === 403);
 
-/*
-  A failed request and its way out are one object everywhere on the page, so the
-  stream list, the roster and the save action all look like the same product
-  instead of three different alerts. The button appears only when there is
-  something to retry: a failed mark is retried by pressing the mark again, and
-  an offer to "retry" that merely hides the message would be a lie.
-*/
-function AttendanceError({ message, onRetry }: { message: TranslationKey; onRetry?: () => void }) {
+/* A list that failed to load, and the way back: one shape for the streams and the roster alike. */
+function AttendanceLoadError({ message, onRetry, inline = false }: { message: TranslationKey; onRetry: () => void; inline?: boolean }) {
   const { t } = useTranslation();
   return (
-    <div className="pa-error-banner">
-      <span className="pa-error-icon"><AlertTriangle /></span>
+    <div className={`pa-load-error${inline ? ' is-inline' : ''}`}>
+      <span className="pa-load-error-icon"><AlertTriangle /></span>
       <p role="alert">{t(message)}</p>
-      {onRetry ? <Button variant="outline" size="sm" onClick={onRetry}>{t('retry')}</Button> : null}
+      <button type="button" className="pa-secondary" onClick={onRetry}>{t('retry')}</button>
     </div>
   );
 }
 
-/*
-  Placeholders keep the page's height while the first response is in flight, so
-  the stream list does not shove the lesson card down the screen when it lands.
-*/
-function AttendanceSkeleton() {
+/* The first card while there is no stream to show — loading, failed or empty — still carries the page menu in its corner. */
+function AttendanceContextShell({ menu, children }: { menu: ReactNode; children: ReactNode }) {
+  const { t } = useTranslation();
   return (
-    <>
-      <div className="pa-flow-cards" aria-hidden="true">
-        {Array.from({ length: 3 }, (_, index) => <span key={index} className="pa-skeleton pa-skeleton-card" />)}
-      </div>
-      <div className="pa-skeleton-strip" aria-hidden="true">
-        {Array.from({ length: 8 }, (_, index) => <span key={index} className="pa-skeleton pa-skeleton-pill" />)}
-      </div>
-      <span className="pa-skeleton pa-skeleton-overview" aria-hidden="true" />
-    </>
+    <section className="pa-context">
+      <div className="pa-context-top"><p className="pa-stream-single">{t('publicAttendanceJournal')}</p>{menu}</div>
+      {children}
+    </section>
+  );
+}
+
+function AttendanceNavigationSkeleton({ menu }: { menu: ReactNode }) {
+  return (
+    <div className="pa-context">
+      <div className="pa-context-top"><span className="pa-skeleton pa-skeleton-streams" aria-hidden="true" />{menu}</div>
+      <span className="pa-skeleton pa-skeleton-heading" aria-hidden="true" />
+      <span className="pa-skeleton pa-skeleton-timeline" aria-hidden="true" />
+    </div>
   );
 }
 
 export default function PublicAttendancePage() {
   const { t } = useTranslation();
-  const state = usePublicAttendance();
+  const client = useQueryClient();
+  const [notice, setNotice] = useState<AttendanceNotice | null>(null);
+  // A conflict names the student it is about, taken from the lesson's list.
+  const showNotice = useCallback((next: AttendanceMarkNotice) => {
+    const roster = next.lessonId === undefined ? undefined : client.getQueryData<PublicAttendanceRoster>(attendanceRosterKey(next.lessonId));
+    const name = roster?.students.find((student) => student.id === next.studentId)?.name;
+    const shown: Omit<AttendanceNotice, 'id'> = next.translationKey === 'publicAttendanceConflict' && name
+      ? { ...next, translationKey: 'publicAttendanceConflictNamed', name } : next;
+    setNotice((current) => ({ ...shown, id: (current?.id ?? 0) + 1 }));
+  }, [client]);
+  const dismissNotice = useCallback(() => setNotice(null), []);
+  const state = usePublicAttendance({ onNotice: showNotice });
   const [password, setPassword] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AttendanceFilter>('all');
-  const [clearStudent, setClearStudent] = useState<PublicAttendanceStudent | null>(null);
-  const [savedStudent, setSavedStudent] = useState<number | null>(null);
-  const busy = state.mark.isPending || state.close.isPending;
+  const [clearing, setClearing] = useState<{ student: AttendanceStudentView; pending: boolean; error?: TranslationKey } | null>(null);
+  const [bulk, setBulk] = useState<PublicAttendanceMarkedStatus | null>(null);
+  const [askExit, setAskExit] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // After a mark is removed, focus goes to that row's first mark rather than to the menu that has gone.
+  const clearedStudent = useRef<number | null>(null);
+  const { mark, markRest, retry } = state;
   const roster = state.roster.data;
+  const placeholder = state.roster.isPlaceholderData;
+  const lessonId = state.lesson?.id;
+  const total = state.students.length;
 
-  useEffect(() => { document.title = `${t('publicAttendanceJournal')} · ${t('publicAttendanceCourse')}`; }, [t]);
-  useEffect(() => { setSearch(''); setFilter('all'); setSavedStudent(null); setClearStudent(null); }, [state.lesson?.id, state.authenticated]);
+  useEffect(() => { document.title = `${t('publicAttendanceJournal')} · ${t('publicAttendanceBrand')}`; }, [t]);
+  useEffect(() => { setSearch(''); setFilter('all'); setClearing(null); setBulk(null); }, [lessonId, state.authenticated]);
+  useEffect(() => {
+    if (state.authenticated) return;
+    setNotice(null);
+    setAskExit(false);
+  }, [state.authenticated]);
 
   const open = async (event: FormEvent) => {
     event.preventDefault();
-    try { await state.open.mutateAsync(password); setPassword(''); } catch { /* The form displays the error. */ }
-  };
-  const save = async (student: PublicAttendanceStudent, status: PublicAttendanceStatus) => {
-    setSavedStudent(null);
+    if (!password || state.open.isPending) return;
     try {
-      await state.mark.mutateAsync({ studentId: student.id, status, expectedRevision: student.revision, ...(status === null ? { clearConfirmed: true } : {}) });
-      setSavedStudent(student.id);
-      if (status === null) setClearStudent(null);
-    } catch (error) {
-      if (error instanceof PublicAttendanceApiError && error.code === 'publicAttendanceConflict') setClearStudent(null);
+      await state.open.mutateAsync(password);
+      setPassword('');
+    } catch { /* The form shows the reason under the field. */ }
+  };
+  const signOut = () => state.signOut({
+    onError: (error) => { if (!isAccessError(error)) showNotice({ translationKey: 'publicAttendanceExitFailed', tone: 'error' }); },
+  });
+  // Signing out is never blocked, but anything not yet saved is only dropped after the visitor agrees.
+  const exit = () => {
+    if (state.marks.unsaved > 0) setAskExit(true);
+    else signOut();
+  };
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await state.refresh();
+    } finally {
+      setRefreshing(false);
     }
   };
+  const onMark = useCallback((student: AttendanceStudentView, status: PublicAttendanceStatus) => { void mark(student.id, status); }, [mark]);
+  const onClear = useCallback((student: AttendanceStudentView) => setClearing({ student, pending: false }), []);
+  const onRetry = useCallback((student: AttendanceStudentView) => retry(student.id), [retry]);
+  const confirmClear = async () => {
+    if (!clearing) return;
+    setClearing({ ...clearing, pending: true, error: undefined });
+    const result = await mark(clearing.student.id, null);
+    if (result.ok) {
+      clearedStudent.current = clearing.student.id;
+      return setClearing(null);
+    }
+    // A refusal means the list changed underneath the dialog; the refreshed list and its message say why.
+    if (result.error instanceof PublicAttendanceApiError && [401, 403, 404, 409].includes(result.error.status)) return setClearing(null);
+    setClearing((current) => current && { ...current, pending: false, error: clearErrorKeys[isAttendanceOffline(result.error) ? 'offline' : 'failed'] });
+  };
+  const focusClearedRow = (event: Event) => {
+    const id = clearedStudent.current;
+    clearedStudent.current = null;
+    const target = id === null ? null : document.querySelector<HTMLElement>(`[data-student-id="${id}"] [data-col="0"]`);
+    if (!target) return;
+    event.preventDefault();
+    target.focus();
+  };
+  const loginError = useMemo(() => (
+    state.open.error ? t(attendanceErrorKey(state.open.error, 'login')) : undefined
+  ), [state.open.error, t]);
+  const menu = <AttendancePageMenu refreshing={refreshing} onRefresh={() => void refresh()} onSignOut={exit} />;
+  const bulkAll = state.bulkCount === total;
+
   return (
     <div className="pa-canvas">
-      <header className="pa-topbar"><div className="pa-topbar-inner">
-        <div className="pa-brand">
-          <span className="pa-brand-icon"><GraduationCap /></span>
-          <span className="pa-brand-text"><span className="pa-brand-name">{t('platformName')}</span><span className="pa-brand-caption">{t('publicAttendanceCourse')}</span></span>
-        </div>
-        <div className="pa-topbar-actions"><LanguageSwitcher />{state.authenticated ? <Button variant="ghost" className="pa-exit" disabled={busy} onClick={() => state.close.mutate()}><LogOut /><span>{t('publicAttendanceExit')}</span></Button> : null}</div>
-      </div></header>
-      <main className={`pa-shell ${!state.authenticated ? 'pa-login-shell' : ''}`}>
-        {!state.authenticated ? <AttendanceLogin password={password} loading={state.session.isPending} initialError={state.session.isError}
-          unavailable={state.session.data?.available === false} pending={state.open.isPending} error={state.open.error ? t(errorKey(state.open.error, 'publicAttendanceSaveFailed')) : undefined}
-          onPasswordChange={(value) => { setPassword(value); state.open.reset(); }} onSubmit={(event) => void open(event)} onRetry={() => void state.session.refetch()} />
-          : <>
-            <div className="pa-page-heading"><p className="pa-eyebrow">{state.group?.name ?? t('publicAttendanceCourse')}</p><h1>{t('publicAttendanceJournal')}</h1></div>
-            {state.close.error ? <AttendanceError message={errorKey(state.close.error, 'publicAttendanceSaveFailed')} /> : null}
-            {state.groups.isPending ? <AttendanceSkeleton />
-              : state.groups.error ? <AttendanceError message={errorKey(state.groups.error, 'publicAttendanceLoadFailed')} onRetry={state.refresh} />
-                : <AttendanceNavigation groups={state.groups.data?.groups ?? []} group={state.group} lesson={state.lesson} busy={busy} onGroup={state.chooseGroup} onLesson={state.chooseLesson} />}
-            {roster ? <AttendanceOverview roster={roster} busy={busy} refreshing={state.roster.isFetching} saving={state.mark.isPending} saved={savedStudent !== null} onRefresh={state.refresh} /> : null}
-            {state.mark.error ? <AttendanceError message={errorKey(state.mark.error, 'publicAttendanceSaveFailed')} /> : null}
-            {state.roster.isPending && state.lesson ? <><span className="pa-skeleton pa-skeleton-overview" aria-hidden="true" /><AttendanceRosterSkeleton /></>
-              : state.roster.error ? <AttendanceError message={errorKey(state.roster.error, 'publicAttendanceLoadFailed')} onRetry={state.refresh} />
-                : roster ? <AttendanceRoster students={roster.students} search={search} filter={filter} canMark={roster.lesson.canMark} busy={busy}
-                  pendingStudentId={state.mark.isPending ? state.mark.variables?.studentId : undefined} onSearch={setSearch} onFilter={setFilter}
-                  onMark={(student, status) => void save(student, status)} onClear={(student) => { state.mark.reset(); setClearStudent(student); }} /> : null}
-          </>}
+      <main className={`pa-shell${state.authenticated ? '' : ' is-login'}`}>
+        {!state.authenticated ? (
+          <AttendanceLogin password={password} loading={state.session.isPending} unavailable={state.session.data?.available === false}
+            initialError={state.session.isError && !state.session.data ? t(attendanceErrorKey(state.session.error, 'login')) : undefined}
+            expired={state.expired} unsent={state.marks.unsaved} error={loginError} pending={state.open.isPending}
+            onPasswordChange={(value) => { setPassword(value); state.open.reset(); }} onSubmit={(event) => void open(event)}
+            onRetry={() => void state.session.refetch()} />
+        ) : (
+          <>
+            <h1 className="sr-only">{t('publicAttendanceJournal')}</h1>
+            {/* A failed background re-read never replaces streams that are already on screen. */}
+            {state.groups.data ? (
+              state.group ? (
+                <AttendanceNavigation groups={state.groups.data.groups} group={state.group} lesson={state.lesson} unsavedLessons={state.marks.lessons}
+                  menu={menu} onGroup={state.chooseGroup} onLesson={state.chooseLesson} />
+              ) : <AttendanceContextShell menu={menu}><p className="pa-context-empty">{t('publicAttendanceNoLessons')}</p></AttendanceContextShell>
+            ) : state.groups.isPending ? <AttendanceNavigationSkeleton menu={menu} />
+              : (
+                <AttendanceContextShell menu={menu}>
+                  <AttendanceLoadError inline message={attendanceErrorKey(state.groups.error, 'load')} onRetry={() => void refresh()} />
+                </AttendanceContextShell>
+              )}
+            {state.lesson ? (
+              state.roster.isPending ? <AttendanceRosterSkeleton />
+                : !roster ? <AttendanceLoadError message={attendanceErrorKey(state.roster.error, 'load')} onRetry={() => void refresh()} />
+                  : (
+                    // While the previous lesson's list stands in, every label comes from the lesson that was chosen.
+                    <AttendanceRoster lesson={placeholder ? state.lesson : roster.lesson} students={state.students} placeholder={placeholder}
+                      waiting={state.marks.waiting} waitingCount={state.marks.pending} pending={state.lessonMarks.pending} failures={state.lessonMarks.failed}
+                      savedAt={state.marks.savedAt} bulkCount={state.bulkCount} search={search} filter={filter} nextOpenLesson={state.nextOpenLesson}
+                      onSearch={setSearch} onFilter={setFilter} onMark={onMark} onClear={onClear} onRetry={onRetry} onRetryAll={state.retryLesson}
+                      onBulk={setBulk} onOpenLesson={state.chooseLesson} />
+                  )
+            ) : null}
+          </>
+        )}
       </main>
-      <ConfirmDialog open={Boolean(clearStudent)} onOpenChange={(value) => { if (!value) setClearStudent(null); }} title={t('publicAttendanceClearTitle')}
-        description={t('publicAttendanceClearDescription').replace('{name}', clearStudent?.name ?? '')} confirmLabel={t('publicAttendanceClear')} variant="destructive"
-        keepOpenOnConfirm isPending={state.mark.isPending} error={state.mark.error ? t(errorKey(state.mark.error, 'publicAttendanceSaveFailed')) : undefined}
-        onConfirm={() => { if (clearStudent) void save(clearStudent, null); }} />
+
+      <AttendanceSnackbar notice={notice} onDismiss={dismissNotice} onRetry={state.retryAll} />
+
+      <ConfirmDialog open={Boolean(clearing)} onOpenChange={(value) => { if (!value) setClearing(null); }} title={t('publicAttendanceClearTitle')}
+        description={t('publicAttendanceClearDescription').replace('{name}', clearing?.student.name ?? '')} confirmLabel={t('publicAttendanceClear')}
+        variant="destructive" keepOpenOnConfirm isPending={clearing?.pending} error={clearing?.error ? t(clearing.error) : undefined}
+        onConfirm={() => void confirmClear()} onCloseAutoFocus={focusClearedRow} />
+      <ConfirmDialog open={bulk !== null} onOpenChange={(value) => { if (!value) setBulk(null); }}
+        title={bulk ? t(bulkAll ? bulkKeys[bulk].allKey : bulkKeys[bulk].restKey) : ''}
+        description={[t('publicAttendanceBulkCount').replace('{count}', String(state.bulkCount)), bulkAll ? '' : t('publicAttendanceBulkKeepsMarks')].filter(Boolean).join(' ')}
+        confirmLabel={bulk ? t(bulkKeys[bulk].confirmKey).replace('{count}', String(state.bulkCount)) : undefined}
+        onConfirm={() => { if (bulk) markRest(bulk); setBulk(null); }} />
+      <ConfirmDialog open={askExit} onOpenChange={setAskExit} title={t('publicAttendanceExitUnsavedTitle')}
+        description={t('publicAttendanceExitUnsavedDescription').replace('{count}', String(state.marks.unsaved))}
+        confirmLabel={t('publicAttendanceExitUnsavedConfirm')} variant="destructive" onConfirm={() => { setAskExit(false); signOut(); }} />
     </div>
   );
 }

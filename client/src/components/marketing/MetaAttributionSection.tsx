@@ -10,9 +10,7 @@ import {
   Newspaper,
   Play,
   RefreshCw,
-  Target,
   Wallet,
-  UserRoundCheck,
   Users,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -284,17 +282,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       sortable: true,
       cellClassName: 'tabular-nums',
     },
-    { key: 'qualified', header: t('qualifiedLeads'), accessor: (row: MetaCreativeRow) => row.qualified, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'demoInvited', header: t('invitedToDemo'), accessor: (row: MetaCreativeRow) => row.demoInvited, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paid', header: t('paidLeads'), accessor: (row: MetaCreativeRow) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
-    {
-      key: 'qualificationRate',
-      header: t('qualificationRate'),
-      accessor: (row: MetaCreativeRow) => row.qualificationRate,
-      render: (row: MetaCreativeRow) => `${row.qualificationRate}%`,
-      sortable: true,
-      cellClassName: 'tabular-nums',
-    },
     {
       key: 'paymentRate',
       header: t('paymentConversion'),
@@ -326,8 +314,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       sortable: true,
     },
     { key: 'leads', header: t('metaAttributedLeads'), accessor: (row: MetaFormRow) => row.leads, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'qualified', header: t('qualifiedLeads'), accessor: (row: MetaFormRow) => row.qualified, sortable: true, cellClassName: 'tabular-nums' },
-    { key: 'demoInvited', header: t('invitedToDemo'), accessor: (row: MetaFormRow) => row.demoInvited, sortable: true, cellClassName: 'tabular-nums' },
     { key: 'paid', header: t('paidLeads'), accessor: (row: MetaFormRow) => row.paid, sortable: true, cellClassName: 'tabular-nums' },
     {
       key: 'revenue',
@@ -357,7 +343,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
   const summary = data.summary;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         <AttributionMetric
           label={t('metaAdsWithLeads')}
           value={`${summary.creatives} / ${summary.totalAds}`}
@@ -365,8 +351,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
         />
         <AttributionMetric label={t('metaAdSpend')} value={spendMoney(summary.spend)} icon={Wallet} />
         <AttributionMetric label={t('metaAttributedLeads')} value={summary.leads} icon={Users} />
-        <AttributionMetric label={t('qualifiedLeads')} value={summary.qualified} icon={UserRoundCheck} />
-        <AttributionMetric label={t('invitedToDemo')} value={summary.demoInvited} icon={Target} />
         <AttributionMetric label={t('paidLeads')} value={summary.paid} icon={CircleCheckBig} />
         <AttributionMetric label={t('attributedRevenue')} value={money(summary.revenue)} icon={BadgeDollarSign} />
       </div>

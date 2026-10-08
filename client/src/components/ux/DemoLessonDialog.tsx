@@ -119,7 +119,7 @@ export function DemoLessonDialog({
   const [seededValues, setSeededValues] = useState<Record<string, string>>({});
 
   const activeLeads = useMemo(
-    () => leads.filter((lead) => !lead.isArchived && lead.statusCode !== 'paid'),
+    () => leads.filter((lead) => !lead.isArchived),
     [leads],
   );
   // The lead provides sensible course/branch defaults, while participants are

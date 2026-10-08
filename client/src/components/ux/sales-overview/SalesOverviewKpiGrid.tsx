@@ -3,15 +3,14 @@ import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { buildSalesDailySeries } from '@/lib/salesMetricCharts';
 import { SalesDailySparkChart } from './SalesDailySparkChart';
-import { SalesActiveLeadsChart, SalesRepeatCallsChart } from './SalesOperationalCharts';
+import { SalesRepeatCallsChart } from './SalesOperationalCharts';
 import type { SalesDashboardMetrics, SalesOverviewNavTarget, SalesOverviewStats } from './types';
 
-export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange, onNavigate, onOpenDemoStudents, leadStatusName, statusColor }: {
+export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange, onNavigate, onOpenDemoStudents }: {
   metrics: SalesDashboardMetrics | undefined; stats: SalesOverviewStats;
   payments: { status?: string | null; paidAt?: string | null; createdAt?: string | null }[];
   reportingRange: { from: string; to: string }; onNavigate: (target: SalesOverviewNavTarget) => void;
   onOpenDemoStudents: () => void;
-  leadStatusName: (code: string) => string; statusColor: (code: string) => string;
 }) {
   const { t, language } = useTranslation();
   const number = new Intl.NumberFormat(language);
@@ -20,7 +19,7 @@ export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange,
   const attendedDaily = useMemo(() => metrics ? buildSalesDailySeries(metrics.daily.map((point) => ({ date: point.date, value: point.demoAttendees })), reportingRange) : undefined, [metrics, reportingRange]);
   const tiles = [
     { title: t('taskInProgress'), value: stats.activeLeads, target: 'pipeline' as const, action: undefined,
-      chart: <SalesActiveLeadsChart stages={stats.activeLeadStages} leadStatusName={leadStatusName} statusColor={statusColor} /> },
+      chart: null },
     { title: t('demoStudentsModalTitle'), value: metrics?.demoAttendees, target: undefined, action: onOpenDemoStudents,
       chart: <SalesDailySparkChart points={attendedDaily} title={t('demoStudentsModalTitle')} formatValue={(value) => number.format(value)} kind="bars" compact className="text-cyan-600 dark:text-cyan-400" /> },
     { title: t('salesPaymentsCount'), value: paidDaily.reduce((sum, point) => sum + point.value, 0), target: 'students' as const, action: undefined,

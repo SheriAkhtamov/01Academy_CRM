@@ -1,4 +1,4 @@
-import { ACADEMY_ACCESS_MODULES, LEAD_ARCHIVE_REASONS, LEAD_STATUSES } from '@shared/academy';
+import { ACADEMY_ACCESS_MODULES, LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import { formatUserModule } from '@/lib/auth';
 import type { Language, TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
@@ -20,6 +20,7 @@ const fieldKeys: Record<string, TranslationKey> = {
   amountuzsKey: 'amount',
   expectedpaymentuzsKey: 'expectedPayment',
   statusKey: 'status',
+  statuscodeKey: 'status',
   learningstatusKey: 'studentLearningStatus',
   archivereasonKey: 'archiveReason',
   churnreasonKey: 'studentChurnReason',
@@ -60,12 +61,17 @@ export const auditVisibleFields = (oldValues: Record<string, unknown>, newValues
 export const auditValue = (field: string, value: unknown, context: {
   t: Translate; language: Language; entity: string;
   employees: Array<{ id: number; fullName: string }>;
+  teachers?: Array<{ id: number; fullName: string }>;
+  statuses?: Array<{ code: string; name: string }>;
 }): string => {
   const { t, language, entity, employees } = context;
   const name = fieldName(field);
   if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'boolean') return t(value ? 'yes' : 'no');
-  if (['managerid', 'teacherid', 'teacheruserid'].includes(name)) {
+  if (name === 'teacherid') {
+    return context.teachers?.find((teacher) => teacher.id === Number(value))?.fullName || t('notAvailable');
+  }
+  if (['managerid', 'teacheruserid'].includes(name)) {
     return employees.find((employee) => employee.id === Number(value))?.fullName || t('notAvailable');
   }
   if (name === 'module' || name === 'modules') {
@@ -83,10 +89,9 @@ export const auditValue = (field: string, value: unknown, context: {
     const reason = LEAD_ARCHIVE_REASONS.find((item) => item.code === value);
     return reason ? t(reason.translationKey) : t('archiveReasonOther');
   }
-  if (name === 'status' || name === 'learningstatus') {
+  if (name === 'status' || name === 'statuscode' || name === 'learningstatus') {
     if (entity.includes('lead')) {
-      const status = LEAD_STATUSES.find((item) => item.code === value);
-      return status ? t(status.translationKey) : t('statusNotSpecified');
+      return context.statuses?.find((stage) => stage.code === value)?.name || t('statusNotSpecified');
     }
     const studentStatusKeys: Record<string, TranslationKey> = {
       studying: 'studentStatusStudying', paused: 'studentStatusPaused',
@@ -94,7 +99,7 @@ export const auditValue = (field: string, value: unknown, context: {
     };
     const paymentStatusKeys: Record<string, TranslationKey> = {
       paid: 'paymentStatusPaid', pending: 'paymentStatusPending', refunded: 'paymentStatusRefunded',
-      overdue: 'paymentStatusOverdue', planned: 'financeCenterPlanned', cancelled: 'financeCenterCancelled',
+      overdue: 'paymentStatusOverdue', planned: 'financeCenterPlanned', cancelled: 'cancelled',
     };
     const key = entity.includes('student') || name === 'learningstatus'
       ? studentStatusKeys[String(value)]

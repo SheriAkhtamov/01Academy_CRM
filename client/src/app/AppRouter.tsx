@@ -142,164 +142,164 @@ export function AppRouter() {
       <Layout>
         <Switch>
         <Route path="/" component={ModuleBasedHome} />
-        <Route path="/help" component={() => <ResourcePage resource="help" />} />
-        <Route path="/support" component={() => <ResourcePage resource="support" />} />
-        <Route path="/updates" component={() => <ResourcePage resource="updates" />} />
-        <Route path="/integrations" component={() => <Redirect to="/admin/system-management/integrations" />} />
-        <Route path="/sales/leads" component={() => <Redirect to="/sales/pipeline" />} />
-        <Route path="/sales/pipeline" component={() => (
+        <Route path="/help" children={<ResourcePage resource="help" />} />
+        <Route path="/support" children={<ResourcePage resource="support" />} />
+        <Route path="/updates" children={<ResourcePage resource="updates" />} />
+        <Route path="/integrations" children={<Redirect to="/admin/system-management/integrations" />} />
+        <Route path="/sales/leads" children={<Redirect to="/sales/pipeline" />} />
+        <Route path="/sales/pipeline" children={
           <ModuleGuard module="sales">
             <SalesDashboard section="pipeline" />
           </ModuleGuard>
-        )} />
-        <Route path="/sales/task-board" component={() => <Redirect to="/tasks" />} />
-        <Route path="/sales/archive" component={() => (
+        } />
+        <Route path="/sales/task-board" children={<Redirect to="/tasks" />} />
+        <Route path="/sales/archive" children={
           <ModuleGuard module="sales">
             <SalesDashboard section="archive" />
           </ModuleGuard>
-        )} />
-        <Route path="/sales/schedule" component={() => (
+        } />
+        <Route path="/sales/schedule" children={
           <ModuleGuard module="sales">
             <SalesDashboard section="schedule" />
           </ModuleGuard>
-        )} />
-        <Route path="/sales/clients" component={() => (
+        } />
+        <Route path="/sales/clients" children={
           <ModuleGuard module="sales">
             <SalesDashboard section="students" />
           </ModuleGuard>
-        )} />
-        <Route path="/sales/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/sales/messages" component={() => (
+        } />
+        <Route path="/sales/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/sales/messages" children={
           <ModuleGuard module="sales">
             <MessagesPage />
           </ModuleGuard>
-        )} />
-        <Route path="/sales/calls" component={() => (
+        } />
+        <Route path="/sales/calls" children={
           <ModuleGuard module="sales">
             <CallJournalPage />
           </ModuleGuard>
-        )} />
+        } />
         <Route path="/tasks" component={TasksPage} />
-        <Route path="/sales" component={() => (
+        <Route path="/sales" children={
           <ModuleGuard module="sales">
             <SalesDashboard section="overview" />
           </ModuleGuard>
-        )} />
-        <Route path="/teacher-module/schedule" component={() => (
+        } />
+        <Route path="/teacher-module/schedule" children={
           <ModuleGuard module="teacher">
             <TeacherModule section="schedule" />
           </ModuleGuard>
-        )} />
-        <Route path="/teacher-module/groups" component={() => (
+        } />
+        <Route path="/teacher-module/groups" children={
           <ModuleGuard module="teacher">
             <TeacherModule section="groups" />
           </ModuleGuard>
-        )} />
-        <Route path="/teacher-module/attendance" component={() => (
+        } />
+        <Route path="/teacher-module/attendance" children={
           <ModuleGuard module="teacher">
             <TeacherModule section="attendance" />
           </ModuleGuard>
-        )} />
-        <Route path="/teacher-module/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/teacher-module/ratings" component={() => <Redirect to="/teacher-module" />} />
-        <Route path="/teacher-module/profile" component={() => <Redirect to="/teacher-module" />} />
-        <Route path="/teacher-module" component={() => (
+        } />
+        <Route path="/teacher-module/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/teacher-module/ratings" children={<Redirect to="/teacher-module" />} />
+        <Route path="/teacher-module/profile" children={<Redirect to="/teacher-module" />} />
+        <Route path="/teacher-module" children={
           <ModuleGuard module="teacher">
             <TeacherModule section="overview" />
           </ModuleGuard>
-        )} />
-        <Route path="/marketing-module/sources" component={() => (
+        } />
+        <Route path="/marketing-module/sources" children={
           <ModuleGuard module="marketing">
             <MarketingModule section="sources" />
           </ModuleGuard>
-        )} />
-        <Route path="/marketing-module/funnel" component={() => (
+        } />
+        <Route path="/marketing-module/funnel" children={
           <ModuleGuard module="marketing">
             <MarketingModule section="funnel" />
           </ModuleGuard>
-        )} />
-        <Route path="/marketing-module/referrals" component={() => <Redirect to="/marketing-module" />} />
-        <Route path="/marketing-module/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/marketing-module/expenses" component={() => <Redirect to="/marketing-module" />} />
-        <Route path="/marketing-module/meta-attribution" component={() => (
+        } />
+        <Route path="/marketing-module/referrals" children={<Redirect to="/marketing-module" />} />
+        <Route path="/marketing-module/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/marketing-module/expenses" children={<Redirect to="/marketing-module" />} />
+        <Route path="/marketing-module/meta-attribution" children={
           <ModuleGuard module="marketing">
             <MarketingModule section="meta-attribution" />
           </ModuleGuard>
-        )} />
-        <Route path="/marketing-module/meta-events" component={() => (
+        } />
+        <Route path="/marketing-module/meta-events" children={
           <ModuleGuard module="marketing">
             <MarketingModule section="meta-events" />
           </ModuleGuard>
-        )} />
-        <Route path="/marketing-module" component={() => (
+        } />
+        <Route path="/marketing-module" children={
           <ModuleGuard module="marketing">
             <MarketingModule section="overview" />
           </ModuleGuard>
-        )} />
-        <Route path="/admin" component={() => (
+        } />
+        <Route path="/admin" children={
           <ModuleGuard module="administration">
             <AdminDashboardPage />
           </ModuleGuard>
-        )} />
-        <Route path="/finance/income" component={() => (
+        } />
+        <Route path="/finance/income" children={
           <FinanceGuard>
             <FinanceCenter section="income" />
           </FinanceGuard>
-        )} />
-        <Route path="/finance/expenses" component={() => (
+        } />
+        <Route path="/finance/expenses" children={
           <FinanceGuard>
             <FinanceCenter section="expenses" />
           </FinanceGuard>
-        )} />
-        <Route path="/finance/payroll" component={() => (
+        } />
+        <Route path="/finance/payroll" children={
           <FinanceGuard>
             <FinanceCenter section="payroll" />
           </FinanceGuard>
-        )} />
-        <Route path="/finance/transactions" component={() => (
+        } />
+        <Route path="/finance/transactions" children={
           <FinanceGuard>
             <FinanceCenter section="transactions" />
           </FinanceGuard>
-        )} />
-        <Route path="/finance" component={() => (
+        } />
+        <Route path="/finance" children={
           <FinanceGuard>
             <FinanceCenter section="overview" />
           </FinanceGuard>
-        )} />
-        <Route path="/employees" component={() => (
+        } />
+        <Route path="/employees" children={
           <ModuleGuard module="administration">
             <Admin mode="employees" />
           </ModuleGuard>
-        )} />
-        <Route path="/admin/sales-settings" component={() => (
+        } />
+        <Route path="/admin/sales-settings" children={
           <ModuleGuard module="administration">
             <AcademySettings mode="sales" />
           </ModuleGuard>
-        )} />
-        <Route path="/admin/leads" component={() => <Redirect to="/admin/sales-settings" />} />
-        <Route path="/admin/tasks" component={() => <Redirect to="/tasks" />} />
-        <Route path="/admin/academy-settings" component={() => (
+        } />
+        <Route path="/admin/leads" children={<Redirect to="/admin/sales-settings" />} />
+        <Route path="/admin/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/admin/academy-settings" children={
           <ModuleGuard module="administration">
             <AcademySettings />
           </ModuleGuard>
-        )} />
-        <Route path="/admin/audit" component={() => <Redirect to="/admin/system-management/audit" />} />
-        <Route path="/admin/system-management/audit" component={() => (
+        } />
+        <Route path="/admin/audit" children={<Redirect to="/admin/system-management/audit" />} />
+        <Route path="/admin/system-management/audit" children={
           <ModuleGuard module="administration">
             <AuditPage />
           </ModuleGuard>
-        )} />
-        <Route path="/admin/system-management/integrations" component={() => adminPage('integrations')} />
-        <Route path="/admin/system-management/employee-notifications" component={() => (
+        } />
+        <Route path="/admin/system-management/integrations" children={adminPage('integrations')} />
+        <Route path="/admin/system-management/employee-notifications" children={
           <ModuleGuard module="administration">
             <SystemManagementPage section="employee-notifications" />
           </ModuleGuard>
-        )} />
-        <Route path="/admin/system-management" component={() => (
+        } />
+        <Route path="/admin/system-management" children={
           <ModuleGuard module="administration">
             <SystemManagementPage />
           </ModuleGuard>
-        )} />
+        } />
         <Route component={NotFound} />
         </Switch>
       </Layout>

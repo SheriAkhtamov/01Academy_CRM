@@ -248,14 +248,10 @@ describe('Meta CRM stage events', () => {
     });
   });
 
-  it('recovers accurate recent stage history for Meta validation', () => {
+  it('does not reconstruct automatic conversions from editable stage history', () => {
     const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain('FROM academy_lead_stage_history history');
-    expect(service).toContain("history.entered_at >= NOW() - INTERVAL '7 days'");
-    expect(service).toContain("inner_attribution.leadgen_id ~ '^[0-9]{15,16}$'");
-    expect(service).toContain("'crm-history:' || eligible.history_id");
-    expect(service).toContain("'event_source', 'crm'");
-    expect(service).toContain("'lead_event_source', $1::text");
+    expect(service).not.toContain('FROM academy_lead_stage_history history');
+    expect(service).not.toContain('crm-history:');
   });
 
   it('hashes only real phone numbers, never the Instagram placeholder', () => {
@@ -268,13 +264,11 @@ describe('Meta CRM stage events', () => {
     expect(hashMetaPhone(null)).toBeNull();
   });
 
-  it('sends an event for every stage change, not just one configured stage', () => {
+  it('does not queue stage changes as business conversion events', () => {
     const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain('if (!statusCode || previousStatus === statusCode) return null;');
-    // The event name comes from the CRM stage, so the pipeline drives what Meta offers.
-    expect(service).toContain('status.name AS stage_name');
-    expect(service).toContain('const eventName = cleanText(row.stage_name, 60) ?? statusCode;');
-    expect(service).not.toContain('conversionStageCode');
+    expect(service).not.toContain('enqueueMetaConversionForLead');
+    expect(service).not.toContain('status.name AS stage_name');
+    expect(service).not.toContain('meta_event_value');
   });
 
   it('sends every identifier the CRM holds so Meta can actually match the person', () => {
@@ -294,12 +288,10 @@ describe('Meta CRM stage events', () => {
     expect(buildMetaUserData({ phone: 'instagram:17841400000000' }).ph).toBeUndefined();
   });
 
-  it('reports real money when there is any, and never invents a zero', () => {
+  it('never assigns money to a sales label', () => {
     const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain('paidAmount > 0 ? paidAmount : (stageValue > 0 ? stageValue : null)');
-    // A stage with no agreed value sends no value at all rather than value 0, which
-    // would teach Meta the stage is worthless.
-    expect(service).toContain("...(conversionValue !== null ? { value: conversionValue, currency: 'UZS' } : {})");
+    expect(service).not.toContain('stageValue');
+    expect(service).not.toContain('conversionValue');
   });
 
   it('uses only a real lead form id for Conversion Leads CRM events', () => {
@@ -324,10 +316,9 @@ describe('Meta CRM stage events', () => {
     expect(service).toContain('cleanText(error.error_user_msg, 900)');
   });
 
-  it('serves the live stage list to the integrations page', () => {
+  it('keeps arbitrary sales labels out of integration conversion configuration', () => {
     const operations = read('../server/modules/academy/operations.router.ts');
-    expect(operations).toContain('SELECT code, name FROM academy_lead_statuses ORDER BY sort_order, code');
-    expect(operations).toContain('conversionStages');
+    expect(operations).not.toContain('conversionStages');
   });
 });
 
@@ -349,11 +340,9 @@ describe('Meta integration wiring', () => {
     expect(read('../server/services/instagram.ts')).toContain("'messaging_referral'");
   });
 
-  it('queues stage events only after the lead transaction commits', () => {
-    const leadEffects = read('../server/modules/academy/academy-leads.ts');
-    expect(leadEffects).toContain('runAfterTransactionCommit(async () =>');
-    expect(leadEffects.indexOf('runAfterTransactionCommit(async () =>'))
-      .toBeLessThan(leadEffects.indexOf('enqueueMetaConversionForLead(lead, previousStatus)'));
+  it('removes automatic stage hooks from the lead repository and scheduler', () => {
+    expect(read('../server/modules/academy/academy-leads.ts')).not.toContain('enqueueMetaConversionForLead');
+    expect(read('../server/services/scheduler.ts')).not.toContain('enqueueRecentMetaCrmHistory');
   });
 
   it('ships the migration and safe configuration template', () => {

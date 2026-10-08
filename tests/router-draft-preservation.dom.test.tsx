@@ -1,0 +1,31 @@
+// @vitest-environment jsdom
+import React, { useState } from 'react';
+import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react';
+import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
+import { afterEach,expect,it,vi } from 'vitest';
+import { AuthProvider } from '../client/src/hooks/useAuth';
+import { AppRouter } from '../client/src/app/AppRouter';
+import { AUTH_SESSION_QUERY_KEY } from '../shared/auth';
+vi.mock('../client/src/components/Layout',()=>({default:({children}:any)=><main>{children}</main>, AppSpinner:()=> <span>Loading</span>}));
+vi.mock('../client/src/pages/sales-dashboard',()=>({default:function SalesFixture(){ const [draft,setDraft]=useState(''); return <input aria-label="Unsaved sales draft" value={draft} onChange={e=>setDraft(e.target.value)}/>; } }));
+const session={kind:'user',user:{id:7, fullName:'Test', module:'sales', modules:['sales']}} as any;
+afterEach(()=>{cleanup();vi.restoreAllMocks();});
+it('preserves the routed sales draft during and after a session refetch',async()=>{
+ history.replaceState(null,'','/sales/pipeline');
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ let resolveRefetch:(value:any)=>void;
+ const fetchAuthSession=vi.fn().mockResolvedValueOnce(session).mockImplementationOnce(()=>new Promise(resolve=>resolveRefetch=resolve));
+ const api={ fetchAuthSession, loginUserSession:vi.fn(), logoutSession:vi.fn() };
+ render(<QueryClientProvider client={client}><AuthProvider api={api}><AppRouter/></AuthProvider></QueryClientProvider>);
+ const field=await screen.findByRole('textbox',{name:'Unsaved sales draft'});
+ fireEvent.change(field,{target:{value:'Critical unsaved edit'}});
+ expect((field as HTMLInputElement).value).toBe('Critical unsaved edit');
+ act(()=>{void client.invalidateQueries({queryKey:AUTH_SESSION_QUERY_KEY});});
+ await waitFor(()=>expect(fetchAuthSession).toHaveBeenCalledTimes(2));
+ expect((screen.getByRole('textbox',{name:'Unsaved sales draft'}) as HTMLInputElement).value).toBe('Critical unsaved edit');
+ expect(document.body.contains(field)).toBe(true);
+ await act(async()=>resolveRefetch!(session));
+ expect(screen.getByRole('textbox',{name:'Unsaved sales draft'})).toBe(field);
+ expect((field as HTMLInputElement).value).toBe('Critical unsaved edit');
+ client.clear();
+});

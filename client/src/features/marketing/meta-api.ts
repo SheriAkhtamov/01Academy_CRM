@@ -9,7 +9,6 @@ export type MetaIntegrationState = {
   datasetId?: string | null;
   pageId?: string | null;
   apiVersion?: string | null;
-  conversionStages?: Array<{ code: string; name: string }>;
   testMode?: boolean;
   usdToUzsRate?: number;
   convertsToUzs?: boolean;
@@ -40,15 +39,12 @@ export type MetaCreativeRow = {
   utmTerm?: string | null;
   utmDerived?: boolean;
   leads: number;
-  qualified: number;
-  demoInvited: number;
   paid: number;
   revenue: number;
   spend: number;
   costPerLead: number | null;
   impressions?: number;
   clicks?: number;
-  qualificationRate: number;
   paymentRate: number;
   enrichmentFailures?: number;
   firstCapturedAt?: string | null;
@@ -59,8 +55,6 @@ export type MetaFormRow = {
   formId: string;
   formName?: string | null;
   leads: number;
-  qualified: number;
-  demoInvited: number;
   paid: number;
   revenue: number;
 };
@@ -92,8 +86,6 @@ export type MetaAttributionData = {
     creatives: number;
     totalAds: number;
     leads: number;
-    qualified: number;
-    demoInvited: number;
     paid: number;
     revenue: number;
     spend: number;
@@ -110,9 +102,9 @@ export type MetaEventRow = {
   contactName?: string | null;
   eventId: string;
   eventName: string;
-  crmStage: string;
+  crmStage: string | null;
   eventTime: string;
-  status: 'pending' | 'processing' | 'sent' | 'failed';
+  status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
   attemptCount: number;
   nextAttemptAt?: string | null;
   lastAttemptAt?: string | null;

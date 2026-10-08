@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { isDemoPipelineStage } from '@shared/demo-pipeline';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -87,6 +86,7 @@ import {
 } from './academy-core';
 import {
   assertGroupLifecycleUpdateAllowed,
+  assertResourceHasNoScheduledDemos,
   getLeadCountForStatusCode,
 } from './academy-route-support';
 import { createAcademyCrudRegistrar } from './crud-router';
@@ -119,6 +119,7 @@ registerSimpleCrud('schools', 'academy_schools', [
         [id],
       );
       if (usage?.inUse) throw Object.assign(new Error('schoolHasActiveResources'), { statusCode: 409 });
+      await assertResourceHasNoScheduledDemos('school', id);
     }
   },
 });
@@ -140,6 +141,7 @@ registerSimpleCrud('rooms', 'academy_rooms', [
         `SELECT (
            EXISTS (SELECT 1 FROM academy_groups WHERE room_id = $1)
            OR EXISTS (SELECT 1 FROM academy_lessons WHERE room_id = $1)
+           OR EXISTS (SELECT 1 FROM academy_demo_lessons WHERE room_id = $1)
          ) AS in_use`,
         [id],
       );
@@ -156,6 +158,7 @@ registerSimpleCrud('rooms', 'academy_rooms', [
         [id],
       );
       if (activeGroup) throw Object.assign(new Error('roomHasActiveGroups'), { statusCode: 409 });
+      await assertResourceHasNoScheduledDemos('room', id);
     }
   },
 });
@@ -185,20 +188,26 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
     }
     values.code = await createPipelineStatusCode(String(values.name ?? ''));
     values.isSystem = false;
+    const initial = await queryOne<{ sortOrder: number }>(`SELECT sort_order FROM academy_lead_statuses WHERE code = (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $1)`, [Number(values.funnelId)]);
+    values.sortOrder = Math.max(Number(initial?.sortOrder ?? 0) + 1, Number(values.sortOrder ?? 0));
   },
   beforeUpdate: async ({ values, row }) => {
     if (values.funnelId !== undefined && Number(values.funnelId) !== Number(row.funnelId)) {
       throw Object.assign(new Error('salesFunnelStageUnavailable'), { statusCode: 409 });
     }
     delete values.funnelId;
-    if (isDemoPipelineStage(row.code)
-      && (values.isActive === false || values.isPipeline === false)) {
-      throw Object.assign(new Error('demoPipelineStageProtected'), { statusCode: 409 });
+    const initial = await queryOne(`SELECT id FROM academy_sales_funnels WHERE initial_stage_code = $1`, [String(row.code)]);
+    if (initial && (values.isActive === false || values.isPipeline === false
+      || values.sortOrder !== undefined && Number(values.sortOrder) !== Number(row.sortOrder))) {
+      throw Object.assign(new Error('pipelineInitialStageProtected'), { statusCode: 409 });
+    }
+    if (!initial && values.sortOrder !== undefined && Number(values.sortOrder) <= 0) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
     }
   },
   beforeDelete: async ({ row }) => {
-    if (row.isSystem === true || isDemoPipelineStage(row.code)) {
-      throw Object.assign(new Error('systemPipelineStageCannotBeDeleted'), {
+    if (await queryOne(`SELECT id FROM academy_sales_funnels WHERE initial_stage_code = $1`, [String(row.code)])) {
+      throw Object.assign(new Error('pipelineInitialStageCannotBeDeleted'), {
         statusCode: 409,
       });
     }

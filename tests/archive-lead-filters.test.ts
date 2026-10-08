@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  archiveRestoreStatuses,
   matchesArchivedLeadFilters,
   type ArchivedLead,
 } from '../client/src/features/sales/ui/ArchiveTab';
@@ -37,4 +38,18 @@ describe('lead archive filters', () => {
       funnel: 'all',
     })).toBe(true);
   });
+  it('offers restore stages from each archived row funnel, independent of the selected board', () => {
+    const stages = [
+      { code: 'intake-a', funnelId: 7, sortOrder: 0 },
+      { code: 'anything-a', funnelId: 7, sortOrder: 10 },
+      { code: 'intake-b', funnelId: 8, sortOrder: 0 },
+      { code: 'hidden-a', funnelId: 7, isPipeline: false },
+      { code: 'inactive-a', funnelId: 7, isActive: false },
+      { code: 'legacy-global' },
+    ];
+    expect(archiveRestoreStatuses(stages, lead()).map((stage) => stage.code)).toEqual(['intake-a', 'anything-a']);
+    expect(archiveRestoreStatuses(stages, lead({ funnelId: 8 })).map((stage) => stage.code)).toEqual(['intake-b']);
+    expect(archiveRestoreStatuses(stages, lead({ funnelId: 99 }))).toEqual([]);
+  });
+
 });

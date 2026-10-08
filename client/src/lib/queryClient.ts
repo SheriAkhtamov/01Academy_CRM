@@ -76,6 +76,9 @@ export const localizeApiErrorMessage = (message: string, status: number) => {
 
   const lower = normalized.toLowerCase();
 
+  if (lower === "invalid credentials") {
+    return i18n.t("invalidCredentialsMessage");
+  }
   if (status === 401 || lower === "unauthorized") {
     return i18n.t("unauthorized");
   }
@@ -252,6 +255,8 @@ let signOutScheduled = false;
 export const handleUnauthorized = (error: unknown) => {
   const status = (error as { status?: number } | null)?.status;
   if (status !== 401 || signOutScheduled) return;
+  const data = (error as { data?: { code?: string } } | null)?.data;
+  if (data?.code === "CREDENTIAL_VALIDATION_FAILED") return;
 
   // A rejected sign-in is also a 401, so only react when we currently believe
   // we are signed in.

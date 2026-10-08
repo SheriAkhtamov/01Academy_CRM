@@ -2,12 +2,12 @@ import { pool } from '../db';
 import type { CreateChatGroupRequest, ChatGroupDto, GroupMessageDto } from '@shared/contracts/chat-groups';
 import type { MessageAttachment } from '@shared/contracts/messages';
 
-const messageColumns = `m.id, m.group_id AS "groupId", m.sender_id AS "senderId", u.full_name AS "senderName", m.content, m.attachments, m.created_at AS "createdAt"`;
+const messageColumns = `m.id, m.group_id AS "groupId", m.sender_id AS "senderId", COALESCE(u.full_name, m.sender_name) AS "senderName", m.content, m.attachments, m.created_at AS "createdAt"`;
 export const chatGroupStorage = {
   async list(userId: number): Promise<ChatGroupDto[]> {
     const result = await pool.query(`SELECT g.id, g.name, g.created_by AS "createdBy",
       (SELECT COUNT(*)::int FROM chat_group_members members WHERE members.group_id=g.id) AS "participantCount",
-      (SELECT COUNT(*)::int FROM chat_group_messages m WHERE m.group_id=g.id AND m.sender_id<>$1 AND m.id>own.last_read_message_id) AS "unreadCount"
+      (SELECT COUNT(*)::int FROM chat_group_messages m WHERE m.group_id=g.id AND m.sender_id IS DISTINCT FROM $1 AND m.id>own.last_read_message_id) AS "unreadCount"
       FROM chat_groups g JOIN chat_group_members own ON own.group_id=g.id AND own.user_id=$1
       ORDER BY COALESCE((SELECT MAX(created_at) FROM chat_group_messages m WHERE m.group_id=g.id), g.created_at) DESC, g.id DESC`, [userId]);
     return result.rows;
@@ -25,7 +25,7 @@ export const chatGroupStorage = {
       await client.query('BEGIN');
       const users = await client.query(`SELECT id FROM users WHERE id=ANY($1::int[]) AND is_active=true AND is_archived=false FOR SHARE`, [ids]);
       if (users.rows.length !== ids.length) throw Object.assign(new Error('chatGroupParticipantsUnavailable'), { statusCode: 400 });
-      const group = await client.query(`INSERT INTO chat_groups (name, created_by) VALUES ($1,$2) RETURNING id, name, created_by AS "createdBy"`, [input.name, userId]);
+      const group = await client.query(`INSERT INTO chat_groups (name, created_by, creator_name) SELECT $1, id, full_name FROM users WHERE id=$2 RETURNING id, name, created_by AS "createdBy"`, [input.name, userId]);
       await client.query(`INSERT INTO chat_group_members (group_id,user_id) SELECT $1, unnest($2::int[])`, [group.rows[0].id, ids]);
       await client.query('COMMIT');
       return { ...group.rows[0], participantCount: ids.length, unreadCount: 0 };
@@ -34,13 +34,13 @@ export const chatGroupStorage = {
   },
   async messages(groupId: number): Promise<GroupMessageDto[]> {
     const result = await pool.query(`SELECT ${messageColumns} FROM chat_group_messages m
-      JOIN users u ON u.id=m.sender_id WHERE m.group_id=$1 ORDER BY m.id`, [groupId]);
+      LEFT JOIN users u ON u.id=m.sender_id WHERE m.group_id=$1 ORDER BY m.id`, [groupId]);
     return result.rows;
   },
   async send(groupId: number, senderId: number, content: string, attachments: MessageAttachment[]): Promise<GroupMessageDto> {
     const result = await pool.query(`WITH m AS (
-      INSERT INTO chat_group_messages (group_id,sender_id,content,attachments) VALUES ($1,$2,$3,$4::jsonb) RETURNING *
-      ) SELECT ${messageColumns} FROM m JOIN users u ON u.id=m.sender_id`, [groupId,senderId,content,JSON.stringify(attachments)]);
+      INSERT INTO chat_group_messages (group_id,sender_id,sender_name,content,attachments) SELECT $1, id, full_name, $3, $4::jsonb FROM users WHERE id=$2 RETURNING *
+      ) SELECT ${messageColumns} FROM m LEFT JOIN users u ON u.id=m.sender_id`, [groupId,senderId,content,JSON.stringify(attachments)]);
     return result.rows[0];
   },
   async markRead(groupId: number, userId: number, messageId: number): Promise<void> {

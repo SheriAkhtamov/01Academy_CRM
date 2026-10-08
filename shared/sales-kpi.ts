@@ -10,17 +10,17 @@ export const isFullCycleKpiRole = (role: string | null | undefined): role is Ful
   FULL_CYCLE_KPI_ROLES.includes(role as FullCycleKpiRole)
 );
 export const KPI_METRICS = [
-  'response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation',
+  'response', 'bookings', 'attendance', 'crm', 'reactivation',
   'reactivatedAttendance', 'newStudents', 'trialConversion', 'offer',
   'renewals', 'renewalConversion', 'upsells', 'nps',
 ] as const;
 export type KpiMetricId = (typeof KPI_METRICS)[number];
 export const ROLE_METRICS: Record<KpiRole, KpiMetricId[]> = {
-  hunter: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance'],
+  hunter: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance'],
   closer: ['newStudents', 'trialConversion', 'offer', 'crm', 'renewals', 'renewalConversion', 'upsells', 'nps'],
-  full_cycle: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
+  full_cycle: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
     'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'nps'],
-  full_cycle_3500: ['response', 'qualified', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
+  full_cycle_3500: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
     'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'nps'],
 };
 
@@ -61,7 +61,7 @@ export const kpiConfigSchema = z.object({
   tiers: z.array(z.object({ from: count.min(1), rateUzs: money }).strict()).min(1).max(12),
   enabledMetrics: z.preprocess((value) => {
     if (!Array.isArray(value)) return value;
-    const metrics = value.filter((metric) => metric !== 'referrals');
+    const metrics = value.filter((metric) => metric !== 'referrals' && metric !== 'qualified');
     // A saved plan may have displayed only the removed metric. Keep it readable.
     return value.length > 0 && metrics.length === 0 ? ['newStudents'] : metrics;
   }, z.array(z.enum(KPI_METRICS)).min(1).max(KPI_METRICS.length)),

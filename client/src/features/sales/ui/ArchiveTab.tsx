@@ -28,6 +28,7 @@ import { EmptyState } from '@/components/ux/EmptyState';
 import { useStickyState } from '@/hooks/useStickyState';
 import { leadContactSummary } from '@/lib/leadContact';
 import type { TranslationKey } from '@/lib/i18n';
+import { salesFunnelStages } from '@shared/sales-funnel-workflow';
 
 /**
  * Only the fields the archive itself reads. Declaring the shape here rather
@@ -56,7 +57,15 @@ export interface ArchiveFunnel {
 
 export interface ArchiveRestoreStatus {
   code: string;
+  funnelId?: number | null;
+  isActive?: boolean;
+  isPipeline?: boolean;
+  sortOrder?: number;
 }
+
+export const archiveRestoreStatuses = (statuses: readonly ArchiveRestoreStatus[], lead: ArchivedLead) => (
+  salesFunnelStages(statuses, undefined, lead.funnelId)
+);
 
 export const matchesArchivedLeadFilters = (
   lead: ArchivedLead,
@@ -220,7 +229,9 @@ export function ArchiveTab({
     {
       key: 'restore',
       header: t('actions'),
-      render: (lead: ArchivedLead) => (
+      render: (lead: ArchivedLead) => {
+        const restoreStatuses = archiveRestoreStatuses(activePipelineStatuses, lead);
+        return (
         <div
           className="flex justify-end"
           onClick={(event) => event.stopPropagation()}
@@ -228,14 +239,14 @@ export function ArchiveTab({
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm" disabled={isPending || activePipelineStatuses.length === 0}>
+              <Button type="button" variant="outline" size="sm" disabled={isPending || restoreStatuses.length === 0}>
                 <RotateCcw data-icon="inline-start" />
                 {t('restoreLead')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>
-                {activePipelineStatuses.map((status) => (
+                {restoreStatuses.map((status) => (
                   <DropdownMenuItem
                     key={status.code}
                     onClick={(event) => {
@@ -251,7 +262,8 @@ export function ArchiveTab({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      ),
+        );
+      },
     },
   ];
 

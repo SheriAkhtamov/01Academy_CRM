@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 const { Pool } = pg;
 const configPath = path.resolve(process.cwd(), 'config', 'app.config.json');
 const appConfig = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
-const databaseUrl = appConfig?.database?.url;
+const databaseUrl = process.env.DATABASE_URL?.trim() || appConfig?.database?.url;
 
 async function main() {
   if (!databaseUrl) {

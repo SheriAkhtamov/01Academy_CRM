@@ -9,6 +9,7 @@ import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { useStickyState } from '@/hooks/useStickyState';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import type { TranslationKey } from '@/lib/i18n';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -758,6 +759,9 @@ export default function MessagesPage() {
   const [leadSheetLeadId, setLeadSheetLeadId] = useState<number | null>(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [mobileView, setMobileView] = useStickyState<'list' | 'thread'>('instagram-mobile-view', 'list');
+  const desktopThreadVisible = useMediaQuery('(min-width: 1280px)');
+  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
+  const [loadedMessageBoundaries, setLoadedMessageBoundaries] = useState<Record<number, number>>({});
   const [atBottom, setAtBottom] = useState(true);
   const [lightbox, setLightbox] = useState<{ url: string; type: MediaType; title?: string } | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
@@ -784,6 +788,13 @@ export default function MessagesPage() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const inboxCardRef = useRef<HTMLDivElement | null>(null);
   const initialScrollConversation = useRef<number | null>(null);
+  const readRequestsRef = useRef(new Map<number, number>());
+
+  useEffect(() => {
+    const updateVisibility = () => setDocumentVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
 
   const { replies: quickReplies, addReply, removeReply } = useQuickReplies();
   const draft = selectedConversationId ? draftsByConversation[selectedConversationId] ?? '' : '';
@@ -954,7 +965,19 @@ export default function MessagesPage() {
 
   const messagesQuery = useQuery<InstagramMessage[]>({
     queryKey: messagesKey,
-    queryFn: () => apiRequest('GET', `/api/instagram/conversations/${selectedConversationId}/messages`),
+    queryFn: async () => {
+      const conversationId = selectedConversationId!;
+      const received = await apiRequest('GET', `/api/instagram/conversations/${conversationId}/messages`) as InstagramMessage[];
+      const messageId = received.reduce((latest, message) => (
+        message.conversationId === conversationId && Number.isSafeInteger(message.id) && message.id > 0
+          ? Math.max(latest, message.id)
+          : latest
+      ), 0);
+      setLoadedMessageBoundaries((current) => ({
+        ...current, [conversationId]: Math.max(current[conversationId] ?? 0, messageId),
+      }));
+      return received;
+    },
     enabled: Boolean(selectedConversationId),
   });
 
@@ -991,24 +1014,37 @@ export default function MessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations, requestedLeadId]);
 
-  const markRead = useMutation({
-    mutationFn: (conversationId: number) =>
-      apiRequest('POST', `/api/instagram/conversations/${conversationId}/read`),
+  const { mutate: markRead } = useMutation({
+    mutationFn: ({ conversationId, messageId }: { conversationId: number; messageId: number }) =>
+      apiRequest('POST', `/api/instagram/conversations/${conversationId}/read`, { lastReadMessageId: messageId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
     },
     // A failed mark-read would leave unread counters wrong forever (there is
     // no polling on this query), so resync from the server immediately.
-    onError: () => {
+    onError: (_error, { conversationId, messageId }) => {
+      if (readRequestsRef.current.get(conversationId) === messageId) {
+        readRequestsRef.current.delete(conversationId);
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
     },
   });
 
+  const loadedMessageId = selectedConversationId ? loadedMessageBoundaries[selectedConversationId] ?? 0 : 0;
   useEffect(() => {
-    if (selectedConversationId && selectedConversation?.unreadCount) {
-      markRead.mutate(selectedConversationId);
-    }
-  }, [selectedConversation?.unreadCount, selectedConversationId]);
+    if (
+      !selectedConversationId
+      || !selectedConversation?.unreadCount
+      || !messagesQuery.isSuccess
+      || !conversationScrollRef.current
+      || !documentVisible
+      || (!desktopThreadVisible && mobileView !== 'thread')
+      || loadedMessageId <= (readRequestsRef.current.get(selectedConversationId) ?? 0)
+    ) return;
+    readRequestsRef.current.set(selectedConversationId, loadedMessageId);
+    markRead({ conversationId: selectedConversationId, messageId: loadedMessageId });
+  }, [selectedConversation?.unreadCount, selectedConversationId, messagesQuery.isSuccess, loadedMessageId,
+    documentVisible, desktopThreadVisible, mobileView, markRead]);
 
   const getViewport = () => {
     const root = conversationScrollRef.current;

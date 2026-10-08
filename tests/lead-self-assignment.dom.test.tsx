@@ -59,11 +59,11 @@ function renderSheet(canTransferLeads = false) {
 }
 
 describe('self-assignment inside the lead modal', () => {
-  it('claims a read-only closer queue lead only after confirmation, independently of the lead form', async () => {
+  it('claims an unassigned lead only after confirmation, independently of the lead form', async () => {
     const { user, onOpenChange } = renderSheet();
     const button = await screen.findByRole('button', { name: i18n.t('assignLeadToMe') });
     expect((button as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(true);
+    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(false);
     expect(screen.queryByRole('combobox', { name: i18n.t('responsibleManager') })).toBeNull();
     await user.click(button);
     const confirmation = await screen.findByRole('alertdialog');

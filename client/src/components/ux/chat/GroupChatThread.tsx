@@ -73,7 +73,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
       {readError ? <div role="alert">{t('updateFailed')} <Button variant="outline" onClick={() => { if (latestId) markRead({ groupId: group.id, messageId: latestId }); }}>{t('retry')}</Button></div> : null}
       {(query.data ?? []).map((message) => <div key={message.id} className={`flex ${message.senderId===user?.id ? 'justify-end' : 'justify-start'}`}>
         <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.senderId===user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-          {message.senderId!==user?.id ? <p className="mb-1 font-medium">{message.senderName}</p> : null}
+          {message.senderId!==user?.id ? <p className="mb-1 font-medium">{message.senderName || t('chatDeletedEmployee')}</p> : null}
           {message.content ? <p className="whitespace-pre-wrap break-words">{message.content}</p> : null}
           {message.attachments?.length ? <ChatMessageAttachments attachments={message.attachments} /> : null}
           <p className="mt-1 text-right text-[10px] opacity-70">{formatAcademyDate(message.createdAt, language, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>

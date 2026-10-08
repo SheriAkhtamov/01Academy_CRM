@@ -185,5 +185,6 @@ printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\\n'
     expect(compose).toContain('user: "1000:${BACKUP_GID:-1000}"');
     expect(compose).toContain('read_only: true');
     expect(dockerfile).toContain('FROM postgres:17-alpine@sha256:');
+    expect(dockerfile).toContain('COPY scripts/prune-retained-uploads.sh /usr/local/bin/prune-retained-uploads');
   });
 });

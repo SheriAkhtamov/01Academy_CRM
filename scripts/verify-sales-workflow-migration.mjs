@@ -1,53 +1,98 @@
+/** Applies all registered migrations only to an explicitly selected EMPTY local *_test database. */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
+import { disposableWorkflowDatabaseUrl, genericWorkflowMigrationIndex, workflowFixtureSql } from './lib/disposable-workflow-database.mjs';
 
-const url = new URL(process.env.DATABASE_URL ?? 'invalid:');
-assert(['127.0.0.1', 'localhost'].includes(url.hostname) && url.pathname.endsWith('_test'),
-  'Use an explicitly configured empty disposable local *_test database');
-const client = new pg.Client({ connectionString: url.toString(), options: '-c timezone=UTC' });
+const url = disposableWorkflowDatabaseUrl(process.env.DATABASE_URL);
+const migrationFolder = fileURLToPath(new URL('../migrations/', import.meta.url));
+const journal = JSON.parse(await readFile(new URL('../migrations/meta/_journal.json', import.meta.url), 'utf8'));
+const genericIndex = genericWorkflowMigrationIndex(journal);
+const migrations = readMigrationFiles({ migrationsFolder: migrationFolder });
+assert.equal(migrations.length, journal.entries.length, 'Every registered migration must be available');
+const client = new pg.Client({ connectionString: url.toString(), options: '-c timezone=UTC', connectionTimeoutMillis: 2000 });
+const apply = async (items) => {
+  await client.query('BEGIN');
+  try {
+    for (const migration of items) for (const sql of migration.sql) await client.query(sql);
+    await client.query('COMMIT');
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+};
 await client.connect();
 try {
-  assert.equal((await client.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'")).rows[0].count, 0);
-  const migrations = readMigrationFiles({ migrationsFolder: './migrations' });
-  await client.query('BEGIN');
-  for (const migration of migrations.slice(0, 107)) for (const sql of migration.sql) await client.query(sql);
-  await client.query('COMMIT');
-  await client.query(`INSERT INTO users(id,email,password,full_name,module) VALUES
-    (1,'hunter@migration.test','test-only','Hunter','sales'),
-    (2,'closer@migration.test','test-only','Closer','sales');
-    INSERT INTO academy_sales_kpi_assignments(user_id,effective_month,role)
-    VALUES (1,to_char(now(),'YYYY-MM'),'hunter'),(2,to_char(now(),'YYYY-MM'),'closer');
-    INSERT INTO academy_lead_sources(id,code,name) VALUES (1,'test','Test');
-    INSERT INTO academy_lead_statuses(code,name,color,sort_order) VALUES
-    ('new_request','New','#666666',0),('offer','Offer','#666666',60),('paid','Paid','#666666',100);
-    INSERT INTO academy_sales_funnels(id,name) VALUES (99,'B2B fixture');
-    INSERT INTO academy_leads(id,contact_name,source_id,funnel_id,manager_id,status_code,is_archived)
-    SELECT id,'Test lead',1,(SELECT id FROM academy_sales_funnels WHERE is_default),manager_id,status_code,archived
-    FROM (VALUES (1,1,'new_request',false),(2,1,'demo_attended',false),(3,1,'offer',false),
-      (4,1,'paid',false),(5,2,'demo_attended',false),(6,1,'demo_attended',true)) AS fixture(id,manager_id,status_code,archived);
-    INSERT INTO academy_leads(id,contact_name,source_id,funnel_id,manager_id,status_code)
-      VALUES (7,'B2B lead',1,99,1,'demo_attended');
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema='public'")).rows[0].count, 0,
+    'The migration verifier requires an empty disposable database');
+  await apply(migrations.slice(0, genericIndex));
+  await client.query(`UPDATE academy_company_settings SET auto_lead_distribution_enabled = false;
+    INSERT INTO users(id,email,password,full_name,module) VALUES
+      (90001,'hunter@migration.test','disabled-test-hash','Hunter','sales'),
+      (90002,'closer@migration.test','disabled-test-hash','Closer','sales'),
+      (90003,'multi-module@migration.test','disabled-test-hash','Multi-module','marketing');
+    INSERT INTO user_modules(user_id,module) VALUES (90003,'sales');
+    INSERT INTO academy_sales_kpi_assignments(user_id,effective_month,role,created_at)
+      VALUES (90001,to_char(now() AT TIME ZONE 'Asia/Tashkent','YYYY-MM'),'hunter',now()-interval '1 day'),
+        (90002,to_char(now() AT TIME ZONE 'Asia/Tashkent','YYYY-MM'),'closer',now()-interval '1 day');
+    INSERT INTO academy_lead_sources(id,code,name) VALUES (90001,'migration_test','Test');
+    INSERT INTO academy_courses(id,name,slug,age_category) VALUES(90001,'Test course','migration-test','kids');
+    INSERT INTO academy_lead_statuses(code,name,color,sort_order,is_pipeline,is_system) VALUES
+      ('new_request','Existing intake label','#123456',0,true,true),
+      ('first_contact','Existing contact label','#234567',10,true,true),
+      ('qualified','Existing custom qualification label','#345678',20,true,true),
+      ('paid','Existing payment label','#456789',100,true,true),
+      ('not_now','Existing inactive label','#567890',110,false,true)
+      ON CONFLICT(code) DO NOTHING;
+    INSERT INTO academy_sales_funnels(id,name) VALUES(90001,'Custom populated funnel'),(90002,'Empty custom funnel');
+    INSERT INTO academy_sales_funnel_users(user_id,funnel_id)
+      SELECT 90001,id FROM academy_sales_funnels WHERE workflow_role='hunter' OR id=90001;
+    INSERT INTO academy_sales_funnel_users(user_id,funnel_id)
+      SELECT 90002,id FROM academy_sales_funnels WHERE workflow_role='closer';
+    INSERT INTO academy_sales_funnel_users(user_id,funnel_id)
+      SELECT 90003,id FROM academy_sales_funnels WHERE workflow_role IN ('hunter','closer');
+    UPDATE academy_integration_funnel_settings SET funnel_id=90001 WHERE provider='website';
+    INSERT INTO academy_leads(id,contact_name,phone,source_id,funnel_id,manager_id,status_code,is_archived,student_age,course_id)
+      SELECT 90000+n,'Test lead '||n,'migration-'||n,90001,
+        CASE WHEN n IN(3,4) THEN (SELECT id FROM academy_sales_funnels WHERE workflow_role='closer')
+          WHEN n=5 THEN 90001 ELSE (SELECT id FROM academy_sales_funnels WHERE is_default) END,
+        CASE WHEN n IN(3,4) THEN 90002 ELSE 90001 END,
+        CASE n WHEN 1 THEN 'new_request' WHEN 2 THEN 'first_contact' WHEN 3 THEN 'demo_attended'
+          WHEN 4 THEN 'paid' WHEN 5 THEN 'paid' ELSE 'qualified' END,
+        n=6,12,90001 FROM generate_series(1,6) n;
     INSERT INTO academy_students(id,contact_name,lead_id,manager_id,referral_code)
-      VALUES (1,'Test student',2,1,'TEST-MIGRATION');
+      VALUES(90001,'Test student',90002,90001,'TEST-GENERIC-MIGRATION');
     INSERT INTO academy_tasks(id,title,responsible_id,entity_type,entity_id)
-      VALUES (1,'Test task',1,'lead',2);`);
-  const before = (await client.query('SELECT * FROM academy_sales_kpi_leads ORDER BY lead_id')).rows;
-  await client.query('BEGIN');
-  for (const sql of migrations[107].sql) await client.query(sql);
-  await client.query('COMMIT');
-  const leads = (await client.query(`SELECT lead.id, lead.manager_id, funnel.workflow_role, lead.is_archived
-    FROM academy_leads lead JOIN academy_sales_funnels funnel ON funnel.id = lead.funnel_id ORDER BY lead.id`)).rows;
-  assert.deepEqual(leads.map((lead) => [lead.id, lead.manager_id, lead.workflow_role]), [
-    [1,1,'hunter'], [2,null,'closer'], [3,1,'closer'], [4,1,'closer'], [5,2,'closer'], [6,1,'closer'], [7,1,null],
-  ]);
-  assert.equal(leads[5].is_archived, true);
-  assert.deepEqual((await client.query('SELECT * FROM academy_sales_kpi_leads ORDER BY lead_id')).rows, before,
-    'historical attribution must remain unchanged during migration');
-  assert.equal((await client.query('SELECT manager_id FROM academy_students WHERE id=1')).rows[0].manager_id, null);
-  assert.equal((await client.query('SELECT responsible_id FROM academy_tasks WHERE id=1')).rows[0].responsible_id, null);
-  assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_funnel_handoffs')).rows[0].count, 1);
-  console.log('PASS: populated migration preserves later-stage/archived/B2B ownership and existing KPI, releases only initial demo queue');
+      VALUES(90001,'Test task',90001,'lead',90002);`);
+  const beforeLeads = (await client.query(`SELECT lead.id,lead.manager_id,lead.funnel_id,lead.is_archived,stage.name AS stage_name
+    FROM academy_leads lead JOIN academy_lead_statuses stage ON stage.code=lead.status_code ORDER BY lead.id`)).rows;
+  const beforeKpi = (await client.query('SELECT * FROM academy_sales_kpi_leads ORDER BY lead_id')).rows;
+  const beforeMemberships = (await client.query('SELECT user_id,funnel_id FROM academy_sales_funnel_users ORDER BY user_id,funnel_id')).rows;
+  const beforeIntakeSettings = (await client.query('SELECT provider,funnel_id FROM academy_integration_funnel_settings ORDER BY provider')).rows;
+  // Apply 0128 and every later registered migration. No hard-coded latest index.
+  await apply(migrations.slice(genericIndex));
+  assert.deepEqual((await client.query(`SELECT lead.id,lead.manager_id,lead.funnel_id,lead.is_archived,stage.name AS stage_name
+    FROM academy_leads lead JOIN academy_lead_statuses stage ON stage.code=lead.status_code AND stage.funnel_id=lead.funnel_id ORDER BY lead.id`)).rows,
+  beforeLeads, 'Conversion preserves each lead owner, funnel, archive flag and visible stage name');
+  assert.deepEqual((await client.query('SELECT * FROM academy_sales_kpi_leads ORDER BY lead_id')).rows, beforeKpi,
+    'Existing historical KPI facts remain unchanged');
+  assert.deepEqual((await client.query('SELECT user_id,funnel_id FROM academy_sales_funnel_users ORDER BY user_id,funnel_id')).rows, beforeMemberships,
+    'Employee-selected memberships, including both funnels and extra sales access, remain unchanged');
+  assert.deepEqual((await client.query('SELECT provider,funnel_id FROM academy_integration_funnel_settings ORDER BY provider')).rows, beforeIntakeSettings,
+    'Incoming-source funnel selections remain unchanged');
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM academy_sales_funnels funnel
+    LEFT JOIN academy_lead_statuses stage ON stage.code=funnel.initial_stage_code
+    WHERE stage.id IS NULL OR stage.funnel_id<>funnel.id OR NOT stage.is_active OR NOT stage.is_pipeline OR stage.sort_order<>0`)).rows[0].count, 0,
+  'All funnels have an explicit active first stage, including the previously empty funnel');
+  assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_statuses WHERE funnel_id IS NULL OR is_system')).rows[0].count, 0);
+  assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_funnel_qualifications')).rows[0].count, 0,
+    'Legacy profile completion or old stage codes cannot fabricate manual qualification');
+  assert.equal((await client.query('SELECT manager_id FROM academy_students WHERE id=90001')).rows[0].manager_id, 90001);
+  assert.equal((await client.query('SELECT responsible_id FROM academy_tasks WHERE id=90001')).rows[0].responsible_id, 90001);
+  for (const fixture of ['demo-pipeline-protection.sql', 'demo-lead-workflow.sql']) {
+    await client.query(workflowFixtureSql(await readFile(new URL(`../tests/sql/${fixture}`, import.meta.url), 'utf8')));
+  }
+  console.log('PASS: all current migrations; populated conversion preserves labels, ownership, KPI and intake settings; generic-stage SQL assertions');
 } finally {
+  await client.query('ROLLBACK').catch(() => undefined);
   await client.end();
 }

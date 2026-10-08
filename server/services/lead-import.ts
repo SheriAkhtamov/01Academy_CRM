@@ -1,3 +1,4 @@
+import { enqueueMetaLeadIntakeSafely } from './meta-marketing';
 import type { Pool, PoolClient } from 'pg';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { resolveLeadFunnelId } from './lead-funnels';
@@ -172,7 +173,7 @@ const restoreArchivedLead = async (
   leadId: number,
   enteredAt: Date,
 ) => {
-  const restored = await client.query<{ from_status_code: string | null }>(
+  const restored = await client.query<{ from_status_code: string | null; to_status_code: string }>(
     `WITH archived_lead AS (
        SELECT id, status_code
        FROM academy_leads
@@ -180,7 +181,7 @@ const restoreArchivedLead = async (
        FOR UPDATE
      ), restored_lead AS (
        UPDATE academy_leads lead
-       SET status_code = 'new_request',
+       SET status_code = (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = lead.funnel_id),
            is_archived = false,
            archive_reason = NULL,
            archived_at = NULL,
@@ -189,18 +190,19 @@ const restoreArchivedLead = async (
            updated_at = NOW()
        FROM archived_lead
        WHERE lead.id = archived_lead.id
-       RETURNING archived_lead.status_code AS from_status_code
+       RETURNING archived_lead.status_code AS from_status_code, lead.status_code AS to_status_code
      )
-     SELECT from_status_code FROM restored_lead`,
+     SELECT from_status_code, to_status_code FROM restored_lead`,
     [leadId],
   );
   const previousStatus = restored.rows[0]?.from_status_code;
-  if (previousStatus && previousStatus !== 'new_request') {
+  const nextStatus = restored.rows[0]?.to_status_code;
+  if (previousStatus && nextStatus && previousStatus !== nextStatus) {
     await client.query(
       `INSERT INTO academy_lead_stage_history
        (lead_id, from_status_code, to_status_code, entered_at, comment)
-       VALUES ($1, $2, 'new_request', $3, 'Повторная заявка из Meta Instant Form')`,
-      [leadId, previousStatus, enteredAt],
+       VALUES ($1, $2, $4, $3, 'Повторная заявка из Meta Instant Form')`,
+      [leadId, previousStatus, enteredAt, nextStatus],
     );
   }
   return (restored.rowCount ?? 0) > 0;
@@ -215,6 +217,8 @@ export const importLeadRecords = async (
   if (!provider) throw new Error('Import provider is required');
   if (!Array.isArray(records)) throw new Error('Import payload must be an array');
 
+  const createdLeadIds: number[] = [];
+  let intakeCommitted = false;
   const summary: LeadImportSummary = {
     created: 0,
     merged: 0,
@@ -301,7 +305,7 @@ export const importLeadRecords = async (
              contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
              language, languages, comment, first_contact_channel, created_at, updated_at
           )
-           VALUES ($1, $2, $3, $4, $5, 'new_request', '', ARRAY[]::text[], $6, 'instagram', $7, NOW())
+           VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), '', ARRAY[]::text[], $6, 'instagram', $7, NOW())
            RETURNING id`,
           [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment, commentCreatedAt],
         );
@@ -309,10 +313,11 @@ export const importLeadRecords = async (
         await client.query(
           `INSERT INTO academy_lead_stage_history
            (lead_id, from_status_code, to_status_code, entered_at, comment)
-           VALUES ($1, NULL, 'new_request', $2, $3)`,
+           VALUES ($1, NULL, (SELECT status_code FROM academy_leads WHERE id = $1), $2, $3)`,
           [matchedLead.id, commentCreatedAt, `Импортирован из ${options.providerLabel ?? 'Meta Lead Ads'}`],
         );
         outcome = 'created';
+        createdLeadIds.push(Number(matchedLead.id));
         summary.created += 1;
       } else {
         if (matchedLead.isArchived && options.restoreArchivedMatches) {
@@ -343,15 +348,15 @@ export const importLeadRecords = async (
         await client.query(
           `INSERT INTO academy_tasks
              (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-           VALUES (
+           SELECT
              'Первый контакт по заявке Meta',
              'Связаться с лидом из Instant Form в течение 15 минут.',
-             NULL,
+             lead.manager_id,
              NOW() + INTERVAL '15 minutes',
              'lead',
              $1,
              'new'
-           )`,
+            FROM academy_leads lead WHERE lead.id = $1 AND lead.manager_id IS NOT NULL`,
           [matchedLead.id],
         );
       }
@@ -391,6 +396,7 @@ export const importLeadRecords = async (
     }
 
     await client.query('COMMIT');
+    intakeCommitted = true;
     if (summary.created > 0) {
       publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { count: summary.created } });
     }
@@ -406,5 +412,6 @@ export const importLeadRecords = async (
     throw error;
   } finally {
     client.release();
+    if (intakeCommitted) for (const leadId of createdLeadIds) await enqueueMetaLeadIntakeSafely(leadId);
   }
 };

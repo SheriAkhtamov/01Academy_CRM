@@ -54,6 +54,8 @@ describe.skipIf(!databaseUrl)("Portal administration directory PostgreSQL + HTTP
       INSERT INTO portal_accounts(login,full_name,status,password_hash,last_seen_at) VALUES('anna.login','Anna','active','hash','2026-10-10T12:00:00Z'),('parent.login','Parent','active','hash','2026-10-03T12:00:00Z'),('pending.login','Pending','pending',NULL,NULL),('blocked.login','Blocked','suspended','hash','2026-09-01T12:00:00Z'),('revoked.login','Revoked','active','hash','2026-10-10T12:00:00Z');
       INSERT INTO portal_student_links(account_id,student_id,kind,relationship,permissions,status,verified_at,verified_by) VALUES(1,1,'self',NULL,'["learning.read"]','active',now(),1),(2,1,'representative','parent','["learning.read"]','active',now(),1),(2,2,'representative','payer','["finance.read"]','active',now(),1),(3,4,'self',NULL,'[]','pending',now(),1),(4,5,'self',NULL,'["learning.read"]','suspended',now(),1),(5,6,'self',NULL,'["learning.read"]','revoked',now(),1);
       INSERT INTO portal_invitations(account_id,link_id,token_hash,expires_at,status,channel,created_by,idempotency_key,request_hash) VALUES(3,4,repeat('a',64),'2026-10-12','created','manual',1,'00000000-0000-4000-8000-000000000001',repeat('b',64));`);
+    // Refresh estimates for the small fixture after every truncate and seed.
+    await pool.query("ANALYZE users,academy_students,academy_groups,academy_student_group_enrollments,portal_student_identity,portal_accounts,portal_student_links,portal_invitations,portal_consents");
   });
   afterAll(async () => { if (pool) await pool.end(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
   it("paginates stable rows and returns current account metadata without authentication artifacts", async () => {

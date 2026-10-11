@@ -1,43 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { reviewMaintainability } from './lib/source-maintainability.mjs';
 
 const projectRoot = process.cwd();
 const sourceRoots = ['client/src', 'server', 'shared'];
 const sourceExtensions = ['.ts', '.tsx'];
-
-// A line budget is a proxy for logic complexity, which a translation
-// dictionary does not have: it is flat data, one line per key. Capping it only
-// pressured authors into shortening user-facing text to reclaim lines, so the
-// file is measured by the i18n audit (npm run check:i18n) instead.
-const lineBudgetExemptions = new Set(['client/src/lib/i18n.ts']);
-
-const legacyLineBudgets = new Map(Object.entries({
-  'client/src/components/ux/LeadDetailSheet.tsx': 1_900,
-  'client/src/pages/academy-settings.tsx': 2_300,
-  'client/src/pages/admin.tsx': 1_600,
-  'client/src/pages/admin/AdminDashboardPage.tsx': 1_100,
-  'client/src/pages/finance-center.tsx': 850,
-  'client/src/pages/marketing-module.tsx': 950,
-  'client/src/pages/sales-dashboard.tsx': 1_800,
-  'client/src/pages/sales/InstagramMessagesPage.tsx': 2_850,
-  'client/src/pages/teacher-module.tsx': 2_100,
-  'server/modules/academy/academy-leads.ts': 1_850,
-  'server/modules/academy/leads.router.ts': 1_600,
-  'server/modules/academy/operations.router.ts': 1_300,
-  'server/routes/telephony.routes.ts': 1_750,
-  'server/routes/user.routes.ts': 1_300,
-  'server/services/instagram.ts': 2_700,
-  'server/db/schema/index.ts': 1_620,
-}));
-
-const compositionBudgets = new Map(Object.entries({
-  'client/src/App.tsx': 50,
-  'client/src/app/AppProviders.tsx': 100,
-  'server/index.ts': 30,
-  'server/routes/index.ts': 80,
-  'server/modules/academy/academy.router.ts': 100,
-}));
 
 // Ratchets let legacy code shrink incrementally without allowing new boundary
 // leaks. Remove an entry (or lower its count) as each vertical slice migrates.
@@ -230,15 +198,7 @@ for (const file of files) {
 
   graph.set(file, [...new Set(dependencies)]);
 
-  if (!lineBudgetExemptions.has(from)) {
-    const lines = source.split(/\r?\n/).length - 1;
-    const maximum = compositionBudgets.get(from)
-      ?? legacyLineBudgets.get(from)
-      ?? 1_200;
-    if (lines > maximum) {
-      warnings.push(`${from}: ${lines} lines exceeds architectural budget ${maximum}`);
-    }
-  }
+  warnings.push(...reviewMaintainability(from, source));
 }
 
 const visitState = new Map();
@@ -280,8 +240,14 @@ for (const cycle of cycles) {
 }
 
 if (warnings.length > 0) {
-  console.warn('[architecture check] Non-blocking file size warnings:');
-  for (const warning of warnings) console.warn(`  - ${warning}`);
+  const limit = process.argv.includes('--verbose') ? warnings.length : 10;
+  warnings.sort((left, right) => right.value / right.guideline - left.value / left.guideline
+    || left.file.localeCompare(right.file) || left.line - right.line);
+  console.warn(`[architecture check] Non-blocking maintainability warnings: ${warnings.length} recommendation(s) in ${new Set(warnings.map((warning) => warning.file)).size} file(s).`);
+  for (const warning of warnings.slice(0, limit)) console.warn(`  - ${warning.message}`);
+  if (warnings.length > limit) {
+    console.warn(`  ${warnings.length - limit} more recommendation(s); run npm run check:architecture -- --verbose for the full report.`);
+  }
 }
 
 if (failures.length > 0) {

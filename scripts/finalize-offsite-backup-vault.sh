@@ -74,6 +74,10 @@ chmod 0640 \
 
 # Rotation is intentionally privileged and local-only. The fetcher cannot
 # remove sealed archives even if its SSH key or process is compromised.
+# Use an exact cutoff: find -mtime +N rounds down and retains an extra day.
+now_epoch="$(date +%s)"
+retention_cutoff_epoch="$((now_epoch - RETENTION_DAYS * 86400))"
+
 while IFS= read -r -d '' expired_archive; do
   case "$expired_archive" in
     "${ARCHIVE_DIR}"/academy-crm-backup-*.zip)
@@ -85,6 +89,6 @@ while IFS= read -r -d '' expired_archive; do
       exit 1
       ;;
   esac
-done < <(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'academy-crm-backup-*.zip' -mtime "+${RETENTION_DAYS}" -print0)
+done < <(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'academy-crm-backup-*.zip' ! -newermt "@${retention_cutoff_epoch}" -print0)
 
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Backup vault ownership and retention finalized"

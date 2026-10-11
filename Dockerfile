@@ -18,6 +18,7 @@ COPY --from=build /app/apply-migrations.js ./
 
 RUN mkdir -p /app/logs /app/uploads/board /app/uploads/payments /app/uploads/portfolio \
     && chmod -R a+rX /app/migrations \
+    && chmod a+r /app/package*.json /app/apply-migrations.js \
     && chown -R node:node /app/logs /app/uploads
 
 EXPOSE 5001

@@ -270,6 +270,22 @@ jobs:
           docker buildx build --builder academy-lms-safe --load --pull --tag 01academy-crm:deploy "$BUILD_CONTEXT"
           release_crm_image="$(docker image inspect 01academy-crm:deploy --format '{{.Id}}')"
           printf '%s\n' "$release_crm_image" > .release-state/current-crm-image
+          # Validate runtime file access as the image's default non-root user
+          # before changing the running CRM or touching the database.
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true --cpus 0.5 --memory 128m \
+            --entrypoint node "$release_crm_image" --input-type=module -e '
+              import { accessSync, constants, readdirSync } from "node:fs";
+              if (process.getuid() === 0) throw new Error("Runtime user must be non-root");
+              for (const file of ["package.json", "package-lock.json", "apply-migrations.js",
+                "dist/index.js", "dist/learning-api.js", "dist/learning-worker.js",
+                "dist/learning-health.js", "migrations/meta/_journal.json",
+                "node_modules/pg/package.json", "node_modules/express/package.json"])
+                accessSync(`/app/${file}`, constants.R_OK);
+              for (const file of readdirSync("/app/migrations"))
+                if (file.endsWith(".sql")) accessSync(`/app/migrations/${file}`, constants.R_OK);
+              console.log("Runtime files are readable by the non-root user.");
+            '
           docker buildx build --builder academy-lms-safe --load --pull --tag 01academy-crm-backup:deploy \
             --file "$BUILD_CONTEXT/Dockerfile.db-archive" \
             "$BUILD_CONTEXT"

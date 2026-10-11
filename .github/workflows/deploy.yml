@@ -293,15 +293,20 @@ jobs:
           # Keep hashed bundles from recent deployments available to tabs that
           # have stayed open while a new CRM image was deployed.
           mkdir -p static-assets
-          if [ -z "$(find static-assets -type f -print -quit)" ] \
-            && docker container inspect crm-pro >/dev/null 2>&1; then
-            docker cp crm-pro:/app/dist/public/assets/. static-assets/
-            find static-assets -type f -exec touch {} +
+          current_asset_snapshot="$BUILD_CONTEXT/current-assets"
+          release_asset_snapshot="$BUILD_CONTEXT/release-assets"
+          if docker container inspect crm-pro >/dev/null 2>&1; then
+            mkdir -p "$current_asset_snapshot"
+            docker cp crm-pro:/app/dist/public/assets/. "$current_asset_snapshot/"
+            cp -R "$current_asset_snapshot/." static-assets/
           fi
+          mkdir -p "$release_asset_snapshot"
           asset_image_container="$(docker create 01academy-crm:deploy)"
-          docker cp "$asset_image_container:/app/dist/public/assets/." static-assets/
+          docker cp "$asset_image_container:/app/dist/public/assets/." "$release_asset_snapshot/"
+          cp -R "$release_asset_snapshot/." static-assets/
           docker rm "$asset_image_container" >/dev/null
           asset_image_container=""
+          chmod -R a+rX static-assets
           find static-assets -type f -mmin +2880 -delete
 
           backup_started_at="$(date +%s)"

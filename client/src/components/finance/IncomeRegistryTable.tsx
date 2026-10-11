@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import type { financeCopy } from '@/lib/financeCenter';
@@ -11,6 +12,8 @@ export function IncomeRegistryTable({
   money,
   dateTime,
   methodLabel,
+  onAllocate,
+  allocationLabel,
 }: {
   rows: Row[];
   filterKey?: string;
@@ -18,6 +21,8 @@ export function IncomeRegistryTable({
   money: (value: number) => string;
   dateTime: (value: unknown) => string;
   methodLabel: (value: string) => string;
+  onAllocate?: (id:number)=>void;
+  allocationLabel?:string;
 }) {
   const columns: DataTableColumn<Row>[] = [
     {
@@ -57,6 +62,8 @@ export function IncomeRegistryTable({
       cellClassName: 'whitespace-nowrap text-right font-semibold tabular-nums',
     },
   ];
+
+  if(onAllocate)columns.push({key:'allocation',header:allocationLabel ?? '',render:row=><Button variant="ghost" size="sm" onClick={()=>onAllocate(Number(row.id))}>{allocationLabel}</Button>});
 
   return (
     <DataTable

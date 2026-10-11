@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_STUDENT_PROJECT_BYTES, summarizeStudentProfile, type StudentProfile } from '../shared/contracts/student-profile';
 import { StudentDetailDialog } from '../client/src/components/ux/StudentDetailDialog';
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
 import { i18n } from '../client/src/lib/i18n';
 
 const mocks = vi.hoisted(() => ({ profile: vi.fn(), addProject: vi.fn() }));
@@ -23,7 +24,12 @@ function show(props = {}) {
   return { onOpenLead, onOpenChange, onRecordPayment };
 }
 beforeEach(() => { vi.clearAllMocks(); i18n.setLanguage('ru'); mocks.profile.mockResolvedValue(profile); mocks.addProject.mockResolvedValue({ id: 45, title: 'Project', createdAt: '2026-10-05' }); HTMLElement.prototype.scrollIntoView = vi.fn(); });
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.restoreAllMocks(); });
+afterEach(async () => {
+  cleanup(); clients.splice(0).forEach((client) => client.clear());
+  // Radix restores focus on the next timer; finish it before jsdom replaces this realm.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vi.restoreAllMocks();
+});
 
 describe('new student detail dialog', () => {
   it('has four compact sections and opens the currently linked lead', async () => {

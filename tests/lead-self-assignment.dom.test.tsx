@@ -7,6 +7,8 @@ import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
 import { localizeApiErrorMessage } from '../client/src/lib/queryClient';
 
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
+
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
 }));

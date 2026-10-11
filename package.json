@@ -8,10 +8,16 @@
   },
   "scripts": {
     "start": "tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npm run build:meta-tools && npm run check:production-bundle",
-    "build:meta-tools": "esbuild scripts/import-meta-lead-ads.ts scripts/sync-meta-marketing.ts scripts/reconnect-instagram.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/scripts",
+    "build": "vite build && esbuild server/index.ts server/learning-api.ts server/learning-worker.ts server/learning-health.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npm run build:meta-tools && npm run check:production-bundle",
+    "build:meta-tools": "esbuild scripts/import-meta-lead-ads.ts scripts/sync-meta-marketing.ts scripts/reconnect-instagram.ts scripts/lms-import-legacy.ts scripts/lms-health.ts scripts/lms-api-acceptance.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/scripts",
     "import:meta-leads": "node dist/scripts/import-meta-lead-ads.js",
+    "import:lms-legacy": "node dist/scripts/lms-import-legacy.js",
     "start:prod": "node apply-migrations.js && node dist/index.js",
+    "start:lms-api": "tsx server/learning-api.ts",
+    "start:lms-api:prod": "node dist/learning-api.js",
+    "start:lms-worker": "tsx server/learning-worker.ts",
+    "start:lms-worker:prod": "node dist/learning-worker.js",
+    "health:lms-worker": "node dist/learning-health.js",
     "check": "tsc && npm run lint && npm run check:architecture && npm run check:encoding && npm run check:i18n && npm run check:responsive",
     "lint": "eslint client/src server shared tests --max-warnings 30",
     "check:encoding": "node scripts/check-mojibake.mjs",
@@ -24,7 +30,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:dev": "tsx scripts/init-dev-data.ts",
-    "db:migrate": "node apply-migrations.js"
+    "db:migrate": "node apply-migrations.js",
+    "health:lms": "node dist/scripts/lms-health.js",
+    "lms:acceptance": "tsx scripts/lms-api-acceptance.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

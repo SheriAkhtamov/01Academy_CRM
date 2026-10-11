@@ -11,7 +11,12 @@ beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => undefined;
 });
 beforeEach(() => { i18n.setLanguage('en'); localStorage.clear(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(async () => {
+  cleanup();
+  // Radix restores focus on the next timer; finish it before jsdom replaces this realm.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vi.restoreAllMocks();
+});
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 it('preserves a cash expense method and keeps the confirmation through pending and failed requests', async () => {

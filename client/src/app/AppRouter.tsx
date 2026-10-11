@@ -8,6 +8,10 @@ import Layout, { AppSpinner } from '@/components/Layout';
 import { SPRING, scaleIn } from '@/lib/motion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
+import { ModulePage } from '@/components/ux/ModulePage';
+import { PageHeader } from '@/components/ux/PageHeader';
 
 const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/login'));
@@ -25,6 +29,24 @@ const AuditPage = lazy(() => import('@/pages/admin/audit'));
 const SystemManagementPage = lazy(() => import('@/pages/admin/SystemManagementPage'));
 const FinanceCenter = lazy(() => import('@/pages/finance-center'));
 const ResourcePage = lazy(() => import('@/pages/resource'));
+const LearningManagementPage = lazy(() => import('@/pages/learning-management'));
+const LearningRolloutSettings = lazy(() => import('@/features/learning-rollout/LearningRolloutSettings'));
+const PortalAccessDirectory = lazy(() => import('@/features/portal-access/PortalAccessDirectory').then(module => ({default:module.PortalAccessDirectory})));
+
+function PortalDirectoryRoute({representatives = false}:{representatives?:boolean}) {
+  const {t} = useTranslation();
+  const capabilities = useQuery(learningCapabilitiesQuery);
+  if (capabilities.isPending) return <RouteLoading/>;
+  if (!capabilities.data?.portalEnabled || !capabilities.data.canManageAccess) return <AccessDenied/>;
+  return <ModulePage><PageHeader title={t(representatives ? 'portalDirectoryRepresentatives':'portalDirectoryTitle')}/><PortalAccessDirectory kind={representatives ? 'representatives':'students'}/></ModulePage>;
+}
+
+function LearningRoute({ administration = false,reports=false }: { administration?: boolean;reports?:boolean }) {
+  const capabilities = useQuery(learningCapabilitiesQuery);
+  if (capabilities.isPending) return <RouteLoading />;
+  if (!capabilities.data?.learningEnabled || !capabilities.data.canManageLearning) return <AccessDenied />;
+  return <LearningManagementPage administration={administration} initialTab={reports?'results':undefined}/>;
+}
 
 function ModuleBasedHome() {
   const { user } = useAuth();
@@ -142,6 +164,7 @@ export function AppRouter() {
       <Layout>
         <Switch>
         <Route path="/" component={ModuleBasedHome} />
+        <Route path="/learning" children={<LearningRoute/>}/>
         <Route path="/help" children={<ResourcePage resource="help" />} />
         <Route path="/support" children={<ResourcePage resource="support" />} />
         <Route path="/updates" children={<ResourcePage resource="updates" />} />
@@ -201,6 +224,7 @@ export function AppRouter() {
           </ModuleGuard>
         } />
         <Route path="/teacher-module/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/teacher-module/learning" children={<ModuleGuard module="teacher"><LearningRoute /></ModuleGuard>} />
         <Route path="/teacher-module/ratings" children={<Redirect to="/teacher-module" />} />
         <Route path="/teacher-module/profile" children={<Redirect to="/teacher-module" />} />
         <Route path="/teacher-module" children={
@@ -278,6 +302,11 @@ export function AppRouter() {
         } />
         <Route path="/admin/leads" children={<Redirect to="/admin/sales-settings" />} />
         <Route path="/admin/tasks" children={<Redirect to="/tasks" />} />
+        <Route path="/admin/learning" children={<ModuleGuard module="administration"><LearningRoute administration /></ModuleGuard>} />
+        <Route path="/admin/learning/reports" children={<ModuleGuard module="administration"><LearningRoute administration reports/></ModuleGuard>} />
+        <Route path="/admin/learning-settings" children={<ModuleGuard module="administration"><LearningRolloutSettings /></ModuleGuard>} />
+        <Route path="/admin/learning/access" children={<ModuleGuard module="administration"><PortalDirectoryRoute /></ModuleGuard>} />
+        <Route path="/admin/learning/representatives" children={<ModuleGuard module="administration"><PortalDirectoryRoute representatives /></ModuleGuard>} />
         <Route path="/admin/academy-settings" children={
           <ModuleGuard module="administration">
             <AcademySettings />

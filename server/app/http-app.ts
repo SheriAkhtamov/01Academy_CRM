@@ -9,18 +9,29 @@ import {
 import { requestContextMiddleware } from '../middleware/errorHandler';
 import { isProductionEnvironment } from '../config';
 import { logger } from '../lib/logger';
+import { privateRequestPath } from '../lib/private-request-path';
+import { isPortalRateLimitRealm } from '../infrastructure/portal-rate-limiters';
 
-export const createHttpApp = () => {
+export const createHttpApp = ({ beforeBodyParser }: { beforeBodyParser?: express.RequestHandler } = {}) => {
   const app = express();
 
   app.disable('x-powered-by');
   app.use(requestContextMiddleware);
   app.use(securityHeadersMiddleware);
+  app.use((request,response,next) => {
+    if (request.path === '/learn' || request.path.startsWith('/learn/') || request.path.startsWith('/portfolio/p/')) {
+      response.setHeader('Referrer-Policy','no-referrer');
+      response.setHeader('Cache-Control','private, no-store');
+      response.setHeader('X-Robots-Tag','noindex, nofollow');
+    }
+    next();
+  });
   app.use(corsMiddleware);
   app.use(browserMutationProtectionMiddleware);
+  if (beforeBodyParser) app.use(beforeBodyParser);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (!isProductionEnvironment || !req.path.startsWith('/api')) {
+    if (!isProductionEnvironment || !req.path.startsWith('/api') || isPortalRateLimitRealm(req.path)) {
       return next();
     }
 
@@ -53,12 +64,10 @@ export const createHttpApp = () => {
     parameterLimit: 100,
   }));
 
-  morgan.token('safe-path', (req) => (
-    req.url?.split(/[?#]/, 1)[0] || '/'
-  ));
+  morgan.token('safe-path', req=>privateRequestPath((req as Request).originalUrl || req.url));
   app.use(morgan(':method :safe-path :status :response-time ms', {
     stream: { write: (message: string) => logger.info(message.trim()) },
-    skip: (req) => !req.path.startsWith('/api') || req.path === '/api/telephony/webhook',
+    skip: (req) => !req.originalUrl.startsWith('/api') || req.originalUrl.split('?')[0] === '/api/telephony/webhook',
   }));
 
   return app;

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { DEFAULT_LEARNING_SCHOOL_SETTINGS,learningSchoolSettingsSchema } from '@shared/contracts/learning-settings';
 
 type AppEnvironment = 'development' | 'production' | 'test';
 
@@ -31,6 +32,19 @@ export interface AppConfig {
     enabled: boolean;
     passwordHash?: string;
     groupIds?: number[];
+  };
+  portal?: {
+    enabled?: boolean;
+    learningEnabled?: boolean;
+    sessionSecret?: string;
+    tokenEncryptionKey?: string;
+    emailEnabled?: boolean;
+    allowInvitations?: boolean;
+    publicPortfolioEnabled?: boolean;
+    groupIds?: number[];
+    scanner?: { host?: string; port?: number; timeoutMs?: number };
+    workCalendar?: { workdays?: number[]; start?: string; end?: string; holidays?: string[]; coordinatorUserIds?: number[] };
+    support?: { phone?: string; email?: string };
   };
   email: {
     resendApiKey?: string;
@@ -91,7 +105,9 @@ export interface AppConfig {
   };
 }
 
-const configPath = path.resolve(process.cwd(), 'config', 'app.config.json');
+const configPath = process.env.APP_CONFIG_PATH?.trim()
+  ? path.resolve(process.env.APP_CONFIG_PATH.trim())
+  : path.resolve(process.cwd(), 'config', 'app.config.json');
 const validEnvironments: ReadonlySet<AppEnvironment> = new Set(['development', 'production', 'test']);
 
 const validateHttpsIntegrationUrl = (
@@ -179,6 +195,43 @@ const readConfigFile = (): AppConfig => {
 };
 
 export const validateConfig = (config: AppConfig) => {
+  const portal = config.portal;
+  if (portal !== undefined) {
+    const flags = ['enabled', 'learningEnabled', 'emailEnabled', 'allowInvitations', 'publicPortfolioEnabled'] as const;
+    if (!portal || typeof portal !== 'object' || flags.some((flag) => portal[flag] !== undefined && typeof portal[flag] !== 'boolean')) {
+      throw new Error('portal feature flags must be boolean values');
+    }
+    if (portal.groupIds !== undefined && (
+      !Array.isArray(portal.groupIds)
+      || portal.groupIds.some((id) => !Number.isSafeInteger(id) || id < 1)
+      || new Set(portal.groupIds).size !== portal.groupIds.length
+    )) {
+      throw new Error('portal.groupIds must contain distinct positive group IDs');
+    }
+    if (portal.enabled) {
+      for (const [name, value] of [['sessionSecret', portal.sessionSecret], ['tokenEncryptionKey', portal.tokenEncryptionKey]] as const) {
+        if (!value || value.trim().length < 32 || /change[-_ ]?me|example|placeholder/i.test(value)) {
+          throw new Error(`portal.${name} must be a non-placeholder value of at least 32 characters`);
+        }
+      }
+      if (portal.sessionSecret === config.session?.secret || portal.tokenEncryptionKey === portal.sessionSecret || portal.tokenEncryptionKey === config.session?.secret) {
+        throw new Error('portal session and encryption secrets must be independent');
+      }
+      if (!/^[A-Za-z0-9+/]{43}=$/.test(portal.tokenEncryptionKey!) || Buffer.from(portal.tokenEncryptionKey!, 'base64').length !== 32) {
+        throw new Error('portal.tokenEncryptionKey must be a base64 encoded 32-byte key');
+      }
+    }
+    const scanner = portal.scanner;
+    if (scanner && (
+      (scanner.port !== undefined && (!Number.isSafeInteger(scanner.port) || scanner.port < 1 || scanner.port > 65535))
+      || (scanner.timeoutMs !== undefined && (!Number.isSafeInteger(scanner.timeoutMs) || scanner.timeoutMs < 1000 || scanner.timeoutMs > 120000))
+    )) {
+      throw new Error('portal scanner port or timeout is invalid');
+    }
+    if (portal.support?.phone && !/^\+?[0-9 ()-]{7,30}$/.test(portal.support.phone)) throw new Error('portal support phone is invalid');
+    if (portal.support?.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(portal.support.email)) throw new Error('portal support email is invalid');
+    if (portal.workCalendar && !learningSchoolSettingsSchema.safeParse({...DEFAULT_LEARNING_SCHOOL_SETTINGS,workCalendar:{...DEFAULT_LEARNING_SCHOOL_SETTINGS.workCalendar,...portal.workCalendar}}).success) throw new Error('portal work calendar is invalid');
+  }
   const attendance = config.publicAttendance;
   if (attendance?.enabled && (
     !/^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(attendance.passwordHash ?? '')

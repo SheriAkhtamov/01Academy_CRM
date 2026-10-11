@@ -14,6 +14,7 @@ import {
 } from '../services/telephony-routing';
 import type { SessionMiddleware } from '../infrastructure/session';
 import { setRealtimeTransport, setRealtimeUserDisconnect, setRealtimeSessionDisconnect } from './realtime-hub';
+import { guardUpgradeSocket, guardUpgradeSocketErrors } from './upgrade-socket';
 
 const WS_OPEN_STATE = 1;
 const MAX_TOTAL_WEBSOCKET_CONNECTIONS = 1_000;
@@ -198,10 +199,19 @@ export const attachWebSocketGateway = async (
   };
 
   httpServer.on('upgrade', (request, socket, head) => {
-    const requestUrl = request.url ? new URL(request.url, 'http://localhost') : null;
+    guardUpgradeSocketErrors(socket);
+    let requestUrl: URL | null;
+    try {
+      requestUrl = request.url ? new URL(request.url, 'http://localhost') : null;
+    } catch {
+      guardUpgradeSocket(socket);
+      socket.destroy();
+      return;
+    }
     if (requestUrl?.pathname !== '/ws') {
       return;
     }
+    const handoffSocket = guardUpgradeSocket(socket);
 
     if (allSockets.size >= MAX_TOTAL_WEBSOCKET_CONNECTIONS) {
       socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
@@ -222,6 +232,7 @@ export const attachWebSocketGateway = async (
     }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
+      handoffSocket();
       wss.emit('connection', ws, request);
     });
   });

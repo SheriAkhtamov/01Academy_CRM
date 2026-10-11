@@ -16,6 +16,8 @@ import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
 import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
+import { createLearningTables, type LearningTables } from "./learning";
+import { createAcademyPortfolioProjectsTable, createPublicAcademyPortfolioProjectInsertSchema } from "./portfolio-projects";
 export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -610,6 +612,7 @@ export const academyAttendance = pgTable("academy_attendance", {
 
 export const academyPayments = pgTable("academy_payments", {
   id: serial("id").primaryKey(),
+  allocationVersion: integer("allocation_version").notNull().default(0),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "set null" }),
   studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "set null" }),
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
@@ -635,6 +638,7 @@ export const academyPayments = pgTable("academy_payments", {
   leadIdx: index("academy_payments_lead_idx").on(table.leadId),
   groupIdx: index("academy_payments_group_idx").on(table.groupId),
   statusIdx: index("academy_payments_status_idx").on(table.status),
+  allocationVersionCheck: check("academy_payments_allocation_version_check", sql`${table.allocationVersion}>=0`),
 }));
 export const academyPaymentAttachments = createAcademyPaymentAttachmentsTable(academyPayments.id, users.id);
 export const academyTasks = pgTable("academy_tasks", {
@@ -702,22 +706,26 @@ export const { academySalesKpiMeta, academySalesKpiPlans, academySalesKpiAssignm
   academySalesKpiActivity, academySalesKpiTrials, academySalesKpiSales, academySalesKpiSurveys } = createSalesKpiTables({
   user: users.id, lead: academyLeads.id, participant: academyDemoLessonParticipants.id, payment: academyPayments.id, survey: academyParentSurveys.id,
 });
-export const academyPortfolioProjects = pgTable("academy_portfolio_projects", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").references(() => academyStudents.id, { onDelete: "cascade" }).notNull(),
-  lessonId: integer("lesson_id").references(() => academyLessons.id, { onDelete: "set null" }),
-  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "set null" }),
-  courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
-  title: varchar("title", { length: 255 }).notNull(),
-  url: text("url"),
-  fileUrl: text("file_url"),
-  finalStatus: varchar("final_status", { length: 80 }).notNull().default("not_started"),
-  marketingConsent: boolean("marketing_consent").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  studentIdx: index("academy_portfolio_projects_student_idx").on(table.studentId),
-}));
+export const academyPortfolioProjects = createAcademyPortfolioProjectsTable({ studentId: academyStudents.id,
+  lessonId: academyLessons.id, groupId: academyGroups.id, courseId: academyCourses.id, userId: users.id,
+  runId: () => learningTables.lmsGroupRuns.id, submissionId: () => learningTables.lmsSubmissions.id, fileId: () => learningTables.lmsFiles.id });
+const learningTables: LearningTables = createLearningTables({ userId: users.id, studentId: academyStudents.id,
+  courseId: academyCourses.id, groupId: academyGroups.id, lessonId: academyLessons.id,
+  enrollmentId: academyStudentGroupEnrollments.id, projectId: academyPortfolioProjects.id, paymentId: academyPayments.id });
+export const {
+  portalAccessAudit, portalAccountContacts, portalAccounts, portalConsents, portalIdentityMailOutbox,
+  portalInvitations, portalRateLimits, portalRecoveryTokens, portalSessions, portalStudentIdentity, portalStudentLinks,
+  lmsAchievements, lmsAnnouncementReads, lmsAnnouncements, lmsAssignmentRecipients, lmsAssignmentVersions,
+  lmsAssignments, lmsCommentReads, lmsComments, lmsCourseCompletions, lmsCourseVersions, lmsGroupRuns,
+  lmsLearningAudit, lmsLearningEvents, lmsLessonBindings, lmsMakeupPlans, lmsMaterialPublications,
+  lmsMaterialReads, lmsMaterialVersions, lmsMaterials, lmsQuizAttempts, lmsQuizRecipients, lmsQuizVersions,
+  lmsQuizzes, lmsReports, lmsReviews, lmsSections, lmsStaffPermissions, lmsSubmissionDrafts, lmsSubmissions,
+  lmsThreads, lmsUnitPreviews, lmsUnits, academyPaymentStudentAllocations, lmsFeatureFlags, lmsFiles,
+  lmsStaffFileCopies, lmsLegacyImportCheckpoints, lmsLegacyImports, lmsLegacyPortfolioDrafts, lmsNotificationSources,
+  lmsNotificationWorkerState, lmsPortfolioShares, lmsProjectComparisons, lmsResourceAudit, lmsResourceOutbox,
+  lmsSchoolSettings, lmsStaffNotificationEvents, portalFinanceQuestionMessages, portalFinanceQuestions,
+  portalNotificationPreferences, portalNotifications,
+} = learningTables;
 
 export const academyMarketingExpenses = pgTable("academy_marketing_expenses", {
   id: serial("id").primaryKey(),
@@ -1254,6 +1262,7 @@ export const insertAcademyAttendanceSchema = createInsertSchema(academyAttendanc
 
 export const insertAcademyPaymentSchema = createInsertSchema(academyPayments).omit({
   id: true,
+  allocationVersion: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1279,11 +1288,7 @@ export const insertAcademyParentSurveySchema = createInsertSchema(academyParentS
   createdAt: true,
 });
 
-export const insertAcademyPortfolioProjectSchema = createInsertSchema(academyPortfolioProjects).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertAcademyPortfolioProjectSchema = createPublicAcademyPortfolioProjectInsertSchema(academyPortfolioProjects);
 
 export const insertAcademyMarketingExpenseSchema = createInsertSchema(academyMarketingExpenses).omit({
   id: true,
@@ -1405,7 +1410,8 @@ export type AcademyAttendance = typeof academyAttendance.$inferSelect;
 export type InsertAcademyAttendance = z.infer<typeof insertAcademyAttendanceSchema>;
 export type AcademyEscalationEvent = typeof academyEscalationEvents.$inferSelect;
 export type InsertAcademyEscalationEvent = z.infer<typeof insertAcademyEscalationEventSchema>;
-export type AcademyPayment = typeof academyPayments.$inferSelect;
+// Legacy CRM projections do not expose the internal allocation revision.
+export type AcademyPayment = Omit<typeof academyPayments.$inferSelect, "allocationVersion">;
 export type InsertAcademyPayment = z.infer<typeof insertAcademyPaymentSchema>;
 export type AcademyTask = typeof academyTasks.$inferSelect;
 export type InsertAcademyTask = z.infer<typeof insertAcademyTaskSchema>;
@@ -1415,7 +1421,9 @@ export type AcademyStudentTransfer = typeof academyStudentTransfers.$inferSelect
 export type InsertAcademyStudentTransfer = z.infer<typeof insertAcademyStudentTransferSchema>;
 export type AcademyParentSurvey = typeof academyParentSurveys.$inferSelect;
 export type InsertAcademyParentSurvey = z.infer<typeof insertAcademyParentSurveySchema>;
-export type AcademyPortfolioProject = typeof academyPortfolioProjects.$inferSelect;
+// Portal fields use their dedicated resource contracts and commands.
+export type AcademyPortfolioProject = Omit<typeof academyPortfolioProjects.$inferSelect, "description" | "lmsRunId" | "sourceSubmissionId" | "links" | "fileIds" | "coverFileId" |
+  "teacherReview" | "reviewedBy" | "portalVersion" | "archivedAt" | "portalCreated">;
 export type InsertAcademyPortfolioProject = z.infer<typeof insertAcademyPortfolioProjectSchema>;
 export type AcademyMarketingExpense = typeof academyMarketingExpenses.$inferSelect;
 export type InsertAcademyMarketingExpense = z.infer<typeof insertAcademyMarketingExpenseSchema>;

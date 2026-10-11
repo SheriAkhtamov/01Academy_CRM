@@ -40,6 +40,7 @@ import {
   type TeacherStudent,
 } from '@/lib/teacherModule';
 import { cn } from '@/lib/utils';
+import { LearningGroupTabs } from '@/features/lms-staff/group-tabs';
 
 type GroupSortKey = 'name' | 'progress' | 'students';
 
@@ -65,6 +66,7 @@ interface TeacherGroupsSectionProps {
   onSelectGroup: (groupId: number | null) => void;
   onOpenStudent: (student: TeacherStudent) => void;
   studentProfileOpen?: boolean;
+  learningEnabled?:boolean;
   onChangeView: (view: TeacherGroupView) => void;
   onArchiveGroup: (group: TeacherGroup) => void;
   onRestoreGroup: (group: TeacherGroup) => void;
@@ -153,6 +155,7 @@ export function TeacherGroupsSection({
   onSelectGroup,
   onOpenStudent,
   studentProfileOpen = false,
+  learningEnabled = false,
   onChangeView,
   onArchiveGroup,
   onRestoreGroup,
@@ -276,6 +279,11 @@ export function TeacherGroupsSection({
   const progressLabel = t('lessonsConductedCount')
     .replace('{conducted}', String(conducted))
     .replace('{total}', String(total));
+  const studentsContent=<div className="border-t border-border/70 pt-4">
+    <h4 className="mb-3 text-sm font-semibold">{t('groupStudentsCount').replace('{count}',String(groupStudents.length))}</h4>
+    <DataTable columns={studentColumns} data={groupStudents} keyExtractor={row=>String(row.id)} onRowClick={onOpenStudent}
+      emptyState={<EmptyState icon={Users} title={t('noStudents')}/>}/>
+  </div>;
 
   return (
     <div className="space-y-4">
@@ -453,7 +461,7 @@ export function TeacherGroupsSection({
       <Sheet open={detailGroup !== null && !studentProfileOpen} onOpenChange={(open) => {
         if (!open) onSelectGroup(null);
       }}>
-        <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <SheetContent className={cn('flex w-full flex-col gap-0 overflow-hidden p-0',learningEnabled?'sm:max-w-5xl':'sm:max-w-xl')}>
           {detailGroup ? (
             <>
               <SheetHeader className="gap-1 border-b border-border/70 px-5 py-4">
@@ -505,23 +513,7 @@ export function TeacherGroupsSection({
                   />
                 ) : null}
 
-                <div className="border-t border-border/70 pt-4">
-                  <h4 className="mb-3 text-sm font-semibold">
-                    {t('groupStudentsCount').replace('{count}', String(groupStudents.length))}
-                  </h4>
-                  <DataTable
-                    columns={studentColumns}
-                    data={groupStudents}
-                    keyExtractor={(row) => String(row.id)}
-                    onRowClick={onOpenStudent}
-                    emptyState={(
-                      <EmptyState
-                        icon={Users}
-                        title={t('noStudents')}
-                      />
-                    )}
-                  />
-                </div>
+                {learningEnabled ? <LearningGroupTabs key={detailGroup.id} groupId={detailGroup.id} enabled>{studentsContent}</LearningGroupTabs>:studentsContent}
               </div>
             </>
           ) : null}

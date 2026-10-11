@@ -1,0 +1,55 @@
+.portal-ui {
+  font-size: 1rem;
+}
+.portal-ui button,
+.portal-ui [role="button"],
+.portal-ui [role="menuitem"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+.portal-ui[role="dialog"] > h2,
+.portal-ui[role="dialog"] > div:first-child > h2 {
+  padding-right: 2.75rem;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-ui,
+  .portal-ui * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media print {
+  body:has(.portal-print-report) * {
+    visibility: hidden;
+  }
+  .portal-print-report,
+  .portal-print-report * {
+    visibility: visible !important;
+  }
+  .portal-print-report {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 1rem;
+    color: black;
+    background: white;
+  }
+  .portal-print-report [role="progressbar"] {
+    print-color-adjust: exact;
+  }
+  .portal-print-report img,
+  .portal-print-report tr,
+  .portal-print-report section {
+    break-inside: avoid;
+  }
+  body:has(.portal-print-report) [role="dialog"] {
+    position: static;
+    transform: none;
+    overflow: visible;
+    max-height: none;
+    border: 0;
+    box-shadow: none;
+  }
+}

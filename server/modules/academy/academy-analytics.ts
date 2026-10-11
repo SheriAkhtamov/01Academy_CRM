@@ -133,7 +133,7 @@ const teacherStudentMembershipsSelect = `COALESCE((
 
 const academicStudentFields = [
   'id', 'studentName', 'contactName', 'studentAge', 'status', 'createdAt', 'updatedAt',
-  'enrolledAt', 'enrollmentDate', 'attendancePercent', 'progressPercent', 'finalProjectStatus',
+  'enrolledAt', 'enrollmentDate', 'attendancePercent', 'progressPercent',
 ] as const;
 
 const teacherStudentRecord = (student: Row): Row => {
@@ -299,7 +299,7 @@ export const getAcademyDataset = async (
     slice('students', () => (
       query(`SELECT ${isTeacherScoped ? `st.id, st.student_name, st.contact_name, st.student_age,
         st.status, st.created_at, st.updated_at, st.enrolled_at, st.enrollment_date,
-        st.attendance_percent, st.progress_percent, st.final_project_status` : 'st.*'},
+        st.attendance_percent, st.progress_percent` : 'st.*'},
         c.name AS course_name, g.name AS group_name, ${isTeacherScoped ? 'NULL' : 'u.full_name'} AS manager_name,
         sc.name AS school_name, ${isTeacherScoped ? 'NULL AS paid_amount_uzs' : studentPaidAmountSelect('st')},
         ${isTeacherScoped ? teacherStudentMembershipsSelect : studentGroupMembershipsSelect('st')},

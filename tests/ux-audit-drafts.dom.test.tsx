@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { StudentDetailDialog } from '../client/src/components/ux/StudentDetailDialog';
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
 import { CreateTaskDialog } from '../client/src/components/ux/board/CreateTaskDialog';
 import { i18n } from '../client/src/lib/i18n';
 import { allowNavigation, requestNavigation } from '../client/src/lib/navigationGuard';

@@ -22,6 +22,7 @@ services:
     build: .
     image: 01academy-crm:deploy
     container_name: crm-pro
+    networks: [default, lms_scanner]
     restart: unless-stopped
     ports:
       - "127.0.0.1:8011:5001"
@@ -114,8 +115,73 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # Enable only after staging scanner and resource measurements pass.
+  clamav:
+    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
+    profiles: [lms-scanner]
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["clamd", "--foreground=true", "--config-file=/etc/clamav/clamd.conf"]
+    networks: [lms_scanner]
+    volumes:
+      - clamav_signatures:/var/lib/clamav:ro
+      - ./config/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1770,uid=1000,gid=1000
+    cpus: "1.0"
+    mem_limit: 3g
+    mem_reservation: 1536m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'PING\n' | nc -w 5 127.0.0.1 3310 | grep -q '^PONG'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 6m
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  clamav-updater:
+    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
+    profiles: [lms-scanner-updates]
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["freshclam", "--daemon", "--foreground", "--stdout", "--config-file=/etc/clamav/freshclam.conf"]
+    networks: [lms_scanner_updates]
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+      - ./config/clamav/freshclam.conf:/etc/clamav/freshclam.conf:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=1000,gid=1000
+    cpus: "0.5"
+    mem_limit: 2g
+    mem_reservation: 512m
+    pids_limit: 32
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      disable: true
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+
 volumes:
   pgdata:
+  clamav_signatures:
+
+networks:
+  lms_scanner:
+    internal: true
+  lms_scanner_updates:
+    driver: bridge
 
 secrets:
   postgres_password:

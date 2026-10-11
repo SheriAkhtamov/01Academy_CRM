@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoLessonDetailsDialog } from '../client/src/components/ux/DemoLessonDetailsDialog';
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
 
@@ -61,11 +61,22 @@ const pastDemo: DemoLesson = {
   canManage: true,
 };
 
-const renderDialog = (demo: DemoLesson = pastDemo) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <DemoLessonDetailsDialog demo={demo} open onOpenChange={vi.fn()} />
-  </QueryClientProvider>,
-);
+const clients: QueryClient[] = [];
+const renderDialog = (demo: DemoLesson = pastDemo) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
+  return render(
+    <QueryClientProvider client={client}>
+      <DemoLessonDetailsDialog demo={demo} open onOpenChange={vi.fn()} />
+    </QueryClientProvider>,
+  );
+};
+
+afterEach(async () => {
+  cleanup(); clients.splice(0).forEach(client => client.clear());
+  // Radix restores focus on the next timer; finish it before jsdom replaces this realm.
+  await new Promise(resolve => setTimeout(resolve, 0));
+});
 
 describe('demo outcome and rescheduling dialogs', () => {
   beforeEach(() => {

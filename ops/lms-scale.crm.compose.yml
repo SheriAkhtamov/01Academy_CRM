@@ -1,0 +1,15 @@
+# Apply only to the EXISTING CRM Compose project. Never launch a second CRM project.
+services:
+  crm:
+    image: ${LMS_APP_IMAGE:?Set the same immutable application image as the LMS services}
+    command: [node, dist/index.js]
+    environment:
+      LMS_PROCESS_ROLES: api
+      LMS_FILE_WRITES: external
+    networks: [default, lms_scanner, lms_crm_edge]
+    stop_grace_period: 11m
+
+networks:
+  lms_crm_edge:
+    external: true
+    name: ${LMS_CRM_EDGE_NETWORK:?Set the prepared private CRM routing network}

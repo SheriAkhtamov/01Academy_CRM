@@ -6,6 +6,8 @@ import ConfirmDialog from '../client/src/components/ConfirmDialog';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
 
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
+
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
   useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
 }));

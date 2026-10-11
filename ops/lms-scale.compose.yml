@@ -1,0 +1,281 @@
+# Opt-in topology. Use with docs/lms-scaling.md, never as the default deployment.
+name: ${LMS_COMPOSE_PROJECT:-academy-lms-scale}
+
+x-node: &node
+  image: ${LMS_APP_IMAGE:?Set an immutable application image reference}
+  profiles: [lms-scale]
+  restart: unless-stopped
+  user: "1000:1000"
+  group_add: ["${APP_CONFIG_GID:-1000}"]
+  environment: &node-env
+    NODE_ENV: production
+    TZ: UTC
+    ACADEMY_TIME_ZONE: Asia/Tashkent
+    APP_CONFIG_PATH: /app/config/lms-worker.config.json
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1770,uid=1000,gid=1000
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  cpus: "1.0"
+  mem_limit: 768m
+  mem_reservation: 256m
+  stop_grace_period: 90s
+  logging:
+    options: { max-size: "10m", max-file: "5" }
+  volumes: &node-volumes
+    - &config
+      type: bind
+      source: ${LMS_CONFIG_DIRECTORY:?Set the existing absolute private configuration directory}
+      target: /app/config
+      read_only: true
+      bind: { create_host_path: false }
+    # Anonymous volumes are private to each replica; Winston rotations must not share files.
+    - type: volume
+      target: /app/logs
+  healthcheck: &worker-health
+    test: [CMD, node, dist/learning-health.js]
+    interval: 15s
+    timeout: 5s
+    retries: 3
+    start_period: 45s
+
+x-uploads: &uploads
+  type: bind
+  source: ${LMS_UPLOADS_DIRECTORY:?Set the existing absolute uploads directory}
+  target: /app/uploads
+  bind: { create_host_path: false }
+
+services:
+  learning-api:
+    <<: *node
+    command: [node, dist/learning-api.js, --roles=api, --pool-max=5]
+    environment:
+      <<: *node-env
+      APP_CONFIG_PATH: /app/config/lms-api.config.json
+      LMS_FILE_WRITES: external
+    networks: [http, database]
+    volumes:
+      [
+        *config,
+        { type: volume, target: /app/logs },
+        { <<: *uploads, read_only: true },
+      ]
+    stop_grace_period: 11m
+    healthcheck: &api-health
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:5001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 45s
+
+  # Exactly one physical upload/clone writer until storage reservations are shared.
+  learning-upload-api:
+    <<: *node
+    command:
+      [node, dist/learning-api.js, --roles=api, --scope=files, --pool-max=5]
+    environment:
+      <<: *node-env
+      APP_CONFIG_PATH: /app/config/lms-files-api.config.json
+    networks: [http, database, scanner]
+    deploy: { replicas: 1 }
+    volumes: [*config, { type: volume, target: /app/logs }, *uploads]
+    stop_grace_period: 11m
+    healthcheck: *api-health
+
+  learning-reports:
+    <<: *node
+    command:
+      [node, dist/learning-api.js, --roles=api, --scope=reports, --pool-max=2]
+    environment:
+      <<: *node-env
+      APP_CONFIG_PATH: /app/config/lms-reports.config.json
+    networks: [http, database]
+    stop_grace_period: 11m
+    healthcheck: *api-health
+
+  learning-lifecycle:
+    <<: *node
+    command: [node, dist/learning-worker.js, --roles=lifecycle, --pool-max=2]
+    networks: [database]
+
+  learning-notifications:
+    <<: *node
+    command:
+      [node, dist/learning-worker.js, --roles=notifications, --pool-max=2]
+    networks: [database]
+
+  learning-files:
+    <<: *node
+    command: [node, dist/learning-worker.js, --roles=files, --pool-max=2]
+    networks: [database, scanner]
+    volumes:
+      [
+        *config,
+        { type: volume, target: /app/logs },
+        { <<: *uploads, read_only: true },
+      ]
+
+  learning-maintenance:
+    <<: *node
+    command: [node, dist/learning-worker.js, --roles=maintenance, --pool-max=2]
+    networks: [database]
+    volumes: [*config, { type: volume, target: /app/logs }, *uploads]
+
+  learning-email:
+    <<: *node
+    profiles: [lms-email]
+    command: [node, dist/learning-worker.js, --roles=email, --pool-max=3]
+    environment:
+      <<: *node-env
+      APP_CONFIG_PATH: /app/config/lms-email.config.json
+    networks: [database, email_egress]
+
+  learning-clamav:
+    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
+    profiles: [lms-scale]
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: [clamd, --foreground=true, --config-file=/etc/clamav/clamd.conf]
+    networks: [scanner]
+    volumes:
+      - signatures:/var/lib/clamav:ro
+      - type: bind
+        source: ../config/clamav/clamd.conf
+        target: /etc/clamav/clamd.conf
+        read_only: true
+        bind: { create_host_path: false }
+    read_only: true
+    tmpfs:
+      [/tmp:rw, noexec, nosuid, nodev, size=256m, mode=1770, uid=1000, gid=1000]
+    cpus: "1.0"
+    mem_limit: 4g
+    mem_reservation: 1536m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 90s
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          "printf 'PING\n' | nc -w 5 127.0.0.1 3310 | grep -q '^PONG'",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 6m
+    logging:
+      options: { max-size: "5m", max-file: "3" }
+
+  learning-clamav-updater:
+    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
+    profiles: [lms-signatures]
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint:
+      [
+        freshclam,
+        --daemon,
+        --foreground,
+        --stdout,
+        --config-file=/etc/clamav/freshclam.conf,
+      ]
+    networks: [signature_egress]
+    volumes:
+      - signatures:/var/lib/clamav
+      - type: bind
+        source: ../config/clamav/freshclam.conf
+        target: /etc/clamav/freshclam.conf
+        read_only: true
+        bind: { create_host_path: false }
+    read_only: true
+    tmpfs:
+      [/tmp:rw, noexec, nosuid, nodev, size=128m, mode=1770, uid=1000, gid=1000]
+    cpus: "0.5"
+    mem_limit: 2g
+    mem_reservation: 512m
+    pids_limit: 32
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck: { disable: true }
+    logging:
+      options: { max-size: "5m", max-file: "3" }
+
+  learning-proxy:
+    image: ${LMS_PROXY_IMAGE:-haproxy:3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be}
+    profiles: [lms-scale]
+    restart: unless-stopped
+    user: "1000:1000"
+    command: [haproxy, -W, -db, -f, /usr/local/etc/haproxy/haproxy.cfg]
+    ports: ["127.0.0.1:${LMS_PROXY_HOST_PORT:-8012}:8080"]
+    networks:
+      http:
+        ipv4_address: ${LMS_PROXY_IP:?Set the reserved proxy address in LMS_HTTP_SUBNET}
+      crm_edge:
+        ipv4_address: ${LMS_CRM_PROXY_IP:?Set the reserved proxy address in the CRM edge network}
+    volumes:
+      - type: bind
+        source: ./lms-scale.haproxy.cfg
+        target: /usr/local/etc/haproxy/haproxy.cfg
+        read_only: true
+        bind: { create_host_path: false }
+    read_only: true
+    tmpfs:
+      [/tmp:rw, noexec, nosuid, nodev, size=16m, mode=1770, uid=1000, gid=1000]
+    cpus: "0.5"
+    mem_limit: 128m
+    mem_reservation: 32m
+    pids_limit: 32
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 11m
+    stop_signal: SIGUSR1
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          "wget -q -T 4 -O - http://127.0.0.1:8080/_lms-proxy/live | grep -qx ready",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      options: { max-size: "10m", max-file: "5" }
+
+  learning-migrate:
+    <<: *node
+    profiles: [lms-migrate]
+    restart: "no"
+    command: [node, apply-migrations.js]
+    networks: [database]
+    healthcheck: { disable: true }
+
+volumes:
+  signatures:
+    external: true
+    name: ${LMS_SIGNATURES_VOLUME:?Set an existing initialized signature volume}
+
+networks:
+  database:
+    external: true
+    name: ${LMS_DATABASE_NETWORK:?Set the existing private PostgreSQL network}
+  crm_edge:
+    external: true
+    name: ${LMS_CRM_EDGE_NETWORK:?Set the prepared private CRM routing network}
+  http:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${LMS_HTTP_SUBNET:?Set an unused private subnet}
+  scanner:
+    internal: true
+  email_egress: { driver: bridge }
+  signature_egress: { driver: bridge }

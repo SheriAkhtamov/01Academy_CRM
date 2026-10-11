@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { logger } from "../lib/logger";
 import { toApiErrorKey } from "../lib/apiErrorKeys";
+import {privateRequestPath} from '../lib/private-request-path';
 import {
   getHttpErrorStatus,
   getPublicErrorMessage,
@@ -74,7 +75,7 @@ export const errorHandler = (
     message: internalMessage,
     requestId: req.requestId,
     userId: extractUserId(req),
-    route: req.originalUrl.split(/[?#]/, 1)[0],
+    route: privateRequestPath(req.originalUrl),
     method: req.method,
     stack: err.stack,
   });

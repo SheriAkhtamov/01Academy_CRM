@@ -44,6 +44,9 @@ import {
   type FinanceSection,
 } from '@/lib/financeCenter';
 import { FinanceError, FinanceLoading, FinanceMetric } from '@/components/finance/FinanceMetrics';
+import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
+import { PaymentAllocationDialog } from '@/features/portal-finance/PaymentAllocationDialog';
+import { PortalFinancePanel } from '@/features/portal-finance/PortalFinancePanel';
 import { IncomeRegistryTable } from '@/components/finance/IncomeRegistryTable';
 import { StatusBadge } from '@/components/finance/StatusBadge';
 import { TransactionTable } from '@/components/finance/TransactionTable';
@@ -144,6 +147,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const chartEntrance = useChartEntrance();
   const { language, t } = useTranslation();
   const copy = financeCopy(t);
+  const learningStatus=useQuery(learningCapabilitiesQuery);
+  const [allocationPaymentId,setAllocationPaymentId]=useState<number|null>(null);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState(currentFinancePeriod);
   // The reporting preset sticks across section switches (see useStickyState).
@@ -486,6 +491,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       {section === 'income' && income.data ? (
         <div className="flex flex-col gap-5">
+          <PortalFinancePanel money={money}/>
+          {allocationPaymentId?<PaymentAllocationDialog key={allocationPaymentId} paymentId={allocationPaymentId} onClose={()=>setAllocationPaymentId(null)} money={money}/>:null}
           <StaggerGroup count={4} className="grid grid-cols-tile gap-4">
             <FinanceMetric label={copy.revenue} value={money(income.data.summary.revenueUzs)} icon={CircleDollarSign} tone="success" />
             <FinanceMetric label={copy.paymentCount} value={String(income.data.summary.paidCount)} icon={ReceiptText} />
@@ -495,7 +502,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <Card className="overflow-hidden">
             <CardHeader className="border-b border-border/70"><CardTitle>{copy.incomeRegistry}</CardTitle><CardDescription>{monthLabel(period)}</CardDescription></CardHeader>
             <CardContent className="p-0">
-              <IncomeRegistryTable filterKey={period} rows={income.data.rows} copy={copy} money={money} dateTime={dateTime} methodLabel={methodLabel} />
+              <IncomeRegistryTable filterKey={period} rows={income.data.rows} copy={copy} money={money} dateTime={dateTime} methodLabel={methodLabel} onAllocate={learningStatus.data?.learningEnabled?setAllocationPaymentId:undefined} allocationLabel={t('lmsPaymentAllocationAction')} />
             </CardContent>
           </Card>
         </div>

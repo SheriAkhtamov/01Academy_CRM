@@ -31,6 +31,22 @@
     "groupIds": []
   },
 
+  "portal": {
+    "enabled": false,
+    "learningEnabled": false,
+    "sessionSecret": "",
+    "tokenEncryptionKey": "",
+    "emailEnabled": false,
+    "allowInvitations": false,
+    "publicPortfolioEnabled": false,
+    "groupIds": [],
+    "scanner": {
+      "host": "clamav",
+      "port": 3310,
+      "timeoutMs": 30000
+    }
+  },
+
   "email": {
     "resendApiKey": "",
     "smtp": {

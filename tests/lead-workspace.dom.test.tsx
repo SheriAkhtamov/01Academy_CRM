@@ -7,6 +7,8 @@ import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
 import { academyInstant, academyToday } from '../client/src/lib/localeFormat';
 
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
+
 const onlinePbxCall = vi.hoisted(() => ({
   startCall: vi.fn(), isPending: false, pendingPhone: null as string | null,
 }));

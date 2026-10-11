@@ -22,6 +22,7 @@ import {
 import {
   X,
   ChevronDown,
+  GraduationCap,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -34,6 +35,7 @@ import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { instagramInboxUnreadQueryOptions } from '@/features/sales/instagram-inbox-api';
 import { MODULE_NAVIGATION, RESOURCE_NAVIGATION_ITEMS, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
 import { useStickyState } from '@/hooks/useStickyState';
+import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
 
 interface NavItem {
   name: string;
@@ -55,6 +57,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
   const navRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuth();
   const { t } = useTranslation();
+  const { data: learningCapabilities } = useQuery({ ...learningCapabilitiesQuery, enabled: Boolean(user) });
   const hasSalesModule = canAccessAcademyModule(user, 'sales');
   const { data: missedCallUnread = { count: 0 } } = useQuery({
     ...missedCallUnreadQueryOptions,
@@ -182,7 +185,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
       return {
         id: module,
         label: t(definition.nameKey),
-        items: definition.items.map((item) => ({
+        items: definition.items.filter((item) => (!['learning','learning-reports'].includes(item.id) || learningCapabilities?.learningEnabled) && (!['learning-settings','learning-access','learning-representatives'].includes(item.id) || learningCapabilities?.portalEnabled)).map((item) => ({
           name: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
             ? 'allClients'
             : item.labelKey),
@@ -207,6 +210,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
       hasModule('marketing') ? moduleSection('marketing') : null,
       hasFinanceAccess(user) ? moduleSection('finance') : null,
       hasModule('administration') ? moduleSection('administration') : null,
+      !hasModule('teacher') && !hasModule('administration') && learningCapabilities?.learningEnabled && learningCapabilities.canManageLearning ? {id:'learning',label:t('lmsStaffTitle'),items:[{name:t('lmsStaffTitle'),href:'/learning',icon:GraduationCap}]} : null,
     ].filter((section): section is NavSection => Boolean(section));
   };
 

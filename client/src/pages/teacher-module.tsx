@@ -58,6 +58,8 @@ import {
   type TeacherStudent,
 } from '@/lib/teacherModule';
 import { buildAnalyticsTimeline, percentage } from '@/lib/analyticsCharts';
+import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
+import { LearningTeacherSummary } from '@/features/lms-staff/teacher-summary';
 
 type SaveAttendanceVariables = {
   lessonId: number;
@@ -208,6 +210,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const { t, language } = useTranslation();
   const locale = resolveLocale(language);
   const { user } = useAuth();
+  const {data:learningCapabilities}=useQuery({...learningCapabilitiesQuery,enabled:Boolean(user)});
   const queryClient = useQueryClient();
   const [location, setLocation] = useLocation();
   const routeSearch = useSearch();
@@ -941,6 +944,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     if (section === 'overview') {
       return (
         <div className="space-y-4">
+          <LearningTeacherSummary enabled={learningCapabilities?.learningEnabled === true && learningCapabilities.canManageLearning === true}/>
           <TeacherTodayPanel
             focusLesson={liveLesson ?? nextLesson}
             isLessonLive={liveLesson !== null}
@@ -1011,6 +1015,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
           onOpenStudent={(student) => pushParams({ student: String(student.id) })}
           studentProfileOpen={Boolean(selectedStudent)}
+          learningEnabled={learningCapabilities?.learningEnabled === true && learningCapabilities.canManageLearning === true}
           onChangeView={(nextView) => replaceParams({
             groups: nextView === 'archive' ? 'archive' : null,
             group: null,

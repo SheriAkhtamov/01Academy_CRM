@@ -18,7 +18,12 @@ beforeEach(() => {
   Element.prototype.setPointerCapture = vi.fn(); Element.prototype.releasePointerCapture = vi.fn();
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, queryFn: async ({ queryKey }) => queryKey[0] === '/api/academy/configuration' ? configuration : [] } } });
 });
-afterEach(() => { cleanup(); client.clear(); vi.unstubAllGlobals(); });
+afterEach(async () => {
+  cleanup(); client.clear();
+  // Radix restores focus on the next timer; finish it before jsdom replaces this realm.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  vi.unstubAllGlobals();
+});
 const mount = (tab: string) => { allowNavigation(() => history.replaceState(null, '', `/admin/academy-settings?tab=${tab}`)); render(<QueryClientProvider client={client}><AcademySettings /></QueryClientProvider>); };
 it.each(['groups', 'courses'])('navigates between current and archived %s with the dropdown', async (tab) => {
   mount(tab); const isGroup = tab === 'groups';

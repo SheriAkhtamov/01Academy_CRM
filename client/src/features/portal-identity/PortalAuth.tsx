@@ -1,0 +1,258 @@
+import { useState, type FormEvent } from "react";
+import { useLocation } from "wouter";
+import { useMutation } from "@tanstack/react-query";
+import { useTranslation } from "@/hooks/useTranslation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { portalIdentityApi } from "../portal-app/api";
+import { usePortal } from "../portal-app/context";
+import { usePortalError } from "../portal-app/ui";
+
+export function PortalLanguage() {
+  const { t, language, setLanguage } = useTranslation();
+  return (
+    <select
+      className="h-11 rounded-md border bg-background px-3 text-sm"
+      aria-label={t("portalLanguage")}
+      value={language}
+      onChange={(event) => setLanguage(event.target.value as "ru" | "en")}
+    >
+      <option value="ru">{t("portalLanguageRussian")}</option>
+      <option value="en">{t("portalLanguageEnglish")}</option>
+    </select>
+  );
+}
+export function PortalAuth({
+  mode = "login",
+  token,
+  afterLogin,
+}: {
+  mode?: "login" | "invite" | "recovery" | "reset";
+  token?: string;
+  afterLogin?: string;
+}) {
+  const { t } = useTranslation();
+  const message = usePortalError();
+  const { acceptSession, account, refresh, session } = usePortal();
+  const [, navigate] = useLocation();
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [name, setName] = useState("");
+  const [validation, setValidation] = useState("");
+  const [done, setDone] = useState(false);
+  const action = useMutation({
+    mutationFn: async () => {
+      if (mode === "login") {
+        const session = await portalIdentityApi.login(identifier, password);
+        acceptSession(session);
+        navigate(
+          token
+            ? `${afterLogin ?? "/learn/invite"}#token=${encodeURIComponent(token)}`
+            : (afterLogin ?? "/learn"),
+        );
+      }
+      if (mode === "invite") {
+        const session = await portalIdentityApi.activate(
+          token ?? "",
+          account ? undefined : password,
+          account ? undefined : name,
+        );
+        acceptSession(session);
+        navigate("/learn");
+      }
+      if (mode === "recovery") {
+        await portalIdentityApi.recovery(identifier);
+        setDone(true);
+      }
+      if (mode === "reset") {
+        await portalIdentityApi.reset(token ?? "", password);
+        refresh();
+        setDone(true);
+      }
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setValidation("");
+    if ((mode === "invite" && !account) || mode === "reset") {
+      if (
+        password.length < 12 ||
+        new TextEncoder().encode(password).length > 72
+      ) {
+        setValidation(t("portalPasswordRules"));
+        document.getElementById("portal-password")?.focus();
+        return;
+      }
+      if (password !== repeat) {
+        setValidation(t("portalPasswordMismatch"));
+        document.getElementById("portal-repeat")?.focus();
+        return;
+      }
+    }
+    action.mutate();
+  }
+  const heading =
+    mode === "login"
+      ? "portalTitle"
+      : mode === "invite"
+        ? "portalInvite"
+        : mode === "reset"
+          ? "portalReset"
+          : "portalRecovery";
+  const button =
+    mode === "login"
+      ? "portalLogin"
+      : mode === "invite"
+        ? "portalActivate"
+        : mode === "reset"
+          ? "portalSave"
+          : "portalRecoveryRequest";
+  return (
+    <main className="portal-ui flex min-h-dvh flex-col items-center justify-center bg-muted/30 p-4">
+      <div className="mb-6 flex w-full max-w-[420px] items-center justify-between gap-4">
+        <span className="text-lg font-semibold">
+          {t("publicAttendanceBrand")}
+        </span>
+        <PortalLanguage />
+      </div>
+      <Card className="w-full max-w-[420px]">
+        <CardHeader>
+          <CardTitle>{t(heading)}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {done ? (
+            <div className="space-y-4" role="status">
+              <p>
+                {t(
+                  mode === "reset"
+                    ? "portalPasswordChanged"
+                    : "portalRecoverySent",
+                )}
+              </p>
+              <Button
+                className="min-h-11 w-full"
+                onClick={() => navigate("/learn/login")}
+              >
+                {t("portalLogin")}
+              </Button>
+            </div>
+          ) : (
+            <form className="space-y-5" onSubmit={submit}>
+              {(mode === "login" || mode === "recovery") && (
+                <div className="space-y-2">
+                  <Label htmlFor="portal-identifier">
+                    {t("portalIdentifier")}
+                  </Label>
+                  <Input
+                    id="portal-identifier"
+                    autoComplete="username"
+                    required
+                    value={identifier}
+                    onChange={(event) => setIdentifier(event.target.value)}
+                    className="min-h-11"
+                  />
+                </div>
+              )}
+              {mode === "invite" && !account && (
+                <div className="space-y-2">
+                  <Label htmlFor="portal-name">{t("portalFullName")}</Label>
+                  <Input
+                    id="portal-name"
+                    autoComplete="name"
+                    required
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="min-h-11"
+                  />
+                </div>
+              )}
+              {mode !== "recovery" && !(mode === "invite" && account) && (
+                <div className="space-y-2">
+                  <Label htmlFor="portal-password">
+                    {t(
+                      mode === "login" ? "portalPassword" : "portalNewPassword",
+                    )}
+                  </Label>
+                  <Input
+                    id="portal-password"
+                    type="password"
+                    autoComplete={
+                      mode === "login" ? "current-password" : "new-password"
+                    }
+                    required
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="min-h-11"
+                  />
+                  {mode !== "login" && (
+                    <p className="text-sm text-muted-foreground">
+                      {t("portalPasswordRules")}
+                    </p>
+                  )}
+                </div>
+              )}
+              {((mode === "invite" && !account) || mode === "reset") && (
+                <div className="space-y-2">
+                  <Label htmlFor="portal-repeat">
+                    {t("portalConfirmPassword")}
+                  </Label>
+                  <Input
+                    id="portal-repeat"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    value={repeat}
+                    onChange={(event) => setRepeat(event.target.value)}
+                    className="min-h-11"
+                  />
+                </div>
+              )}
+              {account && mode === "invite" && <p>{account.fullName}</p>}
+              {(validation || action.error) && (
+                <p role="alert" className="text-sm text-destructive">
+                  {validation || message(action.error, "portalSaveError")}
+                </p>
+              )}
+              <Button
+                type="submit"
+                disabled={action.isPending || !session?.csrfToken}
+                className="min-h-11 w-full"
+              >
+                {t(button)}
+              </Button>
+              {mode === "login" && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="min-h-11 w-full"
+                  onClick={() => navigate("/learn/recover")}
+                >
+                  {t("portalRecovery")}
+                </Button>
+              )}
+              {mode !== "login" && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="min-h-11 w-full"
+                  onClick={() =>
+                    navigate(
+                      token
+                        ? `/learn/login#token=${encodeURIComponent(token)}`
+                        : "/learn/login",
+                    )
+                  }
+                >
+                  {t("portalLogin")}
+                </Button>
+              )}
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </main>
+  );
+}

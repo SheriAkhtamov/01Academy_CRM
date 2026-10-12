@@ -6,7 +6,6 @@ import {
   isSellableGroup,
   relativeDays,
   type GroupSeatTone,
-  type GroupSeats,
 } from './presentation';
 import type { Group } from './types';
 
@@ -18,8 +17,8 @@ export const SEAT_TONE_LABEL_KEYS = {
 } as const satisfies Record<GroupSeatTone, TranslationKey>;
 
 /**
- * The sentences every view of a group shares, so the list, the week grid and
- * the drawer never word the same fact two ways.
+ * The sentences the group list and drawer share so they never word
+ * the same fact two ways.
  */
 export function useGroupLabels() {
   const { t, language } = useTranslation();
@@ -36,14 +35,5 @@ export function useGroupLabels() {
     .replace('{count}', String(group.lessonCount))
     .replace('{minutes}', String(group.lessonDurationMinutes));
 
-  /** Fits a calendar block: "4 free", "Full", "Enrollment closed". */
-  const seatShortLabel = (seats: GroupSeats) => (
-    !seats.sellable
-      ? t('groupsEnrollmentClosed')
-      : seats.free === 0
-        ? t('groupsSeatsFullShort')
-        : t('groupsFreeSeatsShort').replace('{count}', String(seats.free))
-  );
-
-  return { startLabel, lessonPlanLabel, seatShortLabel };
+  return { startLabel, lessonPlanLabel };
 }

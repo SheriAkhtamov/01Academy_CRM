@@ -1,6 +1,6 @@
 import type { Group } from './types';
 
-export const GROUP_FILTER_KEYS = ['q', 'course', 'school', 'teacher', 'status', 'seats'] as const;
+export const GROUP_FILTER_KEYS = ['q', 'course', 'school', 'teacher', 'status'] as const;
 export const availableGroupSeats = (group: Group) => Math.max(0,
   group.maxStudents - Number(group.currentStudents || 0) - Number(group.reservedStudents || 0));
 
@@ -17,10 +17,6 @@ export function filterGroups(groups: Group[], params: URLSearchParams) {
     }
     if (teacher === 'unassigned' && group.teacherId) return false;
     if (teacher !== 'all' && teacher !== 'unassigned' && teacher !== String(group.teacherId)) return false;
-    const seats = params.get('seats');
-    if (seats && !['open', 'in_progress'].includes(group.status)) return false;
-    if (seats === 'available' && availableGroupSeats(group) === 0) return false;
-    if (seats === 'full' && availableGroupSeats(group) > 0) return false;
     return true;
   });
 }

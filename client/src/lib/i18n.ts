@@ -2023,6 +2023,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   send: { en: 'Send', ru: 'Отправить' },
   notifications: { en: 'Notifications', ru: 'Уведомления' },
   markAllRead: { en: 'Mark all read', ru: 'Отметить все прочитанными' },
+  markAllReadAction: { en: 'Read all', ru: 'Прочитать все' },
   years: { en: 'y.', ru: 'л.' },
   allPresent: { en: 'All present', ru: 'Все присутствуют' },
   allAbsent: { en: 'All absent', ru: 'Все отсутствуют' },

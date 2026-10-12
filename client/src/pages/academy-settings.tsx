@@ -1,6 +1,6 @@
 import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
 import { groupConfigurationKey } from '@/features/groups/queries';
-import type { Group, GroupTeacher } from '@/features/groups/types';
+import type { Group, GroupConfiguration, GroupTeacher } from '@/features/groups/types';
 import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
 import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -176,6 +176,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const configuration = useQuery<ConfigurationData>({
     queryKey: ['/api/academy/configuration'],
+  });
+  const groupsConfiguration = useQuery<GroupConfiguration>({
+    queryKey: groupConfigurationKey,
+    enabled: !isSalesSettingsMode && activeTab === 'groups',
   });
   const salesFunnels = useQuery<SalesFunnel[]>({
     queryKey: ['/api/academy/sales-funnels'],
@@ -713,7 +717,12 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0">
-          <GroupsWorkspace configuration={configuration.data} basePath={`${basePath}?tab=groups`} scopeControl="select" />
+          {groupsConfiguration.isPending ? <div role="status" aria-label={t('loading')} className="space-y-4">
+            <Skeleton className="h-44 w-full" /><Skeleton className="h-96 w-full" />
+          </div> : groupsConfiguration.isError || !groupsConfiguration.data ? <Card>
+            <CardHeader><CardTitle>{t('failedToLoadData')}</CardTitle></CardHeader>
+            <CardContent><Button onClick={() => void groupsConfiguration.refetch()}>{t('retry')}</Button></CardContent>
+          </Card> : <GroupsWorkspace configuration={groupsConfiguration.data} basePath={`${basePath}?tab=groups`} scopeControl="select" />}
         </TabsContent>
 
         <TabsContent value="funnels" className="mt-0">

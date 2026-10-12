@@ -24,6 +24,7 @@ import { runAutomations } from '../../services/automations';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
+import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
 import {
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
@@ -325,6 +326,9 @@ export const prepareGroupMutation = async (options: {
 
   const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId) || null;
   if (status === 'completed') {
+    if (teacherId && teacherId !== Number(options.oldRow?.teacherId)) {
+      await assertEligibleGroupTeacher(teacherId);
+    }
     options.values.teacherId = teacherId;
     return;
   }
@@ -346,6 +350,7 @@ export const prepareGroupMutation = async (options: {
     await query(`SELECT pg_advisory_xact_lock($1)`, [1_000_000 + teacherId]);
     await assertTeacherCanLeadGroupSchedule({
       teacherId,
+      existingTeacherId: Number(options.oldRow?.teacherId) || null,
       courseId,
       schoolId,
       schedule,

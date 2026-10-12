@@ -12,6 +12,7 @@ import {
   summarizeSchedule,
 } from '../client/src/features/groups/presentation';
 import { assessTeacher, findRoomClashes, rankTeachers } from '../client/src/features/groups/editorInsights';
+import { filterGroups } from '../client/src/features/groups/filters';
 import type { Group, GroupTeacher } from '../client/src/features/groups/types';
 
 const SHORT_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -50,7 +51,7 @@ describe('group names', () => {
     });
   });
 
-  it('shows a bare code as the title and shortens it for the week grid', () => {
+  it('shows a bare code as the title and shortens its schedule conflict label', () => {
     expect(groupNameParts('ONL-VC-IND-26-0007')).toEqual({ title: 'ONL-VC-IND-26-0007', code: null, shortLabel: 'VC-0007' });
   });
 
@@ -106,12 +107,23 @@ describe('filter counts', () => {
   ];
 
   it('counts an option against every other active filter but not its own', () => {
-    const params = new URLSearchParams('course=2&seats=available');
+    const params = new URLSearchParams('course=2&teacher=unassigned');
     const course = countFacet(groups, params, 'course');
-    expect(course.counts.get('1')).toBe(2);
+    expect(course.counts.get('1')).toBe(1);
     expect(course.counts.get('2')).toBeUndefined();
     expect(countFacet(groups, new URLSearchParams('course=1'), 'teacher').counts.get('unassigned')).toBe(1);
-    expect(Object.fromEntries(countFacet(groups, new URLSearchParams(), 'seats').counts)).toEqual({ available: 2, full: 1 });
+  });
+
+  it.each(['available', 'full', 'invalid'])('ignores obsolete seats=%s without hiding full, frozen or completed groups', (seats) => {
+    const withClosedGroups = [
+      ...groups,
+      makeGroup({ id: 5, status: 'frozen' }),
+      makeGroup({ id: 6, status: 'completed' }),
+    ];
+    const params = new URLSearchParams(`view=week&seats=${seats}`);
+    expect(filterGroups(withClosedGroups, params).map((group) => group.id)).toEqual([1, 2, 3, 5, 6]);
+    expect(countScope(withClosedGroups, params, false)).toBe(5);
+    expect(countFacet(withClosedGroups, params, 'course').counts.get('2')).toBe(1);
   });
 
   it('counts the other half of the list with the same filters', () => {

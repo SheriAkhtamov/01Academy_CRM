@@ -20,6 +20,9 @@ beforeEach(() => {
     if (sql.includes('FROM academy_rooms room')) return { id: 3, schoolId: 2, isActive: true };
     if (sql.includes('current_students')) return { currentStudents: 1, reservedStudents: 0 };
     if (sql.includes('FROM academy_teachers WHERE id')) return candidates.find((candidate) => candidate.id === params[0]);
+    if (sql.includes('FROM academy_teachers t') && sql.includes('employee.is_archived = false')) {
+      return candidates.find((candidate) => candidate.id === params[0]);
+    }
     if (sql.includes('FROM academy_lessons') && sql.includes('WHERE teacher_id = $1')) {
       return lessons.find((item) => item.teacherId === params[0] && item.status !== 'cancelled'
         && !(params[4] as number[]).includes(item.id) && item.scheduledAt < (params[2] as Date)

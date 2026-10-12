@@ -85,6 +85,7 @@ import {
   queryOne,
   updateRow,
 } from './academy-core';
+import { assertEligibleGroupTeacher, groupTeacherEligibilitySql } from './group-teacher-eligibility';
 
 export const calendarDayOrdinal = (year: number, month: number, day: number) =>
   Date.UTC(year, month - 1, day);
@@ -393,7 +394,7 @@ export const findTeacherForGroupSchedule = async (options: {
         (SELECT COUNT(*)::int FROM academy_groups g
          WHERE g.teacher_id = t.id AND g.status IN ('open', 'in_progress') AND g.is_archived = false) AS active_groups
      FROM academy_teachers t
-     WHERE t.status = 'active'
+     WHERE ${groupTeacherEligibilitySql}
      ORDER BY active_groups, t.id`,
   );
 
@@ -524,6 +525,7 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
   startDate?: Date | null;
   endDate?: Date | null;
   excludeGroupId?: number | null;
+  existingTeacherId?: number | null;
 }) => {
   const teacher = await queryOne(`SELECT * FROM academy_teachers WHERE id = $1`, [options.teacherId]);
   if (!teacher) {
@@ -531,6 +533,9 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
   }
   if (teacher.status !== 'active') {
     throw Object.assign(new Error('teacherNotActive'), { statusCode: 400 });
+  }
+  if (options.existingTeacherId !== options.teacherId) {
+    await assertEligibleGroupTeacher(options.teacherId);
   }
 
   const requestedSchedule = normalizeScheduleItems(options.schedule);

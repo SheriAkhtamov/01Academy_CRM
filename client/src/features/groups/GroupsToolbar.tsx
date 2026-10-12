@@ -1,6 +1,6 @@
 import type { RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { CalendarRange, List, Plus, RotateCcw, Search, X } from 'lucide-react';
+import { Plus, RotateCcw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,9 +8,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { ArchiveSelect } from '@/features/academy-resources/ResourceSettingsTables';
 
-export type GroupsView = 'list' | 'week';
 export type GroupFacetKey = 'course' | 'school' | 'teacher' | 'status';
-export type GroupSeatsFilter = 'available' | 'full';
 /**
  * Sales gets a one-click current/archive toggle with counts. The academy
  * settings keep the dropdown every other resource tab there uses.
@@ -36,15 +34,11 @@ interface GroupsToolbarProps {
   isArchive: boolean;
   scopeCounts: { current: number; archive: number };
   onScopeChange: (archive: boolean) => void;
-  view: GroupsView;
-  onViewChange: (view: GroupsView) => void;
   search: string;
   onSearchChange: (value: string) => void;
   searchRef: RefObject<HTMLInputElement>;
   facets: GroupFacet[];
   onFacetChange: (key: GroupFacetKey, value: string) => void;
-  seats: { value: string | null; available: number; full: number };
-  onSeatsChange: (value: GroupSeatsFilter | null) => void;
   foundCount: number;
   hasFilters: boolean;
   onReset: () => void;
@@ -105,18 +99,10 @@ function FacetSelect({ facet, onChange }: { facet: GroupFacet; onChange: (value:
  * numbers say how many groups a choice leaves before it is made.
  */
 export function GroupsToolbar({
-  title, scopeControl = 'toggle', isArchive, scopeCounts, onScopeChange, view, onViewChange, search, onSearchChange, searchRef,
-  facets, onFacetChange, seats, onSeatsChange, foundCount, hasFilters, onReset, onCreate,
+  title, scopeControl = 'toggle', isArchive, scopeCounts, onScopeChange, search, onSearchChange, searchRef,
+  facets, onFacetChange, foundCount, hasFilters, onReset, onCreate,
 }: GroupsToolbarProps) {
   const { t } = useTranslation();
-  const views = [
-    { value: 'list', label: t('calendarViewAgenda'), icon: List },
-    { value: 'week', label: t('calendarViewWeek'), icon: CalendarRange },
-  ] as const;
-  const seatOptions = [
-    { value: 'available', label: t('groupsSeatsAvailableShort'), count: seats.available, dot: 'bg-emerald-500' },
-    { value: 'full', label: t('groupsSeatsFullShort'), count: seats.full, dot: 'bg-rose-500' },
-  ] as const;
 
   return (
     <div className="flex flex-col gap-3">
@@ -142,23 +128,6 @@ export function GroupsToolbar({
             ))}
           </div>
         )}
-        <div role="group" aria-label={t('groupsLayoutLabel')} className={SEGMENTED_GROUP_CLASS}>
-          {views.map(({ value, label, icon: Icon }) => (
-            <Button
-              key={value}
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={label}
-              aria-pressed={view === value}
-              className={segmentClass(view === value)}
-              onClick={() => onViewChange(value)}
-            >
-              <Icon aria-hidden="true" />
-              <span className="hidden sm:inline">{label}</span>
-            </Button>
-          ))}
-        </div>
         <Button type="button" className="ml-auto h-11 w-11 px-0 sm:h-10 sm:w-auto sm:px-4" aria-label={t('addGroup')}
           aria-keyshortcuts={CREATE_GROUP_KEY_LABEL} onClick={onCreate}>
           <Plus data-icon="inline-start" />
@@ -210,31 +179,11 @@ export function GroupsToolbar({
       </div>
 
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-        {/* A phone scrolls the chips sideways rather than stacking five rows of them. */}
+        {/* A phone scrolls the chips sideways rather than stacking rows of them. */}
         <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 py-0.5 sm:flex-wrap sm:overflow-visible">
           {facets.map((facet) => (
             <FacetSelect key={facet.key} facet={facet} onChange={(value) => onFacetChange(facet.key, value)} />
           ))}
-          <div role="group" aria-label={t('groupsSeatsFilter')} className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted/40 p-0.5">
-            {seatOptions.map((option) => {
-              const pressed = seats.value === option.value;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={pressed}
-                  className={cn('rounded-full', segmentClass(pressed))}
-                  onClick={() => onSeatsChange(pressed ? null : option.value)}
-                >
-                  <span className={cn('size-2 rounded-full', option.dot)} aria-hidden="true" />
-                  {option.label}
-                  <Count value={option.count} />
-                </Button>
-              );
-            })}
-          </div>
         </div>
         <div className="flex shrink-0 items-center justify-between gap-2 lg:ml-auto">
           <p className="text-sm text-muted-foreground" aria-live="polite">

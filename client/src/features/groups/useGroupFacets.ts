@@ -7,8 +7,8 @@ import type { GroupConfiguration } from './types';
 
 /**
  * Everything the filter strip shows: each filter's options with how many
- * groups they would leave, the seat chips' counts and the current/archive
- * totals — all recounted whenever the address changes.
+ * groups they would leave and the current/archive totals — all recounted
+ * whenever the address changes.
  */
 export function useGroupFacets(configuration: GroupConfiguration, params: URLSearchParams) {
   const { t } = useTranslation();
@@ -58,15 +58,10 @@ export function useGroupFacets(configuration: GroupConfiguration, params: URLSea
     ];
   }, [configuration, params, t, teacherValue]);
 
-  const seatCounts = useMemo(() => {
-    const { counts } = countFacet(configuration.groups, params, 'seats');
-    return { available: counts.get('available') ?? 0, full: counts.get('full') ?? 0 };
-  }, [configuration.groups, params]);
-
   const scopeCounts = useMemo(() => ({
     current: countScope(configuration.groups, params, false),
     archive: countScope(configuration.groups, params, true),
   }), [configuration.groups, params]);
 
-  return { facets, seatCounts, scopeCounts };
+  return { facets, scopeCounts };
 }

@@ -28,15 +28,18 @@ const configuration = {
 /** What the server answers in this test; a test may swap in richer teachers or rooms. */
 let currentConfiguration: object;
 let client: QueryClient;
+const catalogue = { schoolCodes: { '1': 'CYP' }, courseCodes: { '1': 'PY', '2': 'AI' }, nextNumber: 43, year: '26' };
+const catalogueQuery = vi.fn(async () => catalogue);
 beforeEach(() => {
   i18n.setLanguage('ru'); localStorage.clear(); apiRequest.mockReset(); apiRequest.mockResolvedValue(group);
   currentConfiguration = configuration;
+  catalogueQuery.mockReset(); catalogueQuery.mockResolvedValue(catalogue);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Element.prototype.scrollIntoView = vi.fn(); Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
   Element.prototype.setPointerCapture = vi.fn(); Element.prototype.releasePointerCapture = vi.fn();
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0,
     queryFn: async ({ queryKey }) => {
-      if (queryKey[0] === '/api/academy/group-code-catalogue') return { schoolCodes: { '1': 'CYP' }, courseCodes: { '1': 'PY', '2': 'AI' }, nextNumber: 43, year: '26' };
+      if (queryKey[0] === '/api/academy/group-code-catalogue') return catalogueQuery();
       expect(queryKey[0]).toBe('/api/academy/group-configuration');
       return currentConfiguration;
     } } } });
@@ -49,27 +52,22 @@ const mount = (search = '') => {
   allowNavigation(() => history.replaceState(null, '', `/sales/groups${search}`));
   render(<QueryClientProvider client={client}><GroupsPage /></QueryClientProvider>);
 };
-const seatsButton = (key: 'groupsSeatsAvailableShort' | 'groupsSeatsFullShort') => within(
-  screen.getByRole('group', { name: i18n.t('groupsSeatsFilter') }),
-).getByRole('button', { name: new RegExp(i18n.t(key)) });
 const scopeButton = (archive: boolean) => within(screen.getByRole('group', { name: i18n.t('groupListView') }))
   .getByRole('button', { name: new RegExp(archive ? i18n.t('taskArchive') : i18n.t('groupCurrentShort')) });
 const rowOf = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
 
-it('searches and filters free places including reservations, then resets filters', async () => {
+it('keeps seat counts on rows while searching and resetting the list', async () => {
   mount(); await screen.findByText('Python morning');
   expect(screen.queryByText('Archived group')).toBeNull();
+  expect(screen.queryByRole('group', { name: i18n.t('groupsSeatsFilter') })).toBeNull();
+  expect(screen.queryByRole('group', { name: i18n.t('groupsLayoutLabel') })).toBeNull();
   // Reservations count as taken: AI full has 2 studying + 2 reserved of 4.
-  expect(seatsButton('groupsSeatsAvailableShort').textContent).toContain('2');
-  expect(seatsButton('groupsSeatsFullShort').textContent).toContain('1');
-  await userEvent.click(seatsButton('groupsSeatsAvailableShort'));
-  expect(seatsButton('groupsSeatsAvailableShort').getAttribute('aria-pressed')).toBe('true');
-  expect(screen.queryByText('AI full')).toBeNull();
-  expect(screen.getByText('Python morning')).toBeTruthy();
+  expect(within(rowOf('Python morning')).getByText('3/4')).toBeTruthy();
+  expect(within(rowOf('AI full')).getByText('4/4')).toBeTruthy();
   await userEvent.type(screen.getByRole('searchbox', { name: i18n.t('groupsSearchLabel') }), 'no teacher');
   expect(screen.queryByText('Python morning')).toBeNull();
+  expect(screen.queryByText('AI full')).toBeNull();
   expect(screen.getByText('No teacher')).toBeTruthy();
-  expect(location.search).toContain('seats=available');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('resetFilters') }));
   expect(location.search).toBe('');
   expect(screen.getByText('AI full')).toBeTruthy();
@@ -204,21 +202,133 @@ it('warns about a busy room and a busy teacher before saving and keeps a typed e
   expect(endDate.value).toBe('2026-12-21');
 });
 
-it('lays the groups out by weekday and opens the same view from the week', async () => {
+it.each(['available', 'full', 'invalid'])('shows the complete list for old week links with seats=%s', async (seats) => {
   currentConfiguration = {
     ...configuration,
-    groups: [...configuration.groups, { ...group, id: 5, name: 'Not planned yet', schedule: [] }],
+    groups: [
+      ...configuration.groups,
+      { ...group, id: 5, name: 'Frozen group', status: 'frozen' },
+      { ...group, id: 6, name: 'Completed group', status: 'completed' },
+    ],
   };
-  mount('?view=week');
-  const block = await screen.findByRole('button', { name: /^Python morning, / });
-  expect(block.getAttribute('aria-label')).toContain(i18n.t('groupsFreeSeatsShort').replace('{count}', '1'));
-  expect(screen.getByRole('button', { name: /^AI full, / }).getAttribute('aria-label')).toContain(i18n.t('groupsSeatsFullShort'));
-  expect(screen.getByText(i18n.t('groupsSeatsFew'))).toBeTruthy();
-  // A group without a schedule is still one click away rather than missing from the week.
-  expect(screen.getByRole('button', { name: 'Not planned yet' })).toBeTruthy();
-  await userEvent.click(block);
+  mount(`?view=week&seats=${seats}`);
+  await screen.findByText('Python morning');
+  expect(screen.getByRole('table')).toBeTruthy();
+  expect(screen.getByText('AI full')).toBeTruthy();
+  expect(screen.getByText('Frozen group')).toBeTruthy();
+  expect(screen.getByText('Completed group')).toBeTruthy();
+  expect(screen.queryByText('Archived group')).toBeNull();
+  await waitFor(() => expect(location.search).toBe(''));
+  expect(screen.queryByRole('button', { name: i18n.t('calendarViewWeek') })).toBeNull();
+  await userEvent.click(screen.getByText('Python morning'));
   await screen.findByRole('dialog', { name: 'Python morning' });
-  expect(new URLSearchParams(location.search).get('view')).toBe('week');
+});
+
+it('cleans obsolete URL keys while preserving supported filters and the group dialog link', async () => {
+  mount('?view=week&seats=full&course=1&school=1&teacher=2&status=open&q=python&group=1');
+  const view = await screen.findByRole('dialog', { name: 'Python morning' });
+  expect(within(view).getByText('3/4')).toBeTruthy();
+  expect(within(screen.getByRole('table', { hidden: true })).getByText('Python morning')).toBeTruthy();
+  expect(within(screen.getByRole('table', { hidden: true })).queryByText('AI full')).toBeNull();
+  await waitFor(() => expect(Object.fromEntries(new URLSearchParams(location.search))).toEqual({
+    course: '1', school: '1', teacher: '2', status: 'open', q: 'python', group: '1',
+  }));
+});
+
+it('keeps historical teacher names visible without adding them to selectable filter choices', async () => {
+  currentConfiguration = {
+    ...configuration,
+    groups: [{ ...group, teacherId: 99, teacherName: 'Archived teacher' }, ...configuration.groups.slice(1)],
+  };
+  mount(); await screen.findByText('Python morning');
+  expect(within(rowOf('Python morning')).getByText('Archived teacher')).toBeTruthy();
+  await userEvent.click(screen.getByRole('combobox', { name: i18n.t('teacher') }));
+  expect(screen.getByRole('option', { name: 'Teacher' })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: 'Archived teacher' })).toBeNull();
+  await userEvent.click(screen.getByRole('option', { name: 'Teacher' }));
+  expect(screen.queryByText('Python morning')).toBeNull();
+  expect(screen.getByText('AI full')).toBeTruthy();
+});
+
+it('shows a historical assigned teacher in the editor without offering that employee as a choice', async () => {
+  currentConfiguration = {
+    ...configuration,
+    groups: [{ ...group, teacherId: 99, teacherName: 'Archived teacher' }, ...configuration.groups.slice(1)],
+  };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  const teacher = within(dialog).getByRole('combobox', { name: i18n.t('teacher') });
+  expect(teacher.textContent).toBe('Archived teacher');
+  await userEvent.click(teacher);
+  expect(screen.queryByRole('option', { name: 'Archived teacher' })).toBeNull();
+  expect(screen.getByRole('option', { name: 'Teacher' })).toBeTruthy();
+  await userEvent.keyboard('{Escape}');
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' changed');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({ teacherId: 99 })));
+});
+
+it('retries a failed group code load inside the dialog and keeps entered values', async () => {
+  catalogueQuery.mockRejectedValueOnce(new Error('Catalogue unavailable'));
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await within(dialog).findByRole('alert');
+  const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
+  await userEvent.type(name, 'Morning class');
+  for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
+    await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
+    await userEvent.click(screen.getByRole('option', { name: option }));
+  }
+  const create = within(dialog).getByRole('button', { name: i18n.t('createGroup') }) as HTMLButtonElement;
+  expect(create.disabled).toBe(true);
+  await userEvent.click(create);
+  expect(apiRequest).not.toHaveBeenCalled();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('retry') }));
+  await waitFor(() => expect(name.value).toBe('CYP-PY-GRP-26-0043 — Morning class'));
+  expect(within(dialog).getByRole('combobox', { name: i18n.t('course') }).textContent).toBe('Python');
+  expect(within(dialog).getByRole('combobox', { name: i18n.t('school') }).textContent).toBe('Cyberpark');
+  expect(within(dialog).queryByRole('alert')).toBeNull();
+  expect(create.disabled).toBe(false);
+  expect(catalogueQuery).toHaveBeenCalledTimes(2);
+});
+
+it('blocks creation when a cached group code catalogue fails to refresh', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
+    await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
+    await userEvent.click(screen.getByRole('option', { name: option }));
+  }
+  catalogueQuery.mockRejectedValueOnce(new Error('Catalogue unavailable'));
+  await client.refetchQueries({ queryKey: ['/api/academy/group-code-catalogue'] });
+  expect(await within(dialog).findByRole('alert')).toBeTruthy();
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement).value).toBe('CYP-PY-GRP-26-0043');
+  expect((within(dialog).getByRole('button', { name: i18n.t('createGroup') }) as HTMLButtonElement).disabled).toBe(true);
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('edits a coded group without carrying over a failed create catalogue request', async () => {
+  currentConfiguration = {
+    ...configuration,
+    groups: [{ ...group, name: 'CYP-PY-GRP-26-0001 — Coded group' }, ...configuration.groups.slice(1)],
+  };
+  catalogueQuery.mockRejectedValueOnce(new Error('Catalogue unavailable'));
+  mount(); await screen.findByText('Coded group');
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  const create = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await within(create).findByRole('alert');
+  await userEvent.click(within(create).getByRole('button', { name: i18n.t('cancel') }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await userEvent.click(within(rowOf('Coded group')).getByRole('button', { name: i18n.t('editGroup') }));
+  const edit = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  expect((within(edit).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement).value).toBe('CYP-PY-GRP-26-0001 — Coded group');
+  expect(within(edit).queryByRole('alert')).toBeNull();
+  expect(within(edit).queryByRole('button', { name: i18n.t('retry') })).toBeNull();
+  expect((within(edit).getByRole('button', { name: i18n.t('saveChanges') }) as HTMLButtonElement).disabled).toBe(false);
+  expect(catalogueQuery).toHaveBeenCalledTimes(1);
 });
 
 it('jumps to the search with "/" and opens a new group with "N" when not typing', async () => {
@@ -315,16 +425,17 @@ it('offers full group actions in cards on a phone', async () => {
   expect(screen.getByRole('dialog', { name: i18n.t('editGroup') })).toBeTruthy();
 });
 
-it('shows one day of the week at a time on a phone', async () => {
+it('shows the responsive list for an old week link on a phone', async () => {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 767px)',
     addEventListener() {}, removeEventListener() {} }));
-  mount('?view=week');
-  const monday = await screen.findByRole('button', { name: i18n.t('monday') });
-  expect(monday.getAttribute('aria-pressed')).toBe('true');
+  mount('?view=week&seats=full');
+  await screen.findByText('Python morning');
   expect(screen.getByText('Python morning')).toBeTruthy();
-  await userEvent.click(screen.getByRole('button', { name: i18n.t('tuesday') }));
-  expect(screen.queryByText('Python morning')).toBeNull();
-  expect(screen.getByText(i18n.t('groupsWeekDayEmpty'))).toBeTruthy();
+  expect(screen.getByText('AI full')).toBeTruthy();
+  expect(screen.getByText('No teacher')).toBeTruthy();
+  expect(screen.getByText('Python morning').closest('li')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: i18n.t('monday') })).toBeNull();
+  await waitFor(() => expect(location.search).toBe(''));
 });
 
 it('updates the protected name when course, delivery and training type change', async () => {

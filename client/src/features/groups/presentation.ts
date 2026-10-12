@@ -5,8 +5,8 @@ import { availableGroupSeats, filterGroups } from './filters';
 import type { Group } from './types';
 
 /**
- * Display rules for the group list, the week grid and the quick view. They live
- * apart from the components so all three describe a group the same way: the
+ * Display rules for the group list and the quick view. They live
+ * apart from the components so both describe a group the same way: the
  * same seat arithmetic, the same "starts in N days", the same short name.
  */
 
@@ -171,7 +171,7 @@ export const formatGroupDateLong = (key: string, language: string) => (
 export function countFacet(
   groups: Group[],
   params: URLSearchParams,
-  facet: 'course' | 'school' | 'teacher' | 'status' | 'seats',
+  facet: 'course' | 'school' | 'teacher' | 'status',
 ) {
   const others = new URLSearchParams(params);
   others.delete(facet);
@@ -184,9 +184,6 @@ export function countFacet(
     else if (facet === 'school') bump(String(group.schoolId));
     else if (facet === 'teacher') bump(group.teacherId ? String(group.teacherId) : 'unassigned');
     else if (facet === 'status') bump(group.status);
-    else if (isSellableGroup({ status: group.status, isArchived: false })) {
-      bump(availableGroupSeats(group) > 0 ? 'available' : 'full');
-    }
   }
   return { counts, total: pool.length };
 }

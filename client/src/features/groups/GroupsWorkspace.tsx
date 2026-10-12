@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Archive, Plus, RotateCcw, UsersRound } from 'lucide-react';
@@ -14,8 +14,7 @@ import { useGroupArchive } from './useGroupArchive';
 import { GroupEditorDialog } from './GroupEditorDialog';
 import { GroupQuickView } from './GroupQuickView';
 import { GroupsTable } from './GroupsTable';
-import { GroupsToolbar, type GroupScopeControl, type GroupsView } from './GroupsToolbar';
-import { GroupWeekView } from './GroupWeekView';
+import { GroupsToolbar, type GroupScopeControl } from './GroupsToolbar';
 import { GROUP_FILTER_KEYS, filterGroups } from './filters';
 import { invalidateGroupData } from './queries';
 import { useGroupFacets } from './useGroupFacets';
@@ -37,7 +36,6 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
   const [, navigate] = useLocation();
   const params = useMemo(() => new URLSearchParams(search), [search]);
   const isGroupArchive = params.get('filter') === 'archive';
-  const view: GroupsView = params.get('view') === 'week' ? 'week' : 'list';
   const todayKey = academyToday();
   const searchRef = useRef<HTMLInputElement>(null);
   const [editor, setEditor] = useState<{ group: Group | null } | null>(null);
@@ -53,12 +51,18 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
     }
     const [path, baseSearch] = basePath.split('?');
     new URLSearchParams(baseSearch).forEach((value, key) => next.set(key, value));
+    next.delete('view');
+    next.delete('seats');
     navigate(`${path}${next.size ? `?${next}` : ''}`, { replace });
   }, [basePath, navigate, params]);
 
+  useEffect(() => {
+    if (params.has('view') || params.has('seats')) updateParams({}, true);
+  }, [params, updateParams]);
+
   const displayedGroups = useMemo(() => filterGroups(configuration.groups, params), [configuration.groups, params]);
-  const { facets, seatCounts, scopeCounts } = useGroupFacets(configuration, params);
-  const quickView = useGroupQuickView({ params, groups: configuration.groups, displayedGroups, view, updateParams });
+  const { facets, scopeCounts } = useGroupFacets(configuration, params);
+  const quickView = useGroupQuickView({ params, groups: configuration.groups, updateParams });
 
   const { archiveGroup, restoreGroup } = useGroupArchive<Group>((group, archived) => {
     if (archived) setArchiveTarget(null);
@@ -91,7 +95,7 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
     ...Object.fromEntries(GROUP_FILTER_KEYS.map((key) => [key, null])),
     filter: isGroupArchive ? 'archive' : null,
   });
-  // Only the filters send the table back to its first page — not opening a group or switching the view.
+  // Only the filters send the table back to its first page — not opening a group.
   const filterKey = [...GROUP_FILTER_KEYS.map((key) => params.get(key) ?? ''), params.get('filter') ?? ''].join('|');
 
   const emptyTitle = hasFilters ? t('groupsNoMatches') : isGroupArchive ? t('noArchivedGroups') : t('noGroups');
@@ -117,8 +121,6 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
           isArchive={isGroupArchive}
           scopeCounts={scopeCounts}
           onScopeChange={(archived) => updateParams({ filter: archived ? 'archive' : null })}
-          view={view}
-          onViewChange={(nextView) => updateParams({ view: nextView === 'week' ? 'week' : null })}
           search={params.get('q') ?? ''}
           onSearchChange={(value) => updateParams({ q: value }, true)}
           searchRef={searchRef}
@@ -126,8 +128,6 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
           onFacetChange={(key, value) => updateParams(key === 'teacher'
             ? { teacher: value, filter: isGroupArchive ? 'archive' : null }
             : { [key]: value })}
-          seats={{ value: params.get('seats'), ...seatCounts }}
-          onSeatsChange={(value) => updateParams({ seats: value })}
           foundCount={displayedGroups.length}
           hasFilters={hasFilters}
           onReset={resetFilters}
@@ -135,16 +135,12 @@ export function GroupsWorkspace({ configuration, basePath, showTitle = true, sco
         />
       </CardHeader>
       <CardContent className="p-0">
-        {view === 'week' ? (
-          <GroupWeekView groups={displayedGroups} todayKey={todayKey} emptyState={emptyState} onOpen={quickView.open} />
-        ) : (
-          <GroupsTable groups={displayedGroups} isGroupArchive={isGroupArchive} filterKey={filterKey} todayKey={todayKey}
-            archivingId={archiveGroup.isPending ? archiveGroup.variables.id : null}
-            restoringId={restoreGroup.isPending ? restoreGroup.variables.id : null}
-            deleting={deleteGroup.isPending} onOpen={quickView.open} onEdit={(group) => setEditor({ group })}
-            onArchive={setArchiveTarget} onRestore={setRestoreTarget} onDelete={setDeleteTarget}
-            onOrderChange={quickView.handleOrderChange} emptyState={emptyState} />
-        )}
+        <GroupsTable groups={displayedGroups} isGroupArchive={isGroupArchive} filterKey={filterKey} todayKey={todayKey}
+          archivingId={archiveGroup.isPending ? archiveGroup.variables.id : null}
+          restoringId={restoreGroup.isPending ? restoreGroup.variables.id : null}
+          deleting={deleteGroup.isPending} onOpen={quickView.open} onEdit={(group) => setEditor({ group })}
+          onArchive={setArchiveTarget} onRestore={setRestoreTarget} onDelete={setDeleteTarget}
+          onOrderChange={quickView.handleOrderChange} emptyState={emptyState} />
       </CardContent>
     </Card>
     <GroupQuickView

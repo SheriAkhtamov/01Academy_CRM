@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import AcademySettings from '../client/src/pages/academy-settings';
@@ -11,12 +11,20 @@ const group = { id: 1, name: 'Current Group', courseId: 1, schoolId: 1, roomId: 
 const course = { id: 1, name: 'Current Course', slug: 'current', ageCategory: '10-15', basePriceUzs: 1000, isActive: true, isArchived: false };
 const configuration = { groups: [group, { ...group, id: 2, name: 'Past Group', isArchived: true }], courses: [course, { ...course, id: 2, name: 'Past Course', isArchived: true, isActive: false }], schools: [], rooms: [], statuses: [], teachers: [], lessons: [] };
 let client: QueryClient;
+let currentAdminConfiguration: object;
+let currentGroupsConfiguration: object;
 beforeEach(() => {
   i18n.setLanguage('ru'); localStorage.clear();
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Element.prototype.scrollIntoView = vi.fn(); Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
   Element.prototype.setPointerCapture = vi.fn(); Element.prototype.releasePointerCapture = vi.fn();
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, queryFn: async ({ queryKey }) => queryKey[0] === '/api/academy/configuration' ? configuration : [] } } });
+  currentGroupsConfiguration = configuration;
+  currentAdminConfiguration = configuration;
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, queryFn: async ({ queryKey }) => {
+    if (queryKey[0] === '/api/academy/configuration') return currentAdminConfiguration;
+    if (queryKey[0] === '/api/academy/group-configuration') return currentGroupsConfiguration;
+    return [];
+  } } } });
 });
 afterEach(async () => {
   cleanup(); client.clear();
@@ -42,4 +50,22 @@ it('shows only an icon for group archiving and still opens the confirmation', as
   mount('groups'); const button = await screen.findByRole('button', { name: i18n.t('archiveGroup') });
   expect(button.textContent).toBe(''); expect(button.querySelector('svg')).toBeTruthy();
   await userEvent.click(button); expect(screen.getByRole('alertdialog', { name: i18n.t('archiveGroupTitle') })).toBeTruthy();
+});
+
+it('uses eligible group teachers for the administration group tab and retains historical names', async () => {
+  currentAdminConfiguration = {
+    ...configuration,
+    teachers: [{ id: 99, fullName: 'Archived employee', status: 'active' }, { id: 100, fullName: 'Sales employee', status: 'active' }],
+  };
+  currentGroupsConfiguration = {
+    ...configuration,
+    teachers: [{ id: 2, fullName: 'Eligible teacher', status: 'active' }],
+    groups: [{ ...group, teacherId: 99, teacherName: 'Archived employee' }],
+  };
+  mount('groups'); await screen.findByText('Current Group');
+  expect(within(screen.getByRole('table')).getByText('Archived employee')).toBeTruthy();
+  await userEvent.click(screen.getByRole('combobox', { name: i18n.t('teacher') }));
+  expect(screen.getByRole('option', { name: 'Eligible teacher' })).toBeTruthy();
+  expect(screen.queryByRole('option', { name: 'Archived employee' })).toBeNull();
+  expect(screen.queryByRole('option', { name: 'Sales employee' })).toBeNull();
 });

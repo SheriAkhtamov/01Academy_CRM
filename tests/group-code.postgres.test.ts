@@ -20,7 +20,6 @@ vi.mock('../server/modules/academy/academy-core', async () => {
 import { allocateGroupName, getGroupCodeCatalogue, rememberDeletedGroupCode } from '../server/modules/academy/group-code';
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
-const schema = `group_codes_${randomBytes(6).toString('hex')}`;
 let admin: Pool;
 async function transaction<T>(work: (client: PoolClient) => Promise<T>) {
   const client = await fixture.pool.connect();
@@ -40,8 +39,12 @@ const create = (input: Record<string, unknown> = {}) => transaction(async (clien
   return values.name;
 });
 
-describe.skipIf(!databaseUrl)('automatic group codes against PostgreSQL', () => {
+describe.skipIf(!databaseUrl).each(['json', 'jsonb'] as const)('automatic group codes against PostgreSQL with %s audit payloads', (auditType) => {
+  const schema = `group_codes_${randomBytes(6).toString('hex')}`;
   beforeAll(async () => {
+    if (!databaseUrl || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(databaseUrl).hostname)) {
+      throw new Error('Local isolated PostgreSQL required');
+    }
     admin = new Pool({ connectionString: databaseUrl });
     await admin.query(`CREATE SCHEMA "${schema}"`);
     fixture.pool = new Pool({ connectionString: databaseUrl, max: 8, options: `-c search_path=${schema},public` });
@@ -49,7 +52,7 @@ describe.skipIf(!databaseUrl)('automatic group codes against PostgreSQL', () => 
       CREATE TABLE academy_schools(id int PRIMARY KEY, code text NOT NULL);
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text NOT NULL);
       CREATE TABLE system_settings(key text PRIMARY KEY, value text, updated_at timestamp);
-      CREATE TABLE audit_logs(entity_type text, old_values jsonb, new_values jsonb);`);
+      CREATE TABLE audit_logs(entity_type text, old_values ${auditType}, new_values ${auditType});`);
   });
   beforeEach(async () => {
     await fixture.pool.query(`TRUNCATE academy_groups, academy_schools, academy_courses, system_settings, audit_logs RESTART IDENTITY;
@@ -70,7 +73,10 @@ describe.skipIf(!databaseUrl)('automatic group codes against PostgreSQL', () => 
   it('accounts for deleted group codes saved as both array and object audit records', async () => {
     await fixture.pool.query(`INSERT INTO audit_logs VALUES
       ('academy_group', '[{"name":"FWD-VC-GRP-25-0088"},{"name":"CYP-VC-GRP-23-0099"}]', null),
-      ('academy_groups', null, '{"name":"ONL-AI-IND-24-0090"}');`);
+      ('academy_groups', null, '{"name":"ONL-AI-IND-24-0090"}'),
+      ('academy_group', 'null', '"unrelated scalar"'),
+      ('academy_group', null, null),
+      ('unrelated_record', '{"name":"ONL-AI-IND-24-9999"}', null);`);
     expect(await create()).toMatch(/-0100 — Morning$/);
   });
   it('keeps the high-water mark after the newest group is permanently deleted', async () => {

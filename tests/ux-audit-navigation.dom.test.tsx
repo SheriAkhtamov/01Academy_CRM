@@ -49,7 +49,7 @@ it('requires confirmation to clear notifications and resets the unread badge', a
   const user=userEvent.setup(); mount(<NotificationsMenu />);
   await user.click(await screen.findByRole('button',{name:/143 unread notifications/}));
   await screen.findByText('First notice');
-  await user.click(screen.getByRole('button',{name:'Clear notifications'}));
+  await user.click(screen.getByRole('menuitem',{name:'Clear notifications'}));
   expect(fetch.mock.calls.some(([,options])=>options?.method==='DELETE')).toBe(false);
   const dialog=screen.getByRole('alertdialog');
   await user.click(within(dialog).getByRole('button',{name:'Clear'}));

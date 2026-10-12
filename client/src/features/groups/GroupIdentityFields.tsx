@@ -4,9 +4,10 @@ import type { GroupValues } from '@/lib/academyResourceSchemas';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { ProtectedGroupNameInput } from './ProtectedGroupNameInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 
-export function GroupIdentityFields({ code, error, pending, editing }: {
-  code: string; error: string; pending: boolean; editing: boolean;
+export function GroupIdentityFields({ code, error, pending, editing, onRetry }: {
+  code: string; error: string; pending: boolean; editing: boolean; onRetry?: () => void;
 }) {
   const { t } = useTranslation();
   const form = useFormContext<GroupValues>();
@@ -33,7 +34,10 @@ export function GroupIdentityFields({ code, error, pending, editing }: {
       <FormControl><ProtectedGroupNameInput ref={field.ref} code={code} addition={field.value}
         onAdditionChange={field.onChange} onBlur={field.onBlur} pending={pending}
         placeholder={t('groupNameAdditionPlaceholder')} /></FormControl>
-      {error ? <p className="text-sm text-destructive" role="alert">{error}</p>
+      {error ? <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-destructive" role="alert">{error}</p>
+        {onRetry ? <Button type="button" variant="ghost" size="sm" className="h-7 px-2" disabled={pending} onClick={onRetry}>{t('retry')}</Button> : null}
+      </div>
         : form.formState.errors.name ? <p className="text-sm text-destructive" role="alert">{form.formState.errors.name.message}</p>
           : <FormMessage />}
     </FormItem>} />

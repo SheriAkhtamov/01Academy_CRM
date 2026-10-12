@@ -127,8 +127,8 @@ export function GroupEditorDialog(props: GroupEditorProps) {
               <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-6 py-5">
                 <EditorSection title={t('group')}>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    {autoNaming ? <GroupIdentityFields code={groupCode} error={groupCodeError} pending={codeCatalogue.isFetching}
-                      editing={Boolean(editingGroup)} /> : (
+                    {autoNaming ? <GroupIdentityFields code={groupCode} error={groupCodeError} pending={!editingGroup && codeCatalogue.isFetching}
+                      editing={Boolean(editingGroup)} onRetry={!editingGroup && codeCatalogue.isError ? () => { void codeCatalogue.refetch(); } : undefined} /> : (
                       <FormField control={groupForm.control} name="name" render={({ field }) => (
                         <FormItem className="md:col-span-2">
                           <FormLabel required>{t('groupName')}</FormLabel>
@@ -291,7 +291,10 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       <FormItem className="md:max-w-md">
                         <FormLabel>{t('teacher')}</FormLabel>
                         <Select value={field.value || AUTO_TEACHER_VALUE} onValueChange={field.onChange}>
-                          <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger></FormControl>
+                          <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')}>
+                            {field.value === String(editingGroup?.teacherId) && !rankedTeachers.some((teacher) => String(teacher.id) === field.value)
+                              ? editingGroup?.teacherName : undefined}
+                          </SelectValue></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
                               <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherAutoSelect')}</SelectItem>
@@ -334,7 +337,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 {/* Without a course and a branch there is no code yet; saving then
                     points at those two fields instead of sitting greyed out. */}
                 <Button type="submit" disabled={saveGroup.isPending
-                  || (autoNaming && !groupCode && (Boolean(groupCodeError) || codeCatalogue.isFetching))}>
+                  || (!editingGroup && (Boolean(groupCodeError) || codeCatalogue.isFetching))}>
                   {saveGroup.isPending ? t('saving') : editingGroup ? t('saveChanges') : t('createGroup')}
                 </Button>
               </div>

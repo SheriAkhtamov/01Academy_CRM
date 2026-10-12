@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { AlertCircle, Bell, CheckCheck, ExternalLink, Loader2, X } from 'lucide-react';
+import { AlertCircle, Bell, ExternalLink, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -95,13 +95,23 @@ export function NotificationsMenu() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[min(22rem,calc(100vw-1.5rem))]">
-        <div className="flex items-center justify-between gap-2 pr-2">
-          <DropdownMenuLabel>{t('notifications')}</DropdownMenuLabel>
-          <Button type="button" variant="ghost" className="h-7 px-2 text-xs" aria-label={t('clearNotifications')}
-            disabled={query.isLoading || query.isError || items.length === 0 || readPending || remove.isPending || clear.isPending}
-            onClick={() => { setOpen(false); setClearError(''); setClearOpen(true); }}>{t('clearNotificationsAction')}</Button>
+        <div className="flex flex-wrap items-center justify-between gap-2 pr-2">
+          <DropdownMenuLabel className="min-w-0">{t('notifications')}</DropdownMenuLabel>
+          <div className="flex shrink-0 items-center gap-1">
+            {count > 0 || readAll.isPending ? <DropdownMenuItem asChild
+              disabled={readPending || remove.isPending || clear.isPending}
+              onSelect={(event) => { event.preventDefault(); readAll.mutate(); }}>
+              <Button type="button" variant="ghost" className="h-7 px-2 text-xs" aria-label={t('markAllRead')}
+                disabled={readPending || remove.isPending || clear.isPending}>{t('markAllReadAction')}</Button>
+            </DropdownMenuItem> : null}
+            <DropdownMenuItem asChild
+              disabled={query.isLoading || query.isError || items.length === 0 || readPending || remove.isPending || clear.isPending}
+              onSelect={() => { setOpen(false); setClearError(''); setClearOpen(true); }}>
+              <Button type="button" variant="ghost" className="h-7 px-2 text-xs" aria-label={t('clearNotifications')}
+                disabled={query.isLoading || query.isError || items.length === 0 || readPending || remove.isPending || clear.isPending}>{t('clearNotificationsAction')}</Button>
+            </DropdownMenuItem>
+          </div>
         </div>
-        {count > 0 ? <DropdownMenuItem disabled={readPending} onSelect={(event) => { event.preventDefault(); readAll.mutate(); }}><CheckCheck className="mr-2 size-4" />{t('markAllRead')}</DropdownMenuItem> : null}
         <DropdownMenuSeparator />
         {query.isLoading ? <div role="status" aria-label={t('loading')} className="space-y-3 p-3"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-full" /></div> : null}
         {query.isError || unread.isError ? <div role="alert" className="px-3 py-2 text-sm text-destructive">{t('failedToLoadData')}</div> : null}

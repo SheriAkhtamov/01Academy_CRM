@@ -17,10 +17,10 @@ export async function getGroupCodeCatalogue(reference = new Date()): Promise<Gro
       UNION ALL
       SELECT record->>'name' FROM audit_logs audit
       CROSS JOIN LATERAL jsonb_array_elements(
-        (CASE jsonb_typeof(audit.new_values) WHEN 'array' THEN audit.new_values
-          WHEN 'object' THEN jsonb_build_array(audit.new_values) ELSE '[]'::jsonb END)
-        || (CASE jsonb_typeof(audit.old_values) WHEN 'array' THEN audit.old_values
-          WHEN 'object' THEN jsonb_build_array(audit.old_values) ELSE '[]'::jsonb END)
+        (CASE jsonb_typeof(audit.new_values::jsonb) WHEN 'array' THEN audit.new_values::jsonb
+          WHEN 'object' THEN jsonb_build_array(audit.new_values::jsonb) ELSE '[]'::jsonb END)
+        || (CASE jsonb_typeof(audit.old_values::jsonb) WHEN 'array' THEN audit.old_values::jsonb
+          WHEN 'object' THEN jsonb_build_array(audit.old_values::jsonb) ELSE '[]'::jsonb END)
       ) AS saved_records(record)
       WHERE audit.entity_type IN ('academy_group', 'academy_groups')
     ) AS historical_group_names`);

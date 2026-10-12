@@ -113,6 +113,9 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
 
   const saveGroup = useMutation({
     mutationFn: (values: GroupMutationValues) => {
+      if (!editingGroup && (!groupCode || codeCatalogue.isError || codeCatalogue.isFetching)) {
+        throw new Error(t('failedToLoadData'));
+      }
       const teacherId = values.teacherId && values.teacherId !== AUTO_TEACHER_VALUE
         ? Number(values.teacherId)
         : null;
@@ -188,14 +191,13 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const groupCode = existingCode?.code ?? (codeCatalogue.data ? previewGroupCode(codeCatalogue.data, {
     schoolId: selectedGroupSchoolId, courseId: selectedGroupCourseId, deliveryMode, trainingType,
   }) : '');
-  const groupCodeError = codeCatalogue.isError ? t('failedToLoadData')
+  const groupCodeError = editingGroup ? '' : codeCatalogue.isError ? t('failedToLoadData')
     : codeCatalogue.data && selectedGroupCourseId && !codeCatalogue.data.courseCodes[selectedGroupCourseId] ? t('groupCodeCourseMissing')
       : codeCatalogue.data && deliveryMode === 'offline' && selectedGroupSchoolId && !codeCatalogue.data.schoolCodes[selectedGroupSchoolId] ? t('groupCodeBranchMissing') : '';
   useEffect(() => {
     if (open && autoNaming) groupForm.setValue('name', groupCode ? composeGroupName(groupCode, nameSuffix) : '');
   }, [open, autoNaming, groupCode, nameSuffix, groupForm]);
 
-  const selectedGroupTeacherId = groupForm.watch('teacherId');
   const selectedGroupRoomId = groupForm.watch('roomId');
   const selectedGroupLessonCount = groupForm.watch('lessonCount');
   const selectedGroupStartDate = groupForm.watch('startDate');
@@ -220,11 +222,11 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     && selectedGroupEndDate < minimumGroupEndDate,
   );
   const submitGroupValues = (values: GroupValues) => {
+    if (!editingGroup && (!groupCode || codeCatalogue.isError || codeCatalogue.isFetching)) return;
     if (futureGroupStatusNeedsConfirmation(values)) {
       setFutureGroupStartValues(values);
       return;
     }
-    if (!editingGroup && !groupCode) return;
     saveGroup.mutate(values);
   };
 
@@ -279,9 +281,9 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   );
   const groupTeachers = useMemo(
     () => teachers
-      .filter((teacher) => teacher.status === 'active' || String(teacher.id) === selectedGroupTeacherId)
+      .filter((teacher) => teacher.status === 'active')
       .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
-    [selectedGroupTeacherId, teachers],
+    [teachers],
   );
 
   // A completed group is saved without the room and teacher checks, so it gets no warnings either.

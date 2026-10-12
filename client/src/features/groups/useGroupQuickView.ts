@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GroupsView } from './GroupsToolbar';
-import { groupScheduleSlots } from './presentation';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Group } from './types';
 
 type UpdateParams = (patch: Record<string, string | null>, replace?: boolean) => void;
@@ -9,25 +7,15 @@ const sameIds = (left: number[], right: number[]) => (
   left.length === right.length && left.every((id, index) => id === right[index])
 );
 
-/** Week order for previous/next: by the first lesson of the week, then by name. */
-const byFirstSlot = (left: Group, right: Group) => {
-  const [a] = groupScheduleSlots(left);
-  const [b] = groupScheduleSlots(right);
-  if (a && b) return a.dayOfWeek - b.dayOfWeek || a.startMinutes - b.startMinutes || left.name.localeCompare(right.name);
-  return a ? -1 : b ? 1 : left.name.localeCompare(right.name);
-};
-
 /**
  * The open group lives in the address, so a phone's Back button closes the
  * drawer instead of leaving the page. Opening pushes one entry; stepping to a
  * neighbour replaces it, so a single Back still gets out. Previous and next
- * follow what the reader sees: the table's current sort, or the week's order.
+ * follow the table's current sort.
  */
-export function useGroupQuickView({ params, groups, displayedGroups, view, updateParams }: {
+export function useGroupQuickView({ params, groups, updateParams }: {
   params: URLSearchParams;
   groups: Group[];
-  displayedGroups: Group[];
-  view: GroupsView;
   updateParams: UpdateParams;
 }) {
   const openGroupId = Number(params.get('group')) || null;
@@ -64,8 +52,7 @@ export function useGroupQuickView({ params, groups, displayedGroups, view, updat
     const ids = rows.map((row) => row.id);
     setListOrder((previous) => (sameIds(previous, ids) ? previous : ids));
   }, []);
-  const weekOrder = useMemo(() => [...displayedGroups].sort(byFirstSlot).map((group) => group.id), [displayedGroups]);
-  const order = view === 'week' ? weekOrder : listOrder;
+  const order = listOrder;
   const index = openGroup ? order.indexOf(openGroup.id) : -1;
   const stepTo = (target: number) => updateParams({ group: String(order[target]) }, true);
 

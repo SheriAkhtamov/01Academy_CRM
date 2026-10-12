@@ -1,4 +1,4 @@
-export const ACADEMY_BRAND_NAME = "01 Academy CRM";
+export const ACADEMY_BRAND_NAME = "01 Academy Platform";
 
 export const ACADEMY_MODULES = [
   "administration",

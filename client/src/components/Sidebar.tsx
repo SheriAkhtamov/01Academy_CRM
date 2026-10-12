@@ -298,7 +298,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
           <div className="flex items-center w-full">
             <Logo size="md" />
             <div className="ml-3 flex flex-col flex-1 min-w-0">
-              <span className="text-lg font-semibold text-foreground truncate tracking-tight leading-tight">
+              <span className="text-lg font-semibold text-foreground break-words tracking-tight leading-tight">
                 {t('platformName')}
               </span>
               <span className="text-xs text-muted-foreground">{t('schoolCrm')}</span>

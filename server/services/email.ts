@@ -64,11 +64,11 @@ class EmailService {
         return true;
       }
 
-      const subject = 'Welcome to 01 Academy CRM';
+      const subject = 'Welcome to 01 Academy Platform';
       const html = `
-        <h2>Welcome to 01 Academy CRM</h2>
+        <h2>Welcome to 01 Academy Platform</h2>
         <p>Hello ${escapeHtml(fullName)},</p>
-        <p>Your account has been created for the 01 Academy CRM. Here are your login credentials:</p>
+        <p>Your account has been created for the 01 Academy Platform. Here are your login credentials:</p>
         <ul>
           <li><strong>Email:</strong> ${escapeHtml(to)}</li>
           <li><strong>Temporary Password:</strong> ${escapeHtml(temporaryPassword)}</li>
@@ -99,7 +99,7 @@ class EmailService {
         }
 
         const { data, error } = await this.resend.emails.send({
-          from: '01 Academy CRM <noreply@resend.dev>',
+          from: '01 Academy Platform <noreply@resend.dev>',
           to: [to],
           subject,
           html,

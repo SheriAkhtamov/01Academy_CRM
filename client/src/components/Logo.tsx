@@ -1,5 +1,5 @@
 import React from 'react';
-import { ACADEMY_BRAND_NAME } from '@shared/academy';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -7,6 +7,7 @@ interface LogoProps {
 }
 
 export default function Logo({ size = 'md', className = '' }: LogoProps) {
+  const { t } = useTranslation();
   const sizeClasses = {
     sm: 'w-10 h-10',
     md: 'w-14 h-14',
@@ -17,7 +18,7 @@ export default function Logo({ size = 'md', className = '' }: LogoProps) {
     <div className={`${sizeClasses[size]} ${className} flex items-center justify-center`}>
       <img
         src="/logo.png"
-        alt={ACADEMY_BRAND_NAME}
+        alt={t('platformName')}
         className="h-full w-full object-contain transition-[filter] duration-200 dark:brightness-0 dark:invert"
       />
     </div>

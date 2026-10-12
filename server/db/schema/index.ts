@@ -1,3 +1,4 @@
+import { createPlatformUpdatesTable } from './platform-updates';
 import { createChatGroupTables } from './chat-groups';
 import { academySchools, academyRooms } from './academy-resources';
 export { academySchools, academyRooms } from './academy-resources';
@@ -50,6 +51,8 @@ export const users = pgTable("users", {
   archiveIdx: index("users_archive_idx").on(table.isArchived, table.archivedAt),
   moduleCheck: check("users_module_check", sql`${table.module} IN (${sql.raw(ACADEMY_MODULES.map((module) => `'${module}'`).join(', '))})`),
 }));
+
+export const platformUpdates = createPlatformUpdatesTable(users.id);
 
 export const { academySalesFunnels, academyIntegrationFunnelSettings, academySalesFunnelUsers } = createSalesFunnelTables(users.id, (): AnyPgColumn => academyLeadStatuses.code);
 

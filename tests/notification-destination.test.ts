@@ -18,3 +18,11 @@ it('preserves the task namespace for legacy academy notifications', () => {
   expect(notificationDestination({ ...notification, relatedEntityType: 'academy_task' }, user)).toBe('/tasks?academyTask=55');
   expect(notificationDestination({ ...notification, relatedEntityType: 'board_task' }, user)).toBe('/tasks?task=55');
 });
+
+it('opens a published update for employees in every module', () => {
+  const notification = { id: 1, title: 'New update', message: null, isRead: false, relatedEntityType: 'platform_update', relatedEntityId: 25 };
+  for (const module of ['sales', 'teacher', 'marketing', 'finance', 'administration']) {
+    expect(notificationDestination(notification, { ...user, module, modules: [module] } as SanitizedUser)).toBe('/updates?post=25');
+  }
+  expect(notificationDestination(notification, null)).toBeNull();
+});

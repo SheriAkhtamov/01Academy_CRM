@@ -13,10 +13,12 @@ RUN apk add --no-cache tini
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/migrations ./migrations
+COPY --from=build /app/update-media ./update-media
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/apply-migrations.js ./
 
 RUN mkdir -p /app/logs /app/uploads/board /app/uploads/payments /app/uploads/portfolio \
+    && chmod -R a+rX /app/update-media \
     && chmod -R a+rX /app/migrations \
     && chmod -R a+rX /app/dist/public \
     && chmod a+r /app/package*.json /app/apply-migrations.js \

@@ -8,6 +8,7 @@ import incomingRoutes from './incoming.routes';
 import instagramRoutes from './instagram.routes';
 import messageRoutes from './message.routes';
 import chatGroupRoutes from '../services/chat-groups';
+import { updatesRouter } from '../infrastructure/platform-updates';
 import notificationsRoutes from './notifications.routes';
 import telephonyRoutes from './telephony.routes';
 import userRoutes from './user.routes';
@@ -25,6 +26,7 @@ export const registerApiRoutes = (app: Express): void => {
   app.use('/api/messages', messageRoutes);
   app.use('/api/chat-groups', chatGroupRoutes);
   app.use('/api/notifications', notificationsRoutes);
+  app.use('/api/updates', updatesRouter);
   app.use('/api/academy', academyRoutes);
   app.use('/api/finance', financeRoutes);
   app.use('/api/board', boardRoutes);

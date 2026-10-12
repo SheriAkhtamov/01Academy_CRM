@@ -1,3 +1,4 @@
+import UpdatesPage from '@/features/updates/UpdatesPage';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -7,6 +8,7 @@ export default function ResourcePage({ resource }: { resource: ResourcePageId })
   const { t } = useTranslation();
   const definition = RESOURCE_NAVIGATION_ITEMS.find((item) => item.id === resource)!;
   const Icon = definition.icon;
+  if (resource === 'updates') return <UpdatesPage />;
 
   return (
     <ModulePage>

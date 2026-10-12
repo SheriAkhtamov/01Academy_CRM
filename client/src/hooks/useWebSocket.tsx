@@ -91,6 +91,7 @@ export function useWebSocket() {
           ) });
           break;
         case 'NEW_NOTIFICATION':
+          if (message.data?.postId) queryClient.invalidateQueries({ queryKey: ['/api/updates'] });
         case 'NOTIFICATIONS_CLEARED':
           queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
           break;

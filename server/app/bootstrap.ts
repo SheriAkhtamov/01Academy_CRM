@@ -1,3 +1,4 @@
+import { publishReleaseUpdates } from '../infrastructure/platform-updates';
 import { createServer, type Server } from "node:http";
 import { pool } from "../db";
 import {
@@ -105,6 +106,7 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     }
     app.use(errorHandler);
 
+    await publishReleaseUpdates();
     await learningRuntime.start();
     startScheduler();
     schedulerStarted = true;

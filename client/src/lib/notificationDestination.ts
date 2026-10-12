@@ -7,6 +7,7 @@ export function notificationDestination(notification: NotificationDto, user: San
   const id = notification.relatedEntityId;
   if (type === 'lead_assignment' && canAccessAcademyModule(user, 'sales')) return '/sales/pipeline';
   if (!id || !Number.isSafeInteger(id) || id <= 0) return null;
+  if (type === 'platform_update') return user ? `/updates?post=${id}` : null;
   if (type === 'lead' || type === 'academy_lead') return canAccessAcademyModule(user, 'sales') ? `/sales/pipeline?lead=${id}` : null;
   if (type === 'student' || type === 'academy_student') return canAccessAcademyModule(user, 'sales') ? `/sales/clients?student=${id}` : null;
   if (type === 'group' || type === 'academy_group') return canAccessAcademyModule(user, 'teacher') ? `/teacher-module/groups?group=${id}` : null;

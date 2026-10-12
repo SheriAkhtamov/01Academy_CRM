@@ -91,6 +91,41 @@ describe.skipIf(!databaseUrl)("Portal administration directory PostgreSQL + HTTP
     expect((await repository.students(query({ q: "parent.login" }))).items.map((row) => row.student.id).sort()).toEqual([1, 2]);
     expect((await repository.students(query({ q: "%" }))).total).toBe(0);
   });
+  it("reflects CRM students and membership changes without preparing another student or inheriting portal access", async () => {
+    const accessCounts = async () => (await pool.query(`SELECT
+      (SELECT count(*)::int FROM portal_accounts) AS accounts,
+      (SELECT count(*)::int FROM portal_student_identity) AS identities,
+      (SELECT count(*)::int FROM portal_student_links) AS links,
+      (SELECT count(*)::int FROM portal_consents) AS consents,
+      (SELECT count(*)::int FROM portal_invitations) AS invitations,
+      (SELECT count(*)::int FROM portal_sessions) AS sessions`)).rows[0];
+    const before = await accessCounts();
+    const group = (await pool.query("INSERT INTO academy_groups(name) VALUES('New CRM group') RETURNING id")).rows[0];
+    const student = (await pool.query(`INSERT INTO academy_students(student_name,contact_name,manager_id,lead_id)
+      VALUES('New CRM student','Shared lead contact',2,11) RETURNING id`)).rows[0];
+    await pool.query(`INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at)
+      VALUES($1,$2,'2026-10-01')`, [student.id, group.id]);
+
+    const initial = await repository.students(query({ groupId: group.id }));
+    expect(initial.total).toBe(1);
+    expect(initial.items[0]).toMatchObject({
+      student: { id: student.id, studentName: "New CRM student", classification: "unverified", groups: [{ id: group.id, name: "New CRM group" }] },
+      hasAccess: false, needsVerification: true, selfAccount: null, representatives: [],
+    });
+    expect(initial.groups).toContainEqual({ id: group.id, name: "New CRM group" });
+
+    await pool.query("UPDATE academy_students SET student_name='Renamed CRM student' WHERE id=$1", [student.id]);
+    await pool.query("UPDATE academy_groups SET name='Renamed CRM group' WHERE id=$1", [group.id]);
+    expect((await repository.students(query({ q: "Renamed CRM student" }))).items[0].student.groups)
+      .toEqual([{ id: group.id, name: "Renamed CRM group" }]);
+    await pool.query("UPDATE academy_student_group_enrollments SET ended_at='2026-10-02' WHERE student_id=$1", [student.id]);
+    await pool.query(`INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at)
+      VALUES($1,2,'2026-10-03')`, [student.id]);
+    const transferred = (await repository.students(query({ groupId: 2, q: "Renamed CRM student" }))).items[0];
+    expect(transferred.student.groups).toEqual([{ id: 2, name: "Group Two" }]);
+    expect(transferred).toMatchObject({ hasAccess: false, needsVerification: true, selfAccount: null, representatives: [] });
+    expect(await accessCounts()).toEqual(before);
+  });
   it("lists one representative once with both students, scopes links and filters the representative's own access", async () => {
     const all = await repository.representatives(query());
     expect(all.total).toBe(1); expect(all.items[0].students).toHaveLength(2);

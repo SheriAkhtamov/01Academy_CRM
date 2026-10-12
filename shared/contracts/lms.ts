@@ -694,6 +694,8 @@ export type LmsReportProjectSnapshot = {
   review: string;
 };
 export type LmsStaffRunDto = {
+  setupStatus?: "ready" | "preparing" | "needs_format" | "needs_course" | "needs_program_review";
+  courseId?: number | null;
   permissions?: string[];
   canManageTemplates?: boolean;
   version?: number;
@@ -703,7 +705,7 @@ export type LmsStaffRunDto = {
   runId: number | null;
   groupId: number;
   groupName: string;
-  courseName: string;
+  courseName: string | null;
   teacherName: string | null;
   status: string;
   studentCount: number;

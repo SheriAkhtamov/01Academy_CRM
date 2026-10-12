@@ -212,7 +212,7 @@ export function createLmsContentTables(refs: { accountId: AnyPgColumn; courseId:
 
   const lmsLearningAudit = pgTable("lms_learning_audit", {
     id: bigserial("id", { mode: "number" }).notNull().primaryKey(),
-    userId: integer("user_id").notNull(),
+    userId: integer("user_id"),
     runId: bigint("run_id", { mode: "number" }),
     entityType: text("entity_type").notNull(),
     entityId: bigint("entity_id", { mode: "number" }).notNull(),
@@ -317,7 +317,7 @@ export function createLmsContentTables(refs: { accountId: AnyPgColumn; courseId:
     category: text("category").$type<"lesson" | "practice" | "repeat">().notNull(),
     links: jsonb("links").$type<unknown[]>().notNull().default(sql.raw("'[]'::jsonb")),
     fileIds: jsonb("file_ids").$type<unknown[]>().notNull().default(sql.raw("'[]'::jsonb")),
-    createdBy: integer("created_by").notNull(),
+    createdBy: integer("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     videoUrl: text("video_url"),
     durationMinutes: integer("duration_minutes"),
@@ -336,7 +336,7 @@ export function createLmsContentTables(refs: { accountId: AnyPgColumn; courseId:
     runId: bigint("run_id", { mode: "number" }).notNull(),
     unitId: bigint("unit_id", { mode: "number" }),
     state: text("state").$type<"draft" | "published" | "archived">().notNull().default("draft"),
-    createdBy: integer("created_by").notNull(),
+    createdBy: integer("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   }, (table) => [
     foreignKey({ name: "lms_materials_created_by_fkey", columns: [table.createdBy], foreignColumns: [refs.userId] }).onDelete("restrict"),

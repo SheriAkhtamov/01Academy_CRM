@@ -17,10 +17,11 @@ export function useStaffQuery<T>(
     refetchIntervalInBackground: false,
   });
 }
-export function useStaffRuns() {
+export function useStaffRuns(enabled = true) {
   return useQuery({
     queryKey: [...lmsStaffKey, "runs"],
     queryFn: ({ signal }) => lmsStaffApi.runs(signal),
+    enabled,
     staleTime: 15000,
     refetchInterval: staffRefreshInterval,
     refetchIntervalInBackground: false,

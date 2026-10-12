@@ -254,8 +254,7 @@ describe("staff LMS interaction", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(calls).toEqual([]);
   });
-  it("opens group learning Tabs inside the existing modal content and creates an absent run only by explicit action", async () => {
-    let created = false;
+  it("opens prepared group learning Tabs inside the existing modal content without a per-group creation step", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, options: RequestInit = {}) => {
@@ -265,7 +264,6 @@ describe("staff LMS interaction", () => {
           method,
           body: options.body ? JSON.parse(String(options.body)) : null,
         });
-        if (method === "POST") created = true;
         const body =
           method === "POST"
             ? { id: 3 }
@@ -275,7 +273,8 @@ describe("staff LMS interaction", () => {
                     groupId: 13,
                     groupName: "Assigned group",
                     courseName: "Course",
-                    runId: created ? 3 : null,
+                    runId: 3,
+                    setupStatus: "ready",
                   },
                 ]
               : url.includes("/enrollments?")
@@ -298,24 +297,11 @@ describe("staff LMS interaction", () => {
     );
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.filter((call) => call.method === "POST")).toEqual([]);
-    await userEvent.click(
-      screen.getByRole("button", { name: i18n.t("lmsStaffCreateRun") }),
-    );
-    const dialog = await screen.findByRole("dialog", {
-      name: i18n.t("lmsStaffCreateRun"),
-    });
-    expect(calls.filter((call) => call.method === "POST")).toEqual([]);
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: i18n.t("lmsStaffCreateRun") }),
-    );
     await screen.findByRole("button", { name: i18n.t("lmsStaffAddMaterial") });
-    expect(calls.filter((call) => call.method === "POST")).toEqual([
-      {
-        url: "/api/lms-management/runs",
-        method: "POST",
-        body: { groupId: 13, format: "offline", meetingUrl: null },
-      },
-    ]);
+    expect(
+      screen.queryByRole("button", { name: i18n.t("lmsStaffCreateRun") }),
+    ).toBeNull();
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
     expect(screen.queryByRole("dialog")).toBeNull();
     await userEvent.click(
       screen.getByRole("tab", { name: i18n.t("lmsStaffStudents") }),

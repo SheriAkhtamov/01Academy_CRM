@@ -5,7 +5,6 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
 import { lmsStaffApi } from "./api";
 import { useStaffRuns, useStaffQuery, useStaffInvalidate } from "./queries";
 import {
@@ -14,6 +13,7 @@ import {
   StaffLoading,
   StaffError,
   StaffEmpty,
+  StaffGroupSetup,
   useStaffError,
   safeStaffLink,
 } from "./ui";
@@ -50,13 +50,20 @@ export function LearningManagement({
   const { t } = useTranslation();
   const runs = useStaffRuns();
   const [groupId, setGroupId] = useState("");
-  const [create, setCreate] = useState(false);
+  const [formatGroup, setFormatGroup] = useState<number | null>(null);
   const [editRun, setEditRun] = useState(false);
   const [reviewQueue, setReviewQueue] = useState(false);
   const canReview = Boolean(
     runs.data?.some((run) => run.permissions?.includes("reviews.manage")),
   );
   const selected = runs.data?.find((run) => String(run.groupId) === groupId);
+  const formatTarget = runs.data?.find(
+    (run) =>
+      run.groupId === formatGroup &&
+      !run.runId &&
+      run.setupStatus === "needs_format" &&
+      run.permissions?.includes("content.manage"),
+  );
   return (
     <div className="mx-auto min-w-0 max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -100,33 +107,25 @@ export function LearningManagement({
               value={groupId}
               onChange={(event) => {
                 setGroupId(event.target.value);
-                setCreate(false);
               }}
             >
               <option value="">{t("lmsStaffSelectGroup")}</option>
               {runs.data?.map((run) => (
                 <option key={run.groupId} value={run.groupId}>
-                  {run.groupName} · {run.courseName}
+                  {run.groupName} ·{" "}
+                  {run.courseName || t("lmsStaffCourseNotSelected")}
                 </option>
               ))}
             </select>
           </StaffField>
           {selected && !selected.runId && (
-            <Card>
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-                <div className="min-w-0 space-y-1">
-                  <h2 className="break-words font-semibold">
-                    {selected.groupName}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {selected.courseName}
-                  </p>
-                </div>
-                <Button onClick={() => setCreate(true)}>
-                  {t("lmsStaffCreateRun")}
-                </Button>
-              </CardContent>
-            </Card>
+            <StaffGroupSetup
+              run={selected}
+              retry={() => {
+                void runs.refetch();
+              }}
+              onFormat={() => setFormatGroup(selected.groupId)}
+            />
           )}
           {selected?.runId &&
             (administration ||
@@ -140,7 +139,8 @@ export function LearningManagement({
             <LearningWorkspace
               key={`${selected.runId}:${initialTab ?? ""}`}
               runId={selected.runId}
-              courseId={selected.courseId}
+              run={selected}
+              courseId={selected.courseId ?? undefined}
               administration={administration}
               permissions={selected.permissions}
               canManageTemplates={selected.canManageTemplates}
@@ -162,8 +162,8 @@ export function LearningManagement({
       {editRun && selected?.runId && (
         <RunSettings run={selected} onClose={() => setEditRun(false)} />
       )}
-      {create && selected && (
-        <CreateRun group={selected} onClose={() => setCreate(false)} />
+      {formatTarget && (
+        <CreateRun group={formatTarget} onClose={() => setFormatGroup(null)} />
       )}
       {canReview && reviewQueue && (
         <StaffDialog
@@ -179,6 +179,7 @@ export function LearningManagement({
 }
 function LearningWorkspace({
   runId,
+  run,
   courseId,
   administration,
   permissions,
@@ -186,7 +187,8 @@ function LearningWorkspace({
   initialTab,
 }: {
   runId: number;
-  courseId: number;
+  run: LmsStaffRunDto;
+  courseId?: number;
   administration: boolean;
   permissions?: string[];
   canManageTemplates?: boolean;
@@ -206,6 +208,7 @@ function LearningWorkspace({
   const canReview = Boolean(permissions?.includes("reviews.manage"));
   const [tab, setTab] = useState(() =>
     initialTab &&
+    (initialTab !== "program" || courseId !== undefined) &&
     (initialTab !== "reviews" || canReview) &&
     (!permissions ||
       permissions.includes(permissionForTab[initialTab]) ||
@@ -242,68 +245,79 @@ function LearningWorkspace({
       />
     );
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) => setTab(value as LearningManagementTab)}
-    >
-      <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-        {tabs
-          .filter(([value]) =>
-            value === "reviews"
-              ? canReview
-              : !permissions ||
-                (value === "program" &&
-                  permissions.includes("schedule.manage")) ||
-                permissions.includes(permissionForTab[value]),
-          )
-          .map(([value, key]) => (
-            <TabsTrigger key={value} value={value} className="min-h-11">
-              {t(key)}
-            </TabsTrigger>
-          ))}
-      </TabsList>
-      <TabsContent value="program">
-        <StaffProgram
-          runId={runId}
-          courseId={courseId}
-          administration={administration || Boolean(canManageTemplates)}
-          manageContent={!permissions || permissions.includes("content.manage")}
-          manageSchedule={
-            !permissions || permissions.includes("schedule.manage")
-          }
-        />
-      </TabsContent>
-      <TabsContent value="makeup">
-        <StaffMakeup runId={runId} />
-      </TabsContent>
-      <TabsContent value="materials">
-        <StaffMaterials runId={runId} enrollments={enrollments.data} />
-      </TabsContent>
-      <TabsContent value="assignments">
-        <StaffAssignments
-          runId={runId}
-          enrollments={enrollments.data}
-          canReview={canReview}
-        />
-      </TabsContent>
-      {canReview && (
-        <TabsContent value="reviews">
-          <StaffReviews runId={runId} />
-        </TabsContent>
+    <>
+      {run.setupStatus === "needs_program_review" && (
+        <StaffGroupSetup run={run} onProgram={() => setTab("program")} />
       )}
-      <TabsContent value="quizzes">
-        <StaffQuizzes runId={runId} enrollments={enrollments.data} />
-      </TabsContent>
-      <TabsContent value="threads">
-        <StaffThreads runId={runId} />
-      </TabsContent>
-      <TabsContent value="results">
-        <StaffResults runId={runId} />
-      </TabsContent>
-      <TabsContent value="announcements">
-        <StaffAnnouncements runId={runId} />
-      </TabsContent>
-    </Tabs>
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as LearningManagementTab)}
+      >
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+          {tabs
+            .filter(([value]) =>
+              value === "program" && courseId === undefined
+                ? false
+                : value === "reviews"
+                  ? canReview
+                  : !permissions ||
+                    (value === "program" &&
+                      permissions.includes("schedule.manage")) ||
+                    permissions.includes(permissionForTab[value]),
+            )
+            .map(([value, key]) => (
+              <TabsTrigger key={value} value={value} className="min-h-11">
+                {t(key)}
+              </TabsTrigger>
+            ))}
+        </TabsList>
+        {courseId !== undefined && (
+          <TabsContent value="program">
+            <StaffProgram
+              runId={runId}
+              courseId={courseId}
+              administration={administration || Boolean(canManageTemplates)}
+              manageContent={
+                !permissions || permissions.includes("content.manage")
+              }
+              manageSchedule={
+                !permissions || permissions.includes("schedule.manage")
+              }
+            />
+          </TabsContent>
+        )}
+        <TabsContent value="makeup">
+          <StaffMakeup runId={runId} />
+        </TabsContent>
+        <TabsContent value="materials">
+          <StaffMaterials runId={runId} enrollments={enrollments.data} />
+        </TabsContent>
+        <TabsContent value="assignments">
+          <StaffAssignments
+            runId={runId}
+            enrollments={enrollments.data}
+            canReview={canReview}
+          />
+        </TabsContent>
+        {canReview && (
+          <TabsContent value="reviews">
+            <StaffReviews runId={runId} />
+          </TabsContent>
+        )}
+        <TabsContent value="quizzes">
+          <StaffQuizzes runId={runId} enrollments={enrollments.data} />
+        </TabsContent>
+        <TabsContent value="threads">
+          <StaffThreads runId={runId} />
+        </TabsContent>
+        <TabsContent value="results">
+          <StaffResults runId={runId} />
+        </TabsContent>
+        <TabsContent value="announcements">
+          <StaffAnnouncements runId={runId} />
+        </TabsContent>
+      </Tabs>
+    </>
   );
 }
 export function CreateRun({
@@ -335,8 +349,8 @@ export function CreateRun({
     <StaffDialog
       open
       onClose={onClose}
-      titleKey="lmsStaffCreateRun"
-      description={`${group.groupName} · ${group.courseName}`}
+      titleKey="lmsStaffSelectFormat"
+      description={`${group.groupName} · ${group.courseName || t("lmsStaffCourseNotSelected")}`}
       dirty={Boolean(meeting)}
       pending={action.isPending}
     >
@@ -352,7 +366,7 @@ export function CreateRun({
           action.mutate();
         }}
       >
-        <StaffField id="run-format" labelKey="lmsStaffGroup">
+        <StaffField id="run-format" labelKey="lmsStaffFormat">
           <select
             id="run-format"
             className="min-h-11 w-full rounded-md border bg-background px-3"
@@ -380,7 +394,7 @@ export function CreateRun({
             {validation || message(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("lmsStaffCreateRun")}</Button>
+        <Button disabled={action.isPending}>{t("lmsStaffSave")}</Button>
       </form>
     </StaffDialog>
   );

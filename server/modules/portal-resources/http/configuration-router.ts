@@ -2,9 +2,9 @@ import { Router, type Request } from 'express';
 import { learningFlagUpdateSchema, type LearningCapabilitiesDto, type LearningFlagUpdateInput, type LearningRolloutDto } from '@shared/contracts/learning-rollout';
 import type { ResourceStaffActor } from '../domain/policy';
 import { PortalResourceError } from '../domain/policy';
-import { learningSchoolSettingsUpdateSchema, type LearningSchoolSettings, type LearningSchoolSettingsDto } from '@shared/contracts/learning-settings';
+import { learningSchoolSettingsUpdateSchema, type LearningSchoolSettingsUpdate, type LearningSchoolSettingsDto } from '@shared/contracts/learning-settings';
 
-type FlagPort = { capabilities(): LearningCapabilitiesDto; configuration(): Promise<LearningRolloutDto>; update(actorId: number, input: LearningFlagUpdateInput,requestId?:string): Promise<LearningRolloutDto>; settingsConfiguration(): Promise<LearningSchoolSettingsDto>; updateSettings(actorId: number, input: LearningSchoolSettings,version:number,requestId?:string): Promise<LearningSchoolSettingsDto> };
+type FlagPort = { capabilities(): LearningCapabilitiesDto; configuration(): Promise<LearningRolloutDto>; update(actorId: number, input: LearningFlagUpdateInput,requestId?:string): Promise<LearningRolloutDto>; settingsConfiguration(): Promise<LearningSchoolSettingsDto>; updateSettings(actorId: number, input: LearningSchoolSettingsUpdate['settings'],version:number,requestId?:string): Promise<LearningSchoolSettingsDto> };
 export function createLearningConfigurationRouter(flags: FlagPort, resolveStaff: (request: Request) => Promise<ResourceStaffActor>, canManageAccess: (request: Request) => Promise<boolean> = async () => false,canManageLearning:(request:Request)=>Promise<boolean>=async()=>false) {
   const router = Router();
   router.get('/school-settings', async (request,response,next) => {

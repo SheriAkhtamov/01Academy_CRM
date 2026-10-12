@@ -363,11 +363,11 @@ describe.skipIf(!databaseUrl)(
     it("rechecks directly queued finance replies against their author, link and staff message", async () => {
       const question = (await pool.query("INSERT INTO portal_finance_questions(student_id,account_id,link_id,subject,request_key,request_hash,status) VALUES(1,2,2,'Payment question','request',repeat('a',64),'answered') RETURNING id")).rows[0];
       const reply = (await pool.query("INSERT INTO portal_finance_question_messages(question_id,user_id,body,request_key) VALUES($1,1,'Answer','reply') RETURNING id", [question.id])).rows[0];
-      await pool.query(`INSERT INTO lms_resource_outbox(account_id,link_id,category,code,params,href,event_key,required_permission,channel) VALUES
-        (2,2,'finance','portalNoticeThreadAnswered',$1::jsonb,'/learn/payments','valid-finance-reply','finance.read','in_app'),
-        (2,2,'finance','portalNoticeThreadAnswered',$2::jsonb,'/learn/payments','wrong-question','finance.read','in_app'),
-        (1,1,'finance','portalNoticeThreadAnswered',$1::jsonb,'/learn/payments','minor-without-school-finance','finance.read','in_app')`,
-        [JSON.stringify({ sourceType: "finance_question_answered", questionId: question.id, messageId: reply.id }), JSON.stringify({ sourceType: "finance_question_answered", questionId: 9999, messageId: reply.id })]);
+      await pool.query(`INSERT INTO lms_resource_outbox(account_id,link_id,category,code,params,href,event_key,required_permission,channel,deliver_after) VALUES
+        (2,2,'finance','portalNoticeThreadAnswered',$1::jsonb,'/learn/payments','valid-finance-reply','finance.read','in_app',$3),
+        (2,2,'finance','portalNoticeThreadAnswered',$2::jsonb,'/learn/payments','wrong-question','finance.read','in_app',$3),
+        (1,1,'finance','portalNoticeThreadAnswered',$1::jsonb,'/learn/payments','minor-without-school-finance','finance.read','in_app',$3)`,
+        [JSON.stringify({ sourceType: "finance_question_answered", questionId: question.id, messageId: reply.id }), JSON.stringify({ sourceType: "finance_question_answered", questionId: 9999, messageId: reply.id }), new Date(now)]);
       const result = await worker({ mode: "in_app" }).runOnce();
       expect(result).toMatchObject({ delivered: 1, cancelled: 2 });
       expect((await notifications("portalNoticeThreadAnswered")).map((row) => Number(row.account_id))).toEqual([2]);
@@ -673,8 +673,8 @@ describe.skipIf(!databaseUrl)(
       await event("quiz_finished", Number(attempt.id));
       const achievement = (
         await pool.query(
-          "INSERT INTO lms_achievements(student_id,run_id,rule,event_key,title,reason) VALUES(1,1,'first-project',$1,'Project complete','Finished own work') RETURNING id",
-          [randomUUID()],
+          "INSERT INTO lms_achievements(student_id,run_id,rule,event_key,title,reason,awarded_at) VALUES(1,1,'first-project',$1,'Project complete','Finished own work',$2) RETURNING id",
+          [randomUUID(), new Date(now)],
         )
       ).rows[0];
       await event("achievement_awarded", Number(achievement.id));
@@ -683,14 +683,15 @@ describe.skipIf(!databaseUrl)(
       await event("achievement_revoked", Number(achievement.id));
       const report = (
         await pool.query(
-          "INSERT INTO lms_reports(student_id,run_id,period_from,period_to,version,metrics,comment,next_steps,published_by) VALUES(1,1,$1,$2,1,'{}','Progress','Continue',1) RETURNING id",
+          "INSERT INTO lms_reports(student_id,run_id,period_from,period_to,version,metrics,comment,next_steps,published_by,published_at) VALUES(1,1,$1,$2,1,'{}','Progress','Continue',1,$2) RETURNING id",
           [new Date(now - 7 * DAY), new Date(now)],
         )
       ).rows[0];
       await event("report_published", Number(report.id));
       const completion = (
         await pool.query(
-          "INSERT INTO lms_course_completions(student_id,run_id,completed_by) VALUES(1,1,1) RETURNING id",
+          "INSERT INTO lms_course_completions(student_id,run_id,completed_by,completed_at) VALUES(1,1,1,$1) RETURNING id",
+          [new Date(now)],
         )
       ).rows[0];
       await event("course_completed", Number(completion.id));

@@ -960,6 +960,13 @@
       "when": 1791723314222,
       "tag": "0136_portal_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791723314223,
+      "tag": "0137_lms_crm_preparation",
+      "breakpoints": true
     }
   ]
 }

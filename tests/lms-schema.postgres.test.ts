@@ -64,14 +64,14 @@ describe("Server-only learning schema initialization", () => {
   });
 });
 
-describe.skipIf(!databaseUrl)("Learning Drizzle declarations match actual 0134–0136 migrations", () => {
+describe.skipIf(!databaseUrl)("Learning Drizzle declarations match actual 0134–0137 migrations", () => {
   beforeAll(async () => {
     if (!databaseUrl) return;
     if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(new URL(databaseUrl).hostname)) throw new Error("Schema parity tests require local PostgreSQL");
     admin = new Pool({ connectionString: databaseUrl }); await admin.query(`CREATE SCHEMA ${schema}`);
     pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema} -c timezone=UTC` });
     await pool.query(`CREATE TABLE users(id serial PRIMARY KEY); CREATE TABLE academy_students(id serial PRIMARY KEY); CREATE TABLE academy_courses(id serial PRIMARY KEY); CREATE TABLE academy_groups(id serial PRIMARY KEY,course_id integer); CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer); CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,enrolled_at timestamptz,ended_at timestamptz); CREATE TABLE academy_payments(id serial PRIMARY KEY,amount_uzs integer); CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY);`);
-    for (const migration of ["0134_portal_identity", "0135_lms_learning", "0136_portal_resources"]) await pool.query(readFileSync(new URL(`../migrations/${migration}.sql`, import.meta.url), "utf8"));
+    for (const migration of ["0134_portal_identity", "0135_lms_learning", "0136_portal_resources", "0137_lms_crm_preparation"]) await pool.query(readFileSync(new URL(`../migrations/${migration}.sql`, import.meta.url), "utf8"));
   });
   afterAll(async () => { if (pool) await pool.end(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
   const all = () => [...configurations, getTableConfig(projects)];

@@ -65,7 +65,7 @@ export function RunSettings({
       open
       onClose={onClose}
       titleKey="lmsStaffRunSettings"
-      description={`${run.groupName} · ${run.courseName}`}
+      description={`${run.groupName} · ${run.courseName || t("lmsStaffCourseNotSelected")}`}
       dirty={
         Boolean(reason) ||
         format !== (run.format ?? "offline") ||
@@ -89,7 +89,7 @@ export function RunSettings({
           else action.mutate(input);
         }}
       >
-        <StaffField id="run-setting-format" labelKey="lmsStaffGroup">
+        <StaffField id="run-setting-format" labelKey="lmsStaffFormat">
           <select
             id="run-setting-format"
             className="min-h-11 w-full rounded-md border bg-background px-3"

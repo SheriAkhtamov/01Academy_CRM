@@ -29,6 +29,7 @@ import type {
 } from "../modules/portal-identity";
 import { LmsService } from "../modules/lms/application/lms-service";
 import { PgLearningRepository } from "../modules/lms/infrastructure/learning-repository";
+import { PgCrmLearningPreparationRepository } from "../modules/lms/infrastructure/crm-preparation-repository";
 import { PgAssignmentRepository } from "../modules/lms/infrastructure/assignment-repository";
 import { PgQuizRepository } from "../modules/lms/infrastructure/quiz-repository";
 import { PgEngagementRepository } from "../modules/lms/infrastructure/engagement-repository";
@@ -305,6 +306,7 @@ export function createLearningRuntime(
           ) ?? null,
       copyFiles: (actor, ids, sourceRunId, targetRunId, key) =>
         resources.cloneStaffFiles(actor, ids, sourceRunId, targetRunId, key),
+      crmPreparationDefaultFormat: () => flags.settings().crmPreparation.defaultFormat,
       reportProjects: reportProjectSnapshots,
       afterReview: async (sql, actor, event) => {
         const accepted = (
@@ -755,6 +757,12 @@ export function createLearningRuntime(
       if (roles.includes("lifecycle"))
         job("lifecycle", 15_000, async (signal) => {
           if (!flags.capabilities().learningEnabled) return;
+          ensureLease(signal);
+          await new PgCrmLearningPreparationRepository(pool, {
+            enabled: () => flags.capabilities().learningEnabled,
+            groupIds: portal?.groupIds,
+            defaultFormat: () => flags.settings().crmPreparation.defaultFormat,
+          }).runOnce({kind:"system"}, signal);
           ensureLease(signal);
           await learning.reconcileGroupLifecycle();
           ensureLease(signal);

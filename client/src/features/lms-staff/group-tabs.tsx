@@ -1,18 +1,17 @@
 import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 import type { LmsStaffRunDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { lmsStaffApi } from "./api";
-import { lmsStaffKey, useStaffQuery } from "./queries";
+import { useStaffQuery, useStaffRuns } from "./queries";
 import { CreateRun } from "./management";
 import { StaffMaterials } from "./materials";
 import { StaffAssignments } from "./assignments";
 import { StaffQuizzes } from "./quizzes";
 import { StaffReviews } from "./reviews";
 import { StaffResults } from "./results";
-import { StaffEmpty, StaffError, StaffLoading } from "./ui";
+import { StaffProgram } from "./program";
+import { StaffDialog, StaffGroupSetup, StaffError, StaffLoading } from "./ui";
 
 type GroupTab = "students" | "materials" | "assignments" | "results";
 const allowed = (run: LmsStaffRunDto, permission: string) =>
@@ -31,13 +30,9 @@ export function LearningGroupTabs({
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<GroupTab>("students");
-  const [create, setCreate] = useState(false);
-  const runs = useQuery({
-    queryKey: [...lmsStaffKey, "runs"],
-    queryFn: ({ signal }) => lmsStaffApi.runs(signal),
-    enabled,
-    staleTime: 15000,
-  });
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [programOpen, setProgramOpen] = useState(false);
+  const runs = useStaffRuns(enabled);
   const run = runs.data?.find((item) => item.groupId === groupId);
   if (!enabled) return <>{children}</>;
   if (runs.isPending)
@@ -67,13 +62,19 @@ export function LearningGroupTabs({
   const content = run.runId ? (
     <GroupLearningContent run={run} tab={tab} />
   ) : (
-    <div className="space-y-3">
-      <StaffEmpty />
-      <Button onClick={() => setCreate(true)}>{t("lmsStaffCreateRun")}</Button>
-    </div>
+    <StaffGroupSetup
+      run={run}
+      retry={() => {
+        void runs.refetch();
+      }}
+      onFormat={() => setFormatOpen(true)}
+    />
   );
   return (
     <>
+      {run.runId && run.setupStatus === "needs_program_review" && (
+        <StaffGroupSetup run={run} onProgram={() => setProgramOpen(true)} />
+      )}
       <Tabs value={tab} onValueChange={(value) => setTab(value as GroupTab)}>
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 min-[420px]:grid-cols-4">
           <TabsTrigger value="students" className="min-h-11 px-1">
@@ -98,7 +99,32 @@ export function LearningGroupTabs({
         <TabsContent value="students">{children}</TabsContent>
         {tab !== "students" && <TabsContent value={tab}>{content}</TabsContent>}
       </Tabs>
-      {create && <CreateRun group={run} onClose={() => setCreate(false)} />}
+      {formatOpen &&
+        !run.runId &&
+        run.setupStatus === "needs_format" &&
+        run.permissions?.includes("content.manage") && (
+          <CreateRun group={run} onClose={() => setFormatOpen(false)} />
+        )}
+      {programOpen &&
+        run.runId &&
+        run.courseId &&
+        run.setupStatus === "needs_program_review" &&
+        run.permissions?.includes("content.manage") && (
+          <StaffDialog
+            open
+            onClose={() => setProgramOpen(false)}
+            titleKey="lmsStaffProgram"
+            description={run.groupName}
+          >
+            <StaffProgram
+              runId={run.runId}
+              courseId={run.courseId}
+              administration={Boolean(run.canManageTemplates)}
+              manageContent
+              manageSchedule={allowed(run, "schedule.manage")}
+            />
+          </StaffDialog>
+        )}
     </>
   );
 }

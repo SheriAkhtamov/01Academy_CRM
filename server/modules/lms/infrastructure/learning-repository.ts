@@ -7,6 +7,7 @@ import type {
   LmsStaffAssignmentResultDto,
   LmsStaffQuizResultDto,
   LmsTeacherSummaryDto,
+  LmsStaffRunDto,
 } from "@shared/contracts/lms";
 import { LMS_STAFF_PERMISSIONS } from "@shared/contracts/lms";
 import type { Pool } from "pg";
@@ -27,6 +28,7 @@ import {
   requireVersion,
   type LmsStaffActor,
 } from "../domain/policy";
+import { crmGroupFormat, crmProgramUnits, type CrmLearningFormat, type CrmPreparationStatus } from "../domain/crm-preparation";
 import {
   one,
   rows,
@@ -44,6 +46,7 @@ import {
   type LmsSql,
 } from "./postgres-base";
 export type LmsLearningPolicy = {
+  crmPreparationDefaultFormat?: () => CrmLearningFormat | null;
   reportProjects?: (
     sql: LmsSql,
     actor: LmsStaffActor,
@@ -890,9 +893,13 @@ export class PgLearningRepository {
         "SELECT id FROM academy_groups",
       ))
         if (await this.enabledForGroup(group.id)) enabledGroups.push(group.id);
-    const groups = await listRows<{ id: number; groupId: number }>(
+    const groups = await listRows<LmsStaffRunDto & { id:number; crmCourseId:number|null; crmProgram:unknown; preparedSetupStatus:CrmPreparationStatus|null }>(
       this.pool,
-      `SELECT g.id,g.id AS group_id,g.name AS group_name,course.name AS course_name,course.id AS course_id,teacher_name.full_name AS teacher_name,run.id AS run_id,COALESCE(run.status,g.status) AS status,run.course_version_id,run.version,run.format,run.meeting_url,run.access_until,(SELECT COUNT(*)::int FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.status='active') AS student_count FROM academy_groups g JOIN academy_courses course ON course.id=g.course_id LEFT JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN academy_teachers teacher_name ON teacher_name.id=g.teacher_id WHERE ($1 OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$2 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$2 AND p.permission=ANY($3::text[]))) AND ($4::bigint[] IS NULL OR g.id=ANY($4)) ORDER BY g.name`,
+      `SELECT g.id,g.id AS group_id,g.name AS group_name,course.name AS course_name,course.id AS course_id,crm_course.id AS crm_course_id,crm_course.program AS crm_program,preparation.new_value->>'setupStatus' AS prepared_setup_status,teacher_name.full_name AS teacher_name,run.id AS run_id,COALESCE(run.status,g.status) AS status,run.course_version_id,run.version,run.format,run.meeting_url,run.access_until,(SELECT COUNT(*)::int FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.status='active') AS student_count
+       FROM academy_groups g LEFT JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_course_versions pinned ON pinned.id=run.course_version_id
+       LEFT JOIN academy_courses course ON course.id=COALESCE(pinned.course_id,g.course_id) LEFT JOIN academy_courses crm_course ON crm_course.id=g.course_id
+       LEFT JOIN LATERAL(SELECT new_value FROM lms_learning_audit WHERE entity_type='crm_group_preparation' AND entity_id=g.id AND action='crm.prepared' ORDER BY id DESC LIMIT 1) preparation ON true
+       LEFT JOIN academy_teachers teacher_name ON teacher_name.id=g.teacher_id WHERE ($1 OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$2 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$2 AND p.permission=ANY($3::text[]))) AND ($4::bigint[] IS NULL OR g.id=ANY($4)) ORDER BY g.name`,
       [
         actor.isLeadership,
         actor.userId,
@@ -921,8 +928,11 @@ export class PgLearningRepository {
             "SELECT teacher.id FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.id=$1 AND teacher.user_id=$2 AND teacher.status='active'",
             [group.groupId, actor.userId],
           ));
+        const {crmCourseId,crmProgram,preparedSetupStatus,...publicGroup} = group;
+        const setupStatus:CrmPreparationStatus = crmCourseId === null ? "needs_course" : group.runId ? preparedSetupStatus === "needs_program_review" ? "needs_program_review" : "ready" : !crmGroupFormat(group.groupName,this.policy.crmPreparationDefaultFormat?.() ?? null) ? "needs_format" : crmProgramUnits(crmProgram) ? "preparing" : "needs_program_review";
         visible.push({
-          ...group,
+          ...publicGroup,
+          setupStatus,
           permissions: LMS_STAFF_PERMISSIONS.filter(
             (permission) =>
               assigned ||

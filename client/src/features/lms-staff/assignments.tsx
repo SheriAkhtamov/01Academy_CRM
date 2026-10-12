@@ -542,7 +542,8 @@ function CopyAssignment({
                 )
                 .map((run) => (
                   <option key={run.groupId} value={run.runId!}>
-                    {run.courseName} · {run.groupName}
+                    {run.courseName || t("lmsStaffCourseNotSelected")} ·{" "}
+                    {run.groupName}
                   </option>
                 ))}
             </select>

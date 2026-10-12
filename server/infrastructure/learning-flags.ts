@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { AppConfig } from '../config';
 import { LEARNING_FLAG_KEYS, type LearningCapabilitiesDto, type LearningFlagDto, type LearningFlagKey, type LearningFlagUpdateInput, type LearningRolloutDto } from '@shared/contracts/learning-rollout';
 import { PortalResourceError } from '../modules/portal-resources/domain/policy';
-import { DEFAULT_LEARNING_SCHOOL_SETTINGS, learningSchoolSettingsSchema, type LearningSchoolSettings, type LearningSchoolSettingsDto } from '@shared/contracts/learning-settings';
+import { DEFAULT_LEARNING_SCHOOL_SETTINGS, learningSchoolSettingsSchema, type LearningSchoolSettings, type LearningSchoolSettingsDto, type LearningSchoolSettingsUpdate } from '@shared/contracts/learning-settings';
 
 export class LearningFeatureController {
   private values: LearningFlagDto[] = LEARNING_FLAG_KEYS.map((key) => ({ key, enabled: false, allGroups: false, groupIds: [], updatedAt: null,version:0 }));
@@ -33,7 +33,7 @@ export class LearningFeatureController {
     const configuration = await this.configuration();
     return { settings: this.school,version:this.schoolVersion,employees, emailConfigured: configuration.emailConfigured, scannerConfigured: configuration.scannerConfigured };
   }
-  async updateSettings(actorId: number, input: LearningSchoolSettings,version = this.schoolVersion,requestId?:string) {
+  async updateSettings(actorId: number, input: LearningSchoolSettingsUpdate['settings'],version = this.schoolVersion,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable',409);
     const allowed = (await this.pool.query<{ id: number }>("SELECT id FROM users WHERE id=ANY($1::integer[]) AND is_active=true AND is_archived=false", [input.workCalendar.coordinatorUserIds])).rows;
     if (allowed.length !== input.workCalendar.coordinatorUserIds.length) throw new PortalResourceError('portalInvalidData');
@@ -44,8 +44,10 @@ export class LearningFeatureController {
       const existing = (await sql.query('SELECT settings,version FROM lms_school_settings WHERE singleton=true FOR UPDATE')).rows[0];
       if ((existing?.version ?? 0) !== version) throw new PortalResourceError('portalVersionConflict',409);
       const old = existing?.settings;
-      await sql.query('INSERT INTO lms_school_settings(singleton,settings,updated_by,version) VALUES(true,$1::jsonb,$2,1) ON CONFLICT(singleton) DO UPDATE SET settings=EXCLUDED.settings,updated_by=EXCLUDED.updated_by,updated_at=now(),version=lms_school_settings.version+1', [JSON.stringify(input),actorId]);
-      await sql.query("INSERT INTO lms_learning_audit(user_id,entity_type,entity_id,action,old_value,new_value,request_id) VALUES($1,'school_settings',1,'settings.changed',$2::jsonb,$3::jsonb,$4)", [actorId,JSON.stringify(old ?? null),JSON.stringify(input),requestId ?? null]);
+      const current = learningSchoolSettingsSchema.parse(old ?? DEFAULT_LEARNING_SCHOOL_SETTINGS);
+      const updated = learningSchoolSettingsSchema.parse({...input,crmPreparation:input.crmPreparation ?? current.crmPreparation});
+      await sql.query('INSERT INTO lms_school_settings(singleton,settings,updated_by,version) VALUES(true,$1::jsonb,$2,1) ON CONFLICT(singleton) DO UPDATE SET settings=EXCLUDED.settings,updated_by=EXCLUDED.updated_by,updated_at=now(),version=lms_school_settings.version+1', [JSON.stringify(updated),actorId]);
+      await sql.query("INSERT INTO lms_learning_audit(user_id,entity_type,entity_id,action,old_value,new_value,request_id) VALUES($1,'school_settings',1,'settings.changed',$2::jsonb,$3::jsonb,$4)", [actorId,JSON.stringify(old ?? null),JSON.stringify(updated),requestId ?? null]);
       await sql.query('COMMIT');
     } catch(error) { await sql.query('ROLLBACK'); throw error; } finally { sql.release(); }
     await this.refresh();

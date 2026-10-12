@@ -90,6 +90,99 @@ function saveButton() {
   return screen.getByRole("button", { name: i18n.t("lmsRolloutSave") });
 }
 
+it("confirms one default format policy while preserving its draft and original version through a background refresh", async () => {
+  await openSettings();
+  const format = screen.getByLabelText(
+    i18n.t("lmsSettingsDefaultFormat"),
+  ) as HTMLSelectElement;
+  expect(format.value).toBe("");
+  expect(
+    within(format)
+      .getAllByRole("option")
+      .map((option) => (option as HTMLOptionElement).value),
+  ).toEqual(["", "offline", "online"]);
+  await userEvent.selectOptions(format, "offline");
+  mocks.schoolSettings.mockResolvedValue({
+    ...settings,
+    version: 8,
+    settings: {
+      ...structuredClone(settings.settings),
+      crmPreparation: { defaultFormat: "online" },
+    },
+  });
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ["learning-school-settings"] });
+  });
+  expect(format.value).toBe("offline");
+  await userEvent.click(saveButton());
+  expect(mocks.updateSchoolSettings).not.toHaveBeenCalled();
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("cancel"),
+    }),
+  );
+  expect(mocks.updateSchoolSettings).not.toHaveBeenCalled();
+  expect(format.value).toBe("offline");
+  await userEvent.click(saveButton());
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("lmsRolloutSave"),
+    }),
+  );
+  await waitFor(() =>
+    expect(mocks.updateSchoolSettings).toHaveBeenCalledWith(
+      {
+        version: 7,
+        settings: {
+          ...settings.settings,
+          crmPreparation: { defaultFormat: "offline" },
+        },
+      },
+      expect.anything(),
+    ),
+  );
+});
+
+it("retains an explicitly unset default format after a failed save instead of restoring the previous policy", async () => {
+  mocks.schoolSettings.mockResolvedValue({
+    ...settings,
+    settings: {
+      ...structuredClone(settings.settings),
+      crmPreparation: { defaultFormat: "online" },
+    },
+  });
+  mocks.updateSchoolSettings.mockRejectedValue(new Error("Version changed"));
+  await openSettings();
+  const format = screen.getByLabelText(
+    i18n.t("lmsSettingsDefaultFormat"),
+  ) as HTMLSelectElement;
+  expect(format.value).toBe("online");
+  await userEvent.selectOptions(format, "");
+  await userEvent.click(saveButton());
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("lmsRolloutSave"),
+    }),
+  );
+  await screen.findByText(i18n.t("lmsStaffSaveFailed"));
+  expect(mocks.updateSchoolSettings).toHaveBeenCalledWith(
+    {
+      version: 7,
+      settings: {
+        ...settings.settings,
+        crmPreparation: { defaultFormat: null },
+      },
+    },
+    expect.anything(),
+  );
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("cancel"),
+    }),
+  );
+  expect(format.value).toBe("");
+});
+
 it("preserves an edited draft during background refetch and confirms a file-policy change with the version originally opened", async () => {
   await openSettings();
   changeFileLimit("37");

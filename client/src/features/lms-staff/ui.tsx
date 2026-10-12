@@ -23,7 +23,10 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import type { LmsStaffEnrollmentDto } from "@shared/contracts/lms";
+import type {
+  LmsStaffEnrollmentDto,
+  LmsStaffRunDto,
+} from "@shared/contracts/lms";
 import { LmsStaffApiError } from "./api";
 export function useStaffError() {
   const { t } = useTranslation();
@@ -73,6 +76,61 @@ export function StaffEmpty() {
     <Card>
       <CardContent className="p-6 text-sm text-muted-foreground">
         {t("lmsStaffNoItems")}
+      </CardContent>
+    </Card>
+  );
+}
+export function StaffGroupSetup({
+  run,
+  retry,
+  onFormat,
+  onProgram,
+}: {
+  run: LmsStaffRunDto;
+  retry?: () => void;
+  onFormat?: () => void;
+  onProgram?: () => void;
+}) {
+  const { t } = useTranslation();
+  const labels: Record<string, TranslationKey> = {
+    preparing: "lmsStaffGroupPreparing",
+    needs_format: "lmsStaffGroupNeedsFormat",
+    needs_course: "lmsStaffGroupNeedsCourse",
+    needs_program_review: "lmsStaffGroupProgramReview",
+  };
+  const status = run.setupStatus;
+  const canFormat =
+    status === "needs_format" &&
+    run.permissions?.includes("content.manage") &&
+    onFormat;
+  const canRetry = status === "preparing" || !status;
+  const canReviewProgram =
+    status === "needs_program_review" &&
+    run.runId &&
+    run.courseId &&
+    run.permissions?.includes("content.manage") &&
+    onProgram;
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-5">
+        <p className="text-sm text-muted-foreground">
+          {t(labels[status ?? ""] ?? "lmsStaffGroupNotReady")}
+        </p>
+        {canFormat && (
+          <Button variant="outline" onClick={onFormat}>
+            {t("lmsStaffSelectFormat")}
+          </Button>
+        )}
+        {canReviewProgram && (
+          <Button variant="outline" onClick={onProgram}>
+            {t("lmsStaffReviewProgram")}
+          </Button>
+        )}
+        {canRetry && retry && (
+          <Button variant="outline" onClick={retry}>
+            {t("lmsStaffRetry")}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

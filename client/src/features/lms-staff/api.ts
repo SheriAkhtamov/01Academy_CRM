@@ -223,8 +223,7 @@ export const lmsStaffApi = {
       `/reports?runId=${runId}`,
       signal,
     ),
-  runs: (signal?: AbortSignal) =>
-    collection<LmsStaffRunDto & { courseId: number }>("/runs", signal),
+  runs: (signal?: AbortSignal) => collection<LmsStaffRunDto>("/runs", signal),
   createRun: (body: {
     groupId: number;
     format: "offline" | "online";

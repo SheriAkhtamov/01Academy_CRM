@@ -12,8 +12,8 @@ export function useTranslation() {
     return unsubscribe;
   }, []);
 
-  const t = useCallback((key: TranslationKey): string => {
-    return i18n.t(key);
+  const t = useCallback((key: TranslationKey, params?: Record<string, string | number>): string => {
+    return i18n.t(key, params);
   }, [currentLanguage]);
 
   const setLanguage = useCallback((lang: Language): void => {

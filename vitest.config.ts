@@ -9,7 +9,13 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
+    environmentOptions: {
+      jsdom: {
+        url: "http://localhost/",
+      },
+    },
     globals: true,
+    setupFiles: ["./tests/setup.ts"],
   },
   resolve: {
     alias: {

@@ -920,6 +920,32 @@ export const translations = {
   updatesInvalidContent: { en: 'Complete the title, description and text in both languages', ru: 'Заполните заголовок, описание и текст на обоих языках' },
   updatesPublicationConflict: { en: 'This post has already been published with different content', ru: 'Этот пост уже опубликован с другим содержимым' },
   updatesOpenSection: { en: 'Open section', ru: 'Открыть раздел' },
+  updatesSearch: { en: 'Search updates', ru: 'Поиск по обновлениям' },
+  updatesClearSearch: { en: 'Clear search', ru: 'Очистить поиск' },
+  updatesAllYears: { en: 'All', ru: 'Все' },
+  updatesSearchEmpty: { en: 'No updates found for your query', ru: 'Ничего не найдено по вашему запросу' },
+  updatesResetSearch: { en: 'Reset search', ru: 'Сбросить поиск' },
+  updatesBadgeNew: { en: 'New', ru: 'Новое' },
+  updatesReadingTime: { en: '{count} min read', ru: '{count} мин чтения' },
+  updatesTotalReleases: { en: 'Total releases', ru: 'Всего релизов' },
+  updatesLastRelease: { en: 'Latest release', ru: 'Последний релиз' },
+  updatesCopyLink: { en: 'Copy link', ru: 'Копировать ссылку' },
+  updatesLinkCopied: { en: 'Link copied to clipboard', ru: 'Ссылка скопирована в буфер обмена' },
+  updatesTableOfContents: { en: 'Table of contents', ru: 'Оглавление' },
+  updatesReadingProgress: { en: 'Reading progress', ru: 'Прогресс чтения' },
+  updatesSection: { en: 'Section', ru: 'Раздел' },
+  updatesPrevPost: { en: 'Previous update', ru: 'Предыдущее обновление' },
+  updatesNextPost: { en: 'Next update', ru: 'Следующее обновление' },
+  updatesScrollToTop: { en: 'Back to top', ru: 'Наверх' },
+  updatesPreview: { en: 'Preview', ru: 'Предпросмотр' },
+  updatesEdit: { en: 'Edit', ru: 'Редактирование' },
+  updatesTargetAction: { en: 'Target CRM action', ru: 'Целевое действие CRM' },
+  updatesActionNone: { en: 'No action', ru: 'Без действия' },
+  updatesActionSalesGroups: { en: 'Groups in Sales', ru: 'Группы в продажах' },
+  updatesActionAcademySettings: { en: 'Academy Structure', ru: 'Структура академии' },
+  updatesLanguageReady: { en: 'Ready', ru: 'Заполнено' },
+  updatesLanguageIncomplete: { en: 'Incomplete', ru: 'Не заполнено' },
+  updatesCharsCounter: { en: '{count}/{max} characters', ru: '{count}/{max} символов' },
   whatsNew: { en: "What's new", ru: 'Что нового' },
   sidebarResources: { en: 'Useful links', ru: 'Полезные ссылки' },
   resourceComingSoon: { en: 'Coming soon', ru: 'Скоро' },
@@ -3759,9 +3785,14 @@ const resolveStoredLanguage = (): Language => {
     return DEFAULT_LANGUAGE;
   }
 
+  const storage = window.localStorage;
+  if (!storage) {
+    return DEFAULT_LANGUAGE;
+  }
+
   const storedLanguage =
-    localStorage.getItem(PRIMARY_LANGUAGE_STORAGE_KEY) ??
-    localStorage.getItem(LEGACY_LANGUAGE_STORAGE_KEY);
+    storage.getItem(PRIMARY_LANGUAGE_STORAGE_KEY) ??
+    storage.getItem(LEGACY_LANGUAGE_STORAGE_KEY);
 
   return storedLanguage === 'en' || storedLanguage === 'ru'
     ? storedLanguage
@@ -3773,8 +3804,13 @@ const persistLanguage = (language: Language) => {
     return;
   }
 
-  localStorage.setItem(PRIMARY_LANGUAGE_STORAGE_KEY, language);
-  localStorage.setItem(LEGACY_LANGUAGE_STORAGE_KEY, language);
+  const storage = window.localStorage;
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(PRIMARY_LANGUAGE_STORAGE_KEY, language);
+  storage.setItem(LEGACY_LANGUAGE_STORAGE_KEY, language);
 };
 
 const applyDocumentLanguage = (language: Language) => {
@@ -3809,13 +3845,19 @@ class I18nService {
     };
   }
 
-  t(key: TranslationKey): string {
+  t(key: TranslationKey, params?: Record<string, string | number>): string {
     const translation = translations[key];
     if (!translation) {
       devLog(`Translation missing for key: ${key}`);
       return key.toString();
     }
-    return translation[this.currentLanguage] || translation['en'] || key.toString();
+    let text: string = translation[this.currentLanguage] || translation['en'] || key.toString();
+    if (params) {
+      for (const [paramKey, paramValue] of Object.entries(params)) {
+        text = text.split(`{${paramKey}}`).join(String(paramValue));
+      }
+    }
+    return text;
   }
 }
 

@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   closeWebSocket: vi.fn(),
   poolEnd: vi.fn(),
   poolQuery: vi.fn(),
+  publishReleaseUpdates: vi.fn(async () => undefined),
   getUser: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -51,6 +52,9 @@ vi.mock("../server/lib/logger", () => ({ logger: mocks.logger }));
 vi.mock("../server/storage", () => ({ storage: { getUser: mocks.getUser } }));
 vi.mock("../server/infrastructure/database-health", () => ({
   assertDatabaseConnection: vi.fn(async () => undefined),
+}));
+vi.mock("../server/infrastructure/platform-updates", () => ({
+  publishReleaseUpdates: mocks.publishReleaseUpdates,
 }));
 vi.mock("../server/services/integration-settings", () => ({
   loadIntegrationSettings: vi.fn(async () => undefined),
@@ -201,6 +205,21 @@ afterEach(async () => {
 });
 
 describe("Actual HTTP bootstrap separates staff and portal authentication", () => {
+  it("closes owned resources if release publication fails before serving requests", async () => {
+    expect(mocks.publishReleaseUpdates).toHaveBeenCalledTimes(1);
+    await runtime!.stop();
+    runtime = undefined;
+    vi.clearAllMocks();
+    mocks.publishReleaseUpdates.mockRejectedValueOnce(new Error("release publication failure"));
+    const { startApplication } = await import("../server/app/bootstrap");
+    await expect(startApplication()).rejects.toThrow("release publication failure");
+    const learning = mocks.createRuntime.mock.results[0].value;
+    expect(learning.start).not.toHaveBeenCalled();
+    expect(learning.stop).toHaveBeenCalledTimes(1);
+    expect(mocks.closeWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.poolEnd).toHaveBeenCalledTimes(1);
+    expect(mocks.startScheduler).not.toHaveBeenCalled();
+  });
   it("closes the core pool after a learning shutdown error rather than abandoning ownership", async () => {
     const actual = mocks.createRuntime.mock.results[0].value as {
       stop: ReturnType<typeof vi.fn>;

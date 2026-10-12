@@ -100,6 +100,52 @@ const multiSectionPost = {
   },
 };
 
+const featurePost = {
+  id: 11,
+  publishedAt: '2026-10-10T10:00:00.000Z',
+  content: {
+    title: { ru: 'Функция аналитики', en: 'Analytics Feature' },
+    summary: { ru: 'Новый модуль аналитики', en: 'New analytics module' },
+    category: 'feature' as const,
+    sections: [{ paragraphs: [{ ru: 'Описание модуля.', en: 'Module description.' }], items: [] }],
+  },
+};
+
+const improvementPost = {
+  id: 12,
+  publishedAt: '2026-10-11T10:00:00.000Z',
+  content: {
+    title: { ru: 'Улучшение скорости', en: 'Speed Improvement' },
+    summary: { ru: 'Ускорение загрузки страниц', en: 'Page load optimization' },
+    category: 'improvement' as const,
+    sections: [{ paragraphs: [{ ru: 'Оптимизация рендеринга.', en: 'Render optimization.' }], items: [] }],
+  },
+};
+
+const salesPost = {
+  id: 13,
+  publishedAt: '2026-10-12T10:00:00.000Z',
+  content: {
+    title: { ru: 'Воронка продаж', en: 'Sales Pipeline' },
+    summary: { ru: 'Новые этапы воронки', en: 'New pipeline stages' },
+    category: 'sales' as const,
+    action: { href: '/sales/groups' as const },
+    sections: [{ paragraphs: [{ ru: 'Работа со сделками.', en: 'Deal management.' }], items: [] }],
+  },
+};
+
+const adminPost = {
+  id: 14,
+  publishedAt: '2026-10-13T10:00:00.000Z',
+  content: {
+    title: { ru: 'Настройки ролей', en: 'Role Settings' },
+    summary: { ru: 'Администрирование ролей и прав', en: 'Role and permissions admin' },
+    category: 'administration' as const,
+    action: { href: '/admin/academy-settings?tab=groups' as const },
+    sections: [{ paragraphs: [{ ru: 'Управление доступом.', en: 'Access management.' }], items: [] }],
+  },
+};
+
 let client: QueryClient;
 
 beforeEach(() => {
@@ -328,4 +374,233 @@ it('allows previewing, selecting CRM target action and tracking character counte
       action: { href: '/admin/academy-settings?tab=groups' },
     },
   });
+});
+
+it('filters the feed cards by category filter chips with accessible aria-pressed state', async () => {
+  mocks.list.mockResolvedValue([featurePost, improvementPost, salesPost, adminPost]);
+  mount();
+  await screen.findByText(featurePost.content.title.ru);
+  expect(screen.getByText(improvementPost.content.title.ru)).toBeTruthy();
+  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
+  expect(screen.getByText(adminPost.content.title.ru)).toBeTruthy();
+
+  const allCatButton = screen.getByRole('button', { name: i18n.t('updatesCategoryAll') });
+  const featureCatButton = screen.getByRole('button', { name: i18n.t('updatesCategoryFeature') });
+  const salesCatButton = screen.getByRole('button', { name: i18n.t('updatesCategorySales') });
+
+  expect(allCatButton.getAttribute('aria-pressed')).toBe('true');
+  expect(featureCatButton.getAttribute('aria-pressed')).toBe('false');
+
+  await userEvent.click(featureCatButton);
+  expect(allCatButton.getAttribute('aria-pressed')).toBe('false');
+  expect(featureCatButton.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText(featurePost.content.title.ru)).toBeTruthy();
+  expect(screen.queryByText(improvementPost.content.title.ru)).toBeNull();
+  expect(screen.queryByText(salesPost.content.title.ru)).toBeNull();
+  expect(screen.queryByText(adminPost.content.title.ru)).toBeNull();
+
+  await userEvent.click(salesCatButton);
+  expect(salesCatButton.getAttribute('aria-pressed')).toBe('true');
+  expect(featureCatButton.getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByText(featurePost.content.title.ru)).toBeNull();
+  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
+
+  await userEvent.click(allCatButton);
+  expect(allCatButton.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText(featurePost.content.title.ru)).toBeTruthy();
+  expect(screen.getByText(improvementPost.content.title.ru)).toBeTruthy();
+  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
+  expect(screen.getByText(adminPost.content.title.ru)).toBeTruthy();
+});
+
+it('shows unread badges and allows marking all updates as read in one click', async () => {
+  mocks.list.mockResolvedValue([featurePost, improvementPost]);
+  mount();
+  await screen.findByText(featurePost.content.title.ru);
+
+  const unreadBadges = screen.getAllByText(i18n.t('updatesUnread'));
+  expect(unreadBadges.length).toBe(2);
+
+  const markAllButton = screen.getByRole('button', { name: i18n.t('updatesMarkAllAsRead') });
+  await userEvent.click(markAllButton);
+
+  expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('updatesAllMarkedAsRead') });
+  expect(screen.queryByRole('button', { name: i18n.t('updatesMarkAllAsRead') })).toBeNull();
+  expect(screen.queryByText(i18n.t('updatesUnread'))).toBeNull();
+
+  const stored = JSON.parse(window.localStorage.getItem('academy-updates:read-posts') || '[]');
+  expect(stored).toContain(featurePost.id);
+  expect(stored).toContain(improvementPost.id);
+});
+
+it('opens quick preview in a Dialog without route changes and marks post as read', async () => {
+  mocks.list.mockResolvedValue([salesPost]);
+  mount();
+  await screen.findByText(salesPost.content.title.ru);
+  expect(screen.getByText(i18n.t('updatesUnread'))).toBeTruthy();
+
+  const quickViewButton = screen.getByRole('button', { name: i18n.t('updatesQuickView') });
+  await userEvent.click(quickViewButton);
+
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByText(salesPost.content.title.ru)).toBeTruthy();
+  expect(within(dialog).getByText(salesPost.content.summary.ru)).toBeTruthy();
+  expect(within(dialog).getByText('Работа со сделками.')).toBeTruthy();
+
+  expect(location.search).toBe('');
+
+  const stored = JSON.parse(window.localStorage.getItem('academy-updates:read-posts') || '[]');
+  expect(stored).toContain(salesPost.id);
+
+  const closeButtons = within(dialog).getAllByRole('button', { name: i18n.t('updatesCloseQuickView') });
+  await userEvent.click(closeButtons[0]);
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+it('supports hotkey / to focus search and Escape to clear search or return from article', async () => {
+  mocks.list.mockResolvedValue([post]);
+  mount();
+  await screen.findByText(post.content.title.ru);
+
+  const searchInput = screen.getByRole('searchbox', { name: i18n.t('updatesSearch') });
+  expect(document.activeElement).not.toBe(searchInput);
+
+  await userEvent.keyboard('/');
+  expect(document.activeElement).toBe(searchInput);
+
+  await userEvent.type(searchInput, 'тест');
+  expect((searchInput as HTMLInputElement).value).toBe('тест');
+
+  await userEvent.keyboard('{Escape}');
+  expect((searchInput as HTMLInputElement).value).toBe('');
+  expect(document.activeElement).not.toBe(searchInput);
+
+  cleanup();
+
+  mocks.find.mockResolvedValue(post);
+  mocks.list.mockResolvedValue([post]);
+  mount('?post=5');
+  await screen.findByText('Выберите нужную группу.');
+
+  await userEvent.keyboard('{Escape}');
+  await waitFor(() => expect(location.search).toBe(''));
+});
+
+it('allows toggling employee reactions with accessible aria-pressed and localStorage sync', async () => {
+  mocks.find.mockResolvedValue(post);
+  mocks.list.mockResolvedValue([post]);
+  mount('?post=5');
+  await screen.findByText('Выберите нужную группу.');
+
+  const helpfulButton = screen.getByRole('button', { name: i18n.t('updatesReactionHelpful') });
+  const awesomeButton = screen.getByRole('button', { name: i18n.t('updatesReactionAwesome') });
+  const excitedButton = screen.getByRole('button', { name: i18n.t('updatesReactionExcited') });
+
+  expect(helpfulButton.getAttribute('aria-pressed')).toBe('false');
+  expect(awesomeButton.getAttribute('aria-pressed')).toBe('false');
+  expect(excitedButton.getAttribute('aria-pressed')).toBe('false');
+
+  await userEvent.click(helpfulButton);
+  expect(helpfulButton.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText(i18n.t('updatesReactionFeedback'))).toBeTruthy();
+
+  let raw = window.localStorage.getItem('academy-updates:reactions');
+  let data = JSON.parse(raw || '{}');
+  expect(data['5']?.userReaction).toBe('helpful');
+  expect(data['5']?.counts?.helpful).toBe(1);
+
+  await userEvent.click(awesomeButton);
+  expect(helpfulButton.getAttribute('aria-pressed')).toBe('false');
+  expect(awesomeButton.getAttribute('aria-pressed')).toBe('true');
+
+  raw = window.localStorage.getItem('academy-updates:reactions');
+  data = JSON.parse(raw || '{}');
+  expect(data['5']?.userReaction).toBe('awesome');
+  expect(data['5']?.counts?.helpful).toBe(0);
+  expect(data['5']?.counts?.awesome).toBe(1);
+
+  await userEvent.click(awesomeButton);
+  expect(awesomeButton.getAttribute('aria-pressed')).toBe('false');
+  raw = window.localStorage.getItem('academy-updates:reactions');
+  data = JSON.parse(raw || '{}');
+  expect(data['5']?.userReaction).toBeNull();
+  expect(data['5']?.counts?.awesome).toBe(0);
+});
+
+it('automatically saves draft to localStorage, shows restored banner, and clears on demand', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  mount();
+  await screen.findByText(post.content.title.ru);
+
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+
+  const titleInput = within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') });
+  await userEvent.type(titleInput, 'Черновик релиза');
+  const summaryInput = within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') });
+  await userEvent.type(summaryInput, 'Краткое саммари черновика');
+
+  await waitFor(() => {
+    const rawDraft = window.localStorage.getItem('academy-updates:publish-draft');
+    expect(rawDraft).toBeTruthy();
+    const parsed = JSON.parse(rawDraft || '{}');
+    expect(parsed.titleRu).toBe('Черновик релиза');
+    expect(parsed.summaryRu).toBe('Краткое саммари черновика');
+  });
+
+  cleanup();
+
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const reDialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+
+  expect(within(reDialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
+  expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('Черновик релиза');
+
+  const clearButton = within(reDialog).getByRole('button', { name: i18n.t('updatesClearDraft') });
+  await userEvent.click(clearButton);
+
+  expect(within(reDialog).queryByText(i18n.t('updatesDraftRestored'))).toBeNull();
+  expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('');
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBeNull();
+});
+
+it('supports category selection and multi-section authoring with bullet items and live preview', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  mount();
+  await screen.findByText(post.content.title.ru);
+
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+
+  const categorySelect = within(dialog).getByRole('combobox', { name: i18n.t('updatesCategory') });
+  await userEvent.selectOptions(categorySelect, 'improvement');
+  expect((categorySelect as HTMLSelectElement).value).toBe('improvement');
+
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'Улучшение интерфейса');
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') }), 'Обновленный UI');
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }), 'Основной текст');
+
+  const addSectionButton = within(dialog).getByRole('button', { name: i18n.t('updatesAddSection') });
+  await userEvent.click(addSectionButton);
+
+  const sectionHeading = within(dialog).getByRole('textbox', { name: i18n.t('updatesSectionHeading') });
+  await userEvent.type(sectionHeading, 'Детали улучшения');
+
+  const sectionBody = within(dialog).getByRole('textbox', { name: i18n.t('updatesSectionBody') });
+  await userEvent.type(sectionBody, 'Второй блок текста');
+
+  const addItemButtons = within(dialog).getAllByRole('button', { name: i18n.t('updatesAddItem') });
+  await userEvent.click(addItemButtons[1]);
+
+  const bulletInput = within(dialog).getByPlaceholderText(i18n.t('updatesAddItem'));
+  await userEvent.type(bulletInput, 'Первый пункт списка');
+
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
+  expect(within(dialog).getAllByText(i18n.t('updatesCategoryImprovement')).length).toBeGreaterThanOrEqual(2);
+  expect(within(dialog).getByText('Улучшение интерфейса')).toBeTruthy();
+  expect(within(dialog).getByText('Детали улучшения')).toBeTruthy();
+  expect(within(dialog).getByText('Второй блок текста')).toBeTruthy();
+  expect(within(dialog).getByText('Первый пункт списка')).toBeTruthy();
 });

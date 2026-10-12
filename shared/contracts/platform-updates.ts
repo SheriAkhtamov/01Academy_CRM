@@ -5,9 +5,13 @@ const localized = (maximum: number) => z.object({
   en: z.string().trim().min(1).max(maximum),
 }).strict();
 const localImage = z.string().regex(/^\/api\/updates\/images\/[a-zA-Z0-9-]+\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/);
+export const updateCategorySchema = z.enum(['feature', 'improvement', 'sales', 'administration']);
+export type UpdateCategory = z.infer<typeof updateCategorySchema>;
+
 export const updateContentSchema = z.object({
   title: localized(200),
   summary: localized(600),
+  category: updateCategorySchema.optional(),
   sections: z.array(z.object({
     heading: localized(200).optional(),
     paragraphs: z.array(localized(5000)).max(20).default([]),

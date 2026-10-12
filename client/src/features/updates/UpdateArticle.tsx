@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Clock, Copy, ListCollapse } from 'lucide-react';
 import { canAccessAcademyModule } from '@shared/academy';
 import type { PlatformUpdate } from '@shared/contracts/platform-updates';
@@ -8,24 +8,43 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { calculateReadingTime } from './utils';
+import { cn } from '@/lib/utils';
+import {
+  calculateReadingTime,
+  getPostCategory,
+  getCategoryBadgeClass,
+  getCategoryTranslationKey,
+  getPostReactions,
+  togglePostReaction,
+  type ReactionType,
+  type PostReactions,
+} from './utils';
 import { updatesApi, updateQueryKeys } from './api';
 
 export function UpdateArticle({ post }: { post: PlatformUpdate }) {
   const { t, language } = useTranslation();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [image, setImage] = useState<{ src: string; caption: string } | null>(null);
   const [readingProgress, setReadingProgress] = useState(0);
+  const [reactions, setReactions] = useState<PostReactions>(() => getPostReactions(post.id));
 
   const locale = language === 'ru' ? 'ru' : 'en';
+  const category = getPostCategory(post);
   const action = post.content.action;
   const canOpenAction =
     action &&
     (action.href === '/sales/groups'
       ? canAccessAcademyModule(user, 'sales')
       : canAccessAcademyModule(user, 'administration'));
+
+  // Sync reactions when post changes
+  useEffect(() => {
+    setReactions(getPostReactions(post.id));
+  }, [post.id]);
 
   // Calculate reading scroll progress
   useEffect(() => {
@@ -52,6 +71,43 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
   const nextPost = currentIndex > 0 ? posts[currentIndex - 1] : null; // newer post
   const prevPost = currentIndex >= 0 && currentIndex < posts.length - 1 ? posts[currentIndex + 1] : null; // older post
 
+  // Keyboard navigation shortcuts (ADV-05)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (image) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        navigate('/updates');
+      } else if (
+        (event.key === 'ArrowLeft' || event.key === 'k' || event.key === 'K') &&
+        prevPost
+      ) {
+        event.preventDefault();
+        navigate(`/updates?post=${prevPost.id}`);
+      } else if (
+        (event.key === 'ArrowRight' || event.key === 'j' || event.key === 'J') &&
+        nextPost
+      ) {
+        event.preventDefault();
+        navigate(`/updates?post=${nextPost.id}`);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [image, prevPost, nextPost, navigate]);
+
   const handleCopyLink = async () => {
     const url = `${window.location.origin}/updates?post=${post.id}`;
     try {
@@ -62,6 +118,11 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
       // safe fallback for environments without clipboard permissions
     }
     toast({ title: t('updatesLinkCopied') });
+  };
+
+  const handleReaction = (reaction: ReactionType) => {
+    const updated = togglePostReaction(post.id, reaction);
+    setReactions(updated);
   };
 
   const scrollToTop = () => {
@@ -105,9 +166,13 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
         </Button>
       </div>
 
-      {/* Article Header */}
+      {/* Article Header (ADV-02) */}
       <header className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground">
+          <Badge variant="outline" className={cn(getCategoryBadgeClass(category), 'font-medium')}>
+            {t(getCategoryTranslationKey(category))}
+          </Badge>
+          <span>•</span>
           <time dateTime={post.publishedAt}>
             {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
               dateStyle: 'long',
@@ -191,6 +256,73 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
         </section>
       ))}
 
+      {/* Employee reactions block (ADV-06) */}
+      <div className="rounded-xl border border-border/80 bg-card/60 p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold tracking-tight text-foreground">
+            {t('updatesReactionsTitle')}
+          </p>
+          {reactions.userReaction ? (
+            <span className="text-xs text-muted-foreground animate-in fade-in duration-200">
+              {t('updatesReactionFeedback')}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            type="button"
+            variant={reactions.userReaction === 'helpful' ? 'default' : 'outline'}
+            size="sm"
+            className="gap-1.5"
+            aria-label={t('updatesReactionHelpful')}
+            aria-pressed={reactions.userReaction === 'helpful'}
+            onClick={() => handleReaction('helpful')}
+          >
+            <span aria-hidden="true">👍</span>
+            <span>{t('updatesReactionHelpful')}</span>
+            {reactions.helpful > 0 ? (
+              <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
+                {reactions.helpful}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant={reactions.userReaction === 'awesome' ? 'default' : 'outline'}
+            size="sm"
+            className="gap-1.5"
+            aria-label={t('updatesReactionAwesome')}
+            aria-pressed={reactions.userReaction === 'awesome'}
+            onClick={() => handleReaction('awesome')}
+          >
+            <span aria-hidden="true">🔥</span>
+            <span>{t('updatesReactionAwesome')}</span>
+            {reactions.awesome > 0 ? (
+              <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
+                {reactions.awesome}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant={reactions.userReaction === 'excited' ? 'default' : 'outline'}
+            size="sm"
+            className="gap-1.5"
+            aria-label={t('updatesReactionExcited')}
+            aria-pressed={reactions.userReaction === 'excited'}
+            onClick={() => handleReaction('excited')}
+          >
+            <span aria-hidden="true">🚀</span>
+            <span>{t('updatesReactionExcited')}</span>
+            {reactions.excited > 0 ? (
+              <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
+                {reactions.excited}
+              </span>
+            ) : null}
+          </Button>
+        </div>
+      </div>
+
       {/* Bottom navigation cards: Previous and Next updates */}
       {prevPost || nextPost ? (
         <div className="grid gap-4 border-t pt-6 sm:grid-cols-2">
@@ -225,6 +357,11 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
           ) : null}
         </div>
       ) : null}
+
+      {/* Keyboard navigation hint (ADV-05) */}
+      <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+        <span>{t('updatesHotkeyHint')}</span>
+      </div>
 
       {/* Back to top button */}
       <div className="flex justify-center pt-2">

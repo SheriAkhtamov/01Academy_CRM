@@ -1,4 +1,5 @@
 import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
+import { groupConfigurationKey } from '@/features/groups/queries';
 import type { Group, GroupTeacher } from '@/features/groups/types';
 import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
 import type { School, Room, Course } from '@/features/academy-resources/api';
@@ -198,6 +199,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   }, [activeTab, configuration.isLoading]);
 
   const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: groupConfigurationKey }),
     queryClient.invalidateQueries({ queryKey: ['/api/academy/configuration'] }),
     queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] }),
     queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/marketing'] }),

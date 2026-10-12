@@ -713,7 +713,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0">
-          <GroupsWorkspace configuration={configuration.data} basePath={`${basePath}?tab=groups`} />
+          <GroupsWorkspace configuration={configuration.data} basePath={`${basePath}?tab=groups`} scopeControl="select" />
         </TabsContent>
 
         <TabsContent value="funnels" className="mt-0">

@@ -94,6 +94,12 @@ interface DataTableProps<T> {
   isLoading?: boolean;
   showPagination?: boolean;
   filterKey?: string;
+  /**
+   * Every row in the order the reader sees it, across pages. For callers that
+   * step through rows elsewhere — a detail drawer's previous/next — and must
+   * follow the sort the reader picked rather than the order the data arrived in.
+   */
+  onSortedDataChange?: (rows: T[]) => void;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -111,6 +117,7 @@ export function DataTable<T extends Record<string, any>>({
   isLoading = false,
   showPagination = true,
   filterKey,
+  onSortedDataChange,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const animateRows = useMotionFeature('entrances');
@@ -166,6 +173,10 @@ export function DataTable<T extends Record<string, any>>({
       return 0;
     });
   }, [data, sortKey, sortDirection, columns]);
+
+  useEffect(() => {
+    onSortedDataChange?.(sortedData);
+  }, [onSortedDataChange, sortedData]);
 
   // Reset to the first page only when sorting or page size changes. A row
   // arriving from a background refetch must not kick a user browsing page 4

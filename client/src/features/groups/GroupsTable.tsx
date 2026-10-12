@@ -1,45 +1,68 @@
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Archive, ArchiveRestore, Edit3, Loader2, Trash2 } from 'lucide-react';
+import { GroupStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
+import { Archive, ArchiveRestore, Edit3, Loader2, Trash2, UserX } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
+import { cn } from '@/lib/utils';
 import type { Group } from './types';
-import { normalizeSchedule } from './schedule';
-import { availableGroupSeats } from './filters';
+import { GroupSeatMeter } from './GroupSeatMeter';
+import {
+  formatGroupPeriod,
+  groupNameParts,
+  groupScheduleSlots,
+  groupSeats,
+  groupTimeline,
+  summarizeSchedule,
+} from './presentation';
+import { useGroupLabels } from './useGroupLabels';
 
 interface GroupsTableProps {
   groups: Group[];
   isGroupArchive: boolean;
   filterKey: string;
+  todayKey: string;
   emptyState: React.ReactNode;
   archivingId: number | null;
   restoringId: number | null;
   deleting: boolean;
+  onOpen: (group: Group) => void;
   onEdit: (group: Group) => void;
   onArchive: (group: Group) => void;
   onRestore: (group: Group) => void;
   onDelete: (group: Group) => void;
+  onOrderChange?: (groups: Group[]) => void;
 }
 
-export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, archivingId,
-  restoringId, deleting, onEdit, onArchive, onRestore, onDelete }: GroupsTableProps) {
-  const { t } = useTranslation();
-  const dayNames = [t('monday'), t('tuesday'), t('wednesday'), t('thursday'), t('friday'), t('saturday'), t('sunday')];
+export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, emptyState, archivingId,
+  restoringId, deleting, onOpen, onEdit, onArchive, onRestore, onDelete, onOrderChange }: GroupsTableProps) {
+  const { t, language } = useTranslation();
+  const { startLabel, lessonPlanLabel } = useGroupLabels();
+  const shortDayNames = [t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
+    t('fridayShort'), t('saturdayShort'), t('sundayShort')];
   const groupColumns: DataTableColumn<Group>[] = [
     {
       key: 'name',
       header: t('group'),
       sortable: true,
+      mobilePrimary: true,
       accessor: (row) => row.name,
-      render: (row) => (
-        <div className="min-w-0 max-w-80">
-          <p className="break-words font-medium text-foreground">{row.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {row.teacherName ?? t('notAssigned')}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground xl:hidden">{row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}</p>
-        </div>
-      ),
+      render: (row) => {
+        const { title, code } = groupNameParts(row.name);
+        return (
+          <div className="min-w-0 max-w-80">
+            <p className="break-words font-medium text-foreground">{title}</p>
+            {code ? <p className="truncate font-mono text-[11px] text-muted-foreground">{code}</p> : null}
+            {row.teacherName ? (
+              <p className="truncate text-xs text-muted-foreground">{row.teacherName}</p>
+            ) : (
+              <p className="flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                <UserX className="size-3.5 shrink-0" aria-hidden="true" />
+                {t('notAssigned')}
+              </p>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'courseAndSchool',
@@ -47,9 +70,9 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
       sortable: true,
       accessor: (row) => `${row.courseName ?? ''} ${row.schoolName ?? ''}`,
       render: (row) => (
-        <div>
+        <div className="min-w-0">
           <p className="font-medium text-foreground">{row.courseName ?? '—'}</p>
-          <p className="text-xs text-muted-foreground">{row.schoolName ?? '—'} · {row.roomName ?? t('roomNotFound')}</p>
+          <p className="text-xs text-muted-foreground">{[row.schoolName, row.roomName].filter(Boolean).join(' · ') || '—'}</p>
         </div>
       ),
     },
@@ -57,33 +80,50 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
       key: 'schedule',
       header: t('schedule'),
       accessor: (row) => row.schedule?.length ?? 0,
-      render: (row) => (
-        <div className="flex max-w-md flex-wrap gap-1">
-          {normalizeSchedule(row.schedule, row.lessonDurationMinutes).slice(0, 3).map((item, index) => (
-            <Badge key={`${row.id}-${item.dayOfWeek}-${item.startTime}-${index}`} variant="outline">
-              {dayNames[item.dayOfWeek - 1]} {item.startTime}–{item.endTime}
-            </Badge>
-          ))}
-          {(row.schedule?.length ?? 0) > 3
-            ? <Badge variant="secondary">+{row.schedule.length - 3}</Badge>
-            : null}
-        </div>
-      ),
+      render: (row) => {
+        const lines = summarizeSchedule(groupScheduleSlots(row), shortDayNames);
+        if (lines.length === 0) return <span className="text-xs text-muted-foreground">{t('groupsWithoutSchedule')}</span>;
+        return (
+          <ul className="min-w-36 space-y-0.5 text-sm">
+            {lines.slice(0, 2).map((line) => (
+              <li key={`${line.days}-${line.time}`} className="whitespace-nowrap">
+                <span className="font-medium text-foreground">{line.days}</span>{' '}
+                <span className="tabular-nums text-muted-foreground">{line.time}</span>
+              </li>
+            ))}
+            {lines.length > 2 ? <li className="text-xs text-muted-foreground">+{lines.length - 2}</li> : null}
+          </ul>
+        );
+      },
+    },
+    {
+      key: 'period',
+      header: t('groupDates'),
+      sortable: true,
+      accessor: (row) => groupTimeline(row, todayKey).startKey || null,
+      render: (row) => {
+        const period = formatGroupPeriod(groupTimeline(row, todayKey), language, todayKey);
+        const start = startLabel(row, todayKey);
+        return (
+          <div className="min-w-32">
+            <p className="whitespace-nowrap text-sm text-foreground">{period || '—'}</p>
+            {start ? <p className="text-xs font-medium text-primary">{start}</p> : null}
+            <p className="text-xs text-muted-foreground 2xl:hidden">{lessonPlanLabel(row)}</p>
+          </div>
+        );
+      },
     },
     {
       key: 'learningPlan',
-      className: 'hidden xl:table-cell',
+      // Header and cells hide together; hiding only the header slid every
+      // later value one column to the left of its heading.
+      className: 'hidden 2xl:table-cell',
+      cellClassName: 'hidden 2xl:table-cell',
       mobileHidden: true,
       header: t('groupLearningPlan'),
       sortable: true,
       accessor: (row) => row.lessonCount,
-      render: (row) => (
-        <div className="md:min-w-44">
-          <p className="font-medium text-foreground">
-            {row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}
-          </p>
-        </div>
-      ),
+      render: (row) => <p className="whitespace-nowrap text-sm text-foreground">{lessonPlanLabel(row)}</p>,
     },
     {
       key: 'capacity',
@@ -91,18 +131,24 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
       sortable: true,
       accessor: (row) => Number(row.currentStudents || 0) + Number(row.reservedStudents || 0),
       render: (row) => {
-        const occupied = Number(row.currentStudents || 0) + Number(row.reservedStudents || 0);
+        const seats = groupSeats(row);
         return (
-          <div className="flex min-w-36 flex-col gap-1">
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="font-medium text-foreground">{occupied}/{row.maxStudents || 12}</span>
-              {Number(row.reservedStudents || 0) > 0
-                ? <span className="text-muted-foreground">{t('reservedSeats')}: {row.reservedStudents}</span>
-                : null}
+          <div className="flex min-w-36 max-w-48 flex-col gap-1.5">
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="font-semibold tabular-nums text-foreground">{seats.occupied}/{seats.max}</span>
+              {seats.sellable ? (
+                <span className={cn('font-medium',
+                  seats.tone === 'full' ? 'text-rose-700 dark:text-rose-300'
+                    : seats.tone === 'few' ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-emerald-700 dark:text-emerald-300')}>
+                  {seats.free > 0 ? t('groupsFreeSeats').replace('{count}', String(seats.free)) : t('groupsSeatsFullShort')}
+                </span>
+              ) : null}
             </div>
-            {['open', 'in_progress'].includes(row.status) && !row.isArchived ? (
-              <span className="text-xs text-muted-foreground">{t('groupsFreeSeats').replace('{count}', String(availableGroupSeats(row)))}</span>
-            ) : null}
+            <GroupSeatMeter seats={seats} />
+            {seats.reserved > 0
+              ? <span className="text-xs text-muted-foreground">{t('reservedSeats')}: {seats.reserved}</span>
+              : null}
           </div>
         );
       },
@@ -112,15 +158,7 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
       header: t('status'),
       sortable: true,
       accessor: (row) => row.status,
-      render: (row) => (
-        <Badge variant={row.status === 'completed' ? 'secondary' : 'outline'}>
-          {row.status === 'open'
-            ? t('groupStatusOpen')
-            : row.status === 'in_progress'
-              ? t('groupStatusInProgress')
-              : row.status === 'frozen' ? t('groupStatusFrozen') : t('groupStatusCompleted')}
-        </Badge>
-      ),
+      render: (row) => <GroupStatusBadge status={row.status} />,
     },
     {
       key: 'actions',
@@ -134,10 +172,10 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
               size="icon"
               className="min-h-11 min-w-11"
               aria-label={t('editGroup')}
+              title={t('editGroup')}
               onClick={() => onEdit(row)}
             >
               <Edit3 />
-              <span className="sr-only">{t('edit')}</span>
             </Button>
             {isGroupArchive ? (
               <>
@@ -160,10 +198,11 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
                   size="icon"
                   className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   disabled={deleting}
+                  aria-label={t('deleteGroupPermanently')}
+                  title={t('deleteGroupPermanently')}
                   onClick={() => onDelete(row)}
                 >
                   <Trash2 />
-                  <span className="sr-only">{t('deleteGroupPermanently')}</span>
                 </Button>
               </>
             ) : (
@@ -190,5 +229,6 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, emptyState, arc
   ];
 
   return <DataTable columns={groupColumns} data={groups} keyExtractor={(group) => `group-${group.id}`}
-    defaultSortKey="name" filterKey={filterKey} onRowClick={onEdit} emptyState={emptyState} />;
+    defaultSortKey="name" filterKey={filterKey} onRowClick={onOpen} emptyState={emptyState}
+    onSortedDataChange={onOrderChange} />;
 }

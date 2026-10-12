@@ -103,8 +103,15 @@ SelectContent.displayName = SelectPrimitive.Content.displayName
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+    /**
+     * Shown at the end of the option in the open list only — a count or a
+     * short status — and kept out of the closed trigger, which repeats just
+     * the option's own text.
+     */
+    trailing?: React.ReactNode
+  }
+>(({ className, children, trailing, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
@@ -120,6 +127,9 @@ const SelectItem = React.forwardRef<
     </span>
 
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {trailing ? (
+      <span className="ml-auto flex shrink-0 items-center gap-1 pl-3 text-xs text-muted-foreground">{trailing}</span>
+    ) : null}
   </SelectPrimitive.Item>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName

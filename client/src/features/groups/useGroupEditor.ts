@@ -11,9 +11,10 @@ import { academyDateInputValue } from '@/lib/localeFormat';
 import { useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { futureGroupStatusNeedsConfirmation } from '@/components/ux/FutureGroupStartDialog';
 import type { WeekScheduleItem } from '@/components/ux/WeekScheduleEditor';
-import { getMinimumGroupEndDate } from '@shared/scheduling';
+import { getMinimumGroupEndDate, type GroupScheduleValidationError } from '@shared/scheduling';
 import { normalizeSchedule } from './schedule';
 import { groupCodeCatalogueKey, invalidateGroupData } from './queries';
+import { assessTeacher, findRoomClashes, rankTeachers, type TeacherFit } from './editorInsights';
 import type { Group, GroupConfiguration } from './types';
 
 export const AUTO_TEACHER_VALUE = 'auto';
@@ -38,6 +39,14 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [groupScheduleBaseline, setGroupScheduleBaseline] = useState<WeekScheduleItem[]>([]);
   const [futureGroupStartValues, setFutureGroupStartValues] = useState<GroupValues | null>(null);
+  const [scheduleError, setScheduleError] = useState<GroupScheduleValidationError | null>(null);
+  /*
+    The end date follows the start, the lesson count and the schedule until
+    someone types a date of their own. It is recalculated in those fields'
+    change handlers rather than in an effect, so merely opening a group never
+    marks the form as changed or carries a date over from the previous group.
+  */
+  const [endDateFollowsSchedule, setEndDateFollowsSchedule] = useState(true);
   const groupForm = useForm<GroupValues>({
     resolver: zodResolver(useMemo(() => createGroupSchema(t), [t])),
     defaultValues: {
@@ -90,8 +99,16 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       startDate: '',
       endDate: '',
     });
-    setGroupSchedule(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
-    setGroupScheduleBaseline(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
+    const schedule = normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120);
+    setGroupSchedule(schedule);
+    setGroupScheduleBaseline(schedule);
+    setScheduleError(null);
+    const endDate = academyDateInputValue(group?.endDate);
+    setEndDateFollowsSchedule(!group || (Boolean(endDate) && endDate === getMinimumGroupEndDate({
+      startDate: academyDateInputValue(group.startDate),
+      lessonCount: Number(group.lessonCount || 10),
+      schedule,
+    })));
   }, [open, editingGroup, groupForm]);
 
   const saveGroup = useMutation({
@@ -230,6 +247,30 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     t,
   ]);
 
+  const followEndDate = (next: { startDate?: string; lessonCount?: number; schedule?: WeekScheduleItem[] }) => {
+    if (!endDateFollowsSchedule) return;
+    const values = groupForm.getValues();
+    const earliest = getMinimumGroupEndDate({
+      startDate: next.startDate ?? values.startDate,
+      lessonCount: Number(next.lessonCount ?? values.lessonCount),
+      schedule: next.schedule ?? groupSchedule,
+    });
+    if (earliest && earliest !== values.endDate) {
+      groupForm.setValue('endDate', earliest, { shouldDirty: true, shouldValidate: groupForm.formState.isSubmitted });
+    }
+  };
+  const updateGroupSchedule = (schedule: WeekScheduleItem[]) => {
+    setGroupSchedule(schedule);
+    setScheduleError(null);
+    followEndDate({ schedule });
+  };
+  const applyScheduleEndDate = () => {
+    if (!minimumGroupEndDate) return;
+    groupForm.setValue('endDate', minimumGroupEndDate, { shouldDirty: true, shouldValidate: true });
+    setEndDateFollowsSchedule(true);
+  };
+  const releaseEndDate = () => setEndDateFollowsSchedule(false);
+
   const groupRooms = useMemo(
     () => rooms.filter((room) => (
       (room.isActive !== false || String(room.id) === selectedGroupRoomId) && String(room.schoolId) === selectedGroupSchoolId
@@ -242,11 +283,42 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
     [selectedGroupTeacherId, teachers],
   );
+
+  // A completed group is saved without the room and teacher checks, so it gets no warnings either.
+  const selectedGroupStatus = groupForm.watch('status');
+  const scheduleChecksApply = selectedGroupStatus !== 'completed';
+  const plannedGroup = useMemo(() => ({
+    schedule: groupSchedule,
+    startDate: selectedGroupStartDate,
+    endDate: selectedGroupEndDate,
+    editingGroupId: editingGroup?.id ?? null,
+  }), [editingGroup?.id, groupSchedule, selectedGroupEndDate, selectedGroupStartDate]);
+  const roomClashes = useMemo(() => (
+    scheduleChecksApply && selectedGroupRoomId
+      ? findRoomClashes(Number(selectedGroupRoomId), plannedGroup, configuration.groups)
+      : []
+  ), [configuration.groups, plannedGroup, scheduleChecksApply, selectedGroupRoomId]);
+  const busyRoomIds = useMemo(() => new Set(scheduleChecksApply
+    ? groupRooms
+      .filter((room) => findRoomClashes(room.id, plannedGroup, configuration.groups).length > 0)
+      .map((room) => room.id)
+    : []), [configuration.groups, groupRooms, plannedGroup, scheduleChecksApply]);
+  const teacherFits = useMemo(() => {
+    const fits = new Map<number, TeacherFit>();
+    if (!scheduleChecksApply || !selectedGroupSchoolId || groupSchedule.length === 0) return fits;
+    const plan = { ...plannedGroup, schoolId: Number(selectedGroupSchoolId), courseId: Number(selectedGroupCourseId) };
+    for (const teacher of groupTeachers) fits.set(teacher.id, assessTeacher(teacher, plan, configuration.groups));
+    return fits;
+  }, [configuration.groups, groupSchedule.length, groupTeachers, plannedGroup, scheduleChecksApply,
+    selectedGroupCourseId, selectedGroupSchoolId]);
+  const rankedTeachers = useMemo(() => rankTeachers(groupTeachers, teacherFits), [groupTeachers, teacherFits]);
   return {
-    t, language, schools, courses, groupForm, groupGuard, groupSchedule, setGroupSchedule,
+    t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate, formattedMinimumGroupEndDate,
-    isGroupEndDateTooEarly, groupRooms, groupTeachers, saveGroup, submitGroupValues,
+    isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,
     futureGroupStartValues, setFutureGroupStartValues,
+    scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
+    roomClashes, busyRoomIds, teacherFits, rankedTeachers,
   };
 }

@@ -170,6 +170,26 @@ export function PortalShell({ children }: { children: ReactNode }) {
     ? ["/learn", "/learn/schedule", "/learn/progress", "/learn/help"]
     : ["/learn", "/learn/courses", "/learn/assignments", "/learn/schedule"];
   const mobile = visible.filter((item) => mobileRoutes.includes(item.route));
+  const contextLabel = (
+    <>
+      {subject && (
+        <Avatar aria-hidden="true" className="h-8 w-8">
+          <AvatarFallback className="text-sm">
+            {subject.studentName
+              .trim()
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((part) => Array.from(part)[0] ?? "")
+              .join("")
+              .toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+      )}
+      <span className="min-w-0 truncate">
+        {subject?.studentName ?? t("portalFamily")}
+      </span>
+    </>
+  );
   const logout = useMutation({
     mutationFn: portalIdentityApi.logout,
     onSuccess: () => {
@@ -255,70 +275,61 @@ export function PortalShell({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="min-h-11 max-w-[65vw] justify-start gap-2"
-                >
-                  {subject && (
-                    <Avatar aria-hidden="true" className="h-8 w-8">
-                      <AvatarFallback className="text-sm">
-                        {subject.studentName
-                          .trim()
-                          .split(/\s+/)
-                          .slice(0, 2)
-                          .map((part) => Array.from(part)[0] ?? "")
-                          .join("")
-                          .toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                  <span className="min-w-0 truncate">
-                    {subject?.studentName ?? t("portalFamily")}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="max-h-[60dvh] overflow-auto"
-              >
-                <DropdownMenuLabel>{t("portalMyLearning")}</DropdownMenuLabel>
-                {subjects
-                  .filter((item) => item.kind === "self")
-                  .map((item) => (
-                    <DropdownMenuItem
-                      key={item.linkId}
-                      className="min-h-11"
-                      onSelect={() => selectSubject(item.linkId)}
-                    >
-                      {item.studentName}
-                    </DropdownMenuItem>
-                  ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>{t("portalChildren")}</DropdownMenuLabel>
-                {subjects.filter((item) => item.kind === "representative")
-                  .length > 1 && (
-                  <DropdownMenuItem
-                    className="min-h-11"
-                    onSelect={() => selectSubject(null)}
+            {subjects.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="min-h-11 max-w-[65vw] justify-start gap-2"
                   >
-                    {t("portalFamilyOverview")}
-                  </DropdownMenuItem>
-                )}
-                {subjects
-                  .filter((item) => item.kind === "representative")
-                  .map((item) => (
+                    {contextLabel}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="max-h-[60dvh] overflow-auto"
+                >
+                  <DropdownMenuLabel>{t("portalMyLearning")}</DropdownMenuLabel>
+                  {subjects
+                    .filter((item) => item.kind === "self")
+                    .map((item) => (
+                      <DropdownMenuItem
+                        key={item.linkId}
+                        className="min-h-11"
+                        onSelect={() => selectSubject(item.linkId)}
+                      >
+                        {item.studentName}
+                      </DropdownMenuItem>
+                    ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{t("portalChildren")}</DropdownMenuLabel>
+                  {subjects.filter((item) => item.kind === "representative")
+                    .length > 1 && (
                     <DropdownMenuItem
-                      key={item.linkId}
                       className="min-h-11"
-                      onSelect={() => selectSubject(item.linkId)}
+                      onSelect={() => selectSubject(null)}
                     >
-                      {item.studentName}
+                      {t("portalFamilyOverview")}
                     </DropdownMenuItem>
-                  ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  )}
+                  {subjects
+                    .filter((item) => item.kind === "representative")
+                    .map((item) => (
+                      <DropdownMenuItem
+                        key={item.linkId}
+                        className="min-h-11"
+                        onSelect={() => selectSubject(item.linkId)}
+                      >
+                        {item.studentName}
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="flex min-h-11 min-w-0 max-w-[65vw] items-center gap-2">
+                {contextLabel}
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button

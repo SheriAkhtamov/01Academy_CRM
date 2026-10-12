@@ -41,6 +41,7 @@ import { PortalQuizzes, QuizAttempt } from "../client/src/features/lms/quizzes";
 import { PortalPortfolio } from "../client/src/features/portal-app/portfolio";
 import { PortalPayments } from "../client/src/features/portal-app/payments";
 import { PortalApp } from "../client/src/features/portal-app/PortalApp";
+import { PortalShell } from "../client/src/features/portal-app/PortalShell";
 import { PortalAttendance } from "../client/src/features/lms/attendance";
 import { MakeupDialog } from "../client/src/features/lms/makeup";
 import {
@@ -1048,6 +1049,133 @@ it("retains a share creation key and the selected public fields when retrying a 
   await waitFor(() => expect(mocks.share).toHaveBeenCalledTimes(2));
   expect(mocks.share.mock.calls[1][2]).toEqual(mocks.share.mock.calls[0][2]);
 });
+it("selects a paginated own project inside the share dialog and keeps the original publication draft until switching is confirmed", async () => {
+  const first = projectFixture(70, "First work");
+  const second = { ...projectFixture(50, "Older selected work"), version: 9 };
+  const recent = [
+    first,
+    ...Array.from({ length: 19 }, (_, index) =>
+      projectFixture(69 - index, `Recent work ${index + 1}`),
+    ),
+  ];
+  const foreign = { ...projectFixture(48, "Foreign work"), studentId: 999 };
+  const archived = {
+    ...projectFixture(49, "Archived work"),
+    archivedAt: "2026-10-11T12:00:00Z",
+  };
+  mocks.projectsPage.mockImplementation(
+    async (_link: number, _signal: AbortSignal, cursor?: number) =>
+      cursor
+        ? { items: [second, archived, foreign], nextCursor: null }
+        : { items: recent, nextCursor: 51 },
+  );
+  mocks.share.mockRejectedValueOnce(new PortalApiError(0, "portalOffline"));
+  mount(<PortalPortfolio />);
+  await userEvent.click(
+    (await screen.findAllByRole("button", { name: i18n.t("portalOpen") }))[0],
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: i18n.t("portalShare") }),
+  );
+  let dialog = screen.getByRole("dialog", { name: i18n.t("portalShareTitle") });
+  expect(within(dialog).getAllByRole("option")).toHaveLength(20);
+  expect(mocks.projectsPage).toHaveBeenCalledOnce();
+  await userEvent.clear(
+    within(dialog).getByLabelText(i18n.t("portalDisplayName")),
+  );
+  await userEvent.type(
+    within(dialog).getByLabelText(i18n.t("portalDisplayName")),
+    "First alias",
+  );
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: i18n.t("portalDescription") }),
+  );
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: i18n.t("portalSharePreview") }),
+  );
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", {
+      name: i18n.t("portalConsentDescription"),
+    }),
+  );
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: i18n.t("portalPublish") }),
+  );
+  await screen.findByRole("alert");
+  const originalKey = mocks.share.mock.calls[0][2].idempotencyKey;
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: i18n.t("portalLoadMore") }),
+  );
+  await within(dialog).findByRole("option", { name: "Older selected work" });
+  expect(within(dialog).getAllByRole("option")).toHaveLength(21);
+  expect(
+    within(dialog).queryByRole("option", { name: "Foreign work" }),
+  ).toBeNull();
+  expect(
+    within(dialog).queryByRole("option", { name: "Archived work" }),
+  ).toBeNull();
+  await userEvent.selectOptions(
+    within(dialog).getByLabelText(i18n.t("portalShareProject")),
+    "50",
+  );
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("portalCancel"),
+    }),
+  );
+  expect(
+    (
+      within(dialog).getByLabelText(
+        i18n.t("portalShareProject"),
+      ) as HTMLSelectElement
+    ).value,
+  ).toBe("70");
+  expect(within(dialog).getByText("First alias")).toBeTruthy();
+  expect(mocks.share).toHaveBeenCalledOnce();
+  await userEvent.selectOptions(
+    within(dialog).getByLabelText(i18n.t("portalShareProject")),
+    "50",
+  );
+  await userEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", {
+      name: i18n.t("portalLeave"),
+    }),
+  );
+  dialog = screen.getByRole("dialog", { name: i18n.t("portalShareTitle") });
+  expect(
+    (
+      within(dialog).getByLabelText(
+        i18n.t("portalDisplayName"),
+      ) as HTMLInputElement
+    ).value,
+  ).toBe(account.fullName);
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: i18n.t("portalSharePreview") }),
+  );
+  expect(
+    within(dialog).getByText("Older selected work", { selector: "h2" }),
+  ).toBeTruthy();
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", {
+      name: i18n.t("portalConsentDescription"),
+    }),
+  );
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: i18n.t("portalPublish") }),
+  );
+  await waitFor(() => expect(mocks.share).toHaveBeenCalledTimes(2));
+  expect(mocks.share.mock.calls[1].slice(0, 2)).toEqual([10, 50]);
+  expect(mocks.share.mock.calls[1][2]).toMatchObject({
+    projectVersion: 9,
+    displayName: account.fullName,
+    includeDescription: true,
+    fileIds: [],
+  });
+  expect(mocks.share.mock.calls[1][2].idempotencyKey).not.toBe(originalKey);
+  expect(mocks.projectsPage.mock.calls.every(([link]) => link === 10)).toBe(
+    true,
+  );
+});
 it("keeps representative help private unless the representative explicitly selects the student audience", async () => {
   mocks.session.mockResolvedValue({
     account,
@@ -1766,6 +1894,28 @@ it("does not display dashboard feedback supplied to a representative without fee
   expect(
     screen.queryByRole("region", { name: i18n.t("portalRecentFeedback") }),
   ).toBeNull();
+});
+it("shows a single context as a static header name and avatar without an unnecessary selector", async () => {
+  mocks.session.mockResolvedValue({
+    account,
+    subjects: [{ ...own, studentName: "Solo Learner" }],
+    csrfToken: "test-csrf",
+  });
+  mount(
+    <PortalShell>
+      <p>Content</p>
+    </PortalShell>,
+  );
+  const header = await screen
+    .findByText("Solo Learner")
+    .then((label) => label.closest("header")!);
+  expect(
+    within(header).getByText("SL").closest('[aria-hidden="true"]'),
+  ).toBeTruthy();
+  expect(
+    within(header).queryByRole("button", { name: "Solo Learner" }),
+  ).toBeNull();
+  expect(within(header).queryByRole("menu")).toBeNull();
 });
 it("updates the header avatar fallback when switching from own learning to a child", async () => {
   mocks.session.mockResolvedValue({

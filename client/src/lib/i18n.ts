@@ -788,6 +788,7 @@ export const translations = {
   portalShareTitle: { en: 'Share this project', ru: 'Поделиться проектом' },
   portalDisplayName: { en: 'Display name', ru: 'Отображаемое имя' },
   portalSharePreview: { en: 'Preview', ru: 'Предпросмотр' },
+  portalShareProject: { en: 'Project', ru: 'Проект' },
   portalPublish: { en: 'Request publication', ru: 'Запросить публикацию' },
   portalPrivate: { en: 'Private', ru: 'Закрыт' },
   portalPendingApproval: { en: 'Awaiting approval', ru: 'Ожидает подтверждения' },

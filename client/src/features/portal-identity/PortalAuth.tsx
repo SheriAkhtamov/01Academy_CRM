@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Logo from "@/components/Logo";
 import { portalIdentityApi } from "../portal-app/api";
 import { usePortal } from "../portal-app/context";
 import { usePortalError } from "../portal-app/ui";
@@ -113,9 +114,12 @@ export function PortalAuth({
   return (
     <main className="portal-ui flex min-h-dvh flex-col items-center justify-center bg-muted/30 p-4">
       <div className="mb-6 flex w-full max-w-[420px] items-center justify-between gap-4">
-        <span className="text-lg font-semibold">
-          {t("publicAttendanceBrand")}
-        </span>
+        <div className="flex items-center gap-3">
+          <Logo size="md" />
+          <span className="text-lg font-semibold">
+            {t("publicAttendanceBrand")}
+          </span>
+        </div>
         <PortalLanguage />
       </div>
       <Card className="w-full max-w-[420px]">

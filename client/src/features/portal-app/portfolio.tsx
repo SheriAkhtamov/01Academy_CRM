@@ -117,7 +117,9 @@ export function PortalPortfolio() {
         }}
       />
     );
-  const projects = query.data.pages.flatMap((page) => page.items);
+  const projects = query.data.pages
+    .flatMap((page) => page.items)
+    .filter((project) => project.studentId === subject?.studentId);
   const items = projects.filter(
     (item) => !item.archivedAt && (!course || item.runId === Number(course)),
   );
@@ -354,7 +356,21 @@ export function PortalPortfolio() {
           <DialogTitle>{t("portalShareTitle")}</DialogTitle>
           <DialogDescription>{share?.title}</DialogDescription>
           {share && (
-            <ShareForm project={share} onClose={() => setShare(null)} />
+            <ShareForm
+              key={share.id}
+              project={share}
+              projects={projects.filter((item) => !item.archivedAt)}
+              onProjectChange={setShare}
+              loadingMore={query.isFetchingNextPage}
+              loadMore={
+                query.hasNextPage
+                  ? () => {
+                      void query.fetchNextPage();
+                    }
+                  : undefined
+              }
+              onClose={() => setShare(null)}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -664,14 +680,22 @@ function ProjectForm({
 }
 function ShareForm({
   project,
+  projects,
+  onProjectChange,
+  loadingMore,
+  loadMore,
   onClose,
 }: {
   project: PortalProjectDto;
+  projects: PortalProjectDto[];
+  onProjectChange: (project: PortalProjectDto) => void;
+  loadingMore: boolean;
+  loadMore?: () => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { account, subject, setUnsaved } = usePortal();
+  const { account, subject, setUnsaved, guarded } = usePortal();
   const notify = usePortalSuccess();
   const invalidate = useInvalidateSubject();
   const [preview, setPreview] = useState(false);
@@ -705,6 +729,39 @@ function ShareForm({
   }, [setUnsaved]);
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="share-project">{t("portalShareProject")}</Label>
+        <select
+          id="share-project"
+          className="min-h-11 w-full rounded-md border bg-background px-3"
+          value={project.id}
+          disabled={action.isPending}
+          onChange={(event) => {
+            if (action.isPending) return;
+            const selected = projects.find(
+              (item) => item.id === Number(event.target.value),
+            );
+            if (selected && selected.id !== project.id)
+              guarded(() => onProjectChange(selected));
+          }}
+        >
+          {projects.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.title}
+            </option>
+          ))}
+        </select>
+        {loadMore && (
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={loadingMore || action.isPending}
+            onClick={loadMore}
+          >
+            {t("portalLoadMore")}
+          </Button>
+        )}
+      </div>
       {!preview ? (
         <>
           <div className="space-y-2">

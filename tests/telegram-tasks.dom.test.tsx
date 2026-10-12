@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { i18n } from '../client/src/lib/i18n';
 import { TasksApp } from '../client/src/miniapp/TasksApp';
+import { boardQueryKeys } from '../client/src/features/board/api';
 const mocks = vi.hoisted(() => ({ board: vi.fn(), mini: vi.fn(), detail: vi.fn(), create: vi.fn() }));
 vi.mock('../client/src/features/board/transport', () => ({ boardRequest: mocks.board }));
 vi.mock('../client/src/features/board/telegram', () => ({
@@ -20,6 +21,7 @@ vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 7,
 vi.mock('../client/src/components/ux/board/TaskDetailSheet', () => ({ TaskDetailSheet: (props: unknown) => { mocks.detail(props); return null; } }));
 vi.mock('../client/src/components/ux/board/CreateTaskDialog', () => ({ CreateTaskDialog: (props: unknown) => { mocks.create(props); return null; } }));
 const task = { id: 1, title: 'My assigned task', status: 'todo', priority: 'normal', color: null, creator: { id: 8, fullName: 'Creator' }, assignee: { id: 7, fullName: 'Employee' }, lead: null, dueAt: null, acceptedAt: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', commentCount: 0, attachmentCount: 0, checklistTotal: 0, checklistDone: 0 };
+const delegatedTask = { ...task, id: 2, title: 'Delegated task', creator: task.assignee, assignee: task.creator };
 let client: QueryClient;
 beforeEach(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -27,7 +29,7 @@ beforeEach(() => {
   Element.prototype.releasePointerCapture ??= () => undefined;
   Element.prototype.scrollIntoView ??= () => undefined;
   vi.clearAllMocks(); i18n.setLanguage('en');
-  mocks.board.mockImplementation(async (_method, url) => ({ tasks: url.includes('archived=true') ? [{ ...task, id: 3, title: 'Archived task', status: 'accepted' }] : [task, { ...task, id: 2, title: 'Delegated task', creator: task.assignee, assignee: task.creator }] }));
+  mocks.board.mockImplementation(async (_method, url) => ({ tasks: url.includes('archived=true') ? [{ ...task, id: 3, title: 'Archived task', status: 'accepted' }] : [task, delegatedTask] }));
   mocks.mini.mockResolvedValue([{ id: 7, fullName: 'Employee' }]);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
@@ -79,14 +81,106 @@ describe('Mobile tasks interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     await screen.findByText('Archived task'); expect(screen.queryByRole('combobox')).toBeNull();
   });
+  it('keeps self-assigned work in my tasks and excludes it from delegated work and its counter', async () => {
+    const selfAssigned = ['backlog', 'todo', 'in_progress', 'done'].map((status, index) => ({
+      ...task, id: 10 + index, title: `Personal ${status}`, creator: task.assignee, status,
+    }));
+    mocks.board.mockResolvedValue({ tasks: [
+      task, delegatedTask, ...selfAssigned,
+      { ...delegatedTask, id: 20, title: 'Unassigned task', assignee: null },
+      { ...delegatedTask, id: 21, title: 'Accepted delegation', status: 'accepted' },
+      { ...delegatedTask, id: 22, title: 'Another author task', creator: { id: 9, fullName: 'Other author' } },
+    ] });
+    setup();
+    await screen.findByText('Personal done');
+    for (const personal of selfAssigned) expect(screen.getByText(personal.title)).toBeTruthy();
+    expect(screen.queryByRole('img', { name: 'Completed task awaiting acceptance' })).toBeNull();
+    const navigation = within(screen.getByRole('navigation'));
+    expect(within(navigation.getByRole('button', { name: 'My tasks' })).getByText('5')).toBeTruthy();
+    const delegatedButton = navigation.getByRole('button', { name: 'Assigned by me' });
+    expect(within(delegatedButton).getByText('1')).toBeTruthy();
+    fireEvent.click(delegatedButton);
+    await screen.findByText('Delegated task');
+    for (const personal of selfAssigned) expect(screen.queryByText(personal.title)).toBeNull();
+    expect(screen.queryByText('Unassigned task')).toBeNull();
+    expect(screen.queryByText('Accepted delegation')).toBeNull();
+    expect(screen.queryByText('Another author task')).toBeNull();
+    expect(screen.getByText('Total tasks: 1')).toBeTruthy();
+  });
+  it('marks completed delegated cards and turns their counter red until rework or acceptance', async () => {
+    const otherDelegation = { ...delegatedTask, id: 4, title: 'Another delegated task' };
+    const receivedDone = { ...task, status: 'done' };
+    mocks.board.mockResolvedValue({ tasks: [receivedDone, delegatedTask, otherDelegation] });
+    setup();
+    await screen.findByText('My assigned task');
+    const delegatedButton = screen.getByRole('button', { name: 'Assigned by me' });
+    const badge = () => delegatedButton.querySelector('.mini-badge')!;
+    expect(badge().textContent).toBe('2');
+    expect(badge().classList.contains('mini-badge-alert')).toBe(false);
+    expect(screen.queryByRole('img', { name: 'Completed task awaiting acceptance' })).toBeNull();
+    const updateStatus = (status: string) => act(() => {
+      client.setQueryData([...boardQueryKeys.all, 'mini', false], {
+        tasks: [receivedDone, { ...delegatedTask, status }, otherDelegation],
+      });
+    });
+    updateStatus('done');
+    await waitFor(() => expect(badge().classList.contains('mini-badge-alert')).toBe(true));
+    expect(screen.getByRole('button', { name: 'My tasks' }).querySelector('.mini-badge-alert')).toBeNull();
+    fireEvent.click(delegatedButton);
+    await screen.findByText('Delegated task');
+    const card = screen.getByText('Delegated task').closest('button')!;
+    expect(within(card).getByRole('img', { name: 'Completed task awaiting acceptance' }).classList.contains('mini-task-completion-dot')).toBe(true);
+    expect(screen.getAllByRole('img', { name: 'Completed task awaiting acceptance' })).toHaveLength(1);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Another delegated' } });
+    await waitFor(() => expect(screen.queryByText('Delegated task')).toBeNull());
+    expect(badge().classList.contains('mini-badge-alert')).toBe(true);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    await screen.findByText('Delegated task');
+    updateStatus('in_progress');
+    await waitFor(() => expect(badge().classList.contains('mini-badge-alert')).toBe(false));
+    expect(screen.queryByRole('img', { name: 'Completed task awaiting acceptance' })).toBeNull();
+    expect(screen.getByText('Delegated task')).toBeTruthy();
+    updateStatus('done');
+    await screen.findByRole('img', { name: 'Completed task awaiting acceptance' });
+    updateStatus('accepted');
+    await waitFor(() => expect(badge().textContent).toBe('1'));
+    expect(badge().classList.contains('mini-badge-alert')).toBe(false);
+    expect(screen.queryByText('Delegated task')).toBeNull();
+    expect(screen.queryByRole('img', { name: 'Completed task awaiting acceptance' })).toBeNull();
+  });
+  it('keeps the delegation counter current while viewing the archive', async () => {
+    setup();
+    await screen.findByText('My assigned task');
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('Archived task');
+    const delegatedButton = screen.getByRole('button', { name: 'Assigned by me' });
+    act(() => {
+      client.setQueryData([...boardQueryKeys.all, 'mini', false], { tasks: [task, { ...delegatedTask, status: 'done' }] });
+    });
+    await waitFor(() => expect(delegatedButton.querySelector('.mini-badge-alert')).toBeTruthy());
+    act(() => {
+      client.setQueryData([...boardQueryKeys.all, 'mini', false], { tasks: [task, { ...delegatedTask, status: 'accepted' }] });
+    });
+    await waitFor(() => expect(delegatedButton.querySelector('.mini-badge')).toBeNull());
+    expect(screen.getByText('Archived task')).toBeTruthy();
+  });
   it('keeps task detail and task creation in modals, with lead navigation disabled', async () => {
     setup(); fireEvent.click(await screen.findByText('My assigned task'));
     expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 1, tasksOnly: true }));
     const create = screen.getByRole('button', { name: 'Create task' }); await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(create); expect(mocks.create).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, canAssignUsers: true, miniMode: true }));
-    const onCreated = (mocks.create.mock.lastCall?.[0] as { onCreated: () => void }).onCreated;
-    act(() => onCreated());
+    const onCreated = (mocks.create.mock.lastCall?.[0] as { onCreated: (task: { assigneeId: number }) => void }).onCreated;
+    act(() => onCreated({ assigneeId: 8 }));
     expect(screen.getByRole('heading', { name: 'Assigned by me' })).toBeTruthy();
+  });
+  it('opens my tasks after creating self-assigned work', async () => {
+    setup();
+    await screen.findByText('My assigned task');
+    fireEvent.click(screen.getByRole('button', { name: 'Assigned by me' }));
+    const onCreated = (mocks.create.mock.lastCall?.[0] as { onCreated: (task: { assigneeId: number }) => void }).onCreated;
+    act(() => onCreated({ assigneeId: 7 }));
+    expect(screen.getByRole('combobox', { name: 'Show tasks of' }).textContent).toContain('My tasks');
+    expect(screen.getByText('My assigned task')).toBeTruthy();
   });
   it('filters by text and offers a clear empty state', async () => {
     setup(); await screen.findByText('My assigned task');

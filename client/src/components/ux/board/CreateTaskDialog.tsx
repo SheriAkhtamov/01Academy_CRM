@@ -38,7 +38,7 @@ import { useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 interface CreateTaskDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onCreated?: () => void;
+    onCreated?: (task: { assigneeId: number | null }) => void;
     users: UserMini[];
     currentUser: UserMini | null;
     canAssignUsers: boolean;
@@ -141,14 +141,15 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                     await boardApi.updateTaskAssignee(createdTaskId.current!, targetAssigneeId!);
                 }
             }
+            return { assigneeId: targetAssigneeId };
         },
-        onSuccess: () => {
+        onSuccess: (task) => {
             hapticNotify('success');
             queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
             toast({ title: t('taskCreated') });
             reset();
             onOpenChange(false);
-            onCreated?.();
+            onCreated?.(task);
         },
         onError: (error: Error & { status?: number }) => {
             hapticNotify('error');

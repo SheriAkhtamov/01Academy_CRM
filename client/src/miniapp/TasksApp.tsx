@@ -15,6 +15,7 @@ import { boardQueryKeys } from '@/features/board/api';
 import { BOARD_COLUMNS, formatBoardDateTime, isOverdue, type BoardStatus, type BoardTasksResponse, type TaskSummary, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
 import { academyDateInputValue, academyToday } from '@/lib/localeFormat';
+import { isBoardTaskAwaitingAcceptance } from '@shared/board-permissions';
 
 type TaskTab = 'mine' | 'assigned' | 'archive';
 type QuickFilter = 'all' | Exclude<BoardStatus, 'accepted'>;
@@ -23,6 +24,10 @@ type TaskGroup = 'review' | 'overdue' | 'today' | 'other' | 'done';
 const PULL_THRESHOLD = 72;
 const OWNER_SELF = 'me';
 const PRIORITY_RANK = { urgent: 0, normal: 1, low: 2 } as const;
+
+function isDelegatedBy(task: TaskSummary, userId: number): boolean {
+  return task.creator?.id === userId && task.assignee != null && task.assignee.id !== userId;
+}
 
 function isDueToday(task: TaskSummary): boolean {
   if (!task.dueAt || task.status === 'done' || task.status === 'accepted' || isOverdue(task)) return false;
@@ -63,12 +68,17 @@ export function TasksApp() {
   const [pullDistance, setPullDistance] = useState(0);
   const [pullActive, setPullActive] = useState(false);
   const pullStart = useRef<number | null>(null);
-  const counts = useRef({ mine: 0, assigned: 0 });
-  const tasks = useQuery<BoardTasksResponse>({
-    queryKey: [...boardQueryKeys.all, 'mini', tab === 'archive'],
-    queryFn: () => boardRequest('GET', `/api/board/tasks?archived=${tab === 'archive'}`),
+  const activeTasks = useQuery<BoardTasksResponse>({
+    queryKey: [...boardQueryKeys.all, 'mini', false],
+    queryFn: () => boardRequest('GET', '/api/board/tasks?archived=false'),
     enabled: Boolean(user), refetchInterval: 30_000,
   });
+  const archivedTasks = useQuery<BoardTasksResponse>({
+    queryKey: [...boardQueryKeys.all, 'mini', true],
+    queryFn: () => boardRequest('GET', '/api/board/tasks?archived=true'),
+    enabled: Boolean(user) && tab === 'archive', refetchInterval: 30_000,
+  });
+  const tasks = tab === 'archive' ? archivedTasks : activeTasks;
   const users = useQuery<UserMini[]>({ queryKey: ['mini-users'], queryFn: () => miniRequest('GET', '/users'), enabled: Boolean(user), staleTime: 60_000 });
   const currentUserId = user?.id;
   const ownerOptions = useMemo(() => {
@@ -103,7 +113,7 @@ export function TasksApp() {
 
   const selectedOwnerId = owner === OWNER_SELF ? user.id : Number(owner);
   const owned = (tasks.data?.tasks ?? []).filter((task) => tab === 'mine' ? task.assignee?.id === selectedOwnerId
-    : tab === 'assigned' ? task.creator?.id === user.id : task.creator?.id === user.id || task.assignee?.id === user.id);
+    : tab === 'assigned' ? isDelegatedBy(task, user.id) : task.creator?.id === user.id || task.assignee?.id === user.id);
   const active = tab === 'archive' ? owned : owned.filter((task) => task.status !== 'accepted');
   const visible = active.filter((task) => (filter === 'all' || task.status === filter)
     && (!deferredSearch || `${task.title} ${task.description ?? ''} ${task.assignee?.fullName ?? ''} ${task.creator?.fullName ?? ''}`.toLocaleLowerCase().includes(deferredSearch)));
@@ -154,18 +164,22 @@ export function TasksApp() {
     setPullDistance(0); setPullActive(false); pullStart.current = null;
   };
 
-  if (tab !== 'archive' && tasks.data?.tasks) {
-    counts.current = {
-      mine: tasks.data.tasks.filter((task) => task.assignee?.id === user.id && task.status !== 'accepted').length,
-      assigned: tasks.data.tasks.filter((task) => task.creator?.id === user.id && task.status !== 'accepted').length,
-    };
-  }
+  const currentTasks = (activeTasks.data?.tasks ?? []).filter((task) => task.status !== 'accepted');
+  const assignedTasks = currentTasks.filter((task) => isDelegatedBy(task, user.id));
+  const counts = {
+    mine: currentTasks.filter((task) => task.assignee?.id === user.id).length,
+    assigned: assignedTasks.length,
+  };
+  const hasCompletedAssignments = assignedTasks.some((task) => isBoardTaskAwaitingAcceptance(user, task));
 
   const renderCard = (task: TaskSummary) => {
     const person = tab === 'mine' ? task.creator : task.assignee;
     const personLabel = tab === 'mine' ? t('creatorLabel') : t('assigneeLabel');
     return <button key={task.id} type="button" className="mini-task-card" data-color={task.color ?? undefined} onClick={() => openTask(task.id)}>
-      <span className="mini-task-card-top"><span className="mini-task-status">{statusLabel(task.status)}</span>{task.priority === 'urgent' ? <span className="mini-task-urgent">{t('priorityUrgent')}</span> : null}</span>
+      <span className="mini-task-card-top">
+        {isBoardTaskAwaitingAcceptance(user, task) ? <span role="img" aria-label={t('taskAwaitingAcceptance')} className="mini-task-completion-dot" /> : null}
+        <span className="mini-task-status">{statusLabel(task.status)}</span>{task.priority === 'urgent' ? <span className="mini-task-urgent">{t('priorityUrgent')}</span> : null}
+      </span>
       <span className="mini-task-title">{task.title}</span>
       <span className="mini-task-meta">
         <span className={cn('mini-task-date', isOverdue(task) && 'mini-task-date-overdue')}><CalendarClock className="size-4 shrink-0" />{task.status === 'accepted' && task.acceptedAt
@@ -228,14 +242,14 @@ export function TasksApp() {
     </main>
     <nav className="mini-navigation" aria-label={t('miniTasksNavigation')}><div className="mini-navigation-inner">
       <button type="button" aria-label={t('myTasks')} aria-current={tab === 'mine' ? 'page' : undefined} onClick={() => changeTab('mine')}>
-        <span className="relative"><ClipboardList className="size-5" />{counts.current.mine > 0 ? <span className="mini-badge" aria-hidden="true">{counts.current.mine > 99 ? '99+' : counts.current.mine}</span> : null}</span><span>{t('myTasks')}</span>
+        <span className="relative"><ClipboardList className="size-5" />{counts.mine > 0 ? <span className="mini-badge" aria-hidden="true">{counts.mine > 99 ? '99+' : counts.mine}</span> : null}</span><span>{t('myTasks')}</span>
       </button>
       <button type="button" aria-label={t('miniTasksAssigned')} aria-current={tab === 'assigned' ? 'page' : undefined} onClick={() => changeTab('assigned')}>
-        <span className="relative"><Send className="size-5" />{counts.current.assigned > 0 ? <span className="mini-badge" aria-hidden="true">{counts.current.assigned > 99 ? '99+' : counts.current.assigned}</span> : null}</span><span>{t('miniTasksAssigned')}</span>
+        <span className="relative"><Send className="size-5" />{counts.assigned > 0 ? <span className={cn('mini-badge', hasCompletedAssignments && 'mini-badge-alert')} aria-hidden="true">{counts.assigned > 99 ? '99+' : counts.assigned}</span> : null}</span><span>{t('miniTasksAssigned')}</span>
       </button>
       <button type="button" aria-label={t('taskArchive')} aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => changeTab('archive')}><Archive className="size-5" /><span>{t('taskArchive')}</span></button>
     </div></nav>
-    <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={() => changeTab('assigned')} users={users.data ?? []} currentUser={user} canAssignUsers miniMode />
+    <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={(created) => changeTab(created.assigneeId === user.id ? 'mine' : 'assigned')} users={users.data ?? []} currentUser={user} canAssignUsers miniMode />
     <TaskDetailSheet open={taskId !== null} taskId={taskId} onOpenChange={(open) => { if (!open) setTaskId(null); }} users={users.data ?? []} tasksOnly />
   </div>;
 }

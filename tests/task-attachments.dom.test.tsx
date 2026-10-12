@@ -33,8 +33,9 @@ afterEach(cleanup);
 describe('task creation with attachments', () => {
   const setup = () => {
     const close = vi.fn();
-    const view = render(provider(<CreateTaskDialog open onOpenChange={close} users={[employee]} currentUser={employee} canAssignUsers />));
-    return { ...view, close, input: view.container.ownerDocument.querySelector('input[type=file]') as HTMLInputElement };
+    const created = vi.fn();
+    const view = render(provider(<CreateTaskDialog open onOpenChange={close} onCreated={created} users={[employee]} currentUser={employee} canAssignUsers />));
+    return { ...view, close, created, input: view.container.ownerDocument.querySelector('input[type=file]') as HTMLInputElement };
   };
   it('offers only assigned employees and disables creation when no assignee is available', async () => {
     const user = userEvent.setup();
@@ -49,7 +50,7 @@ describe('task creation with attachments', () => {
     expect(mocks.api).not.toHaveBeenCalled();
   });
   it('saves multiple files and keeps the dialog open until every upload finishes', async () => {
-    const { close, input } = setup();
+    const { close, created, input } = setup();
     const user = userEvent.setup();
     await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Send documents');
     const files = [new File(['a'], 'report.pdf'), new File(['b'], 'table.xlsx'), new File(['c'], 'letter.docx')];
@@ -60,6 +61,7 @@ describe('task creation with attachments', () => {
     expect(mocks.api).toHaveBeenCalledTimes(1);
     expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({ requestKey: expect.any(String), assigneeId: 7 }));
     expect(mocks.upload.mock.calls.map((args) => args[1].name)).toEqual(files.map((file) => file.name));
+    expect(created).toHaveBeenCalledWith({ assigneeId: 7 });
   });
   it.each([false, true])('finishes attachments before handing a new task to another employee (lost response: %s)', async (loseResponse) => {
     const colleague = { ...employee, id: 8, fullName: 'Teammate' };
@@ -73,7 +75,8 @@ describe('task creation with attachments', () => {
       return { id: 100 };
     });
     const close = vi.fn();
-    const view = render(provider(<CreateTaskDialog open onOpenChange={close} users={[employee, colleague]} currentUser={employee} canAssignUsers />));
+    const created = vi.fn();
+    const view = render(provider(<CreateTaskDialog open onOpenChange={close} onCreated={created} users={[employee, colleague]} currentUser={employee} canAssignUsers />));
     const user = userEvent.setup();
     await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Delegate with files');
     await user.click(screen.getByRole('combobox', { name: i18n.t('assigneeLabel') }));
@@ -89,6 +92,7 @@ describe('task creation with attachments', () => {
     const handovers = mocks.api.mock.calls.filter(([method]) => method === 'PATCH');
     expect(handovers).toEqual([['PATCH', '/api/board/tasks/100', { assigneeId: 8 }]]);
     expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(mocks.api.mock.invocationCallOrder[2]);
+    expect(created).toHaveBeenCalledWith({ assigneeId: 8 });
   });
 
   it('retries only pending files without recreating the task', async () => {

@@ -284,6 +284,17 @@ jobs:
                 accessSync(`/app/${file}`, constants.R_OK);
               for (const file of readdirSync("/app/migrations"))
                 if (file.endsWith(".sql")) accessSync(`/app/migrations/${file}`, constants.R_OK);
+              // Vite copies public files with their source permissions. Check
+              // every public asset, including files outside the hashed bundles.
+              function checkPublicFiles(directory) {
+                accessSync(directory, constants.R_OK | constants.X_OK);
+                for (const entry of readdirSync(directory, { withFileTypes: true })) {
+                  const file = `${directory}/${entry.name}`;
+                  if (entry.isDirectory()) checkPublicFiles(file);
+                  else accessSync(file, constants.R_OK);
+                }
+              }
+              checkPublicFiles("/app/dist/public");
               console.log("Runtime files are readable by the non-root user.");
             '
           docker buildx build --builder academy-lms-safe --load --pull --tag 01academy-crm-backup:deploy \

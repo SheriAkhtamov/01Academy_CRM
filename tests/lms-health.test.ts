@@ -68,33 +68,15 @@ describe("read-only LMS operational metrics", () => {
     await expect(collectLmsHealth(pool, { uploadsDirectory: "/tmp", backupDirectory: "/tmp", logMaxBytes: 1 })).rejects.toThrow("HEALTH_ARGUMENT_INVALID");
     expect(pool.connect).not.toHaveBeenCalled();
   });
-  it("keeps optional scanner isolated, pinned and resource limited with updates outside the CRM network", async () => {
+  it("does not require antivirus services, signature storage or scanner networks for the CRM", () => {
     const yaml = createRequire(import.meta.url)("js-yaml");
     const compose = yaml.load(readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8"));
-    const scanner = compose.services.clamav;
-    const updater = compose.services["clamav-updater"];
-    expect(scanner.image).toMatch(/^clamav\/clamav:1\.4\.6-debian@sha256:[a-f0-9]{64}$/);
-    expect(updater.image).toBe(scanner.image);
-    for (const service of [scanner, updater]) {
-      expect(service.user).toBe("1000:1000");
-      expect(service.ports).toBeUndefined();
-      expect(service.read_only).toBe(true);
-      expect(service.cap_drop).toContain("ALL");
-      expect(service.security_opt).toContain("no-new-privileges:true");
-      expect(service.cpus).toBeTruthy();
-      expect(service.mem_limit).toBeTruthy();
-      expect(service.pids_limit).toBeLessThanOrEqual(64);
-      expect(service.volumes.join(" ")).not.toContain("uploads");
-    }
-    expect(scanner.networks).toEqual(["lms_scanner"]);
-    expect(updater.networks).toEqual(["lms_scanner_updates"]);
-    expect(scanner.profiles).toEqual(["lms-scanner"]);
-    expect(updater.profiles).toEqual(["lms-scanner-updates"]);
-    expect(compose.networks.lms_scanner.internal).toBe(true);
-    expect(scanner.volumes).toContain("clamav_signatures:/var/lib/clamav:ro");
-    const config = readFileSync(new URL("../config/clamav/clamd.conf", import.meta.url), "utf8");
-    for (const directive of ["AlertExceedsMax yes", "HeuristicAlerts yes", "AlertOLE2Macros yes", "AlertEncrypted yes"])
-      expect(config).toContain(directive);
+    expect(compose.services.clamav).toBeUndefined();
+    expect(compose.services["clamav-updater"]).toBeUndefined();
+    expect(compose.volumes.clamav_signatures).toBeUndefined();
+    expect(compose.networks).toBeUndefined();
+    expect(compose.services.crm.networks).toEqual(["default"]);
+    expect(compose.services.crm.ports).toEqual(["127.0.0.1:8011:5001"]);
   });
 });
 

@@ -82,7 +82,7 @@ async function runtimeFixture() {
   config.server.environment = "development";
   config.portal = { enabled: true, learningEnabled: true, emailEnabled: true, publicPortfolioEnabled: false, allowInvitations: true,
     groupIds: [11], sessionSecret: "pool-regression-fixture-session-secret-123456789", tokenEncryptionKey: crypto.randomBytes(32).toString("base64"),
-    scanner: { host: "scanner.fixture.invalid", timeoutMs: 30_000 } };
+    };
   const runtime = createLearningRuntime(limited, config);
   await runtime.flags.refresh();
   return runtime;

@@ -42,7 +42,6 @@ export interface AppConfig {
     allowInvitations?: boolean;
     publicPortfolioEnabled?: boolean;
     groupIds?: number[];
-    scanner?: { host?: string; port?: number; timeoutMs?: number };
     workCalendar?: { workdays?: number[]; start?: string; end?: string; holidays?: string[]; coordinatorUserIds?: number[] };
     support?: { phone?: string; email?: string };
   };
@@ -220,13 +219,6 @@ export const validateConfig = (config: AppConfig) => {
       if (!/^[A-Za-z0-9+/]{43}=$/.test(portal.tokenEncryptionKey!) || Buffer.from(portal.tokenEncryptionKey!, 'base64').length !== 32) {
         throw new Error('portal.tokenEncryptionKey must be a base64 encoded 32-byte key');
       }
-    }
-    const scanner = portal.scanner;
-    if (scanner && (
-      (scanner.port !== undefined && (!Number.isSafeInteger(scanner.port) || scanner.port < 1 || scanner.port > 65535))
-      || (scanner.timeoutMs !== undefined && (!Number.isSafeInteger(scanner.timeoutMs) || scanner.timeoutMs < 1000 || scanner.timeoutMs > 120000))
-    )) {
-      throw new Error('portal scanner port or timeout is invalid');
     }
     if (portal.support?.phone && !/^\+?[0-9 ()-]{7,30}$/.test(portal.support.phone)) throw new Error('portal support phone is invalid');
     if (portal.support?.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(portal.support.email)) throw new Error('portal support email is invalid');

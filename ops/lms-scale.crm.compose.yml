@@ -6,7 +6,7 @@ services:
     environment:
       LMS_PROCESS_ROLES: api
       LMS_FILE_WRITES: external
-    networks: [default, lms_scanner, lms_crm_edge]
+    networks: [default, lms_crm_edge]
     stop_grace_period: 11m
 
 networks:

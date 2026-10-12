@@ -1,15 +1,12 @@
-import { createServer, type Server } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ClamAvScanner } from '../server/modules/portal-resources/infrastructure/clamav-scanner';
 import { LocalResourceFileStore, createResourceTokenCodec } from '../server/modules/portal-resources/infrastructure/file-store';
 let directory: string, store: LocalResourceFileStore;
-const servers: Server[] = [];
 beforeEach(async () => { directory = await fs.mkdtemp(path.join(os.tmpdir(),'lms-files-test-')); store = new LocalResourceFileStore(path.join(directory,'files'),directory); });
-afterEach(async () => { for (const server of servers.splice(0)) await new Promise<void>(resolve => server.close(() => resolve())); await fs.rm(directory,{recursive:true,force:true}); });
+afterEach(async () => { await fs.rm(directory,{recursive:true,force:true}); });
 const write = async (body: Buffer | string) => { const filename = path.join(directory,'upload'); await fs.writeFile(filename,body); return filename; };
 const zip = (name: string, encrypted = false, body?: Buffer, declaredExpanded?: number) => {
   const value = Buffer.from(name), header = Buffer.alloc(30), central = Buffer.alloc(46), end = Buffer.alloc(22);
@@ -19,11 +16,6 @@ const zip = (name: string, encrypted = false, body?: Buffer, declaredExpanded?: 
   end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1,8); end.writeUInt16LE(1,10); end.writeUInt32LE(central.length+value.length,12); end.writeUInt32LE(header.length+value.length+compressed.length,16);
   return Buffer.concat([header,value,compressed,central,value,end]);
 };
-async function scanner(reply: string | null, receive?: (body: Buffer) => void) {
-  const server = createServer(socket => { let value = Buffer.alloc(0); socket.on('data',chunk => { value = Buffer.concat([value,chunk]); if (value.length < 10) return;
-    let cursor = 10; const chunks: Buffer[] = []; while (cursor + 4 <= value.length) { const length = value.readUInt32BE(cursor); cursor += 4; if (!length) { receive?.(Buffer.concat(chunks)); if (reply !== null) socket.end(reply); else socket.destroy(); return; } if (cursor + length > value.length) return; chunks.push(value.subarray(cursor,cursor+length)); cursor += length; }
-  }); }); servers.push(server); await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve)); const address = server.address(); if (!address || typeof address === 'string') throw new Error('No scanner address'); return new ClamAvScanner({host:'127.0.0.1',port:address.port,timeoutMs:1000});
-}
 describe('Learning file content and quarantine safeguards', () => {
   it('rejects executable content and fake image signatures regardless of the filename', async () => {
     await expect(store.inspect(await write('MZ executable'),'homework.py')).rejects.toMatchObject({code:'portalFileTypeUnsupported'});
@@ -46,12 +38,18 @@ describe('Learning file content and quarantine safeguards', () => {
     await expect(store.inspect(await write(zip('bomb.txt',false,Buffer.alloc(1024*1024))),'work.zip')).rejects.toMatchObject({code:'portalArchiveTooLarge'});
     await expect(store.inspect(await write(zip('forged.txt',false,Buffer.from('Content is longer than declared'),2)),'work.zip')).rejects.toMatchObject({code:'portalArchiveTooLarge'});
   });
-  it('streams bytes to the scanner and only accepts its explicit clean result', async () => {
-    const filename = await write('safe text'); let body: Buffer | null = null; const clean = await scanner('stream: OK\0',value => { body = value; }); expect(await clean.scan(filename)).toBe('ready'); expect(body!.toString()).toBe('safe text');
-    expect(await (await scanner('stream: Eicar-Test-Signature FOUND\0')).scan(filename)).toBe('rejected');
+  it('rejects active, executable, unknown and nested archive entries including renamed binary payloads', async () => {
+    for (const name of ['program.exe','page.html','image.svg','unknown.dat','nested.zip','xl/macrosheets/sheet1.xml','word/activeX/activeX1.xml','word/embeddings/oleObject.bin'])
+      await expect(store.inspect(await write(zip(name,false,Buffer.from('inert'))),'work.zip')).rejects.toMatchObject({code:'portalFileTypeUnsupported'});
+    for (const name of ['program.txt','image.png'])
+      await expect(store.inspect(await write(zip(name,false,Buffer.from('MZ executable'))),'work.zip')).rejects.toMatchObject({code:'portalFileTypeUnsupported'});
+    await expect(store.inspect(await write(zip('program.txt',false,Buffer.concat([Buffer.from(Array.from({length:2000},(_,index)=>String(index)).join(",")),Buffer.from([0])]))),'work.zip')).rejects.toMatchObject({code:'portalFileTypeUnsupported'});
   });
-  it('treats an incomplete or error scanner reply as failure rather than safe content', async () => {
-    const filename = await write('safe text'); await expect((await scanner('stream: ERROR\0')).scan(filename)).rejects.toThrow(); await expect((await scanner(null)).scan(filename)).rejects.toThrow();
+  it('keeps OOXML text package entries supported and rejects legacy OLE formats', async () => {
+    for (const name of ['work.docx','work.xlsx','work.pptx'])
+      expect(await store.inspect(await write(zip('[Content_Types].xml',false,Buffer.from('<Types/>'))),name)).toMatchObject({size:expect.any(Number)});
+    for (const name of ['legacy.doc','legacy.xls','legacy.ppt'])
+      await expect(store.inspect(await write(Buffer.from([208,207,17,224,161,177,26,225])),name)).rejects.toMatchObject({code:'portalFileTypeUnsupported'});
   });
   it('requires a valid authentication tag when reopening an encrypted public token', () => {
     const codec = createResourceTokenCodec('fixture-secret'), token = codec.random(), envelope = codec.seal(token); expect(codec.open(envelope)).toBe(token); expect(codec.hash(token)).toMatch(/^[a-f0-9]{64}$/);

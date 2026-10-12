@@ -84,7 +84,7 @@ services:
     environment:
       <<: *node-env
       APP_CONFIG_PATH: /app/config/lms-files-api.config.json
-    networks: [http, database, scanner]
+    networks: [http, database]
     deploy: { replicas: 1 }
     volumes: [*config, { type: volume, target: /app/logs }, *uploads]
     stop_grace_period: 11m
@@ -115,7 +115,7 @@ services:
   learning-files:
     <<: *node
     command: [node, dist/learning-worker.js, --roles=files, --pool-max=2]
-    networks: [database, scanner]
+    networks: [database]
     volumes:
       [
         *config,
@@ -137,77 +137,6 @@ services:
       <<: *node-env
       APP_CONFIG_PATH: /app/config/lms-email.config.json
     networks: [database, email_egress]
-
-  learning-clamav:
-    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
-    profiles: [lms-scale]
-    restart: unless-stopped
-    user: "1000:1000"
-    entrypoint: [clamd, --foreground=true, --config-file=/etc/clamav/clamd.conf]
-    networks: [scanner]
-    volumes:
-      - signatures:/var/lib/clamav:ro
-      - type: bind
-        source: ../config/clamav/clamd.conf
-        target: /etc/clamav/clamd.conf
-        read_only: true
-        bind: { create_host_path: false }
-    read_only: true
-    tmpfs:
-      [/tmp:rw, noexec, nosuid, nodev, size=256m, mode=1770, uid=1000, gid=1000]
-    cpus: "1.0"
-    mem_limit: 4g
-    mem_reservation: 1536m
-    pids_limit: 64
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    stop_grace_period: 90s
-    healthcheck:
-      test:
-        [
-          CMD-SHELL,
-          "printf 'PING\n' | nc -w 5 127.0.0.1 3310 | grep -q '^PONG'",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 6m
-    logging:
-      options: { max-size: "5m", max-file: "3" }
-
-  learning-clamav-updater:
-    image: clamav/clamav:1.4.6-debian@sha256:6d0680780fd29855cb7018f68272cb520821f614259e2066f8ec669069ac91b3
-    profiles: [lms-signatures]
-    restart: unless-stopped
-    user: "1000:1000"
-    entrypoint:
-      [
-        freshclam,
-        --daemon,
-        --foreground,
-        --stdout,
-        --config-file=/etc/clamav/freshclam.conf,
-      ]
-    networks: [signature_egress]
-    volumes:
-      - signatures:/var/lib/clamav
-      - type: bind
-        source: ../config/clamav/freshclam.conf
-        target: /etc/clamav/freshclam.conf
-        read_only: true
-        bind: { create_host_path: false }
-    read_only: true
-    tmpfs:
-      [/tmp:rw, noexec, nosuid, nodev, size=128m, mode=1770, uid=1000, gid=1000]
-    cpus: "0.5"
-    mem_limit: 2g
-    mem_reservation: 512m
-    pids_limit: 32
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    healthcheck: { disable: true }
-    logging:
-      options: { max-size: "5m", max-file: "3" }
 
   learning-proxy:
     image: ${LMS_PROXY_IMAGE:-haproxy:3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be}
@@ -258,11 +187,6 @@ services:
     networks: [database]
     healthcheck: { disable: true }
 
-volumes:
-  signatures:
-    external: true
-    name: ${LMS_SIGNATURES_VOLUME:?Set an existing initialized signature volume}
-
 networks:
   database:
     external: true
@@ -275,7 +199,4 @@ networks:
     ipam:
       config:
         - subnet: ${LMS_HTTP_SUBNET:?Set an unused private subnet}
-  scanner:
-    internal: true
   email_egress: { driver: bridge }
-  signature_egress: { driver: bridge }

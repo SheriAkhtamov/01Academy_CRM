@@ -190,7 +190,7 @@ export async function main() {
         groups: fixture.groups.length,
         staff: 3,
         files: cycle.files,
-        infectedFilesRejected: cycle.infectedFilesRejected,
+        unsafeUploadsRejectedBeforeRegistration: cycle.unsafeUploadsRejectedBeforeRegistration,
         unsafeArchivesRejectedBeforeRegistration:
           cycle.unsafeArchivesRejectedBeforeRegistration,
         deniedWebSocketHandshakes: cycle.deniedWebSocketHandshakes,

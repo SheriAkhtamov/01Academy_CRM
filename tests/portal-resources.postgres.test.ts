@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PortalResourceService } from '../server/modules/portal-resources/application/resource-service';
 import { PostgresPortalResourceRepository } from '../server/modules/portal-resources/infrastructure/postgres-repository';
 import { createResourceTokenCodec,LocalResourceFileStore } from '../server/modules/portal-resources/infrastructure/file-store';
@@ -23,6 +23,8 @@ const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `lms_resources_it_${randomBytes(8).toString('hex')}`;
 let admin: Pool, pool: Pool, repository: PostgresPortalResourceRepository, service: PortalResourceService;
 let shareEnabled = true;
+const inspectedFile = () => ({ mime: 'text/plain', size: 5, sha256: 'a'.repeat(64) });
+const store = { inspect: vi.fn(async () => inspectedFile()), commit: async () => {}, remove: async () => {}, location: (key: string) => `/tmp/${key}` };
 const self: PortalActorContext = { portalAccountId: 1, linkId: 1, studentId: 1, sessionId: 'one', kind: 'self', studentClassification: 'minor', permissions: ['learning.read','feedback.read','assignments.submit','portfolio.edit','communication.create'] };
 const parent: PortalActorContext = { ...self, portalAccountId: 3, linkId: 3, kind: 'representative', permissions: ['portfolio.approve'] };
 const adult: PortalActorContext = { ...self, portalAccountId: 2, linkId: 2, studentId: 2, studentClassification: 'adult', permissions: [...self.permissions,'finance.read'] };
@@ -54,11 +56,11 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,period text,paid_at timestamptz,due_at timestamptz,paid_until timestamptz,created_at timestamptz DEFAULT now());`);
     for (const file of ['0134_portal_identity','0135_lms_learning','0136_portal_resources']) await pool.query(readFileSync(`migrations/${file}.sql`,'utf8'));
     repository = new PostgresPortalResourceRepository(pool, async () => true);
-    const store = { inspect: async () => ({ mime: 'text/plain', size: 5, sha256: 'a'.repeat(64) }), commit: async () => {}, remove: async () => {}, location: (key: string) => `/tmp/${key}` };
     service = new PortalResourceService(repository, store, createResourceTokenCodec(randomBytes(32).toString('base64')), { appUrl: 'https://academy.example', publicPortfolioEnabled: () => shareEnabled });
   });
   beforeEach(async () => {
     shareEnabled = true;
+    store.inspect.mockReset().mockImplementation(async () => inspectedFile());
     const tables = (await pool.query('SELECT tablename FROM pg_tables WHERE schemaname=$1',[schema])).rows.map(row => `"${schema}"."${row.tablename}"`).join(',');
     await pool.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
     await pool.query(`INSERT INTO users(full_name,module) VALUES('Teacher','teacher'),('Other teacher','teacher'),('Finance','finance');
@@ -107,16 +109,17 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     expect(await service.project(self,value.id)).toMatchObject({ title: 'Latest', links: [] });
     expect((await pool.query('SELECT url,group_id,course_id FROM academy_portfolio_projects WHERE id=$1',[value.id])).rows[0]).toEqual({ url: null, group_id: 1, course_id: 1 });
   });
-  it('quarantines uploaded files, rejects download until scanned and strips storage metadata from DTOs', async () => {
+  it('quarantines uploaded files, rejects download until validated and strips storage metadata from DTOs', async () => {
     const file = await service.upload(self,'/tmp/upload','work.txt',1); expect(file.state).toBe('checking');
     for (const key of ['storageKey','sha256','ownerAccountId','ownerUserId','studentId','runId']) expect(file).not.toHaveProperty(key);
     await expect(service.file(self,file.id)).rejects.toMatchObject({ code: 'portalFileNotReady' });
     await expect(service.file(stranger,file.id)).rejects.toMatchObject({ code: 'portalNotFound' });
-    await service.scanFiles({ scan: async () => 'rejected' }); expect((await service.fileStatus(self,file.id)).state).toBe('rejected');
+    store.inspect.mockRejectedValueOnce(new PortalResourceError('portalFileTypeUnsupported'));
+    await service.validateFiles(); expect((await service.fileStatus(self,file.id)).state).toBe('rejected');
     await expect(service.file(self,file.id)).rejects.toMatchObject({ code: 'portalFileNotReady' });
   });
-  it('does not trust scanning failure as a clean result and cannot attach another student file', async () => {
-    const file = await service.upload(self,'/tmp/upload','work.txt',1); await service.scanFiles({ scan: async () => { throw new Error('offline'); } });
+  it('retries unavailable storage without marking the file ready and cannot attach another student file', async () => {
+    const file = await service.upload(self,'/tmp/upload','work.txt',1); store.inspect.mockRejectedValueOnce(new Error('storage unavailable')); await service.validateFiles();
     expect((await service.fileStatus(self,file.id)).state).toBe('checking');
     await expect(service.saveProject(adult,null,project({ fileIds: [file.id] }))).rejects.toMatchObject({ code: 'portalFileNotReady' });
   });
@@ -342,27 +345,28 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     await pool.query("UPDATE lms_group_runs SET access_until=now()-interval '1 second' WHERE id=1");
     await expect(service.fileStatus(self,Number(file.id))).rejects.toMatchObject({code:'portalNotFound'});
   });
-  it('claims different files across scanner replicas while one scan is unresolved', async () => {
+  it('claims different files across validation replicas while one inspection is unresolved', async () => {
     const firstFile = await service.upload(self, '/tmp/one', 'one.txt', 1);
     const secondFile = await service.upload(self, '/tmp/two', 'two.txt', 1);
     const replicaPool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
     const replica = new PortalResourceService(new PostgresPortalResourceRepository(replicaPool, async () => true), {
-      inspect: async () => ({ mime: 'text/plain', size: 5, sha256: 'a'.repeat(64) }), commit: async () => {}, remove: async () => {}, location: key => `/tmp/${key}`,
+      inspect: async () => { throw new PortalResourceError('portalFileTypeUnsupported'); }, commit: async () => {}, remove: async () => {}, location: key => `/tmp/${key}`,
     }, createResourceTokenCodec(randomBytes(32).toString('base64')), { appUrl: 'https://academy.example', publicPortfolioEnabled: () => false });
     let release!: () => void, started!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
     const entered = new Promise<void>(resolve => { started = resolve; });
-    const running = service.scanFiles({ scan: async () => { started(); await held; return 'ready'; } });
+    store.inspect.mockImplementationOnce(async () => { started(); await held; return inspectedFile(); });
+    const running = service.validateFiles();
     try {
       await entered;
-      expect(await replica.scanFiles({ scan: async () => 'rejected' })).toBe(1);
+      expect(await replica.validateFiles()).toBe(1);
       expect((await service.fileStatus(self, firstFile.id)).state).toBe('checking');
       expect((await service.fileStatus(self, secondFile.id)).state).toBe('rejected');
     } finally { release(); await running; await replicaPool.end(); }
     expect((await service.fileStatus(self, firstFile.id)).state).toBe('ready');
     expect((await pool.query('SELECT scan_attempts FROM lms_files ORDER BY id')).rows).toEqual([{ scan_attempts: 1 }, { scan_attempts: 1 }]);
   });
-  it('recovers an expired scan claim and fences both expired and previously owned completion tokens', async () => {
+  it('recovers an expired validation claim and fences both expired and previously owned completion tokens', async () => {
     const file = await service.upload(self, '/tmp/file', 'work.txt', 1);
     const initial = (await repository.scanningFiles())[0];
     expect(initial.file.id).toBe(file.id); expect(await repository.scanningFiles()).toEqual([]);
@@ -376,6 +380,27 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     await repository.scanned(file.id, 'ready', undefined, initial.leaseToken);
     expect((await service.fileStatus(self, file.id))).toMatchObject({ state: 'rejected', rejectionCode: 'portalFileRejected' });
     expect((await pool.query('SELECT scan_attempts FROM lms_files WHERE id=$1', [file.id])).rows[0].scan_attempts).toBe(1);
+  });
+  it('validates committed bytes without an external service, rejects changed checksums and protects downloads', async () => {
+    const uploads = await fs.mkdtemp(path.join(os.tmpdir(), 'portal-validation-'));
+    const physicalStore = new LocalResourceFileStore(path.join(uploads,'lms','files'),uploads);
+    const resources = new PortalResourceService(repository,physicalStore,createResourceTokenCodec(randomBytes(32).toString('base64')),{appUrl:'https://academy.example',publicPortfolioEnabled:()=>false});
+    try {
+      const temporary = path.join(uploads,'work.txt'); await fs.writeFile(temporary,'hello');
+      const file = await resources.upload(self,temporary,'work.txt',1);
+      expect(file.state).toBe('checking');
+      await expect(resources.file(self,file.id)).rejects.toMatchObject({code:'portalFileNotReady'});
+      expect(await resources.validateFiles()).toBe(1);
+      expect(await resources.fileStatus(self,file.id)).toMatchObject({state:'ready',rejectionCode:null,downloadUrl:expect.any(String)});
+      expect(await fs.readFile((await resources.file(self,file.id)).path,'utf8')).toBe('hello');
+      await expect(resources.file(stranger,file.id)).rejects.toMatchObject({code:'portalNotFound'});
+      await fs.writeFile(temporary,'hello'); const changed = await resources.upload(self,temporary,'changed.txt',1);
+      const stored = (await repository.filesByIds([changed.id]))[0]; await fs.writeFile(physicalStore.location(stored.storageKey),'other');
+      expect(await resources.validateFiles()).toBe(1);
+      expect(await resources.fileStatus(self,changed.id)).toMatchObject({state:'rejected',rejectionCode:'portalFileRejected',downloadUrl:null});
+      await expect(resources.file(self,changed.id)).rejects.toMatchObject({code:'portalFileNotReady'});
+      expect(await resources.validateFiles()).toBe(0);
+    } finally { await fs.rm(uploads,{recursive:true,force:true}); }
   });
   it('retries interrupted physical cleanup and records one receipt only after removal, preserving the retained backup', async () => {
     const uploads = await fs.mkdtemp(path.join(os.tmpdir(), 'portal-cleanup-recovery-'));

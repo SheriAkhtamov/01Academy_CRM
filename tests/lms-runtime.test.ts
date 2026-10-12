@@ -57,7 +57,6 @@ const configuration = (enabled: boolean): AppConfig => {
     allowInvitations: true,
     sessionSecret: "runtime-portal-session-fixture-".repeat(2),
     tokenEncryptionKey: Buffer.alloc(32, 13).toString("base64"),
-    scanner: { host: "scanner.fixture.invalid", timeoutMs: 30_000 },
   };
   return config;
 };
@@ -69,7 +68,7 @@ let runtime: ReturnType<typeof createLearningRuntime> | undefined;
 let inApp: Mock<() => Promise<typeof result>>,
   email: Mock<() => Promise<typeof result>>;
 let identityMail: MockInstance<PortalIdentityMailWorker["runOnce"]>;
-let scanning: MockInstance<PortalResourceService["scanFiles"]>;
+let scanning: MockInstance<PortalResourceService["validateFiles"]>;
 let cleanup: MockInstance<PortalResourceService["cleanupFiles"]>;
 let quizzes: MockInstance<PgQuizRepository["finishExpired"]>;
 let lifecycle: MockInstance<PgLearningRepository["reconcileGroupLifecycle"]>;
@@ -168,7 +167,7 @@ beforeEach(() => {
     .spyOn(PortalIdentityMailWorker.prototype, "runOnce")
     .mockResolvedValue({ sent: 0, failed: 0, expired: 0 });
   scanning = vi
-    .spyOn(PortalResourceService.prototype, "scanFiles")
+    .spyOn(PortalResourceService.prototype, "validateFiles")
     .mockResolvedValue(0);
   cleanup = vi
     .spyOn(PortalResourceService.prototype, "cleanupFiles")

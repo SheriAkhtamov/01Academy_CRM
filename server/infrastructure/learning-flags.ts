@@ -31,7 +31,7 @@ export class LearningFeatureController {
   async settingsConfiguration(): Promise<LearningSchoolSettingsDto> {
     const employees = (await this.pool.query<{ id: number; full_name: string }>("SELECT id,full_name FROM users WHERE is_active=true AND is_archived=false ORDER BY full_name,id")).rows.map(row => ({ id: row.id, fullName: row.full_name }));
     const configuration = await this.configuration();
-    return { settings: this.school,version:this.schoolVersion,employees, emailConfigured: configuration.emailConfigured, scannerConfigured: configuration.scannerConfigured };
+    return { settings: this.school,version:this.schoolVersion,employees, emailConfigured: configuration.emailConfigured };
   }
   async updateSettings(actorId: number, input: LearningSchoolSettingsUpdate['settings'],version = this.schoolVersion,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable',409);
@@ -96,8 +96,7 @@ export class LearningFeatureController {
     const groups = (await this.pool.query<{ id: number; name: string }>('SELECT id,name FROM academy_groups ORDER BY name,id')).rows;
     const email = this.config.email;
     return { capabilities: this.capabilities(), flags: this.values, groups,
-      emailConfigured: Boolean((email.resendApiKey && email.smtp?.from) || (email.smtp?.host && email.smtp.user && email.smtp.pass && email.smtp.from)),
-      scannerConfigured: Boolean(this.config.portal?.scanner?.host) };
+      emailConfigured: Boolean((email.resendApiKey && email.smtp?.from) || (email.smtp?.host && email.smtp.user && email.smtp.pass && email.smtp.from)) };
   }
   async update(actorId: number, input: LearningFlagUpdateInput,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable', 409);

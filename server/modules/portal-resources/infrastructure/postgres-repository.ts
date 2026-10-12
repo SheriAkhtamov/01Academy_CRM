@@ -148,13 +148,13 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
   async finishUpload(fileId: number) { await this.pool.query("UPDATE lms_files SET state='checking',scan_after=now() WHERE id=$1 AND state='uploading'", [fileId]); }
   async removeFailedUpload(fileId: number) { await this.pool.query("UPDATE lms_files SET deleted_at=now(),state='rejected',rejection_code='portalUploadFailed' WHERE id=$1", [fileId]); }
   async scanningFiles(): Promise<ResourceScanClaim[]> {
-    const values = await resourceRows<Parameters<typeof fileDto>[0] & { scanLease: string }>(this.pool, `WITH candidate AS (
+    const values = await resourceRows<Parameters<typeof fileDto>[0] & { scanLease: string; sha256: string }>(this.pool, `WITH candidate AS (
       SELECT id FROM lms_files WHERE state='checking' AND scan_after<=clock_timestamp() AND deleted_at IS NULL
       ORDER BY scan_after,id FOR UPDATE SKIP LOCKED LIMIT 1
     ) UPDATE lms_files file SET scan_after=clock_timestamp()+interval '3 minutes'
       FROM candidate WHERE file.id=candidate.id AND file.state='checking' AND file.deleted_at IS NULL
       RETURNING file.*,file.scan_after::text AS scan_lease`);
-    return values.map(file => ({ file: fileDto(file), leaseToken: file.scanLease }));
+    return values.map(file => ({ file: fileDto(file), sha256: file.sha256, leaseToken: file.scanLease }));
   }
   async scanned(fileId: number, result: 'ready' | 'rejected' | 'retry', rejectionCode: string | undefined, leaseToken: string) {
     await this.pool.query(`UPDATE lms_files SET state=CASE WHEN $2='retry' THEN 'checking' ELSE $2 END,

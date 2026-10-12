@@ -14,6 +14,19 @@ import { removeCommittedUpload } from '../../../lib/retained-uploads';
 const textExtensions = new Set(['.txt', '.md', '.csv', '.json', '.ipynb', '.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.java', '.c', '.h', '.cpp', '.cs', '.sql', '.yaml', '.yml']);
 const zipExtensions = new Set(['.zip', '.docx', '.xlsx', '.pptx']);
 const mimeByExtension: Record<string, string> = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.zip': 'application/zip', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+const packageTextExtensions = new Set(['.xml', '.rels']);
+const validateSignature = (probe: Buffer, extension: string, packageEntry = false) => {
+  if (textExtensions.has(extension) || packageEntry && packageTextExtensions.has(extension)) {
+    if (probe.includes(0) || probe.subarray(0, 2).toString() === 'MZ' || probe.subarray(0, 4).equals(Buffer.from([127, 69, 76, 70]))) throw new PortalResourceError('portalFileTypeUnsupported');
+    return 'text/plain';
+  }
+  const valid = extension === '.pdf' ? probe.subarray(0, 5).equals(Buffer.from('%PDF-'))
+    : extension === '.png' ? probe.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    : extension === '.jpg' || extension === '.jpeg' ? probe.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+    : extension === '.webp' && probe.subarray(0, 4).toString() === 'RIFF' && probe.subarray(8, 12).toString() === 'WEBP';
+  if (!valid) throw new PortalResourceError('portalFileTypeUnsupported');
+  return mimeByExtension[extension];
+};
 const validateZip = async (file: Awaited<ReturnType<typeof fs.open>>, size: number) => {
   const tailSize = Math.min(size, 65557), tail = Buffer.alloc(tailSize);
   await file.read(tail, 0, tailSize, size - tailSize);
@@ -29,7 +42,9 @@ const validateZip = async (file: Awaited<ReturnType<typeof fs.open>>, size: numb
     if (cursor + 46 > directory.length || directory.readUInt32LE(cursor) !== 0x02014b50) throw new PortalResourceError('portalFileTypeUnsupported');
     const flags = directory.readUInt16LE(cursor + 8), nameSize = directory.readUInt16LE(cursor + 28), extraSize = directory.readUInt16LE(cursor + 30), commentSize = directory.readUInt16LE(cursor + 32);
     const name = directory.subarray(cursor + 46, cursor + 46 + nameSize).toString('utf8').replace(/\\/g, '/');
-    if (!name || /[\x00-\x1f\x7f]/.test(name) || flags & 0x41 || /(^|\/)\.\.(\/|$)|^\/|^[a-z]:|vbaProject\.bin$|\.docm$|\.xlsm$|\.pptm$/i.test(name)) throw new PortalResourceError('portalFileTypeUnsupported');
+    if (!name || /[\x00-\x1f\x7f:]/.test(name) || flags & 0x41 || /(^|\/)\.\.(\/|$)|^\/|vbaProject\.bin$|\.docm$|\.xlsm$|\.pptm$|(^|\/)(macrosheets|activex|embeddings)\//i.test(name)) throw new PortalResourceError('portalFileTypeUnsupported');
+    const unixType = (directory.readUInt32LE(cursor + 38) >>> 16) & 0xf000;
+    if (unixType && ![0x8000, 0x4000].includes(unixType)) throw new PortalResourceError('portalFileTypeUnsupported');
     const method = directory.readUInt16LE(cursor + 10), compressed = directory.readUInt32LE(cursor + 20), expanded = directory.readUInt32LE(cursor + 24), localOffset = directory.readUInt32LE(cursor + 42);
     expandedBytes += expanded;
     if (expanded > PORTAL_MAX_FILE_BYTES || expandedBytes > 2 * PORTAL_MAX_FILE_BYTES || expanded / Math.max(1, compressed) > 200 || localOffset === 0xffffffff) throw new PortalResourceError('portalArchiveTooLarge');
@@ -41,16 +56,29 @@ const validateZip = async (file: Awaited<ReturnType<typeof fs.open>>, size: numb
     if (!localName.equals(directory.subarray(cursor + 46, cursor + 46 + nameSize))) throw new PortalResourceError('portalFileTypeUnsupported');
     if (!(flags & 8) && (local.readUInt32LE(18) !== compressed || local.readUInt32LE(22) !== expanded)) throw new PortalResourceError('portalFileTypeUnsupported');
     if (method === 0 && compressed !== expanded) throw new PortalResourceError('portalFileTypeUnsupported');
-    if (method === 8) {
-      if (!compressed) throw new PortalResourceError('portalFileTypeUnsupported');
-      let actual = 0;
+    if (name.endsWith('/')) {
+      if (compressed || expanded) throw new PortalResourceError('portalFileTypeUnsupported');
+    } else {
+      const extension = path.basename(name).toLowerCase() === '.rels' ? '.rels' : path.extname(name).toLowerCase();
+      if (!textExtensions.has(extension) && !packageTextExtensions.has(extension) && (!mimeByExtension[extension] || zipExtensions.has(extension))) throw new PortalResourceError('portalFileTypeUnsupported');
+      if (method === 8 && !compressed) throw new PortalResourceError('portalFileTypeUnsupported');
+      let actual = 0, probe = Buffer.alloc(0);
       const countBytes = new Writable({ write(chunk: Buffer, _encoding, callback) {
         actual += chunk.length;
-        callback(actual > expanded ? new PortalResourceError('portalArchiveTooLarge') : undefined);
+        if (probe.length < 8192) probe = Buffer.concat([probe, chunk.subarray(0, 8192 - probe.length)]);
+        const binaryText = (textExtensions.has(extension) || packageTextExtensions.has(extension)) && chunk.includes(0);
+        callback(actual > expanded ? new PortalResourceError('portalArchiveTooLarge') : binaryText ? new PortalResourceError('portalFileTypeUnsupported') : undefined);
       } });
-      try { await pipeline(file.createReadStream({start:dataOffset,end:dataOffset+compressed-1,autoClose:false}), createInflateRaw(), countBytes); }
+      try {
+        if (compressed) {
+          const content = file.createReadStream({start:dataOffset,end:dataOffset+compressed-1,autoClose:false});
+          if (method === 8) await pipeline(content, createInflateRaw(), countBytes);
+          else await pipeline(content, countBytes);
+        }
+      }
       catch (error) { if (error instanceof PortalResourceError) throw error; throw new PortalResourceError('portalFileTypeUnsupported'); }
       if (actual !== expanded) throw new PortalResourceError('portalFileTypeUnsupported');
+      validateSignature(probe, extension, true);
     }
     cursor += 46 + nameSize + extraSize + commentSize;
     if (cursor > directory.length) throw new PortalResourceError('portalFileTypeUnsupported');
@@ -81,28 +109,21 @@ export class LocalResourceFileStore implements ResourceFileStore {
     const stat = await fs.stat(temporaryPath);
     if (!stat.isFile() || stat.size > PORTAL_MAX_FILE_BYTES) throw new PortalResourceError('portalFileTooLarge', 413);
     const extension = path.extname(name).toLowerCase(), file = await fs.open(temporaryPath, 'r');
-    let mime = mimeByExtension[extension];
+    let mime: string;
     try {
       const probe = Buffer.alloc(Math.min(stat.size, 8192));
       await file.read(probe, 0, probe.length, 0);
-      if (textExtensions.has(extension)) {
-        if (probe.includes(0) || probe.subarray(0, 2).equals(Buffer.from('MZ'))) throw new PortalResourceError('portalFileTypeUnsupported');
-        mime = 'text/plain';
-      } else if (zipExtensions.has(extension)) {
+      if (zipExtensions.has(extension)) {
         if (probe.length < 4 || ![0x04034b50, 0x06054b50].includes(probe.readUInt32LE(0))) throw new PortalResourceError('portalFileTypeUnsupported');
         await validateZip(file, stat.size);
-      } else if (extension === '.pdf') {
-        if (!probe.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new PortalResourceError('portalFileTypeUnsupported');
-      } else if (extension === '.png') {
-        if (!probe.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new PortalResourceError('portalFileTypeUnsupported');
-      } else if (extension === '.jpg' || extension === '.jpeg') {
-        if (!probe.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) throw new PortalResourceError('portalFileTypeUnsupported');
-      } else if (extension === '.webp') {
-        if (probe.subarray(0, 4).toString() !== 'RIFF' || probe.subarray(8, 12).toString() !== 'WEBP') throw new PortalResourceError('portalFileTypeUnsupported');
-      } else throw new PortalResourceError('portalFileTypeUnsupported');
+        mime = mimeByExtension[extension];
+      } else mime = validateSignature(probe, extension);
     } finally { await file.close(); }
     const hash = crypto.createHash('sha256');
-    for await (const chunk of createReadStream(temporaryPath)) hash.update(chunk);
+    for await (const chunk of createReadStream(temporaryPath)) {
+      if (textExtensions.has(extension) && chunk.includes(0)) throw new PortalResourceError('portalFileTypeUnsupported');
+      hash.update(chunk);
+    }
     return { mime, size: stat.size, sha256: hash.digest('hex') };
   }
 }

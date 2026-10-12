@@ -65,7 +65,6 @@ const rollout = (enabled: boolean): LearningRolloutDto => ({
     { id: 14, name: "Group 14" },
   ],
   emailConfigured: false,
-  scannerConfigured: false,
 });
 let client: QueryClient;
 let rows: LmsStaffRunDto[];

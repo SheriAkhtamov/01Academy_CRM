@@ -61,7 +61,7 @@ describe("opt-in LMS component deployment", () => {
     expect(compose.services.postgres).toBeUndefined();
     expect(compose.networks.database.external).toBe(true);
     expect(compose.networks.crm_edge.external).toBe(true);
-    expect(compose.volumes?.signatures.external).toBe(true);
+    expect(compose.volumes).toBeUndefined();
     for (const [name, service] of Object.entries(compose.services)) {
       expect(service.profiles.length, name).toBeGreaterThan(0);
       expect(service.container_name, name).toBeUndefined();
@@ -129,9 +129,6 @@ describe("opt-in LMS component deployment", () => {
     }
     expect(compose.services["learning-upload-api"].deploy?.replicas).toBe(1);
     expect(compose.services["learning-email"].profiles).toEqual(["lms-email"]);
-    expect(compose.services["learning-clamav-updater"].profiles).toEqual([
-      "lms-signatures",
-    ]);
   });
 
   it("shares the existing uploads without creating replacement folders or replica log races", () => {
@@ -169,24 +166,24 @@ describe("opt-in LMS component deployment", () => {
       ).toBe(false);
   });
 
-  it("isolates scanner/egress and publishes only the private proxy listener", () => {
+  it("isolates HTTP/email egress, requires no antivirus service and publishes only the private proxy listener", () => {
     expect(compose.networks.http.internal).toBe(true);
-    expect(compose.networks.scanner.internal).toBe(true);
+    expect(compose.networks.scanner).toBeUndefined();
+    expect(compose.networks.signature_egress).toBeUndefined();
+    expect(compose.services["learning-clamav"]).toBeUndefined();
+    expect(compose.services["learning-clamav-updater"]).toBeUndefined();
+    expect(networks(compose.services["learning-files"])).toEqual(["database"]);
+    expect(networks(compose.services["learning-upload-api"])).toEqual([
+      "http", "database",
+    ]);
     expect(networks(compose.services["learning-proxy"])).not.toContain(
       "database",
     );
     expect(networks(compose.services["learning-proxy"])).not.toContain(
       "scanner",
     );
-    expect(networks(compose.services["learning-clamav"])).toEqual(["scanner"]);
-    expect(networks(compose.services["learning-clamav-updater"])).toEqual([
-      "signature_egress",
-    ]);
     expect(networks(compose.services["learning-email"])).toContain(
       "email_egress",
-    );
-    expect(compose.services["learning-clamav"].image).toMatch(
-      /@sha256:[a-f0-9]{64}$/,
     );
     for (const [name, service] of Object.entries(compose.services)) {
       expect(service.read_only, name).toBe(true);

@@ -9,7 +9,7 @@ import type {
 } from '@shared/contracts/portal-resources';
 
 export type ResourceFile = PortalFileDto & { storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null };
-export type ResourceScanClaim = { file: ResourceFile; leaseToken: string };
+export type ResourceScanClaim = { file: ResourceFile; sha256: string; leaseToken: string };
 export type ShareRecord = PortalShareDto & {
   studentId: number; tokenHash: string; tokenEnvelope: string;
   snapshot: { title: string; displayName: string; description: string | null; teacherReview: string | null; links: string[]; fileIds: number[]; coverFileId: number | null };
@@ -75,4 +75,3 @@ export interface ResourceFileStore {
   inspect(temporaryPath: string, name: string): Promise<{ mime: string; size: number; sha256: string }>;
 }
 export interface ResourceTokenCodec { random(): string; hash(token: string): string; seal(token: string): string; open(envelope: string): string }
-export interface ResourceScanner { scan(filePath: string): Promise<'ready' | 'rejected'> }

@@ -1,6 +1,5 @@
 {
   "_comment": "Copy this file to app.config.json and fill in all values. This is the ONLY config/secrets file — no .env needed.",
-
   "database": {
     "provider": "postgresql",
     "url": "postgresql://crm:CHANGE_ME_DB_PASSWORD@postgres:5432/crm",
@@ -11,7 +10,6 @@
       "connectionTimeoutMillis": 2000
     }
   },
-
   "server": {
     "environment": "development",
     "host": "0.0.0.0",
@@ -19,18 +17,15 @@
     "appUrl": "http://localhost:5000",
     "trustedProxies": false
   },
-
   "session": {
     "secret": "CHANGE-ME-use-a-long-random-string-here",
     "cookieSecure": false
   },
-
   "publicAttendance": {
     "enabled": false,
     "passwordHash": "",
     "groupIds": []
   },
-
   "portal": {
     "enabled": false,
     "learningEnabled": false,
@@ -39,14 +34,8 @@
     "emailEnabled": false,
     "allowInvitations": false,
     "publicPortfolioEnabled": false,
-    "groupIds": [],
-    "scanner": {
-      "host": "clamav",
-      "port": 3310,
-      "timeoutMs": 30000
-    }
+    "groupIds": []
   },
-
   "email": {
     "resendApiKey": "",
     "smtp": {
@@ -57,7 +46,6 @@
       "from": "noreply@example.com"
     }
   },
-
   "integrations": {
     "_comment": "Supported CRM integrations. Never commit real tokens or secrets.",
     "telegramTasks": {

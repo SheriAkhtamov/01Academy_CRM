@@ -5,7 +5,7 @@ import type {
   PortalFinanceQuestionInput,
   PortalProjectComparisonInput,PortalProjectComparisonDto,PortalComparisonProjectDto,
 } from '@shared/contracts/portal-resources';
-import type { PortalResourceRepository, ResourceFile, ResourceFileStore, ResourceScanner, ResourceTokenCodec, ShareRecord,ComparisonRecord,ComparisonSnapshot } from './ports';
+import type { PortalResourceRepository, ResourceFile, ResourceFileStore, ResourceTokenCodec, ShareRecord,ComparisonRecord,ComparisonSnapshot } from './ports';
 import { PortalResourceError, requireFinanceRead, requireResourcePermission, requireShareCreation, type ResourceStaffActor } from '../domain/policy';
 
 export const presentPortalFile = (file: ResourceFile, linkId?: number, staff = false): PortalFileDto => ({
@@ -209,14 +209,17 @@ export class PortalResourceService {
   }
   async moderateShare(actor: ResourceStaffActor, id: number, version: number, approved: boolean) { return this.presentShare(await this.repository.moderateShare(actor, id, version, approved)); }
   async reviewProject(actor: ResourceStaffActor, id: number, version: number, review: string) { return this.repository.reviewProject(actor, id, version, review); }
-  async scanFiles(scanner: ResourceScanner) {
+  async validateFiles() {
     const files = await this.repository.scanningFiles();
-    for (const { file, leaseToken } of files) {
+    for (const { file, sha256, leaseToken } of files) {
       try {
-        const result = await scanner.scan(this.store.location(file.storageKey));
-        await this.repository.scanned(file.id, result, result === 'rejected' ? 'portalFileRejected' : undefined, leaseToken);
-      } catch {
-        await this.repository.scanned(file.id, 'retry', undefined, leaseToken);
+        const inspected = await this.store.inspect(this.store.location(file.storageKey), file.name);
+        const unchanged = inspected.sha256 === sha256 && inspected.mime === file.mime && inspected.size === file.size;
+        const allowed = unchanged && inspected.size <= (this.options.maxFileBytes?.() ?? 100 * 1024 ** 2);
+        await this.repository.scanned(file.id, allowed ? 'ready' : 'rejected', allowed ? undefined : 'portalFileRejected', leaseToken);
+      } catch (error) {
+        await this.repository.scanned(file.id, error instanceof PortalResourceError ? 'rejected' : 'retry',
+          error instanceof PortalResourceError ? error.code : undefined, leaseToken);
       }
     }
     return files.length;

@@ -41,7 +41,6 @@ const settings: LearningSchoolSettingsDto = {
   version: 7,
   employees: [{ id: 60, fullName: "Coordinator Smith" }],
   emailConfigured: false,
-  scannerConfigured: false,
 };
 let client: QueryClient;
 beforeEach(() => {

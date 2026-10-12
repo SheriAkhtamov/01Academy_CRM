@@ -47,7 +47,6 @@ import {
   LocalResourceFileStore,
   createResourceTokenCodec,
 } from "../modules/portal-resources/infrastructure/file-store";
-import { ClamAvScanner } from "../modules/portal-resources/infrastructure/clamav-scanner";
 import { cleanupResourceQuarantine } from "../modules/portal-resources/infrastructure/storage-reservation";
 import { createResourceUploadParser } from "../modules/portal-resources/infrastructure/upload-parser";
 import {
@@ -433,13 +432,6 @@ export function createLearningRuntime(
     canRetryResource: (id, sql) =>
       notificationEmail.canRetryFailedEmail(id, sql),
   });
-  const scanner = portal?.scanner?.host
-    ? new ClamAvScanner({
-        host: portal.scanner.host,
-        port: portal.scanner.port ?? 3310,
-        timeoutMs: portal.scanner.timeoutMs ?? 60_000,
-      })
-    : null;
   const requestActors = new WeakMap<
     Request,
     Map<number, Promise<PortalActorContext>>
@@ -787,8 +779,8 @@ export function createLearningRuntime(
       }
       if (roles.includes("files"))
         job("files", 30_000, async () => {
-          if (scanner && flags.capabilities().learningEnabled) {
-            await resources.scanFiles(scanner);
+          if (flags.capabilities().learningEnabled) {
+            await resources.validateFiles();
             await portalGateway?.refresh();
           }
         });

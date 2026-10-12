@@ -35,7 +35,6 @@ import {
 import { LmsAcceptanceFailure } from "./lms-api-acceptance-guard";
 import {
   acceptanceArchive,
-  acceptanceEicar,
 } from "./lms-api-acceptance-file-fixtures";
 import {
   openAcceptanceRealtime,
@@ -498,6 +497,7 @@ export async function runAcceptanceCycle(
         expected: [201],
       })
     ).data;
+    checkAcceptance(uploaded.state === "checking", "ACCEPTANCE_UPLOAD_NOT_QUARANTINED");
     const start = Date.now();
     while (Date.now() - start < scanTimeoutMs) {
       const result = (
@@ -513,11 +513,11 @@ export async function runAcceptanceCycle(
     throw new LmsAcceptanceFailure("ACCEPTANCE_FILE_SCAN_TIMEOUT");
   };
   if (withoutFiles)
-    recorder.skip("private_upload_scanned_and_foreign_download_denied");
+    recorder.skip("private_upload_validated_and_foreign_download_denied");
   const files: PortalFileDto[] = withoutFiles
     ? []
     : await recorder.step(
-        "private_upload_scanned_and_foreign_download_denied",
+        "private_upload_validated_and_foreign_download_denied",
         async () => {
           const values = await Promise.all([uploadFile(1), uploadFile(2)]);
           const own = await child.get<Uint8Array>(
@@ -541,10 +541,10 @@ export async function runAcceptanceCycle(
       );
   const answerFiles = files.length ? [files[0].id] : [];
   if (withoutFiles)
-    recorder.skip("infected_upload_and_unsafe_archives_rejected");
+    recorder.skip("unsafe_content_and_archives_rejected");
   else
     await recorder.step(
-      "infected_upload_and_unsafe_archives_rejected",
+      "unsafe_content_and_archives_rejected",
       async () => {
         const uploadForm = (name: string, body: Buffer, mime: string) => {
           const form = new FormData();
@@ -557,57 +557,31 @@ export async function runAcceptanceCycle(
           );
           return form;
         };
-        const infected = (
-          await child.post<PortalFileDto>(
-            "/api/portal/files",
-            uploadForm(
-              `acceptance-${fixture.tag}-eicar.txt`,
-              acceptanceEicar(),
-              "text/plain",
-            ),
-            { expected: [201] },
-          )
-        ).data;
-        checkAcceptance(
-          infected.state === "checking",
-          "ACCEPTANCE_INFECTED_NOT_QUARANTINED",
+        const invalidName = `acceptance-${fixture.tag}-${randomUUID()}-binary.txt`;
+        const invalid = await child.post<{ code: string }>(
+          "/api/portal/files",
+          uploadForm(invalidName, Buffer.from("MZ inert invalid text fixture"), "text/plain"),
+          { expected: [400, 413, 422] },
         );
-        await child.get(
-          `/api/portal/files/${infected.id}/download?linkId=${contexts.child.linkId}`,
-          { expected: [403, 404, 409] },
-        );
-        const deadline = Date.now() + scanTimeoutMs;
-        let rejected = false;
-        while (Date.now() < deadline) {
-          const result = (
-            await child.get<PortalFileDto>(
-              `/api/portal/files/${infected.id}/status?linkId=${contexts.child.linkId}`,
-            )
-          ).data;
-          checkAcceptance(
-            result.state !== "ready",
-            "ACCEPTANCE_INFECTED_FILE_EXPOSED",
-          );
-          if (result.state === "rejected") {
-            rejected = true;
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        checkAcceptance(rejected, "ACCEPTANCE_INFECTED_SCAN_TIMEOUT");
-        await child.get(
-          `/api/portal/files/${infected.id}/download?linkId=${contexts.child.linkId}`,
-          { expected: [403, 404, 409] },
-        );
-        for (const [suffix, archive] of [
+        checkAcceptance(invalid.data.code === "portalFileTypeUnsupported", "ACCEPTANCE_UNSAFE_CONTENT_WRONG_REJECTION");
+        const invalidCount = (await pool.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM lms_files WHERE student_id=$1 AND name=$2",
+          [studentA.id, invalidName],
+        )).rows[0].count;
+        checkAcceptance(invalidCount === 0, "ACCEPTANCE_UNSAFE_CONTENT_REGISTERED");
+        for (const [suffix, archive, code] of [
           [
             "declared-205m",
             acceptanceArchive(
               Buffer.from("small inert entry"),
               205 * 1024 ** 2,
             ),
+            "portalArchiveTooLarge",
           ],
-          ["high-ratio", acceptanceArchive(Buffer.alloc(1024 ** 2))],
+          ["high-ratio", acceptanceArchive(Buffer.alloc(1024 ** 2)), "portalArchiveTooLarge"],
+          ["encrypted", acceptanceArchive(Buffer.from("inert"), 5, "practice.txt", true), "portalFileTypeUnsupported"],
+          ["macro", acceptanceArchive(Buffer.from("inert"), 5, "word/vbaProject.bin"), "portalFileTypeUnsupported"],
+          ["executable", acceptanceArchive(Buffer.from("MZ inert"), 8, "program.exe"), "portalFileTypeUnsupported"],
         ] as const) {
           const name = `acceptance-${fixture.tag}-${randomUUID()}-${suffix}.zip`;
           const before = (
@@ -623,7 +597,7 @@ export async function runAcceptanceCycle(
             { expected: [400, 413, 422] },
           );
           checkAcceptance(
-            rejectedArchive.data.code === "portalArchiveTooLarge",
+            rejectedArchive.data.code === code,
             "ACCEPTANCE_UNSAFE_ARCHIVE_WRONG_REJECTION",
           );
           const after = (
@@ -1338,7 +1312,7 @@ export async function runAcceptanceCycle(
     identitiesReused,
     deniedWebSocketHandshakes: 4,
     revokedWebSocketPolicyClosures: 1,
-    infectedFilesRejected: withoutFiles ? 0 : 1,
-    unsafeArchivesRejectedBeforeRegistration: withoutFiles ? 0 : 2,
+    unsafeUploadsRejectedBeforeRegistration: withoutFiles ? 0 : 1,
+    unsafeArchivesRejectedBeforeRegistration: withoutFiles ? 0 : 5,
   };
 }

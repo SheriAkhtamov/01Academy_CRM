@@ -1,4 +1,6 @@
-import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable, ArchiveSelect } from '@/features/academy-resources/ResourceSettingsTables';
+import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
+import type { Group, GroupTeacher } from '@/features/groups/types';
+import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
 import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AcademyPortalAccess } from '@/features/portal-access/AcademyPortalAccess';
@@ -10,12 +12,10 @@ import { apiRequest } from '@/lib/queryClient';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   createCourseSchema,
-  createGroupSchema,
   createRoomSchema,
   createSchoolSchema,
   createStatusSchema,
   type CourseValues,
-  type GroupValues,
   type RoomValues,
   type SchoolValues,
   type StatusValues,
@@ -63,31 +63,16 @@ import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
-import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
-import { FutureGroupStartDialog, futureGroupStatusNeedsConfirmation } from '@/components/ux/FutureGroupStartDialog';
-import { GroupStatusField } from '@/components/ux/GroupStatusField';
-import { useGroupArchive } from '@/features/groups/useGroupArchive';
 import { LeadMergePanel } from '@/components/ux/LeadMergePanel';
 import { KpiSettingsPanel } from '@/features/sales-kpi/ui/KpiSettingsPanel';
 import { SalesFunnelsPanel } from '@/features/sales-funnels/SalesFunnelsPanel';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
 import { LeadDistributionPanel } from '@/features/lead-distribution/LeadDistributionPanel';
-import { useCeoCopy } from '@/hooks/useCeoCopy';
-import {
-  WeekScheduleEditor,
-  type WeekScheduleItem,
-} from '@/components/ux/WeekScheduleEditor';
 import { stagesForSalesFunnel } from '@shared/sales-funnel-workflow';
 import {
-  getGroupScheduleValidationError,
-  getMinimumGroupEndDate,
-} from '@shared/scheduling';
-import {
   AlertCircle,
-  Archive,
-  ArchiveRestore,
   ArrowDown,
   ArrowUp,
   ArrowRightLeft,
@@ -104,7 +89,7 @@ import {
   UserRoundCheck,
   UsersRound,
 } from 'lucide-react';
-import { ACADEMY_TIME_ZONE, academyDateInputValue } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 
 interface PipelineStatus {
@@ -119,79 +104,14 @@ interface PipelineStatus {
   isActive: boolean;
 }
 
-interface Teacher {
-  id: number;
-  fullName: string;
-  courseIds: number[];
-  schoolIds: number[];
-  availability: WeekScheduleItem[];
-  status: string;
-}
-
-interface Group {
-  id: number;
-  name: string;
-  courseId: number;
-  courseName?: string;
-  schoolId: number;
-  schoolName?: string;
-  roomId: number;
-  roomName?: string;
-  teacherId?: number | null;
-  teacherName?: string | null;
-  schedule: WeekScheduleItem[];
-  lessonCount: number;
-  lessonDurationMinutes: number;
-  durationDays: number;
-  frequency?: string | null;
-  maxStudents: number;
-  currentStudents: number;
-  reservedStudents: number;
-  status: string;
-  isArchived?: boolean;
-  archivedAt?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-}
-
 interface ConfigurationData {
   schools: School[];
   rooms: Room[];
   courses: Course[];
   statuses: PipelineStatus[];
-  teachers: Teacher[];
+  teachers: GroupTeacher[];
   groups: Group[];
 }
-
-type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
-
-const AUTO_TEACHER_VALUE = 'auto';
-
-const normalizeSchedule = (items: unknown, fallbackDurationMinutes = 120): WeekScheduleItem[] => {
-  if (!Array.isArray(items)) return [];
-  return items.flatMap((item: any) => {
-    const dayOfWeek = Number(item?.dayOfWeek);
-    const startTime = String(item?.startTime ?? item?.time ?? '');
-    const explicitEndTime = String(item?.endTime ?? '');
-    const [startHours, startMinutes] = startTime.split(':').map(Number);
-    const legacyEndMinutes = Number.isFinite(startHours) && Number.isFinite(startMinutes)
-      ? Math.min(startHours * 60 + startMinutes + fallbackDurationMinutes, 23 * 60 + 59)
-      : 0;
-    const legacyEndTime = legacyEndMinutes > startHours * 60 + startMinutes
-      ? `${String(Math.floor(legacyEndMinutes / 60)).padStart(2, '0')}:${String(legacyEndMinutes % 60).padStart(2, '0')}`
-      : '';
-    const endTime = explicitEndTime || legacyEndTime;
-    if (!dayOfWeek || !startTime) return [];
-    return [{
-      dayOfWeek,
-      startTime,
-      endTime: endTime || startTime,
-      schoolId: item?.schoolId ? Number(item.schoolId) : null,
-    }];
-  });
-};
-
-const toDateInput = academyDateInputValue;
 
 function EmptyTableState({ title }: { title: string }) {
   return (
@@ -213,7 +133,6 @@ interface AcademySettingsProps {
 
 export default function AcademySettings({ mode = 'academy' }: AcademySettingsProps) {
   const { t, language } = useTranslation();
-  const ceoCopy = useCeoCopy();
   const queryClient = useQueryClient();
   const routeSearch = useSearch();
   const [, navigate] = useLocation();
@@ -237,20 +156,14 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
-  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [selectedStageFunnelId, setSelectedStageFunnelId] = useState<number | null>(null);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [editingStatus, setEditingStatus] = useState<PipelineStatus | null>(null);
-  const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
-  // Snapshot taken when the group dialog opens: lets the unsaved-changes
-  // guard notice edits made in the week-schedule editor itself.
-  const [groupScheduleBaseline, setGroupScheduleBaseline] = useState<WeekScheduleItem[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{
-    resource: 'schools' | 'rooms' | 'courses' | 'groups' | 'pipeline-statuses';
+    resource: 'schools' | 'rooms' | 'courses' | 'pipeline-statuses';
     id: number;
     name: string;
   } | null>(null);
@@ -258,9 +171,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     status: PipelineStatus;
     leadCount: number;
   } | null>(null);
-  const [archiveGroupTarget, setArchiveGroupTarget] = useState<Group | null>(null);
-  const [restoreGroupTarget, setRestoreGroupTarget] = useState<Group | null>(null);
-  const [futureGroupStartValues, setFutureGroupStartValues] = useState<GroupValues | null>(null);
   const [pipelineTransferTargetId, setPipelineTransferTargetId] = useState('');
 
   const configuration = useQuery<ConfigurationData>({
@@ -301,22 +211,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     navigate(nextTab === defaultTab ? basePath : `${basePath}?tab=${nextTab}`);
   };
 
-  const dayNames = [
-    t('monday'),
-    t('tuesday'),
-    t('wednesday'),
-    t('thursday'),
-    t('friday'),
-    t('saturday'),
-    t('sunday'),
-  ];
-
   // Schema factories resolve validation messages through the active language.
   const schoolSchemaMemo = useMemo(() => createSchoolSchema(t), [t]);
   const roomSchemaMemo = useMemo(() => createRoomSchema(t), [t]);
   const courseSchemaMemo = useMemo(() => createCourseSchema(t), [t]);
   const statusSchemaMemo = useMemo(() => createStatusSchema(t), [t]);
-  const groupSchemaMemo = useMemo(() => createGroupSchema(t), [t]);
 
   const schoolForm = useForm<SchoolValues>({
     resolver: zodResolver(schoolSchemaMemo),
@@ -360,23 +259,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
   });
 
-  const groupForm = useForm<GroupValues>({
-    resolver: zodResolver(groupSchemaMemo),
-    defaultValues: {
-      name: '',
-      courseId: '',
-      schoolId: '',
-      roomId: '',
-      teacherId: AUTO_TEACHER_VALUE,
-      lessonCount: 10,
-      lessonDurationMinutes: 120,
-      maxStudents: 12,
-      status: 'open',
-      startDate: '',
-      endDate: '',
-    },
-  });
-
   // Closing any resource dialog with unsaved edits asks for confirmation
   // instead of silently discarding them.
   const schoolGuard = useUnsavedChangesGuard({
@@ -411,16 +293,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       if (!open) setEditingStatus(null);
     },
   });
-  const groupGuard = useUnsavedChangesGuard({
-    open: groupDialogOpen,
-    isDirty: groupForm.formState.isDirty
-      || JSON.stringify(groupSchedule) !== JSON.stringify(groupScheduleBaseline),
-    onOpenChange: (open) => {
-      setGroupDialogOpen(open);
-      if (!open) setEditingGroup(null);
-    },
-  });
-
   const saveSchool = useMutation({
     mutationFn: (values: SchoolValues) => {
       return editingSchool
@@ -497,81 +369,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
   });
 
-  const saveGroup = useMutation({
-    mutationFn: (values: GroupMutationValues) => {
-      const teacherId = values.teacherId && values.teacherId !== AUTO_TEACHER_VALUE
-        ? Number(values.teacherId)
-        : null;
-      const payload = {
-        name: values.name,
-        courseId: Number(values.courseId),
-        schoolId: Number(values.schoolId),
-        roomId: Number(values.roomId),
-        teacherId,
-        schedule: groupSchedule,
-        lessonCount: Number(values.lessonCount),
-        lessonDurationMinutes: Number(values.lessonDurationMinutes),
-        maxStudents: Number(values.maxStudents),
-        status: values.status,
-        startDate: values.startDate || null,
-        endDate: values.endDate || null,
-        autoAssign: !teacherId,
-        allowFutureStart: values.allowFutureStart === true,
-      };
-      return editingGroup
-        ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
-        : apiRequest('POST', '/api/academy/groups', payload);
-    },
-    onSuccess: (group: Group) => {
-      const teacher = configuration.data?.teachers.find(
-        (item) => item.id === Number(group.teacherId),
-      );
-      toast({
-        title: editingGroup ? t('groupUpdated') : t('groupCreated'),
-      });
-      setGroupDialogOpen(false);
-      setEditingGroup(null);
-      setFutureGroupStartValues(null);
-      setGroupSchedule([]);
-      groupForm.reset();
-      invalidate();
-      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
-    },
-    onError: (error: Error & { rawMessage?: string; data?: { minimumEndDate?: string } }) => {
-      const errorCode = error.rawMessage ?? error.message;
-      const backendMinimumEndDate = error.data?.minimumEndDate;
-      const formattedBackendMinimumEndDate = backendMinimumEndDate
-        ? new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-          timeZone: 'UTC',
-        }).format(new Date(`${backendMinimumEndDate}T00:00:00Z`))
-        : '';
-      const description = errorCode === 'groupLessonsLockSchedule'
-        ? t('groupLessonsLockSchedule')
-        : errorCode === 'futureGroupInProgressRequiresConfirmation'
-          ? t('futureGroupInProgressRequiresConfirmation')
-        : errorCode === 'groupHasScheduledLessons'
-          ? t('groupHasScheduledLessons')
-          : errorCode === 'groupHasReservedLeads'
-            ? t('groupHasReservedLeads')
-            : errorCode === 'groupDateRangeTooShort' && formattedBackendMinimumEndDate
-              ? t('groupDateRangeTooShort').replace('{date}', formattedBackendMinimumEndDate)
-              : error.message;
-      toast({ title: t('error'), description, variant: 'destructive' });
-    },
-  });
-
-  /* The archive is a flag of its own, not the `completed` status: a completed
-     group that is still being watched stays on the active list, and shelving
-     one hides it from every calendar in the CRM without completing it. */
-  const { archiveGroup, restoreGroup } = useGroupArchive<Group>((_group, archived) => {
-    if (archived) setArchiveGroupTarget(null);
-    else setRestoreGroupTarget(null);
-    void invalidate();
-  });
-
   const saveStatus = useMutation({
     mutationFn: (values: StatusValues) => {
       return editingStatus
@@ -599,7 +396,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       apiRequest('DELETE', `/api/academy/${resource}/${id}`),
     onSuccess: (_result, target) => {
       toast({
-        title: target.resource === 'groups' ? t('groupDeletedPermanently') : t('resourceDeleted'),
+        title: t('resourceDeleted'),
       });
       setDeleteTarget(null);
       invalidate();
@@ -755,40 +552,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setCourseDialogOpen(true);
   };
 
-  const openGroup = (group?: Group) => {
-    setEditingGroup(group ?? null);
-    groupForm.reset(group ? {
-      name: group.name,
-      courseId: String(group.courseId),
-      schoolId: String(group.schoolId),
-      roomId: String(group.roomId),
-      teacherId: group.teacherId ? String(group.teacherId) : AUTO_TEACHER_VALUE,
-      lessonCount: group.lessonCount || 10,
-      lessonDurationMinutes: group.lessonDurationMinutes || 120,
-      maxStudents: group.maxStudents || 12,
-      status: ['open', 'in_progress', 'frozen', 'completed'].includes(group.status)
-        ? group.status as GroupValues['status']
-        : 'open',
-      startDate: toDateInput(group.startDate),
-      endDate: toDateInput(group.endDate),
-    } : {
-      name: '',
-      courseId: '',
-      schoolId: '',
-      roomId: '',
-      teacherId: AUTO_TEACHER_VALUE,
-      lessonCount: 10,
-      lessonDurationMinutes: 120,
-      maxStudents: 12,
-      status: 'open',
-      startDate: '',
-      endDate: '',
-    });
-    setGroupSchedule(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
-    setGroupScheduleBaseline(normalizeSchedule(group?.schedule, group?.lessonDurationMinutes || 120));
-    setGroupDialogOpen(true);
-  };
-
   const openStatus = (status?: PipelineStatus) => {
     if (!selectedStageFunnelId) return;
     setEditingStatus(status ?? null);
@@ -828,262 +591,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       : [],
     [pipelineDeleteTarget, funnelStatuses],
   );
-  const teachers = configuration.data?.teachers ?? [];
-  const groups = configuration.data?.groups ?? [];
-  const isGroupArchive = requestedFilter === 'archive';
-  const displayedGroups = useMemo(
-    () => {
-      if (requestedFilter === 'archive') {
-        return groups.filter((group) => group.isArchived);
-      }
-      const activeGroups = groups.filter((group) => !group.isArchived);
-      return requestedFilter === 'without-teacher'
-        ? activeGroups.filter((group) => !group.teacherId)
-        : activeGroups;
-    },
-    [groups, requestedFilter],
-  );
-  const groupEmptyState = isGroupArchive
-    ? {
-      title: t('noArchivedGroups'),
-    }
-    : requestedFilter === 'without-teacher'
-      ? {
-        title: ceoCopy.settings.noGroupsWithoutTeacher,
-      }
-      : {
-        title: t('noGroups'),
-      };
-  const selectedGroupSchoolId = groupForm.watch('schoolId');
-  const selectedGroupTeacherId = groupForm.watch('teacherId');
-  const selectedGroupRoomId = groupForm.watch('roomId');
-  const selectedGroupLessonCount = groupForm.watch('lessonCount');
-  const selectedGroupStartDate = groupForm.watch('startDate');
-  const selectedGroupEndDate = groupForm.watch('endDate');
-  const minimumGroupEndDate = useMemo(() => getMinimumGroupEndDate({
-    startDate: selectedGroupStartDate,
-    lessonCount: Number(selectedGroupLessonCount),
-    schedule: groupSchedule,
-  }), [groupSchedule, selectedGroupLessonCount, selectedGroupStartDate]);
-  const formattedMinimumGroupEndDate = useMemo(() => {
-    if (!minimumGroupEndDate) return '';
-    return new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      timeZone: 'UTC',
-    }).format(new Date(`${minimumGroupEndDate}T00:00:00Z`));
-  }, [language, minimumGroupEndDate]);
-  const isGroupEndDateTooEarly = Boolean(
-    minimumGroupEndDate
-    && selectedGroupEndDate
-    && selectedGroupEndDate < minimumGroupEndDate,
-  );
-  const submitGroupValues = (values: GroupValues) => {
-    if (futureGroupStatusNeedsConfirmation(values)) {
-      setFutureGroupStartValues(values);
-      return;
-    }
-    saveGroup.mutate(values);
-  };
-
-  useEffect(() => {
-    if (isGroupEndDateTooEarly) {
-      groupForm.setError('endDate', {
-        type: 'scheduleRange',
-        message: t('groupDateRangeTooShort').replace('{date}', formattedMinimumGroupEndDate),
-      });
-      return;
-    }
-    if (groupForm.getFieldState('endDate').error?.type === 'scheduleRange') {
-      groupForm.clearErrors('endDate');
-    }
-  }, [
-    formattedMinimumGroupEndDate,
-    groupForm,
-    isGroupEndDateTooEarly,
-    selectedGroupEndDate,
-    t,
-  ]);
-
   useEffect(() => {
     if (!pipelineDeleteTarget) return;
     if (availableTransferStatuses.some((status) => String(status.id) === pipelineTransferTargetId)) return;
     setPipelineTransferTargetId(availableTransferStatuses[0] ? String(availableTransferStatuses[0].id) : '');
   }, [availableTransferStatuses, pipelineDeleteTarget, pipelineTransferTargetId]);
-
-  const groupRooms = useMemo(
-    () => rooms.filter((room) => (
-      room.isActive !== false && String(room.schoolId) === selectedGroupSchoolId
-    )),
-    [rooms, selectedGroupSchoolId],
-  );
-  const groupTeachers = useMemo(
-    () => teachers
-      .filter((teacher) => teacher.status === 'active' || String(teacher.id) === selectedGroupTeacherId)
-      .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
-    [selectedGroupTeacherId, teachers],
-  );
-  const groupColumns: DataTableColumn<Group>[] = [
-    {
-      key: 'name',
-      header: t('group'),
-      sortable: true,
-      accessor: (row) => row.name,
-      render: (row) => (
-        <div className="min-w-0">
-          <p className="truncate font-medium text-foreground">{row.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {row.teacherName ?? t('notAssigned')}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'courseAndSchool',
-      header: t('courseAndSchool'),
-      sortable: true,
-      accessor: (row) => `${row.courseName ?? ''} ${row.schoolName ?? ''}`,
-      render: (row) => (
-        <div>
-          <p className="font-medium text-foreground">{row.courseName ?? '—'}</p>
-          <p className="text-xs text-muted-foreground">{row.schoolName ?? '—'} · {row.roomName ?? t('roomNotFound')}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'schedule',
-      header: t('schedule'),
-      accessor: (row) => row.schedule?.length ?? 0,
-      render: (row) => (
-        <div className="flex max-w-md flex-wrap gap-1">
-          {normalizeSchedule(row.schedule).slice(0, 3).map((item, index) => (
-            <Badge key={`${row.id}-${item.dayOfWeek}-${item.startTime}-${index}`} variant="outline">
-              {dayNames[item.dayOfWeek - 1]} {item.startTime}–{item.endTime}
-            </Badge>
-          ))}
-          {(row.schedule?.length ?? 0) > 3
-            ? <Badge variant="secondary">+{row.schedule.length - 3}</Badge>
-            : null}
-        </div>
-      ),
-    },
-    {
-      key: 'learningPlan',
-      header: t('groupLearningPlan'),
-      sortable: true,
-      accessor: (row) => row.lessonCount,
-      render: (row) => (
-        <div className="md:min-w-44">
-          <p className="font-medium text-foreground">
-            {row.lessonCount} {t('lessonsCount')} · {row.lessonDurationMinutes} {t('minuteShort')}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'capacity',
-      header: t('groupCapacity'),
-      sortable: true,
-      accessor: (row) => Number(row.currentStudents || 0) + Number(row.reservedStudents || 0),
-      render: (row) => {
-        const occupied = Number(row.currentStudents || 0) + Number(row.reservedStudents || 0);
-        return (
-          <div className="flex min-w-36 flex-col gap-1">
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="font-medium text-foreground">{occupied}/{row.maxStudents || 12}</span>
-              {Number(row.reservedStudents || 0) > 0
-                ? <span className="text-muted-foreground">{t('reservedSeats')}: {row.reservedStudents}</span>
-                : null}
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'status',
-      header: t('status'),
-      sortable: true,
-      accessor: (row) => row.status,
-      render: (row) => (
-        <Badge variant={row.status === 'completed' ? 'secondary' : 'outline'}>
-          {row.status === 'open'
-            ? t('groupStatusOpen')
-            : row.status === 'in_progress'
-              ? t('groupStatusInProgress')
-              : row.status === 'frozen' ? t('groupStatusFrozen') : t('groupStatusCompleted')}
-        </Badge>
-      ),
-    },
-    {
-      key: 'actions',
-      header: t('actions'),
-      render: (row) => {
-        const isArchiving = archiveGroup.isPending && archiveGroup.variables?.id === row.id;
-        return (
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="min-h-11 min-w-11"
-              onClick={() => openGroup(row)}
-            >
-              <Edit3 />
-              <span className="sr-only">{t('edit')}</span>
-            </Button>
-            {isGroupArchive ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="min-h-11"
-                  disabled={restoreGroup.isPending}
-                  onClick={() => setRestoreGroupTarget(row)}
-                >
-                  {restoreGroup.isPending && restoreGroup.variables?.id === row.id ? (
-                    <Loader2 className="animate-spin" data-icon="inline-start" />
-                  ) : (
-                    <ArchiveRestore data-icon="inline-start" />
-                  )}
-                  {t('restoreGroupFromArchive')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={deleteResource.isPending}
-                  onClick={() => setDeleteTarget({
-                    resource: 'groups',
-                    id: row.id,
-                    name: row.name,
-                  })}
-                >
-                  <Trash2 />
-                  <span className="sr-only">{t('deleteGroupPermanently')}</span>
-                </Button>
-              </>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="min-h-11 min-w-11"
-                title={t('archiveGroup')}
-                aria-label={isArchiving ? t('saving') : t('archiveGroup')}
-                disabled={archiveGroup.isPending}
-                onClick={() => setArchiveGroupTarget(row)}
-              >
-                {isArchiving ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Archive />
-                )}
-              </Button>
-            )}
-          </div>
-        );
-      },
-    },
-  ];
 
   if (configuration.isLoading) {
     return (
@@ -1199,31 +711,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-3">
-                <CardTitle>{t('navGroups')}</CardTitle>
-                <ArchiveSelect archived={isGroupArchive} label={t('groupListView')}
-                  currentFilterLabel={requestedFilter === 'without-teacher' ? t('adminGroupsWithoutTeacher') : undefined}
-                  onChange={(archived) => navigate(`${basePath}?tab=groups${archived ? '&filter=archive' : ''}`)} />
-              </div>
-              {!isGroupArchive ? (
-                <Button onClick={() => openGroup()}>
-                  <Plus data-icon="inline-start" />{t('addGroup')}
-                </Button>
-              ) : null}
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                className="overflow-x-auto"
-                columns={groupColumns}
-                data={displayedGroups}
-                keyExtractor={(row) => `group-${row.id}`}
-                defaultSortKey="name"
-                emptyState={<EmptyTableState title={groupEmptyState.title}  />}
-              />
-            </CardContent>
-          </Card>
+          <GroupsWorkspace configuration={configuration.data} basePath={`${basePath}?tab=groups`} />
         </TabsContent>
 
         <TabsContent value="funnels" className="mt-0">
@@ -1505,219 +993,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog open={groupDialogOpen} onOpenChange={groupGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
-          </DialogHeader>
-          <Form {...groupForm}>
-            <form
-              className="flex min-h-0 flex-1 flex-col"
-              onSubmit={groupForm.handleSubmit((values) => {
-                const scheduleError = getGroupScheduleValidationError(groupSchedule);
-                if (scheduleError) {
-                  const title = scheduleError === 'groupScheduleRequired'
-                    ? t('groupScheduleRequired')
-                    : scheduleError === 'groupScheduleInvalid'
-                      ? t('groupScheduleInvalid')
-                      : t('groupScheduleOverlap');
-                  toast({ title, variant: 'destructive' });
-                  return;
-                }
-                const earliestEndDate = getMinimumGroupEndDate({
-                  startDate: values.startDate,
-                  lessonCount: Number(values.lessonCount),
-                  schedule: groupSchedule,
-                });
-                if (earliestEndDate && values.endDate && values.endDate < earliestEndDate) {
-                  const formattedDate = new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                    timeZone: 'UTC',
-                  }).format(new Date(`${earliestEndDate}T00:00:00Z`));
-                  groupForm.setError('endDate', {
-                    type: 'scheduleRange',
-                    message: t('groupDateRangeTooShort').replace('{date}', formattedDate),
-                  }, { shouldFocus: true });
-                  return;
-                }
-                submitGroupValues(values);
-              })}
-            >
-              <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-6 py-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <FormField control={groupForm.control} name="name" render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel required>{t('groupName')}</FormLabel>
-                    <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <GroupStatusField />
-                <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('groupCapacity')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="courseId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('course')}</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          {courses.filter((course) => course.isActive !== false).map((course) => (
-                            <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="schoolId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('school')}</FormLabel>
-                    <Select value={field.value} onValueChange={(value) => {
-                      field.onChange(value);
-                      if (value !== selectedGroupSchoolId) groupForm.setValue('roomId', '');
-                    }}>
-                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          {schools.filter((school) => school.isActive !== false).map((school) => (
-                            <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="roomId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('room')}</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange} disabled={!selectedGroupSchoolId}>
-                      <FormControl><SelectTrigger><SelectValue placeholder={t('roomRequired')} /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          {groupRooms.map((room) => (
-                            <SelectItem key={room.id} value={String(room.id)}>
-                              {room.name} · {room.capacity} {t('students')}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('teacher')}</FormLabel>
-                    <Select value={field.value || AUTO_TEACHER_VALUE} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherAutoSelect')}</SelectItem>
-                          {groupTeachers.map((teacher) => (
-                            <SelectItem key={teacher.id} value={String(teacher.id)}>
-                              {teacher.fullName}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    {groupTeachers.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">{t('noTeachers')}</p>
-                    ) : null}
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="lessonCount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('lessonsCount')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="lessonDurationMinutes" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('lessonDurationMinutes')}</FormLabel>
-                    <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="startDate" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('startDate')}</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={groupForm.control} name="endDate" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('endDate')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        min={minimumGroupEndDate || selectedGroupStartDate || undefined}
-                        aria-invalid={isGroupEndDateTooEarly}
-                        {...field}
-                      />
-                    </FormControl>
-                    {minimumGroupEndDate ? (
-                      <p className="text-[11px] text-muted-foreground" aria-live="polite">
-                        {t('minimumGroupEndDate').replace('{date}', formattedMinimumGroupEndDate)}
-                      </p>
-                    ) : null}
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{t('schedule')}</p>
-                </div>
-                <WeekScheduleEditor
-                  value={groupSchedule}
-                  onChange={setGroupSchedule}
-                  dayNames={dayNames}
-                  startLabel={t('start')}
-                  endLabel={t('end')}
-                />
-              </div>
-              </div>
-
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => groupGuard.handleOpenChange(false)}>
-                  {t('cancel')}
-                </Button>
-                <Button type="submit" disabled={saveGroup.isPending}>
-                  {saveGroup.isPending ? t('saving') : t('save')}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      <FutureGroupStartDialog
-        values={futureGroupStartValues}
-        isPending={saveGroup.isPending}
-        onDismiss={() => setFutureGroupStartValues(null)}
-        onReturnToStartDate={() => window.requestAnimationFrame(() => groupForm.setFocus('startDate'))}
-        onStatusChange={(status) => groupForm.setValue('status', status)}
-        onSave={(values) => saveGroup.mutate(values)}
-      />
-
       <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
         <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
@@ -1895,58 +1170,17 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <ConfirmDialog
-        open={Boolean(restoreGroupTarget)}
-        onOpenChange={(open) => {
-          if (!open && !restoreGroup.isPending) setRestoreGroupTarget(null);
-        }}
-        title={t('restoreGroupTitle')}
-        description={restoreGroupTarget
-          ? `${t('restoreGroupConfirm')} “${restoreGroupTarget.name}”`
-          : t('restoreGroupConfirm')}
-        confirmLabel={t('restoreGroupFromArchive')}
-        isPending={restoreGroup.isPending}
-        keepOpenOnConfirm
-        onConfirm={() => {
-          if (restoreGroupTarget) restoreGroup.mutate(restoreGroupTarget);
-        }}
-      />
-
-      <ConfirmDialog
-        open={Boolean(archiveGroupTarget)}
-        onOpenChange={(open) => {
-          if (!open && !archiveGroup.isPending) setArchiveGroupTarget(null);
-        }}
-        title={t('archiveGroupTitle')}
-        description={archiveGroupTarget
-          ? `${t('archiveGroupConfirm')} “${archiveGroupTarget.name}”`
-          : ''}
-        confirmLabel={t('archiveGroup')}
-        variant="destructive"
-        isPending={archiveGroup.isPending}
-        onConfirm={() => {
-          if (archiveGroupTarget) archiveGroup.mutate(archiveGroupTarget);
-        }}
-      />
-
-      <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
           if (!open && !deleteResource.isPending) setDeleteTarget(null);
         }}
-        title={deleteTarget?.resource === 'groups'
-          ? t('deleteArchivedGroupTitle')
-          : t('confirmDeleteResource')}
+        title={t('confirmDeleteResource')}
         description={deleteTarget
-          ? deleteTarget.resource === 'groups'
-            ? t('deleteArchivedGroupDescription').replace('{name}', deleteTarget.name)
-            : `${t('deleteResourceDescription')} “${deleteTarget.name}”?`
+          ? `${t('deleteResourceDescription')} “${deleteTarget.name}”?`
           : ''}
-        confirmLabel={deleteTarget?.resource === 'groups'
-          ? t('deleteGroupPermanently')
-          : t('delete')}
+        confirmLabel={t('delete')}
         variant="destructive"
         isPending={deleteResource.isPending}
-        keepOpenOnConfirm={deleteTarget?.resource === 'groups'}
         onConfirm={() => {
           if (deleteTarget) deleteResource.mutate(deleteTarget);
         }}
@@ -1966,11 +1200,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         open={courseGuard.confirmationOpen}
         onOpenChange={courseGuard.setConfirmationOpen}
         onDiscard={courseGuard.discardChanges}
-      />
-      <UnsavedChangesDialog
-        open={groupGuard.confirmationOpen}
-        onOpenChange={groupGuard.setConfirmationOpen}
-        onDiscard={groupGuard.discardChanges}
       />
       <UnsavedChangesDialog
         open={statusGuard.confirmationOpen}

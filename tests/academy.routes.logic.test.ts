@@ -168,6 +168,43 @@ describe('academy route logic boundaries', () => {
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
   });
 
+  it('supplies sales with only group configuration and reservation-aware capacity', async () => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => sql.includes('FROM academy_groups g')
+      ? { rows: [groupFixture({ current_students: 3, reserved_students: 2 })] } : emptyResult());
+    const response = await request(await createApp()).get('/api/academy/group-configuration');
+    expect(response.status).toBe(200);
+    expect(Object.keys(response.body).sort()).toEqual(['courses', 'groups', 'rooms', 'schools', 'teachers']);
+    expect(response.body.groups[0]).toMatchObject({ id: 20, currentStudents: 3, reservedStudents: 2 });
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => /FROM academy_(payments|lead_statuses|parent_surveys|tasks)/.test(String(sql)))).toBe(false);
+    expect((await request(await createApp()).get('/api/academy/configuration')).status).toBe(403);
+    expect((await request(await createApp()).post('/api/academy/schools').send({ name: 'New' })).status).toBe(403);
+  });
+
+  it('applies normal creation validation to sales group creation', async () => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    const response = await request(await createApp()).post('/api/academy/groups').send({ name: 'New' });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('schoolAndCourseRequired');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_groups"'))).toBe(false);
+  });
+
+  it.each(['teacher', 'marketing', 'finance'])('denies %s the sales group-management privileges', async (module) => {
+    mocks.actor = { id: 1, module, modules: [module] };
+    const app = await createApp();
+    expect((await request(app).get('/api/academy/group-configuration')).status).toBe(403);
+    expect((await request(app).post('/api/academy/groups').send({ name: 'New' })).status).toBe(403);
+    expect((await request(app).patch('/api/academy/groups/20').send({ name: 'New' })).status).toBe(403);
+    expect((await request(app).delete('/api/academy/groups/20')).status).toBe(403);
+    if (module !== 'teacher') {
+      expect((await request(app).post('/api/academy/groups/20/archive')).status).toBe(403);
+      expect((await request(app).post('/api/academy/groups/20/unarchive')).status).toBe(403);
+    }
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+
   it('creates schools without a client code and assigns distinct codes even for identical names', async () => {
     const codes: string[] = [];
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -3495,7 +3532,8 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('FROM academy_lessons'))).toBe(false);
   });
 
-  it('renames a group with existing lessons without treating auto assignment as a schedule change', async () => {
+  it.each(['administration', 'sales'])('renames a group with existing lessons without treating auto assignment as a schedule change (%s)', async (module) => {
+    mocks.actor = { id: 1, module, modules: [module] };
     const group = groupFixture({ teacher_id: null });
     const updatedGroup = { ...group, name: 'Vibe Coding Advanced' };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
@@ -3813,7 +3851,8 @@ describe('academy route logic boundaries', () => {
       String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
   });
 
-  it('preserves the running status when administration shelves a group', async () => {
+  it.each(['administration', 'sales'])('preserves the running status when a manager shelves a group (%s)', async (module) => {
+    mocks.actor = { id: 1, module, modules: [module] };
     const group = groupFixture({ status: 'in_progress', is_archived: false });
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_groups g')) return { rows: [group] };
@@ -3873,8 +3912,8 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('returns a group from the archive without reopening it', async () => {
-    mocks.actor = { id: 1, module: 'teacher', modules: ['teacher'] };
+  it.each(['teacher', 'administration', 'sales'])('returns a group from the archive without reopening it (%s)', async (module) => {
+    mocks.actor = { id: 1, module, modules: [module] };
     const group = groupFixture({ status: 'completed', is_archived: true, teacher_user_id: 1 });
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_groups g')) return { rows: [group] };
@@ -4069,7 +4108,8 @@ describe('academy route logic boundaries', () => {
       String(sql).includes('DELETE FROM "academy_groups"'))).toBe(false);
   });
 
-  it('permanently deletes only an empty archived group and records the action', async () => {
+  it.each(['administration', 'sales'])('permanently deletes only an empty archived group and records the action (%s)', async (module) => {
+    mocks.actor = { id: 1, module, modules: [module] };
     const group = groupFixture({ status: 'completed', is_archived: true });
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };

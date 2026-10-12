@@ -1050,7 +1050,7 @@ const loadGroupForArchive = async (groupId: number) => queryOne(
 
 const ensureGroupArchiveAccess = (req: any, res: any, group: Row) => {
   const isAdministrator = hasLeadershipAccess(req.user)
-    || getAssignedModules(req.user).includes('administration');
+    || getAssignedModules(req.user).some((module) => ['administration', 'sales'].includes(module));
   if (isAdministrator) return true;
   if (!group.teacherUserId || Number(group.teacherUserId) !== Number(req.user!.id)) {
     res.status(403).json({ error: 'teacherOwnGroupArchiveOnly' });
@@ -1060,7 +1060,7 @@ const ensureGroupArchiveAccess = (req: any, res: any, group: Row) => {
 };
 
 router.post('/groups/:id/archive', async (req, res) => {
-  if (!ensureOperationsAccess(req, res)) return;
+  if (!getAssignedModules(req.user).includes('sales') && !ensureOperationsAccess(req, res)) return;
   try {
     const groupId = parseId(req.params.id);
     if (!groupId) return res.status(400).json({ error: 'Invalid group id' });
@@ -1068,10 +1068,10 @@ router.post('/groups/:id/archive', async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Group not found' });
     if (!ensureGroupArchiveAccess(req, res, group)) return;
     /* A teacher shelves a course that is over, never one that is still running:
-       only administration may end a group, and ending it is a separate decision
+       sales and administration may end a group, and ending it is a separate decision
        from filing it away. */
     const isAdministrator = hasLeadershipAccess(req.user)
-      || getAssignedModules(req.user).includes('administration');
+      || getAssignedModules(req.user).some((module) => ['administration', 'sales'].includes(module));
     if (!isAdministrator && group.status !== 'completed') {
       return res.status(409).json({ error: 'onlyCompletedGroupsCanBeArchived' });
     }
@@ -1101,7 +1101,7 @@ router.post('/groups/:id/archive', async (req, res) => {
 });
 
 router.post('/groups/:id/unarchive', async (req, res) => {
-  if (!ensureOperationsAccess(req, res)) return;
+  if (!getAssignedModules(req.user).includes('sales') && !ensureOperationsAccess(req, res)) return;
   try {
     const groupId = parseId(req.params.id);
     if (!groupId) return res.status(400).json({ error: 'Invalid group id' });

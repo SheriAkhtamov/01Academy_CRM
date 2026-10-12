@@ -80,6 +80,7 @@ import {
 
 import {
   SOURCE_MANAGEMENT_MODULES,
+  SALES_MODULES,
   createPipelineStatusCode,
   nullableText,
   queryOne,
@@ -231,7 +232,7 @@ registerSimpleCrud('groups', 'academy_groups', [
   'maxStudents', 'status', 'startDate', 'endDate',
 ], {
   orderBy: 'created_at DESC',
-  requireAdministration: true,
+  allowedModules: SALES_MODULES,
   beforeUpdate: async ({ id, values, row }) => {
     await assertGroupLifecycleUpdateAllowed({
       id,

@@ -67,6 +67,7 @@ export const MODULE_NAVIGATION = {
       { id: 'pipeline', labelKey: 'pipeline', href: '/sales/pipeline', icon: Flame },
       { id: 'archive', labelKey: 'leadArchive', href: '/sales/archive', icon: Archive },
       { id: 'schedule', labelKey: 'salesSchedule', href: '/sales/schedule', icon: Calendar },
+      { id: 'groups', labelKey: 'navGroups', href: '/sales/groups', icon: Layers3 },
       { id: 'clients', labelKey: 'myStudents', href: '/sales/clients', icon: GraduationCap },
       { id: 'inbox', labelKey: 'salesInbox', href: '/sales/messages', icon: MessagesSquare },
       { id: 'calls', labelKey: 'callJournal', href: '/sales/calls', icon: PhoneCall },

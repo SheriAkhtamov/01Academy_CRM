@@ -98,9 +98,6 @@ import {
   assertRoomScheduleAvailable,
   assertTeacherCanLeadGroupSchedule,
   assertTeacherCanLeadLesson,
-  ensureTeacherCourseAssignment,
-  findAvailableTeacher,
-  findTeacherForGroupSchedule,
   normalizeScheduleItems,
   readJsonArray,
 } from './academy-scheduling';
@@ -149,10 +146,11 @@ export const prepareGroupMutation = async (options: {
   values: Row;
   oldRow?: Row | null;
   excludeGroupId?: number | null;
-  forceAutoAssign?: boolean;
-  allowUnassigned?: boolean;
   allowFutureStart?: boolean;
 }) => {
+  const teacherId = Number(Object.prototype.hasOwnProperty.call(options.values, 'teacherId')
+    ? options.values.teacherId
+    : options.oldRow?.teacherId) || null;
   const courseId = Number(options.values.courseId ?? options.oldRow?.courseId);
   const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId);
   const roomId = Number(options.values.roomId ?? options.oldRow?.roomId);
@@ -167,6 +165,9 @@ export const prepareGroupMutation = async (options: {
   }
   if (!GROUP_STATUSES.some((item) => item.code === status)) {
     throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
+  }
+  if (!teacherId && (!options.oldRow || groupSchedulePreparationRequired(options.values, options.oldRow))) {
+    throw Object.assign(new Error('teacherRequired'), { statusCode: 400 });
   }
   assertFutureGroupStartAcknowledged({
     status,
@@ -324,7 +325,10 @@ export const prepareGroupMutation = async (options: {
     });
   }
 
-  const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId) || null;
+  if (!teacherId) {
+    options.values.teacherId = null;
+    return;
+  }
   if (status === 'completed') {
     if (teacherId && teacherId !== Number(options.oldRow?.teacherId)) {
       await assertEligibleGroupTeacher(teacherId);
@@ -332,34 +336,18 @@ export const prepareGroupMutation = async (options: {
     options.values.teacherId = teacherId;
     return;
   }
-  if (options.forceAutoAssign || !teacherId) {
-    const teacher = await findTeacherForGroupSchedule({
-      courseId,
-      schoolId,
-      schedule,
-      startDate,
-      endDate,
-      excludeGroupId: options.excludeGroupId,
-    });
-    if (!teacher && !options.allowUnassigned) {
-      throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
-    }
-    if (teacher) await ensureTeacherCourseAssignment(teacher, courseId);
-    options.values.teacherId = teacher ? Number(teacher.id) : null;
-  } else {
-    await query(`SELECT pg_advisory_xact_lock($1)`, [1_000_000 + teacherId]);
-    await assertTeacherCanLeadGroupSchedule({
-      teacherId,
-      existingTeacherId: Number(options.oldRow?.teacherId) || null,
-      courseId,
-      schoolId,
-      schedule,
-      startDate,
-      endDate,
-      excludeGroupId: options.excludeGroupId,
-    });
-    options.values.teacherId = teacherId;
-  }
+  await query(`SELECT pg_advisory_xact_lock($1)`, [1_000_000 + teacherId]);
+  await assertTeacherCanLeadGroupSchedule({
+    teacherId,
+    existingTeacherId: Number(options.oldRow?.teacherId) || null,
+    courseId,
+    schoolId,
+    schedule,
+    startDate,
+    endDate,
+    excludeGroupId: options.excludeGroupId,
+  });
+  options.values.teacherId = teacherId;
 };
 
 export const normalizedGroupScheduleForComparison = (value: unknown) =>
@@ -571,13 +559,16 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
   }
 };
 
-export const assertLessonHistoryUpdateAllowed = async (id: number, values: Row, row: Row, autoAssign = false) => {
-  const historyFields = ['groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'scheduledAt', 'durationMinutes'];
-  const changesHistory = autoAssign || historyFields.some((field) => {
-    if (!(field in values)) return false;
-    if (field === 'scheduledAt') return new Date(values[field]).getTime() !== new Date(row[field]).getTime();
-    return Number(values[field]) !== Number(row[field]);
-  });
+const lessonAssignmentChanged = (values: Row, row: Row) => [
+  'groupId', 'courseId', 'schoolId', 'roomId', 'teacherId', 'lessonNumber', 'scheduledAt', 'durationMinutes',
+].some((field) => {
+  if (!(field in values)) return false;
+  if (field === 'scheduledAt') return new Date(values[field]).getTime() !== new Date(row[field]).getTime();
+  return Number(values[field]) !== Number(row[field]);
+});
+
+export const assertLessonHistoryUpdateAllowed = async (id: number, values: Row, row: Row) => {
+  const changesHistory = lessonAssignmentChanged(values, row);
   if (!changesHistory) return;
   const attendance = row.status === 'conducted' ? null : await queryOne(
     `SELECT id FROM academy_attendance WHERE lesson_id = $1 LIMIT 1`, [id],
@@ -592,7 +583,6 @@ export const prepareLessonMutation = async (options: {
   oldRow?: Row | null;
   excludeLessonId?: number | null;
   excludeLessonIds?: number[];
-  forceAutoAssign?: boolean;
 }) => {
   await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
   const groupId = Number(options.values.groupId ?? options.oldRow?.groupId);
@@ -600,6 +590,15 @@ export const prepareLessonMutation = async (options: {
     ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1 FOR SHARE`, [groupId])
     : null;
   if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+
+  const requiresAssignment = !options.oldRow || lessonAssignmentChanged(options.values, options.oldRow);
+  const teacherId = Number(Object.prototype.hasOwnProperty.call(options.values, 'teacherId')
+    ? options.values.teacherId
+    : options.oldRow?.teacherId ?? (requiresAssignment ? group.teacherId : null)) || null;
+  if (!teacherId && requiresAssignment) {
+    throw Object.assign(new Error('teacherRequired'), { statusCode: 400 });
+  }
+  options.values.teacherId = teacherId;
 
   const requestedCourseId = Number(options.values.courseId ?? options.oldRow?.courseId ?? group.courseId);
   const requestedSchoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId);
@@ -671,32 +670,17 @@ export const prepareLessonMutation = async (options: {
     excludeGroupId: groupId,
   });
 
-  const teacherId = Number(options.values.teacherId ?? options.oldRow?.teacherId ?? group.teacherId) || null;
-  if (options.forceAutoAssign || !teacherId) {
-    const teacher = await findAvailableTeacher({
-      courseId,
-      schoolId,
-      scheduledAt,
-      durationMinutes,
-      excludeGroupId: groupId,
-      excludeLessonId: options.excludeLessonId,
-      excludeLessonIds: options.excludeLessonIds,
-    });
-    if (!teacher) throw Object.assign(new Error('noAvailableTeacher'), { statusCode: 404 });
-    options.values.teacherId = Number(teacher.id);
-  } else {
-    await assertTeacherCanLeadLesson({
-      teacherId,
-      courseId,
-      schoolId,
-      scheduledAt,
-      durationMinutes,
-      excludeGroupId: groupId,
-      excludeLessonId: options.excludeLessonId,
-      excludeLessonIds: options.excludeLessonIds,
-    });
-    options.values.teacherId = teacherId;
-  }
+  if (!teacherId) return;
+  await assertTeacherCanLeadLesson({
+    teacherId,
+    courseId,
+    schoolId,
+    scheduledAt,
+    durationMinutes,
+    excludeGroupId: groupId,
+    excludeLessonId: options.excludeLessonId,
+    excludeLessonIds: options.excludeLessonIds,
+  });
 };
 
 export const calendarDateFromDateOnly = (value: Date): CalendarDate => ({
@@ -783,7 +767,7 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
       durationMinutes: slot.durationMinutes,
       status: 'scheduled',
     };
-    await prepareLessonMutation({ values, forceAutoAssign: false });
+    await prepareLessonMutation({ values });
     createdLessons.push(await insertRow('academy_lessons', values));
   }
 
@@ -864,87 +848,6 @@ export const restoreArchivedGroupLessons = async (group: Row, actorId: number, r
     // Older archive actions marked an unfinished group completed.
     ...(group.status === 'completed' ? { status: 'in_progress' } : {}),
   });
-};
-
-export const reconcileAutomaticTeacherAssignments = async (teacherId?: number | null) => {
-  const groups = await query<{ id: number }>(
-    `SELECT id
-     FROM academy_groups
-     WHERE status IN ('open', 'in_progress')
-       AND is_archived = false
-       AND (teacher_id IS NULL OR teacher_id = $1)
-     ORDER BY created_at, id`,
-    [teacherId ?? null],
-  );
-
-  let updatedCount = 0;
-  for (const group of groups) {
-    try {
-      const updated = await withTransaction(async () => {
-        await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
-        const lockedGroup = await queryOne(
-          `SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE`,
-          [group.id],
-        );
-        if (!lockedGroup) return false;
-
-        const values: Row = {};
-        await prepareGroupMutation({
-          values,
-          oldRow: lockedGroup,
-          excludeGroupId: Number(lockedGroup.id),
-          forceAutoAssign: true,
-          allowUnassigned: true,
-        });
-        const previousTeacherId = Number(lockedGroup.teacherId) || null;
-        const nextTeacherId = Number(values.teacherId) || null;
-        if (previousTeacherId === nextTeacherId) return false;
-
-        const futureLessons = await query(
-          `SELECT * FROM academy_lessons
-           WHERE group_id = $1 AND status = 'scheduled' AND scheduled_at >= NOW()
-             AND NOT EXISTS (SELECT 1 FROM academy_attendance mark WHERE mark.lesson_id = academy_lessons.id)
-           ORDER BY scheduled_at, id FOR UPDATE`,
-          [lockedGroup.id],
-        );
-        const futureLessonIds = futureLessons.map((lesson) => Number(lesson.id));
-        if (nextTeacherId) {
-          // Dated lessons may have been moved outside the group's weekly slots.
-          // Validate their actual times before assigning the replacement teacher.
-          for (const lesson of futureLessons) {
-            await assertTeacherCanLeadLesson({
-              teacherId: nextTeacherId,
-              courseId: Number(lesson.courseId),
-              schoolId: Number(lesson.schoolId),
-              scheduledAt: new Date(lesson.scheduledAt),
-              durationMinutes: Number(lesson.durationMinutes),
-              excludeGroupId: Number(lockedGroup.id),
-              excludeLessonIds: futureLessonIds,
-            });
-          }
-        }
-        await updateRow('academy_groups', Number(lockedGroup.id), {
-          teacherId: nextTeacherId,
-        });
-        for (const lesson of futureLessons) {
-          await updateRow('academy_lessons', Number(lesson.id), { teacherId: nextTeacherId });
-        }
-        if (nextTeacherId) {
-          await materializeGroupLessons(Number(lockedGroup.id));
-        }
-        return true;
-      });
-      if (updated) updatedCount += 1;
-    } catch (error) {
-      if (transactionContext.getStore()) throw error;
-      logger.warn('Skipped automatic teacher assignment reconciliation for group', {
-        groupId: group.id,
-        error,
-      });
-    }
-  }
-
-  return updatedCount;
 };
 
 export const assertResourceHasNoScheduledDemos = async (resource: 'school' | 'room' | 'course', id: number) => {

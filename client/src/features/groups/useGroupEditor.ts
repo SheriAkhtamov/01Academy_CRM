@@ -14,10 +14,9 @@ import type { WeekScheduleItem } from '@/components/ux/WeekScheduleEditor';
 import { getMinimumGroupEndDate, type GroupScheduleValidationError } from '@shared/scheduling';
 import { normalizeSchedule } from './schedule';
 import { groupCodeCatalogueKey, invalidateGroupData } from './queries';
-import { assessTeacher, findRoomClashes, rankTeachers, type TeacherFit } from './editorInsights';
+import { findTeacherConflict, findRoomClashes } from './editorInsights';
 import type { Group, GroupConfiguration } from './types';
 
-export const AUTO_TEACHER_VALUE = 'auto';
 type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
 export interface GroupEditorProps {
   open: boolean;
@@ -48,14 +47,14 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   */
   const [endDateFollowsSchedule, setEndDateFollowsSchedule] = useState(true);
   const groupForm = useForm<GroupValues>({
-    resolver: zodResolver(useMemo(() => createGroupSchema(t), [t])),
+    resolver: zodResolver(useMemo(() => createGroupSchema(t, Boolean(editingGroup && !editingGroup.teacherId)), [t, editingGroup])),
     defaultValues: {
       name: '',
       nameSuffix: '', deliveryMode: 'offline', trainingType: 'GRP',
       courseId: '',
       schoolId: '',
       roomId: '',
-      teacherId: AUTO_TEACHER_VALUE,
+      teacherId: '',
       lessonCount: 10,
       lessonDurationMinutes: 120,
       maxStudents: 12,
@@ -76,7 +75,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
       roomId: String(group.roomId),
-      teacherId: group.teacherId ? String(group.teacherId) : AUTO_TEACHER_VALUE,
+      teacherId: group.teacherId ? String(group.teacherId) : '',
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
       maxStudents: group.maxStudents || 12,
@@ -91,7 +90,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       courseId: '',
       schoolId: '',
       roomId: '',
-      teacherId: AUTO_TEACHER_VALUE,
+      teacherId: '',
       lessonCount: 10,
       lessonDurationMinutes: 120,
       maxStudents: 12,
@@ -116,9 +115,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       if (!editingGroup && (!groupCode || codeCatalogue.isError || codeCatalogue.isFetching)) {
         throw new Error(t('failedToLoadData'));
       }
-      const teacherId = values.teacherId && values.teacherId !== AUTO_TEACHER_VALUE
-        ? Number(values.teacherId)
-        : null;
+      const teacherId = values.teacherId ? Number(values.teacherId) : null;
       const payload = {
         name: values.name,
         ...(autoNaming ? { nameSuffix: values.nameSuffix, deliveryMode: values.deliveryMode, trainingType: values.trainingType } : {}),
@@ -133,7 +130,6 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         status: values.status,
         startDate: values.startDate || null,
         endDate: values.endDate || null,
-        autoAssign: !teacherId,
         allowFutureStart: values.allowFutureStart === true,
       };
       return editingGroup
@@ -223,6 +219,20 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   );
   const submitGroupValues = (values: GroupValues) => {
     if (!editingGroup && (!groupCode || codeCatalogue.isError || codeCatalogue.isFetching)) return;
+    // An old unassigned group can retain metadata, but a new lesson plan needs
+    // an explicit teacher just like creation. Compare values, not dirty flags,
+    // so reverting a field still allows the original metadata-only save.
+    if (editingGroup && !values.teacherId) {
+      const planChanged = (['courseId', 'schoolId', 'roomId', 'lessonCount', 'lessonDurationMinutes'] as const)
+        .some((field) => Number(values[field]) !== Number(editingGroup[field]))
+        || values.startDate !== academyDateInputValue(editingGroup.startDate)
+        || values.endDate !== academyDateInputValue(editingGroup.endDate)
+        || JSON.stringify(groupSchedule) !== JSON.stringify(groupScheduleBaseline);
+      if (planChanged) {
+        groupForm.setError('teacherId', { type: 'required', message: t('teacherRequired') }, { shouldFocus: true });
+        return;
+      }
+    }
     if (futureGroupStatusNeedsConfirmation(values)) {
       setFutureGroupStartValues(values);
       return;
@@ -282,8 +292,8 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const groupTeachers = useMemo(
     () => teachers
       .filter((teacher) => teacher.status === 'active')
-      .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ru')),
-    [teachers],
+      .sort((left, right) => left.fullName.localeCompare(right.fullName, language) || left.id - right.id),
+    [teachers, language],
   );
 
   // A completed group is saved without the room and teacher checks, so it gets no warnings either.
@@ -305,15 +315,13 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       .filter((room) => findRoomClashes(room.id, plannedGroup, configuration.groups).length > 0)
       .map((room) => room.id)
     : []), [configuration.groups, groupRooms, plannedGroup, scheduleChecksApply]);
-  const teacherFits = useMemo(() => {
-    const fits = new Map<number, TeacherFit>();
-    if (!scheduleChecksApply || !selectedGroupSchoolId || groupSchedule.length === 0) return fits;
-    const plan = { ...plannedGroup, schoolId: Number(selectedGroupSchoolId), courseId: Number(selectedGroupCourseId) };
-    for (const teacher of groupTeachers) fits.set(teacher.id, assessTeacher(teacher, plan, configuration.groups));
-    return fits;
+  const selectedTeacherId = groupForm.watch('teacherId');
+  const selectedTeacherConflict = useMemo(() => {
+    const teacher = groupTeachers.find((candidate) => String(candidate.id) === selectedTeacherId);
+    if (!teacher || !scheduleChecksApply || !selectedGroupSchoolId || groupSchedule.length === 0) return null;
+    return findTeacherConflict(teacher, { ...plannedGroup, schoolId: Number(selectedGroupSchoolId) }, configuration.groups);
   }, [configuration.groups, groupSchedule.length, groupTeachers, plannedGroup, scheduleChecksApply,
-    selectedGroupCourseId, selectedGroupSchoolId]);
-  const rankedTeachers = useMemo(() => rankTeachers(groupTeachers, teacherFits), [groupTeachers, teacherFits]);
+    selectedTeacherId, selectedGroupSchoolId]);
   return {
     t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
@@ -321,6 +329,6 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,
     futureGroupStartValues, setFutureGroupStartValues,
     scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
-    roomClashes, busyRoomIds, teacherFits, rankedTeachers,
+    roomClashes, busyRoomIds, selectedTeacherConflict, groupTeachers,
   };
 }

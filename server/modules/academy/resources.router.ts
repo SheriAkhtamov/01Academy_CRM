@@ -225,7 +225,21 @@ registerSimpleCrud('pipeline-statuses', 'academy_lead_statuses', [
 
 registerSimpleCrud('teachers', 'academy_teachers', [
   'userId', 'fullName', 'courseIds', 'schoolIds', 'availability', 'schedule', 'status',
-], { orderBy: 'full_name', requireAdministration: true });
+], {
+  orderBy: 'full_name',
+  requireAdministration: true,
+  beforeDelete: async ({ id }) => {
+    const usage = await queryOne<{ inUse: boolean }>(
+      `SELECT (
+         EXISTS (SELECT 1 FROM academy_groups WHERE teacher_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_lessons WHERE teacher_id = $1)
+         OR EXISTS (SELECT 1 FROM academy_demo_lessons WHERE teacher_id = $1)
+       ) AS in_use`,
+      [id],
+    );
+    if (usage?.inUse) throw Object.assign(new Error('teacherHasAssignments'), { statusCode: 409 });
+  },
+});
 
 registerSimpleCrud('groups', 'academy_groups', [
   'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',

@@ -11,7 +11,7 @@ import {
   groupTimeline,
   summarizeSchedule,
 } from '../client/src/features/groups/presentation';
-import { assessTeacher, findRoomClashes, rankTeachers } from '../client/src/features/groups/editorInsights';
+import { findTeacherConflict, findRoomClashes } from '../client/src/features/groups/editorInsights';
 import { filterGroups } from '../client/src/features/groups/filters';
 import type { Group, GroupTeacher } from '../client/src/features/groups/types';
 
@@ -152,7 +152,7 @@ describe('editor insights', () => {
     expect(findRoomClashes(1, { ...plan, schedule: [{ dayOfWeek: 2, startTime: '19:00', endTime: '21:00' }] }, groups)).toEqual([]);
   });
 
-  it('gives each teacher the reason the server would refuse, and ranks the fitting ones first', () => {
+  it('reports only concrete conflicts for the manually chosen teacher', () => {
     const base = { status: 'active', availability: [{ dayOfWeek: 1, startTime: '09:00', endTime: '22:00' }] };
     const teachers: GroupTeacher[] = [
       { ...base, id: 2, fullName: 'Busy', courseIds: [1], schoolIds: [1] },
@@ -161,14 +161,12 @@ describe('editor insights', () => {
       { ...base, id: 5, fullName: 'Other branch', courseIds: [1], schoolIds: [7] },
       { ...base, id: 6, fullName: 'Mornings', courseIds: [1], schoolIds: [1], availability: [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }] },
     ];
-    const input = { ...plan, schoolId: 1, courseId: 1 };
-    const fits = new Map(teachers.map((teacher) => [teacher.id, assessTeacher(teacher, input, [makeGroup()])]));
+    const input = { ...plan, schoolId: 1 };
+    const fits = new Map(teachers.map((teacher) => [teacher.id, findTeacherConflict(teacher, input, [makeGroup()])]));
     expect(fits.get(2)).toMatchObject({ issue: 'busy' });
-    expect(fits.get(3)).toMatchObject({ issue: null, teachesCourse: true });
-    expect(fits.get(4)).toMatchObject({ issue: null, teachesCourse: false });
+    expect(fits.get(3)).toEqual({ issue: null, clash: null });
+    expect(fits.get(4)).toEqual({ issue: null, clash: null });
     expect(fits.get(5)).toMatchObject({ issue: 'otherBranch' });
     expect(fits.get(6)).toMatchObject({ issue: 'offHours' });
-    expect(rankTeachers(teachers, fits).map((teacher) => teacher.fullName))
-      .toEqual(['Fits', 'New course', 'Busy', 'Mornings', 'Other branch']);
   });
 });

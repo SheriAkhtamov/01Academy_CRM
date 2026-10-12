@@ -303,7 +303,6 @@ router.post('/lessons/:id/reschedule', async (req, res) => {
           oldRow: affectedLesson,
           excludeLessonId: Number(affectedLesson.id),
           excludeLessonIds: affectedLessonIds,
-          forceAutoAssign: false,
         });
         const updated = await updateRow('academy_lessons', Number(affectedLesson.id), values);
         if (!updated) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });

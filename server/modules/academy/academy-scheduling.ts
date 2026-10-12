@@ -80,12 +80,11 @@ import {
 import {
   ACADEMY_TIME_ZONE,
   Row,
-  parseTimeToMinutes,
   query,
   queryOne,
   updateRow,
 } from './academy-core';
-import { assertEligibleGroupTeacher, groupTeacherEligibilitySql } from './group-teacher-eligibility';
+import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
 
 export const calendarDayOrdinal = (year: number, month: number, day: number) =>
   Date.UTC(year, month - 1, day);
@@ -258,253 +257,6 @@ export const getTeacherAvailability = (teacher: Row, durationMinutes: number) =>
     readJsonArray(teacher.availability).length > 0 ? teacher.availability : teacher.schedule,
     durationMinutes,
   );
-
-export const findAvailableTeacher = async (options: {
-  courseId: number;
-  schoolId?: number | null;
-  scheduledAt: Date;
-  durationMinutes: number;
-  excludeGroupId?: number | null;
-  excludeLessonId?: number | null;
-  excludeLessonIds?: number[];
-  excludeDemoLessonId?: number | null;
-}) => {
-  const candidates = await query(
-    `SELECT t.*,
-        (
-          SELECT COUNT(*)::int
-          FROM academy_lessons l
-          WHERE l.teacher_id = t.id
-            AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-              WHERE archived.id = l.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
-            AND l.status = 'scheduled'
-            AND l.scheduled_at >= NOW()
-        ) AS upcoming_lessons
-     FROM academy_teachers t
-     WHERE t.status = 'active'
-       AND t.course_ids @> $1::jsonb
-     ORDER BY upcoming_lessons, t.id`,
-    [JSON.stringify([options.courseId])],
-  );
-
-  const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
-    options.scheduledAt,
-    options.durationMinutes,
-  );
-  const lessonEnd = addMinutes(options.scheduledAt, options.durationMinutes);
-  const teacherIds = candidates.map((teacher) => Number(teacher.id));
-  const existingGroups = teacherIds.length > 0
-    ? await query(
-      `SELECT * FROM academy_groups
-       WHERE teacher_id = ANY($1::int[])
-         AND status IN ('open', 'in_progress')
-         AND is_archived = false
-         AND ($2::int IS NULL OR id <> $2)`,
-      [teacherIds, options.excludeGroupId ?? null],
-    )
-    : [];
-
-  for (const teacher of candidates) {
-    const schoolIds = Array.isArray(teacher.schoolIds) ? teacher.schoolIds.map(Number) : [];
-    if (options.schoolId && schoolIds.length > 0 && !schoolIds.includes(Number(options.schoolId))) {
-      continue;
-    }
-
-    const availability = Array.isArray(teacher.availability)
-      ? teacher.availability
-      : Array.isArray(teacher.schedule)
-        ? teacher.schedule
-        : [];
-    const canWork = availability.some((item: Row) => {
-      if (Number(item.dayOfWeek) !== dayOfWeek) return false;
-      if (options.schoolId && item.schoolId && Number(item.schoolId) !== Number(options.schoolId)) return false;
-      const availableStart = parseTimeToMinutes(item.startTime ?? item.time);
-      const availableEnd = parseTimeToMinutes(item.endTime ?? item.time);
-      if (availableStart === null) return false;
-      const resolvedEnd = availableEnd === null || availableEnd === availableStart
-        ? availableStart + options.durationMinutes
-        : availableEnd;
-      return startMinutes >= availableStart && endMinutes <= resolvedEnd;
-    });
-    if (!canWork) continue;
-
-    const groupConflict = existingGroups
-      .filter((group) => Number(group.teacherId) === Number(teacher.id))
-      .some((group) =>
-        isDateInsideInclusiveDayRange(
-          options.scheduledAt,
-          group.startDate ? new Date(group.startDate) : null,
-          group.endDate ? new Date(group.endDate) : null,
-        )
-        && scheduleConflictsWithSlot(
-          normalizeScheduleItems(group.schedule),
-          dayOfWeek,
-          startMinutes,
-          endMinutes,
-        )
-      );
-    if (groupConflict) continue;
-
-    const [lessonConflict, demoConflict] = await Promise.all([
-      queryOne(
-        `SELECT id
-         FROM academy_lessons
-         WHERE teacher_id = $1
-           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-             WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
-           AND status <> 'cancelled'
-           AND scheduled_at < $3
-           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
-           AND ($4::int IS NULL OR id <> $4)
-           AND NOT (id = ANY($5::int[]))
-         LIMIT 1`,
-        [teacher.id, options.scheduledAt, lessonEnd, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
-      ),
-      queryOne(
-        `SELECT id
-         FROM academy_demo_lessons
-         WHERE teacher_id = $1
-           AND status = 'scheduled'
-           AND scheduled_at < $3
-           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
-           AND ($4::int IS NULL OR id <> $4)
-         LIMIT 1`,
-        [teacher.id, options.scheduledAt, lessonEnd, options.excludeDemoLessonId ?? null],
-      ),
-    ]);
-    if (!lessonConflict && !demoConflict) return teacher;
-  }
-
-  return null;
-};
-
-export const findTeacherForGroupSchedule = async (options: {
-  courseId: number;
-  schoolId: number;
-  schedule: unknown;
-  startDate?: Date | null;
-  endDate?: Date | null;
-  excludeGroupId?: number | null;
-}) => {
-  const requestedSchedule = normalizeScheduleItems(options.schedule);
-  if (requestedSchedule.length === 0) return null;
-
-  const candidates = await query(
-    `SELECT t.*,
-        (SELECT COUNT(*)::int FROM academy_groups g
-         WHERE g.teacher_id = t.id AND g.status IN ('open', 'in_progress') AND g.is_archived = false) AS active_groups
-     FROM academy_teachers t
-     WHERE ${groupTeacherEligibilitySql}
-     ORDER BY active_groups, t.id`,
-  );
-
-  const teacherIds = candidates.map((teacher) => Number(teacher.id));
-  const existingGroups = teacherIds.length > 0
-    ? await query(
-      `SELECT * FROM academy_groups
-       WHERE status IN ('open', 'in_progress')
-         AND is_archived = false
-         AND teacher_id = ANY($1::int[])
-         AND ($2::int IS NULL OR id <> $2)`,
-      [teacherIds, options.excludeGroupId ?? null],
-    )
-    : [];
-  const rangeStart = options.startDate
-    ? getZonedDateOnlyRange(options.startDate, ACADEMY_TIME_ZONE).start
-    : startOfAcademyDay(new Date());
-  const rangeEnd = options.endDate
-    ? getZonedDateOnlyRange(options.endDate, ACADEMY_TIME_ZONE).end
-    : null;
-  const [existingLessons, existingDemos] = teacherIds.length > 0
-    ? await Promise.all([query(
-      `SELECT teacher_id, scheduled_at, duration_minutes
-       FROM academy_lessons
-       WHERE teacher_id = ANY($1::int[])
-         AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-           WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
-         AND status <> 'cancelled'
-         AND scheduled_at >= $2
-         AND ($3::timestamp IS NULL OR scheduled_at < $3)
-         AND ($4::int IS NULL OR group_id <> $4)`,
-      [teacherIds, rangeStart, rangeEnd, options.excludeGroupId ?? null],
-    ), query(
-      `SELECT teacher_id, scheduled_at, duration_minutes
-       FROM academy_demo_lessons
-       WHERE teacher_id = ANY($1::int[])
-         AND status = 'scheduled'
-         AND scheduled_at >= $2
-         AND ($3::timestamp IS NULL OR scheduled_at < $3)`,
-      [teacherIds, rangeStart, rangeEnd],
-    )])
-    : [[], []];
-
-  for (const teacher of candidates) {
-    const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
-    if (schoolIds.length > 0 && !schoolIds.includes(options.schoolId)) continue;
-    const availability = getTeacherAvailability(teacher, 60);
-    const coversSchedule = requestedSchedule.every((item) =>
-      scheduleCoversSlot(
-        availability,
-        item.dayOfWeek,
-        item.startMinutes,
-        item.endMinutes,
-        options.schoolId,
-      )
-    );
-    if (!coversSchedule) continue;
-
-    const hasRecurringConflict = existingGroups
-      .filter((group) => Number(group.teacherId) === Number(teacher.id))
-      .some((group) => {
-        if (!dateRangesOverlap(
-          options.startDate,
-          options.endDate,
-          group.startDate ? new Date(group.startDate) : null,
-          group.endDate ? new Date(group.endDate) : null,
-        )) return false;
-        const groupSchedule = normalizeScheduleItems(group.schedule);
-        return requestedSchedule.some((item) =>
-          scheduleConflictsWithSlot(
-            groupSchedule,
-            item.dayOfWeek,
-            item.startMinutes,
-            item.endMinutes,
-          )
-        );
-      });
-    if (hasRecurringConflict) continue;
-
-    const hasLessonConflict = existingLessons
-      .filter((lesson) => Number(lesson.teacherId) === Number(teacher.id))
-      .some((lesson) => {
-        const scheduledAt = new Date(lesson.scheduledAt);
-        const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
-          scheduledAt,
-          Number(lesson.durationMinutes || 60),
-        );
-        return requestedSchedule.some((item) =>
-          item.dayOfWeek === dayOfWeek
-          && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
-        );
-      });
-    const hasDemoConflict = existingDemos
-      .filter((demo) => Number(demo.teacherId) === Number(teacher.id))
-      .some((demo) => {
-        const scheduledAt = new Date(demo.scheduledAt);
-        const { dayOfWeek, startMinutes, endMinutes } = getAcademySlotPosition(
-          scheduledAt,
-          Number(demo.durationMinutes || 60),
-        );
-        return requestedSchedule.some((item) =>
-          item.dayOfWeek === dayOfWeek
-          && intervalsOverlap(item.startMinutes, item.endMinutes, startMinutes, endMinutes)
-        );
-      });
-    if (!hasLessonConflict && !hasDemoConflict) return teacher;
-  }
-
-  return null;
-};
 
 export const ensureTeacherCourseAssignment = async (teacher: Row, courseId: number) => {
   const currentCourseIds = readJsonArray(teacher.courseIds)
@@ -941,15 +693,11 @@ export const listAvailableSchoolSlots = async (options: {
   const rangeStart = startOfAcademyDay(options.from);
   const rangeEnd = getZonedDayRange(rangeStart, ACADEMY_TIME_ZONE, options.days).start;
   const [teachers, rooms] = await Promise.all([query(
-    `SELECT t.*,
-        (SELECT COUNT(*)::int FROM academy_lessons l
-         WHERE l.teacher_id = t.id AND l.status = 'scheduled' AND l.scheduled_at >= NOW()
-           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-             WHERE archived.id = l.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))) AS upcoming_lessons
+    `SELECT t.*
      FROM academy_teachers t
      WHERE t.status = 'active'
        AND t.course_ids @> $1::jsonb
-     ORDER BY upcoming_lessons, t.id`,
+     ORDER BY t.full_name, t.id`,
     [JSON.stringify([options.courseId])],
   ), format === 'offline'
     ? query(

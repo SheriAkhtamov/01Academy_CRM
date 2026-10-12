@@ -3198,6 +3198,61 @@ describe('academy route logic boundaries', () => {
     expect(mocks.poolQuery).not.toHaveBeenCalled();
   });
 
+  it('creates a teacher without assigning any existing unassigned groups', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('INSERT INTO "academy_teachers"')
+      ? { rows: [{ id: 6, full_name: 'New teacher', status: 'active' }] } : emptyResult());
+    const response = await request(await createApp()).post('/api/academy/teachers').send({ fullName: 'New teacher', status: 'active' });
+    expect(response.status).toBe(201);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('academy_groups') || String(sql).includes('academy_lessons'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('updates teacher availability without replacing any group or lesson assignments', async () => {
+    const teacher = { id: 4, full_name: 'Teacher', status: 'active', availability: [] };
+    mocks.poolQuery.mockResolvedValue({ rows: [teacher] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('FROM academy_teachers WHERE id') || sql.includes('UPDATE "academy_teachers"')
+      ? { rows: [teacher] } : emptyResult());
+    const response = await request(await createApp()).patch('/api/academy/teachers/4').send({ availability: [], status: 'dismissed' });
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('academy_groups') || String(sql).includes('academy_lessons'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it.each(['academy_groups', 'academy_lessons', 'academy_demo_lessons'])('keeps teacher history when %s still references the teacher', async (reference) => {
+    const teacher = { id: 4, full_name: 'Teacher', status: 'active' };
+    mocks.poolQuery.mockResolvedValue({ rows: [teacher] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_teachers WHERE id')) return { rows: [teacher] };
+      if (sql.includes('AS in_use')) {
+        expect(sql).toContain(`EXISTS (SELECT 1 FROM ${reference} WHERE teacher_id = $1)`);
+        expect(sql).not.toContain('is_archived');
+        expect(sql).not.toContain("status = 'scheduled'");
+        return { rows: [{ in_use: true }] };
+      }
+      return emptyResult();
+    });
+    const response = await request(await createApp()).delete('/api/academy/teachers/4');
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('teacherHasAssignments');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM') || String(sql).includes('UPDATE '))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('deletes an unused teacher without assigning another teacher to legacy groups', async () => {
+    const teacher = { id: 4, full_name: 'Teacher', status: 'active' };
+    mocks.poolQuery.mockResolvedValue({ rows: [teacher] });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_teachers WHERE id')) return { rows: [teacher] };
+      if (sql.includes('AS in_use')) return { rows: [{ in_use: false }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).delete('/api/academy/teachers/4');
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('DELETE FROM "academy_teachers"'))).toBe(true);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"') || String(sql).includes('UPDATE "academy_lessons"'))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('validates an explicitly selected lesson teacher for schedule conflicts', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
@@ -3380,7 +3435,7 @@ describe('academy route logic boundaries', () => {
         if (sql.includes('FROM academy_rooms') && sql.includes('ORDER BY capacity')) {
           return { rows: [{ id: 8, school_id: 2, name: 'Room 1', capacity: 12, is_active: true }] };
         }
-        if (sql.includes('FROM academy_teachers t') && sql.includes('upcoming_lessons')) {
+        if (sql.includes('FROM academy_teachers t') && sql.includes('ORDER BY t.full_name')) {
           return {
             rows: [{
               id: 4,
@@ -3548,7 +3603,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('FROM academy_lessons'))).toBe(false);
   });
 
-  it.each(['administration', 'sales'])('renames a group with existing lessons without treating auto assignment as a schedule change (%s)', async (module) => {
+  it.each(['administration', 'sales'])('renames an unassigned legacy group with existing lessons without changing its schedule (%s)', async (module) => {
     mocks.actor = { id: 1, module, modules: [module] };
     const group = groupFixture({ teacher_id: null });
     const updatedGroup = { ...group, name: 'Vibe Coding Advanced' };
@@ -3587,7 +3642,6 @@ describe('academy route logic boundaries', () => {
         status: group.status,
         startDate: group.start_date,
         endDate: group.end_date,
-        autoAssign: true,
       });
 
     expect(response.status).toBe(200);
@@ -3750,7 +3804,6 @@ describe('academy route logic boundaries', () => {
         lessonDurationMinutes: group.lesson_duration_minutes,
         durationDays: group.duration_days,
         frequency: group.frequency,
-        autoAssign: false,
       });
 
     expect(response.status).toBe(409);

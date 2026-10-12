@@ -38,7 +38,7 @@ export const createStatusSchema = (t: Translate) => z.object({
   isActive: z.boolean(),
 });
 
-export const createGroupSchema = (t: Translate) => z.object({
+export const createGroupSchema = (t: Translate, allowUnassignedTeacher = false) => z.object({
   name: z.string().trim().min(1, t('fieldRequired')).max(255, t('groupNameTooLong')),
   nameSuffix: z.string().trim().max(255, t('groupNameTooLong')).default(''),
   deliveryMode: z.enum(['offline', 'online']).default('offline'),
@@ -46,7 +46,8 @@ export const createGroupSchema = (t: Translate) => z.object({
   courseId: z.string().min(1, t('fieldRequired')),
   schoolId: z.string().min(1, t('fieldRequired')),
   roomId: z.string().min(1, t('fieldRequired')),
-  teacherId: z.string(),
+  teacherId: z.string().regex(/^(?:[1-9]\d*)?$/, t('invalidDataFormat'))
+    .refine((value) => allowUnassignedTeacher || value.length > 0, t('teacherRequired')),
   lessonCount: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(1, t('invalidDataFormat')),
   lessonDurationMinutes: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(15, t('invalidDataFormat')),
   maxStudents: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(1, t('invalidDataFormat')),

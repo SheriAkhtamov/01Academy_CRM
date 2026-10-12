@@ -12,11 +12,10 @@ import { GroupStatusField } from '@/components/ux/GroupStatusField';
 import { WeekScheduleEditor } from '@/components/ux/WeekScheduleEditor';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import { getGroupScheduleValidationError, getMinimumGroupEndDate, type GroupScheduleValidationError } from '@shared/scheduling';
-import type { ScheduleClash, TeacherFit } from './editorInsights';
+import type { ScheduleClash, TeacherConflict } from './editorInsights';
 import { formatSlotTime, groupNameParts } from './presentation';
-import { AUTO_TEACHER_VALUE, useGroupEditor, type GroupEditorProps } from './useGroupEditor';
+import { useGroupEditor, type GroupEditorProps } from './useGroupEditor';
 
 const SCHEDULE_ERROR_KEYS = {
   groupScheduleRequired: 'groupScheduleRequired',
@@ -50,16 +49,15 @@ function ClashNotice({ title, clashes, shortDayNames }: { title: string; clashes
   );
 }
 
-function useTeacherFitLabel() {
+function useTeacherConflictLabel() {
   const { t } = useTranslation();
-  return (fit: TeacherFit | undefined) => {
-    if (!fit) return null;
-    if (fit.issue === 'otherBranch') return { text: t('groupTeacherOtherBranch'), warn: true };
-    if (fit.issue === 'offHours') return { text: t('groupTeacherOffHours'), warn: true };
-    if (fit.issue === 'busy' && fit.clash) {
-      return { text: t('groupScheduleOverlapsWith').replace('{group}', groupNameParts(fit.clash.group.name).shortLabel), warn: true };
+  return (conflict: TeacherConflict | null) => {
+    if (conflict?.issue === 'otherBranch') return t('groupTeacherOtherBranch');
+    if (conflict?.issue === 'offHours') return t('groupTeacherOffHours');
+    if (conflict?.issue === 'busy' && conflict.clash) {
+      return t('groupScheduleOverlapsWith').replace('{group}', groupNameParts(conflict.clash.group.name).shortLabel);
     }
-    return fit.teachesCourse ? { text: t('groupTeacherFits'), warn: false } : { text: t('groupTeacherOtherCourse'), warn: false };
+    return null;
   };
 }
 
@@ -72,9 +70,9 @@ export function GroupEditorDialog(props: GroupEditorProps) {
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     futureGroupStartValues, setFutureGroupStartValues,
     scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
-    roomClashes, busyRoomIds, teacherFits, rankedTeachers,
+    roomClashes, busyRoomIds, selectedTeacherConflict, groupTeachers,
   } = useGroupEditor(props);
-  const teacherFitLabel = useTeacherFitLabel();
+  const teacherConflictLabel = useTeacherConflictLabel()(selectedTeacherConflict);
   const scheduleRef = useRef<HTMLFieldSetElement>(null);
   const dayNames = [t('monday'), t('tuesday'), t('wednesday'), t('thursday'), t('friday'), t('saturday'), t('sunday')];
   const shortDayNames = [t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
@@ -95,7 +93,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
   return <>
       <Dialog open={open} onOpenChange={(nextOpen) => { if (!saveGroup.isPending) groupGuard.handleOpenChange(nextOpen); }}>
         <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-6">
             <DialogTitle>{editingGroup ? t('editGroup') : t('createGroup')}</DialogTitle>
           </DialogHeader>
           <Form {...groupForm}>
@@ -124,19 +122,14 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 submitGroupValues(values);
               }, () => { showScheduleError(); })}
             >
-              <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-6 py-5">
+              <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                 <EditorSection title={t('group')}>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    {autoNaming ? <GroupIdentityFields code={groupCode} error={groupCodeError} pending={!editingGroup && codeCatalogue.isFetching}
-                      editing={Boolean(editingGroup)} onRetry={!editingGroup && codeCatalogue.isError ? () => { void codeCatalogue.refetch(); } : undefined} /> : (
-                      <FormField control={groupForm.control} name="name" render={({ field }) => (
-                        <FormItem className="md:col-span-2">
-                          <FormLabel required>{t('groupName')}</FormLabel>
-                          <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <GroupIdentityFields code={groupCode} error={groupCodeError} pending={!editingGroup && codeCatalogue.isFetching}
+                      editing={Boolean(editingGroup)} coded={autoNaming}
+                      onRetry={!editingGroup && codeCatalogue.isError ? () => { void codeCatalogue.refetch(); } : undefined} />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <GroupStatusField />
                     <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                       <FormItem>
@@ -149,7 +142,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 </EditorSection>
 
                 <EditorSection title={t('groupEditorPlaceSection')}>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <FormField control={groupForm.control} name="courseId" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('course')}</FormLabel>
@@ -208,9 +201,34 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                         <FormMessage />
                       </FormItem>
                     )} />
+                    <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required={!editingGroup || Boolean(editingGroup.teacherId)}>{t('teacher')}</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectTeacher')}>
+                            {field.value === String(editingGroup?.teacherId) && !groupTeachers.some((teacher) => String(teacher.id) === field.value)
+                              ? editingGroup?.teacherName || t('notAssigned') : undefined}
+                          </SelectValue></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectGroup>
+                              {groupTeachers.map((teacher) => (
+                                <SelectItem key={teacher.id} value={String(teacher.id)}>{teacher.fullName}</SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        {groupTeachers.length === 0 ? <p className="text-xs text-muted-foreground">{t('noTeachers')}</p> : null}
+                        {teacherConflictLabel ? (
+                          <p role="status" className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300">
+                            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                            <span>{teacherConflictLabel}</span>
+                          </p>
+                        ) : null}
+                        <FormMessage />
+                      </FormItem>
+                    )} />
                   </div>
                 </EditorSection>
-
                 <EditorSection ref={scheduleRef} title={t('schedule')}>
                   <WeekScheduleEditor
                     value={groupSchedule}
@@ -283,55 +301,10 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                   </div>
                 </EditorSection>
 
-                <EditorSection>
-                  <FormField control={groupForm.control} name="teacherId" render={({ field }) => {
-                    const selectedFit = field.value && field.value !== AUTO_TEACHER_VALUE ? teacherFits.get(Number(field.value)) : undefined;
-                    const selectedLabel = selectedFit?.issue ? teacherFitLabel(selectedFit) : null;
-                    return (
-                      <FormItem className="md:max-w-md">
-                        <FormLabel>{t('teacher')}</FormLabel>
-                        <Select value={field.value || AUTO_TEACHER_VALUE} onValueChange={field.onChange}>
-                          <FormControl><SelectTrigger><SelectValue placeholder={t('selectTeacher')}>
-                            {field.value === String(editingGroup?.teacherId) && !rankedTeachers.some((teacher) => String(teacher.id) === field.value)
-                              ? editingGroup?.teacherName : undefined}
-                          </SelectValue></SelectTrigger></FormControl>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value={AUTO_TEACHER_VALUE}>{t('teacherAutoSelect')}</SelectItem>
-                              {rankedTeachers.map((teacher) => {
-                                const fit = teacherFitLabel(teacherFits.get(teacher.id));
-                                return (
-                                  <SelectItem key={teacher.id} value={String(teacher.id)} trailing={fit ? (
-                                    <span className={cn(fit.warn ? 'text-amber-700 dark:text-amber-300'
-                                      : teacherFits.get(teacher.id)?.teachesCourse ? 'text-emerald-700 dark:text-emerald-300' : undefined)}>
-                                      {fit.text}
-                                    </span>
-                                  ) : undefined}>
-                                    {teacher.fullName}
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        {rankedTeachers.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">{t('noTeachers')}</p>
-                        ) : null}
-                        {selectedLabel ? (
-                          <p role="status" className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300">
-                            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                            <span>{t('teacherUnavailableForGroup')} {selectedLabel.text}</span>
-                          </p>
-                        ) : null}
-                        <FormMessage />
-                      </FormItem>
-                    );
-                  }} />
-                </EditorSection>
               </div>
 
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => groupGuard.handleOpenChange(false)}>
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t bg-background/95 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <Button type="button" variant="outline" disabled={saveGroup.isPending} onClick={() => groupGuard.handleOpenChange(false)}>
                   {t('cancel')}
                 </Button>
                 {/* Without a course and a branch there is no code yet; saving then

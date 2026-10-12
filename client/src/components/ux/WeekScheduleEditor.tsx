@@ -201,7 +201,9 @@ export function WeekScheduleEditor({
                 // takes its own line and the two times share the row underneath.
                 'grid grid-cols-2 items-center gap-2 border-b border-border px-3 py-2 last:border-b-0',
                 'sm:grid-cols-[minmax(7rem,1fr)_6.5rem_6.5rem]',
-                'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem_minmax(9rem,1fr)]',
+                showSchool
+                  ? 'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem_minmax(9rem,1fr)]'
+                  : 'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem]',
                 enabled ? 'bg-card' : 'bg-muted/25',
                 invalid && 'bg-destructive/5',
               )}

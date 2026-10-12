@@ -62,12 +62,11 @@ export function findRoomClashes(roomId: number, plan: PlannedGroup, groups: Grou
     .flatMap((group) => clashesWith(slots, plan, group));
 }
 
-export type TeacherFitIssue = 'otherBranch' | 'offHours' | 'busy';
+export type TeacherConflictIssue = 'otherBranch' | 'offHours' | 'busy';
 
-export interface TeacherFit {
-  issue: TeacherFitIssue | null;
+export interface TeacherConflict {
+  issue: TeacherConflictIssue | null;
   clash: ScheduleClash | null;
-  teachesCourse: boolean;
 }
 
 const idList = (value: unknown) => (Array.isArray(value) ? value.map(Number).filter((id) => id > 0) : []);
@@ -80,18 +79,17 @@ const availabilityOf = (teacher: GroupTeacher) => {
     : normalizeWeeklySchedule((teacher as GroupTeacher & { schedule?: unknown }).schedule, 60);
 };
 
-export function assessTeacher(
+export function findTeacherConflict(
   teacher: GroupTeacher,
-  plan: PlannedGroup & { schoolId: number; courseId: number },
+  plan: PlannedGroup & { schoolId: number },
   groups: Group[],
-): TeacherFit {
-  const teachesCourse = idList(teacher.courseIds).includes(plan.courseId);
+): TeacherConflict {
   const schoolIds = idList(teacher.schoolIds);
   if (plan.schoolId && schoolIds.length > 0 && !schoolIds.includes(plan.schoolId)) {
-    return { issue: 'otherBranch', clash: null, teachesCourse };
+    return { issue: 'otherBranch', clash: null };
   }
   const slots = plannedSlots(plan);
-  if (slots.length === 0) return { issue: null, clash: null, teachesCourse };
+  if (slots.length === 0) return { issue: null, clash: null };
   const availability = availabilityOf(teacher);
   const covered = slots.every((item) => availability.some((slot) => (
     slot.dayOfWeek === item.dayOfWeek
@@ -99,22 +97,9 @@ export function assessTeacher(
     && item.startMinutes >= slot.startMinutes
     && item.endMinutes <= slot.endMinutes
   )));
-  if (!covered) return { issue: 'offHours', clash: null, teachesCourse };
+  if (!covered) return { issue: 'offHours', clash: null };
   const clash = groups
     .filter((group) => Number(group.teacherId) === teacher.id)
     .flatMap((group) => clashesWith(slots, plan, group))[0] ?? null;
-  return { issue: clash ? 'busy' : null, clash, teachesCourse };
-}
-
-/** Teachers who can take the group first, then those who could after a change, by name within each. */
-export function rankTeachers(teachers: GroupTeacher[], fits: Map<number, TeacherFit>) {
-  const rank = (teacher: GroupTeacher) => {
-    const fit = fits.get(teacher.id);
-    if (!fit) return 0;
-    if (fit.issue) return 2;
-    return fit.teachesCourse ? 0 : 1;
-  };
-  return [...teachers].sort((left, right) => (
-    rank(left) - rank(right) || left.fullName.localeCompare(right.fullName, 'ru')
-  ));
+  return { issue: clash ? 'busy' : null, clash };
 }

@@ -5,31 +5,32 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/comp
 import { ProtectedGroupNameInput } from './ProtectedGroupNameInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
-export function GroupIdentityFields({ code, error, pending, editing, onRetry }: {
-  code: string; error: string; pending: boolean; editing: boolean; onRetry?: () => void;
+export function GroupIdentityFields({ code, error, pending, editing, coded, onRetry }: {
+  code: string; error: string; pending: boolean; editing: boolean; coded: boolean; onRetry?: () => void;
 }) {
   const { t } = useTranslation();
   const form = useFormContext<GroupValues>();
   return <>
     <FormField control={form.control} name="deliveryMode" render={({ field }) => <FormItem>
-      <FormLabel required>{t('groupDeliveryFormat')}</FormLabel>
-      <Select value={field.value} onValueChange={field.onChange} disabled={editing}>
-        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+      <FormLabel required={coded}>{t('groupDeliveryFormat')}</FormLabel>
+      <Select value={coded ? field.value : ''} onValueChange={field.onChange} disabled={editing}>
+        <FormControl><SelectTrigger><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
         <SelectContent><SelectItem value="offline">{t('offline')}</SelectItem><SelectItem value="online">{t('online')}</SelectItem></SelectContent>
       </Select><FormMessage />
     </FormItem>} />
     <FormField control={form.control} name="trainingType" render={({ field }) => <FormItem>
-      <FormLabel required>{t('groupTrainingType')}</FormLabel>
-      <Select value={field.value} onValueChange={(value) => {
+      <FormLabel required={coded}>{t('groupTrainingType')}</FormLabel>
+      <Select value={coded ? field.value : ''} onValueChange={(value) => {
         field.onChange(value);
         if (value === 'IND') form.setValue('maxStudents', 1, { shouldDirty: true });
       }} disabled={editing}>
-        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+        <FormControl><SelectTrigger><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
         <SelectContent><SelectItem value="GRP">{t('groupTrainingGroup')}</SelectItem><SelectItem value="IND">{t('groupTrainingIndividual')}</SelectItem></SelectContent>
       </Select><FormMessage />
     </FormItem>} />
-    <FormField control={form.control} name="nameSuffix" render={({ field }) => <FormItem className="md:col-span-2">
+    {coded ? <FormField control={form.control} name="nameSuffix" render={({ field }) => <FormItem className="sm:col-span-2">
       <FormLabel>{t('groupName')}</FormLabel>
       <FormControl><ProtectedGroupNameInput ref={field.ref} code={code} addition={field.value}
         onAdditionChange={field.onChange} onBlur={field.onBlur} pending={pending}
@@ -40,6 +41,10 @@ export function GroupIdentityFields({ code, error, pending, editing, onRetry }: 
       </div>
         : form.formState.errors.name ? <p className="text-sm text-destructive" role="alert">{form.formState.errors.name.message}</p>
           : <FormMessage />}
-    </FormItem>} />
+    </FormItem>} /> : <FormField control={form.control} name="name" render={({ field }) => <FormItem className="sm:col-span-2">
+      <FormLabel required>{t('groupName')}</FormLabel>
+      <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
+      <FormMessage />
+    </FormItem>} />}
   </>;
 }

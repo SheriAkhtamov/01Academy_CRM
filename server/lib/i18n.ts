@@ -141,9 +141,13 @@ const translations = {
         en: 'This group is already full.',
         ru: 'В этой группе уже нет свободных мест.',
     },
-    noAvailableTeacher: {
-        en: 'No available teacher for this time.',
-        ru: 'Нет доступных преподавателей на это время.',
+    teacherRequired: {
+        en: 'Choose a teacher.',
+        ru: 'Выберите преподавателя.',
+    },
+    teacherHasAssignments: {
+        en: 'This teacher has assigned groups or lessons. Archive the teacher instead.',
+        ru: 'У преподавателя есть назначенные группы или уроки. Архивируйте преподавателя.',
     },
     roomOccupied: {
         en: 'Room is occupied by another group.',

@@ -18,7 +18,7 @@ vi.mock('../server/modules/academy/academy-core', async (original) => {
   };
 });
 import { registerGroupManagementRoutes } from '../server/modules/academy/group-management.router';
-import { assertTeacherCanLeadGroupSchedule, findTeacherForGroupSchedule } from '../server/modules/academy/academy-scheduling';
+import { assertTeacherCanLeadGroupSchedule } from '../server/modules/academy/academy-scheduling';
 import { prepareGroupMutation } from '../server/modules/academy/academy-route-support';
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
@@ -90,10 +90,12 @@ describe.skipIf(!databaseUrl)('group teachers use active employee module assignm
     expect(result.body.groups[0]).toMatchObject({ teacherId: 1, teacherName: 'Archived teacher', name: 'Historical group' });
   });
 
-  it('automatically chooses only an eligible employee and returns null when none remain', async () => {
-    expect(await findTeacherForGroupSchedule(scheduleOptions)).toMatchObject({ id: 5 });
+  it('requires an explicit teacher even when eligible employees are available', async () => {
+    await expect(prepareGroupMutation({ values: { ...scheduleOptions, roomId: 1, teacherId: null } })).rejects.toMatchObject({ message: 'teacherRequired', statusCode: 400 });
+    await expect(assertTeacherCanLeadGroupSchedule({ ...scheduleOptions, teacherId: 5 })).resolves.toMatchObject({ id: 5 });
     await fixture.pool.query("UPDATE users SET module='sales' WHERE id=5; DELETE FROM user_modules WHERE user_id=6");
-    expect(await findTeacherForGroupSchedule(scheduleOptions)).toBeNull();
+    await expect(assertTeacherCanLeadGroupSchedule({ ...scheduleOptions, teacherId: 5 })).rejects.toMatchObject({ message: 'teacherNotActive' });
+    await expect(assertTeacherCanLeadGroupSchedule({ ...scheduleOptions, teacherId: 6 })).rejects.toMatchObject({ message: 'teacherNotActive' });
   });
 
   it.each([1, 2, 3, 4, 7])('rejects a new explicit ineligible teacher %s', async (teacherId) => {

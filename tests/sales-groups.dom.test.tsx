@@ -141,10 +141,20 @@ it('creates a group from the same editor, shows schedule problems in place and f
   expect(within(dialog).queryByText(i18n.t('groupScheduleRequired'))).toBeNull();
   expect((within(dialog).getByLabelText(new RegExp(i18n.t('endDate'))) as HTMLInputElement).value).toBe('2026-12-14');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('createGroup') }));
+  expect(apiRequest).not.toHaveBeenCalled();
+  expect(await within(dialog).findByText(i18n.t('teacherRequired'))).toBeTruthy();
+  const teacher = within(dialog).getByRole('combobox', { name: i18n.t('teacher') });
+  expect(teacher.textContent).toBe(i18n.t('selectTeacher'));
+  expect(document.activeElement).toBe(teacher);
+  await userEvent.click(teacher);
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Teacher']);
+  await userEvent.click(screen.getByRole('option', { name: 'Teacher' }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('createGroup') }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('POST', '/api/academy/groups', expect.objectContaining({
-    name: 'CYP-PY-GRP-26-0043 — New group', nameSuffix: 'New group', deliveryMode: 'offline', trainingType: 'GRP', autoAssign: true, teacherId: null, courseId: 1, schoolId: 1, roomId: 1,
+    name: 'CYP-PY-GRP-26-0043 — New group', nameSuffix: 'New group', deliveryMode: 'offline', trainingType: 'GRP', teacherId: 2, courseId: 1, schoolId: 1, roomId: 1,
     endDate: '2026-12-14', schedule: expect.arrayContaining([expect.objectContaining({ dayOfWeek: 1 })]),
   })));
+  expect(apiRequest.mock.calls[0][2]).not.toHaveProperty('autoAssign');
 });
 
 it('says which field is wrong instead of a generic error', async () => {
@@ -186,13 +196,11 @@ it('warns about a busy room and a busy teacher before saving and keeps a typed e
   expect(within(dialog).getByText(i18n.t('roomOccupied'))).toBeTruthy();
 
   await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('teacher') }));
-  // Who can take the group comes first; the rest say why not.
-  const [, free, elsewhere, busy] = screen.getAllByRole('option').map((option) => option.textContent ?? '');
-  expect(free).toBe(`Free teacher${i18n.t('groupTeacherFits')}`);
-  expect(elsewhere).toBe(`Elsewhere${i18n.t('groupTeacherOtherBranch')}`);
-  expect(busy).toBe(`Teacher${i18n.t('groupScheduleOverlapsWith').replace('{group}', 'Python morning')}`);
+  // Changing the plan never ranks or recommends a teacher.
+  expect(screen.getAllByRole('option').map((option) => option.textContent))
+    .toEqual(['Elsewhere', 'Free teacher', 'Teacher']);
   await userEvent.click(screen.getByRole('option', { name: /^Teacher/ }));
-  expect(within(dialog).getByText(new RegExp(i18n.t('teacherUnavailableForGroup')))).toBeTruthy();
+  expect(within(dialog).getByText(i18n.t('groupScheduleOverlapsWith').replace('{group}', 'Python morning'))).toBeTruthy();
 
   const endDate = within(dialog).getByLabelText(new RegExp(i18n.t('endDate'))) as HTMLInputElement;
   fireEvent.change(endDate, { target: { value: '2026-12-31' } });
@@ -267,6 +275,113 @@ it('shows a historical assigned teacher in the editor without offering that empl
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' changed');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({ teacherId: 99 })));
+});
+
+it.each(['create', 'coded', 'legacy'] as const)('keeps the same sections and identity field order for %s groups', async (mode) => {
+  if (mode === 'coded') currentConfiguration = {
+    ...configuration,
+    groups: [{ ...group, name: 'CYP-PY-GRP-26-0001 — Coded group' }, ...configuration.groups.slice(1)],
+  };
+  mount(); await screen.findByText(mode === 'coded' ? 'Coded group' : 'Python morning');
+  if (mode === 'create') await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  else await userEvent.click(within(rowOf(mode === 'coded' ? 'Coded group' : 'Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t(mode === 'create' ? 'createGroup' : 'editGroup') });
+  const sections = within(dialog).getAllByRole('group');
+  expect(sections.map((section) => section.querySelector('legend')?.textContent))
+    .toEqual([i18n.t('group'), i18n.t('groupEditorPlaceSection'), i18n.t('schedule'), i18n.t('groupEditorDatesSection')]);
+  expect(Array.from(sections[0].querySelectorAll('label')).map((label) => label.textContent?.replace('*', '').trim()))
+    .toEqual((['groupDeliveryFormat', 'groupTrainingType', 'groupName', 'status', 'groupCapacity'] as const).map((key) => i18n.t(key)));
+  expect(Array.from(sections[1].querySelectorAll('label')).map((label) => label.textContent?.replace('*', '').trim()))
+    .toEqual((['course', 'school', 'room', 'teacher'] as const).map((key) => i18n.t(key)));
+  for (const key of ['groupDeliveryFormat', 'groupTrainingType'] as const) {
+    const select = within(dialog).getByRole('combobox', { name: i18n.t(key) }) as HTMLButtonElement;
+    expect(select.disabled).toBe(mode !== 'create');
+    if (mode === 'legacy') expect(select.textContent).toBe(i18n.t('groupIdentityUnspecified'));
+  }
+  const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
+  if (mode === 'legacy') expect(name.value).toBe('Python morning');
+  if (mode === 'coded') {
+    fireEvent.change(name, { target: { value: 'CYP-PY-GRP-26-9999 — Changed code' } });
+    expect(name.value).toBe('CYP-PY-GRP-26-0001 — Coded group');
+    fireEvent.change(name, { target: { value: 'CYP-PY-GRP-26-0001 — Changed name' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({
+      name: 'CYP-PY-GRP-26-0001 — Changed name', deliveryMode: 'offline', trainingType: 'GRP',
+    })));
+    expect(catalogueQuery).not.toHaveBeenCalled();
+  }
+});
+
+it('keeps legacy unassigned metadata editable without generating identity or assigning a teacher', async () => {
+  mount(); await screen.findByText('No teacher');
+  await userEvent.click(within(rowOf('No teacher')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  expect(within(dialog).getByRole('combobox', { name: i18n.t('teacher') }).textContent).toBe(i18n.t('selectTeacher'));
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' changed');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/3', expect.objectContaining({
+    name: 'No teacher changed', teacherId: null,
+  })));
+  const payload = apiRequest.mock.calls[0][2];
+  for (const key of ['autoAssign', 'deliveryMode', 'trainingType', 'nameSuffix']) expect(payload).not.toHaveProperty(key);
+  expect(catalogueQuery).not.toHaveBeenCalled();
+});
+
+it('requires a manual teacher for a legacy plan change but allows reverting that change', async () => {
+  mount(); await screen.findByText('No teacher');
+  await userEvent.click(within(rowOf('No teacher')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  const duration = within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') });
+  fireEvent.change(duration, { target: { value: '90' } });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  expect(await within(dialog).findByText(i18n.t('teacherRequired'))).toBeTruthy();
+  expect(apiRequest).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(within(dialog).getByRole('combobox', { name: i18n.t('teacher') }));
+  fireEvent.change(duration, { target: { value: '60' } });
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' metadata');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/3', expect.objectContaining({
+    teacherId: null, lessonDurationMinutes: 60, name: 'No teacher metadata',
+  })));
+});
+
+it('disables saving and cancellation while the group save is pending', async () => {
+  let finish!: (value: typeof group) => void;
+  apiRequest.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' pending');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  const saving = await within(dialog).findByRole('button', { name: i18n.t('saving') }) as HTMLButtonElement;
+  expect(saving.disabled).toBe(true);
+  expect((within(dialog).getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.keyboard('{Escape}');
+  expect(screen.getByRole('dialog', { name: i18n.t('editGroup') })).toBeTruthy();
+  finish(group);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('editGroup') })).toBeNull());
+});
+
+it('retains explicit manual assignment through the existing future-start confirmation', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-13T07:00:00Z'));
+  currentConfiguration = {
+    ...configuration,
+    groups: [{ ...group, startDate: '2026-12-07', endDate: '2027-02-08' }, ...configuration.groups.slice(1)],
+  };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('status') }));
+  await userEvent.click(screen.getByRole('option', { name: i18n.t('groupStatusInProgress') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  const confirmation = await screen.findByRole('dialog', { name: i18n.t('futureGroupStartTitle') });
+  expect(apiRequest).not.toHaveBeenCalled();
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('startFutureGroupAnyway') }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({
+    teacherId: 2, status: 'in_progress', allowFutureStart: true,
+  })));
+  expect(apiRequest.mock.calls[0][2]).not.toHaveProperty('autoAssign');
 });
 
 it('retries a failed group code load inside the dialog and keeps entered values', async () => {

@@ -112,7 +112,6 @@ import {
   prepareGroupMetadataMutation,
   prepareGroupMutation,
   prepareLessonMutation,
-  reconcileAutomaticTeacherAssignments,
   restoreArchivedGroupLessons,
 } from './academy-route-support';
 
@@ -243,7 +242,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         ? await withTransaction(async () => {
           await prepareGroupMutation({
             values,
-            forceAutoAssign: req.body.autoAssign === true,
             allowFutureStart: req.body.allowFutureStart === true,
           });
           await allocateGroupName(values, req.body);
@@ -255,7 +253,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           ? await withTransaction(async () => {
             await prepareLessonMutation({
               values,
-              forceAutoAssign: req.body.autoAssign === true || !values.teacherId,
             });
             return insertRow(table, values);
           })
@@ -269,7 +266,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           ? await withTransaction(async () => {
             await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
             const teacher = await insertRow(table, values);
-            await reconcileAutomaticTeacherAssignments(Number(teacher.id));
             return teacher;
           })
         : await insertRow(table, values);
@@ -365,7 +361,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
               values,
               oldRow: lockedRow,
               excludeGroupId: id,
-              forceAutoAssign: req.body.autoAssign === true,
               allowFutureStart: req.body.allowFutureStart === true,
             });
           } else {
@@ -398,12 +393,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             if (options.beforeUpdate) {
               await options.beforeUpdate({ id, values, row: lockedRow, req });
             }
-            await assertLessonHistoryUpdateAllowed(id, values, lockedRow, req.body.autoAssign === true);
+            await assertLessonHistoryUpdateAllowed(id, values, lockedRow);
             await prepareLessonMutation({
               values,
               oldRow: lockedRow,
               excludeLessonId: id,
-              forceAutoAssign: req.body.autoAssign === true,
             });
             const updatedLesson = await updateRow(table, id, values);
             if (values.status !== undefined && lockedRow.status !== updatedLesson?.status) {
@@ -433,7 +427,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
               await options.beforeUpdate({ id, values, row: lockedTeacher, req });
             }
             const updatedTeacher = await updateRow(table, id, values);
-            await reconcileAutomaticTeacherAssignments(id);
             return updatedTeacher;
           })
         : options.beforeUpdate
@@ -514,7 +507,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             await options.beforeDelete({ id, row: lockedTeacher, req });
           }
           await deleteRow(table, id);
-          await reconcileAutomaticTeacherAssignments(null);
         });
       } else {
         await withTransaction(async () => {

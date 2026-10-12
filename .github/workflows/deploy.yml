@@ -373,5 +373,10 @@ jobs:
             exit 1
           fi
 
+          # Keep the dedicated builder cache bounded after a healthy release.
+          docker buildx prune --builder academy-lms-safe --force \
+            --max-used-space 2gb > "$BUILD_CONTEXT/build-cache-prune.log"
+          tail -n 1 "$BUILD_CONTEXT/build-cache-prune.log"
+
           docker compose ps
           REMOTE

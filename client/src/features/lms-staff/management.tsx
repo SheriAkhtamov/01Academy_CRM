@@ -53,6 +53,9 @@ export function LearningManagement({
   const [create, setCreate] = useState(false);
   const [editRun, setEditRun] = useState(false);
   const [reviewQueue, setReviewQueue] = useState(false);
+  const canReview = Boolean(
+    runs.data?.some((run) => run.permissions?.includes("reviews.manage")),
+  );
   const selected = runs.data?.find((run) => String(run.groupId) === groupId);
   return (
     <div className="mx-auto min-w-0 max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -64,10 +67,7 @@ export function LearningManagement({
           <span className="text-sm text-muted-foreground">
             {t(administration ? "administration" : "teacher")}
           </span>
-          {runs.data?.some(
-            (run) =>
-              !run.permissions || run.permissions.includes("reviews.manage"),
-          ) && (
+          {canReview && (
             <Button variant="outline" onClick={() => setReviewQueue(true)}>
               {t("lmsStaffReviews")}
             </Button>
@@ -165,7 +165,7 @@ export function LearningManagement({
       {create && selected && (
         <CreateRun group={selected} onClose={() => setCreate(false)} />
       )}
-      {reviewQueue && (
+      {canReview && reviewQueue && (
         <StaffDialog
           open
           onClose={() => setReviewQueue(false)}
@@ -203,8 +203,10 @@ function LearningWorkspace({
     results: "results.manage",
     announcements: "announcements.manage",
   } as const;
+  const canReview = Boolean(permissions?.includes("reviews.manage"));
   const [tab, setTab] = useState(() =>
     initialTab &&
+    (initialTab !== "reviews" || canReview) &&
     (!permissions ||
       permissions.includes(permissionForTab[initialTab]) ||
       (initialTab === "program" && permissions.includes("schedule.manage")))
@@ -246,26 +248,13 @@ function LearningWorkspace({
     >
       <TabsList className="flex h-auto flex-wrap justify-start gap-1">
         {tabs
-          .filter(
-            ([value]) =>
-              !permissions ||
-              (value === "program" &&
-                permissions.includes("schedule.manage")) ||
-              permissions.includes(
-                (
-                  {
-                    program: "content.manage",
-                    makeup: "assignments.manage",
-                    materials: "content.manage",
-                    assignments: "assignments.manage",
-                    reviews: "reviews.manage",
-                    quizzes: "quizzes.manage",
-                    threads: "communication.manage",
-                    results: "results.manage",
-                    announcements: "announcements.manage",
-                  } as Record<string, string>
-                )[value],
-              ),
+          .filter(([value]) =>
+            value === "reviews"
+              ? canReview
+              : !permissions ||
+                (value === "program" &&
+                  permissions.includes("schedule.manage")) ||
+                permissions.includes(permissionForTab[value]),
           )
           .map(([value, key]) => (
             <TabsTrigger key={value} value={value} className="min-h-11">
@@ -294,12 +283,14 @@ function LearningWorkspace({
         <StaffAssignments
           runId={runId}
           enrollments={enrollments.data}
-          canReview={!permissions || permissions.includes("reviews.manage")}
+          canReview={canReview}
         />
       </TabsContent>
-      <TabsContent value="reviews">
-        <StaffReviews runId={runId} />
-      </TabsContent>
+      {canReview && (
+        <TabsContent value="reviews">
+          <StaffReviews runId={runId} />
+        </TabsContent>
+      )}
       <TabsContent value="quizzes">
         <StaffQuizzes runId={runId} enrollments={enrollments.data} />
       </TabsContent>

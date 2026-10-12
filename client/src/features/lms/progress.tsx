@@ -533,22 +533,22 @@ function CourseComparison({
     (link, signal) => portalResourcesApi.projectComparison(link, runId, signal),
     [runId],
   );
-  const [first, setFirst] = useState<number | null>(null);
-  const [last, setLast] = useState<number | null>(null);
+  const [draft, setDraft] = useState<{
+    firstProject: PortalComparisonProjectDto;
+    latestProject: PortalComparisonProjectDto;
+    version: number;
+  } | null>(null);
   const [reloadOpen, setReloadOpen] = useState(false);
   const canEdit = allowed("portfolio.edit", true);
   const firstWork: PortalComparisonProjectDto | undefined =
-    first === null
-      ? (query.data?.firstProject ?? (canEdit ? projects[0] : undefined))
-      : (projects.find((item) => item.id === first) ??
-        query.data?.firstProject);
+    draft?.firstProject ??
+    query.data?.firstProject ??
+    (canEdit ? projects[0] : undefined);
   const latestWork: PortalComparisonProjectDto | undefined =
-    last === null
-      ? (query.data?.latestProject ??
-        (canEdit ? projects[projects.length - 1] : undefined))
-      : (projects.find((item) => item.id === last) ??
-        query.data?.latestProject);
-  const dirty = first !== null || last !== null;
+    draft?.latestProject ??
+    query.data?.latestProject ??
+    (canEdit ? projects[projects.length - 1] : undefined);
+  const dirty = draft !== null;
   const valid = firstWork && latestWork && firstWork.id !== latestWork.id;
   const action = useMutation({
     mutationFn: () =>
@@ -556,15 +556,14 @@ function CourseComparison({
         runId,
         firstProjectId: firstWork!.id,
         latestProjectId: latestWork!.id,
-        version: query.data?.version ?? 0,
+        version: draft?.version ?? query.data?.version ?? 0,
       }),
     onSuccess: (data) => {
       client.setQueryData(
         portalSubjectKey(account!, subject!, "project-comparison", runId),
         data,
       );
-      setFirst(null);
-      setLast(null);
+      setDraft(null);
       setUnsaved(false);
       void query.refetch();
     },
@@ -576,8 +575,7 @@ function CourseComparison({
       return result.data;
     },
     onSuccess: () => {
-      setFirst(null);
-      setLast(null);
+      setDraft(null);
       setReloadOpen(false);
       action.reset();
       setUnsaved(false);
@@ -624,11 +622,23 @@ function CourseComparison({
                 className="min-h-11 w-full rounded-md border bg-background px-3"
                 value={value.id}
                 disabled={action.isPending}
-                onChange={(event) =>
-                  kind === "first"
-                    ? setFirst(Number(event.target.value))
-                    : setLast(Number(event.target.value))
-                }
+                onChange={(event) => {
+                  const selected = choices.find(
+                    (item) => item.id === Number(event.target.value),
+                  );
+                  if (!selected) return;
+                  setDraft((previous) => ({
+                    firstProject:
+                      kind === "first"
+                        ? selected
+                        : (previous?.firstProject ?? firstWork),
+                    latestProject:
+                      kind === "last"
+                        ? selected
+                        : (previous?.latestProject ?? latestWork),
+                    version: previous?.version ?? query.data?.version ?? 0,
+                  }));
+                }}
               >
                 {choices.map((item) => (
                   <option key={item.id} value={item.id}>

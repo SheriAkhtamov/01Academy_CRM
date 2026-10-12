@@ -16,7 +16,9 @@ import { StaffEmpty, StaffError, StaffLoading } from "./ui";
 
 type GroupTab = "students" | "materials" | "assignments" | "results";
 const allowed = (run: LmsStaffRunDto, permission: string) =>
-  !run.permissions || run.permissions.includes(permission);
+  permission === "reviews.manage"
+    ? Boolean(run.permissions?.includes(permission))
+    : !run.permissions || run.permissions.includes(permission);
 
 export function LearningGroupTabs({
   groupId,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoLessonDetailsDialog } from '../client/src/components/ux/DemoLessonDetailsDialog';
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
 
@@ -16,6 +16,12 @@ class ResizeObserverStub {
 (Element.prototype as unknown as Record<string, unknown>).setPointerCapture = () => undefined;
 (Element.prototype as unknown as Record<string, unknown>).releasePointerCapture = () => undefined;
 (Element.prototype as unknown as Record<string, unknown>).scrollIntoView = () => undefined;
+
+afterEach(async () => {
+  cleanup();
+  // Finish Radix's deferred focus restoration before this jsdom realm closes.
+  await new Promise(resolve => setTimeout(resolve, 0));
+});
 
 const apiMocks = vi.hoisted(() => ({
   saveAttendance: vi.fn(),

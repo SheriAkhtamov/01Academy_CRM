@@ -71,6 +71,15 @@ export async function transaction<T>(
     client.release();
   }
 }
+export function hasImplicitStaffRunAccess(
+  actor: LmsStaffActor,
+  permission: string | readonly string[],
+) {
+  const permissions = typeof permission === "string" ? [permission] : permission;
+  return (
+    actor.isLeadership && permissions.some((name) => name !== "reviews.manage")
+  );
+}
 export async function requireStaffRun(
   sql: LmsSql,
   actor: LmsStaffActor,
@@ -79,27 +88,16 @@ export async function requireStaffRun(
 ) {
   const row = await one<{ groupId: number }>(
     sql,
-    `SELECT run.group_id FROM lms_group_runs run WHERE run.id=$1 AND ($2::boolean OR EXISTS(SELECT 1 FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.id=run.group_id AND teacher.user_id=$3 AND teacher.status='active') OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=$3 AND grant_row.permission=ANY($4::text[])))`,
+    `SELECT run.group_id FROM lms_group_runs run WHERE run.id=$1 AND ($2::boolean OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.id=run.group_id AND teacher.user_id=$3 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=$3 AND grant_row.permission=ANY($4::text[])))`,
     [
       runId,
-      actor.isLeadership,
+      hasImplicitStaffRunAccess(actor, permission),
       actor.userId,
       typeof permission === "string" ? [permission] : permission,
+      actor.modules.includes("teacher"),
     ],
   );
-  if (
-    !row ||
-    (!actor.isLeadership &&
-      !actor.modules.includes("teacher") &&
-      !(await one(
-        sql,
-        "SELECT user_id FROM lms_staff_permissions WHERE user_id=$1 AND permission=ANY($2::text[])",
-        [
-          actor.userId,
-          typeof permission === "string" ? [permission] : permission,
-        ],
-      )))
-  )
+  if (!row)
     throw new LmsError("lmsNotFound", 404);
   return row;
 }

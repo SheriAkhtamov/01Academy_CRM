@@ -882,6 +882,21 @@ export class PgAssignmentRepository {
       requireVersion(row.version, input.version);
       if (input.status === "assigned" && row.status === "accepted")
         throw new LmsError("lmsReviewStateConflict", 409);
+      if (
+        input.status === "assigned" &&
+        row.status !== "assigned" &&
+        (await one(
+          sql,
+          "SELECT id FROM lms_submissions WHERE recipient_id=$1 LIMIT 1",
+          [id],
+        ))
+      )
+        await this.learning.requireStaffAccess(
+          sql,
+          actor,
+          row.runId,
+          "reviews.manage",
+        );
       if (input.dueAt && +new Date(input.dueAt) < +new Date(row.opensAt))
         throw new LmsError("lmsDatesInvalid");
       await sql.query(

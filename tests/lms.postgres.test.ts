@@ -203,6 +203,147 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       code: "lmsNotFound",
     });
   });
+  it("keeps administration metadata access without implicitly granting reviews or corrections", async () => {
+    const administration = { userId: 1, modules: ["administration"], isLeadership: true };
+    const finance = { userId: 2, modules: ["finance"], isLeadership: false };
+    const recipient = await createAssignment();
+    await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "Review permission boundary", links: [], fileIds: [], idempotencyKey: "review-boundary-submit",
+    });
+    const detail = await assignments.detail(actor, recipient.id);
+    const submissionId = detail.submissions[0].id;
+    expect((await learning.managementGroups(administration)).find((group) => group.groupId === 1)?.permissions)
+      .toEqual(expect.arrayContaining(["content.manage", "assignments.manage", "results.manage"]));
+    expect((await learning.managementGroups(administration)).find((group) => group.groupId === 1)?.permissions)
+      .not.toContain("reviews.manage");
+    expect((await learning.managementMaterials(administration, runId)).length).toBeGreaterThan(0);
+    expect((await learning.results(administration, runId))[0].assignmentResults).toHaveLength(1);
+    for (const employee of [administration, finance]) {
+      expect(await assignments.reviewQueue(employee, runId)).toEqual([]);
+      expect(await assignments.reviewQueue(employee, undefined, { limit: 20 })).toEqual([]);
+      await expect(assignments.reviewDetail(employee, submissionId)).rejects.toMatchObject({ code: "lmsNotFound" });
+      await expect(assignments.startReview(employee, submissionId, detail.version)).rejects.toMatchObject({ code: "lmsNotFound" });
+      await expect(assignments.review(employee, submissionId, {
+        version: detail.version, decision: "accepted", comment: "Unauthorised", criterionScores: {},
+      })).rejects.toMatchObject({ code: "lmsNotFound" });
+    }
+    expect((await learning.teacherSummary(administration)).pendingReviews).toBe(0);
+    expect((await pool.query("SELECT status,version FROM lms_assignment_recipients WHERE id=$1", [recipient.id])).rows[0])
+      .toEqual({ status: "submitted", version: detail.version });
+    expect((await pool.query("SELECT review_started_by FROM lms_submissions WHERE id=$1", [submissionId])).rows[0].review_started_by).toBeNull();
+    expect((await pool.query("SELECT count(*)::int count FROM lms_reviews")).rows[0].count).toBe(0);
+    const started = await assignments.startReview(teacher, submissionId, detail.version);
+    await assignments.review(teacher, submissionId, {
+      version: started.version, decision: "accepted", comment: "Teacher accepted", criterionScores: {},
+    });
+    const accepted = await assignments.detail(actor, recipient.id);
+    await expect(assignments.review(administration, submissionId, {
+      version: accepted.version, decision: "revision_required", comment: "Unauthorised correction", reason: "Change decision", criterionScores: {},
+    })).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(assignments.reopen(administration, recipient.id, {
+      version: accepted.version, dueAt: future(), reason: "Unauthorised reopening",
+    })).rejects.toMatchObject({ code: "lmsNotFound" });
+    expect((await assignments.detail(actor, recipient.id)).status).toBe("accepted");
+    expect((await pool.query("SELECT count(*)::int count FROM lms_reviews")).rows[0].count).toBe(1);
+  });
+  it.each([
+    { userId: 1, modules: ["administration"], isLeadership: true },
+    { userId: 2, modules: ["finance"], isLeadership: false },
+  ])("honours and revokes an explicit review grant for $modules without relying on leadership", async (employee) => {
+    const recipient = await createAssignment();
+    await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "Explicit review permission", links: [], fileIds: [], idempotencyKey: "explicit-review-submit",
+    });
+    const submissionId = (await assignments.detail(actor, recipient.id)).submissions[0].id;
+    await pool.query("INSERT INTO lms_staff_permissions(user_id,permission) VALUES($1,'reviews.manage')", [employee.userId]);
+    expect((await learning.managementGroups(employee)).find((group) => group.groupId === 1)?.permissions).toContain("reviews.manage");
+    expect((await assignments.reviewQueue(employee, runId))[0].submissionId).toBe(submissionId);
+    const detail = await assignments.reviewDetail(employee, submissionId);
+    const started = await assignments.startReview(employee, submissionId, detail.version);
+    await assignments.review(employee, submissionId, {
+      version: started.version, decision: "accepted", comment: "Granted reviewer", criterionScores: {},
+    });
+    const accepted = await assignments.reviewDetail(employee, submissionId);
+    await assignments.review(employee, submissionId, {
+      version: accepted.version, decision: "accepted", comment: "Corrected feedback", reason: "Clarify assessment", criterionScores: {},
+    });
+    expect((await assignments.detail(actor, recipient.id)).submissions[0].reviewHistory).toHaveLength(2);
+    const corrected = await assignments.detail(actor, recipient.id);
+    await assignments.reopen(employee, recipient.id, { version: corrected.version, dueAt: future(), reason: "Agreed further practice" });
+    await pool.query("DELETE FROM lms_staff_permissions WHERE user_id=$1 AND permission='reviews.manage'", [employee.userId]);
+    await expect(assignments.reviewDetail(employee, submissionId)).rejects.toMatchObject({ code: "lmsNotFound" });
+    expect((await learning.managementGroups(employee)).find((group) => group.groupId === 1)?.permissions ?? []).not.toContain("reviews.manage");
+  });
+  it("limits implicit review access to the assigned active teacher with the teacher module", async () => {
+    const recipient = await createAssignment();
+    await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "Assigned teacher scope", links: [], fileIds: [], idempotencyKey: "assigned-review-submit",
+    });
+    const detail = await assignments.detail(actor, recipient.id);
+    const submissionId = detail.submissions[0].id;
+    expect((await assignments.reviewDetail(teacher, submissionId)).submissionId).toBe(submissionId);
+    expect((await learning.managementGroups(teacher)).find((group) => group.groupId === 1)?.permissions).toContain("reviews.manage");
+    await expect(assignments.reviewDetail(otherTeacher, submissionId)).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(assignments.startReview(otherTeacher, submissionId, detail.version)).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(assignments.review(otherTeacher, submissionId, { version: detail.version, decision: "accepted", comment: "Foreign", criterionScores: {} })).rejects.toMatchObject({ code: "lmsNotFound" });
+    await pool.query("UPDATE academy_teachers SET status='inactive' WHERE user_id=1");
+    expect(await assignments.reviewQueue(teacher, runId)).toEqual([]);
+    expect((await learning.managementGroups(teacher)).some((group) => group.groupId === 1)).toBe(false);
+    await expect(assignments.reviewDetail(teacher, submissionId)).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(assignments.startReview(teacher, submissionId, detail.version)).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(assignments.review(teacher, submissionId, { version: detail.version, decision: "accepted", comment: "Inactive", criterionScores: {} })).rejects.toMatchObject({ code: "lmsNotFound" });
+    await pool.query("UPDATE academy_teachers SET status='active' WHERE user_id=1");
+    const started = await assignments.startReview(teacher, submissionId, detail.version);
+    await assignments.review(teacher, submissionId, { version: started.version, decision: "accepted", comment: "Assigned", criterionScores: {} });
+    expect((await assignments.detail(actor, recipient.id)).status).toBe("accepted");
+  });
+  it("requires review permission when recipient updates reopen submission history and preserves assignment metadata actions", async () => {
+    const administration = { userId: 1, modules: ["administration"], isLeadership: true };
+    const recipient = await createAssignment();
+    await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "Reopening boundary", links: [], fileIds: [], idempotencyKey: "history-reopen-submit",
+    });
+    const submitted = await assignments.detail(actor, recipient.id);
+    const eventCount = (await pool.query("SELECT count(*)::int count FROM lms_learning_events")).rows[0].count;
+    const auditCount = (await pool.query("SELECT count(*)::int count FROM lms_learning_audit")).rows[0].count;
+    await expect(assignments.updateRecipient(administration, recipient.id, { version: submitted.version, status: "assigned", reason: "Reset submitted work" })).rejects.toMatchObject({ code: "lmsNotFound" });
+    expect((await assignments.detail(actor, recipient.id)).version).toBe(submitted.version);
+    expect((await pool.query("SELECT count(*)::int count FROM lms_learning_events")).rows[0].count).toBe(eventCount);
+    expect((await pool.query("SELECT count(*)::int count FROM lms_learning_audit")).rows[0].count).toBe(auditCount);
+    await assignments.updateRecipient(administration, recipient.id, { version: submitted.version, dueAt: future(), reason: "Extend deadline" });
+    const extended = await assignments.detail(actor, recipient.id);
+    await assignments.updateRecipient(administration, recipient.id, { version: extended.version, status: "excused", reason: "Excuse assignment" });
+    const excused = await assignments.detail(actor, recipient.id);
+    await expect(assignments.updateRecipient(administration, recipient.id, { version: excused.version, status: "assigned", reason: "Reset historical work" })).rejects.toMatchObject({ code: "lmsNotFound" });
+    await assignments.updateRecipient(administration, recipient.id, { version: excused.version, status: "cancelled", reason: "Cancel assignment" });
+    const cancelled = await assignments.detail(actor, recipient.id);
+    const updatesBeforeRetry = (await pool.query("SELECT count(*)::int count FROM lms_learning_audit WHERE entity_type='assignment_recipient' AND entity_id=$1 AND action='update'", [recipient.id])).rows[0].count;
+    await pool.query("INSERT INTO lms_staff_permissions(user_id,permission) VALUES(1,'reviews.manage')");
+    const attempts = await Promise.allSettled([
+      assignments.updateRecipient(administration, recipient.id, { version: cancelled.version, status: "assigned", reason: "Granted reopening" }),
+      assignments.updateRecipient(administration, recipient.id, { version: cancelled.version, status: "assigned", reason: "Granted reopening" }),
+    ]);
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.find((result) => result.status === "rejected")).toMatchObject({ reason: { code: "lmsVersionConflict" } });
+    const reopened = await assignments.detail(actor, recipient.id);
+    expect(reopened).toMatchObject({ status: "assigned", version: cancelled.version + 1 });
+    expect(reopened.submissions).toHaveLength(1);
+    expect((await pool.query("SELECT count(*)::int count FROM lms_learning_audit WHERE entity_type='assignment_recipient' AND entity_id=$1 AND action='update'", [recipient.id])).rows[0].count).toBe(updatesBeforeRetry + 1);
+    await pool.query("DELETE FROM lms_staff_permissions WHERE user_id=1 AND permission='reviews.manage'");
+    await assignments.updateRecipient(teacher, recipient.id, { version: reopened.version, status: "excused", reason: "Teacher excuse" });
+    const teacherExcused = await assignments.detail(actor, recipient.id);
+    await assignments.updateRecipient(teacher, recipient.id, { version: teacherExcused.version, status: "assigned", reason: "Teacher reopening" });
+    expect((await assignments.detail(actor, recipient.id)).status).toBe("assigned");
+    const unopened = await createAssignment();
+    await assignments.updateRecipient(administration, unopened.id, { version: unopened.version, status: "excused", reason: "No submission yet" });
+    const unopenedExcused = await assignments.detail(actor, unopened.id);
+    await assignments.updateRecipient(administration, unopened.id, { version: unopenedExcused.version, status: "assigned", reason: "Assign unopened work" });
+    expect((await assignments.detail(actor, unopened.id)).status).toBe("assigned");
+  });
   it("counts only actionable review/help jobs and unprepared lessons within the coming seven days", async () => {
     const recipient = await createAssignment();
     await assignments.submit(actor, recipient.id, {

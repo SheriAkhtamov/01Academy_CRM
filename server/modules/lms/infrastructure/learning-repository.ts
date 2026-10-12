@@ -33,6 +33,7 @@ import {
   listRows,
   transaction,
   requireStaffRun,
+  hasImplicitStaffRunAccess,
   recordStaffAudit,
   idempotentStaffCommand,
   enrollmentVisibilitySql,
@@ -922,10 +923,12 @@ export class PgLearningRepository {
           ));
         visible.push({
           ...group,
-          permissions:
-            actor.isLeadership || assigned
-              ? [...LMS_STAFF_PERMISSIONS]
-              : grantNames,
+          permissions: LMS_STAFF_PERMISSIONS.filter(
+            (permission) =>
+              assigned ||
+              grantNames.includes(permission) ||
+              hasImplicitStaffRunAccess(actor, permission),
+          ),
           canManageTemplates:
             actor.isLeadership || grantNames.includes("content.manage"),
         });
@@ -1702,7 +1705,7 @@ export class PgLearningRepository {
         `SELECT run.id FROM lms_group_runs run WHERE run.id=ANY($1::bigint[]) AND ($2::boolean OR ($3::boolean AND EXISTS(SELECT 1 FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.id=run.group_id AND teacher.user_id=$4 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=$4 AND grant_row.permission=$5)) ORDER BY run.id`,
         [
           ids,
-          actor.isLeadership,
+          hasImplicitStaffRunAccess(actor, permission),
           actor.modules.includes("teacher"),
           actor.userId,
           permission,

@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LearningText } from "../learning-content/text";
-import { lmsStaffApi } from "./api";
+import { LmsStaffApiError, lmsStaffApi } from "./api";
 import { useStaffQuery, useStaffInvalidate, useStaffRuns } from "./queries";
 import {
   StaffDialog,
@@ -35,7 +35,7 @@ import { ReviewSheet } from "./reviews";
 export function StaffAssignments({
   runId,
   enrollments,
-  canReview = true,
+  canReview = false,
 }: {
   runId: number;
   enrollments: LmsStaffEnrollmentDto[];
@@ -645,6 +645,7 @@ function AssignmentDetails({
         <RecipientEditor
           key={recipient.id}
           recipient={recipient}
+          canReview={canReview}
           onClose={() => setRecipient(null)}
           onSaved={() => {
             setRecipient(null);
@@ -652,7 +653,7 @@ function AssignmentDetails({
           }}
         />
       )}
-      {correction && (
+      {canReview && correction && (
         <ReviewSheet
           id={correction}
           onClose={() => {
@@ -670,10 +671,12 @@ function AssignmentDetails({
 }
 function RecipientEditor({
   recipient,
+  canReview,
   onClose,
   onSaved,
 }: {
   recipient: LmsStaffRecipientDto;
+  canReview: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -687,8 +690,10 @@ function RecipientEditor({
   >("");
   const [confirm, setConfirm] = useState(false);
   const action = useMutation({
-    mutationFn: () =>
-      status === "reopen"
+    mutationFn: () => {
+      if (status === "reopen" && !canReview)
+        throw new LmsStaffApiError(403, "portalUnavailable");
+      return status === "reopen"
         ? lmsStaffApi.reopenAssignment(recipient.id, {
             version: recipient.version,
             dueAt: due ? staffDateIso(due) : null,
@@ -701,7 +706,8 @@ function RecipientEditor({
               ? { status: status as "assigned" | "excused" | "cancelled" }
               : {}),
             reason,
-          }),
+          });
+    },
     onSuccess: () => {
       void invalidate();
       onSaved();
@@ -720,6 +726,7 @@ function RecipientEditor({
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
+          if (status === "reopen" && !canReview) return;
           if (status) setConfirm(true);
           else action.mutate();
         }}
@@ -741,7 +748,9 @@ function RecipientEditor({
           >
             <option value="">{t("lmsStaffDueAt")}</option>
             {recipient.status === "accepted" ? (
-              <option value="reopen">{t("portalRevisionRequired")}</option>
+              canReview && (
+                <option value="reopen">{t("portalRevisionRequired")}</option>
+              )
             ) : (
               <>
                 <option value="excused">{t("portalExcused")}</option>
@@ -763,10 +772,14 @@ function RecipientEditor({
             {errorText(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("lmsStaffSave")}</Button>
+        <Button
+          disabled={action.isPending || (status === "reopen" && !canReview)}
+        >
+          {t("lmsStaffSave")}
+        </Button>
       </form>
       <StaffConfirm
-        open={confirm}
+        open={confirm && (status !== "reopen" || canReview)}
         onOpenChange={setConfirm}
         titleKey="lmsStaffRecipientChangeTitle"
         description="lmsStaffRecipientChangeBody"

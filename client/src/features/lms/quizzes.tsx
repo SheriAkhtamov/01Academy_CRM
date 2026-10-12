@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import type { LmsQuizAttemptDto } from "@shared/contracts/lms";
@@ -182,8 +182,24 @@ export function QuizAttempt({
   const [selection, setSelection] = useState<string[] | null>(null);
   const [finish, setFinish] = useState(false);
   const [reloadOpen, setReloadOpen] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const [offset] = useState(+new Date(initial.serverTime) - Date.now());
+  const [now, setNow] = useState(() => performance.now());
+  const [serverClock, setServerClock] = useState(() => ({
+    serverTime: +new Date(initial.serverTime),
+    receivedAt: performance.now(),
+  }));
+  const serverNow =
+    serverClock.serverTime + Math.max(0, now - serverClock.receivedAt);
+  const syncAttempt = useCallback(
+    (data: LmsQuizAttemptDto) => {
+      const receivedAt = performance.now();
+      setAttempt(data);
+      setServerClock({ serverTime: +new Date(data.serverTime), receivedAt });
+      setNow(receivedAt);
+      if (data.state !== "active") setSelection(null);
+      onChange?.(data);
+    },
+    [onChange],
+  );
   const question = attempt.questions[index];
   const checked = selection ?? attempt.answers[question?.id] ?? [];
   const save = useMutation({
@@ -193,8 +209,7 @@ export function QuizAttempt({
         optionIds,
       }),
     onSuccess: (data) => {
-      setAttempt(data);
-      onChange?.(data);
+      syncAttempt(data);
       setSelection(null);
     },
   });
@@ -202,8 +217,7 @@ export function QuizAttempt({
     mutationFn: () =>
       portalLmsApi.finishQuiz(subject!.linkId, attempt.id, attempt.version),
     onSuccess: (data) => {
-      setAttempt(data);
-      onChange?.(data);
+      syncAttempt(data);
       setFinish(false);
       void invalidate();
     },
@@ -211,8 +225,7 @@ export function QuizAttempt({
   const reload = useMutation({
     mutationFn: () => portalLmsApi.attempt(subject!.linkId, attempt.id),
     onSuccess: (data) => {
-      setAttempt(data);
-      onChange?.(data);
+      syncAttempt(data);
       setSelection(null);
       setReloadOpen(false);
       save.reset();
@@ -226,32 +239,28 @@ export function QuizAttempt({
   }, [selection, setUnsaved]);
   useEffect(() => {
     if (attempt.state !== "active" || !attempt.deadlineAt) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
+    const interval = setInterval(() => setNow(performance.now()), 1000);
     return () => clearInterval(interval);
   }, [attempt.state, attempt.deadlineAt]);
   useEffect(() => {
     if (
       attempt.state === "active" &&
       attempt.deadlineAt &&
-      now + offset >= +new Date(attempt.deadlineAt) &&
+      serverNow >= +new Date(attempt.deadlineAt) &&
       subject
     ) {
       void portalLmsApi
         .attempt(subject.linkId, attempt.id)
-        .then((data) => {
-          setAttempt(data);
-          onChange?.(data);
-        })
+        .then(syncAttempt)
         .catch(() => {});
     }
   }, [
-    now,
-    offset,
+    serverNow,
     attempt.deadlineAt,
     attempt.state,
     attempt.id,
     subject,
-    onChange,
+    syncAttempt,
   ]);
   const active = attempt.state === "active" && allowed("quizzes.attempt", true);
   const unanswered = attempt.questions.filter(
@@ -352,7 +361,7 @@ export function QuizAttempt({
                 end.isPending ||
                 Boolean(
                   attempt.deadlineAt &&
-                  now + offset >= +new Date(attempt.deadlineAt),
+                  serverNow >= +new Date(attempt.deadlineAt),
                 )
               }
               onChange={() => {

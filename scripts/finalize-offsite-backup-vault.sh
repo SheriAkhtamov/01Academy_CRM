@@ -6,8 +6,12 @@ umask 027
 
 BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups/01academy-crm}"
 ARCHIVE_DIR="${BACKUP_ROOT}/hourly"
+MONTHLY_DIR="${BACKUP_ROOT}/monthly"
+LOCK_FILE="${BACKUP_ROOT}/.vault.lock"
 RETENTION_DAYS="${RETENTION_DAYS:-90}"
 BACKUP_GROUP="${BACKUP_GROUP:-crmbackup}"
+MONTHLY_BACKUP_TIME_ZONE="${MONTHLY_BACKUP_TIME_ZONE:-Asia/Tashkent}"
+MONTHLY_RETENTION_SCRIPT="/opt/01academy-backup/bin/offsite-monthly-backups.py"
 
 if (( EUID != 0 )); then
   echo "The vault finalizer must run as root" >&2
@@ -33,6 +37,22 @@ if [[ -L "$ARCHIVE_DIR" || ! -d "$ARCHIVE_DIR" ]]; then
   echo "Backup vault is missing or is a symbolic link: $ARCHIVE_DIR" >&2
   exit 1
 fi
+
+if [[ -L "$MONTHLY_DIR" || ( -e "$MONTHLY_DIR" && ! -d "$MONTHLY_DIR" ) ]]; then
+  echo "Monthly vault is unsafe: $MONTHLY_DIR" >&2
+  exit 1
+fi
+
+if [[ -L "$LOCK_FILE" || ! -f "$LOCK_FILE" ]]; then
+  echo "Backup vault lock is missing or unsafe: $LOCK_FILE" >&2
+  exit 1
+fi
+exec 9<"$LOCK_FILE"
+flock --exclusive 9
+
+mkdir -p "$MONTHLY_DIR"
+chown root:"$BACKUP_GROUP" "$MONTHLY_DIR"
+chmod 0750 "$MONTHLY_DIR"
 
 chown root:"$BACKUP_GROUP" "$BACKUP_ROOT" "$ARCHIVE_DIR"
 chmod 0750 "$BACKUP_ROOT"
@@ -71,6 +91,14 @@ chown root:"$BACKUP_GROUP" \
 chmod 0640 \
   "${ARCHIVE_DIR}"/academy-crm-backup-*.zip \
   "${ARCHIVE_DIR}"/academy-crm-backup-*.zip.sha256
+
+# Preserve all available first-day snapshots before removing expired hourly
+# archives. Any publication failure aborts rotation and keeps the sources.
+python3 "$MONTHLY_RETENTION_SCRIPT" \
+  --hourly-dir "$ARCHIVE_DIR" \
+  --monthly-dir "$MONTHLY_DIR" \
+  --time-zone "$MONTHLY_BACKUP_TIME_ZONE" \
+  --group "$BACKUP_GROUP"
 
 # Rotation is intentionally privileged and local-only. The fetcher cannot
 # remove sealed archives even if its SSH key or process is compromised.

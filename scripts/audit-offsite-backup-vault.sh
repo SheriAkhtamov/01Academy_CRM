@@ -6,6 +6,8 @@ umask 077
 
 BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups/01academy-crm}"
 ARCHIVE_DIR="${BACKUP_ROOT}/hourly"
+MONTHLY_DIR="${BACKUP_ROOT}/monthly"
+LOCK_FILE="${BACKUP_ROOT}/.vault.lock"
 STATE_DIR="${STATE_DIR:-/var/lib/crmbackup/state}"
 STATUS_FILE="${STATE_DIR}/vault-audit.last-success"
 MAX_BACKUP_AGE_SECONDS="${MAX_BACKUP_AGE_SECONDS:-10800}"
@@ -20,17 +22,26 @@ if [[ ! "$MAX_BACKUP_AGE_SECONDS" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-for required_command in jq pg_restore sha256sum stat unzip; do
+for required_command in flock jq pg_restore sha256sum stat unzip; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     echo "Required command is unavailable: $required_command" >&2
     exit 1
   fi
 done
 
-if [[ -L "$ARCHIVE_DIR" || ! -d "$ARCHIVE_DIR" ]]; then
-  echo "Backup vault is missing or is a symbolic link: $ARCHIVE_DIR" >&2
+if [[ -L "$LOCK_FILE" || ! -f "$LOCK_FILE" ]]; then
+  echo "Backup vault lock is missing or unsafe: $LOCK_FILE" >&2
   exit 1
 fi
+exec 9<"$LOCK_FILE"
+flock --shared 9
+
+for vault in "$ARCHIVE_DIR" "$MONTHLY_DIR"; do
+  if [[ -L "$vault" || ! -d "$vault" ]]; then
+    echo "Backup vault is missing or is a symbolic link: $vault" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$STATE_DIR"
 work_dir="$(mktemp -d "${STATE_DIR}/audit.XXXXXX")"
@@ -41,17 +52,21 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
-unexpected_entry="$(find "$ARCHIVE_DIR" -mindepth 1 -maxdepth 1 \
-  ! -type f -o -type f ! -name 'academy-crm-backup-*.zip' ! -name 'academy-crm-backup-*.zip.sha256' \
-  | head -n 1)"
-if [[ -n "$unexpected_entry" ]]; then
-  echo "Unexpected or non-regular vault entry: $unexpected_entry" >&2
-  exit 1
-fi
+for vault in "$ARCHIVE_DIR" "$MONTHLY_DIR"; do
+  unexpected_entry="$(find "$vault" -mindepth 1 -maxdepth 1 \
+    \( ! -type f -o \( ! -name 'academy-crm-backup-*.zip' ! -name 'academy-crm-backup-*.zip.sha256' \) \) \
+    -print -quit)"
+  if [[ -n "$unexpected_entry" ]]; then
+    echo "Unexpected or non-regular vault entry: $unexpected_entry" >&2
+    exit 1
+  fi
+done
 
 shopt -s nullglob
-archives=("${ARCHIVE_DIR}"/academy-crm-backup-*.zip)
-if (( ${#archives[@]} == 0 )); then
+hourly_archives=("${ARCHIVE_DIR}"/academy-crm-backup-*.zip)
+monthly_archives=("${MONTHLY_DIR}"/academy-crm-backup-*.zip)
+archives=("${hourly_archives[@]}" "${monthly_archives[@]}")
+if (( ${#hourly_archives[@]} == 0 )); then
   echo "No archive is available for the vault audit" >&2
   exit 1
 fi
@@ -121,7 +136,7 @@ for archive in "${archives[@]}"; do
   checked_count=$((checked_count + 1))
 done
 
-latest_archive="${archives[-1]}"
+latest_archive="${hourly_archives[-1]}"
 latest_mtime="$(stat -c %Y "$latest_archive")"
 now_epoch="$(date +%s)"
 latest_age="$((now_epoch - latest_mtime))"
@@ -131,11 +146,13 @@ if (( latest_age < 0 || latest_age > MAX_BACKUP_AGE_SECONDS )); then
 fi
 
 status_tmp="${STATUS_FILE}.tmp"
-printf '%s checked=%s latest=%s\n' \
+printf '%s checked=%s hourly=%s monthly=%s latest=%s\n' \
   "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
   "$checked_count" \
+  "${#hourly_archives[@]}" \
+  "${#monthly_archives[@]}" \
   "$(basename "$latest_archive")" > "$status_tmp"
 mv "$status_tmp" "$STATUS_FILE"
 chmod 0600 "$STATUS_FILE"
 
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Read-only backup vault audit completed: checked=${checked_count}"
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Read-only backup vault audit completed: checked=${checked_count}, hourly=${#hourly_archives[@]}, monthly=${#monthly_archives[@]}"

@@ -87,20 +87,26 @@ describe('production backup infrastructure', () => {
     expect(finalizer).toContain('chown root:"$BACKUP_GROUP"');
     expect(finalizer).toContain('chmod 1770 "$ARCHIVE_DIR"');
     expect(finalizer).toContain('Removing sealed backup');
+    expect(finalizer).toContain('offsite-monthly-backups.py');
+    expect(finalizer).toContain('flock --exclusive 9');
     expect(service).toContain('User=crmbackup');
     expect(service).toContain('ProtectSystem=strict');
     expect(service).toContain('LoadCredentialEncrypted=ssh_key:');
     expect(service).toContain('ExecStartPost=+');
     expect(service).toContain('IPAddressDeny=any');
+    expect(service).toContain('/srv/backups/01academy-crm/monthly');
     expect(timer).toContain('OnCalendar=*-*-* *:25:00');
     expect(environment).toContain('INCOMING_DIR=/var/lib/crmbackup/incoming');
     expect(environment).toContain('STATE_DIR=/var/lib/crmbackup/state');
     expect(environment).not.toContain('SSH_KEY_PATH');
     expect(auditScript).toContain('Read-only backup vault audit completed');
     expect(auditScript).toContain('pg_restore --list');
+    expect(auditScript).toContain('flock --shared 9');
+    expect(auditScript).toContain('latest_archive="${hourly_archives[-1]}"');
     expect(auditScript).not.toContain('rm -f -- "$expired_archive"');
     expect(auditService).toContain('PrivateNetwork=true');
     expect(auditService).toContain('ReadOnlyPaths=/opt/01academy-backup');
+    expect(auditService).toContain('/srv/backups/01academy-crm/monthly');
     expect(auditTimer).toContain('OnCalendar=*-*-* 02:10:00');
   });
 

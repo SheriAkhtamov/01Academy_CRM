@@ -1158,11 +1158,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <TabsTrigger value="courses" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <BookOpen />{t('courses')}
               </TabsTrigger>
-              <TabsTrigger value="access" className="gap-2 pb-2.5 data-[state=active]:text-primary">
-                <UserRoundCheck />{t('academyAccessTab')}
-              </TabsTrigger>
               <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
+              </TabsTrigger>
+              <TabsTrigger value="access" className="gap-2 pb-2.5 data-[state=active]:text-primary">
+                <UserRoundCheck />{t('academyAccessTab')}
               </TabsTrigger>
             </>
           )}

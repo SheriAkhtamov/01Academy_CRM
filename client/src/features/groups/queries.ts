@@ -1,9 +1,11 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+export const groupCodeCatalogueKey = ['/api/academy/group-code-catalogue'] as const;
 export const groupConfigurationKey = ['/api/academy/group-configuration'] as const;
 
 export const invalidateGroupData = (client: QueryClient) => Promise.all([
   groupConfigurationKey,
+  groupCodeCatalogueKey,
   ['/api/academy/configuration'],
   ['/api/academy/groups'],
   ...['sales', 'marketing', 'teacher', 'administration'].map((module) => [`/api/academy/modules/${module}`]),

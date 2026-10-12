@@ -33,6 +33,7 @@ beforeEach(() => {
   Element.prototype.setPointerCapture = vi.fn(); Element.prototype.releasePointerCapture = vi.fn();
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0,
     queryFn: async ({ queryKey }) => {
+      if (queryKey[0] === '/api/academy/group-code-catalogue') return { schoolCodes: { '1': 'CYP' }, courseCodes: { '1': 'PY', '2': 'AI' }, nextNumber: 43, year: '26' };
       expect(queryKey[0]).toBe('/api/academy/group-configuration');
       return configuration;
     } } } });
@@ -89,7 +90,7 @@ it('creates a group from the same editor with automatic teacher selection', asyn
   await userEvent.click(within(dialog).getByRole('checkbox', { name: i18n.t('monday') }));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('save') }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('POST', '/api/academy/groups', expect.objectContaining({
-    name: 'New group', autoAssign: true, teacherId: null, courseId: 1, schoolId: 1, roomId: 1,
+    name: 'CYP-PY-GRP-26-0043 — New group', nameSuffix: 'New group', deliveryMode: 'offline', trainingType: 'GRP', autoAssign: true, teacherId: null, courseId: 1, schoolId: 1, roomId: 1,
     schedule: expect.arrayContaining([expect.objectContaining({ dayOfWeek: 1 })]),
   })));
 });
@@ -148,4 +149,36 @@ it('offers full group actions in cards on a phone', async () => {
   expect(within(card!).getByText('3/4')).toBeTruthy();
   await userEvent.click(within(card!).getByRole('button', { name: i18n.t('editGroup') }));
   expect(screen.getByRole('dialog', { name: i18n.t('editGroup') })).toBeTruthy();
+});
+
+it('updates the protected name when course, delivery and training type change', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  const dialog = screen.getByRole('dialog');
+  const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
+  await userEvent.type(name, 'Morning class');
+  for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
+    await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
+    await userEvent.click(screen.getByRole('option', { name: option }));
+  }
+  await waitFor(() => expect(name.value).toBe('CYP-PY-GRP-26-0043 — Morning class'));
+  await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('course') }));
+  await userEvent.click(screen.getByRole('option', { name: 'AI Kids' }));
+  expect(name.value).toBe('CYP-AI-GRP-26-0043 — Morning class');
+  await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('groupDeliveryFormat') }));
+  await userEvent.click(screen.getByRole('option', { name: i18n.t('online') }));
+  expect(name.value).toBe('ONL-AI-GRP-26-0043 — Morning class');
+  await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('groupTrainingType') }));
+  await userEvent.click(screen.getByRole('option', { name: i18n.t('groupTrainingIndividual') }));
+  expect(name.value).toBe('ONL-AI-IND-26-0043 — Morning class');
+  expect((within(dialog).getByRole('spinbutton', { name: i18n.t('groupCapacity') }) as HTMLInputElement).value).toBe('1');
+  await userEvent.click(name);
+  await userEvent.keyboard('{Control>}a{/Control}{Backspace}');
+  expect(name.value).toBe('ONL-AI-IND-26-0043');
+  await userEvent.keyboard('{Backspace}');
+  expect(name.value).toBe('ONL-AI-IND-26-0043');
+  await userEvent.type(name, 'Another class');
+  expect(name.value).toBe('ONL-AI-IND-26-0043 — Another class');
+  fireEvent.change(name, { target: { value: 'ONL-VC-IND-26-9999 — spoofed' } });
+  expect(name.value).toBe('ONL-AI-IND-26-0043 — Another class');
 });

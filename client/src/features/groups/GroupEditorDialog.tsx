@@ -1,3 +1,4 @@
+import { GroupIdentityFields } from './GroupIdentityFields';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form';
@@ -18,6 +19,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
     t, language, schools, courses, groupForm, groupGuard, groupSchedule, setGroupSchedule,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, groupTeachers, saveGroup, submitGroupValues,
+    autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     futureGroupStartValues, setFutureGroupStartValues,
   } = useGroupEditor(props);
   const dayNames = [t('monday'), t('tuesday'), t('wednesday'), t('thursday'), t('friday'), t('saturday'), t('sunday')];
@@ -64,6 +66,8 @@ export function GroupEditorDialog(props: GroupEditorProps) {
             >
               <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-6 py-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {autoNaming ? <GroupIdentityFields code={groupCode} error={groupCodeError} pending={codeCatalogue.isFetching}
+                  editing={Boolean(editingGroup)} /> : <>
                 <FormField control={groupForm.control} name="name" render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel required>{t('groupName')}</FormLabel>
@@ -71,11 +75,12 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     <LocalizedFormMessage />
                   </FormItem>
                 )} />
+                </>}
                 <GroupStatusField />
                 <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                   <FormItem>
                     <FormLabel required>{t('groupCapacity')}</FormLabel>
-                    <FormControl><Input type="number" min="1" {...field} /></FormControl>
+                    <FormControl><Input type="number" min="1" max={autoNaming && trainingType === 'IND' ? 1 : undefined} {...field} /></FormControl>
                     <LocalizedFormMessage />
                   </FormItem>
                 )} />
@@ -212,7 +217,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 <Button type="button" variant="outline" onClick={() => groupGuard.handleOpenChange(false)}>
                   {t('cancel')}
                 </Button>
-                <Button type="submit" disabled={saveGroup.isPending}>
+                <Button type="submit" disabled={saveGroup.isPending || (autoNaming && !groupCode)}>
                   {saveGroup.isPending ? t('saving') : t('save')}
                 </Button>
               </div>

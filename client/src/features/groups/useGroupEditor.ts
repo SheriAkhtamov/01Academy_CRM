@@ -1,6 +1,7 @@
+import { composeGroupName, parseGroupName, previewGroupCode, type GroupCodeCatalogue } from '@shared/academy-group-code';
 import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
@@ -12,7 +13,7 @@ import { futureGroupStatusNeedsConfirmation } from '@/components/ux/FutureGroupS
 import type { WeekScheduleItem } from '@/components/ux/WeekScheduleEditor';
 import { getMinimumGroupEndDate } from '@shared/scheduling';
 import { normalizeSchedule } from './schedule';
-import { invalidateGroupData } from './queries';
+import { groupCodeCatalogueKey, invalidateGroupData } from './queries';
 import type { Group, GroupConfiguration } from './types';
 
 export const AUTO_TEACHER_VALUE = 'auto';
@@ -27,6 +28,12 @@ export interface GroupEditorProps {
 export function useGroupEditor({ open, group: editingGroup, configuration, onClose }: GroupEditorProps) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
+  const existingCode = parseGroupName(editingGroup?.name);
+  const autoNaming = !editingGroup || Boolean(existingCode);
+  const codeCatalogue = useQuery<GroupCodeCatalogue>({
+    queryKey: groupCodeCatalogueKey, enabled: open && !editingGroup,
+    staleTime: 0, retry: false,
+  });
   const { schools, rooms, courses, teachers } = configuration;
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [groupScheduleBaseline, setGroupScheduleBaseline] = useState<WeekScheduleItem[]>([]);
@@ -35,6 +42,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     resolver: zodResolver(useMemo(() => createGroupSchema(t), [t])),
     defaultValues: {
       name: '',
+      nameSuffix: '', deliveryMode: 'offline', trainingType: 'GRP',
       courseId: '',
       schoolId: '',
       roomId: '',
@@ -53,6 +61,9 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     const group = editingGroup;
     groupForm.reset(group ? {
       name: group.name,
+      nameSuffix: parseGroupName(group.name)?.addition ?? '',
+      deliveryMode: parseGroupName(group.name)?.deliveryMode ?? 'offline',
+      trainingType: parseGroupName(group.name)?.trainingType ?? 'GRP',
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
       roomId: String(group.roomId),
@@ -67,6 +78,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       endDate: academyDateInputValue(group.endDate),
     } : {
       name: '',
+      nameSuffix: '', deliveryMode: 'offline', trainingType: 'GRP',
       courseId: '',
       schoolId: '',
       roomId: '',
@@ -89,6 +101,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         : null;
       const payload = {
         name: values.name,
+        ...(autoNaming ? { nameSuffix: values.nameSuffix, deliveryMode: values.deliveryMode, trainingType: values.trainingType } : {}),
         courseId: Number(values.courseId),
         schoolId: Number(values.schoolId),
         roomId: Number(values.roomId),
@@ -150,6 +163,21 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   });
 
   const selectedGroupSchoolId = groupForm.watch('schoolId');
+  const selectedGroupCourseId = groupForm.watch('courseId');
+  const deliveryMode = groupForm.watch('deliveryMode');
+  const trainingType = groupForm.watch('trainingType');
+  const nameSuffix = groupForm.watch('nameSuffix');
+
+  const groupCode = existingCode?.code ?? (codeCatalogue.data ? previewGroupCode(codeCatalogue.data, {
+    schoolId: selectedGroupSchoolId, courseId: selectedGroupCourseId, deliveryMode, trainingType,
+  }) : '');
+  const groupCodeError = codeCatalogue.isError ? t('failedToLoadData')
+    : codeCatalogue.data && selectedGroupCourseId && !codeCatalogue.data.courseCodes[selectedGroupCourseId] ? t('groupCodeCourseMissing')
+      : codeCatalogue.data && deliveryMode === 'offline' && selectedGroupSchoolId && !codeCatalogue.data.schoolCodes[selectedGroupSchoolId] ? t('groupCodeBranchMissing') : '';
+  useEffect(() => {
+    if (open && autoNaming) groupForm.setValue('name', groupCode ? composeGroupName(groupCode, nameSuffix) : '');
+  }, [open, autoNaming, groupCode, nameSuffix, groupForm]);
+
   const selectedGroupTeacherId = groupForm.watch('teacherId');
   const selectedGroupRoomId = groupForm.watch('roomId');
   const selectedGroupLessonCount = groupForm.watch('lessonCount');
@@ -179,6 +207,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       setFutureGroupStartValues(values);
       return;
     }
+    if (!editingGroup && !groupCode) return;
     saveGroup.mutate(values);
   };
 
@@ -215,6 +244,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   );
   return {
     t, language, schools, courses, groupForm, groupGuard, groupSchedule, setGroupSchedule,
+    autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate, formattedMinimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, groupTeachers, saveGroup, submitGroupValues,
     futureGroupStartValues, setFutureGroupStartValues,

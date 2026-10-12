@@ -1,3 +1,4 @@
+import { preserveGroupCode, rememberDeletedGroupCode } from './group-code';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -233,7 +234,8 @@ registerSimpleCrud('groups', 'academy_groups', [
 ], {
   orderBy: 'created_at DESC',
   allowedModules: SALES_MODULES,
-  beforeUpdate: async ({ id, values, row }) => {
+  beforeUpdate: async ({ id, values, row, req }) => {
+    preserveGroupCode(row, values, req.body);
     await assertGroupLifecycleUpdateAllowed({
       id,
       values,
@@ -270,6 +272,7 @@ registerSimpleCrud('groups', 'academy_groups', [
       [id],
     );
     if (usage?.inUse) throw Object.assign(new Error('groupHistoryCannotBeDeleted'), { statusCode: 409 });
+    await rememberDeletedGroupCode(row);
   },
 });
 

@@ -181,6 +181,21 @@ describe('academy route logic boundaries', () => {
     expect((await request(await createApp()).post('/api/academy/schools').send({ name: 'New' })).status).toBe(403);
   });
 
+  it('allows sales to preview approved group codes without exposing configuration settings', async () => {
+    mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('SELECT name, school_id')) return { rows: [{ name: 'CYP-AI-GRP-26-0035', school_id: 2, course_id: 1 }] };
+      if (sql.startsWith('SELECT id, code')) return { rows: [{ id: 2, code: 'cyberpark' }] };
+      if (sql.startsWith('SELECT id, slug')) return { rows: [{ id: 1, slug: 'ai-kids' }] };
+      if (sql.includes('AS maximum_number')) return { rows: [{ maximum_number: 35 }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).get('/api/academy/group-code-catalogue');
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ schoolCodes: { 2: 'CYP' }, courseCodes: { 1: 'AI' }, nextNumber: 36 });
+    expect(Object.keys(response.body).sort()).toEqual(['courseCodes', 'nextNumber', 'schoolCodes', 'year']);
+  });
+
   it('applies normal creation validation to sales group creation', async () => {
     mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
     const response = await request(await createApp()).post('/api/academy/groups').send({ name: 'New' });
@@ -193,6 +208,7 @@ describe('academy route logic boundaries', () => {
     mocks.actor = { id: 1, module, modules: [module] };
     const app = await createApp();
     expect((await request(app).get('/api/academy/group-configuration')).status).toBe(403);
+    expect((await request(app).get('/api/academy/group-code-catalogue')).status).toBe(403);
     expect((await request(app).post('/api/academy/groups').send({ name: 'New' })).status).toBe(403);
     expect((await request(app).patch('/api/academy/groups/20').send({ name: 'New' })).status).toBe(403);
     expect((await request(app).delete('/api/academy/groups/20')).status).toBe(403);

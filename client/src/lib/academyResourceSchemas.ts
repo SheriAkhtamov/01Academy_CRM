@@ -39,7 +39,10 @@ export const createStatusSchema = (t: Translate) => z.object({
 });
 
 export const createGroupSchema = (t: Translate) => z.object({
-  name: z.string().trim().min(1, t('fieldRequired')),
+  name: z.string().trim().min(1, t('fieldRequired')).max(255, t('groupNameTooLong')),
+  nameSuffix: z.string().trim().max(255, t('groupNameTooLong')).default(''),
+  deliveryMode: z.enum(['offline', 'online']).default('offline'),
+  trainingType: z.enum(['GRP', 'IND']).default('GRP'),
   courseId: z.string().min(1, t('fieldRequired')),
   schoolId: z.string().min(1, t('fieldRequired')),
   roomId: z.string().min(1, t('fieldRequired')),
@@ -51,6 +54,9 @@ export const createGroupSchema = (t: Translate) => z.object({
   startDate: z.string().min(1, t('fieldRequired')),
   endDate: z.string(),
 }).superRefine((values, context) => {
+  if (values.trainingType === 'IND' && values.maxStudents !== 1) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxStudents'], message: t('groupIndividualCapacity') });
+  }
   if (values.startDate && values.endDate && values.endDate < values.startDate) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

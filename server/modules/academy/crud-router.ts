@@ -1,3 +1,4 @@
+import { allocateGroupName } from './group-code';
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -245,6 +246,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             forceAutoAssign: req.body.autoAssign === true,
             allowFutureStart: req.body.allowFutureStart === true,
           });
+          await allocateGroupName(values, req.body);
           const group = await insertRow(table, values);
           await materializeGroupLessons(Number(group.id));
           return await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [group.id]) ?? group;
@@ -516,6 +518,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         });
       } else {
         await withTransaction(async () => {
+          if (table === 'academy_groups') await query('SELECT pg_advisory_xact_lock($1)', [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
           const lockedRow = await queryOne(
             `SELECT * FROM ${quoteIdent(table)} WHERE id = $1 FOR UPDATE`,
             [id],

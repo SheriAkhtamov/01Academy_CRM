@@ -584,7 +584,7 @@ export default function UpdatesPage() {
           if (!open) setQuickViewPost(null);
         }}
       >
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[85dvh] max-w-3xl overflow-y-auto">
           {quickViewPost ? (
             <>
               <DialogHeader className="space-y-2 text-left">

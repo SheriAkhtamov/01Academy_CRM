@@ -1552,7 +1552,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   russian: { en: 'Russian', ru: 'Русский' },
   saveChanges: { en: 'Save Changes', ru: 'Сохранить изменения' },
   saving: { en: 'Saving...', ru: 'Сохранение...' },
-  schoolCrm: { en: 'Academy management', ru: 'Управление академией' },
+  schoolCrm: { en: 'Academy digital platform', ru: 'Цифровая платформа академии' },
   searchEmployees: { en: 'Search employees...', ru: 'Поиск сотрудников...' },
   searchUsers: { en: 'Search users...', ru: 'Поиск пользователей...' },
   selectEmployee: { en: 'Select an employee', ru: 'Выберите сотрудника' },

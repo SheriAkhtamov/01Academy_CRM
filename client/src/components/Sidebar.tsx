@@ -292,21 +292,21 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         highlighted nav item — the one clear giveaway that this is an overlay
         rendered on the cheap.
       */}
-      <div className="flex h-full w-64 flex-col border-r border-border/70 bg-card lg:bg-card/95 lg:backdrop-blur-sm">
+      <div className="flex h-full w-72 flex-col border-r border-border/70 bg-card lg:w-64 lg:bg-card/95 lg:backdrop-blur-sm">
         {/* Logo */}
-        <div className="flex items-center border-b border-border/70 px-5 py-4">
+        <div className="flex items-center border-b border-border/70 px-3 py-4">
           <div className="flex items-center w-full">
-            <Logo size="md" />
-            <div className="ml-3 flex flex-col flex-1 min-w-0">
-              <span className="text-lg font-semibold text-foreground break-words tracking-tight leading-tight">
+            <Logo size="sm" className="shrink-0" />
+            <div className="ml-2 flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="whitespace-nowrap text-base font-semibold text-foreground tracking-tight leading-tight">
                 {t('platformName')}
               </span>
-              <span className="text-xs text-muted-foreground">{t('schoolCrm')}</span>
+              <span className="whitespace-nowrap text-[11px] leading-tight text-muted-foreground">{t('schoolCrm')}</span>
             </div>
             {onClose && (
               <button
                 onClick={onClose}
-                className="lg:hidden ml-2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="lg:hidden ml-2 shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 aria-label={t('close')}
               >
                 <X className="w-5 h-5" />

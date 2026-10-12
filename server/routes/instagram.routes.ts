@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import crypto from 'node:crypto';
 import { Readable, Transform, pipeline } from 'node:stream';
 import { Router } from 'express';
@@ -58,7 +59,7 @@ const isAllowedMediaProxyUrl = (url: URL) => (
 
 const isProxyableMediaType = (contentType: string) =>
   /^(image|video|audio)\//i.test(contentType);
-const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+const MAX_MEDIA_BYTES = MAX_UPLOAD_BYTES;
 const MEDIA_FETCH_TIMEOUT_MS = 15_000;
 const MAX_MEDIA_REDIRECTS = 3;
 

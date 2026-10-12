@@ -1,3 +1,4 @@
+import { PORTAL_MAX_FILE_BYTES } from '@shared/contracts/portal-resources';
 import type { PortalActorContext } from '../../portal-identity/domain/actor-context';
 import type {
   PortalFileDto, PortalProjectDto, PortalProjectInput, PortalShareDto, PortalShareInput,
@@ -15,7 +16,7 @@ export const presentPortalFile = (file: ResourceFile, linkId?: number, staff = f
 });
 export class PortalResourceService {
   constructor(private readonly repository: PortalResourceRepository, private readonly store: ResourceFileStore,
-    private readonly tokens: ResourceTokenCodec, private readonly options: { appUrl: string; publicPortfolioEnabled: (studentId?: number) => boolean | Promise<boolean>; maxFileBytes?: () => number }) {}
+    private readonly tokens: ResourceTokenCodec, private readonly options: { appUrl: string; publicPortfolioEnabled: (studentId?: number) => boolean | Promise<boolean> }) {}
   private authorizeProjects(actor: PortalActorContext) {
     if (!actor.permissions.some((permission) => ['learning.read', 'portfolio.edit', 'portfolio.approve'].includes(permission))) throw new PortalResourceError('portalAccessDenied', 403);
   }
@@ -138,7 +139,7 @@ export class PortalResourceService {
   }
   async upload(actor: PortalActorContext, temporaryPath: string, originalName: string, runId: number | null) {
     const inspected = await this.store.inspect(temporaryPath, originalName), storageKey = this.tokens.random();
-    if (inspected.size > (this.options.maxFileBytes?.() ?? 100 * 1024 ** 2)) throw new PortalResourceError('portalFileTooLarge',413);
+    if (inspected.size > PORTAL_MAX_FILE_BYTES) throw new PortalResourceError('portalFileTooLarge',413);
     const file = await this.repository.registerFile(actor, { ...inspected, name: originalName, storageKey, runId });
     try { await this.store.commit(temporaryPath, storageKey); await this.repository.finishUpload(file.id); }
     catch (error) { await this.repository.removeFailedUpload(file.id); await this.store.remove(storageKey); throw error; }
@@ -146,7 +147,7 @@ export class PortalResourceService {
   }
   async uploadStaff(actor: ResourceStaffActor, runId: number, temporaryPath: string, originalName: string) {
     const inspected = await this.store.inspect(temporaryPath, originalName), storageKey = this.tokens.random();
-    if (inspected.size > (this.options.maxFileBytes?.() ?? 100 * 1024 ** 2)) throw new PortalResourceError('portalFileTooLarge',413);
+    if (inspected.size > PORTAL_MAX_FILE_BYTES) throw new PortalResourceError('portalFileTooLarge',413);
     const file = await this.repository.registerStaffFile(actor, runId, { ...inspected, name: originalName, storageKey });
     try { await this.store.commit(temporaryPath, storageKey); await this.repository.finishUpload(file.id); }
     catch (error) { await this.repository.removeFailedUpload(file.id); await this.store.remove(storageKey); throw error; }
@@ -215,7 +216,7 @@ export class PortalResourceService {
       try {
         const inspected = await this.store.inspect(this.store.location(file.storageKey), file.name);
         const unchanged = inspected.sha256 === sha256 && inspected.mime === file.mime && inspected.size === file.size;
-        const allowed = unchanged && inspected.size <= (this.options.maxFileBytes?.() ?? 100 * 1024 ** 2);
+        const allowed = unchanged && inspected.size <= PORTAL_MAX_FILE_BYTES;
         await this.repository.scanned(file.id, allowed ? 'ready' : 'rejected', allowed ? undefined : 'portalFileRejected', leaseToken);
       } catch (error) {
         await this.repository.scanned(file.id, error instanceof PortalResourceError ? 'rejected' : 'retry',

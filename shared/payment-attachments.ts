@@ -1,5 +1,6 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 export const MAX_PAYMENT_ATTACHMENTS = 5;
-export const MAX_PAYMENT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_PAYMENT_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 
 const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
 const mimeTypes = new Set([

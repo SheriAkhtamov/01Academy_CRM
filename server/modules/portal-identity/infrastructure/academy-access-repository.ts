@@ -116,7 +116,7 @@ export class PostgresAcademyPortalAccessRepository implements AcademyPortalAcces
       await sql.query(`INSERT INTO portal_student_identity(student_id,classification,verified_by,verified_at,verification_method)
         VALUES($1,$2,$3,$4,'academy_access') ON CONFLICT(student_id) DO UPDATE SET classification=EXCLUDED.classification,
         verified_by=EXCLUDED.verified_by,verified_at=EXCLUDED.verified_at,verification_method=EXCLUDED.verification_method`, [student.id, target.classification, actor.staffId, new Date(this.now())]);
-      await sql.query("UPDATE portal_student_links SET permissions=$2::jsonb WHERE student_id=$1 AND kind='self' AND status<>'revoked'", [student.id, JSON.stringify(selfPermissions(target.classification, this.options.childFinanceVisible()))]);
+      await sql.query("UPDATE portal_student_links SET permissions=$2::jsonb WHERE student_id=$1 AND kind='self' AND status<>'revoked'", [student.id, JSON.stringify(selfPermissions(target.classification))]);
       await credentialAudit(sql, actor, student.id, 'CLASSIFICATION_VERIFIED', { classification: target.classification, method: 'academy_access' });
     }
     const legalGuardian = relationship === 'parent' || relationship === 'guardian';

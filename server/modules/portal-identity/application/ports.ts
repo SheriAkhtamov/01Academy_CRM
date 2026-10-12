@@ -134,5 +134,4 @@ export type PortalIdentityOptions = {
   allowInvitations: boolean;
   now?: () => number;
   invitationsEnabledForStudent?: (studentId: number, repository: PortalRepository) => boolean | Promise<boolean>;
-  childFinanceVisible?: () => boolean;
 };

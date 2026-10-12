@@ -241,7 +241,7 @@ export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: 
   const lmsSchoolSettings = pgTable("lms_school_settings", {
     singleton: boolean("singleton").notNull().default(true).primaryKey(),
     version: integer("version").notNull().default(0),
-    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default(sql.raw("'{\"maxFileMiB\": 100, \"workCalendar\": {\"end\": \"18:00\", \"start\": \"09:00\", \"holidays\": [], \"workdays\": [1, 2, 3, 4, 5], \"coordinatorUserIds\": []}, \"schoolQuotaGiB\": 20, \"studentQuotaGiB\": 5, \"materialAccessDays\": 365, \"childFinanceVisible\": false, \"achievementTemplates\": []}'::jsonb")),
+    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default(sql.raw("'{\"crmPreparation\": {\"defaultFormat\": null}, \"maxFileMiB\": 10, \"studentQuotaGiB\": 5, \"schoolQuotaGiB\": 20, \"materialAccessDays\": null, \"achievementTemplates\": [{\"rule\": \"first_accepted\", \"title\": \"lmsAchievementFirstAccepted\", \"reason\": \"lmsAchievementFirstAccepted\"}, {\"rule\": \"first_project\", \"title\": \"lmsAchievementFirstProject\", \"reason\": \"lmsAchievementFirstProject\"}, {\"rule\": \"section_completed\", \"title\": \"lmsAchievementSectionCompleted\", \"reason\": \"lmsAchievementSectionCompleted\"}, {\"rule\": \"makeup_completed\", \"title\": \"portalMakeupComplete\", \"reason\": \"portalMakeupComplete\"}, {\"rule\": \"course_completed\", \"title\": \"lmsAchievementCourseCompleted\", \"reason\": \"lmsAchievementCourseCompleted\"}]}'::jsonb")),
     updatedBy: integer("updated_by"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   }, (table) => [

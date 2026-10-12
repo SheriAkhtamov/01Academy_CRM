@@ -109,47 +109,12 @@ export async function runAcceptanceCycle(
     checkAcceptance(result.data.account === null);
     await wrongPortal.get("/api/portal/subjects", deny);
     const flagDeadline = Date.now() + 45_000;
-    let configuration: Awaited<
-      ReturnType<
-        typeof admin.get<{
-          flags: {
-            key: string;
-            enabled: boolean;
-            allGroups: boolean;
-            groupIds: number[];
-          }[];
-        }>
-      >
-    >;
     do {
-      configuration = await admin.get<{
-        flags: {
-          key: string;
-          enabled: boolean;
-          allGroups: boolean;
-          groupIds: number[];
-        }[];
-      }>("/api/lms-management/configuration");
-      if (
-        configuration.data.flags.some(
-          (flag) =>
-            flag.key === "learning" &&
-            flag.groupIds.length === fixture.groups.length &&
-            flag.groupIds.every((id) => fixture.groups.includes(id)),
-        )
-      )
-        break;
-      checkAcceptance(
-        Date.now() < flagDeadline,
-        "ACCEPTANCE_COHORT_REFRESH_TIMEOUT",
-      );
+      const status = await admin.get<{ learningEnabled: boolean; invitationsEnabled: boolean; publicPortfolioEnabled: boolean }>("/api/lms-management/status");
+      if (status.data.learningEnabled && status.data.invitationsEnabled && status.data.publicPortfolioEnabled) break;
+      checkAcceptance(Date.now() < flagDeadline, "ACCEPTANCE_CAPABILITIES_REFRESH_TIMEOUT");
       await new Promise((resolve) => setTimeout(resolve, 1000));
     } while (true);
-    for (const flag of configuration.data.flags) {
-      checkAcceptance(!flag.allGroups);
-      checkAcceptance(flag.groupIds.every((id) => fixture.groups.includes(id)));
-      if (flag.key === "email") checkAcceptance(!flag.enabled);
-    }
   });
   const createInvitation = async (
     studentId: number,
@@ -368,7 +333,7 @@ export async function runAcceptanceCycle(
   await recorder.step("portal_cookie_cannot_authenticate_staff", async () => {
     const wrongStaff = new AcceptanceHttpActor(baseUrl);
     wrongStaff.copyCookiesFrom(child, ["academy.portal.sid"]);
-    await wrongStaff.get("/api/lms-management/configuration", deny);
+    await wrongStaff.get("/api/lms-management/status", deny);
     const staffSession = await wrongStaff.get<{ user: { id: number } | null }>(
       "/api/auth/session",
     );

@@ -51,12 +51,6 @@ export type Account = {
   locale: "ru" | "en";
   status: string;
 };
-export type NotificationWorkCalendar = {
-  workdays: readonly number[];
-  start: string;
-  end: string;
-  holidays: readonly string[];
-};
 export type PortalNotificationWorkerOptions = {
   pool: Pool;
   enabled: boolean | (() => boolean);
@@ -66,8 +60,6 @@ export type PortalNotificationWorkerOptions = {
   enabledForStudent?: (studentId: number) => Promise<boolean> | boolean;
   rolloutStartedAt?: string | Date;
   batchSize?: number;
-  calendar?: NotificationWorkCalendar | (() => NotificationWorkCalendar);
-  coordinatorUserIds?: readonly number[] | (() => readonly number[]);
   authorizeLink: (
     accountId: number,
     linkId: number,
@@ -104,50 +96,8 @@ export const PORTAL_NOTIFICATION_EVENT_CODES = {
 } as const;
 export const code = (type: keyof typeof PORTAL_NOTIFICATION_EVENT_CODES) =>
   PORTAL_NOTIFICATION_EVENT_CODES[type];
-const timeMinutes = (value: string) => {
-  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
-  return hours * 60 + minutes;
-};
-export const localDate = (now: number) => new Date(now + TASHKENT).toISOString().slice(0, 10);
-export function oneWorkingDayAfter(
-  createdAt: number,
-  calendar: NotificationWorkCalendar = {
-    workdays: [1, 2, 3, 4, 5],
-    start: "09:00",
-    end: "18:00",
-    holidays: [],
-  },
-): number {
-  const start = timeMinutes(calendar.start),
-    end = timeMinutes(calendar.end);
-  if (end <= start || !calendar.workdays.length) throw new Error("Invalid LMS working calendar");
-  let cursor = createdAt;
-  let remaining = (end - start) * MINUTE;
-  for (let step = 0; step < 370; step++) {
-    const local = new Date(cursor + TASHKENT);
-    const dayStart =
-      Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - TASHKENT;
-    if (
-      !calendar.workdays.includes(local.getUTCDay()) ||
-      calendar.holidays.includes(localDate(cursor))
-    ) {
-      cursor = dayStart + DAY + start * MINUTE;
-      continue;
-    }
-    const workStart = dayStart + start * MINUTE,
-      workEnd = dayStart + end * MINUTE;
-    cursor = Math.max(cursor, workStart);
-    if (cursor >= workEnd) {
-      cursor = dayStart + DAY + start * MINUTE;
-      continue;
-    }
-    const available = workEnd - cursor;
-    if (remaining <= available) return cursor + remaining;
-    remaining -= available;
-    cursor = dayStart + DAY + start * MINUTE;
-  }
-  throw new Error("LMS working calendar has no available working days");
-}
+export const localDate = (value: number) => new Date(value + TASHKENT).toISOString().slice(0, 10);
+export const notificationEscalationAt = (createdAt: number) => createdAt + DAY;
 export const dateValue = (value: unknown) =>
   value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
 export const number = (value: unknown) => Number(value);

@@ -25,7 +25,6 @@ import { StaffThreads, StaffAnnouncements } from "./communication";
 import { StaffResults } from "./results";
 import { StaffProgram } from "./program";
 import { StaffMakeup } from "./makeup";
-import { StaffPermissions } from "./permissions";
 import { RunSettings } from "./run-settings";
 const tabs = [
   ["program", "lmsStaffProgram"],
@@ -138,16 +137,6 @@ export function LearningManagement({
             />
           )}
         </>
-      )}
-      {administration && (
-        <details className="rounded-xl border p-4">
-          <summary className="cursor-pointer font-medium">
-            {t("lmsStaffPermissionsTitle")}
-          </summary>
-          <div className="mt-4">
-            <StaffPermissions />
-          </div>
-        </details>
       )}
       {editRun && selected?.runId && (
         <RunSettings run={selected} onClose={() => setEditRun(false)} />

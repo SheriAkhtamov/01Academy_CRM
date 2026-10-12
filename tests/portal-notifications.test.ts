@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  oneWorkingDayAfter,
+  notificationEscalationAt,
   PortalNotificationWorker,
   PORTAL_NOTIFICATION_EVENT_CODES,
 } from "../server/modules/portal-resources/infrastructure/notification-worker";
@@ -10,29 +10,9 @@ import { learningNotificationCopy } from "../server/lib/learning-notification-co
 const date = (value: string) => new Date(value).getTime();
 
 describe("LMS notification time and default-off policies", () => {
-  it("counts one working day across weekends and configured holidays", () => {
-    expect(oneWorkingDayAfter(date("2026-10-09T05:00:00Z"))).toBe(
-      date("2026-10-12T05:00:00Z"),
-    );
-    expect(oneWorkingDayAfter(date("2026-10-09T18:00:00Z"))).toBe(
-      date("2026-10-12T13:00:00Z"),
-    );
-    expect(
-      oneWorkingDayAfter(date("2026-10-09T05:00:00Z"), {
-        workdays: [1, 2, 3, 4, 5],
-        start: "09:00",
-        end: "18:00",
-        holidays: ["2026-10-12"],
-      }),
-    ).toBe(date("2026-10-13T05:00:00Z"));
-    expect(() =>
-      oneWorkingDayAfter(date("2026-10-09T05:00:00Z"), {
-        workdays: [],
-        start: "09:00",
-        end: "18:00",
-        holidays: [],
-      }),
-    ).toThrow();
+  it("escalates unanswered requests after 24 hours regardless of branches or weekends", () => {
+    expect(notificationEscalationAt(date("2026-10-09T05:00:00Z"))).toBe(date("2026-10-10T05:00:00Z"));
+    expect(notificationEscalationAt(date("2026-10-12T18:00:00Z"))).toBe(date("2026-10-13T18:00:00Z"));
   });
   it("does not even query or connect while disabled", async () => {
     const connect = vi.fn();

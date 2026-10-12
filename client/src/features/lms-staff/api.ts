@@ -7,7 +7,6 @@ import type {
   LmsStaffMakeupDto,
   LmsReportDto,
   LmsAchievementDto,
-  LmsStaffPermissionDto,
   LmsMakeupOptionsDto,
   LmsRunUpdateInput,
   LmsAnnouncementDto,
@@ -162,12 +161,6 @@ export const lmsStaffApi = {
       undefined,
       signal,
     ),
-  staffPermissions: (signal?: AbortSignal) =>
-    collection<LmsStaffPermissionDto>("/staff-permissions", signal),
-  changeStaffPermissions: (
-    userId: number,
-    body: { permissions: string[]; reason: string },
-  ) => transport(`/staff-permissions/${userId}`, "PUT", body),
   lessons: (runId: number, signal?: AbortSignal) =>
     collection<LmsStaffLessonDto>(`/runs/${runId}/lessons`, signal),
   bindLesson: (

@@ -55,7 +55,6 @@ export const MODULE_NAVIGATION = {
       { id: 'overview', labelKey: 'adminDashboardTitle', href: '/admin', icon: BarChart3 },
       { id: 'employees', labelKey: 'employees', href: '/employees', icon: Users },
       { id: 'academy-structure', labelKey: 'academyConfiguration', href: '/admin/academy-settings', icon: SlidersHorizontal },
-      { id: 'learning-settings', labelKey: 'lmsRolloutConfiguration', href: '/admin/learning-settings', icon: SlidersHorizontal },
       { id: 'sales-management', labelKey: 'salesSettings', href: '/admin/sales-settings', icon: UserCheck },
       { id: 'system-management', labelKey: 'systemManagement', href: '/admin/system-management', icon: Settings2 },
     ],

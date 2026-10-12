@@ -34,7 +34,6 @@ export function validateRepresentativePermissions(
 }
 export function selfPermissions(
   classification: PortalClassification,
-  childFinanceVisible = false,
 ): PortalPermission[] {
   const permissions: PortalPermission[] = [
     "learning.read",
@@ -45,7 +44,7 @@ export function selfPermissions(
     "quizzes.attempt",
     "portfolio.edit",
   ];
-  if (classification === "adult" || (classification === "minor" && childFinanceVisible))
+  if (classification === "adult")
     permissions.push("finance.read");
   return permissions;
 }

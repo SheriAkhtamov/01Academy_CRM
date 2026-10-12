@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { Readable, Transform, pipeline } from 'node:stream';
 import { Router, type Request, type RequestHandler } from 'express';
 import { canAccessAcademyModule, hasLeadershipAccess } from '@shared/academy';
@@ -10,7 +11,7 @@ import { resolveOnlinePbxRecording } from '../services/telephony-recording';
 import { telephonyCallVisibilityCondition } from '../services/telephony-notifications';
 
 const router = Router();
-const ONLINE_PBX_RECORDING_MAX_BYTES = 100 * 1024 * 1024;
+const ONLINE_PBX_RECORDING_MAX_BYTES = MAX_UPLOAD_BYTES;
 const ONLINE_PBX_RECORDING_TIMEOUT_MS = 20_000;
 const ONLINE_PBX_RECORDING_MAX_REDIRECTS = 2;
 const configuredOnlinePbxApiUrl =

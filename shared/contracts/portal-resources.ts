@@ -1,6 +1,7 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { z } from 'zod';
 
-export const PORTAL_MAX_FILE_BYTES = 100 * 1024 * 1024;
+export const PORTAL_MAX_FILE_BYTES = MAX_UPLOAD_BYTES;
 export const PORTAL_FILE_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 const id = z.coerce.number().int().positive();
 const safeLink = z.string().trim().max(2000).url().refine((value) => {

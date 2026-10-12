@@ -28,7 +28,6 @@ const SystemManagementPage = lazy(() => import('@/pages/admin/SystemManagementPa
 const FinanceCenter = lazy(() => import('@/pages/finance-center'));
 const ResourcePage = lazy(() => import('@/pages/resource'));
 const LearningManagementPage = lazy(() => import('@/pages/learning-management'));
-const LearningRolloutSettings = lazy(() => import('@/features/learning-rollout/LearningRolloutSettings'));
 
 function LearningRoute({ administration = false,reports=false }: { administration?: boolean;reports?:boolean }) {
   const capabilities = useQuery(learningCapabilitiesQuery);
@@ -294,7 +293,7 @@ export function AppRouter() {
         <Route path="/admin/tasks" children={<Redirect to="/tasks" />} />
         <Route path="/admin/learning" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=groups" /></ModuleGuard>} />
         <Route path="/admin/learning/reports" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=groups" /></ModuleGuard>} />
-        <Route path="/admin/learning-settings" children={<ModuleGuard module="administration"><LearningRolloutSettings /></ModuleGuard>} />
+        <Route path="/admin/learning-settings" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=access" /></ModuleGuard>} />
         <Route path="/admin/learning/access" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=access" /></ModuleGuard>} />
         <Route path="/admin/learning/representatives" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=access" /></ModuleGuard>} />
         <Route path="/admin/academy-settings" children={

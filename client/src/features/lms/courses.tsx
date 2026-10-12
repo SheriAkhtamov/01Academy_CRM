@@ -97,11 +97,6 @@ export function PortalCourses() {
                   .replace("{done}", String(item.progress.completed))
                   .replace("{total}", String(item.progress.total))}
               </p>
-              {item.accessUntil && (
-                <p className="text-sm text-muted-foreground">
-                  {t("portalAccessUntil")}: {format.date(item.accessUntil)}
-                </p>
-              )}
               {item.nextLesson && (
                 <p className="text-sm">
                   {t("portalUpcomingLesson")}:{" "}

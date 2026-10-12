@@ -11,8 +11,6 @@ import {
   StaffDialog,
   StaffField,
   StaffConfirm,
-  staffDateInput,
-  staffDateIso,
   useStaffError,
   safeStaffLink,
 } from "./ui";
@@ -30,7 +28,6 @@ export function RunSettings({
     run.format ?? "offline",
   );
   const [meeting, setMeeting] = useState(run.meetingUrl ?? "");
-  const [access, setAccess] = useState(staffDateInput(run.accessUntil));
   const [status, setStatus] = useState<"active" | "completed" | "archived">(
     ["active", "completed", "archived"].includes(run.status)
       ? (run.status as "active" | "completed" | "archived")
@@ -51,15 +48,9 @@ export function RunSettings({
     version: run.version ?? 1,
     format,
     meetingUrl: format === "online" ? meeting : null,
-    ...(access !== staffDateInput(run.accessUntil)
-      ? { accessUntil: access ? staffDateIso(access) : null }
-      : {}),
     status,
     reason,
   });
-  const shorter = Boolean(
-    access && (!run.accessUntil || staffDateIso(access) < run.accessUntil),
-  );
   return (
     <StaffDialog
       open
@@ -70,7 +61,6 @@ export function RunSettings({
         Boolean(reason) ||
         format !== (run.format ?? "offline") ||
         meeting !== (run.meetingUrl ?? "") ||
-        access !== staffDateInput(run.accessUntil) ||
         status !== run.status
       }
       pending={action.isPending}
@@ -85,7 +75,7 @@ export function RunSettings({
             return;
           }
           const input = payload();
-          if (status === "archived" || shorter) setConfirm(input);
+          if (status === "archived") setConfirm(input);
           else action.mutate(input);
         }}
       >
@@ -111,14 +101,6 @@ export function RunSettings({
             />
           </StaffField>
         )}
-        <StaffField id="run-setting-access" labelKey="portalAccessUntil">
-          <Input
-            id="run-setting-access"
-            type="datetime-local"
-            value={access}
-            onChange={(event) => setAccess(event.target.value)}
-          />
-        </StaffField>
         <StaffField id="run-setting-status" labelKey="lmsStaffRunSettings">
           <select
             id="run-setting-status"
@@ -169,11 +151,6 @@ export function RunSettings({
         }}
       >
         <p className="font-medium">{run.groupName}</p>
-        {access && (
-          <p>
-            {t("portalAccessUntil")}: {access.replace("T", " ")}
-          </p>
-        )}
       </StaffConfirm>
     </StaffDialog>
   );

@@ -19,12 +19,10 @@ const defaultPreferences = (): PortalNotificationPreferencesDto => ({
 });
 const visibleNotification = `(notification.link_id IS NULL OR EXISTS(SELECT 1 FROM portal_student_links link
   WHERE link.id=notification.link_id AND link.account_id=notification.account_id AND link.status='active'
-  AND (link.expires_at IS NULL OR link.expires_at>now()) AND (notification.required_permission IS NULL OR link.permissions ? notification.required_permission
-    OR (link.kind='self' AND notification.required_permission='finance.read' AND EXISTS(SELECT 1 FROM lms_school_settings WHERE settings->>'childFinanceVisible'='true')))
+  AND (link.expires_at IS NULL OR link.expires_at>now()) AND (notification.required_permission IS NULL OR link.permissions ? notification.required_permission)
   AND (link.kind='self' OR EXISTS(SELECT 1 FROM portal_student_identity identity WHERE identity.student_id=link.student_id AND identity.classification='minor')
     OR EXISTS(SELECT 1 FROM portal_consents consent WHERE consent.link_id=link.id AND consent.revoked_at IS NULL AND consent.method IN ('in_person','portal') AND consent.permissions @> link.permissions))
-  AND (notification.category<>'finance' OR link.kind<>'self' OR EXISTS(SELECT 1 FROM portal_student_identity identity WHERE identity.student_id=link.student_id AND identity.classification='adult')
-    OR EXISTS(SELECT 1 FROM portal_student_identity identity,lms_school_settings settings WHERE identity.student_id=link.student_id AND identity.classification='minor' AND settings.settings->>'childFinanceVisible'='true'))))`;
+  AND (notification.category<>'finance' OR link.kind<>'self' OR EXISTS(SELECT 1 FROM portal_student_identity identity WHERE identity.student_id=link.student_id AND identity.classification='adult'))))`;
 const staffRun = async (sql: ResourceSql, actor: ResourceStaffActor, runId: number) => {
   if (!await resourceOne(sql, 'SELECT id FROM users WHERE id=$1 AND is_active=true AND is_archived=false FOR SHARE', [actor.userId])) throw new PortalResourceError('portalAccessDenied', 403);
   const granted = await resourceOne(sql,"SELECT user_id FROM lms_staff_permissions WHERE user_id=$1 AND permission=ANY($2::text[]) LIMIT 1",[actor.userId,['content.manage','assignments.manage','reviews.manage','quizzes.manage','communication.manage','announcements.manage','results.manage']]);
@@ -32,6 +30,17 @@ const staffRun = async (sql: ResourceSql, actor: ResourceStaffActor, runId: numb
   if (!await resourceOne(sql, `SELECT run.id FROM lms_group_runs run JOIN academy_groups g ON g.id=run.group_id
     LEFT JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE run.id=$1 AND ($2 OR (teacher.user_id=$3 AND teacher.status='active'))`, [runId, actor.isLeadership || Boolean(granted), actor.userId])) throw new PortalResourceError('portalNotFound', 404);
 };
+// Every saved work reference protects its original bytes, including withdrawn or archived work.
+const unreferencedLearningFile = `      AND NOT EXISTS(SELECT 1 FROM lms_submission_drafts draft WHERE draft.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_submissions submission WHERE submission.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM academy_portfolio_projects project WHERE project.file_ids @> jsonb_build_array(file.id) OR project.cover_file_id=file.id)
+      AND NOT EXISTS(SELECT 1 FROM lms_material_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_assignment_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_comments comment WHERE comment.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_announcements announcement WHERE announcement.file_ids @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_portfolio_shares share WHERE (share.snapshot->'fileIds') @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_reports report, jsonb_array_elements(report.best_projects) project WHERE (project->'fileIds') @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_project_comparisons comparison WHERE (comparison.first_snapshot->'fileIds') @> jsonb_build_array(file.id) OR (comparison.latest_snapshot->'fileIds') @> jsonb_build_array(file.id))`;
 export class PostgresPortalResourceRepository extends PaymentAllocationRepository implements PortalResourceRepository {
   constructor(pool: Pool, enabledForGroup: (groupId: number) => Promise<boolean> = async () => false, private readonly quotas: () => { studentBytes: number; schoolBytes: number } = () => ({ studentBytes: PORTAL_FILE_QUOTA_BYTES, schoolBytes: 20 * 1024 ** 3 }), verifiedProject?: (sql: ResourceSql, studentId: number, runId: number, projectId: number) => Promise<void>) {
     super(pool,enabledForGroup,verifiedProject);
@@ -45,19 +54,19 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
         JOIN lms_group_runs run ON run.id=material.run_id WHERE version.file_ids @> jsonb_build_array(file.id) AND enrollment.student_id=$3
         AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND material.state='published'
         AND publication.publish_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR publication.publish_at<enrollment.ended_at)
-        AND (run.access_until IS NULL OR run.access_until>now())))
+        AND TRUE))
       OR ($4 AND EXISTS(SELECT 1 FROM lms_assignment_versions version JOIN lms_assignment_recipients recipient ON recipient.assignment_version_id=version.id
         JOIN academy_student_group_enrollments enrollment ON enrollment.id=recipient.enrollment_id
         JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_group_runs run ON run.id=assignment.run_id
         WHERE recipient.student_id=$3 AND recipient.opens_at<=now() AND recipient.opens_at>=enrollment.enrolled_at
-        AND (enrollment.ended_at IS NULL OR recipient.opens_at<enrollment.ended_at) AND (run.access_until IS NULL OR run.access_until>now())
+        AND (enrollment.ended_at IS NULL OR recipient.opens_at<enrollment.ended_at) AND TRUE
         AND recipient.status NOT IN ('cancelled','excused') AND version.file_ids @> jsonb_build_array(file.id)))
       OR ($4 AND EXISTS(SELECT 1 FROM lms_submissions submission JOIN lms_assignment_recipients recipient ON recipient.id=submission.recipient_id
         JOIN lms_assignment_versions version ON version.id=submission.assignment_version_id
         JOIN academy_student_group_enrollments enrollment ON enrollment.id=recipient.enrollment_id
         JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_group_runs run ON run.id=assignment.run_id
         WHERE recipient.student_id=$3 AND recipient.opens_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR recipient.opens_at<enrollment.ended_at)
-        AND (run.access_until IS NULL OR run.access_until>now()) AND version.file_ids @> jsonb_build_array(file.id)))
+        AND TRUE AND version.file_ids @> jsonb_build_array(file.id)))
       OR ($4 AND EXISTS(SELECT 1 FROM lms_submissions submission JOIN lms_assignment_recipients recipient ON recipient.id=submission.recipient_id
         WHERE recipient.student_id=$3 AND submission.file_ids @> jsonb_build_array(file.id)))
       OR ($4 AND EXISTS(SELECT 1 FROM academy_portfolio_projects project WHERE project.student_id=$3 AND project.archived_at IS NULL AND project.file_ids @> jsonb_build_array(file.id)))
@@ -133,16 +142,7 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
   async completeStaffClone(fileId:number) { await this.pool.query("UPDATE lms_files SET state='ready',checked_at=now() WHERE id=$1 AND state='uploading' AND deleted_at IS NULL",[fileId]); }
   async discardUnusedFile(fileId:number) {
     const file = await resourceOne<Parameters<typeof fileDto>[0]>(this.pool,`UPDATE lms_files file SET deleted_at=now(),state='rejected',rejection_code='portalUploadFailed' WHERE id=$1 AND attached_at IS NULL AND deleted_at IS NULL
-      AND NOT EXISTS(SELECT 1 FROM lms_submission_drafts draft WHERE draft.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_submissions submission WHERE submission.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM academy_portfolio_projects project WHERE project.file_ids @> jsonb_build_array(file.id) OR project.cover_file_id=file.id)
-      AND NOT EXISTS(SELECT 1 FROM lms_material_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_assignment_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_comments comment WHERE comment.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_announcements announcement WHERE announcement.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_portfolio_shares share WHERE (share.snapshot->'fileIds') @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_reports report, jsonb_array_elements(report.best_projects) project WHERE (project->'fileIds') @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_project_comparisons comparison WHERE (comparison.first_snapshot->'fileIds') @> jsonb_build_array(file.id) OR (comparison.latest_snapshot->'fileIds') @> jsonb_build_array(file.id)) RETURNING *`,[fileId]);
+${unreferencedLearningFile} RETURNING *`,[fileId]);
     return file ? fileDto(file):null;
   }
   async finishUpload(fileId: number) { await this.pool.query("UPDATE lms_files SET state='checking',scan_after=now() WHERE id=$1 AND state='uploading'", [fileId]); }
@@ -166,18 +166,10 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
   async cleanupFiles(): Promise<ResourceFile[]> {
     await this.pool.query(`UPDATE lms_files file SET deleted_at=now()
       WHERE attached_at IS NULL AND created_at<now()-interval '24 hours' AND deleted_at IS NULL
-      AND NOT EXISTS(SELECT 1 FROM lms_submission_drafts draft WHERE draft.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_submissions submission WHERE submission.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM academy_portfolio_projects project WHERE project.file_ids @> jsonb_build_array(file.id) OR project.cover_file_id=file.id)
-      AND NOT EXISTS(SELECT 1 FROM lms_material_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_assignment_versions version WHERE version.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_comments comment WHERE comment.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_announcements announcement WHERE announcement.file_ids @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_portfolio_shares share WHERE (share.snapshot->'fileIds') @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_reports report, jsonb_array_elements(report.best_projects) project WHERE (project->'fileIds') @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_project_comparisons comparison WHERE (comparison.first_snapshot->'fileIds') @> jsonb_build_array(file.id) OR (comparison.latest_snapshot->'fileIds') @> jsonb_build_array(file.id))`);
+${unreferencedLearningFile}`);
     const values = await resourceRows<Parameters<typeof fileDto>[0]>(this.pool, `SELECT file.* FROM lms_files file
       WHERE deleted_at IS NOT NULL AND attached_at IS NULL AND created_at<now()-interval '24 hours'
+${unreferencedLearningFile}
         AND NOT EXISTS(SELECT 1 FROM portal_access_audit receipt WHERE receipt.action='file.storage_removed' AND receipt.actor_kind='anonymous' AND receipt.details->>'fileId'=file.id::text)
       ORDER BY deleted_at,id LIMIT 100`);
     return values.map(fileDto);

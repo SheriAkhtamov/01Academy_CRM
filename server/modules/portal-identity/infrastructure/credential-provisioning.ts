@@ -7,7 +7,6 @@ export type CredentialStudentSource = { id: number; lead_id: number; name: strin
 export type CredentialProvisioningOptions = {
   enabled: () => boolean;
   enabledForStudent: (studentId: number, groups: readonly number[]) => boolean | Promise<boolean>;
-  childFinanceVisible: () => boolean;
   now?: () => number;
 };
 export async function credentialStudent(sql: PoolClient, studentId: number, leadId?: number): Promise<CredentialStudentSource> {
@@ -45,7 +44,7 @@ export class PortalCredentialProvisioning {
     const account = (await sql.query<{ id: number }>(`INSERT INTO portal_accounts(login,full_name,phone,status,password_hash,auth_version)
       VALUES($1,$2,$3,'pending',$4,1) RETURNING id`, [login, student.name, student.phone, hash])).rows[0];
     await sql.query(`INSERT INTO portal_student_links(account_id,student_id,kind,permissions,status)
-      VALUES($1,$2,'self',$3::jsonb,'pending')`, [account.id, student.id, JSON.stringify(selfPermissions(student.classification, this.options.childFinanceVisible()))]);
+      VALUES($1,$2,'self',$3::jsonb,'pending')`, [account.id, student.id, JSON.stringify(selfPermissions(student.classification))]);
     await rememberInitialPassword(sql, account.id, 1, password, this.crypto, this.now());
     await credentialAudit(sql, null, student.id, 'STUDENT_CREDENTIALS_PREPARED', { accountId: account.id, source: 'academy_students', leadId: student.lead_id });
     return (await existingStudentCredential(sql, student.id))!;

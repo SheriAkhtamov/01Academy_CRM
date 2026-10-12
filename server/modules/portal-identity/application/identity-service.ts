@@ -197,7 +197,7 @@ export class PortalIdentityService {
     )
       return [];
     if (link.kind === "self")
-      return selfPermissions(student.classification, this.options.childFinanceVisible?.() ?? false);
+      return selfPermissions(student.classification);
     if (student.classification === "unverified") return [];
     if (student.classification === "adult") {
       const consents = snapshotConsents ?? await repository.getConsents(link.id);
@@ -382,7 +382,6 @@ export class PortalIdentityService {
             await repository.updateLink(link.id, {
               permissions: selfPermissions(
                 classification,
-                this.options.childFinanceVisible?.() ?? false,
               ),
             });
           if (link.kind === "representative" && link.status !== "revoked") {
@@ -478,7 +477,7 @@ export class PortalIdentityService {
       }
       const permissions =
         command.kind === "self"
-          ? selfPermissions(student.classification, this.options.childFinanceVisible?.() ?? false)
+          ? selfPermissions(student.classification)
           : [...new Set(command.permissions)];
       const fields = {
         accountId: account.id,
@@ -752,7 +751,7 @@ export class PortalIdentityService {
           studentId: student.id,
           kind: "self",
           relationship: null,
-          permissions: selfPermissions("minor", this.options.childFinanceVisible?.() ?? false),
+          permissions: selfPermissions("minor"),
           status: "active",
           verifiedAt: this.now(),
           verifiedBy: null,

@@ -72,7 +72,6 @@ export type LmsLearningPolicy = {
       reason: string;
     },
   ) => Promise<void>;
-  materialAccessDays?: () => Promise<number | null> | number | null;
   achievementTemplate?: (
     rule: string,
   ) =>
@@ -258,7 +257,7 @@ export class PgLearningRepository {
         WHERE enrollment.student_id=$1
       ) SELECT enrollment.id,enrollment.learning_run_id AS run_id,enrollment.id AS enrollment_id,g.id AS group_id,g.name AS group_name,course.name AS course_name,teacher.full_name AS teacher_name,
         CASE WHEN EXISTS(SELECT 1 FROM lms_course_completions completion WHERE completion.student_id=enrollment.student_id AND completion.run_id=enrollment.learning_run_id AND completion.reopened_at IS NULL) THEN 'completed' ELSE enrollment.learning_run_status END AS status,
-        enrollment.enrolled_at,enrollment.ended_at,enrollment.learning_run_access_until AS access_until,jsonb_build_object('completed',0,'total',0,'percent',null) AS progress
+        enrollment.enrolled_at,enrollment.ended_at,NULL::timestamptz AS access_until,jsonb_build_object('completed',0,'total',0,'percent',null) AS progress
       FROM course_enrollments enrollment JOIN academy_groups g ON g.id=enrollment.group_id JOIN academy_courses course ON course.id=g.course_id
       LEFT JOIN academy_teachers teacher ON teacher.id=g.teacher_id
       WHERE enrollment.student_id=$1 ORDER BY enrollment.enrolled_at DESC,enrollment.id DESC`,
@@ -360,7 +359,7 @@ export class PgLearningRepository {
       FROM visible_publications publication JOIN lms_material_versions version ON version.id=publication.material_version_id
       LEFT JOIN users author ON author.id=version.created_by JOIN lms_materials material ON material.id=publication.material_id
       JOIN lms_group_runs run ON run.id=material.run_id
-      WHERE material.state='published' AND (run.access_until IS NULL OR run.access_until>now()) ${runId ? "AND material.run_id=$2" : ""}
+      WHERE material.state='published' AND TRUE ${runId ? "AND material.run_id=$2" : ""}
       ORDER BY publication.publish_at,publication.id`,
       runId ? [actor.studentId, runId] : [actor.studentId],
       page,
@@ -408,7 +407,7 @@ export class PgLearningRepository {
         JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id
         WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required AND recipient.opens_at<=now() AND recipient.status='assigned'
         AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed)
-      ) SELECT unit.id,unit.title,unit.position,unit.required,section.title AS section_title,preview.open_at,(preview.enabled AND preview.visible_from<=now() AND (run.access_until IS NULL OR run.access_until>now()) AND preview.visible_from>=$3::timestamptz AND ($4::timestamptz IS NULL OR preview.visible_from<$4::timestamptz)) AS preview,
+      ) SELECT unit.id,unit.title,unit.position,unit.required,section.title AS section_title,preview.open_at,(preview.enabled AND preview.visible_from<=now() AND TRUE AND preview.visible_from>=$3::timestamptz AND ($4::timestamptz IS NULL OR preview.visible_from<$4::timestamptz)) AS preview,
       EXISTS(SELECT 1 FROM pending_units pending_unit WHERE pending_unit.unit_id=unit.id) AS pending
       FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_sections section ON section.id=unit.section_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$2 ORDER BY unit.position`,
       [actor.studentId, runId, enrollment.enrolledAt, enrollment.endedAt],
@@ -895,7 +894,7 @@ export class PgLearningRepository {
         if (await this.enabledForGroup(group.id)) enabledGroups.push(group.id);
     const groups = await listRows<LmsStaffRunDto & { id:number; crmCourseId:number|null; crmProgram:unknown; preparedSetupStatus:CrmPreparationStatus|null }>(
       this.pool,
-      `SELECT g.id,g.id AS group_id,g.name AS group_name,course.name AS course_name,course.id AS course_id,crm_course.id AS crm_course_id,crm_course.program AS crm_program,preparation.new_value->>'setupStatus' AS prepared_setup_status,teacher_name.full_name AS teacher_name,run.id AS run_id,COALESCE(run.status,g.status) AS status,run.course_version_id,run.version,run.format,run.meeting_url,run.access_until,(SELECT COUNT(*)::int FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.status='active') AS student_count
+      `SELECT g.id,g.id AS group_id,g.name AS group_name,course.name AS course_name,course.id AS course_id,crm_course.id AS crm_course_id,crm_course.program AS crm_program,preparation.new_value->>'setupStatus' AS prepared_setup_status,teacher_name.full_name AS teacher_name,run.id AS run_id,COALESCE(run.status,g.status) AS status,run.course_version_id,run.version,run.format,run.meeting_url,NULL::timestamptz AS access_until,(SELECT COUNT(*)::int FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.status='active') AS student_count
        FROM academy_groups g LEFT JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_course_versions pinned ON pinned.id=run.course_version_id
        LEFT JOIN academy_courses course ON course.id=COALESCE(pinned.course_id,g.course_id) LEFT JOIN academy_courses crm_course ON crm_course.id=g.course_id
        LEFT JOIN LATERAL(SELECT new_value FROM lms_learning_audit WHERE entity_type='crm_group_preparation' AND entity_id=g.id AND action='crm.prepared' ORDER BY id DESC LIMIT 1) preparation ON true
@@ -940,7 +939,7 @@ export class PgLearningRepository {
               hasImplicitStaffRunAccess(actor, permission),
           ),
           canManageTemplates:
-            actor.isLeadership || grantNames.includes("content.manage"),
+            actor.isLeadership || Boolean(assigned) || grantNames.includes("content.manage"),
         });
       }
     }
@@ -1194,8 +1193,8 @@ export class PgLearningRepository {
         !actor.isLeadership &&
         !(await one(
           sql,
-          "SELECT user_id FROM lms_staff_permissions WHERE user_id=$1 AND permission='content.manage'",
-          [actor.userId],
+          "SELECT teacher.user_id FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.course_id=$2 AND teacher.user_id=$1 AND teacher.status='active' AND $3::boolean UNION ALL SELECT user_id FROM lms_staff_permissions WHERE user_id=$1 AND permission='content.manage'",
+          [actor.userId, input.courseId, actor.modules.includes("teacher")],
         ))
       )
         throw new LmsError("portalAccessDenied", 403);
@@ -1726,12 +1725,9 @@ export class PgLearningRepository {
   async reconcileGroupLifecycle() {
     const enabledRuns = await this.enabledRunIds();
     if (!enabledRuns.length) return { completed: 0 };
-    const days = this.policy.materialAccessDays
-      ? await this.policy.materialAccessDays()
-      : 365;
     const result = await this.pool.query(
-      `UPDATE lms_group_runs run SET status='completed',completed_at=COALESCE(run.completed_at,source.completed_at),access_until=CASE WHEN run.access_until IS NOT NULL OR $2::integer IS NULL THEN run.access_until ELSE source.completed_at+$2::integer*interval '1 day' END,version=run.version+1 FROM (SELECT g.id AS group_id,LEAST(now(),COALESCE((SELECT MAX(lesson.scheduled_at+lesson.duration_minutes*interval '1 minute') FROM academy_lessons lesson WHERE lesson.group_id=g.id AND lesson.status='conducted'),g.end_date,g.updated_at,now())) AS completed_at FROM academy_groups g WHERE g.status='completed') source WHERE run.group_id=source.group_id AND run.status='active' AND run.id=ANY($1::bigint[]) RETURNING run.id`,
-      [enabledRuns, days],
+      `UPDATE lms_group_runs run SET status='completed',completed_at=COALESCE(run.completed_at,source.completed_at),access_until=NULL,version=run.version+1 FROM (SELECT g.id AS group_id,LEAST(now(),COALESCE((SELECT MAX(lesson.scheduled_at+lesson.duration_minutes*interval '1 minute') FROM academy_lessons lesson WHERE lesson.group_id=g.id AND lesson.status='conducted'),g.end_date,g.updated_at,now())) AS completed_at FROM academy_groups g WHERE g.status='completed') source WHERE run.group_id=source.group_id AND run.status='active' AND run.id=ANY($1::bigint[]) RETURNING run.id`,
+      [enabledRuns],
     );
     return { completed: result.rowCount ?? 0 };
   }
@@ -1887,22 +1883,7 @@ export class PgLearningRepository {
         input.meetingUrl !== undefined ? input.meetingUrl : old!.meetingUrl;
       if (format === "online" && !meeting)
         throw new LmsError("lmsMeetingLinkRequired");
-      let accessUntil =
-        input.accessUntil !== undefined ? input.accessUntil : old!.accessUntil;
-      if (
-        input.status === "completed" &&
-        old!.status !== "completed" &&
-        input.accessUntil === undefined &&
-        !accessUntil
-      ) {
-        const days = this.policy.materialAccessDays
-          ? await this.policy.materialAccessDays()
-          : 365;
-        accessUntil =
-          days === null
-            ? null
-            : new Date(Date.now() + days * 86400000).toISOString();
-      }
+      const accessUntil = null;
       const updated = await one(
         sql,
         "UPDATE lms_group_runs SET format=$2,meeting_url=$3,access_until=$4,status=COALESCE($5,status),completed_at=CASE WHEN $5='completed' THEN COALESCE(completed_at,now()) ELSE completed_at END,version=version+1 WHERE id=$1 RETURNING *",

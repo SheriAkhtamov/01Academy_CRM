@@ -9,8 +9,8 @@ describe('shared attachment policy', () => {
   it.each(ALLOWED_ATTACHMENT_EXTENSIONS)('allows %s on client and server', (ext) => {
     expect(validateAttachmentInfo(`File${ext.toUpperCase()}`, '', MAX_ATTACHMENT_BYTES)).toBeNull();
   });
-  it('enforces the exact 50 MB boundary', () => {
-    expect(MAX_ATTACHMENT_BYTES).toBe(50 * 1024 * 1024);
+  it('enforces the exact 10 MB boundary', () => {
+    expect(MAX_ATTACHMENT_BYTES).toBe(10 * 1024 * 1024);
     expect(validateAttachmentInfo('report.pdf', 'application/pdf', MAX_ATTACHMENT_BYTES + 1)).toBe('fileTooLarge');
   });
   it.each(['attack.svg', 'attack.html', 'attack.php', 'attack.exe', 'photo.jpg.js'])('rejects active content: %s', (name) => {

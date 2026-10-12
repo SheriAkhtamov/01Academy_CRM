@@ -1,6 +1,7 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { z } from "zod";
 
-export const MAX_STUDENT_PROJECT_BYTES = 100 * 1024 * 1024;
+export const MAX_STUDENT_PROJECT_BYTES = MAX_UPLOAD_BYTES;
 export const studentProjectLinkSchema = z
   .string()
   .trim()

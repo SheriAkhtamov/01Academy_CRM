@@ -12,7 +12,7 @@ export const requireResourcePermission = (actor: PortalActorContext, permission:
 };
 export const requireFinanceRead = (actor: PortalActorContext) => {
   requireResourcePermission(actor, 'finance.read');
-  if (actor.kind === 'self' && actor.studentClassification === 'unverified') throw new PortalResourceError('portalAccessDenied', 403);
+  if (actor.kind === 'self' && actor.studentClassification !== 'adult') throw new PortalResourceError('portalAccessDenied', 403);
 };
 export const requireShareCreation = (actor: PortalActorContext) => {
   requireResourcePermission(actor, 'portfolio.edit', true);

@@ -519,7 +519,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
     await learning.archiveMaterial(teacher, material.id);
     expect(await learning.materials(actor)).toEqual([]);
   });
-  it("keeps material enrollment start inclusive and end exclusive with live publication revocation and run expiry", async () => {
+  it("keeps material enrollment start inclusive and end exclusive with publication revocation and unlimited historical access", async () => {
     const start = new Date(Date.now() - 2 * 86400000).toISOString();
     const end = new Date(Date.now() - 86400000).toISOString();
     const inside = new Date(+new Date(start) + 3600000).toISOString();
@@ -554,7 +554,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       "UPDATE lms_group_runs SET access_until=now()-interval '1 second' WHERE id=$1",
       [runId],
     );
-    expect(await learning.materials(actor, runId)).toEqual([]);
+    expect((await learning.materials(actor, runId)).map(row => row.title)).toEqual(["At enrollment start"]);
   });
   it("stores the HTTP request correlation separately from authored audit content", async () => {
     const requestTeacher = {
@@ -1031,7 +1031,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
         status: "completed",
         enrolledAt,
         endedAt,
-        accessUntil: expiry,
+        accessUntil: null,
       }],
     });
     const second = await service.portalCollection(actor, "courses", {
@@ -1434,9 +1434,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
     ).toEqual(["award", "revoke", "restore"]);
   });
   it("keeps unlimited access explicit and blocks course completion while future required work remains", async () => {
-    const unlimited = new PgLearningRepository(pool, undefined, () => true, {
-      materialAccessDays: () => null,
-    });
+    const unlimited = new PgLearningRepository(pool, undefined, () => true);
     await unlimited.updateRun(teacher, runId, {
       version: 1,
       status: "completed",
@@ -2482,7 +2480,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       )
     ).rows[0];
     expect(run.status).toBe("completed");
-    expect(+run.access_until - +run.completed_at).toBe(365 * 86400000);
+    expect(run.access_until).toBeNull();
     expect(run.version).toBe(2);
     expect(await learning.reconcileGroupLifecycle()).toEqual({ completed: 0 });
     await pool.query(
@@ -2502,7 +2500,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
           [runId],
         )
       ).rows[0].access_until,
-    ).toEqual(explicit);
+    ).toBeNull();
   });
   it("retains quiz context in help requests and rejects a foreign attempt even in direct database writes", async () => {
     await quizzes.create(teacher, quizInput());
@@ -2761,4 +2759,15 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
     expect((await learning.materials(actor))[0].title).toBe("Material");
     expect(material.id).toBeGreaterThan(0);
   });
+  it("gives the assigned teacher every learning action and programme creation without employee grants", async () => {
+    const own=(await learning.managementGroups(teacher)).find(group=>group.groupId===1)!;
+    expect(own.canManageTemplates).toBe(true);
+    expect(own.permissions).toEqual(expect.arrayContaining(['content.manage','assignments.manage','reviews.manage','quizzes.manage','results.manage','communication.manage','announcements.manage','schedule.manage','portfolio.moderate']));
+    const programme={courseId:1,sections:[{title:'Teacher programme',units:[{title:'Unit',required:true}]}],publish:true};
+    expect(await learning.createCourseVersion(teacher,programme)).toMatchObject({id:expect.any(Number)});
+    await expect(learning.createCourseVersion({...teacher,modules:['sales']},programme)).rejects.toMatchObject({code:'portalAccessDenied'});
+    const unrelated=(await pool.query("INSERT INTO academy_courses(name) VALUES('Unassigned') RETURNING id")).rows[0].id;
+    await expect(learning.createCourseVersion(teacher,{...programme,courseId:unrelated})).rejects.toMatchObject({code:'portalAccessDenied'});
+  });
+
 });

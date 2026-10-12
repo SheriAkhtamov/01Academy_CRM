@@ -239,13 +239,11 @@ export function createLearningRuntime(
         flags.enabledForStudent("invitations", studentId, () =>
           repository.getStudentEnrollmentGroupIds(studentId),
         ),
-      childFinanceVisible: () => flags.settings().childFinanceVisible,
     },
   );
   const academyAccessRepository = new PostgresAcademyPortalAccessRepository(pool, createPortalCrypto(encryptionKey), encryptionKey, {
     enabled: () => flags.capabilities().invitationsEnabled,
     enabledForStudent: (studentId, groups) => flags.enabledForStudent("invitations", studentId, () => groups),
-    childFinanceVisible: () => flags.settings().childFinanceVisible,
   });
   const academyAccess = new AcademyPortalAccessService(academyAccessRepository, () => flags.capabilities().invitationsEnabled);
   const resources: PortalResourceService = new PortalResourceService(
@@ -275,7 +273,6 @@ export function createLearningRuntime(
       appUrl: config.server.appUrl.replace(/\/$/, ""),
       publicPortfolioEnabled: (studentId) =>
         flags.enabledForStudent("public_portfolio", studentId),
-      maxFileBytes: () => flags.settings().maxFileMiB * 1024 ** 2,
     },
   );
   const learning: PgLearningRepository = new PgLearningRepository(
@@ -283,7 +280,6 @@ export function createLearningRuntime(
     authorizeLmsFiles,
     (groupId) => flags.enabledForGroup("learning", groupId),
     {
-      materialAccessDays: () => flags.settings().materialAccessDays,
       achievementTemplate: (rule) =>
         flags
           .settings()
@@ -368,8 +364,6 @@ export function createLearningRuntime(
       const text = learningNotificationCopy(code, params);
       return { title: text, message: text };
     },
-    calendar: () => flags.settings().workCalendar,
-    coordinatorUserIds: () => flags.settings().workCalendar.coordinatorUserIds,
   };
   const notifications = new PortalNotificationWorker(notificationOptions);
   const requestActors = new WeakMap<

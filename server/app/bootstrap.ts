@@ -79,7 +79,7 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     registerApiRoutes(app);
 
     server = createServer(app);
-    // 50 MB task uploads need time on mobile connections. Header timeout,
+    // 10 MB task uploads need time on mobile connections. Header timeout,
     // multipart size limits and per-user upload rate limits still apply.
     server.requestTimeout = 10 * 60_000;
     server.headersTimeout = 15_000;

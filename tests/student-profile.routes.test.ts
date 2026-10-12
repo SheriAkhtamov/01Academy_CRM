@@ -100,7 +100,7 @@ describe('student profile routes', () => {
     expect(response.status).toBe(400);
     expect(await fs.readdir(STUDENT_PROJECT_UPLOAD_DIR)).toEqual(before);
   });
-  it('accepts exactly 100 MB and rejects one byte more', async () => {
+  it('accepts exactly 10 MB and rejects one byte more', async () => {
     const accepted = await request(app()).post('/api/academy/students/321/projects').field('title', 'Boundary').attach('file', upload(MAX_STUDENT_PROJECT_BYTES), 'boundary.zip');
     expect(accepted.status).toBe(201);
     expect((await fs.stat(files[files.length - 1])).size).toBe(MAX_STUDENT_PROJECT_BYTES);

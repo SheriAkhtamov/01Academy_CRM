@@ -999,7 +999,7 @@ export const lmsRunUpdateSchema = z.object({
   version: z.number().int().positive(),
   format: z.enum(["offline", "online"]).optional(),
   meetingUrl: lmsHttpsSchema.nullable().optional(),
-  accessUntil: z.string().datetime().nullable().optional(),
+  accessUntil: z.null().optional(),
   status: z.enum(["active", "completed", "archived"]).optional(),
   reason: z.string().trim().min(1).max(2000),
 });

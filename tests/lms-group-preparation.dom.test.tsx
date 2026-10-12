@@ -16,13 +16,6 @@ import { i18n } from "../client/src/lib/i18n";
 import { LearningManagement } from "../client/src/features/lms-staff/management";
 import { LearningGroupTabs } from "../client/src/features/lms-staff/group-tabs";
 import { StaffDialog } from "../client/src/features/lms-staff/ui";
-import LearningRolloutSettings from "../client/src/features/learning-rollout/LearningRolloutSettings";
-vi.mock("../client/src/features/learning-rollout/SchoolSettingsCard", () => ({
-  SchoolSettingsCard: () => null,
-}));
-vi.mock("../client/src/features/portal-access", () => ({
-  PortalDeliveryFailuresButton: () => null,
-}));
 const group = (
   id = 13,
   extra: Partial<LmsStaffRunDto> = {},
@@ -430,50 +423,5 @@ describe("CRM group learning preparation", () => {
     expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  it("invalidates cached group runs only after a confirmed global learning change", async () => {
-    client.setQueryDefaults(["lms-management"], { gcTime: Infinity });
-    client.setQueryData(["lms-management", "runs"], rows);
-    mount(<LearningRolloutSettings />);
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: i18n.t("lmsRolloutConfiguration"),
-      }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByRole("checkbox", {
-        name: i18n.t("lmsRolloutEnable"),
-      }),
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: i18n.t("lmsRolloutSave") }),
-    );
-    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
-    expect(
-      client.getQueryState(["lms-management", "runs"])?.isInvalidated,
-    ).toBe(false);
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: i18n.t("lmsRolloutSave"),
-      }),
-    );
-    await waitFor(() =>
-      expect(
-        client.getQueryState(["lms-management", "runs"])?.isInvalidated,
-      ).toBe(true),
-    );
-    expect(calls.filter((call) => call.method !== "GET")).toEqual([
-      {
-        path: "/api/lms-management/configuration",
-        method: "PUT",
-        body: {
-          key: "learning",
-          enabled: true,
-          allGroups: true,
-          groupIds: [],
-          version: 2,
-        },
-      },
-    ]);
-  });
+
 });

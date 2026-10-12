@@ -36,7 +36,7 @@ describe.skipIf(!databaseUrl)('Academy lead access, local credentials and retire
     for (const name of ['0134_portal_identity', '0135_lms_learning', '0136_portal_resources', '0137_lms_crm_preparation', '0138_manual_portal_credentials']) {
       await pool.query(readFileSync(new URL(`../migrations/${name}.sql`, import.meta.url), 'utf8'));
     }
-    repository = new PostgresAcademyPortalAccessRepository(pool, crypto, key, { enabled: () => true, enabledForStudent: () => true, childFinanceVisible: () => false });
+    repository = new PostgresAcademyPortalAccessRepository(pool, crypto, key, { enabled: () => true, enabledForStudent: () => true });
     service = new AcademyPortalAccessService(repository, () => true);
     identity = new PortalIdentityService(createPostgresPortalRepository(pool, { initialCredentials: true }), crypto, { appUrl: 'https://academy.example', allowInvitations: true });
   });

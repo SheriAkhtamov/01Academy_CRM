@@ -268,16 +268,16 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     expect(await flags.enabledForStudent('learning',2)).toBe(true);expect(await flags.enabledForStudent('learning',3)).toBe(false);
     await expect(flags.update(1,{key:'learning',enabled:true,allGroups:true,groupIds:[],version:0})).rejects.toMatchObject({code:'portalVersionConflict'});
   });
-  it('correlates both HTTP configuration changes with the resolved staff request without exposing it in settings',async()=>{
-    await pool.query("INSERT INTO lms_feature_flags(key) VALUES('learning'),('invitations'),('public_portfolio'),('email')");
+  it('retires settings and rollout mutations while retaining authenticated capability reads', async () => {
     const config={...appConfig,portal:{enabled:true,learningEnabled:true,allowInvitations:true,publicPortfolioEnabled:true}};
-    const flags=new LearningFeatureController(pool,config);await flags.refresh();
-    const app=express();app.use(express.json());app.use(createLearningConfigurationRouter(flags,async req=>({...teacher,modules:['administration'],requestId:req.get('X-Request-Id')})));
-    const settingsId=randomUUID(),flagId=randomUUID(),settings=structuredClone(DEFAULT_LEARNING_SCHOOL_SETTINGS);settings.studentQuotaGiB=2;
-    const saved=await request(app).put('/school-settings').set('X-Request-Id',settingsId).send({settings,version:0}).expect(200);
-    const updated=await request(app).put('/configuration').set('X-Request-Id',flagId).send({key:'learning',enabled:true,allGroups:false,groupIds:[1],version:0}).expect(200);
-    expect((await pool.query("SELECT entity_type,request_id FROM lms_learning_audit WHERE entity_type IN('school_settings','feature_flag') ORDER BY entity_type")).rows).toEqual([{entity_type:'feature_flag',request_id:flagId},{entity_type:'school_settings',request_id:settingsId}]);
-    for(const output of [saved.body,updated.body])for(const id of [settingsId,flagId])expect(JSON.stringify(output)).not.toContain(id);
+    const flags=new LearningFeatureController(pool,config); await flags.refresh();
+    const app=express();app.use(express.json());app.use(createLearningConfigurationRouter(flags,async()=>({userId:1,modules:['administration'],isLeadership:true})));
+    for (const target of ['/school-settings','/configuration']) {
+      await request(app).get(target).expect(404);
+      await request(app).put(target).send({settings:DEFAULT_LEARNING_SCHOOL_SETTINGS,version:0}).expect(404);
+    }
+    await request(app).get('/status').expect(200);
+    expect((await pool.query("SELECT count(*)::int AS count FROM lms_learning_audit WHERE action IN('settings.changed','flag.changed')")).rows[0].count).toBe(0);
   });
   it('deduplicates concurrent project and share creation and rejects a changed replay payload', async () => {
     const input=project({idempotencyKey:randomUUID()});
@@ -343,7 +343,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     await pool.query('UPDATE lms_assignment_recipients SET assignment_version_id=$1 WHERE id=$2',[revised.id,recipient.id]);
     expect(await service.fileStatus(self,Number(file.id))).toMatchObject({name:'lesson.txt'});
     await pool.query("UPDATE lms_group_runs SET access_until=now()-interval '1 second' WHERE id=1");
-    await expect(service.fileStatus(self,Number(file.id))).rejects.toMatchObject({code:'portalNotFound'});
+    expect(await service.fileStatus(self,Number(file.id))).toMatchObject({id:Number(file.id)});
   });
   it('claims different files across validation replicas while one inspection is unresolved', async () => {
     const firstFile = await service.upload(self, '/tmp/one', 'one.txt', 1);
@@ -428,4 +428,22 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       expect(await fs.readFile(retained, 'utf8')).toBe('hello');
     } finally { await fs.rm(uploads, { recursive: true, force: true }); }
   });
+  it('preserves archived work files and rejects new uploads above 10 MiB', async () => {
+    store.inspect.mockResolvedValueOnce({...inspectedFile(),size:10*1024*1024+1});
+    await expect(service.upload(self,'/tmp/new-upload','work.txt',1)).rejects.toMatchObject({code:'portalFileTooLarge'});
+    expect((await pool.query('SELECT count(*)::int AS count FROM lms_files')).rows[0].count).toBe(0);
+    const file=await service.upload(self,'/tmp/valid-upload','work.txt',1);
+    await pool.query("UPDATE lms_files SET state='ready' WHERE id=$1",[file.id]);
+    const saved=await service.saveProject(self,null,project({fileIds:[file.id]}));
+    await service.archiveProject(self,saved.id);
+    await pool.query("UPDATE lms_files SET attached_at=NULL,created_at=now()-interval '10 years',size_bytes=11*1024*1024 WHERE id=$1",[file.id]);
+    expect(await service.fileStatus(self,file.id)).toMatchObject({id:file.id,size:11*1024*1024});
+    expect(await repository.cleanupFiles()).toEqual([]);
+    expect((await pool.query('SELECT deleted_at FROM lms_files WHERE id=$1',[file.id])).rows[0].deleted_at).toBeNull();
+    // Even a pre-existing tombstone must not unlink bytes retained by a saved work reference.
+    await pool.query("UPDATE lms_files SET deleted_at=now()-interval '1 day' WHERE id=$1",[file.id]);
+    expect(await repository.cleanupFiles()).toEqual([]);
+    expect((await pool.query('SELECT id,archived_at FROM academy_portfolio_projects WHERE id=$1',[saved.id])).rows[0].archived_at).not.toBeNull();
+  });
+
 });

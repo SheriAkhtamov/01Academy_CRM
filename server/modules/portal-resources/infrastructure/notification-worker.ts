@@ -9,7 +9,7 @@ import {
   accessDenied,
   PORTAL_NOTIFICATION_EVENT_CODES,
   defaultPreferences,
-  oneWorkingDayAfter,
+  notificationEscalationAt,
   type Sql,
   type Candidate,
   type Outbox,
@@ -20,12 +20,11 @@ import {
 import { PortalNotificationSources } from "./notification-sources";
 import { isNotificationResultCurrent } from "./notification-current-object";
 export {
-  oneWorkingDayAfter,
+  notificationEscalationAt,
   PORTAL_NOTIFICATION_EVENT_CODES,
 } from "./notification-support";
 export type {
   PortalNotificationWorkerOptions,
-  NotificationWorkCalendar,
 } from "./notification-support";
 
 export class PortalNotificationWorker {
@@ -277,15 +276,7 @@ export class PortalNotificationWorker {
       ).rows[0];
       if (
         !run ||
-        !(await this.allowedGroup(run.group_id)) ||
-        (run.access_until &&
-          dateValue(run.access_until) <= now &&
-          [
-            "material_published",
-            "assignment_assigned",
-            "quiz_assigned",
-            "announcement_published",
-          ].includes(type))
+        !(await this.allowedGroup(run.group_id))
       )
         return false;
     }
@@ -568,14 +559,10 @@ export class PortalNotificationWorker {
     return rows.map((row) => row.user_id);
   }
   private async coordinators(sql: Sql): Promise<number[]> {
-    const requested =
-      typeof this.options.coordinatorUserIds === "function"
-        ? this.options.coordinatorUserIds()
-        : (this.options.coordinatorUserIds ?? []);
     const rows = (
       await sql.query<{ id: number }>(
-        `SELECT staff.id FROM users staff WHERE staff.is_active=true AND staff.is_archived=false AND ($1::int[] IS NULL OR staff.id=ANY($1::int[])) AND (staff.module='administration' OR EXISTS(SELECT 1 FROM user_modules WHERE user_id=staff.id AND module='administration') OR EXISTS(SELECT 1 FROM lms_staff_permissions WHERE user_id=staff.id AND permission='communication.manage'))`,
-        [requested.length ? [...requested] : null],
+        `SELECT staff.id FROM users staff WHERE staff.is_active=true AND staff.is_archived=false AND (staff.module='administration' OR EXISTS(SELECT 1 FROM user_modules WHERE user_id=staff.id AND module='administration') OR EXISTS(SELECT 1 FROM lms_staff_permissions WHERE user_id=staff.id AND permission='communication.manage'))`,
+        [],
       )
     ).rows;
     return rows.map((row) => row.id);
@@ -764,12 +751,7 @@ export class PortalNotificationWorker {
           ]);
       }
       if (
-        oneWorkingDayAfter(
-          dateValue(thread.created_at),
-          typeof this.options.calendar === "function"
-            ? this.options.calendar()
-            : this.options.calendar,
-        ) > now
+        notificationEscalationAt(dateValue(thread.created_at)) > now
       )
         continue;
       for (const coordinator of await this.coordinators(sql))

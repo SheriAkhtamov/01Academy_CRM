@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { DEFAULT_LEARNING_SCHOOL_SETTINGS,learningSchoolSettingsSchema } from '@shared/contracts/learning-settings';
 
 type AppEnvironment = 'development' | 'production' | 'test';
 
@@ -41,7 +40,6 @@ export interface AppConfig {
     allowInvitations?: boolean;
     publicPortfolioEnabled?: boolean;
     groupIds?: number[];
-    workCalendar?: { workdays?: number[]; start?: string; end?: string; holidays?: string[]; coordinatorUserIds?: number[] };
     support?: { phone?: string; email?: string };
   };
   integrations?: {
@@ -211,7 +209,6 @@ export const validateConfig = (config: AppConfig) => {
     }
     if (portal.support?.phone && !/^\+?[0-9 ()-]{7,30}$/.test(portal.support.phone)) throw new Error('portal support phone is invalid');
     if (portal.support?.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(portal.support.email)) throw new Error('portal support email is invalid');
-    if (portal.workCalendar && !learningSchoolSettingsSchema.safeParse({...DEFAULT_LEARNING_SCHOOL_SETTINGS,workCalendar:{...DEFAULT_LEARNING_SCHOOL_SETTINGS.workCalendar,...portal.workCalendar}}).success) throw new Error('portal work calendar is invalid');
   }
   const attendance = config.publicAttendance;
   if (attendance?.enabled && (

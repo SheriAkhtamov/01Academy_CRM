@@ -623,7 +623,7 @@ describe("board routes", () => {
     expect(mockStorage.board.createAttachment).not.toHaveBeenCalled();
   });
 
-  it.each([50 * 1024 * 1024, 50 * 1024 * 1024 + 1])('enforces the upload byte boundary %i and cleans temporary files', async (size) => {
+  it.each([10 * 1024 * 1024, 10 * 1024 * 1024 + 1])('enforces the upload byte boundary %i and cleans temporary files', async (size) => {
     const fs = await import('node:fs/promises');
     const { BOARD_UPLOAD_DIR } = await import('../server/middleware/upload.middleware');
     const before = new Set(await fs.readdir(BOARD_UPLOAD_DIR));
@@ -632,8 +632,8 @@ describe("board routes", () => {
     const agent = request.agent(await createApp());
     await agent.post('/test/session').send({ userId: 7 });
     const result = await agent.post('/api/board/tasks/100/attachments').attach('file', Buffer.alloc(size), 'boundary.pdf');
-    expect(result.status).toBe(size > 50 * 1024 * 1024 ? 413 : 500);
-    expect(mockStorage.board.createAttachment).toHaveBeenCalledTimes(size > 50 * 1024 * 1024 ? 0 : 1);
+    expect(result.status).toBe(size > 10 * 1024 * 1024 ? 413 : 500);
+    expect(mockStorage.board.createAttachment).toHaveBeenCalledTimes(size > 10 * 1024 * 1024 ? 0 : 1);
     expect(new Set(await fs.readdir(BOARD_UPLOAD_DIR))).toEqual(before);
     mockStorage.board.createAttachment.mockReset();
   });

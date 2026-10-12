@@ -1,7 +1,8 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { z } from 'zod';
 
 export const positiveIdSchema = z.coerce.number().int().positive();
-export const MAX_MESSAGE_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_MESSAGE_FILE_BYTES = MAX_UPLOAD_BYTES;
 export const MAX_MESSAGE_FILES = 5;
 export type MessageAttachment = {
   id: string;

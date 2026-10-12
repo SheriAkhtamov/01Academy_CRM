@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { AppConfig } from '../config';
 import { LEARNING_FLAG_KEYS, type LearningCapabilitiesDto, type LearningFlagDto, type LearningFlagKey, type LearningFlagUpdateInput, type LearningRolloutDto } from '@shared/contracts/learning-rollout';
 import { PortalResourceError } from '../modules/portal-resources/domain/policy';
-import { DEFAULT_LEARNING_SCHOOL_SETTINGS, learningSchoolSettingsSchema, type LearningSchoolSettings, type LearningSchoolSettingsDto, type LearningSchoolSettingsUpdate } from '@shared/contracts/learning-settings';
+import { DEFAULT_LEARNING_SCHOOL_SETTINGS, fixedLearningPolicy, learningSchoolSettingsSchema, type LearningSchoolSettings, type LearningSchoolSettingsDto, type LearningSchoolSettingsUpdate } from '@shared/contracts/learning-settings';
 
 export class LearningFeatureController {
   private values: LearningFlagDto[] = LEARNING_FLAG_KEYS.map((key) => ({ key, enabled: false, allGroups: false, groupIds: [], updatedAt: null,version:0 }));
@@ -17,9 +17,8 @@ export class LearningFeatureController {
     this.values = rows.map((row) => ({ key: row.key, enabled: row.enabled, allGroups: row.all_groups, groupIds: row.group_ids, updatedAt: row.updated_at.toISOString(),version:row.version }));
     const configured = (await this.pool.query<{ settings: unknown;version:number;updated_by:number|null }>('SELECT settings,version,updated_by FROM lms_school_settings WHERE singleton=true')).rows[0];
     if (configured) {
-      this.school = learningSchoolSettingsSchema.parse(configured.settings);
+      this.school = fixedLearningPolicy(learningSchoolSettingsSchema.parse(configured.settings));
       this.schoolVersion = configured.version;
-      if (!configured.updated_by && this.config.portal?.workCalendar) this.school.workCalendar = {...this.school.workCalendar,...this.config.portal.workCalendar};
     }
     this.available = true;
     } catch(error) {
@@ -34,8 +33,6 @@ export class LearningFeatureController {
   }
   async updateSettings(actorId: number, input: LearningSchoolSettingsUpdate['settings'],version = this.schoolVersion,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable',409);
-    const allowed = (await this.pool.query<{ id: number }>("SELECT id FROM users WHERE id=ANY($1::integer[]) AND is_active=true AND is_archived=false", [input.workCalendar.coordinatorUserIds])).rows;
-    if (allowed.length !== input.workCalendar.coordinatorUserIds.length) throw new PortalResourceError('portalInvalidData');
     const sql = await this.pool.connect();
     try {
       await sql.query('BEGIN');

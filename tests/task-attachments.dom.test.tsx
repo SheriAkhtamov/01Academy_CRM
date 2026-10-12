@@ -135,9 +135,9 @@ describe('task creation with attachments', () => {
   it('rejects oversized files before making any requests', async () => {
     const { input } = setup();
     const file = new File(['large'], 'large.pdf');
-    Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 + 1 });
+    Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 });
     fireEvent.change(input, { target: { files: [file] } });
-    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'File is too large (maximum 50 MB)' }));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'File is too large (maximum 10 MB)' }));
     expect(mocks.upload).not.toHaveBeenCalled(); expect(mocks.api).not.toHaveBeenCalled();
   });
 });

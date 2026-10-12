@@ -20,7 +20,7 @@ export const checkResourceLink = async (sql: ResourceSql, actor: PortalActorCont
   const link = await resourceOne(sql, `SELECT link.id FROM portal_student_links link JOIN portal_accounts account ON account.id=link.account_id
     WHERE link.id=$1 AND link.account_id=$2 AND link.student_id=$3 AND link.kind=$4 AND link.status='active'
     AND account.status='active' AND (link.expires_at IS NULL OR link.expires_at>now())
-    AND (link.permissions ? $5 OR (link.kind='self' AND $5='finance.read' AND EXISTS(SELECT 1 FROM lms_school_settings WHERE settings->>'childFinanceVisible'='true')))
+    AND (link.permissions ? $5) AND ($5<>'finance.read' OR link.kind<>'self' OR $6='adult')
     AND EXISTS(SELECT 1 FROM portal_student_identity identity WHERE identity.student_id=link.student_id AND identity.classification=$6)
     AND (link.kind='self' OR EXISTS(SELECT 1 FROM portal_student_identity identity WHERE identity.student_id=link.student_id AND identity.classification='minor')
       OR EXISTS(SELECT 1 FROM portal_consents consent WHERE consent.link_id=link.id AND consent.revoked_at IS NULL AND consent.method IN ('in_person','portal') AND consent.permissions @> link.permissions))

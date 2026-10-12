@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { t } from '../lib/i18n';
@@ -12,7 +13,7 @@ import {
 const DEFAULT_AGENT_MODEL = 'google/gemini-3.1-flash-lite';
 const AGENT_TIME_ZONE = 'Asia/Tashkent';
 const MAX_VOICE_DURATION_SECONDS = 300;
-const MAX_VOICE_BYTES = 10 * 1024 * 1024;
+const MAX_VOICE_BYTES = MAX_UPLOAD_BYTES;
 const MAX_TASK_LIST_ITEMS = 15;
 const MAX_SUMMARY_TEXT_LENGTH = 3_900;
 const MAX_CONVERSATION_MESSAGES = 10;

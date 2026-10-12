@@ -22,7 +22,6 @@ import {
   lmsCourseVersionSchema,
   lmsCompletionSchema,
   lmsLessonBindingSchema,
-  lmsStaffPermissionsSchema,
   lmsRunUpdateSchema,
   lmsUnitPreviewSchema,
   lmsAnalyticsSchema,
@@ -507,26 +506,6 @@ export function createLmsManagementRouter(
         "reports",
         readInput(lmsPageSchema, request.query),
         run(request),
-      ),
-    ),
-  );
-  router.get(
-    "/staff-permissions",
-    handle(async (request) =>
-      service.staffCollection(
-        await resolveStaff(request),
-        "staff-permissions",
-        readInput(lmsPageSchema, request.query),
-      ),
-    ),
-  );
-  router.put(
-    "/staff-permissions/:id",
-    handle(async (request) =>
-      service.changeStaffPermissions(
-        await resolveStaff(request),
-        id(request),
-        readInput(lmsStaffPermissionsSchema, request.body),
       ),
     ),
   );

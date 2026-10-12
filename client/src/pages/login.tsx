@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import Logo from '@/components/Logo';
+import { usePortalError } from '@/features/portal-app/ui';
+import { PortalApiError, portalIdentityApi, setPortalCsrf } from '@/features/portal-app/api';
 import { devLog } from '@/lib/debug';
 import { useLocation } from 'wouter';
 import { DURATION, EASE, SPRING, TRANSITION } from '@/lib/motion';
@@ -23,6 +25,7 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, isLoading } = useAuth();
   const { t } = useTranslation();
+  const portalErrorMessage = usePortalError();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   // The URL the user originally asked for (deep link or the page open when the
@@ -30,7 +33,9 @@ export default function Login() {
   // keeps shared links and mid-session expiry painless.
   const [returnTo] = useState(() => {
     const href = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    return href.startsWith('/') && !href.startsWith('//') ? href : '/';
+    const next = new URLSearchParams(window.location.search).get('next');
+    const target = window.location.pathname === '/login' ? (next ?? '/') : href;
+    return target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/login') ? target : '/';
   });
   const loginSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
@@ -54,24 +59,36 @@ export default function Login() {
       setError('');
       devLog('[LOGIN] Attempting login for:', data.login);
 
-      await login(data.login, data.password);
+      try {
+        await login(data.login, data.password);
+      } catch (staffError) {
+        if ((staffError as { status?: number }).status !== 401) throw staffError;
+        const portalSession = await portalIdentityApi.session();
+        setPortalCsrf(portalSession.csrfToken);
+        await portalIdentityApi.login(data.login, data.password);
+        setLocation(returnTo === '/learn' || returnTo.startsWith('/learn/') ? returnTo : '/learn');
+        return;
+      }
       devLog('[LOGIN] Login successful!');
       queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       setIsSubmitting(false);
-      setLocation(returnTo);
+      setLocation(returnTo === '/learn' || returnTo.startsWith('/learn/') ? '/learning' : returnTo);
     } catch (err: any) {
-      if (err?.status === 401) {
+      if ([401, 404].includes(err?.status)) {
         setError(t('invalidCredentialsMessage'));
         setIsSubmitting(false);
         return;
       }
 
+      if (err instanceof PortalApiError) { setError(portalErrorMessage(err, 'loginFailedMessage')); return; }
       devLog('Login error:', err);
       const errorMessage =
         err?.rawMessage && (err.rawMessage === 'invalidCredentialsMessage' || err.rawMessage === 'loginOrEmailRequired' || err.rawMessage === 'passwordRequired')
           ? t(err.rawMessage)
           : (err.message || t('loginFailedMessage'));
       setError(errorMessage);
+      setIsSubmitting(false);
+    } finally {
       setIsSubmitting(false);
     }
   };

@@ -8,8 +8,6 @@ import type { PortalContactMatches } from "@shared/contracts/portal-contact-chec
 export type PortalAccount = PortalAccountDto & {
   passwordHash: string | null;
   authVersion: number;
-  emailVerifiedAt: number | null;
-  pendingEmail: string | null;
 };
 export type PortalStudent = {
   id: number;
@@ -47,21 +45,12 @@ export type PortalInvitation = {
   tokenHash: string;
   expiresAt: number;
   status: "created" | "sent" | "delivery_failed" | "accepted" | "expired" | "revoked";
-  channel: "manual" | "email";
+  channel: "manual";
   createdBy: number;
   idempotencyKey: string;
   requestHash: string;
   acceptedAt: number | null;
   acceptedAccountId: number | null;
-};
-export type PortalRecoveryToken = {
-  id: number;
-  accountId: number;
-  purpose: "recovery" | "email";
-  tokenHash: string;
-  expiresAt: number;
-  consumedAt: number | null;
-  payload: string | null;
 };
 export type PortalSession = {
   id: string;
@@ -80,22 +69,13 @@ export type PortalActorSnapshot = {
   consents: Pick<PortalConsent, "permissions" | "method" | "revokedAt">[];
 };
 export type PortalAudit = {
-  actorKind: "staff" | "portal" | "anonymous";
+  actorKind: "staff" | "portal" | "anonymous" | "system";
   staffId: number | null;
   accountId: number | null;
   studentId: number | null;
   action: string;
   requestId?: string;
   details: Record<string, unknown>;
-};
-export type PortalMail = {
-  accountId: number;
-  recipient: string;
-  template: "invitation" | "recovery" | "email_change" | "email_changed";
-  encryptedPayload: string;
-  expiresAt: number;
-  invitationId?: number;
-  dedupeKey: string;
 };
 
 export interface PortalRepository {
@@ -130,10 +110,6 @@ export interface PortalRepository {
     changes: Partial<Omit<PortalInvitation, "id">>,
   ): Promise<PortalInvitation>;
   revokeInvitations(filter: { accountId?: number; linkId?: number }, at: number): Promise<void>;
-  getToken(hash: string, lock?: boolean): Promise<PortalRecoveryToken | null>;
-  createToken(token: Omit<PortalRecoveryToken, "id">): Promise<PortalRecoveryToken>;
-  consumeToken(id: number, at: number): Promise<void>;
-  revokeTokens(accountId: number, at: number): Promise<void>;
   getSession(id: string, lock?: boolean): Promise<PortalSession | null>;
   resolveActiveSession?(id: string, now: number): Promise<PortalSession | null>;
   readActorSnapshot?(accountId: number, linkId: number): Promise<PortalActorSnapshot>;
@@ -145,7 +121,6 @@ export interface PortalRepository {
   rateLimit(key: string, limit: number, windowMs: number, now: number): Promise<number | null>;
   releaseRateLimit(key: string, now: number): Promise<void>;
   audit(event: PortalAudit): Promise<void>;
-  queueMail(mail: PortalMail): Promise<void>;
 }
 export interface PortalCrypto {
   randomToken(): string;
@@ -156,10 +131,8 @@ export interface PortalCrypto {
 }
 export type PortalIdentityOptions = {
   appUrl: string;
-  emailEnabled: boolean;
   allowInvitations: boolean;
   now?: () => number;
   invitationsEnabledForStudent?: (studentId: number, repository: PortalRepository) => boolean | Promise<boolean>;
   childFinanceVisible?: () => boolean;
-  emailEnabledForAccount?: (accountId: number, repository: PortalRepository) => boolean | Promise<boolean>;
 };

@@ -30,8 +30,7 @@ export class LearningFeatureController {
   settings(): LearningSchoolSettings { return this.school; }
   async settingsConfiguration(): Promise<LearningSchoolSettingsDto> {
     const employees = (await this.pool.query<{ id: number; full_name: string }>("SELECT id,full_name FROM users WHERE is_active=true AND is_archived=false ORDER BY full_name,id")).rows.map(row => ({ id: row.id, fullName: row.full_name }));
-    const configuration = await this.configuration();
-    return { settings: this.school,version:this.schoolVersion,employees, emailConfigured: configuration.emailConfigured };
+    return { settings: this.school,version:this.schoolVersion,employees };
   }
   async updateSettings(actorId: number, input: LearningSchoolSettingsUpdate['settings'],version = this.schoolVersion,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable',409);
@@ -57,7 +56,7 @@ export class LearningFeatureController {
     const portal = this.config.portal;
     const global = (key: LearningFlagKey) => Boolean(portal?.enabled && this.available && this.values.find((flag) => flag.key === key)?.enabled);
     return { portalEnabled: Boolean(portal?.enabled && this.available), learningEnabled: Boolean(portal?.learningEnabled && global('learning')),
-      invitationsEnabled: Boolean(portal?.allowInvitations && global('invitations')), emailEnabled: Boolean(portal?.emailEnabled && global('email')),
+      invitationsEnabled: Boolean(portal?.allowInvitations && global('invitations')),
       publicPortfolioEnabled: Boolean(portal?.publicPortfolioEnabled && global('public_portfolio')) };
   }
   async enabledForStudent(
@@ -66,7 +65,7 @@ export class LearningFeatureController {
     readEnrollmentGroups?: () => readonly number[] | Promise<readonly number[]>,
   ): Promise<boolean> {
     const capabilities = this.capabilities();
-    const enabled = { learning: capabilities.learningEnabled, invitations: capabilities.invitationsEnabled, public_portfolio: capabilities.publicPortfolioEnabled, email: capabilities.emailEnabled }[key];
+    const enabled = { learning: capabilities.learningEnabled, invitations: capabilities.invitationsEnabled, public_portfolio: capabilities.publicPortfolioEnabled }[key];
     if (!enabled) return false;
     const flag = this.values.find((value) => value.key === key)!;
     if (studentId === undefined) return flag.allGroups || flag.groupIds.length > 0;
@@ -94,17 +93,14 @@ export class LearningFeatureController {
   }
   async configuration(): Promise<LearningRolloutDto> {
     const groups = (await this.pool.query<{ id: number; name: string }>('SELECT id,name FROM academy_groups ORDER BY name,id')).rows;
-    const email = this.config.email;
-    return { capabilities: this.capabilities(), flags: this.values, groups,
-      emailConfigured: Boolean((email.resendApiKey && email.smtp?.from) || (email.smtp?.host && email.smtp.user && email.smtp.pass && email.smtp.from)) };
+    return { capabilities: this.capabilities(), flags: this.values, groups };
   }
   async update(actorId: number, input: LearningFlagUpdateInput,requestId?:string) {
     if (!this.config.portal?.enabled) throw new PortalResourceError('portalUnavailable', 409);
     const groups = await this.pool.query('SELECT id FROM academy_groups WHERE id=ANY($1::integer[])', [input.groupIds]);
     if (groups.rowCount !== input.groupIds.length) throw new PortalResourceError('portalInvalidData');
-    const keyEnabled = { learning: this.config.portal.learningEnabled, invitations: this.config.portal.allowInvitations, public_portfolio: this.config.portal.publicPortfolioEnabled, email: this.config.portal.emailEnabled }[input.key];
+    const keyEnabled = { learning: this.config.portal.learningEnabled, invitations: this.config.portal.allowInvitations, public_portfolio: this.config.portal.publicPortfolioEnabled }[input.key];
     if (input.enabled && !keyEnabled) throw new PortalResourceError('portalUnavailable', 409);
-    if (input.enabled && input.key === 'email' && !(await this.configuration()).emailConfigured) throw new PortalResourceError('portalEmailUnavailable', 409);
     const sql = await this.pool.connect();
     try {
       await sql.query('BEGIN');

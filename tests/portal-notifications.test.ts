@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  nextAllowedNotificationEmailAt,
   oneWorkingDayAfter,
   PortalNotificationWorker,
   PORTAL_NOTIFICATION_EVENT_CODES,
@@ -11,41 +10,6 @@ import { learningNotificationCopy } from "../server/lib/learning-notification-co
 const date = (value: string) => new Date(value).getTime();
 
 describe("LMS notification time and default-off policies", () => {
-  it("defers overnight email until eight in Tashkent and sends in daytime", () => {
-    expect(nextAllowedNotificationEmailAt(date("2026-10-11T18:30:00Z"))).toBe(
-      date("2026-10-12T03:00:00Z"),
-    );
-    expect(nextAllowedNotificationEmailAt(date("2026-10-12T01:30:00Z"))).toBe(
-      date("2026-10-12T03:00:00Z"),
-    );
-    expect(nextAllowedNotificationEmailAt(date("2026-10-12T09:30:00Z"))).toBe(
-      date("2026-10-12T09:30:00Z"),
-    );
-  });
-  it("supports same-day quiet hours and urgent security or immediate lesson changes", () => {
-    expect(
-      nextAllowedNotificationEmailAt(
-        date("2026-10-12T06:30:00Z"),
-        "10:00",
-        "12:00",
-      ),
-    ).toBe(date("2026-10-12T07:00:00Z"));
-    expect(
-      nextAllowedNotificationEmailAt(
-        date("2026-10-12T18:30:00Z"),
-        "21:00",
-        "08:00",
-        true,
-      ),
-    ).toBe(date("2026-10-12T18:30:00Z"));
-    expect(
-      nextAllowedNotificationEmailAt(
-        date("2026-10-12T18:30:00Z"),
-        "08:00",
-        "08:00",
-      ),
-    ).toBe(date("2026-10-12T18:30:00Z"));
-  });
   it("counts one working day across weekends and configured holidays", () => {
     expect(oneWorkingDayAfter(date("2026-10-09T05:00:00Z"))).toBe(
       date("2026-10-12T05:00:00Z"),
@@ -76,7 +40,6 @@ describe("LMS notification time and default-off policies", () => {
       pool: { connect } as unknown as Pool,
       enabled: false,
       authorizeLink: vi.fn(),
-      sendEmail: vi.fn(),
     });
     expect(await worker.runOnce()).toEqual({
       queued: 0,
@@ -113,7 +76,7 @@ describe("LMS notification time and default-off policies", () => {
       }),
     );
   });
-  it("uses the same complete RU/EN wording for portal, email and staff notification codes", () => {
+  it("uses the same complete RU/EN wording for portal and staff notification codes", () => {
     const staffCodes = ["lmsNoticeReviewQueue", "lmsNoticeHelpRequested", "lmsNoticeHelpEscalated", "lmsNoticeLessonChanged", "lmsNoticeAssignmentOverdue", "lmsNoticePublished", "lmsNoticeDeliveryFailed"] as const;
     const params = { title: "Example", children: 2, updates: 4 };
     for (const code of [...Object.values(PORTAL_NOTIFICATION_EVENT_CODES), ...staffCodes]) {

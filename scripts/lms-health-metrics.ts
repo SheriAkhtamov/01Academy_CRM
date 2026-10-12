@@ -107,10 +107,7 @@ export async function readLmsHttpMetrics(files: string[], now: Date, windowMinut
 
 async function databaseMetrics(pool: Pool, now: Date) {
   const empty = { available: false, code: null as string | null, resourceOutbox: null as null | {
-    pending: number; inAppPending: number; emailPending: number; due: number; failed: number; emailFailed: number;
-    oldestPendingAgeSeconds: number | null; oldestDueAgeSeconds: number | null; oldestLeaseAgeSeconds: number | null;
-  }, identityMail: null as null | {
-    pending: number; delivering: number; due: number; failed: number;
+    pending: number; inAppPending: number; due: number; failed: number;
     oldestPendingAgeSeconds: number | null; oldestDueAgeSeconds: number | null; oldestLeaseAgeSeconds: number | null;
   }, quarantine: null as null | {
     uploading: number; checking: number; rejected: number; due: number;
@@ -122,31 +119,20 @@ async function databaseMetrics(pool: Pool, now: Date) {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await client.query("SET LOCAL statement_timeout = '5000'");
     await client.query("SET LOCAL lock_timeout = '1000'");
-    const tables = ["lms_resource_outbox", "portal_identity_mail_outbox", "lms_files"] as const;
+    const tables = ["lms_resource_outbox", "lms_files"] as const;
     const found = await client.query<{ name: string; exists: boolean }>("SELECT name,to_regclass(name) IS NOT NULL AS exists FROM unnest($1::text[]) AS name", [tables]);
     const available = new Set(found.rows.filter((row) => row.exists).map((row) => row.name));
     empty.unavailableTables = tables.filter((name) => !available.has(name));
     if (available.has("lms_resource_outbox")) {
       const { rows: [row] } = await client.query(`SELECT count(*) FILTER(WHERE state='pending') AS pending,
         count(*) FILTER(WHERE state='pending' AND channel='in_app') AS in_app_pending,
-        count(*) FILTER(WHERE state='pending' AND channel='email') AS email_pending,
         count(*) FILTER(WHERE state='pending' AND deliver_after<=$1) AS due,
-        count(*) FILTER(WHERE state='failed') AS failed,count(*) FILTER(WHERE state='failed' AND channel='email') AS email_failed,
+        count(*) FILTER(WHERE state='failed') AS failed,
         extract(epoch FROM ($1::timestamptz-min(created_at) FILTER(WHERE state='pending'))) AS pending_age,
         extract(epoch FROM ($1::timestamptz-min(deliver_after) FILTER(WHERE state='pending' AND deliver_after<=$1))) AS due_age,
         extract(epoch FROM ($1::timestamptz-min(locked_at) FILTER(WHERE state='pending' AND locked_at IS NOT NULL))) AS lease_age
         FROM lms_resource_outbox`, [now]);
-      empty.resourceOutbox = { pending: integer(row.pending), inAppPending: integer(row.in_app_pending), emailPending: integer(row.email_pending), due: integer(row.due), failed: integer(row.failed), emailFailed: integer(row.email_failed), oldestPendingAgeSeconds: seconds(row.pending_age), oldestDueAgeSeconds: seconds(row.due_age), oldestLeaseAgeSeconds: seconds(row.lease_age) };
-    }
-    if (available.has("portal_identity_mail_outbox")) {
-      const { rows: [row] } = await client.query(`SELECT count(*) FILTER(WHERE status='pending') AS pending,
-        count(*) FILTER(WHERE status='delivering') AS delivering,count(*) FILTER(WHERE status='pending' AND available_at<=$1) AS due,
-        count(*) FILTER(WHERE status='failed') AS failed,
-        extract(epoch FROM ($1::timestamptz-min(created_at) FILTER(WHERE status IN ('pending','delivering')))) AS pending_age,
-        extract(epoch FROM ($1::timestamptz-min(available_at) FILTER(WHERE status='pending' AND available_at<=$1))) AS due_age,
-        extract(epoch FROM ($1::timestamptz-min(locked_at) FILTER(WHERE status='delivering' AND locked_at IS NOT NULL))) AS lease_age
-        FROM portal_identity_mail_outbox`, [now]);
-      empty.identityMail = { pending: integer(row.pending), delivering: integer(row.delivering), due: integer(row.due), failed: integer(row.failed), oldestPendingAgeSeconds: seconds(row.pending_age), oldestDueAgeSeconds: seconds(row.due_age), oldestLeaseAgeSeconds: seconds(row.lease_age) };
+      empty.resourceOutbox = { pending: integer(row.pending), inAppPending: integer(row.in_app_pending), due: integer(row.due), failed: integer(row.failed), oldestPendingAgeSeconds: seconds(row.pending_age), oldestDueAgeSeconds: seconds(row.due_age), oldestLeaseAgeSeconds: seconds(row.lease_age) };
     }
     if (available.has("lms_files")) {
       const { rows: [row] } = await client.query(`SELECT count(*) FILTER(WHERE state='uploading') AS uploading,
@@ -163,7 +149,6 @@ async function databaseMetrics(pool: Pool, now: Date) {
     await client?.query("ROLLBACK").catch(() => undefined);
     empty.code = operationCode(error, "HEALTH_DATABASE_UNAVAILABLE");
     empty.resourceOutbox = null;
-    empty.identityMail = null;
     empty.quarantine = null;
   } finally { client?.release(); }
   return empty;
@@ -209,5 +194,5 @@ export async function collectLmsHealth(pool: Pool, options: LmsHealthOptions) {
     readLmsHttpMetrics(options.logFiles ?? [], now, windowMinutes, maxBytes),
   ]);
   return { collectedAt: now.toISOString(), readOnly: true as const, database, disk, backup, http,
-    emailFailed: database.available && database.identityMail && database.resourceOutbox ? database.identityMail.failed + database.resourceOutbox.emailFailed : null };
+    notificationFailed: database.available && database.resourceOutbox ? database.resourceOutbox.failed : null };
 }

@@ -205,7 +205,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         csrfToken: "",
       });
       void client.invalidateQueries({ queryKey: portalSessionKey });
-      navigate("/learn/login");
+      navigate("/login");
     },
   });
   const go = (route: string) =>

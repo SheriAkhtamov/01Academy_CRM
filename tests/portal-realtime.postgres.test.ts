@@ -73,7 +73,7 @@ describe.skipIf(!databaseUrl)(
       const identity = new PortalIdentityService(
         createPostgresPortalRepository(observedPool),
         createPortalCrypto(),
-        { appUrl: origin, allowInvitations: false, emailEnabled: false },
+        { appUrl: origin, allowInvitations: false, },
       );
       server = createServer((_request, response) => response.end());
       gateway = createPortalWebSocketGateway(server, {

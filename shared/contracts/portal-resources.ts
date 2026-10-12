@@ -83,15 +83,14 @@ export type PortalNotificationDto = {
 export type PortalNotificationPageDto = { items: PortalNotificationDto[]; nextCursor: number | null; unreadCount: number };
 export type PortalNotificationCollectionDto = PortalNotificationPageDto & PortalResourcePageDto<PortalNotificationDto>;
 export type PortalNotificationPreferencesDto = {
-  categories: Record<PortalNotificationCategory, { inApp: boolean; email: boolean }>;
-  quietFrom: string; quietUntil: string; weeklySummary: boolean;
+  categories: Record<PortalNotificationCategory, { inApp: boolean }>;
+  weeklySummary: boolean;
 };
 export const portalNotificationPreferencesSchema = z.object({
   categories: z.object(Object.fromEntries(PORTAL_NOTIFICATION_CATEGORIES.map((category) => [category,
-    z.object({ inApp: z.boolean(), email: z.boolean() }).strict(),
-  ])) as Record<PortalNotificationCategory, z.ZodObject<{ inApp: z.ZodBoolean; email: z.ZodBoolean }>>).strict(),
-  quietFrom: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  quietUntil: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), weeklySummary: z.boolean(),
+    z.object({ inApp: z.boolean() }).strict(),
+  ])) as Record<PortalNotificationCategory, z.ZodObject<{ inApp: z.ZodBoolean }>>).strict(),
+  weeklySummary: z.boolean(),
 }).strict();
 export const portalPaymentAllocationSchema = z.object({
   version: z.number().int().nonnegative(),

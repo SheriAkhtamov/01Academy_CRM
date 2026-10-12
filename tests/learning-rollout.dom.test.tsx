@@ -40,7 +40,6 @@ const settings: LearningSchoolSettingsDto = {
   settings: structuredClone(DEFAULT_LEARNING_SCHOOL_SETTINGS),
   version: 7,
   employees: [{ id: 60, fullName: "Coordinator Smith" }],
-  emailConfigured: false,
 };
 let client: QueryClient;
 beforeEach(() => {

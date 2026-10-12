@@ -82,20 +82,20 @@ describe("Learning connection budget and prepared plans", () => {
       createLearningExecutionPools(
         null,
         config(),
-        { mode: "worker", roles: ["email"] },
-        { max: 2 },
+        { mode: "worker", roles: ["credentials"] },
+        { max: 1 },
       ),
     ).toThrow();
     const capped = config();
-    capped.database.pool = { max: 2 };
+    capped.database.pool = { max: 1 };
     expect(() =>
       createLearningExecutionPools(
         null,
         capped,
-        { mode: "worker", roles: ["email"] },
+        { mode: "worker", roles: ["credentials"] },
         { max: 3 },
       ),
-    ).toThrow("at least 3");
+    ).toThrow("at least 2");
     expect(mocks.create).not.toHaveBeenCalled();
     expect(() => createLearningPool(null, config(false))).toThrow();
     expect(() => createLearningPool(null, config(), { max: 11 })).toThrow();
@@ -191,7 +191,6 @@ describe("Learning connection budget and prepared plans", () => {
       {
         appUrl: "https://portal.example.test",
         allowInvitations: true,
-        emailEnabled: false,
         invitationsEnabledForStudent: (id) =>
           flags.enabledForStudent("invitations", id),
       },

@@ -9,7 +9,6 @@ import {
   accessDenied,
   PORTAL_NOTIFICATION_EVENT_CODES,
   defaultPreferences,
-  nextAllowedNotificationEmailAt,
   oneWorkingDayAfter,
   type Sql,
   type Candidate,
@@ -21,12 +20,10 @@ import {
 import { PortalNotificationSources } from "./notification-sources";
 import { isNotificationResultCurrent } from "./notification-current-object";
 export {
-  nextAllowedNotificationEmailAt,
   oneWorkingDayAfter,
   PORTAL_NOTIFICATION_EVENT_CODES,
 } from "./notification-support";
 export type {
-  PortalNotificationEmail,
   PortalNotificationWorkerOptions,
   NotificationWorkCalendar,
 } from "./notification-support";
@@ -67,44 +64,30 @@ export class PortalNotificationWorker {
       if (!supplied) client.release();
     }
   }
-  async runOnce(): Promise<{
-    queued: number;
-    delivered: number;
-    cancelled: number;
-    failed: number;
-  }> {
+  async runOnce(): Promise<{ queued: number; delivered: number; cancelled: number; failed: number }> {
     const result = { queued: 0, delivered: 0, cancelled: 0, failed: 0 };
     if (this.running || !this.flag(this.options.enabled)) return result;
     this.running = true;
     try {
-      const mode = this.options.mode ?? "all";
-      for (const phase of mode === "all" ? ["in_app", "email"] as const : [mode]) {
-        if (!this.flag(this.options.enabled)) break;
-        const sql = phase === "in_app" ? await this.options.pool.connect() : this.options.pool;
-        try { await this.runPhase(sql, phase, result); }
-        finally { if (phase === "in_app") (sql as PoolClient).release(); }
-      }
+      const sql = await this.options.pool.connect();
+      try { await this.runPhase(sql, result); } finally { sql.release(); }
       return result;
-    } finally {
-      this.running = false;
-    }
+    } finally { this.running = false; }
   }
   private async runPhase(
     sql: Sql,
-    phase: "in_app" | "email",
     result: { queued: number; delivered: number; cancelled: number; failed: number },
   ): Promise<void> {
+    const phase = "in_app";
     const lockName = `academy-lms-notification-worker:${phase}`;
     let locked = false;
     try {
-      if (phase === "in_app") {
         locked = (await sql.query<{ locked: boolean }>(
           "SELECT pg_try_advisory_lock(hashtext($1||':'||current_schema())) AS locked", [lockName],
         )).rows[0].locked;
         if (!locked) return;
-      }
+
       const now = this.options.now?.() ?? Date.now();
-      if (phase === "in_app") {
         const requestedCutoff = this.options.rolloutStartedAt
         ? new Date(this.options.rolloutStartedAt).toISOString()
         : new Date(now).toISOString();
@@ -147,7 +130,7 @@ export class PortalNotificationWorker {
           [marker],
         );
       await this.staffJobs(sql, cutoff, now);
-      }
+
       await sql.query(
         "UPDATE lms_resource_outbox SET state='failed',locked_at=NULL,last_error_code='delivery_interrupted' WHERE state='pending' AND channel=$2 AND attempts>=5 AND (locked_at IS NULL OR locked_at<$1)",
         [new Date(now - 5 * MINUTE), phase],
@@ -179,32 +162,15 @@ export class PortalNotificationWorker {
       if (locked) await sql.query("SELECT pg_advisory_unlock(hashtext($1||':'||current_schema()))", [lockName]);
     }
   }
-  private async preferences(
-    sql: Sql,
-    accountId: number,
-  ): Promise<PortalNotificationPreferencesDto> {
-    const row = (
-      await sql.query<{
-        categories: PortalNotificationPreferencesDto["categories"];
-        quiet_from: string;
-        quiet_until: string;
-        weekly_summary: boolean;
-      }>(
-        "SELECT categories,quiet_from::text,quiet_until::text,weekly_summary FROM portal_notification_preferences WHERE account_id=$1",
-        [accountId],
-      )
-    ).rows[0];
-    if (!row) return defaultPreferences();
-    return {
-      categories: {
-        ...defaultPreferences().categories,
-        ...row.categories,
-        security: { inApp: true, email: true },
-      },
-      quietFrom: row.quiet_from.slice(0, 5),
-      quietUntil: row.quiet_until.slice(0, 5),
-      weeklySummary: row.weekly_summary,
-    };
+  private async preferences(sql: Sql, accountId: number): Promise<PortalNotificationPreferencesDto> {
+    const row = (await sql.query<{ categories: PortalNotificationPreferencesDto['categories']; weekly_summary: boolean }>(
+      'SELECT categories,weekly_summary FROM portal_notification_preferences WHERE account_id=$1', [accountId])).rows[0];
+    const defaults = defaultPreferences();
+    if (!row) return defaults;
+    return { categories: Object.fromEntries(Object.keys(defaults.categories).map(category => {
+      const key = category as keyof typeof defaults.categories;
+      return [key, { inApp: key === 'security' || (row.categories[key]?.inApp ?? defaults.categories[key].inApp) }];
+    })) as PortalNotificationPreferencesDto['categories'], weeklySummary: row.weekly_summary };
   }
   private async enqueue(sql: Sql, candidate: Candidate, now: number): Promise<number> {
     const links =
@@ -246,17 +212,11 @@ export class PortalNotificationWorker {
         }
       }
       const preferences = await this.preferences(sql, number(link.account_id));
-      for (const channel of ["in_app", "email"] as const) {
+      const channel = "in_app";
         if (
           channel === "in_app" &&
           !preferences.categories[candidate.category].inApp &&
           candidate.category !== "security"
-        )
-          continue;
-        if (
-          channel === "email" &&
-          (!this.flag(this.options.emailEnabled) ||
-            !preferences.categories[candidate.category].email)
         )
           continue;
         let href = candidate.href;
@@ -296,7 +256,7 @@ export class PortalNotificationWorker {
           ],
         );
         inserted += queued.rowCount ?? 0;
-      }
+
     }
     return inserted;
   }
@@ -485,27 +445,6 @@ export class PortalNotificationWorker {
       )).rowCount);
     return isNotificationResultCurrent(sql, row, actor, now);
   }
-  /** Read-only preview/requeue guard; no queue mutation or SMTP dispatch occurs here. */
-  async canRetryFailedEmail(id: number, sql: Sql = this.options.pool): Promise<boolean> {
-    if (!this.flag(this.options.enabled) || !this.flag(this.options.emailEnabled)) return false;
-    const row = (await sql.query<Outbox & { state: string; locked_at: Date | null }>("SELECT * FROM lms_resource_outbox WHERE id=$1", [id])).rows[0];
-    if (!row || row.state !== "failed" || row.channel !== "email" || row.locked_at) return false;
-    row.account_id = number(row.account_id);
-    if (!Object.prototype.hasOwnProperty.call(PORTAL_NOTIFICATION_EVENT_CODES, String(row.params.sourceType ?? "")) && row.params.sourceType !== "finance_question_answered") return false;
-    const account = (await sql.query<Account>("SELECT id,email,email_verified_at,locale,status FROM portal_accounts WHERE id=$1", [row.account_id])).rows[0];
-    if (!account || account.status === "archived" || (account.status !== "active" && row.category !== "security") || !account.email || !account.email_verified_at) return false;
-    if (this.options.emailEnabledForAccount && !(await this.options.emailEnabledForAccount(row.account_id))) return false;
-    let actor: PortalActorContext | null = null;
-    if (row.link_id !== null) {
-      try { actor = await this.options.authorizeLink(number(row.account_id), number(row.link_id), row.required_permission ?? undefined); }
-      catch (error) { if (accessDenied(error)) return false; throw error; }
-    }
-    if (actor && ((this.options.enabledForStudent && !(await this.options.enabledForStudent(actor.studentId))) ||
-        (this.options.emailEnabledForStudent && !(await this.options.emailEnabledForStudent(actor.studentId))))) return false;
-    const preferences = await this.preferences(sql, row.account_id);
-    if (!preferences.categories[row.category].email || (row.params.sourceType === "family_weekly" && !preferences.weeklySummary)) return false;
-    return this.isCurrent(sql, row, actor, this.options.now?.() ?? Date.now());
-  }
   private async deliver(
     sql: Sql,
     row: Outbox,
@@ -514,7 +453,7 @@ export class PortalNotificationWorker {
     if (!row.locked_at) return "deferred";
     const account = (
       await sql.query<Account>(
-        "SELECT id,email,email_verified_at,locale,status FROM portal_accounts WHERE id=$1",
+        "SELECT id,status FROM portal_accounts WHERE id=$1",
         [row.account_id],
       )
     ).rows[0];
@@ -586,99 +525,8 @@ export class PortalNotificationWorker {
       });
       return recorded ? "delivered" : "deferred";
     }
-    if (
-      !this.flag(this.options.emailEnabled) ||
-      !preferences.categories[row.category].email ||
-      !account.email ||
-      !account.email_verified_at
-    )
-      return cancel();
-    if (this.options.emailEnabledForAccount && !(await this.options.emailEnabledForAccount(row.account_id))) return cancel();
-    if (
-      actor &&
-      this.options.emailEnabledForStudent &&
-      !(await this.options.emailEnabledForStudent(actor.studentId))
-    )
-      return cancel();
-    const next = nextAllowedNotificationEmailAt(
-      now,
-      preferences.quietFrom,
-      preferences.quietUntil,
-      row.urgent || row.category === "security",
-    );
-    if (next > now) {
-      await sql.query(
-        "UPDATE lms_resource_outbox SET deliver_after=$2,locked_at=NULL WHERE id=$1 AND state='pending' AND locked_at=$3 AND attempts=$4",
-        [row.id, new Date(next), row.locked_at, row.attempts],
-      );
-      return "deferred";
-    }
-    if (row.params.sourceType === "family_weekly") {
-      if (!preferences.weeklySummary) return cancel();
-      row.params = {
-        ...row.params,
-        ...(await this.sources.weeklySummary(sql, row.account_id, now)),
-      };
-    }
-    if (!this.flag(this.options.enabled) || !this.flag(this.options.emailEnabled)) return cancel();
-    const attempted = await sql.query<{ attempts: number }>(`UPDATE lms_resource_outbox SET attempts=attempts+1
-      WHERE id=$1 AND state='pending' AND locked_at=$2 AND attempts=$3 AND locked_at>$4::timestamptz-interval '5 minutes'
-      RETURNING attempts`, [row.id, row.locked_at, row.attempts, new Date(this.options.now?.() ?? Date.now())]);
-    if (!attempted.rowCount) return "deferred";
-    const attempt = attempted.rows[0].attempts;
-    row.attempts = attempt;
-    let delivered = false;
-    try {
-      delivered = await this.options.sendEmail({
-        to: account.email,
-        locale: account.locale,
-        category: row.category,
-        code: row.code,
-        params: row.params,
-        href: row.href,
-        accountId: number(row.account_id),
-        eventKey: row.event_key,
-      });
-    } catch {
-      /* Provider errors are stored as a safe code, never as addresses, tokens or response bodies. */
-    }
-    if (delivered) {
-      const changed = await sql.query(
-        "UPDATE lms_resource_outbox SET state='delivered',delivered_at=$2,locked_at=NULL,last_error_code=NULL WHERE id=$1 AND state='pending' AND locked_at=$3 AND attempts=$4",
-        [row.id, new Date(this.options.now?.() ?? Date.now()), row.locked_at, attempt],
-      );
-      return changed.rowCount ? "delivered" : "deferred";
-    }
-    const changed = await sql.query(
-      `UPDATE lms_resource_outbox SET state=$2,deliver_after=$3,locked_at=NULL,last_error_code='delivery_failed'
-        WHERE id=$1 AND state='pending' AND locked_at=$4 AND attempts=$5`,
-      [
-        row.id,
-        attempt >= 5 ? "failed" : "pending",
-        new Date((this.options.now?.() ?? Date.now()) + MINUTE * Math.pow(2, attempt - 1)),
-        row.locked_at,
-        attempt,
-      ],
-    );
-    if (!changed.rowCount) return "deferred";
-    if (attempt >= 5 && this.options.staffCopy) {
-      const admins = (
-        await sql.query<{ id: number }>(
-          "SELECT staff.id FROM users staff WHERE staff.is_active=true AND staff.is_archived=false AND (staff.module='administration' OR EXISTS(SELECT 1 FROM user_modules WHERE user_id=staff.id AND module='administration'))",
-        )
-      ).rows;
-      for (const admin of admins)
-        await this.staffNotification(
-          sql,
-          admin.id,
-          `notification-failed:${row.id}`,
-          "lmsNoticeDeliveryFailed",
-          {},
-          "lms_notification_delivery",
-          number(row.id),
-        );
-    }
-    return "failed";
+
+    return cancel();
   }
   private async staffNotification(
     sql: Sql,

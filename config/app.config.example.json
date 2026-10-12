@@ -31,20 +31,9 @@
     "learningEnabled": false,
     "sessionSecret": "",
     "tokenEncryptionKey": "",
-    "emailEnabled": false,
     "allowInvitations": false,
     "publicPortfolioEnabled": false,
     "groupIds": []
-  },
-  "email": {
-    "resendApiKey": "",
-    "smtp": {
-      "host": "smtp.gmail.com",
-      "port": 587,
-      "user": "",
-      "pass": "",
-      "from": "noreply@example.com"
-    }
   },
   "integrations": {
     "_comment": "Supported CRM integrations. Never commit real tokens or secrets.",

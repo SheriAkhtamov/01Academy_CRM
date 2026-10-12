@@ -156,7 +156,7 @@ it("requires a prepared synthetic cohort for load-only and keeps file scanning m
   expect(arguments_.withoutFiles).toBe(false);
   expect(parseAcceptanceArguments(["--without-files"]).withoutFiles).toBe(true);
 });
-it("refuses email delivery, disabled learning, short secrets and mismatched server configuration before accessing a database", async () => {
+it("refuses disabled learning, short secrets and mismatched server configuration before accessing a database", async () => {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), "lms-acceptance-runtime-"),
   );
@@ -169,7 +169,6 @@ it("refuses email delivery, disabled learning, short secrets and mismatched serv
       learningEnabled: true,
       allowInvitations: true,
       publicPortfolioEnabled: true,
-      emailEnabled: false,
       sessionSecret: "synthetic-runtime-secret-with-32-characters",
     },
   };
@@ -182,7 +181,6 @@ it("refuses email delivery, disabled learning, short secrets and mismatched serv
   await writeFile(location, JSON.stringify(valid));
   expect(read()).toEqual({ sessionSecret: valid.portal.sessionSecret });
   for (const portal of [
-    { ...valid.portal, emailEnabled: true },
     { ...valid.portal, learningEnabled: false },
     { ...valid.portal, allowInvitations: false },
     { ...valid.portal, publicPortfolioEnabled: false },

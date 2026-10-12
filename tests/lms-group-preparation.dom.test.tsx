@@ -47,7 +47,6 @@ const rollout = (enabled: boolean): LearningRolloutDto => ({
     portalEnabled: false,
     learningEnabled: enabled,
     invitationsEnabled: false,
-    emailEnabled: false,
     publicPortfolioEnabled: false,
   },
   flags: [
@@ -64,7 +63,6 @@ const rollout = (enabled: boolean): LearningRolloutDto => ({
     { id: 13, name: "Group 13" },
     { id: 14, name: "Group 14" },
   ],
-  emailConfigured: false,
 });
 let client: QueryClient;
 let rows: LmsStaffRunDto[];

@@ -46,7 +46,6 @@ export type StudentPortalAccessTabProps = {
   canManageAccess: boolean;
   canSuspendAccounts?: boolean;
   enabled?: boolean;
-  emailEnabled?: boolean;
   onDraftChange?: (dirty: boolean, pending: boolean) => void;
   initialInvitationKind?: "self" | "representative";
 };
@@ -57,7 +56,6 @@ export function StudentPortalAccessTab({
   canManageAccess,
   canSuspendAccounts = false,
   enabled = true,
-  emailEnabled = true,
   onDraftChange,
   initialInvitationKind = "self",
 }: StudentPortalAccessTabProps) {
@@ -299,7 +297,6 @@ export function StudentPortalAccessTab({
         classification={data.classification}
         controls={controls}
         onDraftChange={inviteDraft}
-        emailEnabled={emailEnabled}
         initialKind={initialInvitationKind}
       />
       <ClassificationDialog

@@ -14,8 +14,8 @@ import { resourceRows, resourceOne, resourceTransaction, resourceAudit, checkRes
 
 const fileSelect = 'SELECT file.* FROM lms_files file';
 const defaultPreferences = (): PortalNotificationPreferencesDto => ({
-  categories: Object.fromEntries(PORTAL_NOTIFICATION_CATEGORIES.map((category) => [category, { inApp: true, email: category !== 'learning' }])) as PortalNotificationPreferencesDto['categories'],
-  quietFrom: '21:00', quietUntil: '08:00', weeklySummary: false,
+  categories: Object.fromEntries(PORTAL_NOTIFICATION_CATEGORIES.map((category) => [category, { inApp: true }])) as PortalNotificationPreferencesDto['categories'],
+  weeklySummary: false,
 });
 const visibleNotification = `(notification.link_id IS NULL OR EXISTS(SELECT 1 FROM portal_student_links link
   WHERE link.id=notification.link_id AND link.account_id=notification.account_id AND link.status='active'
@@ -227,14 +227,14 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
     await this.pool.query(`UPDATE portal_notifications notification SET read_at=COALESCE(read_at,now()) WHERE notification.account_id=$1 AND ($2::bigint IS NULL OR notification.id=$2) AND ${visibleNotification}`, [accountId, id]);
   }
   async preferences(accountId: number): Promise<PortalNotificationPreferencesDto> {
-    const row = await resourceOne<{ categories: PortalNotificationPreferencesDto['categories']; quietFrom: string; quietUntil: string; weeklySummary: boolean }>(this.pool,
-      "SELECT categories,quiet_from::text,quiet_until::text,weekly_summary FROM portal_notification_preferences WHERE account_id=$1", [accountId]);
-    return row ? { ...row, categories: { ...defaultPreferences().categories, ...row.categories, security: { inApp: true, email: true } }, quietFrom: row.quietFrom.slice(0, 5), quietUntil: row.quietUntil.slice(0, 5) } : defaultPreferences();
+    const row = await resourceOne<{ categories: PortalNotificationPreferencesDto['categories']; weeklySummary: boolean }>(this.pool,
+      "SELECT categories,weekly_summary FROM portal_notification_preferences WHERE account_id=$1", [accountId]);
+    return row ? { ...row, categories: { ...defaultPreferences().categories, ...row.categories, security: { inApp: true } } } : defaultPreferences();
   }
   async savePreferences(accountId: number, preferences: PortalNotificationPreferencesDto) {
-    const categories = { ...preferences.categories, security: { inApp: true, email: true } };
-    await this.pool.query(`INSERT INTO portal_notification_preferences(account_id,categories,quiet_from,quiet_until,weekly_summary) VALUES($1,$2::jsonb,$3,$4,$5)
-      ON CONFLICT(account_id) DO UPDATE SET categories=excluded.categories,quiet_from=excluded.quiet_from,quiet_until=excluded.quiet_until,weekly_summary=excluded.weekly_summary,updated_at=now()`, [accountId, JSON.stringify(categories), preferences.quietFrom, preferences.quietUntil, preferences.weeklySummary]);
+    const categories = { ...preferences.categories, security: { inApp: true } };
+    await this.pool.query(`INSERT INTO portal_notification_preferences(account_id,categories,weekly_summary) VALUES($1,$2::jsonb,$3)
+      ON CONFLICT(account_id) DO UPDATE SET categories=excluded.categories,weekly_summary=excluded.weekly_summary,updated_at=now()`, [accountId, JSON.stringify(categories), preferences.weeklySummary]);
   }
   async auditDownload(actor: PortalActorContext | null, fileId: number, shareId?: number, requestId?: string) {
     if (actor) await resourceAudit(this.pool, actor, 'file.downloaded', 'file', fileId);

@@ -30,7 +30,7 @@ export const createPortalCrypto = (encryptionKey?: string): PortalCrypto => ({
       .join(".");
   },
 });
-export const decryptPortalMail = (
+export const decryptPortalEnvelope = (
   envelope: string,
   encryptionKey: string,
 ): Record<string, unknown> => {

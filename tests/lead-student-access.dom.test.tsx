@@ -24,12 +24,12 @@ class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 for (const method of ['setPointerCapture', 'releasePointerCapture', 'scrollIntoView']) (Element.prototype as unknown as Record<string, unknown>)[method] = () => undefined;
 (Element.prototype as unknown as Record<string, unknown>).hasPointerCapture = () => false;
 const clients: QueryClient[] = [];
-const capabilities = (portalEnabled: boolean, canManageAccess = true) => ({ portalEnabled, canManageAccess, learningEnabled: false, invitationsEnabled: true, emailEnabled: false, publicPortfolioEnabled: false });
+const capabilities = (portalEnabled: boolean, canManageAccess = true) => ({ portalEnabled, canManageAccess, learningEnabled: false, invitationsEnabled: true, publicPortfolioEnabled: false });
 function show({ portalEnabled = false, canManageAccess = true, purpose = 'enrollment', missingCapabilities = false }: {
   portalEnabled?: boolean; canManageAccess?: boolean; purpose?: 'enrollment' | 'demo'; missingCapabilities?: boolean;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); clients.push(client);
-  if (!missingCapabilities) client.setQueryData(['learning-capabilities', mocks.user?.id ?? 0], capabilities(portalEnabled, canManageAccess));
+  if (!missingCapabilities) client.setQueryData(['learning-capabilities'], capabilities(portalEnabled, canManageAccess));
   function Harness() {
     const [open, setOpen] = useState(true);
     return <CreateLeadStudentDialog open={open} onOpenChange={value => { mocks.close(value); setOpen(value); }}
@@ -73,62 +73,18 @@ describe('Lead conversion learner and portal access choices', () => {
     expect(createLeadStudentRequestSchema.safeParse(mocks.createStudent.mock.calls[0][1]).success).toBe(true);
     expect(Object.keys(mocks.createStudent.mock.calls[0][1])).not.toEqual(expect.arrayContaining(['whoStudies', 'relationship', 'accessRecipient', 'account']));
   });
-  it('keeps a child name separate from the lead and opens the validated representative invitation flow', async () => {
-    show({ portalEnabled: true });
-    fireEvent.click(screen.getByRole('radio', { name: 'Lead contact' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Child' }));
-    expect((screen.getByLabelText('Student Name') as HTMLInputElement).value).toBe('');
-    enterName('Child Learner'); fireEvent.click(screen.getByRole('radio', { name: 'Representative' })); save();
-    const access = await screen.findByRole('dialog', { name: 'Access' });
-    expect(within(access).getByText('Child Learner')).toBeTruthy();
-    expect(mocks.access.get).toHaveBeenCalledWith(42);
-    expect(mocks.access.classify).not.toHaveBeenCalled(); expect(mocks.access.invite).not.toHaveBeenCalled(); expect(mocks.access.checkContacts).not.toHaveBeenCalled();
-    fireEvent.click(await within(access).findByRole('button', { name: 'Invite' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    expect((await screen.findByLabelText(i18n.t('lmsStaffFullName'))).getAttribute('value')).toBe('');
-    expect(mocks.access.invite).not.toHaveBeenCalled();
+  it('preserves the child name and completes conversion without a second access dialog', async () => {
+    show({ portalEnabled: true }); fireEvent.click(screen.getByRole('radio', { name: 'Child' }));
+    enterName('Child Learner'); save(); await waitFor(() => expect(mocks.created).toHaveBeenCalled());
+    expect(mocks.createStudent.mock.calls[0][1].studentName).toBe('Child Learner');
+    expect(mocks.access.invite).not.toHaveBeenCalled(); expect(mocks.close).toHaveBeenCalledWith(false);
   });
-  it('opens student access only after a successful save and seeds the student name', async () => {
-    show({ portalEnabled: true }); fireEvent.click(screen.getByRole('radio', { name: 'Another person' }));
-    enterName('Other Learner'); fireEvent.click(screen.getByRole('radio', { name: 'Student' }));
-    let complete!: (student: { id: number; studentName: string }) => void;
-    mocks.createStudent.mockImplementation(() => new Promise(resolve => { complete = resolve; }));
-    save(); await waitFor(() => expect(mocks.createStudent).toHaveBeenCalled());
-    expect(mocks.access.get).not.toHaveBeenCalled();
-    await act(async () => complete({ id: 43, studentName: 'Other Learner' }));
-    const access = await screen.findByRole('dialog', { name: 'Access' });
-    fireEvent.click(await within(access).findByRole('button', { name: 'Invite' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    expect((await screen.findByLabelText(i18n.t('lmsStaffFullName'))).getAttribute('value')).toBe('Other Learner');
-    expect(mocks.access.get).toHaveBeenCalledWith(43); expect(mocks.access.invite).not.toHaveBeenCalled();
-  });
-  it('never opens access on failed conversion and keeps the entered learner and recipient for retry', async () => {
+  it('keeps the child name for retry when conversion fails', async () => {
     show({ portalEnabled: true }); fireEvent.click(screen.getByRole('radio', { name: 'Child' })); enterName('Retained Learner');
-    fireEvent.click(screen.getByRole('radio', { name: 'Representative' })); mocks.createStudent.mockRejectedValueOnce(new Error('invalidData')); save();
+    mocks.createStudent.mockRejectedValueOnce(new Error('invalidData')); save();
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' })));
     expect((screen.getByLabelText('Student Name') as HTMLInputElement).value).toBe('Retained Learner');
-    expect((screen.getByRole('radio', { name: 'Representative' }) as HTMLInputElement).checked).toBe(true);
-    expect(mocks.access.get).not.toHaveBeenCalled(); expect(mocks.access.invite).not.toHaveBeenCalled();
-  });
-  it('requires explicit identity verification before inviting the selected representative', async () => {
-    mocks.access.get.mockResolvedValue({ studentId: 42, studentName: 'Child Learner', classification: 'unverified', links: [] });
-    show({ portalEnabled: true }); fireEvent.click(screen.getByRole('radio', { name: 'Child' })); enterName('Child Learner');
-    fireEvent.click(screen.getByRole('radio', { name: 'Representative' })); save();
-    const access = await screen.findByRole('dialog', { name: 'Access' });
-    fireEvent.click(await within(access).findByRole('button', { name: 'Invite' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
-    expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes(i18n.t('lmsAccessVerificationRequired')))).toBe(true);
-    expect(screen.queryByLabelText(i18n.t('lmsStaffFullName'))).toBeNull();
-    expect(mocks.access.classify).not.toHaveBeenCalled(); expect(mocks.access.invite).not.toHaveBeenCalled();
-  });
-  it('closes the follow-up access dialog when the capability is disabled and preserves the created student', async () => {
-    const client = show({ portalEnabled: true }); fireEvent.click(screen.getByRole('radio', { name: 'Child' })); enterName('Child Learner');
-    fireEvent.click(screen.getByRole('radio', { name: 'Representative' })); save();
-    await screen.findByRole('dialog', { name: 'Access' });
-    await act(async () => { client.setQueryData(['learning-capabilities', 7], capabilities(false)); });
-    expect(screen.queryByRole('dialog', { name: 'Access' })).toBeNull();
-    expect(mocks.created).toHaveBeenCalledWith({ id: 42, studentName: 'Child Learner' });
-    expect(mocks.createStudent).toHaveBeenCalledTimes(1); expect(mocks.access.invite).not.toHaveBeenCalled();
+    expect(mocks.access.invite).not.toHaveBeenCalled();
   });
   it('resets learner choice between multiple students without adding unsupported conversion fields', async () => {
     show({ portalEnabled: true, purpose: 'demo' }); fireEvent.click(screen.getByRole('radio', { name: 'Child' })); enterName('First Learner');
@@ -140,11 +96,11 @@ describe('Lead conversion learner and portal access choices', () => {
     expect(mocks.access.get).not.toHaveBeenCalled();
   });
   it('hides the new choices for staff without access rights and when status is unavailable', async () => {
-    show({ portalEnabled: true, canManageAccess: false });
+    show({ portalEnabled: false, canManageAccess: false });
     expect(screen.queryByRole('group', { name: 'Who will study?' })).toBeNull();
     cleanup(); for (const client of clients.splice(0)) client.clear();
     const client = show({ missingCapabilities: true });
-    await waitFor(() => expect(client.getQueryState(['learning-capabilities', 7])?.status).toBe('error'));
+    await waitFor(() => expect(client.getQueryState(['learning-capabilities'])?.status).toBe('error'));
     expect(screen.queryByRole('group', { name: 'Who will study?' })).toBeNull();
     enterName('Legacy Learner'); save(); await waitFor(() => expect(mocks.created).toHaveBeenCalled());
     expect(mocks.access.get).not.toHaveBeenCalled();

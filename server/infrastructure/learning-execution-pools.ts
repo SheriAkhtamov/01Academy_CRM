@@ -25,7 +25,7 @@ export function createLearningExecutionPools(
   const singleton =
     config.portal?.enabled &&
     execution.roles.some(
-      (role) => role === "lifecycle" || role === "maintenance",
+      (role) => role === "lifecycle" || role === "maintenance" || role === "credentials",
     );
   let lease: ReturnType<typeof createLearningPool> | undefined;
   try {

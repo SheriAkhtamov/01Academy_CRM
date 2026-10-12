@@ -5,6 +5,7 @@ import { pgTable, serial, getTableConfig, PgDialect, type PgTable, type AnyPgCol
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createLearningTables, createLearningPortfolioColumns, createLearningPortfolioConstraints } from "../server/db/schema/learning";
+import { createPortalCredentialTables } from "../server/db/schema/portal-credentials";
 import * as deployedSchema from "../server/db/schema";
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
@@ -19,7 +20,9 @@ const enrollments = pgTable("academy_student_group_enrollments", { id: serial("i
 const payments = pgTable("academy_payments", { id: serial("id").primaryKey() });
 const projects = pgTable("academy_portfolio_projects", { id: serial("id").primaryKey(), ...createLearningPortfolioColumns() }, (table) => createLearningPortfolioConstraints(table, { runId: () => tables.lmsGroupRuns.id, submissionId: () => tables.lmsSubmissions.id, fileId: () => tables.lmsFiles.id, userId: () => users.id }));
 const tables = createLearningTables({ userId: users.id, studentId: students.id, courseId: courses.id, groupId: groups.id, lessonId: lessons.id, enrollmentId: enrollments.id, projectId: projects.id, paymentId: payments.id });
-const configurations = Object.values(tables).map(getTableConfig);
+const leads = pgTable("academy_leads", { id: serial("id").primaryKey() });
+const credentials = createPortalCredentialTables({ accountId: tables.portalAccounts.id, leadId: leads.id, studentId: students.id, userId: users.id });
+const configurations = [...Object.values(tables), ...Object.values(credentials)].map(getTableConfig);
 const dialect = new PgDialect();
 const expression = (value: SQL | undefined) => value ? dialect.sqlToQuery(value).sql : null;
 const names = (columns: AnyPgColumn[]) => columns.map((column) => column.name);
@@ -70,8 +73,8 @@ describe.skipIf(!databaseUrl)("Learning Drizzle declarations match actual 0134â€
     if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(new URL(databaseUrl).hostname)) throw new Error("Schema parity tests require local PostgreSQL");
     admin = new Pool({ connectionString: databaseUrl }); await admin.query(`CREATE SCHEMA ${schema}`);
     pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema} -c timezone=UTC` });
-    await pool.query(`CREATE TABLE users(id serial PRIMARY KEY); CREATE TABLE academy_students(id serial PRIMARY KEY); CREATE TABLE academy_courses(id serial PRIMARY KEY); CREATE TABLE academy_groups(id serial PRIMARY KEY,course_id integer); CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer); CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,enrolled_at timestamptz,ended_at timestamptz); CREATE TABLE academy_payments(id serial PRIMARY KEY,amount_uzs integer); CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY);`);
-    for (const migration of ["0134_portal_identity", "0135_lms_learning", "0136_portal_resources", "0137_lms_crm_preparation"]) await pool.query(readFileSync(new URL(`../migrations/${migration}.sql`, import.meta.url), "utf8"));
+    await pool.query(`CREATE TABLE users(id serial PRIMARY KEY); CREATE TABLE academy_leads(id serial PRIMARY KEY); CREATE TABLE academy_students(id serial PRIMARY KEY); CREATE TABLE academy_courses(id serial PRIMARY KEY); CREATE TABLE academy_groups(id serial PRIMARY KEY,course_id integer); CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer); CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,enrolled_at timestamptz,ended_at timestamptz); CREATE TABLE academy_payments(id serial PRIMARY KEY,amount_uzs integer); CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY);`);
+    for (const migration of ["0134_portal_identity", "0135_lms_learning", "0136_portal_resources", "0137_lms_crm_preparation", "0138_manual_portal_credentials"]) await pool.query(readFileSync(new URL(`../migrations/${migration}.sql`, import.meta.url), "utf8"));
   });
   afterAll(async () => { if (pool) await pool.end(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
   const all = () => [...configurations, getTableConfig(projects)];

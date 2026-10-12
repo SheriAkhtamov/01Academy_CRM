@@ -9,8 +9,6 @@ import type {
   PortalConsent,
   PortalInvitation,
   PortalLink,
-  PortalMail,
-  PortalRecoveryToken,
   PortalRepository,
   PortalSession,
   PortalStudent,
@@ -22,8 +20,6 @@ const fields: Record<string, string> = {
   authVersion: "auth_version",
   fullName: "full_name",
   passwordHash: "password_hash",
-  emailVerifiedAt: "email_verified_at",
-  pendingEmail: "pending_email",
   studentId: "student_id",
   verifiedAt: "verified_at",
   verifiedBy: "verified_by",
@@ -51,7 +47,6 @@ const fields: Record<string, string> = {
   dedupeKey: "dedupe_key",
 };
 const dateFields = new Set([
-  "emailVerifiedAt",
   "verifiedAt",
   "expiresAt",
   "acceptedAt",
@@ -88,6 +83,7 @@ export class PostgresPortalRepository implements PortalRepository {
     private readonly connection: Connection,
     private readonly pool: Pool,
     private readonly transactional = false,
+    private readonly options: { initialCredentials?: boolean } = {},
   ) {}
   async transaction<T>(
     work: (repository: PortalRepository) => Promise<T>,
@@ -97,7 +93,7 @@ export class PostgresPortalRepository implements PortalRepository {
     try {
       await client.query("BEGIN");
       const result = await work(
-        new PostgresPortalRepository(client, this.pool, true),
+        new PostgresPortalRepository(client, this.pool, true, this.options),
       );
       await client.query("COMMIT");
       return result;
@@ -168,7 +164,7 @@ export class PostgresPortalRepository implements PortalRepository {
   }
   async findAccount(identifier: string, lock = false) {
     return this.one<PortalAccount>(
-      `SELECT * FROM portal_accounts WHERE login=$1 OR (email=$1 AND email_verified_at IS NOT NULL) ${lock ? "FOR UPDATE" : ""}`,
+      `SELECT * FROM portal_accounts WHERE login=$1 ${lock ? "FOR UPDATE" : ""}`,
       [identifier],
     );
   }
@@ -217,16 +213,16 @@ export class PostgresPortalRepository implements PortalRepository {
     );
     if (
       "phone" in changes ||
-      "email" in changes ||
-      "emailVerifiedAt" in changes
+      "email" in changes
     )
       await this.syncContacts(result);
+    if (this.options.initialCredentials && 'passwordHash' in changes) await this.connection.query('UPDATE portal_initial_credentials SET encrypted_password=NULL WHERE account_id=$1', [id]);
     return result;
   }
   private async syncContacts(account: PortalAccount) {
     for (const [kind, value, verifiedAt] of [
       ["phone", account.phone, null],
-      ["email", account.email, account.emailVerifiedAt],
+      ["email", account.email, null],
     ] as const) {
       if (value)
         await this.connection.query(
@@ -236,7 +232,7 @@ export class PostgresPortalRepository implements PortalRepository {
             kind,
             value,
             verifiedAt ? new Date(verifiedAt) : null,
-            verifiedAt ? "email_link" : null,
+            null,
           ],
         );
     }
@@ -334,31 +330,7 @@ export class PostgresPortalRepository implements PortalRepository {
       `UPDATE portal_invitations SET status='revoked' WHERE ($1::int IS NULL OR account_id=$1) AND ($2::int IS NULL OR link_id=$2) AND status IN ('created','sent','delivery_failed')`,
       [filter.accountId ?? null, filter.linkId ?? null],
     );
-    await this.connection.query(
-      `UPDATE portal_identity_mail_outbox SET status='expired',encrypted_payload=NULL WHERE invitation_id IN (SELECT id FROM portal_invitations WHERE ($1::int IS NULL OR account_id=$1) AND ($2::int IS NULL OR link_id=$2) AND status='revoked') AND status IN ('pending','delivering','failed')`,
-      [filter.accountId ?? null, filter.linkId ?? null],
-    );
-  }
-  async getToken(hash: string, lock = false) {
-    return this.one<PortalRecoveryToken>(
-      `SELECT * FROM portal_recovery_tokens WHERE token_hash=$1 ${lock ? "FOR UPDATE" : ""}`,
-      [hash],
-    );
-  }
-  async createToken(token: Omit<PortalRecoveryToken, "id">) {
-    return this.insert<PortalRecoveryToken>("portal_recovery_tokens", token);
-  }
-  async consumeToken(id: number, at: number) {
-    await this.connection.query(
-      "UPDATE portal_recovery_tokens SET consumed_at=$2 WHERE id=$1",
-      [id, new Date(at)],
-    );
-  }
-  async revokeTokens(accountId: number, at: number) {
-    await this.connection.query(
-      "UPDATE portal_recovery_tokens SET consumed_at=$2 WHERE account_id=$1 AND consumed_at IS NULL",
-      [accountId, new Date(at)],
-    );
+
   }
   async getSession(id: string, lock = false) {
     return this.one<PortalSession>(
@@ -412,6 +384,7 @@ export class PostgresPortalRepository implements PortalRepository {
       ],
     );
     if (result.rowCount !== 1) throw new PortalError("portalAuthenticationRequired", 401);
+    if (session.accountId !== null && this.options.initialCredentials) await this.connection.query('UPDATE portal_initial_credentials SET encrypted_password=NULL WHERE account_id=$1 AND auth_version=$2', [session.accountId, session.authVersion]);
   }
   async touchSession(session: PortalSession) {
     // Validate on every call; only the activity writes are coalesced. The boolean
@@ -486,20 +459,6 @@ export class PostgresPortalRepository implements PortalRepository {
   async audit(event: PortalAudit) {
     await this.insert("portal_access_audit", event);
   }
-  async queueMail(mail: PortalMail) {
-    await this.connection.query(
-      `INSERT INTO portal_identity_mail_outbox(account_id,recipient,template,encrypted_payload,expires_at,invitation_id,dedupe_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dedupe_key) DO NOTHING`,
-      [
-        mail.accountId,
-        mail.recipient,
-        mail.template,
-        mail.encryptedPayload,
-        new Date(mail.expiresAt),
-        mail.invitationId ?? null,
-        mail.dedupeKey,
-      ],
-    );
-  }
 }
-export const createPostgresPortalRepository = (pool: Pool): PortalRepository =>
-  new PostgresPortalRepository(pool, pool);
+export const createPostgresPortalRepository = (pool: Pool, options: { initialCredentials?: boolean } = {}): PortalRepository =>
+  new PostgresPortalRepository(pool, pool, false, options);

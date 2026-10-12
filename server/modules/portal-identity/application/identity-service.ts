@@ -44,7 +44,6 @@ export class PortalIdentityService {
     this.profile = new PortalProfileService(repository, crypto, options, {
       requireSession: (id, reauthenticated) => this.requireSession(id, reauthenticated),
       listSubjects: (accountId) => this.listSubjects(accountId),
-      emailEnabled: (accountId, repository) => this.emailEnabled(accountId, repository),
       rotate: (repository, account, oldId) => this.rotate(repository, account, oldId),
     });
   }
@@ -54,13 +53,6 @@ export class PortalIdentityService {
       this.options.allowInvitations &&
       (!this.options.invitationsEnabledForStudent ||
         (await this.options.invitationsEnabledForStudent(studentId, repository)))
-    );
-  }
-  private async emailEnabled(accountId: number, repository: PortalRepository = this.repository) {
-    return (
-      this.options.emailEnabled &&
-      (!this.options.emailEnabledForAccount ||
-        (await this.options.emailEnabledForAccount(accountId, repository)))
     );
   }
 
@@ -418,8 +410,6 @@ export class PortalIdentityService {
     command: PortalInvitationCreateCommand,
   ): Promise<PortalInvitationResultDto> {
     if (!this.options.allowInvitations) throw new PortalError("portalInvitationsDisabled", 403);
-    if (command.channel === "email" && !this.options.emailEnabled)
-      throw new PortalError("portalEmailUnavailable", 409);
     const token = this.crypto.randomToken();
     const now = this.now();
     return this.repository.transaction(async (repository) => {
@@ -465,14 +455,10 @@ export class PortalIdentityService {
           status: "pending",
           passwordHash: null,
           authVersion: 1,
-          emailVerifiedAt: null,
-          pendingEmail: null,
         });
       }
       if (!account || ["suspended", "archived"].includes(account.status))
         throw new PortalError("portalAccountUnavailable", 409);
-      if (command.channel === "email" && !account.email)
-        throw new PortalError("portalEmailRequired");
       const links = await repository.listLinks({ studentId });
       let link = links.find((item) => item.accountId === account!.id && item.status !== "revoked");
       if (link && (link.kind !== command.kind || link.status === "active"))
@@ -550,20 +536,6 @@ export class PortalIdentityService {
         acceptedAccountId: null,
       });
       const activationUrl = `${this.options.appUrl.replace(/\/$/, "")}/learn/activate#token=${encodeURIComponent(token)}`;
-      if (command.channel === "email")
-        await repository.queueMail({
-          accountId: account.id,
-          recipient: account.email!,
-          template: "invitation",
-          encryptedPayload: this.crypto.encrypt({
-            token,
-            url: activationUrl,
-            locale: account.locale,
-          }),
-          expiresAt: invitation.expiresAt,
-          invitationId: invitation.id,
-          dedupeKey: `invitation:${invitation.id}`,
-        });
       await repository.audit({
         actorKind: "staff",
         staffId: actor.staffId,
@@ -584,7 +556,7 @@ export class PortalIdentityService {
         accountId: account.id,
         linkId: link.id,
         expiresAt: new Date(invitation.expiresAt).toISOString(),
-        activationUrl: command.channel === "manual" ? activationUrl : null,
+        activationUrl,
         status: "created",
         replayed: false,
       };
@@ -631,7 +603,6 @@ export class PortalIdentityService {
           status: "active",
           passwordHash: await this.crypto.hashPassword(password!),
           fullName: fullName ?? account.fullName,
-          emailVerifiedAt: invitation.channel === "email" ? this.now() : null,
         });
       const consented =
         link.kind === "self" ||
@@ -662,58 +633,6 @@ export class PortalIdentityService {
       return this.rotate(repository, current, currentSession?.id);
     });
   }
-  async requestRecovery(identifier: string, ip: string) {
-    const normalized = identifier.trim().toLowerCase();
-    const account = await this.repository.findAccount(normalized);
-    for (const [key, limit] of [
-      [this.limitKey("recovery-ip", ip), 20],
-      [this.limitKey("recovery-account", account ? `account-${account.id}` : normalized), 3],
-    ] as const) {
-      const retry = await this.repository.rateLimit(key, limit, HOUR, this.now());
-      if (retry !== null) throw new PortalError("portalTooManyRequests", 429, retry);
-    }
-    if (!this.options.emailEnabled) return;
-    if (
-      !account ||
-      account.status !== "active" ||
-      !account.email ||
-      !account.emailVerifiedAt ||
-      !(await this.emailEnabled(account.id))
-    )
-      return;
-    const token = this.crypto.randomToken();
-    await this.repository.transaction(async (repository) => {
-      const current = await repository.getAccount(account.id, true);
-      if (
-        !current ||
-        current.authVersion !== account.authVersion ||
-        current.status !== "active" ||
-        !current.emailVerifiedAt
-      )
-        return;
-      await repository.revokeTokens(account.id, this.now());
-      const record = await repository.createToken({
-        accountId: account.id,
-        purpose: "recovery",
-        tokenHash: this.crypto.hashToken(token),
-        expiresAt: this.now() + 30 * MINUTE,
-        consumedAt: null,
-        payload: null,
-      });
-      await repository.queueMail({
-        accountId: account.id,
-        recipient: account.email!,
-        template: "recovery",
-        encryptedPayload: this.crypto.encrypt({
-          token,
-          url: `${this.options.appUrl.replace(/\/$/, "")}/learn/reset#token=${encodeURIComponent(token)}`,
-          locale: account.locale,
-        }),
-        expiresAt: record.expiresAt,
-        dedupeKey: `recovery:${record.id}`,
-      });
-    });
-  }
   private async resetAccount(
     repository: PortalRepository,
     account: PortalAccount,
@@ -725,35 +644,9 @@ export class PortalIdentityService {
       status: "active",
     });
     await repository.revokeSessions(account.id);
-    await repository.revokeTokens(account.id, this.now());
+
     await repository.revokeInvitations({ accountId: account.id }, this.now());
     return updated;
-  }
-  async completeRecovery(token: string, password: string, requestId?: string) {
-    await this.repository.transaction(async (repository) => {
-      const candidate = await repository.getToken(this.crypto.hashToken(token));
-      if (!candidate) throw new PortalError("portalRecoveryInvalid");
-      const account = await repository.getAccount(candidate.accountId, true);
-      const record = await repository.getToken(this.crypto.hashToken(token), true);
-      if (
-        !record ||
-        record.purpose !== "recovery" ||
-        record.consumedAt ||
-        record.expiresAt <= this.now()
-      )
-        throw new PortalError("portalRecoveryInvalid");
-      if (!account || account.status !== "active") throw new PortalError("portalRecoveryInvalid");
-      await this.resetAccount(repository, account, password);
-      await repository.audit({
-        actorKind: "portal",
-        accountId: account.id,
-        staffId: null,
-        studentId: null,
-        action: "RECOVERY_COMPLETED",
-        requestId,
-        details: {},
-      });
-    });
   }
   updateProfile(
     sessionId: string,
@@ -828,7 +721,6 @@ export class PortalIdentityService {
         (item) => item.kind === "self" && item.status !== "revoked",
       );
       let account = self ? await repository.getAccount(self.accountId, true) : null;
-      if (account?.emailVerifiedAt) throw new PortalError("portalChildSelfRecoveryRequired", 409);
       if (
         login &&
         (await repository.findAccount(login))?.id !== account?.id &&
@@ -848,8 +740,6 @@ export class PortalIdentityService {
           status: "pending",
           passwordHash: null,
           authVersion: 1,
-          emailVerifiedAt: null,
-          pendingEmail: null,
         });
       }
       if (["suspended", "archived"].includes(account.status))
@@ -951,7 +841,7 @@ export class PortalIdentityService {
         authVersion: account.authVersion + 1,
       });
       await repository.revokeSessions(accountId);
-      await repository.revokeTokens(accountId, this.now());
+
       await repository.revokeInvitations({ accountId }, this.now());
       await repository.audit({
         actorKind: "staff",
@@ -1053,11 +943,5 @@ export class PortalIdentityService {
     requestId?: string,
   ) {
     return this.profile.representativeConsent(sessionId, linkId, permissions, approved, requestId);
-  }
-  requestEmailChange(sessionId: string, email: string) {
-    return this.profile.requestEmailChange(sessionId, email);
-  }
-  verifyEmail(sessionId: string, token: string, requestId?: string) {
-    return this.profile.verifyEmail(sessionId, token, requestId);
   }
 }

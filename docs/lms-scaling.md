@@ -12,7 +12,7 @@
 | Аналитика и отчёты | тот же entrypoint, `--scope=reports --pool-max=2` | Отдельные CPU, память и пул; доступ только к явно разрешённым report routes |
 | Учебные сроки и состояния | worker, `--roles=lifecycle --pool-max=2` | Отдельный процесс; выполнение защищено lease, дополнительные экземпляры дают резервирование |
 | In-app уведомления | worker, `--roles=notifications --pool-max=2` | Отдельная очередь и singleton execution; дополнительные экземпляры не умножают обработку |
-| Email | worker, `--roles=email --pool-max=3` | Опциональный профиль `lms-email`; конкурентный claim требует подтверждённого lease/fencing |
+| Учётные данные учеников | worker, `--roles=credentials --pool-max=2` | Стандартный профиль, отдельный lease; подготовка новых учеников без определения роли лида |
 | Проверка файлов | worker, `--roles=files --pool-max=2` | Локальная проверка формата/структуры, сохранённого размера/MIME/SHA-256; отдельная очередь |
 | Очистка и обслуживание | worker, `--roles=maintenance --pool-max=2` | Отдельный process lease и доступ к общему хранилищу |
 | Балансировка | HAProxy 3.2 Alpine | Docker DNS discovery, отдельные backend pools, сохранение WebSocket upgrade |
@@ -47,7 +47,7 @@ HAProxy сначала отправляет `POST /api/portal/files`, `POST /api
 | `LMS_PROXY_HOST_PORT` | По умолчанию 8012, bind только `127.0.0.1`; внешний HTTPS ingress остаётся отдельным |
 | `LMS_COMPOSE_PROJECT` | По умолчанию `academy-lms-scale`, отдельно от существующего CRM project |
 
-В каталоге конфигурации подготовить `lms-api.config.json`, `lms-files-api.config.json`, `lms-reports.config.json`, `lms-worker.config.json` и опциональный `lms-email.config.json` из действующей конфигурации: те же DB, staff/portal session secrets, encryption key, school settings и соответствующие флаги. Dedicated API/files/report `server.host=0.0.0.0`, `server.port=5001`; `database.pool.max` соответственно **5**, **5**, **2**; обычные workers **2**, email **3**. Вложенные ACL/delivery queries требуют этих минимумов: меньший configured cap должен завершить startup с ошибкой, вместо зависания на pool exhaustion. `portal.enabled=false` запрещает запуск worker до создания pools, каталогов и timers; выключенный email feature оставляет email worker живым, но доставка не начинается. Нельзя запускать новые workers, оставив LMS jobs включёнными в основной CRM, до проверки lease поведения.
+В каталоге конфигурации подготовить `lms-api.config.json`, `lms-files-api.config.json`, `lms-reports.config.json` и `lms-worker.config.json` из действующей конфигурации: те же DB, staff/portal session secrets, encryption key, school settings и соответствующие флаги. Dedicated API/files/report `server.host=0.0.0.0`, `server.port=5001`; `database.pool.max` соответственно **5**, **5**, **2**; workers **2**. Lifecycle, maintenance и credentials имеют отдельный lease pool max 1. Почтовых процессов, профилей, конфигураций и сетей больше нет. Нельзя запускать новые workers, оставив те же LMS jobs включёнными в основной CRM, до проверки lease поведения.
 
 `server.appUrl` во всех конфигурациях остаётся внешним HTTPS URL школы; внутренний port 5001 не должен попадать в invitation links или Origin policy. Проверка disabled worker выполнена отдельным subprocess: runtime/logger импортируются только после config/role/feature validation, а healthcheck использует logger-free reader.
 
@@ -62,9 +62,9 @@ docker compose --env-file /private/path/lms-scale.env \
   -f ops/lms-scale.compose.yml --profile lms-scale config --quiet
 ```
 
-Для проверки HAProxy использовать `haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg` в отдельном ephemeral container без network и без application configs. Сначала проверить model profiles `lms-scale`, `lms-email`, `lms-signatures` и отдельный `lms-migrate`; обычный запуск профиля `lms-scale` не включает три остальных. `learning-migrate` запускается единожды под существующим deploy lock после явного разрешения миграций, а не через `up` вместе с репликами. PostgreSQL advisory migration lock остаётся второй защитой от конкуренции.
+Для проверки HAProxy использовать `haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg` в отдельном ephemeral container без network и без application configs. Сначала проверить model profiles `lms-scale` и отдельный `lms-migrate`; обычный запуск профиля `lms-scale` не включает миграции. `learning-migrate` запускается единожды под существующим deploy lock после явного разрешения миграций, а не через `up` вместе с репликами. PostgreSQL advisory migration lock остаётся второй защитой от конкуренции.
 
-На изолированном стенде после применения схемы и настройки private configs сначала заменить только существующий CRM service через overlay, сохранив его текущий project name. Затем поднять отдельный LMS project с профилем `lms-scale`; email и signature updater включать отдельными профилями. Операторские команды для согласованного cutover приведены ниже, они не выполнялись созданием этих артефактов:
+На изолированном стенде после применения схемы и настройки private configs сначала заменить только существующий CRM service через overlay, сохранив его текущий project name. Затем поднять отдельный LMS project с профилем `lms-scale`. Операторские команды для согласованного cutover приведены ниже, они не выполнялись созданием этих артефактов:
 
 ```sh
 # Existing CRM project, same volumes; run inside the approved deploy lock.
@@ -87,7 +87,7 @@ docker compose --env-file /private/path/lms-scale.env \
 
 ## Подключения к БД и ресурсы
 
-Пулы ограничены на процесс, не на весь кластер. Dedicated API в текущей сборке содержит core pool и отдельный LMS pool; считать оба даже при малом числе staff запросов. Каждый API scope требует минимум 2 LMS business connections для вложенных ACL queries; cap 1 отклоняется до startup. Для одной worker роли без email business pool имеет минимум 2 соединения, для email — 3; сочетания ролей проверяются перед запуском. Lifecycle и maintenance дополнительно получают lease pool max 1. Максимум также ограничен `config.database.pool.max`. Idle pools не являются зарезервированными активными соединениями, но сумма максимумов нужна для worst case capacity.
+Пулы ограничены на процесс, не на весь кластер. Dedicated API в текущей сборке содержит core pool и отдельный LMS pool; считать оба даже при малом числе staff запросов. Каждый API scope требует минимум 2 LMS business connections для вложенных ACL queries; cap 1 отклоняется до startup. Для одной worker роли business pool имеет минимум 2 соединения; сочетания ролей проверяются перед запуском. Lifecycle, maintenance и credentials дополнительно получают lease pool max 1. Максимум также ограничен `config.database.pool.max`. Idle pools не являются зарезервированными активными соединениями, но сумма максимумов нужна для worst case capacity.
 
 | Процесс | Формула максимума соединений |
 | --- | --- |
@@ -99,11 +99,11 @@ docker compose --env-file /private/path/lms-scale.env \
 | Notifications | `2` |
 | Files | `2` |
 | Maintenance | `2 + 1 = 3` |
-| Email при включении профиля | `3` на реплику |
+| Credentials | `2 + 1 = 3` |
 
-При одной общей API, одной reports и одной files API replica получается **64** application connections либо **67** с email. Дополнительно предусмотреть migration 1, backup 1 и operator/monitoring reserve 16: **82/85**. Вторая общая API replica повышает сумму до **92/95**, третья — **102/105**. При PostgreSQL `max_connections=100` третья уже не помещается; фактические core настройки, другие интеграции и дополнительные workers требуют пересчёта. HAProxy limits не заменяют этот бюджет.
+При одной общей API, одной reports и одной files API replica получается **67** application connections. Дополнительно предусмотреть migration 1, backup 1 и operator/monitoring reserve 16: **85**. Вторая общая API replica повышает сумму до **95**, третья — **105**. При PostgreSQL `max_connections=100` третья уже не помещается; фактические core настройки, другие интеграции и дополнительные workers требуют пересчёта. HAProxy limits не заменяют этот бюджет.
 
-ClamAV и его updater исключены владельцем 12 октября; antivirus-процессов и signature volume в текущей топологии нет. Стандартный `lms-scale` задаёт семь Node-процессов по 768MiB и proxy 128MiB: **5.375GiB новых maxima**, до CRM, PostgreSQL и ОС; email добавляет 0.75GiB. Перед включением нужна проверка общего ресурса хоста; суммы limits нельзя считать измеренным RSS. Проверка текущего хоста перед удалением антивируса показала 6CPU/7.75GiB RAM и 5.45GiB MemAvailable; прежние измерения с тестовым стендом исторические. Более низкие caps стенда не подтверждают автоматически production queues.
+ClamAV и его updater исключены владельцем 12 октября; antivirus-процессов и signature volume в текущей топологии нет. Стандартный `lms-scale` задаёт восемь Node-процессов по 768MiB и proxy 128MiB: **6.125GiB новых maxima**, до CRM, PostgreSQL и ОС. Перед включением нужна проверка общего ресурса хоста; суммы limits нельзя считать измеренным RSS. Проверка текущего хоста перед удалением антивируса показала 6CPU/7.75GiB RAM и 5.45GiB MemAvailable; прежние измерения с тестовым стендом исторические. Более низкие caps стенда не подтверждают автоматически production queues.
 
 Compose выделяет каждому Node-процессу собственные CPU/memory limits. Files worker выполняет локальную проверку содержимого и metadata; external scanner host, INSTREAM и обновления вирусных сигнатур не нужны. `ready` не означает антивирусную гарантию.
 
@@ -115,9 +115,9 @@ Reservation/inventory cache остаются локальными процесс
 
 Lifecycle/maintenance удерживают schema-scoped PostgreSQL session advisory lease отдельным max-1 coordination pool на время job. Работа awaited, release выполняется в `finally`; потеря соединения отменяет cooperative work. Lease прекращается при release/закрытии соединения, standby может попробовать следующий tick. Это не TTL lease: нельзя обещать немедленное восстановление при network partition до обнаружения PostgreSQL разрыва. Notifications используют singleton lock и durable event/source dedupe.
 
-Identity/resource email используют однострочные `SKIP LOCKED` claims, lease 5 минут и completion, ограниченный исходными `locked_at` и `attempts`. Во время SMTP resource worker не держит business connection. Files используют однострочный claim, 3-минутный `scan_after` token и CAS completion; files workers могут читать общий uploads как read-only replicas. Maintenance повторяет tombstone cleanup до успешного удаления/ENOENT, затем сохраняет один anonymous audit receipt с fileId, не удаляя retained backup bytes. Конкурирующие workers, lease expiry, stale completion, interrupted cleanup и coordinator connection loss подтверждены 89 PostgreSQL tests. Отдельный запуск собранных процессов и проверка допустимых и отклонённых файлов текущего image остаются условиями допуска реплик.
+Почтовые claims исключены из текущего выпуска. Files используют однострочный claim, 3-минутный `scan_after` token и CAS completion; files workers могут читать общий uploads как read-only replicas. Maintenance повторяет tombstone cleanup до успешного удаления/ENOENT, затем сохраняет один anonymous audit receipt с fileId, не удаляя retained backup bytes. Конкурирующие workers, lease expiry, stale completion, interrupted cleanup и coordinator connection loss подтверждены 89 PostgreSQL tests. Отдельный запуск собранных процессов и проверка допустимых и отклонённых файлов текущего image остаются условиями допуска реплик.
 
-Email доставка имеет семантику **at least once**. Crash после принятия письма SMTP provider и до фиксации результата может привести к повтору; стабильный Message-ID не гарантирует provider deduplication. Provider idempotency key уменьшает риск там, где он поддерживается. Claim/fencing не дают права называть внешнюю SMTP отправку exactly once.
+Почтовая доставка полностью удалена по поручению владельца 12 октября. Внешних mail providers, mail workers и email egress нет.
 
 WebSocket hints кабинета пересчитываются по текущим DB revisions и актуальной авторизации. Проверить bounded cross-API invalidation и отзыв сессии на двух репликах. Текущие connection/account/IP quotas process-local; cluster-wide limits требуют отдельного общего limiter. Staff realtime transport основной CRM остаётся локальным: изменения из dedicated LMS API/workers должны либо попадать в подтверждённый межпроцессный relay, либо иметь явно проверенный polling fallback. Без этого нельзя обещать моментальное обновление всех staff экранов. Sticky sessions не решают эти два ограничения.
 

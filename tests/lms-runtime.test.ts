@@ -31,13 +31,12 @@ vi.mock("../server/realtime/portal-websocket-gateway", () => ({
 import { createHttpApp } from "../server/app/http-app";
 import { createLearningRuntime } from "../server/infrastructure/lms-runtime";
 import { requireAuth } from "../server/middleware/auth.middleware";
-import { PortalIdentityMailWorker } from "../server/modules/portal-identity";
+import { PortalCredentialProvisioning } from "../server/modules/portal-identity/infrastructure/credential-provisioning";
 import { PortalNotificationWorker } from "../server/modules/portal-resources/infrastructure/notification-worker";
 import { PortalResourceService } from "../server/modules/portal-resources/application/resource-service";
 import { PgQuizRepository } from "../server/modules/lms/infrastructure/quiz-repository";
 import { PgLearningRepository } from "../server/modules/lms/infrastructure/learning-repository";
 import type { LmsSql } from "../server/modules/lms/infrastructure/postgres-base";
-import { PortalMailer } from "../server/infrastructure/portal-mailer";
 import { LmsService } from "../server/modules/lms/application/lms-service";
 import { PortalError } from "../server/modules/portal-identity";
 import type { LearningJobRunner } from "../server/infrastructure/learning-job-runner";
@@ -48,11 +47,9 @@ const configuration = (enabled: boolean): AppConfig => {
   const config = JSON.parse(
     readFileSync("config/app.config.example.json", "utf8"),
   ) as AppConfig;
-  config.email = {};
   config.portal = {
     enabled,
     learningEnabled: true,
-    emailEnabled: true,
     publicPortfolioEnabled: true,
     allowInvitations: true,
     sessionSecret: "runtime-portal-session-fixture-".repeat(2),
@@ -65,14 +62,12 @@ let query: Mock<
   (sql: string) => Promise<{ rows: unknown[]; rowCount: number }>
 >;
 let runtime: ReturnType<typeof createLearningRuntime> | undefined;
-let inApp: Mock<() => Promise<typeof result>>,
-  email: Mock<() => Promise<typeof result>>;
-let identityMail: MockInstance<PortalIdentityMailWorker["runOnce"]>;
+let inApp: Mock<() => Promise<typeof result>>;
+let credentials: MockInstance<PortalCredentialProvisioning["runOnce"]>;
 let scanning: MockInstance<PortalResourceService["validateFiles"]>;
 let cleanup: MockInstance<PortalResourceService["cleanupFiles"]>;
 let quizzes: MockInstance<PgQuizRepository["finishExpired"]>;
 let lifecycle: MockInstance<PgLearningRepository["reconcileGroupLifecycle"]>;
-let close: MockInstance<PortalMailer["close"]>;
 const result = { queued: 0, delivered: 0, cancelled: 0, failed: 0 };
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -113,7 +108,7 @@ beforeEach(() => {
       });
     if (sql.includes("FROM lms_feature_flags"))
       return {
-        rows: ["learning", "invitations", "public_portfolio", "email"].map(
+        rows: ["learning", "invitations", "public_portfolio"].map(
           (key) => ({
             key,
             enabled: true,
@@ -123,7 +118,7 @@ beforeEach(() => {
             updated_at: new Date(),
           }),
         ),
-        rowCount: 4,
+        rowCount: 3,
       };
     if (sql.includes("FROM lms_school_settings"))
       return {
@@ -154,18 +149,8 @@ beforeEach(() => {
     size: 0,
   });
   inApp = vi.fn(async () => result);
-  email = vi.fn(async () => result);
-  vi.spyOn(PortalNotificationWorker.prototype, "runOnce").mockImplementation(
-    function (this: PortalNotificationWorker) {
-      return (this as unknown as { options: { mode: string } }).options.mode ===
-        "email"
-        ? email()
-        : inApp();
-    },
-  );
-  identityMail = vi
-    .spyOn(PortalIdentityMailWorker.prototype, "runOnce")
-    .mockResolvedValue({ sent: 0, failed: 0, expired: 0 });
+  vi.spyOn(PortalNotificationWorker.prototype, "runOnce").mockImplementation(() => inApp());
+  credentials = vi.spyOn(PortalCredentialProvisioning.prototype, "runOnce").mockResolvedValue({ prepared: 0 });
   scanning = vi
     .spyOn(PortalResourceService.prototype, "validateFiles")
     .mockResolvedValue(0);
@@ -178,9 +163,6 @@ beforeEach(() => {
   lifecycle = vi
     .spyOn(PgLearningRepository.prototype, "reconcileGroupLifecycle")
     .mockResolvedValue({ completed: 0 });
-  close = vi
-    .spyOn(PortalMailer.prototype, "close")
-    .mockImplementation(() => undefined);
   vi.spyOn(reservations, "cleanupResourceQuarantine").mockResolvedValue(0);
 });
 afterEach(async () => {
@@ -191,7 +173,7 @@ afterEach(async () => {
 });
 
 describe("LMS composition default-off isolation and background scheduling", () => {
-  it("stops timers/mail and awaits outstanding jobs even when gateway shutdown rejects", async () => {
+  it("stops timers and awaits outstanding jobs even when gateway shutdown rejects", async () => {
     vi.useFakeTimers();
     const held = deferred<typeof result>();
     inApp.mockReturnValue(held.promise);
@@ -210,7 +192,6 @@ describe("LMS composition default-off isolation and background scheduling", () =
       await vi.advanceTimersByTimeAsync(30_000);
       expect(done).not.toHaveBeenCalled();
       expect(inApp).toHaveBeenCalledTimes(1);
-      expect(close).toHaveBeenCalledTimes(1);
       held.resolve(result);
       await expect(stopping).rejects.toThrow("gateway shutdown failure");
     } finally {
@@ -234,8 +215,7 @@ describe("LMS composition default-off isolation and background scheduling", () =
     expect(mocks.gateway.refresh).toHaveBeenCalledTimes(2);
     for (const work of [
       inApp,
-      email,
-      identityMail,
+      credentials,
       scanning,
       cleanup,
       lifecycle,
@@ -249,7 +229,7 @@ describe("LMS composition default-off isolation and background scheduling", () =
   it.each([
     "lifecycle",
     "notifications",
-    "email",
+    "credentials",
     "files",
     "maintenance",
   ] as LearningProcessRole[])(
@@ -273,13 +253,12 @@ describe("LMS composition default-off isolation and background scheduling", () =
       );
       const names = [...new Set(runJob.mock.calls.map(([name]) => name))];
       expect(names).toEqual(
-        role === "email" ? ["identity-email", "notification-email"] : [role],
+        [role],
       );
       expect(runtime.health().lastFlagRefreshAt).not.toBeNull();
       for (const [active, work] of [
         [role === "notifications", inApp],
-        [role === "email", email],
-        [role === "email", identityMail],
+        [role === "credentials", credentials],
         [role === "files", scanning],
         [role === "maintenance", cleanup],
         [role === "lifecycle", lifecycle],
@@ -536,13 +515,11 @@ describe("LMS composition default-off isolation and background scheduling", () =
     expect(status.body).toMatchObject({
       portalEnabled: false,
       learningEnabled: false,
-      emailEnabled: false,
     });
     expect(query).not.toHaveBeenCalled();
     expect(mkdir).not.toHaveBeenCalled();
     expect(inApp).not.toHaveBeenCalled();
-    expect(email).not.toHaveBeenCalled();
-    expect(identityMail).not.toHaveBeenCalled();
+    expect(credentials).not.toHaveBeenCalled();
     expect(scanning).not.toHaveBeenCalled();
   });
   it("does not stop the CRM when enabled startup cannot read the new schema and keeps portal authentication closed", async () => {
@@ -581,17 +558,11 @@ describe("LMS composition default-off isolation and background scheduling", () =
     expect(runtime.flags.capabilities().portalEnabled).toBe(false);
     expect(inApp).toHaveBeenCalledTimes(1);
   });
-  it("continues in-app publishing independently while identity SMTP, notification SMTP and scanning are all unresolved", async () => {
+  it("continues in-app publishing independently while credential preparation and file validation are all unresolved", async () => {
     vi.useFakeTimers();
-    const heldIdentity = deferred<{
-      sent: number;
-      failed: number;
-      expired: number;
-    }>();
-    const heldEmail = deferred<typeof result>();
+    const heldIdentity = deferred<{ prepared: number }>();
     const heldScan = deferred<number>();
-    identityMail.mockReturnValue(heldIdentity.promise);
-    email.mockReturnValue(heldEmail.promise);
+    credentials.mockReturnValue(heldIdentity.promise);
     scanning.mockReturnValue(heldScan.promise);
     runtime = createLearningRuntime(fakePool(), configuration(true));
     await runtime.start();
@@ -600,17 +571,15 @@ describe("LMS composition default-off isolation and background scheduling", () =
       expect(inApp).toHaveBeenCalledTimes(6);
       expect(quizzes).toHaveBeenCalledTimes(6);
       expect(lifecycle).toHaveBeenCalledTimes(6);
-      expect(identityMail).toHaveBeenCalledTimes(1);
-      expect(email).toHaveBeenCalledTimes(1);
+      expect(credentials).toHaveBeenCalledTimes(1);
       expect(scanning).toHaveBeenCalledTimes(1);
       expect(cleanup).not.toHaveBeenCalled();
     } finally {
-      heldIdentity.resolve({ sent: 0, failed: 0, expired: 0 });
-      heldEmail.resolve(result);
+      heldIdentity.resolve({ prepared: 0 });
       heldScan.resolve(0);
     }
   });
-  it("does not overlap a publishing pass, stops timers and mail immediately and waits for its outstanding work", async () => {
+  it("does not overlap a publishing pass, stops timers immediately and waits for its outstanding work", async () => {
     vi.useFakeTimers();
     const held = deferred<typeof result>();
     inApp.mockReturnValue(held.promise);
@@ -618,14 +587,11 @@ describe("LMS composition default-off isolation and background scheduling", () =
     await runtime.start();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(inApp).toHaveBeenCalledTimes(1);
-    expect(email).toHaveBeenCalledTimes(2);
     const finished = vi.fn(),
       stopping = runtime.stop().then(finished);
     try {
       await vi.advanceTimersByTimeAsync(60_000);
       expect(inApp).toHaveBeenCalledTimes(1);
-      expect(email).toHaveBeenCalledTimes(2);
-      expect(close).toHaveBeenCalledTimes(1);
       expect(finished).not.toHaveBeenCalled();
     } finally {
       held.resolve(result);

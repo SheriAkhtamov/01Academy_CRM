@@ -12,7 +12,6 @@ import {
 import { PortalIdentityService } from "../server/modules/portal-identity/application/identity-service";
 import {
   createPortalCrypto,
-  decryptPortalMail,
 } from "../server/modules/portal-identity/infrastructure/crypto";
 import { createPortalIdentityRouter } from "../server/modules/portal-identity/http/portal-router";
 import { createPortalAccessRouter } from "../server/modules/portal-identity/http/staff-access-router";
@@ -120,7 +119,6 @@ beforeEach(() => {
     { ...codec, hashPassword: (value) => bcrypt.hash(value, 1) },
     {
       appUrl: "https://academy.example",
-      emailEnabled: true,
       allowInvitations: true,
       now: () => now,
     },
@@ -411,32 +409,6 @@ describe("portal identity security and explicit relationships", () => {
       ),
     ).rejects.toMatchObject({ code: "portalInvitationInvalid" });
   });
-  it("enforces runtime invitation and email cohorts before creating accounts or mail", async () => {
-    const codec = createPortalCrypto(key);
-    const gated = new PortalIdentityService(repository, codec, {
-      appUrl: "https://academy.example",
-      emailEnabled: true,
-      allowInvitations: true,
-      now: () => now,
-      invitationsEnabledForStudent: async () => false,
-      emailEnabledForAccount: async () => false,
-    });
-    await expect(
-      gated.createInvitation(staff, 1, command("adult.login")),
-    ).rejects.toMatchObject({ code: "portalInvitationsDisabled" });
-    expect(repository.accounts.size).toBe(0);
-    const { session } = await invite("adult.login");
-    await repository.updateAccount(session.accountId!, {
-      email: "adult@example.com",
-      emailVerifiedAt: now,
-    });
-    await gated.requestRecovery("adult.login", "ip");
-    expect(repository.mail).toHaveLength(0);
-    await expect(
-      gated.requestEmailChange(session.id, "new@example.com"),
-    ).rejects.toMatchObject({ code: "portalEmailUnavailable" });
-    expect(repository.mail).toHaveLength(0);
-  });
   it("requires the intended existing account to login before accepting another child", async () => {
     const { session } = await invite("parent.login", 2, "representative", [
       "learning.read",
@@ -490,23 +462,11 @@ describe("portal identity security and explicit relationships", () => {
       (await service.login("adult.login", password, "127.0.0.2")).accountId,
     ).toBeTruthy();
   });
-  it("shares account throttles across login and verified email aliases", async () => {
+  it("keeps contact addresses separate from login identifiers", async () => {
     const { session } = await invite("adult.login");
-    await repository.updateAccount(session.accountId!, {
-      email: "adult@example.com",
-      emailVerifiedAt: now,
-    });
-    for (let index = 0; index < 5; index++)
-      await expect(
-        service.login(
-          index % 2 ? "adult.login" : "adult@example.com",
-          "bad",
-          "ip",
-        ),
-      ).rejects.toMatchObject({ status: 401 });
-    await expect(
-      service.login("adult@example.com", password, "different-ip"),
-    ).rejects.toMatchObject({ status: 429 });
+    await repository.updateAccount(session.accountId!, { email: "adult@example.com" });
+    await expect(service.login("adult@example.com", password, "ip")).rejects.toMatchObject({ status: 401 });
+    expect((await service.login("adult.login", password, "ip")).accountId).toBe(session.accountId);
   });
   it("rejects different invitation commands reusing an idempotency key", async () => {
     const cmd = command("adult.login");
@@ -517,37 +477,6 @@ describe("portal identity security and explicit relationships", () => {
         verificationBasis: "Different recipient evidence",
       }),
     ).rejects.toMatchObject({ code: "portalIdempotencyConflict", status: 409 });
-  });
-  it("uses verified email only for login and encrypted single-use recovery tokens", async () => {
-    const { session } = await invite("adult.login");
-    await repository.updateAccount(session.accountId!, {
-      email: "adult@example.com",
-      emailVerifiedAt: now,
-    });
-    expect(
-      (await service.login(" Adult@Example.com ", password, "ip")).accountId,
-    ).toBe(session.accountId);
-    await service.requestRecovery("adult@example.com", "ip");
-    const mail = repository.mail[0];
-    const payload = decryptPortalMail(mail.encryptedPayload, key);
-    expect(mail.encryptedPayload).not.toContain(String(payload.token));
-    await service.completeRecovery(String(payload.token), "NewPassword123!");
-    expect(await service.resolveSession(session.id)).toBeNull();
-    await expect(
-      service.completeRecovery(String(payload.token), "NewPassword123!"),
-    ).rejects.toMatchObject({ code: "portalRecoveryInvalid" });
-    expect(
-      (await service.login("adult.login", "NewPassword123!", "ip")).accountId,
-    ).toBe(session.accountId);
-  });
-  it("returns neutral recovery responses for unknown and unverified accounts", async () => {
-    const { session } = await invite("adult.login");
-    await repository.updateAccount(session.accountId!, {
-      email: "adult@example.com",
-    });
-    await service.requestRecovery("adult.login", "ip");
-    await service.requestRecovery("missing.login", "ip");
-    expect(repository.mail).toHaveLength(0);
   });
   it("allows delegated credentials only for a verified minor, records the real actor, and never exposes passwords", async () => {
     const { session: parent, result } = await invite(
@@ -632,28 +561,10 @@ describe("portal HTTP isolation and CSRF", () => {
       .set("X-Portal-CSRF", csrf).set("X-Request-ID", trace("PASSWORD_CHANGED"))
       .send({ password, newPassword: changedPassword }).expect(200);
     csrf = response.body.csrfToken;
-    await adult.post("/api/portal/me/email").set("X-Portal-CSRF", csrf)
-      .send({ email: "trace.updated@example.invalid" }).expect(200);
-    const emailMail = [...repository.mail].reverse().find(mail => mail.template === "email_change")!;
-    const emailToken = String(decryptPortalMail(emailMail.encryptedPayload, key).token);
-    response = await adult.post("/api/portal/me/email/verify")
-      .set("X-Portal-CSRF", csrf).set("X-Request-ID", trace("EMAIL_CHANGED"))
-      .send({ token: emailToken }).expect(200);
-    csrf = response.body.csrfToken;
     const relative = await invite("trace.relative", 1, "representative", ["finance.read"]);
     for (const approved of [true, false]) await adult.post("/api/portal/me/representatives/consent")
       .set("X-Portal-CSRF", csrf).set("X-Request-ID", trace(approved ? "CONSENT_GRANTED" : "CONSENT_REVOKED"))
       .send({ linkId: relative.result.linkId, permissions: ["finance.read"], approved }).expect(200);
-    const recovery = request.agent(server);
-    const recoveryBootstrap = await recovery.get("/api/portal/auth/session").expect(200);
-    await recovery.post("/api/portal/auth/recovery/request").set("X-Portal-CSRF", recoveryBootstrap.body.csrfToken)
-      .send({ identifier: "trace.adult" }).expect(200);
-    const recoveryMail = [...repository.mail].reverse().find(mail => mail.template === "recovery")!;
-    const recoveryToken = String(decryptPortalMail(recoveryMail.encryptedPayload, key).token);
-    const recoveredPassword = "TraceRecoveredPassword123!";
-    await recovery.post("/api/portal/auth/recovery/complete")
-      .set("X-Portal-CSRF", recoveryBootstrap.body.csrfToken).set("X-Request-ID", trace("RECOVERY_COMPLETED"))
-      .send({ token: recoveryToken, password: recoveredPassword }).expect(200);
     const parentFixture = await invite("trace.parent", 2, "representative", ["child_credentials.manage"]);
     const parent = request.agent(server);
     const parentBootstrap = await parent.get("/api/portal/auth/session").expect(200);
@@ -665,7 +576,7 @@ describe("portal HTTP isolation and CSRF", () => {
       parent.post("/api/portal/auth/login").set("X-Portal-CSRF", parentBootstrap.body.csrfToken).set("X-Request-ID", parentLoginId)
         .send({ identifier: "trace.parent", password }).expect(200),
       adultAgain.post("/api/portal/auth/login").set("X-Portal-CSRF", adultAgainBootstrap.body.csrfToken).set("X-Request-ID", adultLoginId)
-        .send({ identifier: "trace.adult", password: recoveredPassword }).expect(200),
+        .send({ identifier: "trace.adult", password: changedPassword }).expect(200),
     ]);
     await parent.post(`/api/portal/subjects/${parentFixture.result.linkId}/credentials`)
       .set("X-Portal-CSRF", parentLogin.body.csrfToken).set("X-Request-ID", trace("CHILD_CREDENTIALS_RESET"))
@@ -678,7 +589,7 @@ describe("portal HTTP isolation and CSRF", () => {
     expect(repository.audits.find(audit => audit.requestId === parentLoginId)?.accountId).toBe(parentFixture.session.accountId);
     expect(repository.audits.find(audit => audit.requestId === adultLoginId)?.accountId).toBe(activation.accountId);
     const serialized = JSON.stringify(repository.audits);
-    for (const secret of [password, changedPassword, recoveredPassword, tokenFrom(activation.activationUrl), emailToken, recoveryToken]) expect(serialized).not.toContain(secret);
+    for (const secret of [password, changedPassword, tokenFrom(activation.activationUrl)]) expect(serialized).not.toContain(secret);
   });
   it("requires anonymous CSRF bootstrap before login and maintains independent cookies", async () => {
     await invite("adult.login");

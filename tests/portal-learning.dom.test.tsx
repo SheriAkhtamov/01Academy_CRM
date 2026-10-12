@@ -703,12 +703,12 @@ it("preserves payment state and summary when decoding a canonical JSON page", as
 it("uses the notification preferences endpoint for both reads and saves", async () => {
   const preferences = {
     categories: {
-      learning: { inApp: true, email: false },
-      schedule: { inApp: true, email: false },
-      feedback: { inApp: true, email: false },
-      finance: { inApp: true, email: false },
-      family: { inApp: true, email: false },
-      security: { inApp: true, email: false },
+      learning: { inApp: true, },
+      schedule: { inApp: true, },
+      feedback: { inApp: true, },
+      finance: { inApp: true, },
+      family: { inApp: true, },
+      security: { inApp: true, },
     },
     quietFrom: "21:00",
     quietUntil: "08:00",

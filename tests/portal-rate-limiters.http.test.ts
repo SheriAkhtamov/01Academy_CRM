@@ -59,8 +59,6 @@ const fixture = (
       status: "active",
       passwordHash: null,
       authVersion: 1,
-      emailVerifiedAt: null,
-      pendingEmail: null,
     });
     repository.students.set(id, {
       id,
@@ -96,7 +94,6 @@ const fixture = (
   }
   const identity = new PortalIdentityService(repository, createPortalCrypto(), {
     appUrl: "https://academy.example",
-    emailEnabled: false,
     allowInvitations: false,
   });
   const drafts = vi.fn(

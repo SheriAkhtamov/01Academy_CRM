@@ -5,7 +5,7 @@ export const LEARNING_PROCESS_ROLES = [
   "api",
   "lifecycle",
   "notifications",
-  "email",
+  "credentials",
   "files",
   "maintenance",
 ] as const;
@@ -30,7 +30,7 @@ export const minimumLearningPoolSize = (
     roles.includes("api") ? 2 : 1,
     1 +
       roles.reduce(
-        (count, role) => count + (role === "api" ? 0 : role === "email" ? 2 : 1),
+        (count, role) => count + (role === "api" ? 0 : 1),
         0,
       ),
   );

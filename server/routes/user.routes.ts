@@ -5,7 +5,6 @@ import { storage } from '../storage';
 import { pool } from '../db';
 import { authService } from '../services/auth';
 import { requireAuth, requireAdministration } from '../middleware/auth.middleware';
-import { emailService } from '../services/email';
 import { logger } from '../lib/logger';
 import {
     ACADEMY_MODULES,
@@ -718,11 +717,6 @@ router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) =
             return res.status(500).json({ error: 'failedCreateUserDescription' });
         }
 
-        try {
-            await emailService.sendWelcomeEmail(newUser.email, fullName, temporaryPassword);
-        } catch (emailError) {
-            logger.error('Failed to send welcome email', { error: emailError, userId: newUser.id });
-        }
 
         res.json({
             ...authService.sanitizeUser(newUser),

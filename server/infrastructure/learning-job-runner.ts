@@ -3,8 +3,7 @@ import type { Pool } from "pg";
 export type LearningJobName =
   | "lifecycle"
   | "notifications"
-  | "identity-email"
-  | "notification-email"
+  | "credentials"
   | "files"
   | "maintenance";
 export type LearningJobRunner = (
@@ -16,7 +15,7 @@ export type LearningJobRunner = (
 export function createLearningJobRunner(leasePool: Pool): LearningJobRunner {
   return async (name, work) => {
     const controller = new AbortController();
-    if (name !== "lifecycle" && name !== "maintenance") {
+    if (name !== "lifecycle" && name !== "maintenance" && name !== "credentials") {
       await work(controller.signal);
       return true;
     }

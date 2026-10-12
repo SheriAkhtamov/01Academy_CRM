@@ -967,6 +967,13 @@
       "when": 1791723314223,
       "tag": "0137_lms_crm_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791803086079,
+      "tag": "0138_manual_portal_credentials",
+      "breakpoints": true
     }
   ]
 }

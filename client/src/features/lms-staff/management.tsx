@@ -27,7 +27,6 @@ import { StaffProgram } from "./program";
 import { StaffMakeup } from "./makeup";
 import { StaffPermissions } from "./permissions";
 import { RunSettings } from "./run-settings";
-import { StaffAnalytics } from "./analytics";
 const tabs = [
   ["program", "lmsStaffProgram"],
   ["makeup", "portalMakeup"],
@@ -71,9 +70,6 @@ export function LearningManagement({
           {t("lmsStaffTitle")}
         </h1>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm text-muted-foreground">
-            {t(administration ? "administration" : "teacher")}
-          </span>
           {canReview && (
             <Button variant="outline" onClick={() => setReviewQueue(true)}>
               {t("lmsStaffReviews")}
@@ -81,12 +77,6 @@ export function LearningManagement({
           )}
         </div>
       </div>
-      {administration && (
-        <StaffAnalytics
-          runId={selected?.runId ?? undefined}
-          groupName={selected?.runId ? selected.groupName : undefined}
-        />
-      )}
       {runs.isPending ? (
         <StaffLoading />
       ) : runs.error ? (

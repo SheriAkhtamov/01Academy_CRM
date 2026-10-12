@@ -48,19 +48,19 @@ describe("explicit learning process contracts", () => {
       }),
     ).toMatchObject({ roles: ["files"], poolMax: 2, healthCheck: false });
     expect(
-      resolveLearningWorkerOptions({ args: ["--roles=email"], environment: {} })
+      resolveLearningWorkerOptions({ args: ["--roles=credentials"], environment: {} })
         .poolMax,
-    ).toBe(3);
+    ).toBe(2);
     expect(
       resolveLearningWorkerOptions({
-        args: ["--roles=notifications,email"],
+        args: ["--roles=notifications,credentials"],
         environment: {},
       }).poolMax,
-    ).toBe(4);
-    expect(minimumLearningPoolSize(LEARNING_PROCESS_ROLES)).toBe(7);
+    ).toBe(3);
+    expect(minimumLearningPoolSize(LEARNING_PROCESS_ROLES)).toBe(6);
     expect(() =>
       resolveLearningWorkerOptions({
-        args: ["--roles=email", "--pool-max=2"],
+        args: ["--roles=credentials", "--pool-max=1"],
         environment: {},
       }),
     ).toThrow();
@@ -71,7 +71,7 @@ describe("explicit learning process contracts", () => {
       ["--roles=files,files"],
       ["--roles=files,"],
       ["--roles=unknown"],
-      ["--roles=files", "--roles=email"],
+      ["--roles=files", "--roles=credentials"],
       ["--roles=files", "--pool-max=0"],
       ["--roles=files", "--pool-max=11"],
       ["--roles=files", "--pool-max=2.5"],

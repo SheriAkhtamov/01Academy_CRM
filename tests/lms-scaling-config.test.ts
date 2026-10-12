@@ -92,7 +92,7 @@ describe("opt-in LMS component deployment", () => {
       "notifications",
       "files",
       "maintenance",
-      "email",
+      "credentials",
     ]) {
       const service = compose.services[`learning-${role}`];
       const options = resolveLearningWorkerOptions({
@@ -100,7 +100,7 @@ describe("opt-in LMS component deployment", () => {
         environment: {},
       });
       expect(options.roles).toEqual([role]);
-      expect(options.poolMax).toBe(role === "email" ? 3 : 2);
+      expect(options.poolMax).toBe(2);
       expect(service.healthcheck.test).toEqual([
         "CMD",
         "node",
@@ -128,7 +128,7 @@ describe("opt-in LMS component deployment", () => {
       expect(service.ports).toBeUndefined();
     }
     expect(compose.services["learning-upload-api"].deploy?.replicas).toBe(1);
-    expect(compose.services["learning-email"].profiles).toEqual(["lms-email"]);
+    expect(compose.services["learning-credentials"].profiles).toEqual(["lms-scale"]);
   });
 
   it("shares the existing uploads without creating replacement folders or replica log races", () => {
@@ -158,7 +158,7 @@ describe("opt-in LMS component deployment", () => {
       expect(logs, name).toMatchObject({ type: "volume", target: "/app/logs" });
       expect(logs?.source, name).toBeUndefined();
     }
-    for (const role of ["reports", "lifecycle", "notifications", "email"])
+    for (const role of ["reports", "lifecycle", "notifications", "credentials"])
       expect(
         mounts(compose.services[`learning-${role}`]).some(
           (mount) => mount.target === "/app/uploads",
@@ -166,7 +166,7 @@ describe("opt-in LMS component deployment", () => {
       ).toBe(false);
   });
 
-  it("isolates HTTP/email egress, requires no antivirus service and publishes only the private proxy listener", () => {
+  it("isolates HTTP egress, requires no antivirus service and publishes only the private proxy listener", () => {
     expect(compose.networks.http.internal).toBe(true);
     expect(compose.networks.scanner).toBeUndefined();
     expect(compose.networks.signature_egress).toBeUndefined();
@@ -182,9 +182,8 @@ describe("opt-in LMS component deployment", () => {
     expect(networks(compose.services["learning-proxy"])).not.toContain(
       "scanner",
     );
-    expect(networks(compose.services["learning-email"])).toContain(
-      "email_egress",
-    );
+    expect(networks(compose.services["learning-credentials"])).toEqual(["database"]);
+    expect(compose.networks.email_egress).toBeUndefined();
     for (const [name, service] of Object.entries(compose.services)) {
       expect(service.read_only, name).toBe(true);
       expect(service.cap_drop, name).toContain("ALL");
@@ -208,6 +207,7 @@ describe("opt-in LMS component deployment", () => {
       "notifications",
       "files",
       "maintenance",
+      "credentials",
     ].reduce((sum, role) => sum + pool(`learning-${role}`), 0);
     const base =
       30 +
@@ -215,12 +215,12 @@ describe("opt-in LMS component deployment", () => {
       pool("learning-reports") * 2 +
       pool("learning-upload-api") * 2 +
       workers +
-      2;
+      3;
     const reserve = 1 + 1 + 16;
-    expect(base).toBe(64);
-    expect(base + pool("learning-email") + reserve).toBe(85);
+    expect(base).toBe(67);
+    expect(base + reserve).toBe(85);
     expect(
-      base + pool("learning-email") + reserve + pool("learning-api") * 2,
+      base + reserve + pool("learning-api") * 2,
     ).toBeLessThan(100);
     expect(base + reserve + pool("learning-api") * 4).toBeGreaterThan(100);
   });

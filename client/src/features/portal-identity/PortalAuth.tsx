@@ -25,36 +25,32 @@ export function PortalLanguage() {
     </select>
   );
 }
+export function PortalRecoveryHelp() {
+  const { t } = useTranslation();
+  const [, navigate] = useLocation();
+  return <main className="portal-ui flex min-h-dvh items-center justify-center bg-muted/30 p-4">
+    <Card className="w-full max-w-[420px]"><CardHeader><Logo size="md" /><CardTitle>{t('portalRecovery')}</CardTitle></CardHeader>
+      <CardContent className="space-y-5"><p>{t('portalRecoveryContactSchool')}</p><Button className="min-h-11 w-full" onClick={() => navigate('/login')}>{t('portalLogin')}</Button></CardContent>
+    </Card>
+  </main>;
+}
 export function PortalAuth({
-  mode = "login",
+  mode = "invite",
   token,
-  afterLogin,
 }: {
-  mode?: "login" | "invite" | "recovery" | "reset";
+  mode?: "invite";
   token?: string;
-  afterLogin?: string;
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { acceptSession, account, refresh, session } = usePortal();
+  const { acceptSession, account, session } = usePortal();
   const [, navigate] = useLocation();
-  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [name, setName] = useState("");
   const [validation, setValidation] = useState("");
-  const [done, setDone] = useState(false);
   const action = useMutation({
     mutationFn: async () => {
-      if (mode === "login") {
-        const session = await portalIdentityApi.login(identifier, password);
-        acceptSession(session);
-        navigate(
-          token
-            ? `${afterLogin ?? "/learn/invite"}#token=${encodeURIComponent(token)}`
-            : (afterLogin ?? "/learn"),
-        );
-      }
       if (mode === "invite") {
         const session = await portalIdentityApi.activate(
           token ?? "",
@@ -64,21 +60,12 @@ export function PortalAuth({
         acceptSession(session);
         navigate("/learn");
       }
-      if (mode === "recovery") {
-        await portalIdentityApi.recovery(identifier);
-        setDone(true);
-      }
-      if (mode === "reset") {
-        await portalIdentityApi.reset(token ?? "", password);
-        refresh();
-        setDone(true);
-      }
     },
   });
   function submit(event: FormEvent) {
     event.preventDefault();
     setValidation("");
-    if ((mode === "invite" && !account) || mode === "reset") {
+    if (mode === "invite" && !account) {
       if (
         password.length < 12 ||
         new TextEncoder().encode(password).length > 72
@@ -95,22 +82,8 @@ export function PortalAuth({
     }
     action.mutate();
   }
-  const heading =
-    mode === "login"
-      ? "portalTitle"
-      : mode === "invite"
-        ? "portalInvite"
-        : mode === "reset"
-          ? "portalReset"
-          : "portalRecovery";
-  const button =
-    mode === "login"
-      ? "portalLogin"
-      : mode === "invite"
-        ? "portalActivate"
-        : mode === "reset"
-          ? "portalSave"
-          : "portalRecoveryRequest";
+  const heading = "portalInvite";
+  const button = "portalActivate";
   return (
     <main className="portal-ui flex min-h-dvh flex-col items-center justify-center bg-muted/30 p-4">
       <div className="mb-6 flex w-full max-w-[420px] items-center justify-between gap-4">
@@ -127,39 +100,8 @@ export function PortalAuth({
           <CardTitle>{t(heading)}</CardTitle>
         </CardHeader>
         <CardContent>
-          {done ? (
-            <div className="space-y-4" role="status">
-              <p>
-                {t(
-                  mode === "reset"
-                    ? "portalPasswordChanged"
-                    : "portalRecoverySent",
-                )}
-              </p>
-              <Button
-                className="min-h-11 w-full"
-                onClick={() => navigate("/learn/login")}
-              >
-                {t("portalLogin")}
-              </Button>
-            </div>
-          ) : (
+          {(
             <form className="space-y-5" onSubmit={submit}>
-              {(mode === "login" || mode === "recovery") && (
-                <div className="space-y-2">
-                  <Label htmlFor="portal-identifier">
-                    {t("portalIdentifier")}
-                  </Label>
-                  <Input
-                    id="portal-identifier"
-                    autoComplete="username"
-                    required
-                    value={identifier}
-                    onChange={(event) => setIdentifier(event.target.value)}
-                    className="min-h-11"
-                  />
-                </div>
-              )}
               {mode === "invite" && !account && (
                 <div className="space-y-2">
                   <Label htmlFor="portal-name">{t("portalFullName")}</Label>
@@ -173,32 +115,32 @@ export function PortalAuth({
                   />
                 </div>
               )}
-              {mode !== "recovery" && !(mode === "invite" && account) && (
+              {!(mode === "invite" && account) && (
                 <div className="space-y-2">
                   <Label htmlFor="portal-password">
                     {t(
-                      mode === "login" ? "portalPassword" : "portalNewPassword",
+                      "portalNewPassword",
                     )}
                   </Label>
                   <Input
                     id="portal-password"
                     type="password"
                     autoComplete={
-                      mode === "login" ? "current-password" : "new-password"
+                      "new-password"
                     }
                     required
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     className="min-h-11"
                   />
-                  {mode !== "login" && (
+                  {mode === "invite" && (
                     <p className="text-sm text-muted-foreground">
                       {t("portalPasswordRules")}
                     </p>
                   )}
                 </div>
               )}
-              {((mode === "invite" && !account) || mode === "reset") && (
+              {(mode === "invite" && !account) && (
                 <div className="space-y-2">
                   <Label htmlFor="portal-repeat">
                     {t("portalConfirmPassword")}
@@ -227,17 +169,7 @@ export function PortalAuth({
               >
                 {t(button)}
               </Button>
-              {mode === "login" && (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="min-h-11 w-full"
-                  onClick={() => navigate("/learn/recover")}
-                >
-                  {t("portalRecovery")}
-                </Button>
-              )}
-              {mode !== "login" && (
+              {mode === "invite" && (
                 <Button
                   type="button"
                   variant="link"
@@ -245,8 +177,8 @@ export function PortalAuth({
                   onClick={() =>
                     navigate(
                       token
-                        ? `/learn/login#token=${encodeURIComponent(token)}`
-                        : "/learn/login",
+                        ? `/login?next=${encodeURIComponent(`/learn/invite#token=${encodeURIComponent(token)}`)}`
+                        : "/login",
                     )
                   }
                 >

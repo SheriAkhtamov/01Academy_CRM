@@ -141,8 +141,6 @@ beforeEach(async () => {
     status: "active",
     passwordHash: await bcrypt.hash(credentials.password, 1),
     authVersion: 1,
-    emailVerifiedAt: null,
-    pendingEmail: null,
   });
   repository.students.set(10, {
     id: 10,
@@ -169,7 +167,6 @@ beforeEach(async () => {
     {
       appUrl: mocks.config.server.appUrl,
       allowInvitations: false,
-      emailEnabled: false,
     },
   );
   mocks.createRuntime.mockImplementation(() => ({

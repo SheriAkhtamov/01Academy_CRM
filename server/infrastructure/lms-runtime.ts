@@ -17,7 +17,6 @@ import {
   createPortalIdentityRouter,
   createPortalAccessRouter,
   PortalIdentityService,
-  PortalIdentityMailWorker,
   PortalError,
   PortalDirectoryRepository,
   createPortalAdminRouter,
@@ -36,8 +35,6 @@ import { PgEngagementRepository } from "../modules/lms/infrastructure/engagement
 import { createLmsPortalRouter } from "../modules/lms/http/portal.router";
 import { createLmsManagementRouter } from "../modules/lms/http/management.router";
 import { PortalResourceService } from "../modules/portal-resources/application/resource-service";
-import { PortalDeliveryManagement } from "../modules/portal-resources/application/delivery-management";
-import { createPortalDeliveryManagementRouter } from "../modules/portal-resources/http/delivery-management-router";
 import {
   PostgresPortalResourceRepository,
   authorizeLmsFiles,
@@ -59,12 +56,14 @@ import {
   createStaffResourceRouter,
 } from "../modules/portal-resources/http/router";
 import { createLearningConfigurationRouter } from "../modules/portal-resources/http/configuration-router";
+import { PostgresAcademyPortalAccessRepository } from "../modules/portal-identity/infrastructure/academy-access-repository";
+import { AcademyPortalAccessService } from "../modules/portal-identity/application/academy-access-service";
+import { createAcademyPortalAccessRouter } from "../modules/portal-identity/http/academy-access-router";
 import { LearningFeatureController } from "./learning-flags";
 import {
   createPortalSessionMiddleware,
   portalCsrfProtection,
 } from "./portal-session";
-import { PortalMailer } from "./portal-mailer";
 import {
   createPortalWebSocketGateway,
   type PortalWebSocketGateway,
@@ -229,38 +228,26 @@ export function createLearningRuntime(
   };
   const encryptionKey =
     portal?.tokenEncryptionKey ?? crypto.randomBytes(32).toString("base64");
-  const identityRepository = createPostgresPortalRepository(pool);
-  const emailForAccount = async (
-    accountId: number,
-    repository: PortalRepository = identityRepository,
-  ) => {
-    if (!flags.capabilities().emailEnabled) return false;
-    const links = await repository.listLinks({ accountId });
-    const now = Date.now();
-    for (const link of links) {
-      if (link.status !== "active" || (link.expiresAt !== null && link.expiresAt <= now))
-        continue;
-      if (await flags.enabledForStudent("email", link.studentId, () =>
-        repository.getStudentEnrollmentGroupIds(link.studentId),
-      )) return true;
-    }
-    return false;
-  };
+  const identityRepository = createPostgresPortalRepository(pool, { initialCredentials: true });
   const identity = new PortalIdentityService(
     identityRepository,
     createPortalCrypto(encryptionKey),
     {
       appUrl: config.server.appUrl,
-      emailEnabled: Boolean(portal?.emailEnabled),
       allowInvitations: Boolean(portal?.allowInvitations),
       invitationsEnabledForStudent: (studentId, repository) =>
         flags.enabledForStudent("invitations", studentId, () =>
           repository.getStudentEnrollmentGroupIds(studentId),
         ),
-      emailEnabledForAccount: emailForAccount,
       childFinanceVisible: () => flags.settings().childFinanceVisible,
     },
   );
+  const academyAccessRepository = new PostgresAcademyPortalAccessRepository(pool, createPortalCrypto(encryptionKey), encryptionKey, {
+    enabled: () => flags.capabilities().invitationsEnabled,
+    enabledForStudent: (studentId, groups) => flags.enabledForStudent("invitations", studentId, () => groups),
+    childFinanceVisible: () => flags.settings().childFinanceVisible,
+  });
+  const academyAccess = new AcademyPortalAccessService(academyAccessRepository, () => flags.capabilities().invitationsEnabled);
   const resources: PortalResourceService = new PortalResourceService(
     new PostgresPortalResourceRepository(
       pool,
@@ -369,47 +356,14 @@ export function createLearningRuntime(
     quizzes,
     engagement,
   });
-  const mailer = new PortalMailer(config);
-  const identityMail = new PortalIdentityMailWorker({
-    pool,
-    encryptionKey,
-    send: (mail) => mailer.identity(mail),
-    canDeliver: async (mail) => {
-      if (mail.template !== "invitation")
-        return emailForAccount(mail.accountId);
-      const record = (
-        await pool.query<{ student_id: number }>(
-          "SELECT link.student_id FROM portal_invitations invitation JOIN portal_student_links link ON link.id=invitation.link_id WHERE invitation.id=$1 AND invitation.account_id=$2",
-          [mail.invitationId, mail.accountId],
-        )
-      ).rows[0];
-      return Boolean(
-        record &&
-        (await flags.enabledForStudent("email", record.student_id)) &&
-        (await flags.enabledForStudent("invitations", record.student_id)),
-      );
-    },
-  });
   const notificationOptions: PortalNotificationWorkerOptions = {
     pool,
     enabled: () => flags.capabilities().learningEnabled,
-    emailEnabled: () => flags.capabilities().emailEnabled,
     enabledForGroup: (groupId) => flags.enabledForGroup("learning", groupId),
     enabledForStudent: (studentId) =>
       flags.enabledForStudent("learning", studentId),
-    emailEnabledForStudent: (studentId) =>
-      flags.enabledForStudent("email", studentId),
-    emailEnabledForAccount: emailForAccount,
     authorizeLink: (accountId, linkId, permission) =>
       identity.resolveAccountActor(accountId, linkId, permission),
-    sendEmail: (mail) =>
-      mailer.notification({
-        recipient: mail.to,
-        locale: mail.locale,
-        text: learningNotificationCopy(mail.code, mail.params, mail.locale),
-        href: mail.href,
-        deliveryKey: `portal-notification:${mail.accountId}:${mail.eventKey}`,
-      }),
     staffCopy: (code, params) => {
       const text = learningNotificationCopy(code, params);
       return { title: text, message: text };
@@ -417,21 +371,7 @@ export function createLearningRuntime(
     calendar: () => flags.settings().workCalendar,
     coordinatorUserIds: () => flags.settings().workCalendar.coordinatorUserIds,
   };
-  const notifications = new PortalNotificationWorker({
-    ...notificationOptions,
-    mode: "in_app",
-  });
-  const notificationEmail = new PortalNotificationWorker({
-    ...notificationOptions,
-    mode: "email",
-  });
-  const deliveries = new PortalDeliveryManagement({
-    pool,
-    enabled: () => flags.capabilities().portalEnabled,
-    canRetryIdentity: (id, sql) => identityMail.canRetryFailedEmail(id, sql),
-    canRetryResource: (id, sql) =>
-      notificationEmail.canRetryFailedEmail(id, sql),
-  });
+  const notifications = new PortalNotificationWorker(notificationOptions);
   const requestActors = new WeakMap<
     Request,
     Map<number, Promise<PortalActorContext>>
@@ -613,23 +553,15 @@ export function createLearningRuntime(
         resolveStaffActor: resolvePortalStaff,
         canInvite: (studentId) =>
           flags.enabledForStudent("invitations", studentId),
-        emailEnabledForStudent: (studentId) =>
-          flags.enabledForStudent("email", studentId),
       }),
     );
+    app.use("/api/lms-management", createAcademyPortalAccessRouter(academyAccess, resolvePortalStaff));
     app.use(
       "/api/lms-management",
       createPortalAdminRouter({
         repository: new PortalDirectoryRepository(pool),
         resolveStaffActor: resolvePortalStaff,
         enabled: () => flags.capabilities().portalEnabled,
-      }),
-    );
-    app.use(
-      "/api/lms-management",
-      createPortalDeliveryManagementRouter({
-        service: deliveries,
-        resolveStaffActor: resolvePortalStaff,
       }),
     );
     app.use(
@@ -760,23 +692,15 @@ export function createLearningRuntime(
           ensureLease(signal);
           await quizzes.finishExpired();
         });
+      if (roles.includes("credentials"))
+        job("credentials", 15_000, async (signal) => {
+          if (flags.capabilities().invitationsEnabled) await academyAccessRepository.provisioning.runOnce(signal);
+        });
       if (roles.includes("notifications"))
         job("notifications", 15_000, async () => {
           if (flags.capabilities().learningEnabled)
             await notifications.runOnce();
         });
-      if (roles.includes("email")) {
-        job("identity-email", 30_000, async () => {
-          if (flags.capabilities().emailEnabled) await identityMail.runOnce();
-        });
-        job("notification-email", 30_000, async () => {
-          if (
-            flags.capabilities().learningEnabled &&
-            flags.capabilities().emailEnabled
-          )
-            await notificationEmail.runOnce();
-        });
-      }
       if (roles.includes("files"))
         job("files", 30_000, async () => {
           if (flags.capabilities().learningEnabled) {
@@ -813,7 +737,6 @@ export function createLearningRuntime(
         Promise.resolve().then(() => {
           if (api) execution.configureLegacyPortfolioAvailability?.(null);
         }),
-        Promise.resolve().then(() => mailer.close()),
         ...running,
       ]);
       const failed = finished.find((result) => result.status === "rejected");

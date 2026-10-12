@@ -44,7 +44,6 @@ export function readAcceptanceRuntimeConfiguration(
       learningEnabled?: boolean;
       allowInvitations?: boolean;
       publicPortfolioEnabled?: boolean;
-      emailEnabled?: boolean;
       sessionSecret?: string;
     };
   };
@@ -52,8 +51,7 @@ export function readAcceptanceRuntimeConfiguration(
     !configuration.portal?.enabled ||
     !configuration.portal.learningEnabled ||
     !configuration.portal.allowInvitations ||
-    !configuration.portal.publicPortfolioEnabled ||
-    configuration.portal.emailEnabled !== false
+    !configuration.portal.publicPortfolioEnabled
   )
     throw new LmsAcceptanceFailure("ACCEPTANCE_RUNTIME_CONFIG_REFUSED");
   if (
@@ -83,7 +81,7 @@ export async function main() {
     diagnosticFile = options.diagnostics;
     if (options.help) {
       process.stdout.write(
-        "Local isolated LMS HTTP acceptance. --base-url http://127.0.0.1:5007 --manifest PRIVATE.json\nPrepare before starting server: --seed-only --manifest PRIVATE.json [--load]\nRun prepared fixture: --fixture PRIVATE.json [--load]. Synthetic data only; portal email must be disabled.\n",
+        "Local isolated LMS HTTP acceptance. --base-url http://127.0.0.1:5007 --manifest PRIVATE.json\nPrepare before starting server: --seed-only --manifest PRIVATE.json [--load]\nRun prepared fixture: --fixture PRIVATE.json [--load]. Synthetic data only.\n",
       );
       return;
     }

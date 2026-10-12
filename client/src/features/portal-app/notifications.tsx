@@ -12,8 +12,6 @@ import { translations, type TranslationKey } from "@/lib/i18n";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
 import { usePortal, portalGrantFingerprint } from "./context";
@@ -243,7 +241,7 @@ function PreferencesForm({
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { account, setUnsaved } = usePortal();
+  const { setUnsaved } = usePortal();
   const [values, setValues] = useState(initial);
   const [baseline, setBaseline] = useState(JSON.stringify(initial));
   useEffect(() => {
@@ -292,59 +290,12 @@ function PreferencesForm({
                 />
                 {t("portalInAppNotifications")}
               </label>
-              <label className="flex min-h-11 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={values.categories[category].email}
-                  disabled={!account?.email}
-                  onChange={(event) =>
-                    setValues({
-                      ...values,
-                      categories: {
-                        ...values.categories,
-                        [category]: {
-                          ...values.categories[category],
-                          email: event.target.checked,
-                        },
-                      },
-                    })
-                  }
-                />
-                {t("portalEmailNotifications")}
-              </label>
+
             </div>
           </fieldset>
         ))}
       </div>
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">{t("portalQuietHours")}</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="quiet-from">{t("portalQuietFrom")}</Label>
-            <Input
-              id="quiet-from"
-              type="time"
-              value={values.quietFrom}
-              onChange={(event) =>
-                setValues({ ...values, quietFrom: event.target.value })
-              }
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="quiet-until">{t("portalQuietUntil")}</Label>
-            <Input
-              id="quiet-until"
-              type="time"
-              value={values.quietUntil}
-              onChange={(event) =>
-                setValues({ ...values, quietUntil: event.target.value })
-              }
-              className="min-h-11"
-            />
-          </div>
-        </div>
-      </fieldset>
+
       <label className="flex min-h-11 items-center gap-3">
         <input
           type="checkbox"

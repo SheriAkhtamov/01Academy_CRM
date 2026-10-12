@@ -23,7 +23,7 @@ describe.skipIf(!databaseUrl)("Exact portal contact warnings with PostgreSQL + H
     pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema} -c timezone=UTC`, max: 8 });
     await pool.query("CREATE TABLE users(id serial PRIMARY KEY); CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text,manager_id integer REFERENCES users(id))");
     await pool.query(readFileSync(new URL("../migrations/0134_portal_identity.sql", import.meta.url), "utf8"));
-    service = new PortalIdentityService(createPostgresPortalRepository(pool), createPortalCrypto(randomBytes(32).toString("base64")), { appUrl: "https://academy.invalid", emailEnabled: false, allowInvitations: true });
+    service = new PortalIdentityService(createPostgresPortalRepository(pool), createPortalCrypto(randomBytes(32).toString("base64")), { appUrl: "https://academy.invalid", allowInvitations: true });
   });
   beforeEach(async () => {
     const tables = (await pool.query("SELECT tablename FROM pg_tables WHERE schemaname=$1", [schema])).rows.map((row) => `"${schema}"."${row.tablename}"`).join(",");

@@ -36,7 +36,7 @@ const command = (login: string, representative = false) => portalInvitationCreat
   idempotencyKey: crypto.randomUUID(),
 });
 const options = (extra: Partial<PortalIdentityOptions> = {}): PortalIdentityOptions => ({
-  appUrl: "https://academy.example", emailEnabled: true, allowInvitations: true, now: () => now, ...extra,
+  appUrl: "https://academy.example", allowInvitations: true, now: () => now, ...extra,
 });
 
 async function bounded<T>(work: Promise<T>): Promise<T> {
@@ -66,21 +66,10 @@ async function activate(studentId: number, login: string, representative = false
   return { invite, session };
 }
 
-async function emailFixture(studentId: number) {
-  const { session } = await activate(studentId, `email${studentId}.login`);
-  const oldEmail = `old${studentId}@example.invalid`, newEmail = `new${studentId}@example.invalid`;
-  await service.repository.updateAccount(session.accountId!, { email: oldEmail, emailVerifiedAt: now, pendingEmail: newEmail });
-  const token = codec.randomToken();
-  await service.repository.createToken({ accountId: session.accountId!, purpose: "email", tokenHash: codec.hashToken(token),
-    expiresAt: now + 30 * 60_000, consumedAt: null, payload: newEmail });
-  return { session, token, oldEmail, newEmail };
-}
-
 async function runtimeFixture() {
   const config = JSON.parse(readFileSync(new URL("../config/app.config.example.json", import.meta.url), "utf8")) as AppConfig;
-  config.email = {};
   config.server.environment = "development";
-  config.portal = { enabled: true, learningEnabled: true, emailEnabled: true, publicPortfolioEnabled: false, allowInvitations: true,
+  config.portal = { enabled: true, learningEnabled: true, publicPortfolioEnabled: false, allowInvitations: true,
     groupIds: [11], sessionSecret: "pool-regression-fixture-session-secret-123456789", tokenEncryptionKey: crypto.randomBytes(32).toString("base64"),
     };
   const runtime = createLearningRuntime(limited, config);
@@ -189,31 +178,6 @@ describe.skipIf(!databaseUrl)("identity policy checks on the held PostgreSQL con
     } finally { await single.end(); }
   });
 
-  it("verifies two emails and queues old-address security notices using the two held connections", async () => {
-    const targets = await Promise.all([emailFixture(1), emailFixture(2)]);
-    const join = rendezvous();
-    const snapshots: { total: number; idle: number }[] = [];
-    const identity = new PortalIdentityService(repository, cheapCrypto, options({
-      emailEnabledForAccount: async (accountId, current = repository) => {
-        await join();
-        snapshots.push({ total: limited.totalCount, idle: limited.idleCount });
-        const links = (await current.listLinks({ accountId })).filter(link => link.status === "active" && (!link.expiresAt || link.expiresAt > now));
-        for (const link of links) if ((await current.getStudentEnrollmentGroupIds(link.studentId)).includes(11)) return true;
-        return false;
-      },
-    }));
-    const rotated = await bounded(Promise.all(targets.map(target => identity.verifyEmail(target.session.id, target.token))));
-    expect(snapshots).toEqual([{ total: 2, idle: 0 }, { total: 2, idle: 0 }]);
-    expect((await fixture.query("SELECT email,pending_email,auth_version FROM portal_accounts ORDER BY login")).rows)
-      .toEqual(targets.map(target => ({ email: target.newEmail, pending_email: null, auth_version: target.session.authVersion + 1 })));
-    expect((await fixture.query("SELECT recipient,template,status FROM portal_identity_mail_outbox ORDER BY recipient")).rows)
-      .toEqual(targets.map(target => ({ recipient: target.oldEmail, template: "email_changed", status: "pending" })));
-    expect((await fixture.query("SELECT id FROM portal_sessions ORDER BY id")).rows.map(row => row.id)).toEqual(rotated.map(session => session.id).sort());
-    expect((await fixture.query("SELECT count(*)::int AS count FROM portal_recovery_tokens WHERE consumed_at IS NULL")).rows[0].count).toBe(0);
-    expect((await fixture.query("SELECT count(*)::int AS count FROM portal_access_audit WHERE action='EMAIL_CHANGED'")).rows[0].count).toBe(2);
-    expect(limited.waitingCount).toBe(0); expect(limited.idleCount).toBe(2);
-  });
-
   it("uses the production runtime wiring for parallel invitations and requires the same group in both rollout restrictions", async () => {
     const runtime = await runtimeFixture(), held = holdBothRuntimeChecks(runtime);
     try {
@@ -231,21 +195,6 @@ describe.skipIf(!databaseUrl)("identity policy checks on the held PostgreSQL con
       expect((await fixture.query("SELECT count(*)::int AS count FROM portal_accounts")).rows[0].count).toBe(2);
       expect((await fixture.query("SELECT count(*)::int AS count FROM portal_invitations")).rows[0].count).toBe(2);
       expect(limited.waitingCount).toBe(0);
-    } finally { held.restore(); await runtime.stop(); }
-  });
-
-  it("uses the production runtime wiring for parallel email verification without reserving any third connection", async () => {
-    const targets = await Promise.all([emailFixture(1), emailFixture(2)]);
-    const runtime = await runtimeFixture(), held = holdBothRuntimeChecks(runtime);
-    try {
-      const rotated = await bounded(Promise.all(targets.map(target => runtime.identity.verifyEmail(target.session.id, target.token))));
-      expect(rotated).toHaveLength(2);
-      expect(held.snapshots).toEqual([{ total: 2, idle: 0 }, { total: 2, idle: 0 }]);
-      expect((await fixture.query("SELECT email,pending_email,auth_version FROM portal_accounts ORDER BY login")).rows)
-        .toEqual(targets.map(target => ({ email: target.newEmail, pending_email: null, auth_version: target.session.authVersion + 1 })));
-      expect((await fixture.query("SELECT recipient,template,status FROM portal_identity_mail_outbox ORDER BY recipient")).rows)
-        .toEqual(targets.map(target => ({ recipient: target.oldEmail, template: "email_changed", status: "pending" })));
-      expect(limited.waitingCount).toBe(0); expect(limited.idleCount).toBe(2);
     } finally { held.restore(); await runtime.stop(); }
   });
 });

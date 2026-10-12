@@ -152,7 +152,7 @@ describe("worker startup, private heartbeat and graceful ownership", () => {
     await expect(checkLearningWorkerHealth(options())).rejects.toThrow();
     await fs.writeFile(options().healthFile, JSON.stringify(state));
     await expect(
-      checkLearningWorkerHealth({ ...options(), roles: ["email"] }),
+      checkLearningWorkerHealth({ ...options(), roles: ["credentials"] }),
     ).rejects.toThrow();
     expect(mocks.poolQuery).toHaveBeenCalledTimes(1);
   });

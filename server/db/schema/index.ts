@@ -17,6 +17,7 @@ import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
 import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
 import { createLearningTables, type LearningTables } from "./learning";
+import { createPortalCredentialTables } from "./portal-credentials";
 import { createAcademyPortfolioProjectsTable, createPublicAcademyPortfolioProjectInsertSchema } from "./portfolio-projects";
 export interface AcademyCourseProgramLesson { lessonNumber: number; topic: string; description?: string | null; materials?: string | null; }
 export const users = pgTable("users", {
@@ -713,8 +714,8 @@ const learningTables: LearningTables = createLearningTables({ userId: users.id, 
   courseId: academyCourses.id, groupId: academyGroups.id, lessonId: academyLessons.id,
   enrollmentId: academyStudentGroupEnrollments.id, projectId: academyPortfolioProjects.id, paymentId: academyPayments.id });
 export const {
-  portalAccessAudit, portalAccountContacts, portalAccounts, portalConsents, portalIdentityMailOutbox,
-  portalInvitations, portalRateLimits, portalRecoveryTokens, portalSessions, portalStudentIdentity, portalStudentLinks,
+  portalAccessAudit, portalAccountContacts, portalAccounts, portalConsents,
+  portalInvitations, portalRateLimits, portalSessions, portalStudentIdentity, portalStudentLinks,
   lmsAchievements, lmsAnnouncementReads, lmsAnnouncements, lmsAssignmentRecipients, lmsAssignmentVersions,
   lmsAssignments, lmsCommentReads, lmsComments, lmsCourseCompletions, lmsCourseVersions, lmsGroupRuns,
   lmsLearningAudit, lmsLearningEvents, lmsLessonBindings, lmsMakeupPlans, lmsMaterialPublications,
@@ -726,6 +727,9 @@ export const {
   lmsSchoolSettings, lmsStaffNotificationEvents, portalFinanceQuestionMessages, portalFinanceQuestions,
   portalNotificationPreferences, portalNotifications,
 } = learningTables;
+export const { portalInitialCredentials, portalLeadAccounts } = createPortalCredentialTables({
+  accountId: portalAccounts.id, leadId: academyLeads.id, studentId: academyStudents.id, userId: users.id,
+});
 
 export const academyMarketingExpenses = pgTable("academy_marketing_expenses", {
   id: serial("id").primaryKey(),

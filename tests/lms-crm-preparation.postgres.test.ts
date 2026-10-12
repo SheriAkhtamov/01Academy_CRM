@@ -156,7 +156,7 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
   });
 
   it("preserves source program snapshots and uses one explicit legacy policy without resetting it from old clients", async () => {
-    const config = {portal:{enabled:true,learningEnabled:true},email:{smtp:{}}} as AppConfig;
+    const config = {portal:{enabled:true,learningEnabled:true}} as AppConfig;
     const flags = new LearningFeatureController(pool,config);
     await flags.refresh();
     await flags.updateSettings(1,{...DEFAULT_LEARNING_SCHOOL_SETTINGS,crmPreparation:{defaultFormat:"online"}},0,"policy-request");

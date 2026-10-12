@@ -38,6 +38,25 @@ afterEach(() => { cleanup(); queryClient.clear(); vi.restoreAllMocks(); });
 const setup = () => render(<QueryClientProvider client={queryClient}><AuthProvider><AppRouter /></AuthProvider></QueryClientProvider>);
 
 describe('mounted authentication flow', () => {
+  it('uses the existing login form and anonymous portal CSRF bootstrap for learner credentials', async () => {
+    history.replaceState(null, '', '/login?next=%2Flearn%2Fcourses%2F8');
+    const calls: { url: string; options?: RequestInit }[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (url === '/api/auth/session') return response({ kind: 'anonymous' });
+      if (url === '/api/auth/login') return response({ error: 'Invalid credentials' }, 401);
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-portal-csrf' });
+      if (url === '/api/portal/auth/login') return response({ account: { id: 9, login: 'student-9', fullName: 'Learner', email: null, phone: null, status: 'active', locale: 'en' }, subjects: [], csrfToken: 'authenticated-portal-csrf' });
+      return response({}, 404);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'student-9' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'LearnerPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(location.pathname).toBe('/learn/courses/8'));
+    expect(calls.find(call => call.url === '/api/portal/auth/login')?.options?.headers).toEqual(expect.objectContaining({ 'X-Portal-CSRF': 'anonymous-portal-csrf' }));
+    expect(queryClient.getQueryData(AUTH_SESSION_QUERY_KEY)).toEqual({ kind: 'anonymous' });
+  });
   it('opens the financial center at home for an employee whose primary module is finance', async () => {
     current = { ...session, user: { ...session.user, module: 'finance', modules: ['finance'] } } as AuthSession;
     history.replaceState(null, '', '/');

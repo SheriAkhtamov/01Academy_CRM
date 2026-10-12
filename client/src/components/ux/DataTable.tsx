@@ -92,6 +92,7 @@ interface DataTableProps<T> {
   rowClassName?: (row: T) => string;
   pageSize?: number;
   isLoading?: boolean;
+  showPagination?: boolean;
   filterKey?: string;
 }
 
@@ -108,6 +109,7 @@ export function DataTable<T extends Record<string, any>>({
   rowClassName,
   pageSize: initialPageSize = 25,
   isLoading = false,
+  showPagination = true,
   filterKey,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
@@ -501,7 +503,7 @@ export function DataTable<T extends Record<string, any>>({
         </Table>
         )}
       </div>
-      {!isLoading ? (
+      {!isLoading && showPagination ? (
         <PaginationControls
           page={safePage}
           pageSize={pageSize}

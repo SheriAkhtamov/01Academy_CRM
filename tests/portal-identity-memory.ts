@@ -5,8 +5,6 @@ import type {
   PortalConsent,
   PortalInvitation,
   PortalLink,
-  PortalMail,
-  PortalRecoveryToken,
   PortalRepository,
   PortalSession,
   PortalStudent,
@@ -20,11 +18,9 @@ export class MemoryPortalRepository implements PortalRepository {
   links = new Map<number, PortalLink>();
   consents = new Map<number, PortalConsent>();
   invitations = new Map<number, PortalInvitation>();
-  tokens = new Map<number, PortalRecoveryToken>();
   sessions = new Map<string, PortalSession>();
   rates = new Map<string, { count: number; resetAt: number }>();
   audits: PortalAudit[] = [];
-  mail: PortalMail[] = [];
   private id = 0;
   private next() {
     return ++this.id;
@@ -39,11 +35,9 @@ export class MemoryPortalRepository implements PortalRepository {
       links: this.links,
       consents: this.consents,
       invitations: this.invitations,
-      tokens: this.tokens,
       sessions: this.sessions,
       rates: this.rates,
       audits: this.audits,
-      mail: this.mail,
       id: this.id,
     });
     try {
@@ -57,8 +51,7 @@ export class MemoryPortalRepository implements PortalRepository {
     return clone(
       [...this.accounts.values()].find(
         (account) =>
-          account.login === identifier ||
-          (account.emailVerifiedAt && account.email === identifier),
+          account.login === identifier,
       ) ?? null,
     );
   }
@@ -176,25 +169,6 @@ export class MemoryPortalRepository implements PortalRepository {
       )
         value.status = "revoked";
   }
-  async getToken(hash: string) {
-    return clone(
-      [...this.tokens.values()].find((value) => value.tokenHash === hash) ??
-        null,
-    );
-  }
-  async createToken(token: Omit<PortalRecoveryToken, "id">) {
-    const value = { ...token, id: this.next() };
-    this.tokens.set(value.id, clone(value));
-    return clone(value);
-  }
-  async consumeToken(id: number, at: number) {
-    this.tokens.get(id)!.consumedAt = at;
-  }
-  async revokeTokens(accountId: number, at: number) {
-    for (const value of this.tokens.values())
-      if (value.accountId === accountId && !value.consumedAt)
-        value.consumedAt = at;
-  }
   async getSession(id: string) {
     return clone(this.sessions.get(id) ?? null);
   }
@@ -236,9 +210,5 @@ export class MemoryPortalRepository implements PortalRepository {
   }
   async audit(event: PortalAudit) {
     this.audits.push(clone(event));
-  }
-  async queueMail(mail: PortalMail) {
-    if (!this.mail.some((value) => value.dedupeKey === mail.dedupeKey))
-      this.mail.push(clone(mail));
   }
 }

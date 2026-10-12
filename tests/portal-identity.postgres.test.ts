@@ -6,7 +6,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { portalInvitationCreateSchema } from "@shared/contracts/portal-identity";
 import { PortalIdentityService } from "../server/modules/portal-identity/application/identity-service";
 import { createPostgresPortalRepository } from "../server/modules/portal-identity/infrastructure/postgres-repository";
-import { PortalIdentityMailWorker, type PortalIdentityMailDelivery } from "../server/modules/portal-identity/infrastructure/mail-worker";
 import { createPortalCrypto } from "../server/modules/portal-identity/infrastructure/crypto";
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
@@ -30,18 +29,6 @@ const cmd = (login = "adult.login") =>
 const token = (url: string | null) =>
   new URLSearchParams(new URL(url!).hash.slice(1)).get("token")!;
 const password = "ValidPassword123!";
-
-async function pendingMailFixture(count = 1) {
-  const key = crypto.randomBytes(32).toString("base64"), clock = { now: Date.now() };
-  const identity = new PortalIdentityService(createPostgresPortalRepository(pool), createPortalCrypto(key), {
-    appUrl: "https://academy.example", emailEnabled: true, allowInvitations: true, now: () => clock.now,
-  });
-  for (let index = 0; index < count; index++) await identity.createInvitation(staff, index + 1, portalInvitationCreateSchema.parse({
-    ...cmd(`mail${index}.login`), account: { login: `mail${index}.login`, fullName: "Fixture", email: `mail${index}@example.invalid` }, channel: "email",
-  }));
-  clock.now = Date.now() + 1_000;
-  return { key, clock };
-}
 
 describe.skipIf(!databaseUrl)(
   "portal identity isolated PostgreSQL integration",
@@ -75,7 +62,6 @@ describe.skipIf(!databaseUrl)(
         { ...codec, hashPassword: (value) => bcrypt.hash(value, 1) },
         {
           appUrl: "https://academy.example",
-          emailEnabled: true,
           allowInvitations: true,
         },
       );
@@ -201,23 +187,11 @@ describe.skipIf(!databaseUrl)(
         ),
       ).rejects.toMatchObject({ code: "23514" });
     });
-    it("keeps family phone non-unique and confirmed email unique without claiming unverified mail", async () => {
-      await pool.query(
-        "INSERT INTO portal_accounts(login,full_name,phone,email) VALUES('child.login','Child','same-phone','family@example.com'),('parent.login','Parent','same-phone','family@example.com')",
-      );
+    it("keeps family contact phone and email non-unique without treating them as login aliases", async () => {
+      await pool.query("INSERT INTO portal_accounts(login,full_name,phone,email) VALUES('child.login','Child','same-phone','family@example.com'),('parent.login','Parent','same-phone','family@example.com')");
       const repository = createPostgresPortalRepository(pool);
       expect(await repository.findAccount("family@example.com")).toBeNull();
-      await pool.query(
-        "UPDATE portal_accounts SET email_verified_at=now() WHERE login='parent.login'",
-      );
-      expect((await repository.findAccount("family@example.com"))?.login).toBe(
-        "parent.login",
-      );
-      await expect(
-        pool.query(
-          "UPDATE portal_accounts SET email_verified_at=now() WHERE login='child.login'",
-        ),
-      ).rejects.toMatchObject({ code: "23505" });
+      expect((await repository.findAccount("parent.login"))?.login).toBe('parent.login');
     });
     it("updates rate limits atomically across multiple repositories and clears reset session artifacts", async () => {
       const invite = await service.createInvitation(staff, 1, cmd());
@@ -251,154 +225,6 @@ describe.skipIf(!databaseUrl)(
       );
       expect(await service.resolveSession(session.id)).toBeNull();
     });
-    it("delivers encrypted invitation mail once and removes the token envelope", async () => {
-      const encryptionKey = crypto.randomBytes(32).toString("base64");
-      const codec = createPortalCrypto(encryptionKey);
-      const mailService = new PortalIdentityService(
-        createPostgresPortalRepository(pool),
-        { ...codec, hashPassword: (value) => bcrypt.hash(value, 1) },
-        {
-          appUrl: "https://academy.example",
-          emailEnabled: true,
-          allowInvitations: true,
-        },
-      );
-      const command = portalInvitationCreateSchema.parse({
-        ...cmd(),
-        account: {
-          login: "mail.login",
-          fullName: "Student",
-          email: "student@example.com",
-        },
-        channel: "email",
-      });
-      const invite = await mailService.createInvitation(staff, 1, command);
-      expect(invite.activationUrl).toBeNull();
-      const sent: string[] = [];
-      const worker = new PortalIdentityMailWorker({
-        pool,
-        encryptionKey,
-        send: async (mail) => {
-          sent.push(mail.url!);
-          return true;
-        },
-      });
-      expect(await worker.runOnce()).toMatchObject({ sent: 1 });
-      expect(await worker.runOnce()).toMatchObject({ sent: 0 });
-      expect(sent).toHaveLength(1);
-      expect(
-        (
-          await pool.query(
-            "SELECT status,encrypted_payload FROM portal_identity_mail_outbox",
-          )
-        ).rows[0],
-      ).toEqual({ status: "sent", encrypted_payload: null });
-      expect(
-        (await pool.query("SELECT status FROM portal_invitations")).rows[0]
-          .status,
-      ).toBe("sent");
-      const session = await mailService.acceptInvitation(
-        token(sent[0]),
-        password,
-        undefined,
-        null,
-      );
-      expect((await mailService.getSessionDto(session)).account?.email).toBe(
-        "student@example.com",
-      );
-    });
-    it("preserves the outbox delivery key across retries and worker restarts without reusing another row's key", async () => {
-      const encryptionKey = crypto.randomBytes(32).toString("base64");
-      const codec = createPortalCrypto(encryptionKey);
-      let time = Date.now();
-      const mailService = new PortalIdentityService(
-        createPostgresPortalRepository(pool),
-        { ...codec, hashPassword: (value) => bcrypt.hash(value, 1) },
-        { appUrl: "https://academy.example", emailEnabled: true, allowInvitations: true, now: () => time },
-      );
-      for (const studentId of [1, 2]) await mailService.createInvitation(staff, studentId, portalInvitationCreateSchema.parse({
-        ...cmd(`mail.login.${studentId}`),
-        account: { login: `mail.login.${studentId}`, fullName: "Student", email: `student${studentId}@example.invalid` },
-        channel: "email",
-      }));
-      const rows = (await pool.query<{ id: string }>("SELECT id FROM portal_identity_mail_outbox ORDER BY id")).rows;
-      const expectedKeys = rows.map(row => `portal-identity:${row.id}`);
-      const deliveries: PortalIdentityMailDelivery[] = [];
-      const send = async (mail: PortalIdentityMailDelivery) => {
-        deliveries.push(mail);
-        return deliveries.filter(delivery => delivery.deliveryKey === mail.deliveryKey).length > 1;
-      };
-      time += 1000;
-      expect(await new PortalIdentityMailWorker({ pool, encryptionKey, send, now: () => time }).runOnce()).toMatchObject({ sent: 0, failed: 2 });
-      expect(deliveries.map(mail => mail.deliveryKey)).toEqual(expectedKeys);
-      time += 31_000;
-      expect(await new PortalIdentityMailWorker({ pool, encryptionKey, send, now: () => time }).runOnce()).toMatchObject({ sent: 2, failed: 0 });
-      expect(deliveries.map(mail => mail.deliveryKey)).toEqual([...expectedKeys, ...expectedKeys]);
-      expect(new Set(expectedKeys).size).toBe(2);
-      expect(await new PortalIdentityMailWorker({ pool, encryptionKey, send, now: () => time }).runOnce()).toMatchObject({ sent: 0, failed: 0 });
-      expect(deliveries).toHaveLength(4);
-    });
-    it("does not send a revoked token and exhausts retries without claiming delivery", async () => {
-      const encryptionKey = crypto.randomBytes(32).toString("base64");
-      const codec = createPortalCrypto(encryptionKey);
-      let time = Date.now();
-      const mailService = new PortalIdentityService(
-        createPostgresPortalRepository(pool),
-        { ...codec, hashPassword: (value) => bcrypt.hash(value, 1) },
-        {
-          appUrl: "https://academy.example",
-          emailEnabled: true,
-          allowInvitations: true,
-          now: () => time,
-        },
-      );
-      const command = portalInvitationCreateSchema.parse({
-        ...cmd(),
-        account: {
-          login: "mail.login",
-          fullName: "Student",
-          email: "student@example.com",
-        },
-        channel: "email",
-      });
-      const invite = await mailService.createInvitation(staff, 1, command);
-      time += 1000;
-      let sends = 0;
-      const worker = new PortalIdentityMailWorker({
-        pool,
-        encryptionKey,
-        now: () => time,
-        send: async () => {
-          sends++;
-          return false;
-        },
-      });
-      for (let attempt = 0; attempt < 5; attempt++) {
-        expect((await worker.runOnce()).failed).toBe(1);
-        time += 30 * 60_000;
-      }
-      expect(
-        (
-          await pool.query(
-            "SELECT status,attempts,delivered_at FROM portal_identity_mail_outbox",
-          )
-        ).rows[0],
-      ).toMatchObject({ status: "failed", attempts: 5, delivered_at: null });
-      expect(
-        (await pool.query("SELECT status FROM portal_invitations")).rows[0]
-          .status,
-      ).toBe("delivery_failed");
-      await mailService.revokeLink(staff, 1, invite.linkId);
-      await worker.runOnce();
-      expect(sends).toBe(5);
-      expect(
-        (
-          await pool.query(
-            "SELECT encrypted_payload FROM portal_identity_mail_outbox",
-          )
-        ).rows[0].encrypted_payload,
-      ).toBeNull();
-    });
     it("preserves relationship history through foreign-key restrictions and never resurrects deleted sessions", async () => {
       const invite = await service.createInvitation(staff, 1, cmd());
       const session = await service.acceptInvitation(
@@ -421,7 +247,7 @@ describe.skipIf(!databaseUrl)(
       const session = await service.acceptInvitation(token(invite.activationUrl), password, undefined, null);
       let now = session.lastSeenAt + 29_999;
       const clockService = new PortalIdentityService(createPostgresPortalRepository(pool), createPortalCrypto(crypto.randomBytes(32).toString("base64")), {
-        appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true, now: () => now,
+        appUrl: "https://academy.example", allowInvitations: true, now: () => now,
       });
       const state = async () => (await pool.query(
         "SELECT session.xmin::text AS session_xmin,account.xmin::text AS account_xmin,session.last_seen_at AS session_seen,account.last_seen_at AS account_seen FROM portal_sessions session JOIN portal_accounts account ON account.id=session.account_id WHERE session.id=$1", [session.id],
@@ -445,7 +271,7 @@ describe.skipIf(!databaseUrl)(
       const repository = createPostgresPortalRepository(pool);
       let now = session.lastSeenAt + 5_000;
       const clockService = new PortalIdentityService(repository, createPortalCrypto(crypto.randomBytes(32).toString("base64")), {
-        appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true, now: () => now,
+        appUrl: "https://academy.example", allowInvitations: true, now: () => now,
       });
       await clockService.reauthenticate(session.id, password);
       const fresh = await repository.getSession(session.id);
@@ -517,7 +343,7 @@ describe.skipIf(!databaseUrl)(
       const repository = createPostgresPortalRepository(observed);
       const now = session.lastSeenAt + 1_000;
       const clockService = new PortalIdentityService(repository, createPortalCrypto(crypto.randomBytes(32).toString("base64")), {
-        appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true, now: () => now,
+        appUrl: "https://academy.example", allowInvitations: true, now: () => now,
       });
       const valid = await clockService.resolveSession(session.id);
       expect(statements).toHaveLength(1);
@@ -548,7 +374,7 @@ describe.skipIf(!databaseUrl)(
       const statements: string[] = [];
       const observed = { query: (sql: string, values: unknown[]) => { statements.push(sql); return pool.query(sql, values); } } as unknown as Pool;
       const repository = createPostgresPortalRepository(observed);
-      const fast = new PortalIdentityService(repository, createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true });
+      const fast = new PortalIdentityService(repository, createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", allowInvitations: true });
       const actor = await fast.resolveAccountActor(session.accountId!, invite.linkId, "finance.read", session.id);
       expect(statements).toHaveLength(1);
       expect(actor).toMatchObject({ portalAccountId: session.accountId, studentId: 1, linkId: invite.linkId, kind: "self", sessionId: session.id });
@@ -571,7 +397,7 @@ describe.skipIf(!databaseUrl)(
       const original = createPostgresPortalRepository(pool);
       const statements: string[] = [];
       const observed = { query: (sql: string, values: unknown[]) => { statements.push(sql); return pool.query(sql, values); } } as unknown as Pool;
-      const fast = new PortalIdentityService(createPostgresPortalRepository(observed), createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true });
+      const fast = new PortalIdentityService(createPostgresPortalRepository(observed), createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", allowInvitations: true });
       const deny = async () => { statements.length = 0; await expect(fast.resolveAccountActor(session.accountId!, invite.linkId)).rejects.toMatchObject({ status: 403 }); expect(statements).toHaveLength(1); };
       await deny();
       await original.updateLink(invite.linkId, { status: "active" });
@@ -595,7 +421,7 @@ describe.skipIf(!databaseUrl)(
       await original.createConsent({ linkId: adultLink.id, permissions: ["finance.read"], method: "in_person", subjectAccountId: null, staffId: 1, revokedAt: null, createdAt: Date.now() });
       const statements: string[] = [];
       const observed = { query: (sql: string, values: unknown[]) => { statements.push(sql); return pool.query(sql, values); } } as unknown as Pool;
-      const fast = new PortalIdentityService(createPostgresPortalRepository(observed), createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", emailEnabled: false, allowInvitations: true });
+      const fast = new PortalIdentityService(createPostgresPortalRepository(observed), createPortalCrypto(crypto.randomBytes(32).toString("base64")), { appUrl: "https://academy.example", allowInvitations: true });
       const child = await fast.resolveAccountActor(session.accountId!, invite.linkId, "child_credentials.manage");
       expect(statements).toHaveLength(1); expect(child.studentId).toBe(2); expect(child.permissions).toEqual(["attendance.read", "child_credentials.manage"]);
       statements.length = 0;
@@ -606,64 +432,6 @@ describe.skipIf(!databaseUrl)(
       await original.updateStudentIdentity(2, "minor", null, 1, "in_person");
       await original.updateLink(invite.linkId, { status: "pending", verifiedAt: null }); await deny();
       await original.updateLink(invite.linkId, { status: "active", verifiedAt: Date.now(), expiresAt: Date.now() - 1 }); await deny();
-    });
-    it("lets competing identity mail replicas claim different rows while a provider is held, without duplicate sends", async () => {
-      const { key, clock } = await pendingMailFixture(2);
-      const replicaA = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
-      const replicaB = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
-      let release!: () => void, started!: () => void;
-      const held = new Promise<void>(resolve => { release = resolve; });
-      const entered = new Promise<void>(resolve => { started = resolve; });
-      const deliveries: string[] = [];
-      const first = new PortalIdentityMailWorker({ pool: replicaA, encryptionKey: key, now: () => clock.now, batchSize: 1,
-        send: async mail => { deliveries.push(mail.deliveryKey!); started(); await held; return true; } });
-      const second = new PortalIdentityMailWorker({ pool: replicaB, encryptionKey: key, now: () => clock.now, batchSize: 1,
-        send: async mail => { deliveries.push(mail.deliveryKey!); return true; } });
-      const running = first.runOnce();
-      try {
-        await Promise.race([entered, running.then(() => { throw new Error("Expected queued identity mail"); })]);
-        expect(await second.runOnce()).toMatchObject({ sent: 1 });
-        expect((await pool.query("SELECT status,attempts FROM portal_identity_mail_outbox ORDER BY id")).rows).toEqual([
-          { status: "delivering", attempts: 1 }, { status: "sent", attempts: 1 },
-        ]);
-      } finally {
-        release(); await running;
-        await Promise.all([replicaA.end(), replicaB.end()]);
-      }
-      expect(new Set(deliveries).size).toBe(2);
-      expect((await pool.query("SELECT count(*)::int AS count FROM portal_identity_mail_outbox WHERE status='sent'")).rows[0].count).toBe(2);
-    });
-    it("recovers an expired identity mail lease and fences the old provider completion without downgrading the new result", async () => {
-      const { key, clock } = await pendingMailFixture();
-      let release!: () => void, started!: () => void;
-      const held = new Promise<void>(resolve => { release = resolve; });
-      const entered = new Promise<void>(resolve => { started = resolve; });
-      const keys: string[] = [];
-      const first = new PortalIdentityMailWorker({ pool, encryptionKey: key, now: () => clock.now, batchSize: 1,
-        send: async mail => { keys.push(mail.deliveryKey!); started(); await held; return false; } });
-      const second = new PortalIdentityMailWorker({ pool, encryptionKey: key, now: () => clock.now, batchSize: 1,
-        send: async mail => { keys.push(mail.deliveryKey!); return true; } });
-      const running = first.runOnce();
-      try {
-        await Promise.race([entered, running.then(() => { throw new Error("Expected queued identity mail"); })]);
-        clock.now += 6 * 60_000;
-        expect(await second.runOnce()).toMatchObject({ sent: 1 });
-      } finally { release(); }
-      expect(await running).toMatchObject({ sent: 0, failed: 0 });
-      expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]);
-      expect((await pool.query("SELECT status,attempts,locked_at,last_error_code,encrypted_payload FROM portal_identity_mail_outbox")).rows[0])
-        .toEqual({ status: "sent", attempts: 2, locked_at: null, last_error_code: null, encrypted_payload: null });
-      expect((await pool.query("SELECT status FROM portal_invitations")).rows[0].status).toBe("sent");
-    });
-    it("recovers the fifth interrupted identity lease as failed and never makes a sixth provider call", async () => {
-      const { key, clock } = await pendingMailFixture();
-      await pool.query("UPDATE portal_identity_mail_outbox SET status='delivering',attempts=5,locked_at=$1", [new Date(clock.now - 6 * 60_000)]);
-      let sends = 0;
-      const worker = new PortalIdentityMailWorker({ pool, encryptionKey: key, now: () => clock.now, send: async () => { sends++; return true; } });
-      await worker.runOnce(); await worker.runOnce();
-      expect(sends).toBe(0);
-      expect((await pool.query("SELECT status,attempts,locked_at,last_error_code,delivered_at FROM portal_identity_mail_outbox")).rows[0])
-        .toEqual({ status: "failed", attempts: 5, locked_at: null, last_error_code: "delivery_interrupted", delivered_at: null });
     });
   },
 );

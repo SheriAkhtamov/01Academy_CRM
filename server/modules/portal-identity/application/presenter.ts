@@ -4,7 +4,7 @@ export const safeAccount = (account: PortalAccount): PortalAccountDto => ({
   id: account.id,
   login: account.login,
   fullName: account.fullName,
-  email: account.emailVerifiedAt ? account.email : null,
+  email: account.email,
   phone: account.phone,
   locale: account.locale,
   status: account.status,

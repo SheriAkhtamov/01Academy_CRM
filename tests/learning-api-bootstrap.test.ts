@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
     },
     session: { secret: "independent-learning-api-staff-secret" },
     portal: { enabled: true },
-    email: {},
+
   },
 }));
 vi.mock("../server/config", () => ({

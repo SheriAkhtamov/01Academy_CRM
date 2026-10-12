@@ -8,15 +8,11 @@ import { z } from "zod";
 import {
   portalChildCredentialsSchema,
   portalConsentSchema,
-  portalEmailChangeSchema,
-  portalEmailVerifySchema,
   portalInvitationAcceptSchema,
   portalLoginCommandSchema,
   portalPasswordChangeSchema,
   portalProfileUpdateSchema,
   portalReauthenticateSchema,
-  portalRecoveryCompleteSchema,
-  portalRecoveryRequestSchema,
 } from "@shared/contracts/portal-identity";
 import type { PortalPermission } from "@shared/contracts/portal-identity";
 import type { PortalIdentityService } from "../application/identity-service";
@@ -121,23 +117,6 @@ export const createPortalIdentityRouter = ({
       res.json(await service.getSessionDto(session));
     }),
   );
-  router.post(
-    "/auth/recovery/request",
-    wrap(async (req, res) => {
-      const command = portalRecoveryRequestSchema.parse(req.body);
-      await service.requestRecovery(command.identifier, req.ip ?? "unknown");
-      res.json({ success: true });
-    }),
-  );
-  router.post(
-    "/auth/recovery/complete",
-    wrap(async (req, res) => {
-      const command = portalRecoveryCompleteSchema.parse(req.body);
-      await service.completeRecovery(command.token, command.password, req.requestId);
-      req.portalSessionCookies?.clear();
-      res.json({ success: true });
-    }),
-  );
   router.get(
     "/subjects",
     wrap(async (req, res) => {
@@ -236,23 +215,6 @@ export const createPortalIdentityRouter = ({
         req.requestId,
       );
       res.json({ success: true });
-    }),
-  );
-  router.post(
-    "/me/email",
-    wrap(async (req, res) => {
-      const command = portalEmailChangeSchema.parse(req.body);
-      await service.requestEmailChange(sessionId(req), command.email);
-      res.json({ success: true });
-    }),
-  );
-  router.post(
-    "/me/email/verify",
-    wrap(async (req, res) => {
-      const command = portalEmailVerifySchema.parse(req.body);
-      const session = await service.verifyEmail(sessionId(req), command.token, req.requestId);
-      req.portalSessionCookies?.set(session);
-      res.json(await service.getSessionDto(session));
     }),
   );
   return router;

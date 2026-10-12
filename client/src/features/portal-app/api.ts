@@ -152,16 +152,6 @@ export const portalIdentityApi = {
         ...(fullName ? { fullName } : {}),
       },
     }),
-  recovery: (identifier: string) =>
-    portalRequest<{ success: boolean }>("/auth/recovery/request", {
-      method: "POST",
-      body: { identifier },
-    }),
-  reset: (token: string, password: string) =>
-    portalRequest<{ success: boolean }>("/auth/recovery/complete", {
-      method: "POST",
-      body: { token, password },
-    }),
   profile: (body: { fullName?: string; locale?: "ru" | "en" }) =>
     portalRequest<PortalAccountDto>("/me", { method: "PATCH", body }),
   password: (password: string, newPassword: string) =>
@@ -192,16 +182,6 @@ export const portalIdentityApi = {
     portalRequest<{ success: boolean }>("/me/representatives/consent", {
       method: "POST",
       body: { linkId, permissions, approved },
-    }),
-  email: (email: string) =>
-    portalRequest<{ success: boolean }>("/me/email", {
-      method: "POST",
-      body: { email },
-    }),
-  verifyEmail: (token: string) =>
-    sessionRequest("/me/email/verify", {
-      method: "POST",
-      body: { token },
     }),
   sessions: (signal?: AbortSignal) =>
     portalRequest<PortalDeviceSessionDto[]>("/me/sessions", { signal }),

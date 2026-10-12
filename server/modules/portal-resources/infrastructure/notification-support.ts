@@ -40,7 +40,7 @@ export type Outbox = {
   href: string | null;
   event_key: string;
   required_permission: PortalPermission | null;
-  channel: "in_app" | "email";
+  channel: "in_app";
   urgent: boolean;
   attempts: number;
   deliver_after: Date;
@@ -48,20 +48,8 @@ export type Outbox = {
 };
 export type Account = {
   id: number;
-  email: string | null;
-  email_verified_at: Date | null;
   locale: "ru" | "en";
   status: string;
-};
-export type PortalNotificationEmail = {
-  to: string;
-  locale: "ru" | "en";
-  category: PortalNotificationCategory;
-  code: string;
-  params: Params;
-  href: string | null;
-  accountId: number;
-  eventKey: string;
 };
 export type NotificationWorkCalendar = {
   workdays: readonly number[];
@@ -71,16 +59,11 @@ export type NotificationWorkCalendar = {
 };
 export type PortalNotificationWorkerOptions = {
   pool: Pool;
-  /** Discovery is owned by in_app; email delivers only already-queued email rows. */
-  mode?: "all" | "in_app" | "email";
   enabled: boolean | (() => boolean);
   groupIds?: readonly number[] | (() => readonly number[]);
-  emailEnabled?: boolean | (() => boolean);
   now?: () => number;
   enabledForGroup?: (groupId: number) => Promise<boolean> | boolean;
   enabledForStudent?: (studentId: number) => Promise<boolean> | boolean;
-  emailEnabledForStudent?: (studentId: number) => Promise<boolean> | boolean;
-  emailEnabledForAccount?: (accountId: number) => Promise<boolean> | boolean;
   rolloutStartedAt?: string | Date;
   batchSize?: number;
   calendar?: NotificationWorkCalendar | (() => NotificationWorkCalendar);
@@ -90,7 +73,6 @@ export type PortalNotificationWorkerOptions = {
     linkId: number,
     permission?: PortalPermission,
   ) => Promise<PortalActorContext>;
-  sendEmail: (notification: PortalNotificationEmail) => Promise<boolean>;
   staffCopy?: (code: string, params: Params) => { title: string; message: string };
 };
 export const PORTAL_NOTIFICATION_EVENT_CODES = {
@@ -127,23 +109,6 @@ const timeMinutes = (value: string) => {
   return hours * 60 + minutes;
 };
 export const localDate = (now: number) => new Date(now + TASHKENT).toISOString().slice(0, 10);
-export function nextAllowedNotificationEmailAt(
-  now: number,
-  from = "21:00",
-  until = "08:00",
-  urgent = false,
-): number {
-  if (urgent || from === until) return now;
-  const local = new Date(now + TASHKENT);
-  const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
-  const start = timeMinutes(from),
-    end = timeMinutes(until);
-  const quiet = start > end ? minutes >= start || minutes < end : minutes >= start && minutes < end;
-  if (!quiet) return now;
-  const dayStart =
-    Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - TASHKENT;
-  return dayStart + end * MINUTE + (start > end && minutes >= start ? DAY : 0);
-}
 export function oneWorkingDayAfter(
   createdAt: number,
   calendar: NotificationWorkCalendar = {
@@ -195,14 +160,12 @@ export const accessDenied = (error: unknown) =>
   );
 export const defaultPreferences = (): PortalNotificationPreferencesDto => ({
   categories: {
-    learning: { inApp: true, email: false },
-    schedule: { inApp: true, email: true },
-    feedback: { inApp: true, email: true },
-    finance: { inApp: true, email: true },
-    family: { inApp: true, email: true },
-    security: { inApp: true, email: true },
+    learning: { inApp: true },
+    schedule: { inApp: true },
+    feedback: { inApp: true },
+    finance: { inApp: true },
+    family: { inApp: true },
+    security: { inApp: true },
   },
-  quietFrom: "21:00",
-  quietUntil: "08:00",
   weeklySummary: false,
 });

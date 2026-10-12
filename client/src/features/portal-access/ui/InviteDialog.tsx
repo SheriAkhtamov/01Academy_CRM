@@ -47,7 +47,6 @@ export function InviteDialog({
   classification,
   controls,
   onDraftChange,
-  emailEnabled = true,
   initialKind = "self",
 }: {
   open: boolean;
@@ -56,7 +55,6 @@ export function InviteDialog({
   classification: PortalClassification;
   controls: StudentPortalAccessControls;
   onDraftChange?: (dirty: boolean, pending: boolean) => void;
-  emailEnabled?: boolean;
   initialKind?: "self" | "representative";
 }) {
   const { t, language } = useTranslation();
@@ -91,7 +89,7 @@ export function InviteDialog({
   const [method, setMethod] = useState("");
   const [basis, setBasis] = useState("");
   const [consent, setConsent] = useState(false);
-  const [channel, setChannel] = useState<"manual" | "email">("manual");
+  const channel = "manual";
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PortalInvitationResultDto | null>(null);
   const [copied, setCopied] = useState(false);
@@ -132,7 +130,6 @@ export function InviteDialog({
     setMethod("");
     setBasis("");
     setConsent(false);
-    setChannel("manual");
     setErrors({});
     setResult(null);
     setCopied(false);
@@ -175,13 +172,6 @@ export function InviteDialog({
       if (kind === "representative" && !permissions.length)
         next.permissions = t("lmsAccessChoosePermissions");
     }
-    if (
-      step === 3 &&
-      channel === "email" &&
-      accountMode === "new" &&
-      !email.trim()
-    )
-      next.email = t("lmsAccessInvalidEmail");
     return next;
   };
   const checkContacts = async (advance: boolean) => {
@@ -354,9 +344,7 @@ export function InviteDialog({
                     {copied ? t("lmsStaffCopied") : t("lmsStaffCopyLink")}
                   </Button>
                 </div>
-              ) : (
-                <p className="text-sm">{t("lmsAccessEmailQueued")}</p>
-              )}
+              ) : null}
               {errors.form && (
                 <p role="alert" className="text-sm text-destructive">
                   {errors.form}
@@ -685,27 +673,8 @@ export function InviteDialog({
                       </div>
                     ) : null}
                   </div>
-                  <Label htmlFor="portal-invite-channel">
-                    {t("lmsAccessDelivery")}
-                  </Label>
-                  <Select
-                    value={channel}
-                    onValueChange={(value) =>
-                      setChannel(value as typeof channel)
-                    }
-                  >
-                    <SelectTrigger id="portal-invite-channel">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">
-                        {t("lmsStaffManual")}
-                      </SelectItem>
-                      <SelectItem value="email" disabled={!emailEnabled}>
-                        {t("lmsStaffByEmail")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+
+
                   {errors.email ? (
                     <p role="alert" className="text-sm text-destructive">
                       {errors.email}

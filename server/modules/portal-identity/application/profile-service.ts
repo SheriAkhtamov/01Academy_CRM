@@ -21,7 +21,6 @@ type ProfileContext = {
     reauthenticated?: boolean,
   ) => Promise<{ session: PortalSession; account: PortalAccount }>;
   listSubjects: (accountId: number) => Promise<PortalSubjectDto[]>;
-  emailEnabled: (accountId: number, repository?: PortalRepository) => Promise<boolean>;
   rotate: (
     repository: PortalRepository,
     account: PortalAccount,
@@ -150,89 +149,6 @@ export class PortalProfileService {
         requestId,
         details: { linkId, permissions },
       });
-    });
-  }
-  async requestEmailChange(sessionId: string, email: string) {
-    const authenticated = await this.context.requireSession(sessionId, true);
-    const { account } = authenticated;
-    if (!(await this.context.emailEnabled(account.id)))
-      throw new PortalError("portalEmailUnavailable", 409);
-    const token = this.crypto.randomToken();
-    await this.repository.transaction(async (repository) => {
-      await requireCurrentPortalSession(repository, authenticated, this.now(), true);
-      const existing = await repository.findAccount(email);
-      if (existing && existing.id !== account.id)
-        throw new PortalError("portalEmailUnavailable", 409);
-      await repository.updateAccount(account.id, { pendingEmail: email });
-      const record = await repository.createToken({
-        accountId: account.id,
-        purpose: "email",
-        tokenHash: this.crypto.hashToken(token),
-        expiresAt: this.now() + 30 * MINUTE,
-        consumedAt: null,
-        payload: email,
-      });
-      await repository.queueMail({
-        accountId: account.id,
-        recipient: email,
-        template: "email_change",
-        encryptedPayload: this.crypto.encrypt({
-          token,
-          url: `${this.options.appUrl.replace(/\/$/, "")}/learn/verify-email#token=${encodeURIComponent(token)}`,
-          locale: account.locale,
-        }),
-        expiresAt: record.expiresAt,
-        dedupeKey: `email:${record.id}`,
-      });
-    });
-  }
-  async verifyEmail(sessionId: string, token: string, requestId?: string) {
-    const authenticated = await this.context.requireSession(sessionId);
-    const { account } = authenticated;
-    return this.repository.transaction(async (repository) => {
-      const current = await requireCurrentPortalSession(repository, authenticated, this.now());
-      const record = await repository.getToken(this.crypto.hashToken(token), true);
-      if (
-        !record ||
-        record.accountId !== account.id ||
-        record.purpose !== "email" ||
-        record.consumedAt ||
-        record.expiresAt <= this.now() ||
-        !current ||
-        record.payload !== current.pendingEmail ||
-        !record.payload
-      )
-        throw new PortalError("portalEmailVerificationInvalid");
-      const existing = await repository.findAccount(record.payload);
-      if (existing && existing.id !== account.id)
-        throw new PortalError("portalEmailUnavailable", 409);
-      const updated = await repository.updateAccount(account.id, {
-        email: record.payload,
-        emailVerifiedAt: this.now(),
-        pendingEmail: null,
-        authVersion: current.authVersion + 1,
-      });
-      await repository.revokeTokens(account.id, this.now());
-      await repository.revokeSessions(account.id);
-      if (current.email && current.emailVerifiedAt && (await this.context.emailEnabled(account.id, repository)))
-        await repository.queueMail({
-          accountId: account.id,
-          recipient: current.email,
-          template: "email_changed",
-          encryptedPayload: this.crypto.encrypt({ locale: account.locale }),
-          expiresAt: this.now() + DAY,
-          dedupeKey: `email-changed:${record.id}`,
-        });
-      await repository.audit({
-        actorKind: "portal",
-        accountId: account.id,
-        staffId: null,
-        studentId: null,
-        action: "EMAIL_CHANGED",
-        requestId,
-        details: {},
-      });
-      return this.context.rotate(repository, updated);
     });
   }
 }

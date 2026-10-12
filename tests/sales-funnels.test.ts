@@ -74,7 +74,7 @@ describe('sales funnel lead routing', () => {
     );
 
     expect(settingsPage).toContain(
-      "const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups'];",
+      "const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'access'];",
     );
     expect(settingsPage).toContain(
       "const salesSettingsTabs = ['lead-assignment', 'pipeline', 'funnels', 'lead-merge', 'kpi'];",

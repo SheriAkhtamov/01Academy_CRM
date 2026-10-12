@@ -257,7 +257,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
   });
   it('preserves a changed school policy and feature scope on concurrent stale settings updates',async()=>{
     await pool.query("INSERT INTO lms_feature_flags(key) VALUES('learning'),('invitations'),('public_portfolio'),('email')");
-    const config={...appConfig,portal:{enabled:true,learningEnabled:true,emailEnabled:false,allowInvitations:true,publicPortfolioEnabled:true}};
+    const config={...appConfig,portal:{enabled:true,learningEnabled:true,allowInvitations:true,publicPortfolioEnabled:true}};
     const flags=new LearningFeatureController(pool,config);await flags.refresh();
     const first=structuredClone(DEFAULT_LEARNING_SCHOOL_SETTINGS);first.studentQuotaGiB=2;
     const second=structuredClone(DEFAULT_LEARNING_SCHOOL_SETTINGS);second.studentQuotaGiB=3;
@@ -270,7 +270,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
   });
   it('correlates both HTTP configuration changes with the resolved staff request without exposing it in settings',async()=>{
     await pool.query("INSERT INTO lms_feature_flags(key) VALUES('learning'),('invitations'),('public_portfolio'),('email')");
-    const config={...appConfig,portal:{enabled:true,learningEnabled:true,emailEnabled:false,allowInvitations:true,publicPortfolioEnabled:true}};
+    const config={...appConfig,portal:{enabled:true,learningEnabled:true,allowInvitations:true,publicPortfolioEnabled:true}};
     const flags=new LearningFeatureController(pool,config);await flags.refresh();
     const app=express();app.use(express.json());app.use(createLearningConfigurationRouter(flags,async req=>({...teacher,modules:['administration'],requestId:req.get('X-Request-Id')})));
     const settingsId=randomUUID(),flagId=randomUUID(),settings=structuredClone(DEFAULT_LEARNING_SCHOOL_SETTINGS);settings.studentQuotaGiB=2;

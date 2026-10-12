@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Redirect, Switch, Route } from 'wouter';
+import { Redirect, Switch, Route, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -10,8 +10,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
-import { ModulePage } from '@/components/ux/ModulePage';
-import { PageHeader } from '@/components/ux/PageHeader';
 
 const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/login'));
@@ -31,15 +29,6 @@ const FinanceCenter = lazy(() => import('@/pages/finance-center'));
 const ResourcePage = lazy(() => import('@/pages/resource'));
 const LearningManagementPage = lazy(() => import('@/pages/learning-management'));
 const LearningRolloutSettings = lazy(() => import('@/features/learning-rollout/LearningRolloutSettings'));
-const PortalAccessDirectory = lazy(() => import('@/features/portal-access/PortalAccessDirectory').then(module => ({default:module.PortalAccessDirectory})));
-
-function PortalDirectoryRoute({representatives = false}:{representatives?:boolean}) {
-  const {t} = useTranslation();
-  const capabilities = useQuery(learningCapabilitiesQuery);
-  if (capabilities.isPending) return <RouteLoading/>;
-  if (!capabilities.data?.portalEnabled || !capabilities.data.canManageAccess) return <AccessDenied/>;
-  return <ModulePage><PageHeader title={t(representatives ? 'portalDirectoryRepresentatives':'portalDirectoryTitle')}/><PortalAccessDirectory kind={representatives ? 'representatives':'students'}/></ModulePage>;
-}
 
 function LearningRoute({ administration = false,reports=false }: { administration?: boolean;reports?:boolean }) {
   const capabilities = useQuery(learningCapabilitiesQuery);
@@ -129,6 +118,7 @@ function RouteLoading() {
 }
 
 export function AppRouter() {
+  const [path] = useLocation();
   const { isAuthenticated, isLoading, isSessionError, isRefetchingSession, refetchSession } = useAuth();
   const { t } = useTranslation();
 
@@ -151,7 +141,7 @@ export function AppRouter() {
     return <RouteLoading />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || path === '/login') {
     return (
       <Suspense fallback={<RouteLoading />}>
         <Login />
@@ -302,11 +292,11 @@ export function AppRouter() {
         } />
         <Route path="/admin/leads" children={<Redirect to="/admin/sales-settings" />} />
         <Route path="/admin/tasks" children={<Redirect to="/tasks" />} />
-        <Route path="/admin/learning" children={<ModuleGuard module="administration"><LearningRoute administration /></ModuleGuard>} />
-        <Route path="/admin/learning/reports" children={<ModuleGuard module="administration"><LearningRoute administration reports/></ModuleGuard>} />
+        <Route path="/admin/learning" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=groups" /></ModuleGuard>} />
+        <Route path="/admin/learning/reports" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=groups" /></ModuleGuard>} />
         <Route path="/admin/learning-settings" children={<ModuleGuard module="administration"><LearningRolloutSettings /></ModuleGuard>} />
-        <Route path="/admin/learning/access" children={<ModuleGuard module="administration"><PortalDirectoryRoute /></ModuleGuard>} />
-        <Route path="/admin/learning/representatives" children={<ModuleGuard module="administration"><PortalDirectoryRoute representatives /></ModuleGuard>} />
+        <Route path="/admin/learning/access" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=access" /></ModuleGuard>} />
+        <Route path="/admin/learning/representatives" children={<ModuleGuard module="administration"><Redirect to="/admin/academy-settings?tab=access" /></ModuleGuard>} />
         <Route path="/admin/academy-settings" children={
           <ModuleGuard module="administration">
             <AcademySettings />

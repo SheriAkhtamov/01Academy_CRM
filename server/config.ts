@@ -38,22 +38,11 @@ export interface AppConfig {
     learningEnabled?: boolean;
     sessionSecret?: string;
     tokenEncryptionKey?: string;
-    emailEnabled?: boolean;
     allowInvitations?: boolean;
     publicPortfolioEnabled?: boolean;
     groupIds?: number[];
     workCalendar?: { workdays?: number[]; start?: string; end?: string; holidays?: string[]; coordinatorUserIds?: number[] };
     support?: { phone?: string; email?: string };
-  };
-  email: {
-    resendApiKey?: string;
-    smtp?: {
-      host?: string;
-      port?: number;
-      user?: string;
-      pass?: string;
-      from?: string;
-    };
   };
   integrations?: {
     telegramTasks?: {
@@ -196,7 +185,7 @@ const readConfigFile = (): AppConfig => {
 export const validateConfig = (config: AppConfig) => {
   const portal = config.portal;
   if (portal !== undefined) {
-    const flags = ['enabled', 'learningEnabled', 'emailEnabled', 'allowInvitations', 'publicPortfolioEnabled'] as const;
+    const flags = ['enabled', 'learningEnabled', 'allowInvitations', 'publicPortfolioEnabled'] as const;
     if (!portal || typeof portal !== 'object' || flags.some((flag) => portal[flag] !== undefined && typeof portal[flag] !== 'boolean')) {
       throw new Error('portal feature flags must be boolean values');
     }

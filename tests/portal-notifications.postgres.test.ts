@@ -15,7 +15,6 @@ import { createPostgresPortalRepository } from "../server/modules/portal-identit
 import { createPortalCrypto } from "../server/modules/portal-identity/infrastructure/crypto";
 import {
   PortalNotificationWorker,
-  type PortalNotificationEmail,
 } from "../server/modules/portal-resources/infrastructure/notification-worker";
 import type { PortalNotificationPreferencesDto } from "@shared/contracts/portal-resources";
 import { isolatePortalWorkerFixture } from './portal-worker-fixture-pool';
@@ -29,22 +28,16 @@ let admin: Pool,
   pool: Pool,
   identity: PortalIdentityService,
   now: number,
-  allowedGroups: number[],
-  sent: PortalNotificationEmail[];
-let send: ReturnType<
-  typeof vi.fn<(mail: PortalNotificationEmail) => Promise<boolean>>
->;
+  allowedGroups: number[];
 const preferences: PortalNotificationPreferencesDto = {
   categories: {
-    learning: { inApp: true, email: true },
-    schedule: { inApp: true, email: true },
-    feedback: { inApp: true, email: true },
-    finance: { inApp: true, email: true },
-    family: { inApp: true, email: true },
-    security: { inApp: true, email: true },
+    learning: { inApp: true, },
+    schedule: { inApp: true, },
+    feedback: { inApp: true, },
+    finance: { inApp: true, },
+    family: { inApp: true, },
+    security: { inApp: true, },
   },
-  quietFrom: "21:00",
-  quietUntil: "08:00",
   weeklySummary: false,
 };
 const worker = (
@@ -55,13 +48,11 @@ const worker = (
   new PortalNotificationWorker({
     pool,
     enabled: true,
-    emailEnabled: true,
     now: () => now,
     rolloutStartedAt: new Date(INITIAL - 7 * DAY),
     enabledForGroup: async (groupId) => allowedGroups.includes(groupId),
     authorizeLink: (accountId, linkId, permission) =>
       identity.resolveAccountActor(accountId, linkId, permission),
-    sendEmail: send,
     staffCopy: (code, params) => ({
       title: code,
       message: String(params.title ?? ""),
@@ -166,14 +157,8 @@ async function putPreferences(
   values: PortalNotificationPreferencesDto = preferences,
 ) {
   await pool.query(
-    "INSERT INTO portal_notification_preferences(account_id,categories,quiet_from,quiet_until,weekly_summary) VALUES($1,$2::jsonb,$3,$4,$5) ON CONFLICT(account_id) DO UPDATE SET categories=EXCLUDED.categories,quiet_from=EXCLUDED.quiet_from,quiet_until=EXCLUDED.quiet_until,weekly_summary=EXCLUDED.weekly_summary",
-    [
-      accountId,
-      JSON.stringify(values.categories),
-      values.quietFrom,
-      values.quietUntil,
-      values.weeklySummary,
-    ],
+    "INSERT INTO portal_notification_preferences(account_id,categories,weekly_summary) VALUES($1,$2::jsonb,$3) ON CONFLICT(account_id) DO UPDATE SET categories=EXCLUDED.categories,weekly_summary=EXCLUDED.weekly_summary",
+    [accountId, JSON.stringify(values.categories), values.weeklySummary],
   );
 }
 
@@ -228,7 +213,6 @@ describe.skipIf(!databaseUrl)(
         {
           appUrl: "https://academy.example",
           allowInvitations: true,
-          emailEnabled: true,
           now: () => now,
         },
       );
@@ -236,11 +220,6 @@ describe.skipIf(!databaseUrl)(
     beforeEach(async () => {
       now = INITIAL;
       allowedGroups = [1];
-      sent = [];
-      send = vi.fn(async (mail: PortalNotificationEmail) => {
-        sent.push(mail);
-        return true;
-      });
       const tables = (
         await pool.query(
           "SELECT tablename FROM pg_tables WHERE schemaname=$1",
@@ -276,9 +255,6 @@ describe.skipIf(!databaseUrl)(
         ),
       ).toEqual([1, 2, 3]);
       expect(
-        sent.filter((mail) => mail.code === "portalNoticeMaterialPublished"),
-      ).toHaveLength(3);
-      expect(
         (
           await pool.query(
             "SELECT count(*)::int AS count FROM notifications WHERE title='lmsNoticePublished'",
@@ -295,16 +271,15 @@ describe.skipIf(!databaseUrl)(
         FROM generate_series(1,9000) number`, [comment.id, new Date(now - 1000)]);
       const currentId = await event("thread_answered", Number(comment.id), { eventKey: "current-private-reply" });
       const startedAt = Date.now();
-      const result = await worker({ mode: "in_app" }).runOnce();
+      const result = await worker({ }).runOnce();
       expect(Date.now() - startedAt).toBeLessThan(60_000);
       expect(result).toMatchObject({ delivered: 1, cancelled: 0 });
       const replies = await notifications("portalNoticeThreadAnswered");
       expect(replies).toHaveLength(1);
       expect(replies[0]).toMatchObject({ account_id: "2", link_id: "2", href: `/learn/help?thread=${thread.id}&linkId=2` });
       expect((await pool.query("SELECT count(*)::int AS count FROM lms_notification_sources WHERE source_key=$1", [`learning:${currentId}`])).rows[0].count).toBe(1);
-      await Promise.all([worker({ mode: "in_app" }).runOnce(), worker({ mode: "in_app" }).runOnce()]);
+      await Promise.all([worker({ }).runOnce(), worker({ }).runOnce()]);
       expect(await notifications("portalNoticeThreadAnswered")).toHaveLength(1);
-      expect(sent).toHaveLength(0);
       expect((await pool.query("SELECT count(*)::int AS count FROM lms_learning_events WHERE event_key LIKE 'backlog:%'")).rows[0].count).toBe(9000);
     });
     it("uses current consent and never gives an adult representative unconsented learning data", async () => {
@@ -319,47 +294,6 @@ describe.skipIf(!databaseUrl)(
         ),
       ).toEqual([1]);
     });
-    it("keeps discovering and delivering in-app updates while SMTP is unresolved, without email source writes", async () => {
-      await material();
-      const deliveryOnly = await worker({ mode: "email" }).runOnce();
-      expect(deliveryOnly).toEqual({ queued: 0, delivered: 0, cancelled: 0, failed: 0 });
-      expect((await pool.query("SELECT count(*)::int AS count FROM lms_notification_sources")).rows[0].count).toBe(0);
-      expect((await pool.query("SELECT count(*)::int AS count FROM lms_notification_worker_state")).rows[0].count).toBe(0);
-      const first = await worker({ mode: "in_app" }).runOnce();
-      expect(first).toMatchObject({ queued: 6, delivered: 3 });
-      expect(sent).toHaveLength(0);
-      let releaseEmail!: () => void;
-      let startedEmail!: () => void;
-      const heldEmail = new Promise<void>((resolve) => { releaseEmail = resolve; });
-      const started = new Promise<void>((resolve) => { startedEmail = resolve; });
-      send.mockImplementationOnce(async (mail) => {
-        startedEmail();
-        await heldEmail;
-        sent.push(mail);
-        return true;
-      });
-      const mailing = worker({ mode: "email" }).runOnce();
-      await started;
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await material();
-        const second = await Promise.race([
-          worker({ mode: "in_app" }).runOnce(),
-          new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error("In-app worker was blocked by SMTP")), 1_000); }),
-        ]);
-        expect(second).toMatchObject({ queued: 6, delivered: 3 });
-        expect(await notifications("portalNoticeMaterialPublished")).toHaveLength(6);
-        expect(sent).toHaveLength(0);
-      } finally {
-        if (timeout) clearTimeout(timeout);
-        releaseEmail();
-        await mailing;
-      }
-      expect(sent).toHaveLength(3);
-      await worker({ mode: "email" }).runOnce();
-      expect(sent).toHaveLength(6);
-      expect(await notifications("portalNoticeMaterialPublished")).toHaveLength(6);
-    });
     it("rechecks directly queued finance replies against their author, link and staff message", async () => {
       const question = (await pool.query("INSERT INTO portal_finance_questions(student_id,account_id,link_id,subject,request_key,request_hash,status) VALUES(1,2,2,'Payment question','request',repeat('a',64),'answered') RETURNING id")).rows[0];
       const reply = (await pool.query("INSERT INTO portal_finance_question_messages(question_id,user_id,body,request_key) VALUES($1,1,'Answer','reply') RETURNING id", [question.id])).rows[0];
@@ -368,7 +302,7 @@ describe.skipIf(!databaseUrl)(
         (2,2,'finance','portalNoticeThreadAnswered',$2::jsonb,'/learn/payments','wrong-question','finance.read','in_app',$3),
         (1,1,'finance','portalNoticeThreadAnswered',$1::jsonb,'/learn/payments','minor-without-school-finance','finance.read','in_app',$3)`,
         [JSON.stringify({ sourceType: "finance_question_answered", questionId: question.id, messageId: reply.id }), JSON.stringify({ sourceType: "finance_question_answered", questionId: 9999, messageId: reply.id }), new Date(now)]);
-      const result = await worker({ mode: "in_app" }).runOnce();
+      const result = await worker({ }).runOnce();
       expect(result).toMatchObject({ delivered: 1, cancelled: 2 });
       expect((await notifications("portalNoticeThreadAnswered")).map((row) => Number(row.account_id))).toEqual([2]);
     });
@@ -408,12 +342,6 @@ describe.skipIf(!databaseUrl)(
       ).toEqual([2]);
       expect((await notifications("portalNoticeThreadAnswered"))[0].href)
         .toBe(`/learn/help?thread=${thread.id}&linkId=2`);
-      expect(
-        sent
-          .filter((mail) => mail.code === "portalNoticeThreadAnswered")
-          .map((mail) => mail.to),
-      ).toEqual(["parent@example.com"]);
-      expect(JSON.stringify(sent)).not.toContain("Private staff note");
     });
     it("sends in-app immediately, defers ordinary email through quiet hours and rechecks revoked links", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -422,24 +350,11 @@ describe.skipIf(!databaseUrl)(
       expect(await notifications("portalNoticeReportPublished")).toHaveLength(
         3,
       );
-      expect(sent).toHaveLength(0);
       await pool.query(
         "UPDATE portal_student_links SET status='revoked' WHERE id=2",
       );
       now = new Date("2026-10-13T03:00:00Z").getTime();
       await worker().runOnce();
-      expect(
-        sent
-          .filter((mail) => mail.code === "portalNoticeReportPublished")
-          .map((mail) => mail.to),
-      ).toEqual(["child@example.com", "other@example.com"]);
-      expect(
-        (
-          await pool.query(
-            "SELECT state FROM lms_resource_outbox WHERE account_id=2 AND code='portalNoticeReportPublished' AND channel='email'",
-          )
-        ).rows[0].state,
-      ).toBe("cancelled");
     });
     it("cancels obsolete assignment reminders after a due date moves or a submission is accepted", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -452,23 +367,12 @@ describe.skipIf(!databaseUrl)(
       );
       now = new Date("2026-10-13T03:00:00Z").getTime();
       await worker().runOnce();
-      expect(
-        sent.filter((mail) => mail.code === "portalNoticeAssignmentDue"),
-      ).toHaveLength(0);
       await pool.query(
         "UPDATE lms_assignment_recipients SET status='accepted' WHERE id=$1",
         [recipient.id],
       );
       now += 3 * DAY;
       await worker().runOnce();
-      expect(
-        sent.filter((mail) =>
-          [
-            "portalNoticeAssignmentDue",
-            "portalNoticeAssignmentOverdue",
-          ].includes(mail.code),
-        ),
-      ).toHaveLength(0);
     });
     it("limits financial reminders to confirmed financial access and cancels them after payment", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -490,40 +394,6 @@ describe.skipIf(!databaseUrl)(
       );
       now = new Date("2026-10-13T03:00:00Z").getTime();
       await worker().runOnce();
-      expect(
-        sent.filter((mail) => mail.code === "portalNoticePaymentDue"),
-      ).toHaveLength(0);
-      expect(
-        (
-          await pool.query(
-            "SELECT state FROM lms_resource_outbox WHERE account_id=2 AND code='portalNoticePaymentDue' AND channel='email'",
-          )
-        ).rows[0].state,
-      ).toBe("cancelled");
-    });
-    it("caps delivery at five failures and never marks a failed provider response delivered", async () => {
-      send.mockImplementation(async () => false);
-      await event("report_published", await publishedReport());
-      const instance = worker();
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await instance.runOnce();
-        now += 10 * 60 * 1000;
-      }
-      const rows = (
-        await pool.query(
-          "SELECT state,attempts,delivered_at FROM lms_resource_outbox WHERE code='portalNoticeReportPublished' AND channel='email'",
-        )
-      ).rows;
-      expect(rows).toHaveLength(3);
-      expect(
-        rows.every(
-          (row) =>
-            row.state === "failed" &&
-            row.attempts === 5 &&
-            row.delivered_at === null,
-        ),
-      ).toBe(true);
-      expect(send).toHaveBeenCalledTimes(15);
     });
     it("excludes old imports and disabled pilot groups", async () => {
       await event("report_published", 1, { occurredAt: INITIAL - 10 * DAY });
@@ -535,7 +405,6 @@ describe.skipIf(!databaseUrl)(
       expect(await notifications("portalNoticeMaterialPublished")).toHaveLength(
         0,
       );
-      expect(sent).toHaveLength(0);
     });
     it("sends urgent changes to an imminent lesson during quiet hours and includes attendance-only parents", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -563,9 +432,6 @@ describe.skipIf(!databaseUrl)(
           Number(row.account_id),
         ),
       ).toEqual([1, 2, 3]);
-      expect(
-        sent.filter((mail) => mail.code === "portalNoticeLessonRescheduled"),
-      ).toHaveLength(3);
     });
     it("notifies a new absence once and prevents corrected attendance from sending a queued email", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -590,9 +456,6 @@ describe.skipIf(!databaseUrl)(
       );
       now = new Date("2026-10-13T03:00:00Z").getTime();
       await worker().runOnce();
-      expect(
-        sent.filter((mail) => mail.code === "portalNoticeAttendanceAbsent"),
-      ).toHaveLength(0);
     });
     it("offers opt-in weekly family summaries while keeping another parent out of the recipient list", async () => {
       await putPreferences(2, { ...preferences, weeklySummary: true });
@@ -611,9 +474,6 @@ describe.skipIf(!databaseUrl)(
         (await notifications("portalNoticeWeeklySummary"))[0].params,
       ).toMatchObject({ children: 1, updates: 1 });
       await worker().runOnce();
-      expect(
-        sent.filter((mail) => mail.code === "portalNoticeWeeklySummary"),
-      ).toHaveLength(1);
     });
     it("publishes assignment reviews, quiz results, reports, achievements, announcements and completion notices", async () => {
       const recipient = await assignment(now + DAY);
@@ -784,11 +644,6 @@ describe.skipIf(!databaseUrl)(
           Number(row.account_id),
         ),
       ).toEqual([2]);
-      expect(
-        sent
-          .filter((mail) => mail.category === "security")
-          .map((mail) => mail.to),
-      ).toEqual(["parent@example.com", "parent@example.com"]);
       expect(recipient.id).toBeGreaterThan(0);
     });
     it("targets private assignment feedback to one representative even when another has matching rights", async () => {
@@ -812,11 +667,6 @@ describe.skipIf(!databaseUrl)(
           Number(row.account_id),
         ),
       ).toEqual([2]);
-      expect(
-        sent
-          .filter((mail) => mail.code === "portalNoticeFeedback")
-          .map((mail) => mail.to),
-      ).toEqual(["parent@example.com"]);
     });
     it("rolls source work back when authorization storage fails and retries without losing the event", async () => {
       await material();
@@ -887,64 +737,6 @@ describe.skipIf(!databaseUrl)(
           )
         ).rows[0].count,
       ).toBe(1);
-    });
-    it("runs competing email replicas in parallel on separate pools without duplicate provider calls", async () => {
-      await material(); await worker({ mode: "in_app" }).runOnce();
-      const replicaA = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
-      const replicaB = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
-      const identityA = new PortalIdentityService(createPostgresPortalRepository(replicaA), createPortalCrypto(), { appUrl: "https://academy.example", emailEnabled: false, allowInvitations: false });
-      const identityB = new PortalIdentityService(createPostgresPortalRepository(replicaB), createPortalCrypto(), { appUrl: "https://academy.example", emailEnabled: false, allowInvitations: false });
-      let release!: () => void, started!: () => void;
-      const held = new Promise<void>(resolve => { release = resolve; });
-      const entered = new Promise<void>(resolve => { started = resolve; });
-      const deliveries: string[] = [];
-      const first = worker({ pool: replicaA, mode: "email", batchSize: 1,
-        authorizeLink: (accountId, linkId, permission) => identityA.resolveAccountActor(accountId, linkId, permission),
-        sendEmail: async mail => { deliveries.push(`${mail.accountId}:${mail.eventKey}`); started(); await held; return true; } });
-      const second = worker({ pool: replicaB, mode: "email", batchSize: 1,
-        authorizeLink: (accountId, linkId, permission) => identityB.resolveAccountActor(accountId, linkId, permission),
-        sendEmail: async mail => { deliveries.push(`${mail.accountId}:${mail.eventKey}`); return true; } });
-      const running = first.runOnce();
-      try {
-        await entered;
-        expect(await second.runOnce()).toMatchObject({ delivered: 1 });
-        expect(await second.runOnce()).toMatchObject({ delivered: 1 });
-        expect((await pool.query("SELECT count(*)::int AS count FROM lms_resource_outbox WHERE channel='email' AND state='delivered'")).rows[0].count).toBe(2);
-      } finally {
-        release(); await running; await Promise.all([replicaA.end(), replicaB.end()]);
-      }
-      expect(deliveries).toHaveLength(3); expect(new Set(deliveries).size).toBe(3);
-      expect((await pool.query("SELECT attempts,state FROM lms_resource_outbox WHERE channel='email'")).rows).toEqual(Array.from({ length: 3 }, () => ({ attempts: 1, state: "delivered" })));
-    });
-    it("recovers an expired email lease and rejects a late failed completion from its previous owner", async () => {
-      await material(); await worker({ mode: "in_app" }).runOnce();
-      let release!: () => void, started!: () => void;
-      const held = new Promise<void>(resolve => { release = resolve; });
-      const entered = new Promise<void>(resolve => { started = resolve; });
-      const deliveries: string[] = [];
-      const first = worker({ mode: "email", batchSize: 1,
-        sendEmail: async mail => { deliveries.push(`${mail.accountId}:${mail.eventKey}`); started(); await held; return false; } });
-      const second = worker({ mode: "email", batchSize: 1,
-        sendEmail: async mail => { deliveries.push(`${mail.accountId}:${mail.eventKey}`); return true; } });
-      const running = first.runOnce();
-      try {
-        await entered; now += 6 * MINUTE;
-        expect(await second.runOnce()).toMatchObject({ delivered: 1 });
-      } finally { release(); }
-      expect(await running).toMatchObject({ delivered: 0, cancelled: 0, failed: 0 });
-      expect(deliveries).toHaveLength(2); expect(deliveries[0]).toBe(deliveries[1]);
-      expect((await pool.query("SELECT state,attempts,locked_at,last_error_code FROM lms_resource_outbox WHERE channel='email' ORDER BY id LIMIT 1")).rows[0])
-        .toEqual({ state: "delivered", attempts: 2, locked_at: null, last_error_code: null });
-    });
-    it("fails fifth interrupted email leases without sending again and keeps the in-app result intact", async () => {
-      await material(); await worker({ mode: "in_app" }).runOnce();
-      await pool.query("UPDATE lms_resource_outbox SET attempts=5,locked_at=$1 WHERE channel='email'", [new Date(now - 6 * MINUTE)]);
-      const mail = worker({ mode: "email" });
-      await mail.runOnce(); await mail.runOnce();
-      expect(sent).toHaveLength(0);
-      expect((await pool.query("SELECT state,attempts,locked_at,last_error_code FROM lms_resource_outbox WHERE channel='email'")).rows)
-        .toEqual(Array.from({ length: 3 }, () => ({ state: "failed", attempts: 5, locked_at: null, last_error_code: "delivery_interrupted" })));
-      expect((await notifications("portalNoticeMaterialPublished"))).toHaveLength(3);
     });
   },
 );

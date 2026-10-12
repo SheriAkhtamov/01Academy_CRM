@@ -7,14 +7,14 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { useLocation, useSearch } from "wouter";
+import { Redirect, useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { PortalPermission } from "@shared/contracts/portal-identity";
 import { PortalSessionProvider, portalSessionKey, usePortal } from "./context";
 import { PortalApiError, portalIdentityApi } from "./api";
 import { PortalShell } from "./PortalShell";
-import { PortalAuth } from "../portal-identity/PortalAuth";
+import { PortalRecoveryHelp, PortalAuth } from "../portal-identity/PortalAuth";
 import { PortalProfile } from "../portal-identity/PortalProfile";
 import {
   PortalDay,
@@ -137,27 +137,12 @@ function PortalRoutes() {
     );
   if (path === "/learn/invite" || path === "/learn/activate")
     return <PortalAuth mode="invite" token={token} />;
-  if (path === "/learn/recover") return <PortalAuth mode="recovery" />;
-  if (path === "/learn/reset") return <PortalAuth mode="reset" token={token} />;
-  if (!account)
-    return (
-      <PortalAuth
-        token={token}
-        afterLogin={
-          path === "/learn/verify-email"
-            ? "/learn/verify-email"
-            : requestedRaw
-              ? `${path}${search ? `?${search}` : ""}`
-              : undefined
-        }
-      />
-    );
-  if (path === "/learn/verify-email" && token)
-    return (
-      <PortalShell>
-        <VerifyEmail token={token} />
-      </PortalShell>
-    );
+  if (path === "/learn/recover" || path === "/learn/reset") return <PortalRecoveryHelp />;
+  if (!account) {
+    const destination = token ? `/learn/invite#token=${encodeURIComponent(token)}` : `${path === '/learn/login' ? '/learn' : path}${search ? `?${search}` : ''}`;
+    return <Redirect to={`/login?next=${encodeURIComponent(destination)}`} />;
+  }
+  if (path === '/learn/login') return <Redirect to='/learn' />;
   if (requestedRaw !== null && !requestedSubject)
     return (
       <PortalShell>
@@ -294,27 +279,6 @@ function PortalRoutes() {
         {page}
       </div>
     </PortalShell>
-  );
-}
-function VerifyEmail({ token }: { token: string }) {
-  const { acceptSession } = usePortal();
-  const started = useRef(false);
-  const action = useMutation({
-    mutationFn: () => portalIdentityApi.verifyEmail(token),
-    onSuccess: acceptSession,
-  });
-  useEffect(() => {
-    if (!started.current) {
-      started.current = true;
-      action.mutate();
-    }
-  }, [action]);
-  return action.isPending ? (
-    <PortalLoading />
-  ) : action.error ? (
-    <PortalError error={action.error} retry={() => action.mutate()} />
-  ) : (
-    <PortalEmpty labelKey="portalSaved" />
   );
 }
 

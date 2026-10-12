@@ -22,7 +22,6 @@ export const createPortalAccessRouter = ({
   resolveStaffActor,
   enabled = true,
   canInvite,
-  emailEnabledForStudent,
 }: {
   service: PortalIdentityService;
   resolveStaffActor: (
@@ -30,7 +29,6 @@ export const createPortalAccessRouter = ({
   ) => PortalStaffActor | Promise<PortalStaffActor>;
   enabled?: boolean;
   canInvite?: (studentId: number) => Promise<boolean>;
-  emailEnabledForStudent?: (studentId: number) => Promise<boolean>;
 }) => {
   const router = Router({ mergeParams: true });
   router.use((_req, res, next) =>
@@ -112,12 +110,6 @@ export const createPortalAccessRouter = ({
       const command = portalInvitationCreateSchema.parse(req.body);
       if (canInvite && !(await canInvite(studentId)))
         throw new PortalError("portalInvitationsDisabled", 403);
-      if (
-        command.channel === "email" &&
-        emailEnabledForStudent &&
-        !(await emailEnabledForStudent(studentId))
-      )
-        throw new PortalError("portalEmailUnavailable", 409);
       res
         .status(201)
         .json(await service.createInvitation(actor, studentId, command));

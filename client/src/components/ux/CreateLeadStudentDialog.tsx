@@ -8,9 +8,7 @@ import { leadsApi } from '@/features/leads/api';
 import { studentsApi } from '@/features/students/api';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useAuth } from '@/hooks/useAuth';
 import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
-import { LeadStudentAccessDialog } from '@/features/portal-access/LeadStudentAccessDialog';
 import { academyToday } from '@/lib/localeFormat';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
@@ -98,8 +96,7 @@ const studentSchema = z.object({
 });
 
 type StudentFormValues = z.infer<typeof studentSchema>;
-type AccessRecipient = 'not_now' | 'self' | 'representative';
-type StudentSaveIntent = { values: StudentFormValues; createAnother: boolean; accessRecipient: AccessRecipient };
+type StudentSaveIntent = { values: StudentFormValues; createAnother: boolean };
 
 const todayInputValue = academyToday;
 
@@ -142,7 +139,6 @@ type LeadStudentFormDialogProps = {
   groups: LeadStudentGroupOption[];
   purpose?: 'enrollment' | 'demo';
   identityChoicesEnabled?: boolean;
-  onAccessRequested?: (student: CreatedLeadStudent, kind: 'self' | 'representative') => void;
 } & (
   | {
     mode: 'create';
@@ -157,22 +153,8 @@ type LeadStudentFormDialogProps = {
 );
 
 export function CreateLeadStudentDialog(props: CreateLeadStudentDialogProps) {
-  const { user } = useAuth();
-  const [accessTarget, setAccessTarget] = useState<{ student: CreatedLeadStudent; kind: 'self' | 'representative'; staffId: number } | null>(null);
-  const capabilities = useQuery({ ...learningCapabilitiesQuery,
-    queryKey: [...learningCapabilitiesQuery.queryKey, user?.id ?? 0],
-    enabled: Boolean(user) && (props.open || Boolean(accessTarget)),
-  });
-  const enabled = Boolean(user) && capabilities.data?.portalEnabled === true && capabilities.data.canManageAccess === true;
-  useEffect(() => { if (!enabled || accessTarget?.staffId !== user?.id) setAccessTarget(null); }, [enabled, accessTarget?.staffId, user?.id]);
-  return <>
-    <LeadStudentFormDialog {...props} mode="create" identityChoicesEnabled={enabled}
-      onAccessRequested={(student, kind) => { if (enabled && user) setAccessTarget({ student, kind, staffId: user.id }); }} />
-    {enabled && accessTarget ? <LeadStudentAccessDialog studentId={accessTarget.student.id}
-      studentName={accessTarget.student.studentName ?? ''} initialInvitationKind={accessTarget.kind}
-      staffAccountId={user?.id} open onOpenChange={(nextOpen) => { if (!nextOpen) setAccessTarget(null); }}
-      emailEnabled={capabilities.data?.emailEnabled === true} /> : null}
-  </>;
+  const capabilities = useQuery({ ...learningCapabilitiesQuery, enabled: props.open });
+  return <LeadStudentFormDialog {...props} mode="create" identityChoicesEnabled={capabilities.data?.portalEnabled === true} />;
 }
 
 export function EditLeadStudentDialog(props: EditLeadStudentDialogProps) {
@@ -187,7 +169,6 @@ function LeadStudentFormDialog({
   groups,
   purpose = 'enrollment',
   identityChoicesEnabled = false,
-  onAccessRequested,
   ...modeProps
 }: LeadStudentFormDialogProps) {
   const { t } = useTranslation();
@@ -233,7 +214,6 @@ function LeadStudentFormDialog({
   const [createdCount, setCreatedCount] = useState(0);
   const [whoStudies, setWhoStudies] = useState<'lead' | 'child' | 'other' | ''>('');
   const [whoStudiesError, setWhoStudiesError] = useState(false);
-  const [accessRecipient, setAccessRecipient] = useState<AccessRecipient>('not_now');
   const openedFormKey = useRef<string | null>(null);
   const paymentSnapshot = useRef({ amount: expectedPaymentUzs ?? null, updatedAt: studentUpdatedAt });
   const selectedGroupIds = form.watch('groupIds');
@@ -271,7 +251,7 @@ function LeadStudentFormDialog({
     form.reset(initialValues);
     paymentSnapshot.current = { amount: expectedPaymentUzs ?? null, updatedAt: studentUpdatedAt };
     openedFormKey.current = formKey;
-    if (opening) { setCreatedCount(0); setWhoStudies(''); setWhoStudiesError(false); setAccessRecipient('not_now'); }
+    if (opening) { setCreatedCount(0); setWhoStudies(''); setWhoStudiesError(false); }
   }, [editedStudent?.id, expectedPaymentUzs, form, initialValues, leadId, studentUpdatedAt, open, purpose]);
 
   useEffect(() => {
@@ -336,7 +316,6 @@ function LeadStudentFormDialog({
       toast({
         title: t('studentCreated'),
       });
-      if (variables.accessRecipient !== 'not_now') onAccessRequested?.({ ...student, studentName: student.studentName || variables.values.studentName }, variables.accessRecipient);
       if (!variables.createAnother) {
         onOpenChange(false);
         return;
@@ -348,8 +327,8 @@ function LeadStudentFormDialog({
         demoOnly: purpose === 'demo',
       });
       paymentSnapshot.current = { amount: null, updatedAt: undefined };
-      setWhoStudies(''); setWhoStudiesError(false); setAccessRecipient('not_now');
-      if (variables.accessRecipient === 'not_now') form.setFocus('studentName');
+      setWhoStudies(''); setWhoStudiesError(false);
+      form.setFocus('studentName');
     },
     onError: (error: Error) => toast({
       title: isEditing ? t('studentUpdateFailed') : t('studentCreateFailed'),
@@ -363,7 +342,7 @@ function LeadStudentFormDialog({
       document.getElementById('lead-student-person-lead')?.focus();
       return;
     }
-    saveStudent.mutate({ ...intent, accessRecipient: showIdentityChoices ? accessRecipient : 'not_now' });
+    saveStudent.mutate(intent);
   };
 
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
@@ -411,16 +390,7 @@ function LeadStudentFormDialog({
                 </div>
                 {whoStudiesError ? <p id="lead-student-person-error" role="alert" className="text-sm font-medium text-destructive">{t('lmsLeadWhoStudiesRequired')}</p> : null}
               </fieldset>
-              <fieldset className="space-y-2 md:col-span-2" disabled={saveStudent.isPending}>
-                <legend className="text-sm font-medium">{t('lmsLeadAccessRecipient')}</legend>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {(['not_now', 'self', 'representative'] as const).map((recipient) => <label key={recipient}
-                    className={cn('flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm', accessRecipient === recipient && 'border-primary bg-primary/5')}>
-                    <input type="radio" name="lead-student-access" value={recipient} checked={accessRecipient === recipient} onChange={() => setAccessRecipient(recipient)} />
-                    {t(({ not_now: 'lmsLeadAccessLater', self: 'lmsLeadAccessStudent', representative: 'lmsLeadAccessRepresentative' } as const)[recipient])}
-                  </label>)}
-                </div>
-              </fieldset>
+
             </> : null}
             <FormField
               control={form.control}

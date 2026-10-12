@@ -220,7 +220,7 @@ export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: 
     href: text("href"),
     eventKey: text("event_key").notNull(),
     requiredPermission: text("required_permission"),
-    channel: text("channel").$type<"in_app" | "email">().notNull(),
+    channel: text("channel").$type<"in_app">().notNull(),
     urgent: boolean("urgent").notNull().default(false),
     state: text("state").$type<"pending" | "delivered" | "cancelled" | "failed">().notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
@@ -232,7 +232,7 @@ export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: 
   }, (table) => [
     unique("lms_resource_outbox_account_id_event_key_channel_key").on(table.accountId, table.eventKey, table.channel),
     foreignKey({ name: "lms_resource_outbox_account_id_fkey", columns: [table.accountId], foreignColumns: [refs.accountId] }).onDelete("restrict"),
-    check("lms_resource_outbox_channel_check", sql.raw("(channel = ANY (ARRAY['in_app'::text, 'email'::text]))")),
+    check("lms_resource_outbox_channel_check", sql.raw("(channel = 'in_app'::text)")),
     foreignKey({ name: "lms_resource_outbox_link_id_fkey", columns: [table.linkId], foreignColumns: [refs.linkId] }).onDelete("restrict"),
     check("lms_resource_outbox_state_check", sql.raw("(state = ANY (ARRAY['pending'::text, 'delivered'::text, 'cancelled'::text, 'failed'::text]))")),
     index("lms_resource_outbox_due").on(table.deliverAfter, table.id).where(sql.raw("(state = 'pending'::text)")),
@@ -304,8 +304,6 @@ export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: 
   const portalNotificationPreferences = pgTable("portal_notification_preferences", {
     accountId: bigint("account_id", { mode: "number" }).notNull().primaryKey(),
     categories: jsonb("categories").$type<Record<string, unknown>>().notNull(),
-    quietFrom: time("quiet_from").notNull().default(sql.raw("'21:00:00'::time without time zone")),
-    quietUntil: time("quiet_until").notNull().default(sql.raw("'08:00:00'::time without time zone")),
     weeklySummary: boolean("weekly_summary").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   }, (table) => [

@@ -1,6 +1,7 @@
 import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable, ArchiveSelect } from '@/features/academy-resources/ResourceSettingsTables';
 import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AcademyPortalAccess } from '@/features/portal-access/AcademyPortalAccess';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -203,7 +204,7 @@ function EmptyTableState({ title }: { title: string }) {
   );
 }
 
-const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups'];
+const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'access'];
 const salesSettingsTabs = ['lead-assignment', 'pipeline', 'funnels', 'lead-merge', 'kpi'];
 
 interface AcademySettingsProps {
@@ -1157,6 +1158,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <TabsTrigger value="courses" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <BookOpen />{t('courses')}
               </TabsTrigger>
+              <TabsTrigger value="access" className="gap-2 pb-2.5 data-[state=active]:text-primary">
+                <UserRoundCheck />{t('academyAccessTab')}
+              </TabsTrigger>
               <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
               </TabsTrigger>
@@ -1170,6 +1174,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
             <LeadAssignmentContent />
           </div>
         </TabsContent>
+
+        {!isSalesSettingsMode && <TabsContent value="access" className="mt-0"><AcademyPortalAccess /></TabsContent>}
 
         <TabsContent value="schools" className="mt-0">
           <SchoolSettingsTable data={schools} archived={requestedFilter === 'archive'}

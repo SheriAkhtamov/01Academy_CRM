@@ -166,16 +166,6 @@ jobs:
                       "secret": secrets.token_urlsafe(48),
                       "cookieSecure": True,
                   },
-                  "email": {
-                      "resendApiKey": "",
-                      "smtp": {
-                          "host": "",
-                          "port": 587,
-                          "user": "",
-                          "pass": "",
-                          "from": "",
-                      },
-                  },
                   "integrations": {
                       "chatplace": {"webhookSecret": secrets.token_urlsafe(32)},
                       "website": {

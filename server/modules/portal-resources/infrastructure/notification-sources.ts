@@ -696,18 +696,16 @@ export class PortalNotificationSources {
         action: string;
         details: Record<string, unknown>;
       }>(
-        `SELECT audit.id,audit.account_id,audit.student_id,audit.action,audit.details FROM portal_access_audit audit WHERE audit.created_at>=$1 AND audit.action IN ('PASSWORD_CHANGED','RECOVERY_COMPLETED','STAFF_CREDENTIALS_RESET','CHILD_CREDENTIALS_RESET','EMAIL_CHANGED','LINK_REVOKED','LINK_PERMISSIONS_CHANGED','CONSENT_GRANTED','CONSENT_REVOKED','CLASSIFICATION_VERIFIED','ACCOUNT_SUSPENDED','ACCOUNT_RESUMED','INVITATION_ACCEPTED') AND NOT EXISTS(SELECT 1 FROM lms_notification_sources source WHERE source.source_key='security-audit:'||audit.id::text) ORDER BY audit.id LIMIT 500`,
+        `SELECT audit.id,audit.account_id,audit.student_id,audit.action,audit.details FROM portal_access_audit audit WHERE audit.created_at>=$1 AND audit.action IN ('PASSWORD_CHANGED','STAFF_CREDENTIALS_RESET','STAFF_CREDENTIALS_CHANGED','CHILD_CREDENTIALS_RESET','LINK_REVOKED','LINK_PERMISSIONS_CHANGED','CONSENT_GRANTED','CONSENT_REVOKED','CLASSIFICATION_VERIFIED','ACCOUNT_SUSPENDED','ACCOUNT_RESUMED','INVITATION_ACCEPTED') AND NOT EXISTS(SELECT 1 FROM lms_notification_sources source WHERE source.source_key='security-audit:'||audit.id::text) ORDER BY audit.id LIMIT 500`,
         [new Date(cutoff)],
       )
     ).rows;
     const candidates: Candidate[] = [];
     for (const event of events) {
-      const passwordEvent = [
+      const passwordEvent = event.action === "STAFF_CREDENTIALS_CHANGED" ? Boolean(event.details.passwordChanged) : [
         "PASSWORD_CHANGED",
-        "RECOVERY_COMPLETED",
         "STAFF_CREDENTIALS_RESET",
         "CHILD_CREDENTIALS_RESET",
-        "EMAIL_CHANGED",
       ].includes(event.action);
       const accounts = new Set<number>();
       if (event.details.subjectAccountId)

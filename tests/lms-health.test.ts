@@ -50,7 +50,7 @@ describe("read-only LMS operational metrics", () => {
       expect(report.database).toMatchObject({ available: false, code: "ECONNREFUSED", resourceOutbox: null });
       expect(report.backup).toMatchObject({ ageSeconds: 3600, archiveBytes: 15, code: null });
       expect(report.disk.availableBytes).toBeGreaterThan(0);
-      expect(report.emailFailed).toBeNull();
+      expect(report.notificationFailed).toBeNull();
       expect(JSON.stringify(report)).not.toContain("private");
       expect(JSON.stringify(report)).not.toContain(directory);
       await writeFile(path.join(directory, ".last-success"), "2026-10-11T14:00:00Z ../secret.zip\n");
@@ -128,10 +128,9 @@ describe.skipIf(!databaseUrl)("LMS health PostgreSQL read-only snapshots", () =>
     expect(statements!.some((sql) => /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|CREATE|DROP)\b/i.test(sql))).toBe(false);
     expect(statements!).toContain("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     expect(report!.database.available).toBe(true);
-    expect(report!.database.resourceOutbox).toEqual({ pending: 3, inAppPending: 1, emailPending: 2, due: 2, failed: 2, emailFailed: 1, oldestPendingAgeSeconds: 3600, oldestDueAgeSeconds: 300, oldestLeaseAgeSeconds: 60 });
-    expect(report!.database.identityMail).toEqual({ pending: 1, delivering: 1, due: 1, failed: 1, oldestPendingAgeSeconds: 7200, oldestDueAgeSeconds: 900, oldestLeaseAgeSeconds: 300 });
+    expect(report!.database.resourceOutbox).toEqual({ pending: 3, inAppPending: 1, due: 2, failed: 2, oldestPendingAgeSeconds: 3600, oldestDueAgeSeconds: 300, oldestLeaseAgeSeconds: 60 });
     expect(report!.database.quarantine).toEqual({ uploading: 1, checking: 2, rejected: 1, due: 1, oldestUploadingAgeSeconds: 3600, oldestCheckingAgeSeconds: 1800 });
-    expect(report!.emailFailed).toBe(2);
+    expect(report!.notificationFailed).toBe(2);
     expect((await pool.query("SELECT count(*) FROM lms_resource_outbox")).rows[0].count).toBe("5");
   });
   it("returns absent tables as unavailable instead of zero metrics or schema creation", async () => {
@@ -139,9 +138,9 @@ describe.skipIf(!databaseUrl)("LMS health PostgreSQL read-only snapshots", () =>
     try {
       const report = await collectLmsHealth(absent, { uploadsDirectory: directory, backupDirectory: directory, now });
       expect(report.database.available).toBe(true);
-      expect(report.database.unavailableTables).toEqual(["lms_resource_outbox", "portal_identity_mail_outbox", "lms_files"]);
+      expect(report.database.unavailableTables).toEqual(["lms_resource_outbox", "lms_files"]);
       expect(report.database.quarantine).toBeNull();
-      expect(report.emailFailed).toBeNull();
+      expect(report.notificationFailed).toBeNull();
     } finally { await absent.end(); }
   });
 });

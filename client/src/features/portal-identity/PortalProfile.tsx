@@ -54,20 +54,15 @@ export function PortalProfile() {
   const [name, setName] = useState(account?.fullName ?? "");
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [child, setChild] = useState(false);
-  const [email, setEmail] = useState(account?.email ?? "");
-  const [emailBaseline, setEmailBaseline] = useState(account?.email ?? "");
   useEffect(() => {
     setUnsaved(
       name !== account?.fullName ||
-        language !== account?.locale ||
-        email !== emailBaseline,
+        language !== account?.locale,
     );
     return () => setUnsaved(false);
   }, [
     name,
     language,
-    email,
-    emailBaseline,
     account?.fullName,
     account?.locale,
     setUnsaved,
@@ -76,10 +71,6 @@ export function PortalProfile() {
     mutationFn: () =>
       portalIdentityApi.profile({ fullName: name, locale: language }),
     onSuccess: refresh,
-  });
-  const mail = useMutation({
-    mutationFn: () => portalIdentityApi.email(email),
-    onSuccess: () => setEmailBaseline(email),
   });
   return (
     <>
@@ -131,36 +122,7 @@ export function PortalProfile() {
               {t("portalSave")}
             </Button>
           </form>
-          <form
-            className="space-y-3 border-t pt-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              mail.mutate();
-            }}
-          >
-            <Label htmlFor="profile-email">{t("portalEmail")}</Label>
-            <Input
-              id="profile-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              className="min-h-11"
-            />
-            {mail.error && (
-              <p role="alert" className="text-destructive">
-                {message(mail.error, "portalSaveError")}
-              </p>
-            )}
-            {mail.isSuccess && <p role="status">{t("portalEmailSent")}</p>}
-            <Button
-              variant="outline"
-              className="min-h-11"
-              disabled={mail.isPending || !email || email === account?.email}
-            >
-              {t("portalEmailChange")}
-            </Button>
-          </form>
+
         </CardContent>
       </Card>
       <Card>

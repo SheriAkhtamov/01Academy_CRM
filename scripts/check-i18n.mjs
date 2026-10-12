@@ -26,8 +26,6 @@ const nonLocalizedValueKeys = new Set([
   'publicAttendanceBrand',
   'roasLabel',
   'sessionTimeoutPlaceholder',
-  'smtpHostPlaceholder',
-  'smtpPortPlaceholder',
   'uzbekLang',
 ]);
 const hardcodedTextAllowlist = new Set(['.csv', 'Ctrl+', 'Enter', 'K', 'x']);

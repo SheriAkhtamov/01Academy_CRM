@@ -129,14 +129,10 @@ services:
     networks: [database]
     volumes: [*config, { type: volume, target: /app/logs }, *uploads]
 
-  learning-email:
+  learning-credentials:
     <<: *node
-    profiles: [lms-email]
-    command: [node, dist/learning-worker.js, --roles=email, --pool-max=3]
-    environment:
-      <<: *node-env
-      APP_CONFIG_PATH: /app/config/lms-email.config.json
-    networks: [database, email_egress]
+    command: [node, dist/learning-worker.js, --roles=credentials, --pool-max=2]
+    networks: [database]
 
   learning-proxy:
     image: ${LMS_PROXY_IMAGE:-haproxy:3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be}
@@ -199,4 +195,3 @@ networks:
     ipam:
       config:
         - subnet: ${LMS_HTTP_SUBNET:?Set an unused private subnet}
-  email_egress: { driver: bridge }

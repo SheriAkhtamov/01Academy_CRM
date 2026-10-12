@@ -5,7 +5,7 @@ import { pgTable, text, serial, bigserial, integer, timestamp, varchar, jsonb, d
 export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userId: AnyPgColumn }) {
   const portalAccessAudit = pgTable("portal_access_audit", {
     id: bigserial("id", { mode: "number" }).notNull().primaryKey(),
-    actorKind: varchar("actor_kind", { length: 10 }).$type<"staff" | "portal" | "anonymous">().notNull(),
+    actorKind: varchar("actor_kind", { length: 10 }).$type<"staff" | "portal" | "anonymous" | "system">().notNull(),
     staffId: integer("staff_id"),
     accountId: integer("account_id"),
     studentId: integer("student_id"),
@@ -15,8 +15,8 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   }, (table) => [
     foreignKey({ name: "portal_access_audit_account_id_fkey", columns: [table.accountId], foreignColumns: [portalAccounts.id] }).onDelete("set null"),
-    check("portal_access_audit_actor_kind_check", sql.raw("((actor_kind)::text = ANY ((ARRAY['staff'::character varying, 'portal'::character varying, 'anonymous'::character varying])::text[]))")),
-    check("portal_access_audit_check", sql.raw("((((actor_kind)::text = 'staff'::text) AND (account_id IS NULL)) OR (((actor_kind)::text = 'portal'::text) AND (staff_id IS NULL)) OR (((actor_kind)::text = 'anonymous'::text) AND (account_id IS NULL) AND (staff_id IS NULL)))")),
+    check("portal_access_audit_actor_kind_check", sql.raw("((actor_kind)::text = ANY ((ARRAY['staff'::character varying, 'portal'::character varying, 'anonymous'::character varying, 'system'::character varying])::text[]))")),
+    check("portal_access_audit_check", sql.raw("((((actor_kind)::text = 'staff'::text) AND (account_id IS NULL)) OR (((actor_kind)::text = 'portal'::text) AND (staff_id IS NULL)) OR (((actor_kind)::text = ANY ((ARRAY['anonymous'::character varying,'system'::character varying])::text[])) AND (account_id IS NULL) AND (staff_id IS NULL)))")),
     foreignKey({ name: "portal_access_audit_staff_id_fkey", columns: [table.staffId], foreignColumns: [refs.userId] }).onDelete("set null"),
     foreignKey({ name: "portal_access_audit_student_id_fkey", columns: [table.studentId], foreignColumns: [refs.studentId] }).onDelete("set null"),
     index("portal_access_audit_student_idx").on(table.studentId, table.createdAt.desc().nullsFirst()),
@@ -42,8 +42,6 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     login: varchar("login", { length: 32 }).notNull(),
     fullName: varchar("full_name", { length: 255 }).notNull(),
     email: varchar("email", { length: 254 }),
-    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
-    pendingEmail: varchar("pending_email", { length: 254 }),
     phone: varchar("phone", { length: 50 }),
     locale: varchar("locale", { length: 5 }).$type<"ru" | "en">().notNull().default("ru"),
     status: varchar("status", { length: 16 }).$type<"pending" | "active" | "suspended" | "archived">().notNull().default("pending"),
@@ -53,14 +51,12 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   }, (table) => [
     check("portal_accounts_auth_version_check", sql.raw("(auth_version > 0)")),
-    check("portal_accounts_check", sql.raw("((email_verified_at IS NULL) OR (email IS NOT NULL))")),
     check("portal_accounts_check1", sql.raw("(((status)::text <> 'active'::text) OR (password_hash IS NOT NULL))")),
     check("portal_accounts_email_check", sql.raw("((email IS NULL) OR ((email)::text = lower((email)::text)))")),
     check("portal_accounts_locale_check", sql.raw("((locale)::text = ANY ((ARRAY['ru'::character varying, 'en'::character varying])::text[]))")),
     check("portal_accounts_login_check", sql.raw("(((login)::text = lower((login)::text)) AND ((login)::text ~ '^[a-z0-9._-]{4,32}$'::text))")),
     unique("portal_accounts_login_key").on(table.login),
     check("portal_accounts_status_check", sql.raw("((status)::text = ANY ((ARRAY['pending'::character varying, 'active'::character varying, 'suspended'::character varying, 'archived'::character varying])::text[]))")),
-    uniqueIndex("portal_accounts_verified_email_unique").on(table.email).where(sql.raw("(email_verified_at IS NOT NULL)")),
   ]);
 
   const portalConsents = pgTable("portal_consents", {
@@ -81,31 +77,6 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     foreignKey({ name: "portal_consents_subject_account_id_fkey", columns: [table.subjectAccountId], foreignColumns: [portalAccounts.id] }).onDelete("set null"),
   ]);
 
-  const portalIdentityMailOutbox = pgTable("portal_identity_mail_outbox", {
-    id: bigserial("id", { mode: "number" }).notNull().primaryKey(),
-    accountId: integer("account_id").notNull(),
-    recipient: varchar("recipient", { length: 254 }).notNull(),
-    template: varchar("template", { length: 30 }).$type<"invitation" | "recovery" | "email_change" | "email_changed">().notNull(),
-    encryptedPayload: text("encrypted_payload"),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    invitationId: integer("invitation_id"),
-    dedupeKey: varchar("dedupe_key", { length: 100 }).notNull(),
-    status: varchar("status", { length: 16 }).$type<"pending" | "delivering" | "sent" | "failed" | "expired">().notNull().default("pending"),
-    attempts: integer("attempts").notNull().default(0),
-    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
-    lockedAt: timestamp("locked_at", { withTimezone: true }),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    lastErrorCode: varchar("last_error_code", { length: 60 }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  }, (table) => [
-    foreignKey({ name: "portal_identity_mail_outbox_account_id_fkey", columns: [table.accountId], foreignColumns: [portalAccounts.id] }).onDelete("cascade"),
-    unique("portal_identity_mail_outbox_dedupe_key_key").on(table.dedupeKey),
-    foreignKey({ name: "portal_identity_mail_outbox_invitation_id_fkey", columns: [table.invitationId], foreignColumns: [portalInvitations.id] }).onDelete("set null"),
-    check("portal_identity_mail_outbox_status_check", sql.raw("((status)::text = ANY ((ARRAY['pending'::character varying, 'delivering'::character varying, 'sent'::character varying, 'failed'::character varying, 'expired'::character varying])::text[]))")),
-    check("portal_identity_mail_outbox_template_check", sql.raw("((template)::text = ANY ((ARRAY['invitation'::character varying, 'recovery'::character varying, 'email_change'::character varying, 'email_changed'::character varying])::text[]))")),
-    index("portal_identity_mail_outbox_pending_idx").on(table.status, table.availableAt),
-  ]);
-
   const portalInvitations = pgTable("portal_invitations", {
     id: serial("id").notNull().primaryKey(),
     accountId: integer("account_id").notNull(),
@@ -113,7 +84,7 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     tokenHash: varchar("token_hash", { length: 64 }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     status: varchar("status", { length: 20 }).$type<"created" | "sent" | "delivery_failed" | "accepted" | "expired" | "revoked">().notNull().default("created"),
-    channel: varchar("channel", { length: 10 }).$type<"manual" | "email">().notNull(),
+    channel: varchar("channel", { length: 10 }).$type<"manual">().notNull(),
     createdBy: integer("created_by"),
     idempotencyKey: uuid("idempotency_key").notNull(),
     requestHash: varchar("request_hash", { length: 64 }).notNull(),
@@ -123,7 +94,7 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
   }, (table) => [
     foreignKey({ name: "portal_invitations_accepted_account_id_fkey", columns: [table.acceptedAccountId], foreignColumns: [portalAccounts.id] }).onDelete("set null"),
     foreignKey({ name: "portal_invitations_account_id_fkey", columns: [table.accountId], foreignColumns: [portalAccounts.id] }).onDelete("restrict"),
-    check("portal_invitations_channel_check", sql.raw("((channel)::text = ANY ((ARRAY['manual'::character varying, 'email'::character varying])::text[]))")),
+    check("portal_invitations_channel_check", sql.raw("((channel)::text = 'manual'::text)")),
     foreignKey({ name: "portal_invitations_created_by_fkey", columns: [table.createdBy], foreignColumns: [refs.userId] }).onDelete("set null"),
     unique("portal_invitations_idempotency_key_key").on(table.idempotencyKey),
     foreignKey({ name: "portal_invitations_link_id_fkey", columns: [table.linkId], foreignColumns: [portalStudentLinks.id] }).onDelete("restrict"),
@@ -139,21 +110,6 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
   }, (table) => [
     check("portal_rate_limits_count_check", sql.raw("(count >= 0)")),
     index("portal_rate_limits_reset_idx").on(table.resetAt),
-  ]);
-
-  const portalRecoveryTokens = pgTable("portal_recovery_tokens", {
-    id: serial("id").notNull().primaryKey(),
-    accountId: integer("account_id").notNull(),
-    purpose: varchar("purpose", { length: 10 }).$type<"recovery" | "email">().notNull(),
-    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    payload: varchar("payload", { length: 254 }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  }, (table) => [
-    foreignKey({ name: "portal_recovery_tokens_account_id_fkey", columns: [table.accountId], foreignColumns: [portalAccounts.id] }).onDelete("cascade"),
-    check("portal_recovery_tokens_purpose_check", sql.raw("((purpose)::text = ANY ((ARRAY['recovery'::character varying, 'email'::character varying])::text[]))")),
-    unique("portal_recovery_tokens_token_hash_key").on(table.tokenHash),
   ]);
 
   const portalSessions = pgTable("portal_sessions", {
@@ -215,5 +171,5 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     uniqueIndex("portal_student_links_self_student_unique").on(table.studentId).where(sql.raw("(((kind)::text = 'self'::text) AND ((status)::text <> 'revoked'::text))")),
   ]);
 
-  return { portalAccessAudit, portalAccountContacts, portalAccounts, portalConsents, portalIdentityMailOutbox, portalInvitations, portalRateLimits, portalRecoveryTokens, portalSessions, portalStudentIdentity, portalStudentLinks };
+  return { portalAccessAudit, portalAccountContacts, portalAccounts, portalConsents, portalInvitations, portalRateLimits, portalSessions, portalStudentIdentity, portalStudentLinks };
 }

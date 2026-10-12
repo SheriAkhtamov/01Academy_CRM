@@ -85,15 +85,6 @@ export const portalInvitationAcceptSchema = z
     fullName: z.string().trim().min(1).max(255).optional(),
   })
   .strict();
-export const portalRecoveryRequestSchema = z
-  .object({ identifier: z.string().trim().min(1).max(254) })
-  .strict();
-export const portalRecoveryCompleteSchema = z
-  .object({
-    token: z.string().min(32).max(256),
-    password: portalPasswordSchema,
-  })
-  .strict();
 export const portalReauthenticateSchema = z
   .object({ password: z.string().min(1).max(256) })
   .strict();
@@ -115,12 +106,6 @@ export const portalChildCredentialsSchema = z
     login: portalLoginSchema.optional(),
     password: portalPasswordSchema,
   })
-  .strict();
-export const portalEmailChangeSchema = z
-  .object({ email: z.string().trim().toLowerCase().email().max(254) })
-  .strict();
-export const portalEmailVerifySchema = z
-  .object({ token: z.string().min(32).max(256) })
   .strict();
 export const portalClassificationCommandSchema = z
   .object({
@@ -174,7 +159,7 @@ export const portalInvitationCreateSchema = z
         confirmed: z.boolean(),
       })
       .optional(),
-    channel: z.enum(["manual", "email"]).default("manual"),
+    channel: z.literal("manual").default("manual"),
     idempotencyKey: z.string().uuid(),
   })
   .strict()
@@ -203,7 +188,7 @@ export type PortalAccessLinkDto = {
       | "expired"
       | "revoked";
     expiresAt: string;
-    channel: "manual" | "email";
+    channel: "manual";
   } | null;
 };
 export type PortalStudentAccessDto = {

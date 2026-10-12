@@ -3,7 +3,7 @@ export {
   createPostgresPortalRepository,
   PostgresPortalRepository,
 } from "./infrastructure/postgres-repository";
-export { createPortalCrypto, decryptPortalMail } from "./infrastructure/crypto";
+export { createPortalCrypto, decryptPortalEnvelope } from "./infrastructure/crypto";
 export {
   createPortalIdentityRouter,
   requirePortalActor,
@@ -19,7 +19,5 @@ export type {
   PortalCrypto,
   PortalSession,
 } from "./application/ports";
-export { PortalIdentityMailWorker } from "./infrastructure/mail-worker";
-export type { PortalIdentityMailDelivery } from "./infrastructure/mail-worker";
 export { PortalDirectoryRepository } from "./infrastructure/directory-repository";
 export { createPortalAdminRouter } from "./http/admin-router";

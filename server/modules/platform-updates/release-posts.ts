@@ -6,7 +6,6 @@ export const releasePosts: PublishUpdateCommand[] = [publishUpdateSchema.parse({
   content: {
     title: text('Группы теперь в модуле «Продажи»', 'Groups are now available in Sales'),
     summary: text('Находите подходящие группы, проверяйте свободные места и управляйте обучением прямо из модуля продаж.', 'Find suitable groups, check available seats and manage groups directly from Sales.'),
-    action: { href: '/sales/groups' },
     sections: [
       { heading: text('Что изменилось', 'What changed'), paragraphs: [text(
         'В меню «Продажи» появился самостоятельный раздел «Группы». Здесь можно посмотреть курс, филиал, кабинет, преподавателя, расписание, вместимость и статус каждой группы.',

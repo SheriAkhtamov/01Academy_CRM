@@ -4,10 +4,7 @@ import { Link, useLocation, useSearch } from 'wouter';
 import {
   ArrowLeft,
   ArrowUpRight,
-  Calendar,
-  CheckCheck,
   Clock,
-  Copy,
   Eye,
   Plus,
   RotateCcw,
@@ -16,13 +13,10 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { hasLeadershipAccess, canAccessAcademyModule } from '@shared/academy';
+import { hasLeadershipAccess } from '@shared/academy';
 import type { PlatformUpdate } from '@shared/contracts/platform-updates';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { TranslationKey } from '@/lib/i18n';
-import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -45,13 +39,8 @@ import {
   calculateReadingTime,
   formatReleaseDate,
   getFirstPostImage,
-  getPostCategory,
-  getCategoryBadgeClass,
-  getCategoryTranslationKey,
   getReadPostIds,
   markPostAsRead,
-  markAllPostsAsRead,
-  type UpdateCategory,
 } from './utils';
 
 export default function UpdatesPage() {
@@ -70,7 +59,6 @@ export default function UpdatesPage() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<UpdateCategory | null>(null);
   const [readIds, setReadIds] = useState<number[]>(() => getReadPostIds());
   const [quickViewPost, setQuickViewPost] = useState<PlatformUpdate | null>(null);
 
@@ -118,29 +106,6 @@ export default function UpdatesPage() {
     setReadIds(updated);
   };
 
-  const handleMarkAllAsRead = () => {
-    if (!list.data || list.data.length === 0) return;
-    const allIds = list.data.map((item) => item.id);
-    const updated = markAllPostsAsRead(allIds);
-    setReadIds(updated);
-    toast({ title: t('updatesAllMarkedAsRead') });
-  };
-
-  const copyPostLink = async (id: number) => {
-    const url = `${window.location.origin}/updates?post=${id}`;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      }
-    } catch {}
-    toast({ title: t('updatesLinkCopied') });
-  };
-
-  const unreadCount = useMemo(() => {
-    if (!list.data) return 0;
-    return list.data.filter((item) => !readIds.includes(item.id)).length;
-  }, [list.data, readIds]);
-
   const availableYears = useMemo(() => {
     if (!list.data) return [];
     const yearsSet = new Set<string>();
@@ -157,21 +122,6 @@ export default function UpdatesPage() {
     return Array.from(yearsSet).sort((a, b) => Number(b) - Number(a));
   }, [list.data]);
 
-  const latestPost = useMemo(() => {
-    if (!list.data || list.data.length === 0) return null;
-    return [...list.data].sort(
-      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-    )[0];
-  }, [list.data]);
-
-  const categoryFilterOptions: Array<{ id: UpdateCategory | null; labelKey: TranslationKey }> = [
-    { id: null, labelKey: 'updatesCategoryAll' },
-    { id: 'feature', labelKey: 'updatesCategoryFeature' },
-    { id: 'improvement', labelKey: 'updatesCategoryImprovement' },
-    { id: 'sales', labelKey: 'updatesCategorySales' },
-    { id: 'administration', labelKey: 'updatesCategoryAdministration' },
-  ];
-
   const filteredPosts = useMemo(() => {
     if (!list.data) return [];
     const query = searchQuery.trim().toLowerCase();
@@ -184,11 +134,6 @@ export default function UpdatesPage() {
         } catch {
           return false;
         }
-      }
-
-      if (selectedCategory) {
-        const itemCategory = getPostCategory(item);
-        if (itemCategory !== selectedCategory) return false;
       }
 
       if (!query) return true;
@@ -237,33 +182,18 @@ export default function UpdatesPage() {
 
       return Boolean(sectionsMatch);
     });
-  }, [list.data, searchQuery, selectedYear, selectedCategory, locale]);
+  }, [list.data, searchQuery, selectedYear, locale]);
 
   return (
     <ModulePage>
       <PageHeader
         title={t('whatsNew')}
-        actions={
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 && !postText ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleMarkAllAsRead}
-              >
-                <CheckCheck data-icon="inline-start" className="size-4" />
-                {t('updatesMarkAllAsRead')}
-              </Button>
-            ) : null}
-            {hasLeadershipAccess(user) ? (
-              <Button onClick={() => setPublishOpen(true)}>
-                <Plus data-icon="inline-start" />
-                {t('updatesNewPost')}
-              </Button>
-            ) : null}
-          </div>
-        }
+        actions={hasLeadershipAccess(user) ? (
+          <Button onClick={() => setPublishOpen(true)}>
+            <Plus data-icon="inline-start" />
+            {t('updatesNewPost')}
+          </Button>
+        ) : undefined}
       />
 
       {postText && !detail.data ? (
@@ -295,33 +225,7 @@ export default function UpdatesPage() {
         <UpdateArticle post={detail.data} />
       ) : list.data && list.data.length > 0 ? (
         <div className="mx-auto max-w-7xl space-y-6">
-          {/* Release stats block */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border bg-card/60 p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Sparkles className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">{t('updatesTotalReleases')}</p>
-                <p className="text-xl font-bold tracking-tight">{list.data.length}</p>
-              </div>
-            </div>
-            {latestPost ? (
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Calendar className="size-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">{t('updatesLastRelease')}</p>
-                  <p className="text-sm font-semibold tracking-tight">
-                    {formatReleaseDate(latestPost.publishedAt, locale)}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Filter Bar: Search, Category chips, and Year chips */}
+          {/* Search and year filters */}
           <div className="space-y-3">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative flex-1 sm:max-w-md">
@@ -355,7 +259,6 @@ export default function UpdatesPage() {
                 ) : (
                   <kbd
                     className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground select-none"
-                    title={t('updatesSearchShortcutHint')}
                   >
                     /
                   </kbd>
@@ -392,25 +295,6 @@ export default function UpdatesPage() {
                 </div>
               ) : null}
             </div>
-
-            {/* Category filter chips */}
-            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('updatesCategories')}>
-              {categoryFilterOptions.map((cat) => {
-                const isSelected = selectedCategory === cat.id;
-                return (
-                  <Button
-                    key={cat.id ?? 'all'}
-                    type="button"
-                    size="sm"
-                    variant={isSelected ? 'default' : 'outline'}
-                    aria-pressed={isSelected ? 'true' : 'false'}
-                    onClick={() => setSelectedCategory(cat.id)}
-                  >
-                    {t(cat.labelKey)}
-                  </Button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Empty search/filter results state */}
@@ -424,7 +308,6 @@ export default function UpdatesPage() {
                 onClick={() => {
                   setSearchQuery('');
                   setSelectedYear(null);
-                  setSelectedCategory(null);
                 }}
               >
                 <RotateCcw data-icon="inline-start" className="size-4" />
@@ -437,16 +320,8 @@ export default function UpdatesPage() {
               {filteredPosts.map((post) => {
                 const firstImage = getFirstPostImage(post);
                 const readingTime = calculateReadingTime(post, locale);
-                const isLatest = latestPost?.id === post.id;
-                const category = getPostCategory(post);
+                const isLatest = list.data[0]?.id === post.id;
                 const isRead = readIds.includes(post.id);
-                const action = post.content.action;
-                const canOpenAction =
-                  action &&
-                  (action.href === '/sales/groups'
-                    ? canAccessAcademyModule(user, 'sales')
-                    : canAccessAcademyModule(user, 'administration'));
-
                 return (
                   <Card
                     key={post.id}
@@ -479,10 +354,6 @@ export default function UpdatesPage() {
                               {t('updatesUnread')}
                             </Badge>
                           ) : null}
-                          {/* Category badge */}
-                          <Badge variant="outline" className={cn('text-xs font-medium', getCategoryBadgeClass(category))}>
-                            {t(getCategoryTranslationKey(category))}
-                          </Badge>
                           {/* New release badge */}
                           {isLatest ? (
                             <Badge variant="default" className="text-xs font-semibold">
@@ -538,29 +409,6 @@ export default function UpdatesPage() {
                           <Eye data-icon="inline-start" className="size-3.5" />
                           {t('updatesQuickView')}
                         </Button>
-
-                        {/* Direct module link if authorized */}
-                        {canOpenAction ? (
-                          <Button asChild variant="outline" size="sm">
-                            <Link href={action.href}>
-                              {t('updatesOpenSection')}
-                              <ArrowUpRight data-icon="inline-end" />
-                            </Link>
-                          </Button>
-                        ) : null}
-
-                        {/* Copy link button */}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyPostLink(post.id)}
-                          aria-label={t('updatesCopyLink')}
-                          title={t('updatesCopyLink')}
-                        >
-                          <Copy className="size-3.5" data-icon="inline-start" />
-                          {t('updatesCopyLink')}
-                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -589,12 +437,6 @@ export default function UpdatesPage() {
             <>
               <DialogHeader className="space-y-2 text-left">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className={cn('text-xs font-medium', getCategoryBadgeClass(getPostCategory(quickViewPost)))}
-                  >
-                    {t(getCategoryTranslationKey(getPostCategory(quickViewPost)))}
-                  </Badge>
                   <time className="text-xs text-muted-foreground" dateTime={quickViewPost.publishedAt}>
                     {formatReleaseDate(quickViewPost.publishedAt, locale)}
                   </time>
@@ -659,17 +501,6 @@ export default function UpdatesPage() {
                       <ArrowUpRight data-icon="inline-end" className="size-3.5" />
                     </Link>
                   </Button>
-                  {quickViewPost.content.action &&
-                  (quickViewPost.content.action.href === '/sales/groups'
-                    ? canAccessAcademyModule(user, 'sales')
-                    : canAccessAcademyModule(user, 'administration')) ? (
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={quickViewPost.content.action.href} onClick={() => setQuickViewPost(null)}>
-                        {t('updatesOpenSection')}
-                        <ArrowUpRight data-icon="inline-end" className="size-3.5" />
-                      </Link>
-                    </Button>
-                  ) : null}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setQuickViewPost(null)}>
                   {t('updatesCloseQuickView')}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Eye, ArrowUpRight, Plus, Trash2, RotateCcw } from 'lucide-react';
+import { Check, Eye, Plus, Trash2, RotateCcw } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -8,24 +8,24 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { cn } from '@/lib/utils';
 import { updatesApi, updateQueryKeys } from './api';
 import {
-  getCategoryBadgeClass,
-  getCategoryTranslationKey,
   getPublishDraft,
   savePublishDraft,
   clearPublishDraft,
-  type UpdateCategory,
   type PublishDraftData,
 } from './utils';
 import type { PublishUpdateCommand } from '@shared/contracts/platform-updates';
 import { allowNavigation } from '@/lib/navigationGuard';
 
-type TargetActionHref = '' | '/sales/groups' | '/admin/academy-settings?tab=groups';
+type DraftRemoval =
+  | { kind: 'draft' }
+  | { kind: 'section'; sectionIndex: number }
+  | { kind: 'item'; sectionIndex: number; itemIndex: number };
 
 interface SectionDraft {
   id: string;
@@ -37,8 +37,6 @@ interface SectionDraft {
 interface UpdatePostDraft {
   title: { ru: string; en: string };
   summary: { ru: string; en: string };
-  category: UpdateCategory;
-  targetAction: TargetActionHref;
   sections: SectionDraft[];
 }
 
@@ -52,8 +50,6 @@ const createInitialSection = (): SectionDraft => ({
 const emptyPostDraft = (): UpdatePostDraft => ({
   title: { ru: '', en: '' },
   summary: { ru: '', en: '' },
-  category: 'feature',
-  targetAction: '',
   sections: [createInitialSection()],
 });
 
@@ -62,19 +58,17 @@ const serializeDraft = (draft: UpdatePostDraft): PublishDraftData => ({
   titleEn: draft.title.en,
   summaryRu: draft.summary.ru,
   summaryEn: draft.summary.en,
-  category: draft.category,
-  actionHref: draft.targetAction,
   rawBodyRu: draft.sections[0]?.body.ru || '',
   rawBodyEn: draft.sections[0]?.body.en || '',
   sectionsRu: draft.sections.map((s) => ({
     heading: s.heading.ru,
     paragraphs: s.body.ru ? [s.body.ru] : [],
-    items: s.items.map((i) => i.ru).filter(Boolean),
+    items: s.items.map((i) => i.ru),
   })),
   sectionsEn: draft.sections.map((s) => ({
     heading: s.heading.en,
     paragraphs: s.body.en ? [s.body.en] : [],
-    items: s.items.map((i) => i.en).filter(Boolean),
+    items: s.items.map((i) => i.en),
   })),
 });
 
@@ -120,8 +114,6 @@ const deserializeDraft = (data: PublishDraftData): UpdatePostDraft => {
   return {
     title: { ru: data.titleRu ?? '', en: data.titleEn ?? '' },
     summary: { ru: data.summaryRu ?? '', en: data.summaryEn ?? '' },
-    category: data.category ?? 'feature',
-    targetAction: (data.actionHref as TargetActionHref) ?? '',
     sections: sections.length > 0 ? sections : [createInitialSection()],
   };
 };
@@ -139,7 +131,8 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
         initialSaved.summaryEn?.trim() ||
         initialSaved.rawBodyRu?.trim() ||
         initialSaved.rawBodyEn?.trim() ||
-        initialSaved.sectionsRu?.some((s) => s.heading?.trim() || s.paragraphs?.some(Boolean) || s.items?.some(Boolean)))
+        initialSaved.sectionsRu?.some((s) => s.heading?.trim() || s.paragraphs?.some(Boolean) || s.items?.some(Boolean)) ||
+        initialSaved.sectionsEn?.some((s) => s.heading?.trim() || s.paragraphs?.some(Boolean) || s.items?.some(Boolean)))
   );
 
   const [draftRestored, setDraftRestored] = useState(hasSavedContent);
@@ -153,6 +146,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   const [previewLanguage, setPreviewLanguage] = useState<'ru' | 'en'>(currentLanguage === 'en' ? 'en' : 'ru');
   const [publicationKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState('');
+  const [pendingRemoval, setPendingRemoval] = useState<DraftRemoval | null>(null);
 
   // Auto-save draft changes to localStorage (ADV-07)
   useEffect(() => {
@@ -161,7 +155,6 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
       Boolean(draft.title.en.trim()) ||
       Boolean(draft.summary.ru.trim()) ||
       Boolean(draft.summary.en.trim()) ||
-      Boolean(draft.targetAction) ||
       draft.sections.some(
         (s) =>
           s.heading.ru.trim() ||
@@ -173,6 +166,8 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
 
     if (hasContent) {
       savePublishDraft(serializeDraft(draft));
+    } else {
+      clearPublishDraft();
     }
   }, [draft]);
 
@@ -201,8 +196,6 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     Boolean(draft.title.en) ||
     Boolean(draft.summary.ru) ||
     Boolean(draft.summary.en) ||
-    draft.category !== 'feature' ||
-    Boolean(draft.targetAction) ||
     draft.sections.some(
       (s) =>
         Boolean(s.heading.ru) ||
@@ -221,15 +214,21 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     },
   });
 
-  const isRuValid =
-    Boolean(draft.title.ru.trim()) &&
-    Boolean(draft.summary.ru.trim()) &&
-    draft.sections.every((s) => s.body.ru.trim() || s.items.some((i) => i.ru.trim()));
+  const isLanguageComplete = (language: 'ru' | 'en') => {
+    const hasTranslation = (value: { ru: string; en: string }) =>
+      (!value.ru.trim() && !value.en.trim()) || Boolean(value[language].trim());
 
-  const isEnValid =
-    Boolean(draft.title.en.trim()) &&
-    Boolean(draft.summary.en.trim()) &&
-    draft.sections.every((s) => s.body.en.trim() || s.items.some((i) => i.en.trim()));
+    return Boolean(draft.title[language].trim()) &&
+      Boolean(draft.summary[language].trim()) &&
+      draft.sections.every((section) =>
+        (section.body[language].trim() || section.items.some((item) => item[language].trim())) &&
+        hasTranslation(section.heading) &&
+        hasTranslation(section.body) &&
+        section.items.every(hasTranslation)
+      );
+  };
+  const isRuValid = isLanguageComplete('ru');
+  const isEnValid = isLanguageComplete('en');
 
   const addSection = () => {
     setDraft((prev) => ({
@@ -288,6 +287,18 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     });
   };
 
+  const confirmRemoval = () => {
+    if (!pendingRemoval) return;
+    if (pendingRemoval.kind === 'draft') {
+      handleClearDraft();
+    } else if (pendingRemoval.kind === 'section') {
+      removeSection(pendingRemoval.sectionIndex);
+    } else {
+      removeItem(pendingRemoval.sectionIndex, pendingRemoval.itemIndex);
+    }
+    setPendingRemoval(null);
+  };
+
   const submit = () => {
     const hasEmptyTitleOrSummary =
       !draft.title.ru.trim() ||
@@ -301,7 +312,15 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
         (!s.body.en.trim() && !s.items.some((i) => i.en.trim()))
     );
 
-    if (hasEmptyTitleOrSummary || hasIncompleteSection) {
+    const hasIncompleteTranslation = (value: { ru: string; en: string }) =>
+      Boolean(value.ru.trim()) !== Boolean(value.en.trim());
+    const hasIncompleteContent = draft.sections.some((section) =>
+      hasIncompleteTranslation(section.heading) ||
+      hasIncompleteTranslation(section.body) ||
+      section.items.some(hasIncompleteTranslation)
+    );
+
+    if (hasEmptyTitleOrSummary || hasIncompleteSection || hasIncompleteContent) {
       setError(t('updatesInvalidContent'));
       return;
     }
@@ -311,8 +330,6 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
       content: {
         title: { ru: draft.title.ru.trim(), en: draft.title.en.trim() },
         summary: { ru: draft.summary.ru.trim(), en: draft.summary.en.trim() },
-        category: draft.category,
-        action: draft.targetAction ? { href: draft.targetAction } : undefined,
         sections: draft.sections.map((sec) => {
           const headingRu = sec.heading.ru.trim();
           const headingEn = sec.heading.en.trim();
@@ -337,6 +354,13 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     publish.mutate(command);
   };
 
+  const removalCopy = {
+    draft: { titleKey: 'updatesClearDraft', descriptionKey: 'updatesClearDraftConfirm' },
+    section: { titleKey: 'updatesRemoveSection', descriptionKey: 'updatesRemoveSectionConfirm' },
+    item: { titleKey: 'updatesRemoveItem', descriptionKey: 'updatesRemoveItemConfirm' },
+  } as const;
+  const removalText = removalCopy[pendingRemoval?.kind ?? 'draft'];
+
   return (
     <>
       <Dialog open onOpenChange={guard.handleOpenChange}>
@@ -357,53 +381,14 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={handleClearDraft}
+                disabled={publish.isPending}
+                onClick={() => setPendingRemoval({ kind: 'draft' })}
               >
                 <Trash2 className="mr-1 size-3" />
                 {t('updatesClearDraft')}
               </Button>
             </div>
           ) : null}
-
-          {/* Category (ADV-08) and Target Action selectors */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="update-category">{t('updatesCategory')}</Label>
-              <select
-                id="update-category"
-                aria-label={t('updatesCategory')}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                value={draft.category}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, category: event.target.value as UpdateCategory }))
-                }
-                disabled={publish.isPending}
-              >
-                <option value="feature">{t('updatesCategoryFeature')}</option>
-                <option value="improvement">{t('updatesCategoryImprovement')}</option>
-                <option value="sales">{t('updatesCategorySales')}</option>
-                <option value="administration">{t('updatesCategoryAdministration')}</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="update-action">{t('updatesTargetAction')}</Label>
-              <select
-                id="update-action"
-                aria-label={t('updatesTargetAction')}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                value={draft.targetAction}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, targetAction: event.target.value as TargetActionHref }))
-                }
-                disabled={publish.isPending}
-              >
-                <option value="">{t('updatesActionNone')}</option>
-                <option value="/sales/groups">{t('updatesActionSalesGroups')}</option>
-                <option value="/admin/academy-settings?tab=groups">{t('updatesActionAcademySettings')}</option>
-              </select>
-            </div>
-          </div>
 
           <Tabs defaultValue="ru" className="min-h-0 overflow-y-auto">
             <TabsList className="grid w-full grid-cols-3">
@@ -493,7 +478,8 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                            onClick={() => removeSection(sIndex)}
+                            disabled={publish.isPending}
+                            onClick={() => setPendingRemoval({ kind: 'section', sectionIndex: sIndex })}
                           >
                             <Trash2 className="mr-1 size-3" />
                             {t('updatesRemoveSection')}
@@ -501,7 +487,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                         ) : null}
                       </div>
 
-                      {sIndex > 0 ? (
+                      {sIndex > 0 || section.heading.ru || section.heading.en ? (
                         <div className="space-y-1.5">
                           <Label htmlFor={`sec-heading-${language}-${sIndex}`}>{t('updatesSectionHeading')}</Label>
                           <Input
@@ -557,6 +543,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                             variant="outline"
                             size="sm"
                             className="h-6 px-2 text-xs"
+                            disabled={publish.isPending}
                             onClick={() => addItem(sIndex)}
                           >
                             <Plus className="mr-1 size-3" />
@@ -566,6 +553,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                         {section.items.map((item, iIndex) => (
                           <div key={item.id} className="flex items-center gap-2">
                             <Input
+                              disabled={publish.isPending}
                               value={item[language]}
                               placeholder={t('updatesAddItem')}
                               maxLength={2000}
@@ -590,7 +578,8 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                               variant="ghost"
                               size="icon"
                               className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeItem(sIndex, iIndex)}
+                              disabled={publish.isPending}
+                              onClick={() => setPendingRemoval({ kind: 'item', sectionIndex: sIndex, itemIndex: iIndex })}
                               aria-label={t('updatesRemoveItem')}
                             >
                               <Trash2 className="size-3.5" />
@@ -606,6 +595,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
                     variant="outline"
                     size="sm"
                     className="w-full gap-1.5 border-dashed"
+                    disabled={publish.isPending}
                     onClick={addSection}
                   >
                     <Plus className="size-4" />
@@ -642,27 +632,12 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
 
               <div className="space-y-4 rounded-xl border p-5">
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={cn(getCategoryBadgeClass(draft.category), 'font-medium')}>
-                      {t(getCategoryTranslationKey(draft.category))}
-                    </Badge>
-                  </div>
                   <h3 className="break-words text-xl font-semibold tracking-tight">
                     {draft.title[previewLanguage].trim() || <span className="text-muted-foreground italic">—</span>}
                   </h3>
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     {draft.summary[previewLanguage].trim() || <span className="italic">—</span>}
                   </p>
-                  {draft.targetAction ? (
-                    <div>
-                      <Button asChild size="sm" variant="default" className="pointer-events-none">
-                        <span>
-                          {t('updatesOpenSection')}
-                          <ArrowUpRight data-icon="inline-end" />
-                        </span>
-                      </Button>
-                    </div>
-                  ) : null}
                 </div>
 
                 {draft.sections.map((section, sIndex) => (
@@ -702,6 +677,16 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
           </div>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={Boolean(pendingRemoval)}
+        onOpenChange={(open) => { if (!open) setPendingRemoval(null); }}
+        title={t(removalText.titleKey)}
+        description={t(removalText.descriptionKey)}
+        confirmLabel={t(removalText.titleKey)}
+        onConfirm={confirmRemoval}
+        variant="destructive"
+        isPending={publish.isPending}
+      />
       <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
     </>
   );

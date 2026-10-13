@@ -4,7 +4,12 @@ import type { UpdateRepository } from '../application/update-service';
 import type { PlatformUpdate, PublishUpdateCommand, UpdatePublicationResult, UpdateContent } from '@shared/contracts/platform-updates';
 
 type Row = { id: number; content: UpdateContent; published_at: Date };
-const present = (row: Row): PlatformUpdate => ({ id: row.id, content: row.content, publishedAt: row.published_at.toISOString() });
+// Historical JSON may contain retired metadata. Present only current content fields without rewriting it.
+const present = (row: Row): PlatformUpdate => ({
+  id: row.id,
+  content: { title: row.content.title, summary: row.content.summary, sections: row.content.sections },
+  publishedAt: row.published_at.toISOString(),
+});
 export class PostgresUpdateRepository implements UpdateRepository {
   constructor(private readonly pool: Pool) {}
   async list() {
@@ -29,7 +34,8 @@ export class PostgresUpdateRepository implements UpdateRepository {
       const created = Boolean(inserted.rows[0]);
       const row = inserted.rows[0] ?? (await client.query<Row>(
         'SELECT id, content, published_at FROM platform_updates WHERE publication_key=$1', [command.publicationKey])).rows[0];
-      if (!row || !isDeepStrictEqual(row.content, command.content)) {
+      const post = row && present(row);
+      if (!post || !isDeepStrictEqual(post.content, command.content)) {
         throw Object.assign(new Error('updatesPublicationConflict'), { statusCode: 409 });
       }
       let recipientIds: number[] = [];
@@ -38,11 +44,11 @@ export class PostgresUpdateRepository implements UpdateRepository {
           (user_id, type, title, message, is_read, related_entity_type, related_entity_id)
           SELECT id, 'platform_update', $1, $2, false, 'platform_update', $3 FROM users
           WHERE is_active=true AND is_archived=false RETURNING user_id`,
-        [command.content.title.ru, command.content.summary.ru, row.id]);
+        [command.content.title.ru, command.content.summary.ru, post.id]);
         recipientIds = recipients.rows.map((recipient) => recipient.user_id);
       }
       await client.query('COMMIT');
-      return { post: present(row), recipientIds, created };
+      return { post, recipientIds, created };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

@@ -71,4 +71,23 @@ describe.skipIf(!url)('platform update publication transactions', () => {
     expect(await repository.find(first.post.id)).toEqual(first.post);
     expect((await pool.query('SELECT COUNT(*)::int AS count FROM notifications')).rows[0].count).toBe(3);
   });
+  it('reads and retries a historical publication without retired metadata or new notifications', async () => {
+    const input = command();
+    const historicalContent = { ...input.content, category: 'sales', action: { href: '/sales/groups' } };
+    const inserted = await pool.query<{ id: number }>(`INSERT INTO platform_updates(publication_key, content, created_by)
+      VALUES($1, $2::jsonb, $3) RETURNING id`, [input.publicationKey, JSON.stringify(historicalContent), 1]);
+    const id = inserted.rows[0].id;
+    const service = new PlatformUpdateService(repository, notify);
+    const post = await service.publish(input, 1);
+
+    expect(post.id).toBe(id);
+    expect(post.content).toEqual(input.content);
+    expect(await repository.list()).toEqual([post]);
+    expect(await repository.find(id)).toEqual(post);
+    expect(await repository.findByKey(input.publicationKey)).toEqual(post);
+    expect(notify).not.toHaveBeenCalled();
+    expect((await pool.query('SELECT COUNT(*)::int AS count FROM platform_updates')).rows[0].count).toBe(1);
+    expect((await pool.query('SELECT COUNT(*)::int AS count FROM notifications')).rows[0].count).toBe(0);
+    expect((await pool.query('SELECT content FROM platform_updates WHERE id=$1', [id])).rows[0].content).toEqual(historicalContent);
+  });
 });

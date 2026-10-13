@@ -32,6 +32,7 @@ const post = {
   content: {
     title: { ru: 'Группы в продажах', en: 'Groups in Sales' },
     summary: { ru: 'Работа с группами', en: 'Group management' },
+    category: 'sales',
     action: { href: '/sales/groups' },
     sections: [
       {
@@ -184,23 +185,23 @@ const mount = (query = '') => {
   );
 };
 
-it('opens the post, enlarges a screenshot in a dialog and links to the sales section', async () => {
+it('opens the post and enlarges a screenshot in a dialog', async () => {
   mount();
   await screen.findByText(post.content.title.ru);
   expect(screen.queryByRole('button', { name: i18n.t('updatesNewPost') })).toBeNull();
   await userEvent.click(screen.getByRole('link', { name: i18n.t('updatesReadPost') }));
   await screen.findByText('Выберите нужную группу.');
   expect(location.search).toBe('?post=5');
-  expect(screen.getByRole('link', { name: i18n.t('updatesOpenSection') }).getAttribute('href')).toBe('/sales/groups');
+  expect(screen.queryByRole('link', { name: 'Открыть раздел' })).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: 'Список групп' }));
   expect(screen.getByRole('dialog', { name: 'Список групп' })).toBeTruthy();
 });
 
-it('lets teachers read the same post without presenting a sales action or publishing controls', async () => {
+it('lets teachers read the same post without publishing controls', async () => {
   mocks.actor = { id: 2, module: 'teacher', modules: ['teacher'] };
   mount('?post=5');
   await screen.findByText('Выберите нужную группу.');
-  expect(screen.queryByRole('link', { name: i18n.t('updatesOpenSection') })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Открыть раздел' })).toBeNull();
   expect(screen.queryByRole('button', { name: i18n.t('updatesNewPost') })).toBeNull();
 });
 
@@ -228,6 +229,8 @@ it('publishes a bilingual post from a modal with one stable publication key', as
     publicationKey: expect.any(String),
     content: { title: { ru: 'Новый пост', en: 'New post' } },
   });
+  expect(mocks.publish.mock.calls[0][0].content).not.toHaveProperty('category');
+  expect(mocks.publish.mock.calls[0][0].content).not.toHaveProperty('action');
   await waitFor(() => expect(location.search).toBe('?post=5'));
   expect(screen.queryByRole('dialog')).toBeNull();
 });
@@ -239,24 +242,38 @@ it('reports an invalid post link without issuing an unbounded or malformed reque
   expect(mocks.list).not.toHaveBeenCalled();
 });
 
-it('copies post link to clipboard and notifies with a toast in card and article view', async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.assign(navigator, { clipboard: { writeText } });
+it('omits removed controls in the feed, quick preview and reading surface for historical metadata', async () => {
+  const expectRemovedControlsAbsent = () => {
+    expect(screen.queryByRole('group', { name: 'Категории' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Копировать ссылку|Отметить всё как прочитанное/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Открыть раздел' })).toBeNull();
+    expect(screen.queryByText('Всего релизов')).toBeNull();
+    expect(screen.queryByText('Последний релиз')).toBeNull();
+    expect(screen.queryByText('Продажи')).toBeNull();
+  };
 
   mount();
   await screen.findByText(post.content.title.ru);
-  const cardCopyButton = screen.getByRole('button', { name: i18n.t('updatesCopyLink') });
-  await userEvent.click(cardCopyButton);
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/updates?post=5'));
-  expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('updatesLinkCopied') });
-
-  cleanup();
-  mount('?post=5');
+  expectRemovedControlsAbsent();
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesQuickView') }));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expectRemovedControlsAbsent();
+  await userEvent.click(within(screen.getByRole('dialog')).getByRole('link', { name: i18n.t('updatesReadPost') }));
   await screen.findByText('Выберите нужную группу.');
-  const articleCopyButton = screen.getByRole('button', { name: i18n.t('updatesCopyLink') });
-  await userEvent.click(articleCopyButton);
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/updates?post=5'));
-  expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('updatesLinkCopied') });
+  expectRemovedControlsAbsent();
+
+  const article = screen.getByRole('article');
+  const surface = article.parentElement!;
+  expect(surface.className).toContain('bg-card');
+  expect(surface.className).toContain('rounded-xl');
+  expect(surface.className).toContain('border');
+  expect(surface.className).toContain('max-w-4xl');
+  expect(surface.className).toContain('min-w-0');
+  expect(article.className).toContain('p-4');
+  expect(article.className).toContain('sm:p-6');
+  expect(article.className).toContain('lg:p-8');
+  expect(article.className).toContain('[overflow-wrap:anywhere]');
+  expect(within(article).getByRole('img', { name: 'Список групп' }).className).toContain('max-w-full');
 });
 
 it('filters the feed cards by search query and year chips, and allows resetting when search is empty', async () => {
@@ -333,104 +350,68 @@ it('shows neighboring post cards for chronological navigation', async () => {
   expect(screen.getByText(multiSectionPost.content.title.ru)).toBeTruthy();
 });
 
-it('allows previewing, selecting CRM target action and tracking character counters in publish modal', async () => {
+it('previews both languages, tracks character counters and publishes without removed editor fields', async () => {
   mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
   mount();
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).queryByRole('combobox')).toBeNull();
 
-  const actionSelect = within(dialog).getByRole('combobox', { name: i18n.t('updatesTargetAction') });
-  await userEvent.selectOptions(actionSelect, '/admin/academy-settings?tab=groups');
-  expect((actionSelect as HTMLSelectElement).value).toBe('/admin/academy-settings?tab=groups');
-
-  const ruTitleInput = within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') });
-  await userEvent.type(ruTitleInput, 'Новая структура');
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'Новая структура');
   expect(within(dialog).getByText('15 / 200')).toBeTruthy();
-
-  const ruSummaryInput = within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') });
-  await userEvent.type(ruSummaryInput, 'Описание изменений');
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') }), 'Описание изменений');
   expect(within(dialog).getByText('18 / 600')).toBeTruthy();
-
-  const ruBodyInput = within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') });
-  await userEvent.type(ruBodyInput, 'Подробности здесь.');
-
-  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
-  expect(within(dialog).getByText('Новая структура')).toBeTruthy();
-  expect(within(dialog).getByText('Описание изменений')).toBeTruthy();
-  expect(within(dialog).getByText('Подробности здесь.')).toBeTruthy();
-
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }), 'Подробности здесь.');
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'New structure');
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') }), 'Change summary');
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }), 'Details here.');
 
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
+  expect(within(dialog).getByText('Новая структура')).toBeTruthy();
+  expect(within(dialog).getByText('Описание изменений')).toBeTruthy();
+  expect(within(dialog).getByText('Подробности здесь.')).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesEnglish') }));
+  expect(within(dialog).getByText('New structure')).toBeTruthy();
+  expect(within(dialog).getByText('Change summary')).toBeTruthy();
+  expect(within(dialog).getByText('Details here.')).toBeTruthy();
+  expect(within(dialog).queryByRole('link', { name: 'Открыть раздел' })).toBeNull();
+
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
   await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
   expect(mocks.publish.mock.calls[0][0]).toMatchObject({
     publicationKey: expect.any(String),
-    content: {
-      title: { ru: 'Новая структура', en: 'New structure' },
-      action: { href: '/admin/academy-settings?tab=groups' },
-    },
+    content: { title: { ru: 'Новая структура', en: 'New structure' } },
   });
+  expect(mocks.publish.mock.calls[0][0].content).not.toHaveProperty('category');
+  expect(mocks.publish.mock.calls[0][0].content).not.toHaveProperty('action');
 });
 
-it('filters the feed cards by category filter chips with accessible aria-pressed state', async () => {
+it('shows historical posts without interpreting their former category or target section', async () => {
   mocks.list.mockResolvedValue([featurePost, improvementPost, salesPost, adminPost]);
   mount();
-  await screen.findByText(featurePost.content.title.ru);
-  expect(screen.getByText(improvementPost.content.title.ru)).toBeTruthy();
-  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
-  expect(screen.getByText(adminPost.content.title.ru)).toBeTruthy();
-
-  const allCatButton = screen.getByRole('button', { name: i18n.t('updatesCategoryAll') });
-  const featureCatButton = screen.getByRole('button', { name: i18n.t('updatesCategoryFeature') });
-  const salesCatButton = screen.getByRole('button', { name: i18n.t('updatesCategorySales') });
-
-  expect(allCatButton.getAttribute('aria-pressed')).toBe('true');
-  expect(featureCatButton.getAttribute('aria-pressed')).toBe('false');
-
-  await userEvent.click(featureCatButton);
-  expect(allCatButton.getAttribute('aria-pressed')).toBe('false');
-  expect(featureCatButton.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText(featurePost.content.title.ru)).toBeTruthy();
-  expect(screen.queryByText(improvementPost.content.title.ru)).toBeNull();
-  expect(screen.queryByText(salesPost.content.title.ru)).toBeNull();
-  expect(screen.queryByText(adminPost.content.title.ru)).toBeNull();
-
-  await userEvent.click(salesCatButton);
-  expect(salesCatButton.getAttribute('aria-pressed')).toBe('true');
-  expect(featureCatButton.getAttribute('aria-pressed')).toBe('false');
-  expect(screen.queryByText(featurePost.content.title.ru)).toBeNull();
-  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
-
-  await userEvent.click(allCatButton);
-  expect(allCatButton.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText(featurePost.content.title.ru)).toBeTruthy();
-  expect(screen.getByText(improvementPost.content.title.ru)).toBeTruthy();
-  expect(screen.getByText(salesPost.content.title.ru)).toBeTruthy();
-  expect(screen.getByText(adminPost.content.title.ru)).toBeTruthy();
+  for (const item of [featurePost, improvementPost, salesPost, adminPost]) {
+    expect(await screen.findByRole('heading', { name: item.content.title.ru })).toBeTruthy();
+  }
+  expect(screen.queryByRole('group', { name: 'Категории' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Все категории|Новая функция|Улучшение UX|Продажи|Администрирование/ })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Открыть раздел' })).toBeNull();
 });
 
-it('shows unread badges and allows marking all updates as read in one click', async () => {
+it('marks only the opened post as read and keeps other updates unread', async () => {
   mocks.list.mockResolvedValue([featurePost, improvementPost]);
   mount();
   await screen.findByText(featurePost.content.title.ru);
+  expect(screen.getAllByText(i18n.t('updatesUnread'))).toHaveLength(2);
+  expect(screen.queryByRole('button', { name: 'Отметить всё как прочитанное' })).toBeNull();
 
-  const unreadBadges = screen.getAllByText(i18n.t('updatesUnread'));
-  expect(unreadBadges.length).toBe(2);
-
-  const markAllButton = screen.getByRole('button', { name: i18n.t('updatesMarkAllAsRead') });
-  await userEvent.click(markAllButton);
-
-  expect(mocks.toast).toHaveBeenCalledWith({ title: i18n.t('updatesAllMarkedAsRead') });
-  expect(screen.queryByRole('button', { name: i18n.t('updatesMarkAllAsRead') })).toBeNull();
-  expect(screen.queryByText(i18n.t('updatesUnread'))).toBeNull();
-
-  const stored = JSON.parse(window.localStorage.getItem('academy-updates:read-posts') || '[]');
-  expect(stored).toContain(featurePost.id);
-  expect(stored).toContain(improvementPost.id);
+  await userEvent.click(screen.getAllByRole('button', { name: i18n.t('updatesQuickView') })[0]);
+  expect(JSON.parse(window.localStorage.getItem('academy-updates:read-posts') || '[]')).toEqual([featurePost.id]);
+  await userEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: i18n.t('updatesCloseQuickView') })[0]);
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getAllByText(i18n.t('updatesUnread'))).toHaveLength(1);
+  expect(mocks.toast).not.toHaveBeenCalled();
 });
 
 it('opens quick preview in a Dialog without route changes and marks post as read', async () => {
@@ -559,24 +540,30 @@ it('automatically saves draft to localStorage, shows restored banner, and clears
   expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('Черновик релиза');
 
   const clearButton = within(reDialog).getByRole('button', { name: i18n.t('updatesClearDraft') });
+  const savedBeforeClear = window.localStorage.getItem('academy-updates:publish-draft');
   await userEvent.click(clearButton);
+  let confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesClearDraft') });
+  expect(within(confirmation).getByText(i18n.t('updatesClearDraftConfirm'))).toBeTruthy();
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBe(savedBeforeClear);
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('cancel') }));
+  expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('Черновик релиза');
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBe(savedBeforeClear);
+  await userEvent.click(clearButton);
+  confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesClearDraft') });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('updatesClearDraft') }));
 
   expect(within(reDialog).queryByText(i18n.t('updatesDraftRestored'))).toBeNull();
   expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('');
   expect(window.localStorage.getItem('academy-updates:publish-draft')).toBeNull();
 });
 
-it('supports category selection and multi-section authoring with bullet items and live preview', async () => {
+it('supports multi-section authoring with bullet items and live preview', async () => {
   mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
   mount();
   await screen.findByText(post.content.title.ru);
 
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
-
-  const categorySelect = within(dialog).getByRole('combobox', { name: i18n.t('updatesCategory') });
-  await userEvent.selectOptions(categorySelect, 'improvement');
-  expect((categorySelect as HTMLSelectElement).value).toBe('improvement');
 
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'Улучшение интерфейса');
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') }), 'Обновленный UI');
@@ -598,9 +585,234 @@ it('supports category selection and multi-section authoring with bullet items an
   await userEvent.type(bulletInput, 'Первый пункт списка');
 
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
-  expect(within(dialog).getAllByText(i18n.t('updatesCategoryImprovement')).length).toBeGreaterThanOrEqual(2);
+  expect(within(dialog).queryByRole('combobox')).toBeNull();
   expect(within(dialog).getByText('Улучшение интерфейса')).toBeTruthy();
   expect(within(dialog).getByText('Детали улучшения')).toBeTruthy();
   expect(within(dialog).getByText('Второй блок текста')).toBeTruthy();
   expect(within(dialog).getByText('Первый пункт списка')).toBeTruthy();
+});
+
+
+it('restores and publishes a historical bilingual draft without its former category or action', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Прежний черновик', titleEn: 'Historical draft',
+    summaryRu: 'Сохранённое описание', summaryEn: 'Saved summary',
+    category: 'sales', actionHref: '/sales/groups',
+    sectionsRu: [{ heading: 'Раздел', paragraphs: ['Сохранённый текст'], items: ['Пункт'] }],
+    sectionsEn: [{ heading: 'Section', paragraphs: ['Saved text'], items: ['Item'] }],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
+  expect(within(dialog).queryByRole('combobox')).toBeNull();
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
+  expect(within(dialog).getByText('Прежний черновик')).toBeTruthy();
+  expect(within(dialog).getByText('Сохранённый текст')).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesEnglish') }));
+  expect(within(dialog).getByText('Historical draft')).toBeTruthy();
+  expect(within(dialog).getByText('Saved text')).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
+  expect(mocks.publish.mock.calls[0][0].content).toEqual({
+    title: { ru: 'Прежний черновик', en: 'Historical draft' },
+    summary: { ru: 'Сохранённое описание', en: 'Saved summary' },
+    sections: [{
+      heading: { ru: 'Раздел', en: 'Section' },
+      paragraphs: [{ ru: 'Сохранённый текст', en: 'Saved text' }],
+      items: [{ ru: 'Пункт', en: 'Item' }],
+    }],
+  });
+});
+
+it('restores an English-only historical section rather than replacing it with an empty draft', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: '', titleEn: '', summaryRu: '', summaryEn: '',
+    category: 'feature', actionHref: '/sales/groups',
+    sectionsEn: [{ paragraphs: ['English-only saved section'], items: ['English-only item'] }],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }) as HTMLTextAreaElement).value).toBe('English-only saved section');
+  expect((within(dialog).getByPlaceholderText(i18n.t('updatesAddItem')) as HTMLInputElement).value).toBe('English-only item');
+  const saved = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
+  expect(saved).not.toHaveProperty('category');
+  expect(saved).not.toHaveProperty('actionHref');
+  expect(saved.sectionsEn[0].items).toEqual(['English-only item']);
+});
+
+it('keeps sparse bullet translations aligned after saving and restoring, and rejects incomplete items', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  let dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  for (const tab of ['updatesRussian', 'updatesEnglish'] as const) {
+    await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t(tab) }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), tab === 'updatesRussian' ? 'Черновик' : 'Draft');
+    await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesSummary') }), tab === 'updatesRussian' ? 'Описание' : 'Summary');
+    await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }), tab === 'updatesRussian' ? 'Текст' : 'Body');
+  }
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
+  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[1], 'Second item');
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesRussian') }));
+  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[0], 'Первый пункт');
+  const saved = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
+  expect(saved.sectionsRu[0].items).toEqual(['Первый пункт', '']);
+  expect(saved.sectionsEn[0].items).toEqual(['', 'Second item']);
+
+  cleanup();
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem')).map((input) => (input as HTMLInputElement).value)).toEqual(['Первый пункт', '']);
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(within(dialog).getByRole('alert').textContent).toBe(i18n.t('updatesInvalidContent'));
+  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[1], 'Второй пункт');
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
+  expect(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem')).map((input) => (input as HTMLInputElement).value)).toEqual(['', 'Second item']);
+  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[0], 'First item');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
+  expect(mocks.publish.mock.calls[0][0].content.sections[0].items).toEqual([
+    { ru: 'Первый пункт', en: 'First item' },
+    { ru: 'Второй пункт', en: 'Second item' },
+  ]);
+});
+
+it.each(['item', 'section'] as const)('confirms %s removal and preserves bilingual draft content on cancellation', async (kind) => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Черновик', titleEn: 'Draft', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [
+      { paragraphs: ['Первый текст'], items: ['Первый пункт'] },
+      { heading: 'Второй раздел', paragraphs: ['Второй текст'], items: ['Второй пункт'] },
+    ],
+    sectionsEn: [
+      { paragraphs: ['First body'], items: ['First item'] },
+      { heading: 'Second section', paragraphs: ['Second body'], items: ['Second item'] },
+    ],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  const actionKey = kind === 'item' ? 'updatesRemoveItem' : 'updatesRemoveSection';
+  const descriptionKey = kind === 'item' ? 'updatesRemoveItemConfirm' : 'updatesRemoveSectionConfirm';
+  const trigger = within(dialog).getAllByRole('button', { name: i18n.t(actionKey) }).at(-1)!;
+  const savedBefore = window.localStorage.getItem('academy-updates:publish-draft');
+  await userEvent.click(trigger);
+  let confirmation = screen.getByRole('alertdialog', { name: i18n.t(actionKey) });
+  expect(within(confirmation).getByText(i18n.t(descriptionKey))).toBeTruthy();
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBe(savedBefore);
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('cancel') }));
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBe(savedBefore);
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesSectionBody') }) as HTMLTextAreaElement).value).toBe('Второй текст');
+  await userEvent.click(trigger);
+  confirmation = screen.getByRole('alertdialog', { name: i18n.t(actionKey) });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t(actionKey) }));
+  const savedAfter = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
+  expect(savedAfter.sectionsRu[0]).toEqual({ heading: '', paragraphs: ['Первый текст'], items: ['Первый пункт'] });
+  expect(savedAfter.sectionsEn[0]).toEqual({ heading: '', paragraphs: ['First body'], items: ['First item'] });
+  if (kind === 'section') {
+    expect(savedAfter.sectionsRu).toHaveLength(1);
+    expect(savedAfter.sectionsEn).toHaveLength(1);
+    expect(within(dialog).queryByRole('textbox', { name: i18n.t('updatesSectionBody') })).toBeNull();
+  } else {
+    expect(savedAfter.sectionsRu[1].items).toEqual([]);
+    expect(savedAfter.sectionsEn[1].items).toEqual([]);
+    expect(savedAfter.sectionsRu[1].paragraphs).toEqual(['Второй текст']);
+    expect(savedAfter.sectionsEn[1].paragraphs).toEqual(['Second body']);
+  }
+});
+
+it('does not restore the last draft text after confirmed removal of its bullet', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: '', titleEn: '', summaryRu: '', summaryEn: '',
+    sectionsRu: [{ items: ['Последний текст'] }],
+    sectionsEn: [{ items: ['Last text'] }],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  let dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesRemoveItem') }));
+  const confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesRemoveItem') });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('updatesRemoveItem') }));
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBeNull();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).queryByText(i18n.t('updatesDraftRestored'))).toBeNull();
+  expect(within(dialog).queryByPlaceholderText(i18n.t('updatesAddItem'))).toBeNull();
+});
+
+it.each(['body', 'heading'] as const)('rejects a one-sided %s despite completed bilingual bullets', async (field) => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Черновик', titleEn: 'Draft', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [{
+      heading: field === 'heading' ? 'Заголовок' : '',
+      paragraphs: field === 'body' ? ['Русский текст'] : [],
+      items: ['Пункт'],
+    }],
+    sectionsEn: [{ items: ['Item'] }],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(within(dialog).getByRole('alert').textContent).toBe(i18n.t('updatesInvalidContent'));
+  const saved = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
+  if (field === 'heading') expect(saved.sectionsRu[0].heading).toBe('Заголовок');
+  else expect(saved.sectionsRu[0].paragraphs).toEqual(['Русский текст']);
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
+  const fieldLabel = field === 'heading' ? 'updatesSectionHeading' : 'updatesBody';
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t(fieldLabel) }), field === 'heading' ? 'Heading' : 'English text');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
+  const publishedSection = mocks.publish.mock.calls[0][0].content.sections[0];
+  expect(publishedSection.items).toEqual([{ ru: 'Пункт', en: 'Item' }]);
+  if (field === 'heading') expect(publishedSection.heading).toEqual({ ru: 'Заголовок', en: 'Heading' });
+  else expect(publishedSection.paragraphs).toEqual([{ ru: 'Русский текст', en: 'English text' }]);
+});
+
+it('keeps article shortcuts from navigating while the publisher or a confirmation is open', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  mocks.list.mockResolvedValue([multiSectionPost, post, olderPost]);
+  mount('?post=5');
+  await screen.findByText('Выберите нужную группу.');
+  await screen.findByText(multiSectionPost.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'Текст');
+  within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }).focus();
+  await userEvent.keyboard('{ArrowRight}{ArrowLeft}jk');
+  expect(location.search).toBe('?post=5');
+  await userEvent.keyboard('{Escape}');
+  const unsaved = screen.getByRole('alertdialog', { name: i18n.t('unsavedChangesTitle') });
+  expect(location.search).toBe('?post=5');
+  await userEvent.click(within(unsaved).getByRole('button', { name: i18n.t('keepEditing') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesRemoveItem') }));
+  const confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesRemoveItem') });
+  within(confirmation).getByRole('button', { name: i18n.t('updatesRemoveItem') }).focus();
+  await userEvent.keyboard('jk{ArrowRight}{Escape}');
+  expect(location.search).toBe('?post=5');
+  expect(screen.getByRole('dialog', { name: i18n.t('updatesNewPost') })).toBeTruthy();
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toContain('Текст');
 });

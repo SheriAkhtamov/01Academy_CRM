@@ -5,6 +5,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { getInitials } from '@/lib/auth';
 import { useTranslation } from '@/hooks/useTranslation';
+import { UserPhotoCropDialog } from './UserPhotoCropDialog';
 
 export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, disabled = false }: {
   photo: File | null; onChange: (photo: File | null) => void;
@@ -12,8 +13,10 @@ export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, di
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
+  const chooseButton = useRef<HTMLButtonElement>(null);
   const [preview, setPreview] = useState<string>();
   const [error, setError] = useState<string>();
+  const [cropFile, setCropFile] = useState<File>();
   useEffect(() => {
     if (!photo) { setPreview(undefined); return; }
     const url = URL.createObjectURL(photo);
@@ -35,10 +38,11 @@ export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, di
           if (!USER_PHOTO_MIME_TYPES.some((type) => type === file.type) && !(file.type === '' && /\.(jpe?g|png|webp|gif|avif)$/i.test(file.name))) {
             setError(t('profilePhotoTypeUnsupported')); return;
           }
-          setError(undefined); onChange(file);
+          if (disabled) return;
+          setError(undefined); setCropFile(file);
         }} />
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => input.current?.click()}><Camera className="size-4" />{photo || currentPhotoUrl ? t('replaceProfilePhoto') : t('chooseProfilePhoto')}</Button>
+          <Button ref={chooseButton} type="button" variant="outline" size="sm" disabled={disabled} onClick={() => input.current?.click()}><Camera className="size-4" />{photo || currentPhotoUrl ? t('replaceProfilePhoto') : t('chooseProfilePhoto')}</Button>
           {photo ? <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => { setError(undefined); onChange(null); }}><X className="size-4" />{t('cancelPhotoSelection')}</Button> : null}
         </div>
         <p className="text-xs text-muted-foreground">{t('profilePhotoLimit')}</p>
@@ -46,5 +50,15 @@ export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, di
       </div>
     </div>
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    {cropFile ? <UserPhotoCropDialog
+      file={cropFile}
+      disabled={disabled}
+      onApply={(croppedPhoto) => { onChange(croppedPhoto); setCropFile(undefined); }}
+      onCancel={() => setCropFile(undefined)}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        if (chooseButton.current?.isConnected && !chooseButton.current.disabled) chooseButton.current.focus();
+      }}
+    /> : null}
   </div>;
 }

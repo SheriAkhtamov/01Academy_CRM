@@ -4,24 +4,28 @@ import { voiceReminderApi, voiceReminderQueryKeys } from './api';
 
 export function useVoiceReminders(open: boolean) {
   const queryClient = useQueryClient();
+  const mutationOptions = {
+    onMutate: () => queryClient.cancelQueries({ queryKey: voiceReminderQueryKeys.snapshot }),
+    onSuccess: (data: VoiceReminderSnapshot) => {
+      queryClient.setQueryData(voiceReminderQueryKeys.snapshot, data);
+    },
+    onError: (error: unknown) => {
+      if ((error as { rawMessage?: string })?.rawMessage === 'voiceReminderAudioChanged') {
+        return queryClient.invalidateQueries({ queryKey: voiceReminderQueryKeys.snapshot });
+      }
+    },
+  };
+  const saveSettings = useMutation({ mutationFn: voiceReminderApi.saveSettings, ...mutationOptions });
+  const uploadAudio = useMutation({ mutationFn: voiceReminderApi.uploadAudio, ...mutationOptions });
+  const removeTime = useMutation({ mutationFn: voiceReminderApi.removeTime, ...mutationOptions });
+  const pending = saveSettings.isPending || uploadAudio.isPending || removeTime.isPending;
   const snapshot = useQuery({
     queryKey: voiceReminderQueryKeys.snapshot,
     queryFn: voiceReminderApi.getSnapshot,
-    enabled: open,
+    enabled: open && !pending,
     staleTime: 0,
-    refetchInterval: open ? 10_000 : false,
-  });
-  const updateSnapshot = (data: VoiceReminderSnapshot) => {
-    queryClient.setQueryData(voiceReminderQueryKeys.snapshot, data);
-  };
-  const saveSettings = useMutation({
-    mutationFn: voiceReminderApi.saveSettings,
-    onSuccess: updateSnapshot,
-  });
-  const uploadAudio = useMutation({
-    mutationFn: voiceReminderApi.uploadAudio,
-    onSuccess: updateSnapshot,
+    refetchInterval: open && !pending ? 10_000 : false,
   });
 
-  return { snapshot, saveSettings, uploadAudio };
+  return { snapshot, saveSettings, uploadAudio, removeTime, pending };
 }

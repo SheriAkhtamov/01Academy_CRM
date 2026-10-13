@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Upload } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
+  voiceReminderClockTimeSchema,
   voiceReminderSettingsSchema,
   type VoiceReminderSettingsInput,
 } from '@shared/contracts/voice-reminders';
@@ -9,23 +10,23 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
-import { voiceReminderApi } from '../api';
+import type { VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderTimeRemoval } from '../api';
 import { useVoiceReminders } from '../hooks';
+import { emptyRecordingDraft, VoiceReminderRecordings } from './VoiceReminderRecordings';
 import { VoiceReminderResults } from './VoiceReminderResults';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
 const errorKeys = new Set<TranslationKey>([
   'voiceReminderInvalidSettings', 'voiceReminderInvalidHours', 'voiceReminderAudioRequired',
   'voiceReminderTransportUnavailable', 'voiceReminderAudioInvalid', 'voiceReminderAudioTooLarge',
-  'voiceReminderAudioTooLong', 'voiceReminderAudioProcessingUnavailable', 'voiceReminderSaveFailed',
+  'voiceReminderInvalidTime', 'voiceReminderAudioChanged', 'voiceReminderAudioTooLong',
+  'voiceReminderAudioProcessingUnavailable', 'voiceReminderSaveFailed',
 ]);
 
 const mutationErrorKey = (error: unknown, fallback: TranslationKey): TranslationKey => {
@@ -48,25 +49,25 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot, saveSettings, uploadAudio } = useVoiceReminders(open);
+  const { snapshot, saveSettings, uploadAudio, removeTime, pending } = useVoiceReminders(open);
   const [draft, setDraft] = useState<VoiceReminderSettingsInput | null>(null);
   const [savedSettings, setSavedSettings] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [fileInputKey, setFileInputKey] = useState(0);
+  const [recordings, setRecordings] = useState(emptyRecordingDraft);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
-  const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+  const [replacement, setReplacement] = useState<VoiceReminderAudioUpload | null>(null);
+  const [removal, setRemoval] = useState<VoiceReminderTimeRemoval | null>(null);
   const [activeTab, setActiveTab] = useState('settings');
-  const pending = saveSettings.isPending || uploadAudio.isPending;
-  const dirty = Boolean(selectedFile || (draft && JSON.stringify(draft) !== savedSettings));
+  const dirty = Boolean(recordings.intro || recordings.outro || recordings.timeFile || recordings.time
+    || (draft && JSON.stringify(draft) !== savedSettings));
   const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
 
   useEffect(() => {
     if (!open) {
       setDraft(null);
-      setSelectedFile(null);
+      setRecordings(emptyRecordingDraft());
       setErrorKey(null);
-      setReplaceConfirmOpen(false);
+      setReplacement(null);
+      setRemoval(null);
       setActiveTab('settings');
       return;
     }
@@ -79,16 +80,6 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       }
     }
   }, [draft, open, savedSettings, snapshot.data]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(selectedFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [selectedFile]);
 
   const save = async () => {
     if (!draft || !snapshot.data) return;
@@ -115,17 +106,68 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     }
   };
 
-  const upload = async () => {
-    if (!selectedFile) return;
+  const selectFile = (field: 'intro' | 'outro' | 'timeFile', file: File | null, input: HTMLInputElement) => {
+    setErrorKey(null);
+    setRecordings((current) => ({ ...current, [field]: null }));
+    if (file && !/\.(mp3|wav)$/i.test(file.name)) {
+      setErrorKey('voiceReminderAudioInvalid');
+      input.value = '';
+      return;
+    }
+    if (file && file.size > VOICE_REMINDER_MAX_AUDIO_BYTES) {
+      setErrorKey('voiceReminderAudioTooLarge');
+      input.value = '';
+      return;
+    }
+    setRecordings((current) => ({ ...current, [field]: file }));
+  };
+
+  const upload = async (selection: VoiceReminderAudioUpload) => {
     setErrorKey(null);
     try {
-      await uploadAudio.mutateAsync(selectedFile);
-      setSelectedFile(null);
-      setFileInputKey((key) => key + 1);
-      setReplaceConfirmOpen(false);
+      await uploadAudio.mutateAsync(selection);
+      setRecordings((current) => {
+        if ('part' in selection.target) {
+          const part = selection.target.part;
+          return current[part] === selection.file ? { ...current, [part]: null } : current;
+        }
+        return current.time === selection.target.time && current.timeFile === selection.file
+          ? { ...current, time: '', timeFile: null } : current;
+      });
+      setReplacement(null);
       toast({ title: t('voiceRemindersAudioSaved') });
     } catch (error) {
-      setErrorKey(mutationErrorKey(error, 'voiceRemindersUploadFailed'));
+      const key = mutationErrorKey(error, 'voiceRemindersUploadFailed');
+      if (key === 'voiceReminderAudioChanged') setReplacement(null);
+      setErrorKey(key);
+    }
+  };
+
+  const requestUpload = (target: VoiceReminderAudioTarget, file: File) => {
+    if (!snapshot.data || pending) return;
+    setErrorKey(null);
+    if ('time' in target && !voiceReminderClockTimeSchema.safeParse(target.time).success) {
+      setErrorKey('voiceReminderInvalidTime');
+      return;
+    }
+    const library = snapshot.data.settings.audioLibrary;
+    const existing = 'part' in target ? library[target.part]
+      : library.times.find((entry) => entry.time === target.time)?.audio;
+    const selection = { target, file, ...(existing ? { expectedId: existing.id } : {}) };
+    if (existing) setReplacement(selection);
+    else void upload(selection);
+  };
+
+  const deleteRecording = async () => {
+    if (!removal || pending) return;
+    setErrorKey(null);
+    try {
+      await removeTime.mutateAsync(removal);
+      setRemoval(null);
+    } catch (error) {
+      const key = mutationErrorKey(error, 'voiceRemindersDeleteFailed');
+      if (key === 'voiceReminderAudioChanged') setRemoval(null);
+      setErrorKey(key);
     }
   };
 
@@ -136,7 +178,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-2xl">
+        <DialogContent aria-describedby={undefined} className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t('voiceRemindersTitle')}</DialogTitle>
           </DialogHeader>
@@ -152,6 +194,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <TabsList>
                   <TabsTrigger value="settings">{t('settings')}</TabsTrigger>
+                  <TabsTrigger value="recordings">{t('voiceRemindersRecordings')}</TabsTrigger>
                   <TabsTrigger value="results">{t('voiceRemindersResults')}</TabsTrigger>
                 </TabsList>
                 <Badge variant={snapshot.data.readiness.ready ? 'success' : 'secondary'}>
@@ -169,53 +212,13 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
                     onChange={(settings) => { setDraft(settings); setErrorKey(null); }}
                   />
                 </form>
-                <section className="space-y-3 rounded-lg border p-4" aria-label={t('voiceRemindersAudio')}>
-                  <Label htmlFor="voice-reminders-audio">{t('voiceRemindersAudio')}</Label>
-                  {snapshot.data.settings.audio ? (
-                    <div className="space-y-2">
-                      <p className="break-all text-sm">{snapshot.data.settings.audio.fileName}</p>
-                      <audio
-                        controls preload="none" className="w-full"
-                        aria-label={t('voiceRemindersPlayAudio')}
-                        src={voiceReminderApi.audioUrl(snapshot.data.settings.audio.id)}
-                      />
-                    </div>
-                  ) : null}
-                  <Input
-                    key={fileInputKey}
-                    id="voice-reminders-audio" type="file"
-                    accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
-                    disabled={pending}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      setErrorKey(null);
-                      setSelectedFile(null);
-                      if (file && !/\.(mp3|wav)$/i.test(file.name)) {
-                        setErrorKey('voiceReminderAudioInvalid');
-                        event.target.value = '';
-                        return;
-                      }
-                      if (file && file.size > VOICE_REMINDER_MAX_AUDIO_BYTES) {
-                        setErrorKey('voiceReminderAudioTooLarge');
-                        event.target.value = '';
-                        return;
-                      }
-                      setSelectedFile(file);
-                    }}
-                  />
-                  {previewUrl ? (
-                    <audio controls preload="metadata" className="w-full"
-                      aria-label={t('voiceRemindersPlaySelectedAudio')} src={previewUrl} />
-                  ) : null}
-                  <Button
-                    type="button" variant="outline" disabled={!selectedFile || pending}
-                    onClick={() => snapshot.data.settings.audio ? setReplaceConfirmOpen(true) : void upload()}
-                  >
-                    {uploadAudio.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
-                      : <Upload data-icon="inline-start" />}
-                    {t('voiceRemindersUploadAudio')}
-                  </Button>
-                </section>
+              </TabsContent>
+              <TabsContent value="recordings" forceMount hidden={activeTab !== 'recordings'} className="pt-3">
+                <VoiceReminderRecordings library={snapshot.data.settings.audioLibrary} draft={recordings} disabled={pending}
+                  onTime={(time) => { setRecordings((current) => ({ ...current, time })); setErrorKey(null); }}
+                  onFile={selectFile} onUpload={requestUpload}
+                  onRemove={(time, expectedId) => { setRemoval({ time, expectedId }); setErrorKey(null); }}
+                  onPreviewError={() => setErrorKey('voiceRemindersPreviewFailed')} />
               </TabsContent>
               <TabsContent value="results" className="pt-3">
                 <VoiceReminderResults data={snapshot.data} />
@@ -240,11 +243,19 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen}
         onDiscard={guard.discardChanges} />
       <ConfirmDialog
-        open={replaceConfirmOpen} onOpenChange={setReplaceConfirmOpen}
+        open={Boolean(replacement)} onOpenChange={(next) => { if (!next) { setReplacement(null); setErrorKey(null); } }}
         title={t('voiceRemindersReplaceAudioTitle')}
         description={t('voiceRemindersReplaceAudioDescription')}
         confirmLabel={t('voiceRemindersReplaceAudio')}
-        onConfirm={() => void upload()} isPending={uploadAudio.isPending} keepOpenOnConfirm
+        onConfirm={() => { if (replacement) void upload(replacement); }} isPending={uploadAudio.isPending} keepOpenOnConfirm
+        error={errorKey ? t(errorKey) : undefined}
+      />
+      <ConfirmDialog
+        open={removal !== null} onOpenChange={(next) => { if (!next) { setRemoval(null); setErrorKey(null); } }}
+        title={t('voiceRemindersDeleteTimeTitle')}
+        description={t('voiceRemindersDeleteTimeDescription', { time: removal?.time ?? '' })}
+        confirmLabel={t('delete')} variant="destructive"
+        onConfirm={() => void deleteRecording()} isPending={removeTime.isPending} keepOpenOnConfirm
         error={errorKey ? t(errorKey) : undefined}
       />
     </>

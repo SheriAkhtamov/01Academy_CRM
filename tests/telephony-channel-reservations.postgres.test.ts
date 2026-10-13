@@ -30,6 +30,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
       CREATE TABLE telephony_calls(id serial PRIMARY KEY,provider_call_id text,client_call_id text,ended_at timestamptz,status text);`);
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     channels = new TelephonyChannelReservations(database, async () => snapshot);
   });
   beforeEach(async () => {

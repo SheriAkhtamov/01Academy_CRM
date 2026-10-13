@@ -113,7 +113,10 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     const robot = localPeer();
     let received!: Awaited<ReturnType<typeof answeringPeer>>;
     let earlyPacketCount = -1;
+    let libraryUnchanged = true;
+    const guards: boolean[] = [];
     const harness = await fakeVerto(async (socket, invite) => {
+      libraryUnchanged = false;
       received = await answeringPeer(socket, invite);
       event(socket, 'verto.invite', { callID: 'manager-incoming-fork', sdp: received.sdp }, 'incoming-event');
       event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early-event');
@@ -125,7 +128,9 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
       event(socket, 'verto.answer', { callID: received.callID }, 'answer-event');
     });
     const onStarted = vi.fn(async () => undefined);
-    const result = await performVertoReminderCall(harness.credentials, callInput({ onStarted }), {
+    const result = await performVertoReminderCall(harness.credentials, callInput({ onStarted,
+      shouldContinue: async (verifyAudio = true) => { guards.push(verifyAudio); return !verifyAudio || libraryUnchanged; },
+    }), {
       ...dependencies(expectedAudio), createPeer: () => robot,
     });
     expect(harness.errors).toEqual([]);
@@ -133,6 +138,8 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     expect(result.terminationConfirmed).toBe(true);
     expect(result.callStarted).toBe(true);
     expect(onStarted).toHaveBeenCalledOnce();
+    expect(guards).toContain(true);
+    expect(guards).toContain(false);
     expect(earlyPacketCount).toBe(0);
     expect(Buffer.concat(received.packets)).toEqual(expectedAudio);
     expect(received.packets.map((packet) => packet.length)).toEqual([160, 160, 160, 160]);

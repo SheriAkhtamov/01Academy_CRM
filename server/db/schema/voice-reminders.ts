@@ -33,6 +33,8 @@ export const createVoiceReminderTables = (references: {
     allowedEndTime: varchar('allowed_end_time', { length: 5 }).notNull().default('20:00'),
     maxConcurrentCalls: integer('max_concurrent_calls').notNull().default(2),
     audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    introAudioId: uuid('intro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    outroAudioId: uuid('outro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   }, table => ({
@@ -44,7 +46,16 @@ export const createVoiceReminderTables = (references: {
     hoursCheck: check('voice_reminder_settings_hours_check', sql`${table.allowedStartTime} < ${table.allowedEndTime}`),
     startCheck: check('voice_reminder_settings_allowed_start_time_check', sql`${table.allowedStartTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
     endCheck: check('voice_reminder_settings_allowed_end_time_check', sql`${table.allowedEndTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
-    enabledAudioCheck: check('voice_reminder_settings_enabled_audio_check', sql`NOT ${table.enabled} OR ${table.audioId} IS NOT NULL`),
+    enabledAudioCheck: check('voice_reminder_settings_modular_audio_check', sql`NOT ${table.enabled} OR (${table.introAudioId} IS NOT NULL AND ${table.outroAudioId} IS NOT NULL)`),
+  }));
+
+  const voiceReminderTimeAudio = pgTable('voice_reminder_time_audio', {
+    time: varchar('time', { length: 5 }).primaryKey(),
+    audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }).notNull(),
+    updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({
+    timeCheck: check('voice_reminder_time_audio_time_check', sql`${table.time} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
   }));
 
   const voiceReminderJobs = pgTable('voice_reminder_jobs', {
@@ -60,6 +71,10 @@ export const createVoiceReminderTables = (references: {
     attempts: integer('attempts').notNull().default(0),
     phone: varchar('phone', { length: 20 }),
     audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    introAudioId: uuid('intro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    timeAudioId: uuid('time_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    outroAudioId: uuid('outro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    audioClockTime: varchar('audio_clock_time', { length: 5 }),
     leaseToken: uuid('lease_token'),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     lastCallAt: timestamp('last_call_at', { withTimezone: true }),
@@ -75,6 +90,7 @@ export const createVoiceReminderTables = (references: {
     attemptsCheck: check('voice_reminder_jobs_attempts_check', sql`${table.attempts} >= 0`),
     lessonRevisionCheck: check('voice_reminder_jobs_lesson_revision_check', sql`${table.lessonRevision} >= 0`),
     participantRevisionCheck: check('voice_reminder_jobs_participant_revision_check', sql`${table.participantRevision} >= 0`),
+    clockTimeCheck: check('voice_reminder_jobs_audio_clock_time_check', sql`${table.audioClockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
     leaseCheck: check('voice_reminder_jobs_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL) OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),
   }));
   const telephonyLineReservations = pgTable('telephony_line_reservations', {
@@ -109,5 +125,5 @@ export const createVoiceReminderTables = (references: {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
 };

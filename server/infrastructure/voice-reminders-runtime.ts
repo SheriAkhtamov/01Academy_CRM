@@ -4,6 +4,8 @@ import type { VoiceReminderGateway, VoiceReminderLine } from '../modules/voice-r
 import { VoiceReminderSettingsService } from '../modules/voice-reminders/application/settings-service';
 import { VoiceReminderWorker } from '../modules/voice-reminders/application/worker-service';
 import { LocalVoiceReminderAudioStore } from '../modules/voice-reminders/infrastructure/audio-store';
+import { LocalVoiceReminderAudioComposer } from '../modules/voice-reminders/infrastructure/audio-composer';
+import path from 'node:path';
 import { PostgresVoiceReminderRepository } from '../modules/voice-reminders/infrastructure/postgres-repository';
 import { createVoiceReminderRouter } from '../modules/voice-reminders/http/voice-reminders.router';
 import { pool } from '../db';
@@ -28,6 +30,8 @@ export const createVoiceRemindersRuntime = (
   const readyAt = now() + Math.max(0, options.startupRecoveryMs ?? 0);
   const repository = new PostgresVoiceReminderRepository(database);
   const audioStore = new LocalVoiceReminderAudioStore(options.audioDirectory);
+  const audioComposer = new LocalVoiceReminderAudioComposer(audioStore,
+    options.audioDirectory ? path.join(options.audioDirectory, 'assembled') : undefined);
   const channels = new TelephonyChannelReservations(database, () => provider.snapshot(),
     provider.readLocked ? (connection, excludeId) => provider.readLocked!(connection, excludeId) : undefined);
   const receipts = new RobotCallReceipts(database);
@@ -80,7 +84,7 @@ export const createVoiceRemindersRuntime = (
             const credentials = await provider.getCredentials(lease.extension);
             const result = await (options.performCall ?? performVertoReminderCall)(credentials, {
               ...input, callId: lease.clientCallId, signal: controller.signal,
-              shouldContinue: () => alive && !stopping ? input.shouldContinue() : Promise.resolve(false),
+              shouldContinue: (verifyAudio = true) => alive && !stopping ? input.shouldContinue(verifyAudio) : Promise.resolve(false),
               onStarted: async () => {
                 const recorded = await receipts.start({
                   callId: lease.clientCallId, jobId: input.jobId, jobLeaseToken: input.jobLeaseToken!,
@@ -100,8 +104,8 @@ export const createVoiceRemindersRuntime = (
       };
     },
   };
-  const worker = new VoiceReminderWorker(repository, audioStore, gateway);
-  const service = new VoiceReminderSettingsService(repository, audioStore, gateway);
+  const worker = new VoiceReminderWorker(repository, audioComposer, gateway, () => new Date(now()));
+  const service = new VoiceReminderSettingsService(repository, audioStore, gateway, audioComposer);
   return {
     router: createVoiceReminderRouter(service), channels, worker, gateway,
     tick: () => worker.tick(),

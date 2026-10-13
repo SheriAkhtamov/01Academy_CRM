@@ -73,6 +73,7 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
         duration_seconds integer DEFAULT 0,talk_seconds integer DEFAULT 0);`);
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
   });
   beforeEach(async () => {
     await database.query(`TRUNCATE voice_reminder_call_attempts,voice_reminder_provider_quarantine,telephony_line_reservations,

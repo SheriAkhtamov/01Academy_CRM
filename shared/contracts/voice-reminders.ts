@@ -5,7 +5,9 @@ export const VOICE_REMINDER_MAX_AUDIO_SECONDS = 180;
 export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled'] as const;
 export type VoiceReminderStatus = typeof VOICE_REMINDER_STATUSES[number];
 
-const wallClock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+export const voiceReminderClockTimeSchema = z.string().length(5).regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+export const voiceReminderAudioIdSchema = z.string().uuid();
+const wallClock = voiceReminderClockTimeSchema;
 export const voiceReminderSettingsSchema = z.object({
   enabled: z.boolean(),
   leadMinutes: z.number().int().min(1).max(1440),
@@ -29,6 +31,12 @@ export type VoiceReminderAudio = {
 export type VoiceReminderSettings = VoiceReminderSettingsInput & {
   timeZone: 'Asia/Tashkent';
   audio: VoiceReminderAudio | null;
+  audioLibrary: VoiceReminderAudioLibrary;
+};
+export type VoiceReminderAudioLibrary = {
+  intro: VoiceReminderAudio | null;
+  outro: VoiceReminderAudio | null;
+  times: Array<{ time: string; audio: VoiceReminderAudio }>;
 };
 export type VoiceReminderReadiness = {
   ready: boolean;
@@ -64,4 +72,5 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   maxConcurrentCalls: 2,
   timeZone: 'Asia/Tashkent',
   audio: null,
+  audioLibrary: { intro: null, outro: null, times: [] },
 };

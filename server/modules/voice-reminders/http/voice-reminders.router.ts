@@ -1,6 +1,7 @@
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderSettingsSchema } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderSettingsSchema } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderAudioTarget } from '../application/ports';
 import { actorContextFrom } from '../../leads/domain/actor-context';
 import type { VoiceReminderSettingsService } from '../application/settings-service';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
@@ -16,6 +17,41 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     storage: multer.memoryStorage(),
     limits: { fileSize: VOICE_REMINDER_MAX_AUDIO_BYTES, files: 1, fields: 0, parts: 1 },
   }).single('file');
+  const expectedFrom = (request: Request, response: Response, required = false): { id: string | null } | null => {
+    if (request.query.expectedId === undefined && !required) return { id: null };
+    const parsed = voiceReminderAudioIdSchema.safeParse(request.query.expectedId);
+    if (!parsed.success) { response.status(400).json({ error: 'voiceReminderAudioInvalid' }); return null; }
+    return { id: parsed.data };
+  };
+  const streamFile = async (response: Response, action: () => Promise<{ path: string; mimeType: string }>) => {
+    try {
+      const file = await action();
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.type(file.mimeType).sendFile(file.path, { acceptRanges: true }, error => {
+        if (error && !response.headersSent) response.status(404).json({ error: 'resourceNotFound' });
+      });
+    } catch (error) { sendError(response, error); }
+  };
+  const uploadPart = (request: Request, response: Response, target?: VoiceReminderAudioTarget) => {
+    const expected = target ? expectedFrom(request, response) : { id: null };
+    if (!expected) return;
+    upload(request, response, (error: unknown) => {
+      if (error) {
+        const tooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+        response.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'voiceReminderAudioTooLarge' : 'voiceReminderAudioInvalid' });
+        return;
+      }
+      if (!request.file) { response.status(400).json({ error: 'voiceReminderAudioRequired' }); return; }
+      const input = { bytes: request.file.buffer, originalName: request.file.originalname, mimeType: request.file.mimetype };
+      const action = target ? service.uploadPart(actorContextFrom(request), target, input, expected.id) : service.upload(actorContextFrom(request), input);
+      void action.then(result => response.json(result)).catch(failure => { sendError(response, failure); });
+    });
+  };
+  const timeFrom = (request: Request, response: Response): string | null => {
+    const parsed = voiceReminderClockTimeSchema.safeParse(request.params.time);
+    if (!parsed.success) { response.status(400).json({ error: 'voiceReminderInvalidTime' }); return null; }
+    return parsed.data;
+  };
 
   router.use('/voice-reminders', (request, response, next) => {
     try {
@@ -37,28 +73,31 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     catch (error) { sendError(response, error); }
   });
 
-  router.post('/voice-reminders/audio', (request, response) => {
-    upload(request, response, (error: unknown) => {
-      if (error) {
-        const tooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
-        response.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'voiceReminderAudioTooLarge' : 'voiceReminderAudioInvalid' });
-        return;
-      }
-      if (!request.file) { response.status(400).json({ error: 'voiceReminderAudioRequired' }); return; }
-      void service.upload(actorContextFrom(request), {
-        bytes: request.file.buffer, originalName: request.file.originalname, mimeType: request.file.mimetype,
-      }).then(result => response.json(result)).catch(failure => { sendError(response, failure); });
-    });
+  router.post('/voice-reminders/audio', (request, response) => uploadPart(request, response));
+  router.get('/voice-reminders/audio', (request, response) => streamFile(response, () => service.playback(actorContextFrom(request))));
+  for (const part of ['intro', 'outro'] as const) {
+    router.post(`/voice-reminders/audio/${part}`, (request, response) => uploadPart(request, response, { part }));
+    router.get(`/voice-reminders/audio/${part}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), { part })));
+  }
+  router.post('/voice-reminders/audio/times/:time', (request, response) => {
+    const time = timeFrom(request, response);
+    if (time) uploadPart(request, response, { part: 'time', time });
   });
-
-  router.get('/voice-reminders/audio', async (request, response) => {
-    try {
-      const file = await service.playback(actorContextFrom(request));
-      response.setHeader('X-Content-Type-Options', 'nosniff');
-      response.type(file.mimeType).sendFile(file.path, { acceptRanges: true }, error => {
-        if (error && !response.headersSent) response.status(404).json({ error: 'resourceNotFound' });
-      });
-    } catch (error) { sendError(response, error); }
+  router.get('/voice-reminders/audio/times/:time', (request, response) => {
+    const time = timeFrom(request, response);
+    if (time) void streamFile(response, () => service.playbackPart(actorContextFrom(request), { part: 'time', time }));
+  });
+  router.delete('/voice-reminders/audio/times/:time', async (request, response) => {
+    const time = timeFrom(request, response);
+    if (!time) return;
+    const expected = expectedFrom(request, response, true);
+    if (!expected?.id) return;
+    try { response.json(await service.removeTime(actorContextFrom(request), time, expected.id)); }
+    catch (error) { sendError(response, error); }
+  });
+  router.get('/voice-reminders/preview/:time', (request, response) => {
+    const time = timeFrom(request, response);
+    if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time));
   });
   return router;
 };

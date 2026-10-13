@@ -2,22 +2,27 @@ import crypto from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import {
   DEFAULT_VOICE_REMINDER_SETTINGS,
+  VOICE_REMINDER_MAX_AUDIO_SECONDS,
   VOICE_REMINDER_STATUSES,
+  voiceReminderClockTimeSchema,
   type VoiceReminderResult,
   type VoiceReminderSettings,
   type VoiceReminderSettingsInput,
   type VoiceReminderStatus,
 } from '@shared/contracts/voice-reminders';
-import { normalizeReminderPhone, reminderWithinAllowedHours } from '../domain/policy';
+import { normalizeReminderPhone, reminderWithinAllowedHours, VoiceReminderError } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   PreparedVoiceReminder,
   StoredVoiceReminderAudio,
+  StoredVoiceReminderAudioLibrary,
+  StoredVoiceReminderAudioParts,
+  VoiceReminderAudioTarget,
   VoiceReminderCallResult,
   VoiceReminderRepository,
 } from '../application/ports';
 
-type SettingsRow = VoiceReminderSettingsInput & { audioId: string | null };
+type SettingsRow = VoiceReminderSettingsInput & { audioId: string | null; introAudioId: string | null; outroAudioId: string | null };
 type AudioRow = Omit<StoredVoiceReminderAudio, 'uploadedAt'> & { uploadedAt: Date };
 type LiveJobRow = {
   id: string;
@@ -29,12 +34,17 @@ type LiveJobRow = {
   studentPhone: string | null;
   primaryPhone: string | null;
   leadPhone: string | null;
+  introAudioId: string | null;
+  timeAudioId: string | null;
+  outroAudioId: string | null;
+  audioClockTime: string | null;
   valid: boolean;
 };
 
 const settingsSql = `SELECT enabled, lead_minutes AS "leadMinutes", max_attempts AS "maxAttempts",
   retry_minutes AS "retryMinutes", allowed_start_time AS "allowedStartTime",
-  allowed_end_time AS "allowedEndTime", max_concurrent_calls AS "maxConcurrentCalls", audio_id AS "audioId"
+  allowed_end_time AS "allowedEndTime", max_concurrent_calls AS "maxConcurrentCalls", audio_id AS "audioId",
+  intro_audio_id AS "introAudioId", outro_audio_id AS "outroAudioId"
   FROM voice_reminder_settings WHERE id = 1`;
 const audioSql = `SELECT id, file_name AS "fileName", mime_type AS "mimeType", size_bytes AS "sizeBytes",
   duration_seconds AS "durationSeconds", storage_key AS "storageKey", sha256, uploaded_at AS "uploadedAt"
@@ -47,9 +57,14 @@ const validLiveJobSql = `demo.status = 'scheduled'
   AND (student.lead_id IS NULL OR (lead.id IS NOT NULL AND lead.is_archived = false))`;
 const liveJobSql = `SELECT job.id, job.lease_token AS "leaseToken", job.lease_until AS "leaseUntil",
   job.scheduled_at AS "scheduledAt", job.attempts, job.phone,
+  job.intro_audio_id AS "introAudioId", job.time_audio_id AS "timeAudioId", job.outro_audio_id AS "outroAudioId",
+  job.audio_clock_time AS "audioClockTime",
   student.phone AS "studentPhone", lead.phone AS "leadPhone",
   (SELECT phone.phone FROM academy_lead_phones phone WHERE phone.lead_id = lead.id
-   ORDER BY phone.is_primary DESC, phone.id LIMIT 1) AS "primaryPhone",
+   AND trim(phone.phone) ~ '^[+]?[0-9[:space:]().-]+$'
+   AND (length(regexp_replace(phone.phone, '[^0-9]', '', 'g'))=9
+     OR regexp_replace(regexp_replace(phone.phone, '[^0-9]', '', 'g'), '^00', '') ~ '^[1-9][0-9]{7,14}$')
+   ORDER BY phone.is_primary DESC NULLS LAST, phone.id LIMIT 1) AS "primaryPhone",
   (${validLiveJobSql}) AS valid
   FROM voice_reminder_jobs job
   JOIN academy_demo_lessons demo ON demo.id = job.demo_lesson_id
@@ -64,9 +79,27 @@ const publicAudio = (audio: StoredVoiceReminderAudio) => {
   const { storageKey: _storageKey, sha256: _sha256, ...publicFields } = audio;
   return publicFields;
 };
-const currentPhone = (row: LiveJobRow) => normalizeReminderPhone(row.studentPhone)
-  ?? normalizeReminderPhone(row.primaryPhone)
-  ?? normalizeReminderPhone(row.leadPhone);
+const currentPhone = (row: LiveJobRow) => normalizeReminderPhone(row.primaryPhone)
+  ?? normalizeReminderPhone(row.leadPhone)
+  ?? normalizeReminderPhone(row.studentPhone);
+const clockFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+const clockTime = (date: Date) => clockFormatter.format(date);
+const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const isDemoDay = (scheduledAt: Date, now: Date) => dateFormatter.format(scheduledAt) === dateFormatter.format(now);
+const selectedParts = (library: StoredVoiceReminderAudioLibrary, time: string): StoredVoiceReminderAudioParts | null => {
+  const audio = library.times.find(entry => entry.time === time)?.audio;
+  return library.intro && library.outro && audio
+    ? { intro: library.intro, time: audio, outro: library.outro, clockTime: time } : null;
+};
+const libraryDurationValid = (library: StoredVoiceReminderAudioLibrary) => {
+  const base = (library.intro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
+  return base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
+    && library.times.every(entry => base + entry.audio.durationSeconds <= VOICE_REMINDER_MAX_AUDIO_SECONDS);
+};
 
 export class PostgresVoiceReminderRepository implements VoiceReminderRepository {
   constructor(private readonly pool: Pool) {}
@@ -90,9 +123,33 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
     const row = (await connection.query<SettingsRow>(settingsSql)).rows[0];
     if (!row) return { ...DEFAULT_VOICE_REMINDER_SETTINGS };
     const audio = row.audioId ? (await connection.query<AudioRow>(audioSql, [row.audioId])).rows[0] : null;
-    const { audioId: _audioId, ...settings } = row;
-    return { ...settings, timeZone: 'Asia/Tashkent', audio: audio ? publicAudio(asAudio(audio)) : null };
+    const library = await this.readLibrary(connection);
+    const { audioId: _audioId, introAudioId: _introId, outroAudioId: _outroId, ...settings } = row;
+    return { ...settings, timeZone: 'Asia/Tashkent', audio: audio ? publicAudio(asAudio(audio)) : null,
+      audioLibrary: { intro: library.intro ? publicAudio(library.intro) : null,
+        outro: library.outro ? publicAudio(library.outro) : null,
+        times: library.times.map(entry => ({ time: entry.time, audio: publicAudio(entry.audio) })) } };
   }
+
+  private async readLibrary(connection: Pick<PoolClient, 'query'>): Promise<StoredVoiceReminderAudioLibrary> {
+    const row = (await connection.query<{ introAudioId: string | null; outroAudioId: string | null }>(
+      `SELECT intro_audio_id AS "introAudioId",outro_audio_id AS "outroAudioId" FROM voice_reminder_settings WHERE id=1`,
+    )).rows[0];
+    const part = async (id: string | null | undefined) => {
+      if (!id) return null;
+      const audio = (await connection.query<AudioRow>(audioSql, [id])).rows[0];
+      return audio ? asAudio(audio) : null;
+    };
+    const intro = await part(row?.introAudioId);
+    const outro = await part(row?.outroAudioId);
+    const times = (await connection.query<AudioRow & { time: string }>(`SELECT entry.time,audio.id,audio.file_name AS "fileName",
+      audio.mime_type AS "mimeType",audio.size_bytes AS "sizeBytes",audio.duration_seconds AS "durationSeconds",
+      audio.storage_key AS "storageKey",audio.sha256,audio.uploaded_at AS "uploadedAt"
+      FROM voice_reminder_time_audio entry JOIN voice_reminder_audio audio ON audio.id=entry.audio_id ORDER BY entry.time`)).rows;
+    return { intro, outro, times: times.map(({ time, ...audio }) => ({ time, audio: asAudio(audio) })) };
+  }
+
+  audioLibrary() { return this.readLibrary(this.pool); }
 
   settings() { return this.readSettings(this.pool); }
 
@@ -106,24 +163,70 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
   }
 
   async saveSettings(input: VoiceReminderSettingsInput, actorId: number): Promise<void> {
-    await this.pool.query(`UPDATE voice_reminder_settings SET enabled = $1, lead_minutes = $2,
+    await this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR UPDATE');
+      const library = await this.readLibrary(connection);
+      if (input.enabled && (!library.intro || !library.outro || !library.times.length)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (!libraryDurationValid(library)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
+      await connection.query(`UPDATE voice_reminder_settings SET enabled = $1, lead_minutes = $2,
       max_attempts = $3, retry_minutes = $4, allowed_start_time = $5, allowed_end_time = $6,
       max_concurrent_calls = $7, updated_by = $8, updated_at = now() WHERE id = 1`, [
       input.enabled, input.leadMinutes, input.maxAttempts, input.retryMinutes,
       input.allowedStartTime, input.allowedEndTime, input.maxConcurrentCalls, actorId,
-    ]);
+      ]);
+    });
   }
 
   async saveAudio(audio: StoredVoiceReminderAudio, actorId: number): Promise<void> {
     await this.transaction(async connection => {
-      await connection.query(`INSERT INTO voice_reminder_audio
+      await this.insertAudio(connection, audio, actorId);
+      await connection.query(`UPDATE voice_reminder_settings SET audio_id = $1, updated_by = $2,
+        updated_at = now() WHERE id = 1`, [audio.id, actorId]);
+    });
+  }
+
+  private async insertAudio(connection: PoolClient, audio: StoredVoiceReminderAudio, actorId: number) {
+    await connection.query(`INSERT INTO voice_reminder_audio
         (id, file_name, mime_type, size_bytes, duration_seconds, storage_key, sha256, uploaded_by, uploaded_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [
         audio.id, audio.fileName, audio.mimeType, audio.sizeBytes, audio.durationSeconds,
         audio.storageKey, audio.sha256, actorId, audio.uploadedAt,
-      ]);
-      await connection.query(`UPDATE voice_reminder_settings SET audio_id = $1, updated_by = $2,
-        updated_at = now() WHERE id = 1`, [audio.id, actorId]);
+    ]);
+  }
+
+  async saveLibraryAudio(target: VoiceReminderAudioTarget, audio: StoredVoiceReminderAudio, actorId: number, expectedAudioId?: string | null): Promise<void> {
+    if (target.part === 'time' && !voiceReminderClockTimeSchema.safeParse(target.time).success) throw new VoiceReminderError('voiceReminderInvalidTime', 400);
+    await this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR UPDATE');
+      const library = await this.readLibrary(connection);
+      const current = target.part === 'time' ? library.times.find(entry => entry.time === target.time)?.audio : library[target.part];
+      if (expectedAudioId !== undefined && (current?.id ?? null) !== expectedAudioId) throw new VoiceReminderError('voiceReminderAudioChanged', 409);
+      const candidate = target.part === 'time'
+        ? { ...library, times: [...library.times.filter(entry => entry.time !== target.time), { time: target.time, audio }] }
+        : { ...library, [target.part]: audio };
+      if (!libraryDurationValid(candidate)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
+      await this.insertAudio(connection, audio, actorId);
+      if (target.part === 'time') {
+        await connection.query(`INSERT INTO voice_reminder_time_audio(time,audio_id,updated_by) VALUES($1,$2,$3)
+          ON CONFLICT(time) DO UPDATE SET audio_id=EXCLUDED.audio_id,updated_by=EXCLUDED.updated_by,updated_at=now()`, [target.time, audio.id, actorId]);
+        await connection.query('UPDATE voice_reminder_settings SET updated_by=$1,updated_at=now() WHERE id=1', [actorId]);
+      } else {
+        const column = target.part === 'intro' ? 'intro_audio_id' : 'outro_audio_id';
+        await connection.query(`UPDATE voice_reminder_settings SET ${column}=$1,updated_by=$2,updated_at=now() WHERE id=1`, [audio.id, actorId]);
+      }
+    });
+  }
+
+  async removeTimeAudio(time: string, actorId: number, expectedAudioId?: string): Promise<void> {
+    if (!voiceReminderClockTimeSchema.safeParse(time).success) throw new VoiceReminderError('voiceReminderInvalidTime', 400);
+    await this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR UPDATE');
+      if (expectedAudioId !== undefined) {
+        const current = (await connection.query<{ audioId: string }>('SELECT audio_id AS "audioId" FROM voice_reminder_time_audio WHERE time=$1', [time])).rows[0];
+        if (current?.audioId !== expectedAudioId) throw new VoiceReminderError('voiceReminderAudioChanged', 409);
+      }
+      await connection.query('UPDATE voice_reminder_settings SET updated_by=$1,updated_at=now() WHERE id=1', [actorId]);
+      await connection.query('DELETE FROM voice_reminder_time_audio WHERE time=$1', [time]);
     });
   }
 
@@ -169,7 +272,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
             AND participant.voice_reminder_revision = job.participant_revision
             AND participant.status IN ('invited', 'confirmed')
             AND (student.lead_id IS NULL OR (lead.id IS NOT NULL AND lead.is_archived = false))))`, [now]);
-      if (!settings.enabled || !settings.audio) return;
+      if (!settings.enabled) return;
       await connection.query(`INSERT INTO voice_reminder_jobs
         (demo_lesson_id, participant_id, scheduled_at, due_at, lesson_revision, participant_revision)
         SELECT demo.id, participant.id, demo.scheduled_at AT TIME ZONE 'UTC',
@@ -200,9 +303,15 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const row = (await connection.query<{ id: string; scheduledAt: Date; attempts: number }>(
         `UPDATE voice_reminder_jobs job SET status = 'calling', lease_token = $2, not_before_at = NULL,
           lease_until = $1::timestamptz + ($3 * interval '1 second'), updated_at = $1
-         WHERE job.id = (SELECT id FROM voice_reminder_jobs WHERE status = 'waiting'
-           AND due_at <= $1 AND (not_before_at IS NULL OR not_before_at <= $1)
-           AND scheduled_at > $1 ORDER BY scheduled_at, due_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
+         WHERE job.id = (SELECT pending.id FROM voice_reminder_jobs pending
+           CROSS JOIN voice_reminder_settings settings
+           JOIN voice_reminder_time_audio time_audio ON time_audio.time=to_char(pending.scheduled_at AT TIME ZONE 'Asia/Tashkent','HH24:MI')
+           WHERE pending.status = 'waiting' AND settings.id=1 AND settings.enabled
+           AND settings.intro_audio_id IS NOT NULL AND settings.outro_audio_id IS NOT NULL
+           AND pending.due_at <= $1 AND (pending.not_before_at IS NULL OR pending.not_before_at <= $1)
+           AND pending.scheduled_at > $1
+           AND (pending.scheduled_at AT TIME ZONE 'Asia/Tashkent')::date = ($1::timestamptz AT TIME ZONE 'Asia/Tashkent')::date
+           ORDER BY pending.scheduled_at,pending.due_at,pending.id FOR UPDATE OF pending SKIP LOCKED LIMIT 1)
          RETURNING id, scheduled_at AS "scheduledAt", attempts`, [now, token, leaseSeconds],
       )).rows[0];
       return row ? { id: Number(row.id), scheduledAt: row.scheduledAt, attempts: row.attempts, leaseToken: token } : null;
@@ -212,27 +321,35 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
   async prepare(job: ClaimedVoiceReminder, now: Date): Promise<PreparedVoiceReminder | 'defer' | null> {
     return this.transaction(async connection => {
       const row = (await connection.query<LiveJobRow>(`${liveJobSql} FOR UPDATE OF job`, [job.id, job.leaseToken, now])).rows[0];
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
       const settings = await this.readSettings(connection);
       const phone = row ? currentPhone(row) : null;
       if (!row?.valid || !phone) return null;
-      if (!settings.enabled || !settings.audio || row.attempts >= settings.maxAttempts
+      if (!settings.enabled || !isDemoDay(row.scheduledAt, now) || row.attempts >= settings.maxAttempts
         || !reminderWithinAllowedHours(now, settings)) return 'defer';
-      const audioRow = (await connection.query<AudioRow>(audioSql, [settings.audio.id])).rows[0];
-      if (!audioRow) return null;
-      await connection.query(`UPDATE voice_reminder_jobs SET phone = $3, audio_id = $4
-        WHERE id = $1 AND lease_token = $2`, [job.id, job.leaseToken, phone, audioRow.id]);
-      return { ...job, phone, audio: asAudio(audioRow) };
+      const library = await this.readLibrary(connection);
+      const parts = selectedParts(library, clockTime(row.scheduledAt));
+      if (!parts || !libraryDurationValid(library)) return 'defer';
+      await connection.query(`UPDATE voice_reminder_jobs SET phone=$3,intro_audio_id=$4,time_audio_id=$5,outro_audio_id=$6,audio_clock_time=$7
+        WHERE id=$1 AND lease_token=$2`, [job.id,job.leaseToken,phone,parts.intro.id,parts.time.id,parts.outro.id,parts.clockTime]);
+      return { ...job, phone, audioParts: parts };
     });
   }
 
-  async canContinue(job: ClaimedVoiceReminder, phone: string, now: Date): Promise<boolean> {
-    const [live, settings] = await Promise.all([
-      this.pool.query<LiveJobRow>(liveJobSql, [job.id, job.leaseToken, now]),
-      this.settings(),
-    ]);
-    const row = live.rows[0];
-    return Boolean(row?.valid && currentPhone(row) === phone && settings.enabled && settings.audio
-      && row.attempts < settings.maxAttempts && reminderWithinAllowedHours(now, settings));
+  async canContinue(job: ClaimedVoiceReminder, phone: string, now: Date, verifyAudio = true): Promise<boolean> {
+    return this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
+      const row = (await connection.query<LiveJobRow>(liveJobSql, [job.id,job.leaseToken,now])).rows[0];
+      const settings = await this.readSettings(connection);
+      const library = await this.readLibrary(connection);
+      const parts = row ? selectedParts(library,clockTime(row.scheduledAt)) : null;
+      const eligible = row?.valid && isDemoDay(row.scheduledAt, now) && currentPhone(row) === phone && settings.enabled
+        && row.attempts<settings.maxAttempts && reminderWithinAllowedHours(now,settings);
+      if (!eligible) return false;
+      if (!verifyAudio) return true;
+      return Boolean(parts && libraryDurationValid(library) && parts.intro.id===row.introAudioId
+        && parts.time.id===row.timeAudioId && parts.outro.id===row.outroAudioId && parts.clockTime===row.audioClockTime);
+    });
   }
 
   async renew(job: ClaimedVoiceReminder, now: Date, leaseSeconds: number): Promise<boolean> {

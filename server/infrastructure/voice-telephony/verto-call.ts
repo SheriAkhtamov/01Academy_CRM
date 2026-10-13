@@ -135,7 +135,7 @@ export async function performVertoReminderCall(
   };
   const check = async () => {
     if (stopped) throw new CallStopped(stopped);
-    const allowed = await bounded(input.shouldContinue().catch(() => false), 2_000).catch(() => false);
+    const allowed = await bounded(input.shouldContinue(!callStarted).catch(() => false), 2_000).catch(() => false);
     if (stopped) throw new CallStopped(stopped);
     if (Date.now() >= input.deadline.getTime() || input.signal?.aborted || !allowed) {
       stop('cancelled');

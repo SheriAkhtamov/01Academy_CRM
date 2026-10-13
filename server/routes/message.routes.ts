@@ -1,3 +1,4 @@
+import { INLINE_CHAT_MEDIA_TYPES } from '@shared/chat-media';
 import { Router } from 'express';
 import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -52,7 +53,7 @@ router.get('/attachments/:fileId', requireAuth, async (req, res) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
         res.setHeader('Cache-Control', 'private, no-store');
-        const inline = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'video/mp4', 'video/webm', 'video/quicktime'].includes(attachment.mimeType);
+        const inline = INLINE_CHAT_MEDIA_TYPES.includes(attachment.mimeType);
         if (!inline || req.query.download === '1') {
             res.setHeader('Content-Type', 'application/octet-stream');
             return res.download(filePath, attachment.name, (error) => {

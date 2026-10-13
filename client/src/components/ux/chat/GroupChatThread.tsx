@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2, Paperclip, Send, UsersRound } from 'lucide-react';
+import { ChevronDown, Loader2, Paperclip, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,6 +13,7 @@ import { MAX_MESSAGE_FILE_BYTES, MAX_MESSAGE_FILES } from '@shared/contracts/mes
 import type { ChatGroupDto, GroupMessageDto } from '@shared/contracts/chat-groups';
 import { ChatFileDrafts, ChatMessageAttachments } from './ChatAttachments';
 import { UserAvatar } from '@/components/ux/UserAvatar';
+import { ChatGroupAvatar } from './ChatGroupAvatar';
 import { ChatGroupDetailsDialog } from './ChatGroupDetailsDialog';
 
 type Draft = { text: string; files: File[] };
@@ -70,7 +71,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
   return <div className="flex min-h-0 flex-1 flex-col">
     <button type="button" className="flex w-full items-center gap-3 border-b p-4 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => setDetailsOpen(true)} aria-haspopup="dialog" aria-label={t('chatGroupDetails')}>
-      <UsersRound className="size-9 shrink-0 text-primary" /><div className="min-w-0 flex-1">
+      <ChatGroupAvatar group={group} className="size-10 shrink-0" /><div className="min-w-0 flex-1">
       <h3 className="truncate font-medium">{group.name}</h3><p className="text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</p>
     </div><ChevronDown className="size-4 shrink-0" /></button>
     <ScrollArea className="min-h-0 flex-1"><div className="space-y-3 p-4">

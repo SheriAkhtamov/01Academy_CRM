@@ -7,7 +7,7 @@ const messageColumns = `m.id, m.group_id AS "groupId", m.sender_id AS "senderId"
 export const chatGroupStorage = {
   ...chatGroupManagementStorage,
   async list(userId: number): Promise<ChatGroupDto[]> {
-    const result = await pool.query(`SELECT g.id, g.name, g.created_by AS "createdBy",
+    const result = await pool.query(`SELECT g.id, g.name, g.avatar_url AS "avatarUrl", g.created_by AS "createdBy",
       (SELECT COUNT(*)::int FROM chat_group_members members WHERE members.group_id=g.id) AS "participantCount",
       (SELECT COUNT(*)::int FROM chat_group_messages m WHERE m.group_id=g.id AND m.sender_id IS DISTINCT FROM $1 AND m.id>own.last_read_message_id) AS "unreadCount"
       FROM chat_groups g JOIN chat_group_members own ON own.group_id=g.id AND own.user_id=$1

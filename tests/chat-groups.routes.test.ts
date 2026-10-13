@@ -1,8 +1,10 @@
+import fs from 'node:fs/promises';
+import { messageFilePath } from '../server/middleware/message-upload.middleware';
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), detail: vi.fn(), rename: vi.fn(), addParticipants: vi.fn(),
+const mocks = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), detail: vi.fn(), rename: vi.fn(), updateProfile: vi.fn(), addParticipants: vi.fn(),
   removeParticipant: vi.fn(), leave: vi.fn(), memberIds: vi.fn(), messages: vi.fn(), send: vi.fn(), markRead: vi.fn(), attachment: vi.fn(), publish: vi.fn(),
   actor: { id: 7, module: 'sales' } }));
 vi.mock('../server/middleware/auth.middleware', () => ({ requireAuth: (req: any, _res: any, next: () => void) => { req.user=mocks.actor; next(); } }));
@@ -119,4 +121,17 @@ describe('staff group chat boundaries', () => {
   it.each([{name:'',participantIds:[8]}, {name:'Teachers',participantIds:[]}, {name:'Teachers',participantIds:[-1]}])('rejects an invalid group %j', async (input) => {
     await request(app).post('/api/chat-groups').send(input).expect(400); expect(mocks.create).not.toHaveBeenCalled();
   });
+});
+
+it('uploads audio into the group and protects its inline playback endpoint', async () => {
+  mocks.send.mockImplementationOnce(async (groupId, senderId, content, attachments) => ({ id: 10, groupId, senderId, content, attachments }));
+  const response = await request(app).post('/api/chat-groups/4/messages').field('content', '').attach('files', Buffer.from('ID3audio'), { filename: 'audio.mp3', contentType: 'application/octet-stream' });
+  expect(response.status).toBe(201); const attachment = response.body.attachments[0];
+  try {
+    expect(attachment.mimeType).toBe('audio/mpeg'); expect(attachment.url).toBe(`/api/chat-groups/attachments/${attachment.id}`);
+    mocks.attachment.mockResolvedValue(attachment);
+    const audio = await request(app).get(attachment.url); expect(audio.status).toBe(200); expect(audio.headers['content-type']).toContain('audio/mpeg');
+    expect(mocks.attachment).toHaveBeenCalledWith(attachment.id, 7);
+    mocks.attachment.mockResolvedValue(null); await request(app).get(attachment.url).expect(404);
+  } finally { await fs.unlink(messageFilePath(attachment.id)!); }
 });

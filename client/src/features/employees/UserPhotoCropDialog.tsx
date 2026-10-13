@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import type { TranslationKey } from '@/lib/i18n';
 import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -19,8 +20,9 @@ const INITIAL_POSITION: CropPosition = { centerX: 0.5, centerY: 0.5, zoom: MIN_C
 
 type Drag = { pointerId: number; clientX: number; clientY: number; position: CropPosition; viewportWidth: number };
 
-export function UserPhotoCropDialog({ file, disabled = false, onApply, onCancel, onCloseAutoFocus }: {
+export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disabled = false, onApply, onCancel, onCloseAutoFocus }: {
   file: File;
+  titleKey?: TranslationKey;
   disabled?: boolean;
   onApply: (photo: File) => void;
   onCancel: () => void;
@@ -162,7 +164,7 @@ export function UserPhotoCropDialog({ file, disabled = false, onApply, onCancel,
       }}
     >
       <DialogHeader className="shrink-0 border-b border-border px-4 py-5 pr-12 text-left sm:px-6">
-        <DialogTitle>{t('cropProfilePhoto')}</DialogTitle>
+        <DialogTitle>{t(titleKey)}</DialogTitle>
       </DialogHeader>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
         <div

@@ -52,6 +52,14 @@ describe('employee chat attachment routes', () => {
     expect((await request(app).get(attachment.url)).status).toBe(401);
   });
 
+  it('detects uploaded audio by bytes and serves it inline only to participants', async () => {
+    const agent = await login();
+    const response = await agent.post('/api/messages').field('receiverId', '2').attach('files', Buffer.from('ID3audio'), { filename: 'audio.mp3', contentType: 'application/octet-stream' });
+    expect(response.status).toBe(200); const attachment = response.body.attachments[0]; expect(attachment.mimeType).toBe('audio/mpeg');
+    const audio = await (await login(2)).get(attachment.url); expect(audio.status).toBe(200); expect(audio.headers['content-type']).toContain('audio/mpeg');
+    expect(audio.headers['content-disposition']).toContain('inline'); expect((await (await login(3)).get(attachment.url)).status).toBe(404);
+  });
+
   it('allows exactly 10 MB, rejects a larger file and removes partial uploads', async () => {
     const agent = await login();
     const exact = await agent.post('/api/messages').field('receiverId', '2').attach('files', Buffer.alloc(MAX_MESSAGE_FILE_BYTES), 'exact.bin');

@@ -1,3 +1,5 @@
+import { registerChatGroupProfileRoutes } from './chat-group-profile.routes';
+import { INLINE_CHAT_MEDIA_TYPES } from '@shared/chat-media';
 import { Router, type Response } from 'express';
 import { hasLeadershipAccess } from '@shared/academy';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -50,7 +52,7 @@ router.get('/attachments/:fileId', async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Cache-Control', 'private, no-store');
-    if (req.query.download === '1' || !['image/png','image/jpeg','image/gif','image/webp','image/avif','video/mp4','video/webm','video/quicktime'].includes(file.mimeType)) {
+    if (req.query.download === '1' || !INLINE_CHAT_MEDIA_TYPES.includes(file.mimeType)) {
       res.setHeader('Content-Type', 'application/octet-stream');
       return res.download(filePath, file.name, (error) => { if (error && !res.headersSent) res.status(404).json({ error: 'attachmentDownloadFailed' }); });
     }
@@ -71,6 +73,7 @@ router.use('/:id', async (req, res, next) => {
     next();
   } catch (error) { logger.error('Failed to check chat group access', { error }); res.status(500).json({ error: 'failedToLoadData' }); }
 });
+registerChatGroupProfileRoutes(router, chatGroupStorage, announceChange, managementFailure);
 router.get('/:id', async (req, res) => {
   try {
     const group = await chatGroupStorage.detail(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user));

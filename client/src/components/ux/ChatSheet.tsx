@@ -1,3 +1,4 @@
+import { ChatGroupAvatar } from './chat/ChatGroupAvatar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -357,7 +358,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {(groupsQuery.data ?? []).filter((group) => group.name.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())).map((group) => (
                   <button key={`group-${group.id}`} type="button" className={`mb-1 flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted ${selectedGroupId===group.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''}`}
                     onClick={() => { setSelectedEmployeeId(null); setSelectedGroupId(group.id); }}>
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10"><UsersRound className="size-5 text-primary" /></span>
+                    <ChatGroupAvatar group={group} className="size-10 shrink-0" />
                     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{group.name}</span>
                       <span className="block truncate text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</span></span>
                     <UnreadCountBadge count={group.unreadCount} label={t('unreadMessageCount').replace('{count}', String(group.unreadCount))} />

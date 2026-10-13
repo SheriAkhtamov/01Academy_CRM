@@ -28,8 +28,18 @@ async function mutateMembership(groupId: number, userId: number, administrator: 
 }
 
 export const chatGroupManagementStorage = {
+  async updateProfile(groupId: number, userId: number, administrator: boolean, input: { name: string; avatarUrl?: string | null }) {
+    let previousAvatarUrl: string | null = null;
+    const audienceUserIds = await mutateMembership(groupId, userId, administrator, true, async (client) => {
+      const previous = await client.query('SELECT avatar_url FROM chat_groups WHERE id=$1', [groupId]);
+      previousAvatarUrl = previous.rows[0]?.avatar_url ?? null;
+      if (input.avatarUrl === undefined) await client.query('UPDATE chat_groups SET name=$2 WHERE id=$1', [groupId, input.name]);
+      else await client.query('UPDATE chat_groups SET name=$2, avatar_url=$3 WHERE id=$1', [groupId, input.name, input.avatarUrl]);
+    });
+    return { audienceUserIds, previousAvatarUrl };
+  },
   async detail(groupId: number, userId: number, administrator: boolean): Promise<ChatGroupDetailsDto | null> {
-    const result = await pool.query(`SELECT g.id, g.name, g.created_by AS "createdBy",
+    const result = await pool.query(`SELECT g.id, g.name, g.avatar_url AS "avatarUrl", g.created_by AS "createdBy",
       (SELECT COUNT(*)::int FROM chat_group_members WHERE group_id=g.id) AS "participantCount",
       (SELECT COUNT(*)::int FROM chat_group_messages m WHERE m.group_id=g.id
         AND m.sender_id IS DISTINCT FROM $2 AND m.id>own.last_read_message_id) AS "unreadCount",

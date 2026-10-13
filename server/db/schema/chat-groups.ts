@@ -6,6 +6,7 @@ export const createChatGroupTables = (userId: AnyPgColumn) => {
   const chatGroups = pgTable('chat_groups', {
     id: serial('id').primaryKey(),
     name: varchar('name', { length: 80 }).notNull(),
+    avatarUrl: text('avatar_url'),
     createdBy: integer('created_by').references(() => userId, { onDelete: 'set null' }),
     creatorName: varchar('creator_name', { length: 255 }).notNull().default(''),
     createdAt: timestamp('created_at').notNull().defaultNow(),

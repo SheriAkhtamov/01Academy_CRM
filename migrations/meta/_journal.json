@@ -988,6 +988,13 @@
       "when": 1791831364442,
       "tag": "0140_platform_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1791889606146,
+      "tag": "0141_chat_group_photos",
+      "breakpoints": true
     }
   ]
 }

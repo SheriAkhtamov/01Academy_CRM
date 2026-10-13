@@ -78,14 +78,15 @@ it('opens the roster from the group title and shows participant and message phot
 
 it('renames a group and preserves unsaved changes when closing is cancelled', async () => {
   const user = userEvent.setup(); mount(); const dialog = await openDetails(user);
-  await user.click(await within(dialog).findByRole('button', { name: i18n.t('editGroup') }));
-  const input = within(dialog).getByLabelText(i18n.t('groupName'));
+  await user.click(await within(dialog).findByRole('button', { name: i18n.t('chatGroupManage') }));
+  const manage = screen.getByRole('dialog', { name: i18n.t('chatGroupManage') });
+  const input = within(manage).getByLabelText(i18n.t('groupName'));
   await user.clear(input); await user.type(input, 'Tutors');
-  await user.click(within(dialog).getAllByRole('button', { name: i18n.t('close') })[0]);
+  await user.click(within(manage).getByRole('button', { name: i18n.t('cancel') }));
   const discard = screen.getByRole('alertdialog', { name: i18n.t('unsavedChangesTitle') });
   await user.click(within(discard).getByRole('button', { name: i18n.t('keepEditing') }));
   expect((input as HTMLInputElement).value).toBe('Tutors');
-  await user.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await user.click(within(manage).getByRole('button', { name: i18n.t('saveChanges') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/chat-groups/10', { name: 'Tutors' }));
   await screen.findByRole('dialog', { name: 'Tutors' });
 });
@@ -121,7 +122,7 @@ it('lets a regular participant leave but hides management controls', async () =>
   const user = userEvent.setup(); mount(true);
   await user.click(await screen.findByRole('button', { name: /Teachers/ }));
   const dialog = await openDetails(user); await within(dialog).findByText('Alice');
-  expect(within(dialog).queryByRole('button', { name: i18n.t('editGroup') })).toBeNull();
+  expect(within(dialog).queryByRole('button', { name: i18n.t('chatGroupManage') })).toBeNull();
   expect(within(dialog).queryByRole('button', { name: i18n.t('chatGroupAddParticipants') })).toBeNull();
   expect(within(dialog).queryByRole('button', { name: /Remove / })).toBeNull();
   await user.click(within(dialog).getByRole('button', { name: i18n.t('chatGroupLeave') }));

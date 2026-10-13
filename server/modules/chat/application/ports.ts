@@ -3,6 +3,7 @@ import type { MessageAttachment } from '@shared/contracts/messages';
 
 export interface ChatGroupRepository {
   detail(groupId: number, userId: number, administrator: boolean): Promise<ChatGroupDetailsDto | null>;
+  updateProfile(groupId: number, userId: number, administrator: boolean, input: { name: string; avatarUrl?: string | null }): Promise<{ audienceUserIds: number[]; previousAvatarUrl: string | null }>;
   rename(groupId: number, userId: number, administrator: boolean, name: string): Promise<number[]>;
   addParticipants(groupId: number, userId: number, administrator: boolean, participantIds: number[]): Promise<number[]>;
   removeParticipant(groupId: number, userId: number, administrator: boolean, participantId: number): Promise<number[]>;

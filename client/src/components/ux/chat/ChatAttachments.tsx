@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, FileText, X } from 'lucide-react';
+import { safeChatAttachment } from '@shared/chat-media';
 import type { MessageAttachment } from '@shared/contracts/messages';
 import { useTranslation } from '@/hooks/useTranslation';
 import { resolveLocale } from '@/lib/localeFormat';
@@ -14,16 +15,15 @@ export function ChatMessageAttachments({ attachments }: { attachments: MessageAt
   const { t, language } = useTranslation();
   const [preview, setPreview] = useState<MessageAttachment | null>(null);
   const [failed, setFailed] = useState<string[]>([]);
-  const safeAttachments = attachments.filter((file) => [
-    `/api/messages/attachments/${file.id}`, `/api/chat-groups/attachments/${file.id}`,
-  ].includes(file.url) && /^[A-Za-z0-9_-]{21}$/.test(file.id));
+  const safeAttachments = attachments.filter((file) => safeChatAttachment(file));
   return <>
     <div className="space-y-2">
       {safeAttachments.map((file) => <div key={file.id} className="min-w-0 space-y-1">
         {!failed.includes(file.id) && file.mimeType.startsWith('image/') ? <button type="button" className="block overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setPreview(file)} aria-label={`${t('attachmentPreview')}: ${file.name}`}>
           <img src={file.url} alt={file.name} loading="lazy" className="max-h-72 w-full max-w-80 object-contain" onError={() => setFailed((current) => [...current, file.id])} />
         </button> : !failed.includes(file.id) && file.mimeType.startsWith('video/') ?
-          <video src={file.url} controls playsInline preload="metadata" aria-label={file.name} className="max-h-72 w-full max-w-80 rounded-lg" onError={() => setFailed((current) => [...current, file.id])} /> : null}
+          <video src={file.url} controls playsInline preload="metadata" aria-label={file.name} className="max-h-72 w-full max-w-80 rounded-lg" onError={() => setFailed((current) => [...current, file.id])} /> : !failed.includes(file.id) && file.mimeType.startsWith('audio/') ?
+          <audio src={file.url} controls preload="none" aria-label={file.name} className="w-full max-w-80" onError={() => setFailed((current) => [...current, file.id])} /> : null}
         <a href={`${file.url}?download=1`} className="flex min-w-0 items-center gap-2 rounded-md py-1 text-xs underline-offset-2 hover:underline" aria-label={`${t('download')}: ${file.name}`}>
           {file.mimeType === 'application/octet-stream' ? <FileText className="size-4 shrink-0" /> : <Download className="size-3 shrink-0" />}
           <span className="min-w-0 flex-1 break-all">{file.name}</span><span className="shrink-0 opacity-75">{sizeLabel(file.size, language)}</span>

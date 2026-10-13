@@ -19,7 +19,7 @@ describe.skipIf(!url)('group membership with PostgreSQL transactions', () => {
     pool = new Pool({ connectionString: url, options: `-c search_path=${schema}` });
     await pool.query(`CREATE TABLE users(id integer PRIMARY KEY, full_name text NOT NULL, position text, avatar_url text,
       is_active boolean NOT NULL DEFAULT true, is_archived boolean NOT NULL DEFAULT false);
-      CREATE TABLE chat_groups(id serial PRIMARY KEY, name varchar(80) NOT NULL,
+      CREATE TABLE chat_groups(id serial PRIMARY KEY, name varchar(80) NOT NULL, avatar_url text,
         created_by integer REFERENCES users(id) ON DELETE SET NULL, creator_name text NOT NULL DEFAULT '', created_at timestamp DEFAULT now());
       CREATE TABLE chat_group_members(group_id integer REFERENCES chat_groups(id) ON DELETE CASCADE,
         user_id integer REFERENCES users(id) ON DELETE CASCADE, last_read_message_id integer NOT NULL DEFAULT 0, PRIMARY KEY(group_id,user_id));
@@ -70,6 +70,16 @@ describe.skipIf(!url)('group membership with PostgreSQL transactions', () => {
     const row = (await pool.query('SELECT created_by FROM chat_groups WHERE id=$1', [groupId])).rows[0];
     const members = (await pool.query('SELECT user_id FROM chat_group_members WHERE group_id=$1', [groupId])).rows;
     expect(members.some((member) => member.user_id === row.created_by)).toBe(true);
+  });
+
+  it('atomically changes photo and name while checking current permissions', async () => {
+    const avatarUrl = `/api/chat-groups/${groupId}/photos/aaaaaaaaaaaaaaaaaaaaa`;
+    expect(await storage.updateProfile(groupId, 1, false, { name: 'New team', avatarUrl })).toEqual({ audienceUserIds: [1, 2, 3], previousAvatarUrl: null });
+    expect((await storage.list(2))[0]).toMatchObject({ name: 'New team', avatarUrl });
+    await expect(storage.updateProfile(groupId, 2, false, { name: 'Forbidden', avatarUrl: null })).rejects.toMatchObject({ statusCode: 403 });
+    expect((await storage.detail(groupId, 2, false))?.avatarUrl).toBe(avatarUrl);
+    expect((await storage.updateProfile(groupId, 1, false, { name: 'No photo', avatarUrl: null })).previousAvatarUrl).toBe(avatarUrl);
+    expect((await storage.detail(groupId, 1, false))?.avatarUrl).toBeNull();
   });
 
   it('retains the group and messages after the last member leaves', async () => {

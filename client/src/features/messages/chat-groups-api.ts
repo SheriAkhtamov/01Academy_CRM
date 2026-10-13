@@ -10,6 +10,17 @@ export const chatGroupsApi = {
   list: (): Promise<ChatGroupDto[]> => apiRequest('GET', '/api/chat-groups'),
   create: (input: CreateChatGroupRequest): Promise<ChatGroupDto> => apiRequest('POST', '/api/chat-groups', input),
   detail: (id: number): Promise<ChatGroupDetailsDto> => apiRequest('GET', `/api/chat-groups/${id}`),
+  updateProfile: (id: number, input: { name: string; photo: File | null; removePhoto: boolean }) => {
+    if (!input.photo && !input.removePhoto) return apiRequest('PATCH', `/api/chat-groups/${id}`, { name: input.name });
+    if (!input.photo) return apiRequest('PATCH', `/api/chat-groups/${id}`, { name: input.name, removePhoto: true });
+    const form = new FormData(); form.append('profile', JSON.stringify({ name: input.name })); form.append('photo', input.photo);
+    return apiRequest('PATCH', `/api/chat-groups/${id}`, form);
+  },
+  photoFile: async (url: string): Promise<File> => {
+    const response = await fetch(url, { credentials: 'include' });
+    if (!response.ok) throw new Error('chatGroupPhotoFailed');
+    const blob = await response.blob(); return new File([blob], 'group-photo', { type: blob.type });
+  },
   rename: (id: number, name: string) => apiRequest('PATCH', `/api/chat-groups/${id}`, { name }),
   addParticipants: (id: number, participantIds: number[]) => apiRequest('POST', `/api/chat-groups/${id}/participants`, { participantIds }),
   removeParticipant: (id: number, participantId: number) => apiRequest('DELETE', `/api/chat-groups/${id}/participants/${participantId}`),

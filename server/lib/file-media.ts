@@ -6,8 +6,13 @@ export const detectInlineMediaMimeType = (header: Buffer): string => {
   if (header[0] === 255 && header[1] === 216 && header[2] === 255) return 'image/jpeg';
   if (/^GIF8[79]a/.test(header.toString('ascii', 0, 6))) return 'image/gif';
   if (header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WAVE') return 'audio/wav';
+  if (header.toString('ascii', 0, 3) === 'ID3' || (header[0] === 0xff && (header[1] & 0xe0) === 0xe0 && (header[1] & 0x06) !== 0)) return 'audio/mpeg';
+  if (header.toString('ascii', 0, 4) === 'OggS' && (header.includes(Buffer.from('OpusHead')) || header.includes(Buffer.from('vorbis')))) return 'audio/ogg';
+  if (header.toString('ascii', 0, 4) === 'fLaC') return 'audio/flac';
   if (header.toString('ascii', 4, 8) === 'ftyp') {
     const brand = header.toString('ascii', 8, 12);
+    if (['M4A ', 'M4B ', 'M4P '].includes(brand)) return 'audio/mp4';
     if (['avif', 'avis'].includes(brand)) return 'image/avif';
     if (['isom', 'iso2', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP'].includes(brand)) return 'video/mp4';
     if (brand === 'qt  ') return 'video/quicktime';

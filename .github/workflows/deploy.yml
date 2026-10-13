@@ -53,6 +53,11 @@ jobs:
       - name: Type-check and validate source
         run: npm run check
 
+      - name: Install audio verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run test suite
         run: npm test
 

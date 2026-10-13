@@ -34,6 +34,8 @@ const mocks = vi.hoisted(() => ({
   closeWebSocket: vi.fn(),
   poolEnd: vi.fn(),
   poolQuery: vi.fn(),
+  voiceTick: vi.fn(async () => undefined),
+  voiceClose: vi.fn(async () => undefined),
   publishReleaseUpdates: vi.fn(async () => undefined),
   getUser: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -76,6 +78,12 @@ vi.mock("../server/realtime/websocket-gateway", () => ({
 }));
 vi.mock("../server/infrastructure/lms-runtime", () => ({
   createLearningRuntime: mocks.createRuntime,
+}));
+vi.mock("../server/infrastructure/voice-reminders-runtime", () => ({
+  createVoiceRemindersRuntime: () => ({
+    router: Router(), channels: {}, observeRobotCall: vi.fn(async () => false),
+    tick: mocks.voiceTick, close: mocks.voiceClose,
+  }),
 }));
 vi.mock("../server/infrastructure/session", async () => {
   const { default: session } = await import("express-session");
@@ -217,8 +225,30 @@ describe("Actual HTTP bootstrap separates staff and portal authentication", () =
     expect(learning.start).not.toHaveBeenCalled();
     expect(learning.stop).toHaveBeenCalledTimes(1);
     expect(mocks.closeWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.voiceClose).toHaveBeenCalledTimes(1);
+    expect(mocks.voiceTick).not.toHaveBeenCalled();
     expect(mocks.poolEnd).toHaveBeenCalledTimes(1);
     expect(mocks.startScheduler).not.toHaveBeenCalled();
+  });
+  it("starts reminder work and drains it before closing the core pool", async () => {
+    expect(mocks.voiceTick).toHaveBeenCalledTimes(1);
+    const current = runtime!;
+    let release!: () => void;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    mocks.voiceClose.mockImplementationOnce(() => drain);
+    const stopping = current.stop();
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(mocks.voiceClose).toHaveBeenCalledTimes(1);
+      expect(mocks.poolEnd).not.toHaveBeenCalled();
+      release();
+      await stopping;
+      expect(mocks.poolEnd).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await stopping;
+      runtime = undefined;
+    }
   });
   it("closes the core pool after a learning shutdown error rather than abandoning ownership", async () => {
     const actual = mocks.createRuntime.mock.results[0].value as {

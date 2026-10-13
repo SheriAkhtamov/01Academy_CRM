@@ -11,6 +11,7 @@ import { t } from '../lib/i18n';
 import { secureSessionCookies } from '../config';
 import { logger } from '../lib/logger';
 import { getLinkedAccountId } from '@shared/account-switching';
+import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH, normalizeStaffLogin } from '@shared/staff-login';
 import { pool } from '../db';
 import { getPasswordPolicyError, isPasswordWithinBcryptLimit } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
@@ -48,7 +49,7 @@ const loginAccountLimiter = rateLimit({
     legacyHeaders: false,
     skipSuccessfulRequests: true,
     keyGenerator: (req) => {
-        const login = normalizeLogin(req.body?.login ?? req.body?.email).slice(0, 254);
+        const login = normalizeStaffLogin(req.body?.login ?? req.body?.email).slice(0, MAX_STAFF_LOGIN_LENGTH);
         return `account:${crypto.createHash('sha256').update(login || 'missing').digest('hex')}`;
     },
 });
@@ -64,18 +65,12 @@ const accountLimiter = rateLimit({
         : `ip:${ipKeyGenerator(req.ip || '127.0.0.1')}`,
 });
 
-const normalizeLogin = (value: unknown) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : '';
-
 const parsePositiveId = (value: unknown): number | null => {
     const text = String(value ?? '').trim();
     if (!/^\d+$/.test(text)) return null;
     const parsed = Number(text);
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 };
-
-const isValidLogin = (value: string) =>
-    value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const findUserByLogin = async (login: string, exceptUserId?: number) => {
     const users = await storage.getUsers();
@@ -97,7 +92,7 @@ router.post('/login', loginIpLimiter, loginAccountLimiter, async (req, res) => {
         if (typeof password !== 'string' || !password) {
             return res.status(400).json({ error: 'Password is required' });
         }
-        if (loginOrEmail.trim().length > 254 || !isPasswordWithinBcryptLimit(password)) {
+        if (loginOrEmail.trim().length > MAX_STAFF_LOGIN_LENGTH || !isPasswordWithinBcryptLimit(password)) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -166,10 +161,9 @@ router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Reques
             return res.status(400).json({ error: 'fullNameRequired' });
         }
         const fullName = req.body.fullName.trim();
-        const email = normalizeLogin(req.body.email);
-        if (!email || !isValidLogin(email)) {
-            return res.status(400).json({ error: 'invalidEmailAddress' });
-        }
+        const email = normalizeStaffLogin(req.body.email);
+        if (!email) return res.status(400).json({ error: 'loginRequired' });
+        if (!isValidStaffLogin(email)) return res.status(400).json({ error: 'invalidLogin' });
         if (req.body.position !== undefined && req.body.position !== null && typeof req.body.position !== 'string') {
             return res.status(400).json({ error: 'invalidData' });
         }
@@ -311,14 +305,14 @@ router.patch('/me/credentials', requireAuth, async (req: Request, res: Response)
         let passwordChanged = false;
 
         if (req.body.email !== undefined) {
-            const nextLogin = normalizeLogin(req.body.email);
+            const nextLogin = normalizeStaffLogin(req.body.email);
 
             if (!nextLogin) {
                 return res.status(400).json({ error: 'loginRequired' });
             }
 
-            if (!isValidLogin(nextLogin)) {
-                return res.status(400).json({ error: 'invalidEmailAddress' });
+            if (!isValidStaffLogin(nextLogin)) {
+                return res.status(400).json({ error: 'invalidLogin' });
             }
 
             if (nextLogin !== currentUser.email.toLowerCase()) {

@@ -15,6 +15,7 @@ import {
     type AcademyModule,
 } from '@shared/academy';
 import type { AcademyScheduleItem } from '@shared/scheduling';
+import { isValidStaffLogin, normalizeStaffLogin } from '@shared/staff-login';
 import { getPasswordPolicyError } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
@@ -97,12 +98,6 @@ const isUsersEmailUniqueViolation = (error: unknown) => {
         detail.includes('email') ||
         message.includes('users_email_unique');
 };
-
-const normalizeLogin = (value: unknown) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : '';
-
-const isValidLogin = (value: string) =>
-    value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 const findUserByLogin = async (login: string, exceptUserId?: number) => {
     const users = await storage.getUsers();
@@ -616,13 +611,15 @@ router.post('/', requireAdministration, parseUserPhotoUpload, async (req, res) =
         const teacherSettings = readTeacherSettings(req.body);
         const dateOfBirth = parseDateOfBirth(req.body.dateOfBirth);
 
+        if (req.body.email !== undefined && typeof req.body.email !== 'string') {
+            return res.status(400).json({ error: 'invalidLogin' });
+        }
+        const providedEmail = normalizeStaffLogin(req.body.email);
+        if (providedEmail && !isValidStaffLogin(providedEmail)) {
+            return res.status(400).json({ error: 'invalidLogin' });
+        }
         const existingUsers = await storage.getUsers();
         const unavailableLogins = new Set(existingUsers.map((user) => user.email.toLowerCase()));
-        const providedEmail = normalizeLogin(req.body.email);
-
-        if (providedEmail && !isValidLogin(providedEmail)) {
-            return res.status(400).json({ error: 'invalidEmailAddress' });
-        }
 
         if (providedEmail && unavailableLogins.has(providedEmail)) {
             return res.status(409).json({ error: 'loginAlreadyExists' });
@@ -777,14 +774,14 @@ router.patch('/:id/credentials', requireAdministration, async (req, res) => {
         let plainPassword: string | undefined;
 
         if (req.body.email !== undefined) {
-            const nextLogin = normalizeLogin(req.body.email);
+            const nextLogin = normalizeStaffLogin(req.body.email);
 
             if (!nextLogin) {
                 return res.status(400).json({ error: 'loginRequired' });
             }
 
-            if (!isValidLogin(nextLogin)) {
-                return res.status(400).json({ error: 'invalidEmailAddress' });
+            if (!isValidStaffLogin(nextLogin)) {
+                return res.status(400).json({ error: 'invalidLogin' });
             }
 
             if (nextLogin !== user.email.toLowerCase()) {

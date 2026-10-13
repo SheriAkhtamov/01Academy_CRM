@@ -779,9 +779,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   <FormLabel required>{t('loginLabel')}</FormLabel>
                                   <FormControl>
                                     <Input
-                                      type="email"
-                                      placeholder={t('emailPlaceholder')}
-                                      disabled
+                                      type="text"
+                                      autoComplete="username"
+                                      placeholder={t('loginOrEmailPlaceholder')}
+                                      readOnly
                                       {...field}
                                     />
                                   </FormControl>
@@ -1233,7 +1234,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     <FormItem>
                       <FormLabel required>{t('loginLabel')}</FormLabel>
                       <FormControl>
-                        <Input type="email" autoComplete="username" {...field} />
+                        <Input type="text" autoComplete="username" placeholder={t('loginOrEmailPlaceholder')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1304,7 +1305,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     type="button"
                     variant="outline"
                     onClick={async () => {
-                      const credentialLines = [`${t('email')}: ${userCredentials.email}`];
+                      const credentialLines = [`${t('loginLabel')}: ${userCredentials.email}`];
                       if (userCredentials.temporaryPassword) {
                         credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
                       }

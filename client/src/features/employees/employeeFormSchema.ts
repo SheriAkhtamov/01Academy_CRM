@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ACADEMY_MODULES } from '@shared/academy';
 import { kpiRoleSchema } from '@shared/sales-kpi';
+import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH } from '@shared/staff-login';
 import type { TranslationKey } from '@/lib/i18n';
 
 type Translate = (key: TranslationKey) => string;
@@ -8,8 +9,8 @@ type Translate = (key: TranslationKey) => string;
 // Schema functions that use runtime translation
 export const createUserSchema = (t: Translate) => z.object({
   email: z.preprocess(
-    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().email(t('invalidEmailAddress')).optional()
+    (value) => typeof value === 'string' ? value.trim() || undefined : value,
+    z.string().max(MAX_STAFF_LOGIN_LENGTH, t('fieldTooLong')).refine(isValidStaffLogin, t('invalidLogin')).optional()
   ),
   fullName: z.string().min(1, t('fullNameRequired')),
   phoneNumbers: z.array(z.string()).min(1).max(10).superRefine((phoneNumbers, ctx) => {
@@ -45,7 +46,7 @@ export const createUserSchema = (t: Translate) => z.object({
 });
 
 export const createCredentialsSchema = (t: Translate) => z.object({
-  email: z.string().email(t('invalidEmailAddress')),
+  email: z.string().trim().min(1, t('loginRequired')).max(MAX_STAFF_LOGIN_LENGTH, t('fieldTooLong')).refine(isValidStaffLogin, t('invalidLogin')),
   password: z.string().optional(),
   confirmPassword: z.string().optional(),
 }).superRefine((values, ctx) => {

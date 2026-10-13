@@ -64,15 +64,15 @@ describe('mounted authentication flow', () => {
     await screen.findByText('Finance overview');
     expect(screen.queryByText(i18n.t('noModuleAssigned'))).toBeNull();
   });
-  it('keeps rejected credentials and the error, then signs in at the complete deep link', async () => {
+  it.each(['sales@audit.invalid', 'Golosbaxti'])('keeps rejected %s credentials and the error, then signs in at the complete deep link', async (identifier) => {
     loginFail = true; setup(); const user = userEvent.setup();
     const login = await screen.findByRole('textbox');
-    await user.type(login, 'sales@audit.invalid');
+    await user.type(login, identifier);
     const password = document.querySelector('input[name=password]') as HTMLInputElement;
     await user.type(password, 'wrong');
     await user.click(screen.getByRole('button', { name: i18n.t('signIn') }));
     await screen.findByText(/Invalid|incorrect/i);
-    expect((login as HTMLInputElement).value).toBe('sales@audit.invalid');
+    expect((login as HTMLInputElement).value).toBe(identifier);
     expect(password.value).toBe('wrong');
     expect(document.body.contains(login)).toBe(true);
     loginFail = false;

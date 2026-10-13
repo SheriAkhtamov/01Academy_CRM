@@ -9,6 +9,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_MODULES, type AcademyAccessModule, type AcademyModule } from "../../../shared/academy";
 import { isOnlinePbxExtension } from "../../../shared/telephony";
+import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH, normalizeStaffLogin } from "../../../shared/staff-login";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
 import { createMetaMarketingTables } from "./meta-marketing";
@@ -1111,7 +1112,7 @@ export const savedAccounts = pgTable("saved_accounts", {
 
 // Insert schemas
 export const insertUserSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().min(1, 'loginRequired').max(MAX_STAFF_LOGIN_LENGTH, 'fieldTooLong').refine(isValidStaffLogin, 'invalidLogin').transform(normalizeStaffLogin),
   password: z.string().min(1),
   credentialPasswordCiphertext: z.string().optional().nullable(),
   fullName: z.string().min(1),

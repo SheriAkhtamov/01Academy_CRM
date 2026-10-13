@@ -1503,6 +1503,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   loginAlreadyExists: { en: 'This login is already used by another employee', ru: 'Такой логин уже используется другим сотрудником' },
   loginManagedInCredentials: { en: "Change the login in the employee credentials dialog.", ru: "Измените логин в окне учётных данных сотрудника." },
   loginRequired: { en: 'Login is required', ru: 'Логин обязателен' },
+  invalidLogin: { en: 'Enter a login without spaces or a valid email address', ru: 'Введите логин без пробелов или корректную почту' },
   newPassword: { en: 'New password', ru: 'Новый пароль' },
   newPasswordRequired: { en: 'Enter a new password', ru: 'Введите новый пароль' },
   noChangesTitle: { en: 'No changes', ru: 'Нет изменений' },

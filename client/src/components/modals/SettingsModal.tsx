@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AUTH_SESSION_QUERY_KEY, SAVED_ACCOUNTS_QUERY_KEY, type SanitizedUser } from '@shared/auth';
+import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH } from '@shared/staff-login';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -35,14 +36,14 @@ import {
 import { MotionSettingsPanel } from '@/components/ux/motion';
 import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
 import { withUserPhoto } from '@/features/employees/user-photo-api';
-import { User, Mail, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
+import { User, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
 
 const createSettingsSchema = (
   t: (key: TranslationKey) => string,
   currentEmail: string,
 ) => z.object({
   fullName: z.string().min(1, t('fullNameRequired')),
-  email: z.string().email(t('validEmailRequired')),
+  email: z.string().trim().min(1, t('loginRequired')).max(MAX_STAFF_LOGIN_LENGTH, t('fieldTooLong')).refine(isValidStaffLogin, t('invalidLogin')),
   position: z.string().max(255, t('fieldTooLong')),
   phone: z.string().optional(),
   currentPassword: z.string().optional(),
@@ -281,18 +282,18 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 )}
               />
 
-              {/* Email */}
+              {/* Login */}
               <FormField
                 control={form.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
+                      <KeyRound className="h-4 w-4" />
                       {t('loginLabel')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} type="email" placeholder={t('enterEmail')} />
+                      <Input {...field} type="text" autoComplete="username" placeholder={t('loginOrEmailPlaceholder')} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -66,6 +66,7 @@ jobs:
     steps:
       - name: Deploy over SSH
         env:
+          DEPLOY_COMMIT: ${{ github.sha }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -97,8 +98,14 @@ jobs:
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=20 \
             -o TCPKeepAlive=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$DEPLOY_COMMIT" <<'REMOTE'
           set -euo pipefail
+
+          DEPLOY_COMMIT="$1"
+          if ! [[ "$DEPLOY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Invalid deployment commit.' >&2
+            exit 1
+          fi
 
           APP_DIR="$HOME/01academy-crm"
           REPO_URL="https://github.com/SheriAkhtamov/01Academy_CRM.git"
@@ -118,7 +125,12 @@ jobs:
           cd "$APP_DIR"
           git remote set-url origin "$REPO_URL"
           git fetch origin main
-          git reset --hard origin/main
+          remote_main_commit="$(git rev-parse --verify origin/main)"
+          if [ "$DEPLOY_COMMIT" != "$remote_main_commit" ]; then
+            printf 'Skipping superseded release %s (main is %s).\n' "$DEPLOY_COMMIT" "$remote_main_commit"
+            exit 0
+          fi
+          git reset --hard "$DEPLOY_COMMIT"
 
           mkdir -p config uploads logs backups .secrets
           chmod 750 config
@@ -238,7 +250,7 @@ jobs:
             rm -rf "$BUILD_CONTEXT"
           }
           trap cleanup_build_context EXIT
-          git archive --format=tar origin/main | tar -xf - -C "$BUILD_CONTEXT"
+          git archive --format=tar "$DEPLOY_COMMIT" | tar -xf - -C "$BUILD_CONTEXT"
 
           docker compose config --quiet
           docker compose pull postgres

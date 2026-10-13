@@ -25,3 +25,5 @@ Status: local implementation reviewed and verified in an isolated copy. No indep
 An additive migration creates chat_groups.avatar_url. It is authored and registered; the user supplied the required server access under AGENTS.md and authorized publication. Merge this patch against the then-current main state, resolve only relevant conflicts, run the affected checks and publish through the normal full-CI-gated pipeline.
 
 Publication preparation: route-test cleanup targets only this suite’s generated file IDs, preserving existing developer uploads and retained backups.
+
+GP-08 / P1 / full CI preview scrolling: the preview wrapper combined min-h-0/flex-1 with vertical clipping. Changed it to overflow-y-auto so media and playback controls remain reachable on short viewports. Existing app-shell scrolling test preserved and added to focused verification; no allowlist or assertion changes. Initial CI: 3121 passed, one app-shell assertion failed; deployment correctly skipped.

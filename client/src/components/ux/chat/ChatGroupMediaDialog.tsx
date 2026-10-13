@@ -56,7 +56,7 @@ export function ChatGroupMediaDialog({ catalog, initialCategory, onClose }: { ca
         onKeyDown={(event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); move(-1); } if (event.key === 'ArrowRight') { event.preventDefault(); move(1); } }}>
         <DialogHeader><DialogTitle className="break-all pr-6">{preview?.file.name ?? t('attachmentPreview')}</DialogTitle></DialogHeader>
         {preview ? <>
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {failed.includes(preview.file.id) ? <p role="alert" className="py-8 text-center text-sm text-destructive">{t('attachmentDownloadFailed')}</p>
               : preview.file.mimeType.startsWith('video/') ? <video key={preview.file.id} src={preview.file.url} controls playsInline preload="metadata" aria-label={preview.file.name} className="max-h-[65dvh] w-full" onError={() => setFailed((current) => [...current, preview.file.id])} /> : <img src={preview.file.url} alt={preview.file.name} className="max-h-[65dvh] w-full object-contain" onError={() => setFailed((current) => [...current, preview.file.id])} />}
           </div>

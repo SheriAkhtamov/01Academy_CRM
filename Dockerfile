@@ -8,7 +8,7 @@ RUN npm prune --omit=dev --ignore-scripts --no-audit && npm cache clean --force
 
 FROM node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS production
 WORKDIR /app
-RUN apk add --no-cache tini
+RUN apk add --no-cache tini ffmpeg
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules

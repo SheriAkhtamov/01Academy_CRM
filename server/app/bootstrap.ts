@@ -22,6 +22,9 @@ import { upgradeClientIp } from "../infrastructure/upgrade-client-ip";
 import { createLearningExecutionPools } from "../infrastructure/learning-execution-pools";
 import { resolveLearningExecution } from "../infrastructure/learning-execution";
 import { configureStudentProfileLearningPortfolioAvailability } from "../modules/academy/student-profile-data";
+import { createVoiceRemindersRuntime } from '../infrastructure/voice-reminders-runtime';
+import { createPbxCapacityProvider } from '../infrastructure/voice-telephony/provider-capacity';
+import { onlinePbxClient } from '../services/onlinepbx';
 
 export type ApplicationRuntime = {
   server: Server;
@@ -42,6 +45,8 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
   let server: Server | undefined;
   let closeStaffWebSocket: (() => Promise<void>) | undefined;
   let schedulerStarted = false;
+  let voiceReminders: ReturnType<typeof createVoiceRemindersRuntime> | undefined;
+  let voiceTimer: ReturnType<typeof setInterval> | undefined;
   try {
     const learningDatabase = createLearningExecutionPools(
       pool,
@@ -77,7 +82,8 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
         : sessionMiddleware(request, response, next),
     );
     learningRuntime.registerRoutes(app);
-    registerApiRoutes(app);
+    voiceReminders = createVoiceRemindersRuntime(createPbxCapacityProvider(onlinePbxClient));
+    registerApiRoutes(app, voiceReminders);
 
     server = createServer(app);
     // 10 MB task uploads need time on mobile connections. Header timeout,
@@ -110,6 +116,12 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     await learningRuntime.start();
     startScheduler();
     schedulerStarted = true;
+    const runVoiceReminders = () => {
+      void voiceReminders!.tick().catch(() => logger.error('Voice reminder worker failed'));
+    };
+    voiceTimer = setInterval(runVoiceReminders, 10_000);
+    voiceTimer.unref();
+    runVoiceReminders();
 
     await new Promise<void>((resolve, reject) => {
       const current = server!;
@@ -166,6 +178,7 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
           ),
           attempt(() => (schedulerStarted ? stopScheduler() : undefined)),
           attempt(() => learningRuntime.stop()),
+          attempt(() => { if (voiceTimer) clearInterval(voiceTimer); return voiceReminders?.close(); }),
         ]);
         const closed = await Promise.allSettled([
           Promise.resolve().then(() => learningDatabase.close()),
@@ -180,10 +193,12 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
 
     return { server, stop };
   } catch (error) {
+    if (voiceTimer) clearInterval(voiceTimer);
     await Promise.allSettled([
       closeStaffWebSocket?.(),
       runtimeForCleanup?.closeWebSocket?.(),
       runtimeForCleanup?.stop(),
+      voiceReminders?.close(),
     ]);
     if (server?.listening)
       await new Promise<void>((resolve) => server!.close(() => resolve()));

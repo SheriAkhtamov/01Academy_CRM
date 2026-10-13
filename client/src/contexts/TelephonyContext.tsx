@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
+import { telephonyApi } from '@/features/telephony/api';
 import {
   hasOnlinePbxManagerAssignment,
   ONLINE_PBX_EXTENSION_MAX,
@@ -89,6 +90,14 @@ type VertoClientLike = {
     onSuccess?: () => void,
     onError?: (error?: unknown) => void,
   ) => VertoDialogLike | undefined;
+};
+
+type OutgoingAttempt = {
+  manager: VertoClientLike;
+  callId: string;
+  leaseId: string | null;
+  microphone: MediaStream | null;
+  cancelled: boolean;
 };
 
 export const waitForTelephonySocket = async (
@@ -239,6 +248,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
   const outgoingSetupRef = useRef(false);
+  const outgoingAttemptRef = useRef<OutgoingAttempt | null>(null);
+  const lineLeaseRef = useRef<{ id: string; attempt: OutgoingAttempt } | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -343,6 +354,30 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     callSetupTimerRef.current = null;
   }, []);
 
+  const releaseLine = useCallback((expected?: OutgoingAttempt) => {
+    const lease = lineLeaseRef.current;
+    const owner = expected ?? lease?.attempt;
+    const id = owner?.leaseId ?? null;
+    if (owner) owner.leaseId = null;
+    if (lease && (!expected || lease.attempt === expected)) lineLeaseRef.current = null;
+    if (id) void telephonyApi.releaseLine(id).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const lease = lineLeaseRef.current;
+      if (!lease) return;
+      void telephonyApi.renewLine(lease.id).then(({ alive }) => {
+        if (!alive && lineLeaseRef.current === lease) {
+          // Losing the reservation does not end the manager's conversation.
+          // The server must confirm external occupancy before admitting a robot.
+          lineLeaseRef.current = null;
+        }
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => { window.clearInterval(timer); releaseLine(); };
+  }, [releaseLine]);
+
   const finishSession = useCallback((cause?: string | null) => {
     const current = activeCallRef.current;
     if (!current || terminalStatuses.includes(current.status)) return;
@@ -358,9 +393,15 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     clearCallSetupTimer();
     stopRingtone();
     stopLocalMedia();
+    const attempt = outgoingAttemptRef.current;
+    if (attempt?.callId === current.clientCallId) {
+      attempt.cancelled = true;
+      outgoingAttemptRef.current = null;
+      releaseLine(attempt);
+    }
     setActiveCall(finished);
     void reportCall(finished, cause);
-  }, [clearCallSetupTimer, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
+  }, [clearCallSetupTimer, releaseLine, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
 
   useEffect(() => {
     if (!isManagerAssigned) return undefined;
@@ -407,11 +448,11 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mountedRef.current = true;
+    setPendingPhone(null);
+    setActiveCall(null);
     if (!isManagerAssigned || !user?.id) {
       setConnectionState('disabled');
       setExtension(null);
-      setPendingPhone(null);
-      setActiveCall(null);
       return undefined;
     }
 
@@ -520,7 +561,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          if (direction === 'outgoing' && outgoingSetupRef.current && !sessionRef.current) {
+          if (direction === 'outgoing' && outgoingSetupRef.current && outgoingAttemptRef.current && !sessionRef.current) {
+            outgoingAttemptRef.current.callId = callId;
             patchActiveCall({ clientCallId: callId });
           }
           if (activeCallRef.current?.clientCallId !== callId) {
@@ -532,6 +574,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             }
             return;
           }
+          if (direction === 'outgoing' && !outgoingAttemptRef.current && !['hangup', 'destroy', 'purge'].includes(state)) return;
           sessionRef.current = dialog;
 
           if (['requesting', 'trying'].includes(state)) {
@@ -621,67 +664,91 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       }
       incomingPresentationTimersRef.current.clear();
       incomingAuthorizationRef.current.clear();
+      const attempt = outgoingAttemptRef.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        outgoingAttemptRef.current = null;
+        releaseLine(attempt);
+      }
+      outgoingSetupRef.current = false;
       stopLocalMedia();
       credentialsRef.current = null;
       managerRef.current = null;
       sessionRef.current = null;
       manager?.closeSocket(1000);
     };
-  }, [clearCallSetupTimer, finishSession, isManagerAssigned, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id, user?.onlinePbxExtension]);
+  }, [clearCallSetupTimer, finishSession, isManagerAssigned, lookupContact, patchActiveCall, releaseLine, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id, user?.onlinePbxExtension]);
 
   const startCall = useCallback(async (rawPhone: string) => {
     const manager = managerRef.current;
     const credentials = credentialsRef.current;
-    if (!manager || !credentials) {
-      throw new Error('onlinePbxWebPhoneOffline');
-    }
+    if (!manager || !credentials) throw new Error('onlinePbxWebPhoneOffline');
     const phone = formatPhone(rawPhone);
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 7 || digits.length > 15) throw new Error('onlinePbxInvalidPhone');
     const current = activeCallRef.current;
-    if (current && !terminalStatuses.includes(current.status)) throw new Error('onlinePbxCallAlreadyActive');
-
-    setPendingPhone(phone);
-    let microphone: MediaStream | null = null;
-    try {
-      if (!await waitForTelephonySocket(manager)) {
-        setConnectionState('offline');
-        throw new Error('onlinePbxWebPhoneOffline');
-      }
-      microphone = await requestMicrophone();
-      if (managerRef.current !== manager || !await waitForTelephonySocket(manager)) {
-        setConnectionState('offline');
-        throw new Error('onlinePbxWebPhoneOffline');
-      }
-    } catch (error) {
-      microphone?.getTracks().forEach((track) => track.stop());
-      setPendingPhone(null);
-      throw error;
+    if (outgoingAttemptRef.current || (current && !terminalStatuses.includes(current.status))) {
+      throw new Error('onlinePbxCallAlreadyActive');
     }
-    stopLocalMedia();
-    localMediaRef.current = microphone;
 
+    // Claim synchronously: React's pending state cannot serialize two clicks
+    // that both reach microphone permission before the first render completes.
     const provisionalId = globalThis.crypto?.randomUUID?.() ?? `call-${Date.now()}`;
-    const contactPromise = lookupContact(phone);
-    const started: ActiveTelephonyCall = {
-      clientCallId: provisionalId,
-      storedCallId: null,
-      direction: 'outgoing',
-      status: 'dialing',
-      phone,
-      contact: null,
-      startedAt: new Date().toISOString(),
-      answeredAt: null,
-      endedAt: null,
-      muted: false,
-      held: false,
-      errorCode: null,
+    const attempt: OutgoingAttempt = {
+      manager,
+      callId: provisionalId,
+      leaseId: null,
+      microphone: null,
+      cancelled: false,
     };
-    setActiveCall(started);
+    outgoingAttemptRef.current = attempt;
+    setPendingPhone(phone);
+    let started: ActiveTelephonyCall | null = null;
+    let dialogCreated = false;
+    const ownsAttempt = () => outgoingAttemptRef.current === attempt && !attempt.cancelled;
+    const assertCurrent = () => {
+      if (!ownsAttempt() || managerRef.current !== manager || !mountedRef.current) {
+        throw new Error('onlinePbxWebPhoneOffline');
+      }
+    };
 
     try {
+      if (!await waitForTelephonySocket(manager)) throw new Error('onlinePbxWebPhoneOffline');
+      assertCurrent();
+      attempt.microphone = await requestMicrophone();
+      assertCurrent();
+      if (!await waitForTelephonySocket(manager)) throw new Error('onlinePbxWebPhoneOffline');
+      assertCurrent();
+      const latest = activeCallRef.current;
+      if (latest && !terminalStatuses.includes(latest.status)) throw new Error('onlinePbxCallAlreadyActive');
+      stopLocalMedia();
+      localMediaRef.current = attempt.microphone;
+      started = {
+        clientCallId: provisionalId,
+        storedCallId: null,
+        direction: 'outgoing',
+        status: 'dialing',
+        phone,
+        contact: null,
+        startedAt: new Date().toISOString(),
+        answeredAt: null,
+        endedAt: null,
+        muted: false,
+        held: false,
+        errorCode: null,
+      };
+      setActiveCall(started);
+      const contactPromise = lookupContact(phone);
+      const lease = await telephonyApi.reserveLine(provisionalId, `+${digits}`);
+      attempt.leaseId = lease.id;
+      // An abandoned request may finish after a new user/call has taken over.
+      // Its returned lease belongs to this attempt and must not replace theirs.
+      assertCurrent();
+      if (!manager.socketReady()) throw new Error('onlinePbxWebPhoneOffline');
+      if (lease.id) lineLeaseRef.current = { id: lease.id, attempt };
       outgoingSetupRef.current = true;
       const session = manager.newCall({
+        callID: provisionalId,
         destination_number: digits,
         caller_id_name: user?.fullName || credentials.extension,
         caller_id_number: credentials.extension,
@@ -689,18 +756,22 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         useStereo: false,
         useMic: 'any',
         useSpeak: 'any',
-        useStream: microphone,
+        useStream: attempt.microphone,
         tag: () => remoteAudioRef.current,
       }, undefined, undefined, (error) => {
-        if (!error && !manager.socketReady()) {
-          setConnectionState('offline');
-          return;
-        }
+        if (!ownsAttempt()) return;
+        if (!manager.socketReady()) setConnectionState('offline');
         const cause = error instanceof Error ? error.name : 'CALL_SETUP_FAILED';
         finishSession(cause);
       });
       outgoingSetupRef.current = false;
       if (!session) throw new Error('onlinePbxWebPhoneOffline');
+      dialogCreated = true;
+      if (!ownsAttempt()) {
+        session.hangup({ cause: 'NORMAL_CLEARING' });
+        throw new Error('onlinePbxWebPhoneOffline');
+      }
+      attempt.callId = session.callID;
       sessionRef.current = session;
       const withSessionId = { ...activeCallRef.current!, clientCallId: session.callID };
       setActiveCall(withSessionId);
@@ -708,37 +779,48 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       clearCallSetupTimer();
       callSetupTimerRef.current = window.setTimeout(() => {
         const latest = activeCallRef.current;
-        if (latest?.clientCallId !== session.callID || latest.status !== 'dialing') return;
+        if (!ownsAttempt() || latest?.clientCallId !== session.callID || latest.status !== 'dialing') return;
         session.hangup({ cause: 'NO_RESPONSE' });
         finishSession('NO_RESPONSE');
       }, 45_000);
       void contactPromise.then((contact) => {
-        if (contact && activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
+        if (ownsAttempt() && contact && activeCallRef.current?.clientCallId === session.callID) patchActiveCall({ contact });
       });
     } catch (error) {
-      clearCallSetupTimer();
-      stopLocalMedia();
-      if (error instanceof Error && error.message === 'onlinePbxWebPhoneOffline') {
-        setConnectionState('offline');
-        setActiveCall(null);
-        throw error;
+      releaseLine(attempt);
+      if (localMediaRef.current === attempt.microphone && attempt.microphone) stopLocalMedia();
+      else attempt.microphone?.getTracks().forEach((track) => track.stop());
+      if (ownsAttempt()) {
+        clearCallSetupTimer();
+        attempt.cancelled = true;
+        outgoingAttemptRef.current = null;
+        if (error instanceof Error && error.message === 'onlinePbxWebPhoneOffline') {
+          if (managerRef.current === manager) setConnectionState('offline');
+          if (activeCallRef.current?.clientCallId === attempt.callId) setActiveCall(null);
+        } else if (started && activeCallRef.current?.clientCallId === attempt.callId) {
+          const failed = {
+            ...started,
+            status: 'failed' as const,
+            endedAt: new Date().toISOString(),
+            errorCode: 'CALL_SETUP_FAILED',
+          };
+          setActiveCall(failed);
+          // A rejected channel reservation never placed a phone call and must
+          // not become a failed call in the journal or the manager's KPIs.
+          if (dialogCreated) void reportCall(failed);
+        }
+        setPendingPhone(null);
       }
-      const failed = {
-        ...started,
-        status: 'failed' as const,
-        endedAt: new Date().toISOString(),
-        errorCode: error instanceof Error && error.name === 'NotAllowedError'
-          ? 'MICROPHONE_PERMISSION_DENIED'
-          : 'CALL_SETUP_FAILED',
-      };
-      setActiveCall(failed);
-      void reportCall(failed);
       throw error;
     } finally {
-      outgoingSetupRef.current = false;
-      setPendingPhone(null);
+      // A synchronous SDK error may already have ended this attempt. Never
+      // reset the pending state or setup flags of a successor call.
+      if (outgoingAttemptRef.current === attempt) {
+        outgoingSetupRef.current = false;
+        setPendingPhone(null);
+      }
     }
-  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
+  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, releaseLine, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
 
   const answerCall = useCallback(async () => {
     const session = sessionRef.current;
@@ -768,6 +850,17 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const hangupCall = useCallback(async () => {
     const session = sessionRef.current;
     const current = activeCallRef.current;
+    const attempt = outgoingAttemptRef.current;
+    if (attempt && (!session || current?.clientCallId === attempt.callId)) {
+      attempt.cancelled = true;
+      outgoingAttemptRef.current = null;
+      outgoingSetupRef.current = false;
+      releaseLine(attempt);
+      if (localMediaRef.current === attempt.microphone && attempt.microphone) stopLocalMedia();
+      setPendingPhone(null);
+      clearCallSetupTimer();
+      if (!session && current?.clientCallId === attempt.callId) setActiveCall(null);
+    }
     if (!session || !current) return;
     stopRingtone();
     try {
@@ -782,7 +875,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     } finally {
       sessionRef.current = null;
     }
-  }, [reportCall, setActiveCall, stopRingtone]);
+  }, [clearCallSetupTimer, releaseLine, reportCall, setActiveCall, stopLocalMedia, stopRingtone]);
 
   const toggleMute = useCallback(() => {
     const session = sessionRef.current;

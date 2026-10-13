@@ -12,6 +12,7 @@ import { isOnlinePbxExtension } from "../../../shared/telephony";
 import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH, normalizeStaffLogin } from "../../../shared/staff-login";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
 import { createAcademyDemoTables } from "./demo-lessons";
+import { createVoiceReminderTables } from './voice-reminders';
 import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
@@ -565,6 +566,10 @@ export const academyLessons = pgTable("academy_lessons", {
 export const { academyDemoLessons, academyDemoLessonParticipants } = createAcademyDemoTables({
   courseId: academyCourses.id, schoolId: academySchools.id, roomId: academyRooms.id,
   teacherId: academyTeachers.id, studentId: academyStudents.id, userId: users.id,
+});
+
+export const { voiceReminderAudio, voiceReminderSettings, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine } = createVoiceReminderTables({
+  userId: users.id, demoLessonId: academyDemoLessons.id, participantId: academyDemoLessonParticipants.id,
 });
 
 export const academyLeadFunnelHandoffs = createLeadFunnelHandoffTable({

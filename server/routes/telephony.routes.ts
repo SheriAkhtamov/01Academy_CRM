@@ -589,7 +589,9 @@ const findCallReportedByProvider = async (
   return result.rows[0]?.id ?? null;
 };
 
-router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
+type RobotCallObserver = (payload: Record<string, unknown>) => Promise<boolean>;
+
+const createWebhookHandler = (observeRobotCall?: RobotCallObserver) => asyncRoute(async (req, res) => {
   const webhookSecret = req.get('x-webhook-secret') ?? req.query.token;
   if (!hasValidWebhookSecret(webhookSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -600,6 +602,10 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   const event = String(payload.event ?? 'call_start');
   if (!providerCallId || providerCallId.length > 120) {
     return res.status(400).json({ error: 'onlinePbxInvalidWebhook' });
+  }
+
+  if (observeRobotCall && await observeRobotCall(payload)) {
+    return res.status(200).json({ ok: true });
   }
 
   const candidates = [
@@ -792,7 +798,9 @@ router.post('/webhook', inboundWebhookLimiter, asyncRoute(async (req, res) => {
   }
   publishMissedCallFollowupUpdate({ direction, status, talkSeconds });
   res.json({ ok: true });
-}));
+});
+
+router.post('/webhook', inboundWebhookLimiter, createWebhookHandler());
 
 router.get('/credentials', requireAuth, asyncRoute(async (req, res) => {
   if (!canAccessAcademyModule(req.user, 'sales')) {
@@ -1334,5 +1342,12 @@ router.put('/calls/:id/note', requireAuth, asyncRoute(async (req, res) => {
 router.post('/calls', requireAuth, (_req, res) => {
   res.status(409).json({ error: 'onlinePbxUseWebPhone' });
 });
+
+export const createTelephonyRouter = (observeRobotCall: RobotCallObserver) => {
+  const composed = Router();
+  composed.post('/webhook', inboundWebhookLimiter, createWebhookHandler(observeRobotCall));
+  composed.use(router);
+  return composed;
+};
 
 export default router;

@@ -1,5 +1,6 @@
 import { apiRequest } from '@/lib/queryClient';
 import type { TelephonyCallStatus } from '@/lib/telephony';
+import type { TelephonyLineLease } from '@shared/contracts/telephony-lines';
 
 export type MissedCallUnreadSummary = {
   count: number;
@@ -52,6 +53,15 @@ export const telephonyQueryKeys = {
 };
 
 export const telephonyApi = {
+  reserveLine: (clientCallId: string, phone: string) => (
+    apiRequest('POST', '/api/telephony/lines/reserve', { clientCallId, phone }) as Promise<TelephonyLineLease>
+  ),
+  renewLine: (id: string) => (
+    apiRequest('POST', '/api/telephony/lines/renew', { id }) as Promise<{ alive: boolean }>
+  ),
+  releaseLine: (id: string) => (
+    apiRequest('POST', '/api/telephony/lines/release', { id }) as Promise<{ ok: boolean }>
+  ),
   getMissedCallUnread: () => (
     apiRequest('GET', '/api/telephony/calls/missed/unread') as Promise<MissedCallUnreadSummary>
   ),

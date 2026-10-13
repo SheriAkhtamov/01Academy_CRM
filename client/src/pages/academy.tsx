@@ -6,7 +6,6 @@ import type { TranslationKey } from '@/lib/i18n';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { Alert, AlertTitle } from '@/components/ui/alert';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
 import {
   UnsavedChangesDialog,
@@ -36,6 +35,7 @@ import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { IntegrationSettingsDialog } from '@/components/integrations/IntegrationSettingsDialog';
+import { VoiceRemindersDialog } from '@/features/voice-reminders/ui/VoiceRemindersDialog';
 import type { IntegrationType } from '@/features/integrations/api';
 import type { MetaIntegrationState } from '@/features/marketing/meta-api';
 import {
@@ -55,7 +55,6 @@ import {
   Star,
   Trash2,
   Unplug,
-  Users,
 } from 'lucide-react';
 
 type AcademySection = 'integrations';
@@ -190,6 +189,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     username?: string | null;
   } | null>(null);
   const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
+  const [voiceRemindersOpen, setVoiceRemindersOpen] = useState(false);
   const [integrationCatalogOpen, setIntegrationCatalogOpen] = useState(false);
   const [settingsProvider, setSettingsProvider] = useState<IntegrationType | null>(null);
   const [settingsSiteDomain, setSettingsSiteDomain] = useState<string | null>(null);
@@ -442,10 +442,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
         {integrations.isError ? (
           <div className="flex flex-col items-start gap-3">
-            <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-            </Alert>
+            <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
             <Button variant="outline" onClick={() => integrations.refetch()} disabled={integrations.isFetching}>
               {t('retry')}
             </Button>
@@ -513,7 +510,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center lg:justify-end">
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:max-w-[70%] lg:justify-end">
                     {integration.provider === 'instagram' ? (
                       integration.connected ? (
                         <Button
@@ -543,14 +540,24 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         </Button>
                       )
                     ) : integration.provider === 'onlinepbx' ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => setOnlinePbxSettingsOpen(true)}
-                        disabled={!integration.connected}
-                      >
-                        <Settings2 data-icon="inline-start" />
-                        {t('integrationCallRouting')}
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => setOnlinePbxSettingsOpen(true)}
+                          disabled={!integration.connected}
+                        >
+                          <Settings2 data-icon="inline-start" />
+                          {t('integrationCallRouting')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setVoiceRemindersOpen(true)}
+                          disabled={!integration.connected}
+                        >
+                          <PhoneCall data-icon="inline-start" />
+                          {t('voiceRemindersTitle')}
+                        </Button>
+                      </>
                     ) : integration.provider === 'telegram_tasks' && integration.externalUrl ? (
                       <Button asChild variant="outline">
                         <a href={integration.externalUrl} target="_blank" rel="noopener noreferrer">
@@ -634,17 +641,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               ))}
             </div>
           ) : onlinePbxRouting.isError ? (
-            <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>{t('onlinePbxRoutingLoadFailed')}</AlertTitle>
-            </Alert>
+            <p role="alert" className="text-sm text-destructive">{t('onlinePbxRoutingLoadFailed')}</p>
           ) : (
             <div className="max-h-[68dvh] overflow-y-auto overscroll-contain pr-4">
               <div className="flex flex-col gap-3">
-                <Alert>
-                  <Users />
-                  <AlertTitle>{t('onlinePbxManagersBlockTitle')}</AlertTitle>
-                </Alert>
+                <h3 className="font-semibold">{t('onlinePbxManagersBlockTitle')}</h3>
 
                 <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                   <div className="space-y-2">
@@ -697,10 +698,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 </div>
 
                 {(onlinePbxRouting.data?.extensions.length ?? 0) === 0 ? (
-                  <Alert variant="destructive">
-                    <AlertCircle />
-                    <AlertTitle>{t('onlinePbxNoExtensionsTitle')}</AlertTitle>
-                  </Alert>
+                  <p className="text-sm">{t('onlinePbxNoExtensionsTitle')}</p>
                 ) : null}
 
                 <div className="space-y-3">
@@ -736,7 +734,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                                 ? status.isTelephonyReady
                                   ? t('onlinePbxTelephonyReady')
                                   : t('onlinePbxTelephonyNotReady')
-                                : t('onlinePbxOfflineExcluded')}
+                                : t('offline')}
                             </p>
                           </div>
 
@@ -815,10 +813,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 </div>
 
                 {onlinePbxRoutingDraft.assignments.length === 0 ? (
-                  <Alert>
-                    <AlertCircle />
-                    <AlertTitle>{t('onlinePbxNoAssignments')}</AlertTitle>
-                  </Alert>
+                  <p className="text-sm">{t('onlinePbxNoAssignments')}</p>
                 ) : null}
 
                 <Separator className="my-2" />
@@ -896,6 +891,8 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <VoiceRemindersDialog open={voiceRemindersOpen} onOpenChange={setVoiceRemindersOpen} />
 
       <ConfirmDialog
         open={Boolean(removeManagerTarget)}

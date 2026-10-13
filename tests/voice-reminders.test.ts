@@ -1,0 +1,167 @@
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, voiceReminderSettingsSchema } from '../shared/contracts/voice-reminders';
+import { normalizeReminderPhone, nextReminderAttempt, reminderWithinAllowedHours } from '../server/modules/voice-reminders/domain/policy';
+import { VoiceReminderWorker } from '../server/modules/voice-reminders/application/worker-service';
+import type { ClaimedVoiceReminder, VoiceReminderCallResult, VoiceReminderGateway, VoiceReminderLine, VoiceReminderRepository } from '../server/modules/voice-reminders/application/ports';
+
+const now = new Date('2030-01-15T05:00:00Z');
+const scheduledAt = new Date('2030-01-15T06:00:00Z');
+const audio = {
+  id: '6700d6f9-e152-45ae-9e43-16beb3a6f633', fileName: 'demo.wav', mimeType: 'audio/wav' as const,
+  sizeBytes: 16044, durationSeconds: 1, uploadedAt: now.toISOString(), storageKey: 'demo.wav', sha256: 'a'.repeat(64),
+};
+const settings = { ...DEFAULT_VOICE_REMINDER_SETTINGS, enabled: true, audio };
+const completed: VoiceReminderCallResult = { outcome: 'played', callStarted: true, callId: 'call-1' };
+const job = (id: number): ClaimedVoiceReminder => ({ id, leaseToken: `lease-${id}`, scheduledAt, attempts: 0 });
+
+const setup = (jobs = 2) => {
+  const queue = Array.from({ length: jobs }, (_, index) => job(index + 1));
+  const repository = {
+    settings: vi.fn(async () => settings), synchronize: vi.fn(async () => undefined),
+    claim: vi.fn(async () => queue.shift() ?? null),
+    prepare: vi.fn(async (claimed: ClaimedVoiceReminder) => ({ ...claimed, phone: '+998901234567', audio })),
+    canContinue: vi.fn(async () => true), renew: vi.fn(async () => true),
+    finish: vi.fn(async () => undefined), defer: vi.fn(async () => undefined),
+  };
+  const lines: VoiceReminderLine[] = [];
+  const gateway = {
+    readiness: vi.fn(async () => ({ ready: true, code: 'ready' as const })),
+    tryAcquireLine: vi.fn(async (): Promise<VoiceReminderLine | null> => {
+      const line = { call: vi.fn(async () => completed), release: vi.fn(async () => undefined) };
+      lines.push(line);
+      return line;
+    }),
+  };
+  const store = { resolve: vi.fn(async () => '/private/demo.wav'), save: vi.fn() };
+  const worker = new VoiceReminderWorker(repository as unknown as VoiceReminderRepository, store, gateway as VoiceReminderGateway, () => now);
+  return { worker, repository, gateway, store, lines };
+};
+
+describe('voice reminder scheduling and safe parallel calls', () => {
+  it('normalizes contact numbers and refuses extension/injection-shaped destinations', () => {
+    expect(normalizeReminderPhone('(90) 123-45-67')).toBe('+998901234567');
+    expect(normalizeReminderPhone('00998901234567')).toBe('+998901234567');
+    for (const invalid of ['100', 'sip:998901234567@host', '+998901234567;transfer', '+998901234567 ext 101', '']) {
+      expect(normalizeReminderPhone(invalid)).toBeNull();
+    }
+  });
+
+  it('uses Tashkent hours independently of host timezone and bounds retry before the lesson', () => {
+    expect(reminderWithinAllowedHours(new Date('2030-01-15T03:59:00Z'), settings)).toBe(false);
+    expect(reminderWithinAllowedHours(new Date('2030-01-15T04:00:00Z'), settings)).toBe(true);
+    expect(reminderWithinAllowedHours(new Date('2030-01-15T15:00:00Z'), settings)).toBe(false);
+    expect(nextReminderAttempt({ now, scheduledAt, attempts: 1, settings })?.toISOString()).toBe('2030-01-15T05:10:00.000Z');
+    expect(nextReminderAttempt({ now, scheduledAt, attempts: 2, settings })).toBeNull();
+    expect(nextReminderAttempt({ now, scheduledAt: new Date('2030-01-15T05:10:00Z'), attempts: 1, settings })).toBeNull();
+  });
+
+  it('rejects third channel, crossing/invalid hours and secret-bearing settings', () => {
+    const { audio: _audio, timeZone: _timeZone, ...input } = settings;
+    expect(voiceReminderSettingsSchema.safeParse(input).success).toBe(true);
+    for (const extra of [{ maxConcurrentCalls: 3 }, { allowedEndTime: '08:00' }, { allowedStartTime: '24:00' }, { password: 'secret' }]) {
+      expect(voiceReminderSettingsSchema.safeParse({ ...input, ...extra }).success).toBe(false);
+    }
+  });
+
+  it.each([0, 1, 2])('dispatches only %i transport-approved shared lines', async available => {
+    const fixture = setup();
+    fixture.gateway.tryAcquireLine.mockImplementation(async () => {
+      if (fixture.lines.length >= available) return null;
+      const line = { call: vi.fn(async () => completed), release: vi.fn(async () => undefined) };
+      fixture.lines.push(line); return line;
+    });
+    await fixture.worker.tick();
+    expect(fixture.repository.finish).toHaveBeenCalledTimes(available);
+    for (const line of fixture.lines) expect(line.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs two reserved lines concurrently while guarding another tick', async () => {
+    const fixture = setup();
+    let release!: () => void;
+    const held = new Promise<VoiceReminderCallResult>(resolve => { release = () => resolve(completed); });
+    fixture.gateway.tryAcquireLine.mockImplementation(async () => {
+      const line = { call: vi.fn(() => held), release: vi.fn(async () => undefined) };
+      fixture.lines.push(line); return line;
+    });
+    const running = fixture.worker.tick();
+    await vi.waitFor(() => expect(fixture.lines.filter(line => (line.call as ReturnType<typeof vi.fn>).mock.calls.length)).toHaveLength(2));
+    await fixture.worker.tick();
+    expect(fixture.gateway.tryAcquireLine).toHaveBeenCalledTimes(2);
+    release(); await running;
+    expect(fixture.repository.finish).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the first call when acquiring the second line fails', async () => {
+    const fixture = setup();
+    let release!: () => void;
+    const held = new Promise<VoiceReminderCallResult>(resolve => { release = () => resolve(completed); });
+    fixture.gateway.tryAcquireLine.mockImplementationOnce(async () => ({ call: vi.fn(() => held), release: vi.fn(async () => undefined) }))
+      .mockRejectedValue(new Error('Provider unavailable'));
+    let ended = false;
+    const running = fixture.worker.tick().catch(() => { ended = true; });
+    await vi.waitFor(() => expect(fixture.gateway.tryAcquireLine).toHaveBeenCalledTimes(2));
+    expect(ended).toBe(false);
+    release(); await running;
+    expect(ended).toBe(true);
+    expect(fixture.repository.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits on unknown occupancy, disabled reminders and absent audio', async () => {
+    for (const mode of ['unknown', 'disabled', 'audio'] as const) {
+      const fixture = setup();
+      if (mode === 'unknown') fixture.gateway.readiness.mockResolvedValue({ ready: false, code: 'transport_unavailable' as 'ready' });
+      if (mode === 'disabled') fixture.repository.settings.mockResolvedValue({ ...settings, enabled: false });
+      if (mode === 'audio') fixture.repository.settings.mockResolvedValue({ ...settings, audio: null as unknown as typeof audio });
+      await fixture.worker.tick();
+      expect(fixture.gateway.tryAcquireLine).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not consume an attempt when a manager claims the line and retries only known no-answer', async () => {
+    for (const result of [
+      { outcome: 'busy', callStarted: false, callId: null },
+      { outcome: 'unanswered', callStarted: true, callId: 'call-1' },
+      { outcome: 'failed', callStarted: true, callId: 'call-1' },
+    ] as VoiceReminderCallResult[]) {
+      const fixture = setup(1);
+      fixture.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async () => result), release: vi.fn(async () => undefined) });
+      await fixture.worker.tick();
+      expect(fixture.repository.finish).toHaveBeenCalledWith(expect.anything(), result, now,
+        result.outcome === 'unanswered' ? new Date('2030-01-15T05:10:00Z') : null);
+    }
+  });
+
+  it('cancels changed lessons but defers a temporary settings gate before dial', async () => {
+    for (const prepared of [null, 'defer'] as const) {
+      const fixture = setup(1);
+      fixture.repository.prepare.mockResolvedValue(prepared as never);
+      await fixture.worker.tick();
+      expect(fixture.lines[0].call).not.toHaveBeenCalled();
+      if (prepared === 'defer') expect(fixture.repository.defer).toHaveBeenCalledTimes(1);
+      else expect(fixture.repository.finish).toHaveBeenCalledWith(expect.anything(), { outcome: 'cancelled', callStarted: false, callId: null }, now, null);
+    }
+  });
+
+  it('treats a thrown transport failure after dispatch as ambiguous and never retries it', async () => {
+    const fixture = setup(1);
+    fixture.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async () => { throw new Error('Connection lost'); }), release: vi.fn(async () => undefined) });
+    await fixture.worker.tick();
+    expect(fixture.repository.finish).toHaveBeenCalledWith(expect.anything(), { outcome: 'failed', callStarted: true, callId: null }, now, null);
+  });
+
+  it('immediately reuses a free line for queued work while the other line is still ringing', async () => {
+    const fixture = setup(4);
+    let finishSlow!: () => void;
+    const held = new Promise<VoiceReminderCallResult>(resolve => { finishSlow = () => resolve(completed); });
+    fixture.gateway.tryAcquireLine.mockImplementation(async () => {
+      const first = fixture.lines.length === 0;
+      const line = { call: vi.fn(async () => first ? held : completed), release: vi.fn(async () => undefined) };
+      fixture.lines.push(line); return line;
+    });
+    const running = fixture.worker.tick();
+    await vi.waitFor(() => expect(fixture.repository.finish).toHaveBeenCalledTimes(3));
+    expect(fixture.lines[0].release).not.toHaveBeenCalled();
+    finishSlow(); await running;
+    expect(fixture.repository.finish).toHaveBeenCalledTimes(4);
+  });
+});

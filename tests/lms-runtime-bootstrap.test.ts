@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
   poolEnd: vi.fn(),
   poolQuery: vi.fn(),
   voiceTick: vi.fn(async () => undefined),
-  voiceClose: vi.fn(async () => undefined),
+  voiceClose: vi.fn(async (): Promise<void> => undefined),
   publishReleaseUpdates: vi.fn(async () => undefined),
   getUser: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },

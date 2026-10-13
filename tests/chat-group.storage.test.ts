@@ -34,8 +34,16 @@ it('retains messages and unread counts after their sender is deleted', async () 
   expect(mocks.query.mock.calls.at(-1)![0]).toContain('m.sender_id IS DISTINCT FROM $1');
 });
 it('captures the sender name when saving a message', async () => {
-  mocks.query.mockResolvedValue({ rows: [{ id: 12, senderId: 7, senderName: 'Teacher' }] });
+  mocks.clientQuery.mockImplementation(async (sql: string) => sql.startsWith('WITH m') ? { rows: [{ id: 12, senderId: 7, senderName: 'Teacher' }] } : { rows: [] });
   await chatGroupStorage.send(4, 7, 'Hello', []);
-  expect(mocks.query.mock.calls.at(-1)![0]).toContain('sender_name');
-  expect(mocks.query.mock.calls.at(-1)![0]).toContain('SELECT $1, id, full_name');
+  const sql = mocks.clientQuery.mock.calls.find(([sql]) => sql.startsWith('WITH m'))![0];
+  expect(sql).toContain('sender_name'); expect(sql).toContain('SELECT $1, id, full_name');
+  expect(sql).toContain('senderAvatarUrl'); expect(sql).toContain('EXISTS (SELECT 1 FROM chat_group_members');
+  expect(mocks.clientQuery).toHaveBeenCalledWith('SELECT id FROM chat_groups WHERE id=$1 FOR SHARE', [4]);
+  expect(mocks.clientQuery).toHaveBeenLastCalledWith('COMMIT');
+});
+it('rejects a sender whose membership was removed after the route access check', async () => {
+  await expect(chatGroupStorage.send(4, 7, 'Hello', [])).rejects.toMatchObject({ statusCode: 404 });
+  expect(mocks.clientQuery).toHaveBeenLastCalledWith('ROLLBACK');
+  expect(mocks.release).toHaveBeenCalled();
 });

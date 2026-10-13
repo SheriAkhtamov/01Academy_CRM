@@ -1,9 +1,11 @@
 import { pool } from '../db';
 import type { CreateChatGroupRequest, ChatGroupDto, GroupMessageDto } from '@shared/contracts/chat-groups';
 import type { MessageAttachment } from '@shared/contracts/messages';
+import { chatGroupManagementStorage } from './chat-group-management.storage';
 
-const messageColumns = `m.id, m.group_id AS "groupId", m.sender_id AS "senderId", COALESCE(u.full_name, m.sender_name) AS "senderName", m.content, m.attachments, m.created_at AS "createdAt"`;
+const messageColumns = `m.id, m.group_id AS "groupId", m.sender_id AS "senderId", COALESCE(u.full_name, m.sender_name) AS "senderName", u.avatar_url AS "senderAvatarUrl", m.content, m.attachments, m.created_at AS "createdAt"`;
 export const chatGroupStorage = {
+  ...chatGroupManagementStorage,
   async list(userId: number): Promise<ChatGroupDto[]> {
     const result = await pool.query(`SELECT g.id, g.name, g.created_by AS "createdBy",
       (SELECT COUNT(*)::int FROM chat_group_members members WHERE members.group_id=g.id) AS "participantCount",
@@ -38,10 +40,20 @@ export const chatGroupStorage = {
     return result.rows;
   },
   async send(groupId: number, senderId: number, content: string, attachments: MessageAttachment[]): Promise<GroupMessageDto> {
-    const result = await pool.query(`WITH m AS (
-      INSERT INTO chat_group_messages (group_id,sender_id,sender_name,content,attachments) SELECT $1, id, full_name, $3, $4::jsonb FROM users WHERE id=$2 RETURNING *
-      ) SELECT ${messageColumns} FROM m LEFT JOIN users u ON u.id=m.sender_id`, [groupId,senderId,content,JSON.stringify(attachments)]);
-    return result.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM chat_groups WHERE id=$1 FOR SHARE', [groupId]);
+      const result = await client.query(`WITH m AS (
+        INSERT INTO chat_group_messages (group_id,sender_id,sender_name,content,attachments)
+        SELECT $1, id, full_name, $3, $4::jsonb FROM users WHERE id=$2
+          AND EXISTS (SELECT 1 FROM chat_group_members WHERE group_id=$1 AND user_id=$2) RETURNING *
+        ) SELECT ${messageColumns} FROM m LEFT JOIN users u ON u.id=m.sender_id`, [groupId,senderId,content,JSON.stringify(attachments)]);
+      if (!result.rows[0]) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
   },
   async markRead(groupId: number, userId: number, messageId: number): Promise<void> {
     await pool.query(`UPDATE chat_group_members SET last_read_message_id=GREATEST(last_read_message_id,

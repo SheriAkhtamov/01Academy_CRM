@@ -1,11 +1,25 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
+import { hasLeadershipAccess } from '@shared/academy';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import type { ChatGroupRepository } from '../modules/chat/application/ports';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
-import { createChatGroupSchema, sendGroupMessageSchema } from '@shared/contracts/chat-groups';
+import { addChatGroupParticipantsSchema, createChatGroupSchema, leaveChatGroupSchema, renameChatGroupSchema, sendGroupMessageSchema } from '@shared/contracts/chat-groups';
 import { positiveIdSchema } from '@shared/contracts/messages';
 import { messageFilePath, parseMessageUpload, removeMessageFiles, uploadedMessageAttachment } from '../middleware/message-upload.middleware';
+
+const managementErrors = new Set(['resourceNotFound', 'invalidData', 'chatGroupManagementDenied', 'chatGroupOwnerProtected',
+  'chatGroupMemberMissing', 'chatGroupParticipantsUnavailable', 'chatGroupParticipantsLimit', 'chatGroupNextOwnerRequired', 'chatGroupNextOwnerUnavailable']);
+function managementFailure(res: Response, error: unknown) {
+  logger.error('Failed to change chat group', { error });
+  const failure = error as Error & { statusCode?: number };
+  const known = managementErrors.has(failure?.message) && [400, 403, 404].includes(failure.statusCode ?? 0);
+  return res.status(known ? failure.statusCode! : 500).json({ error: known ? failure.message : 'chatGroupUpdateFailed' });
+}
+function announceChange(groupId: number, audienceUserIds: number[]) {
+  try { publishRealtimeEvent({ type: 'GROUP_CHAT_UPDATED', data: { groupId }, audienceUserIds }); }
+  catch (error) { logger.error('Failed to announce chat group change', { error, groupId }); }
+}
 
 export const createChatGroupRouter = (chatGroupStorage: ChatGroupRepository) => {
 const router = Router();
@@ -57,6 +71,50 @@ router.use('/:id', async (req, res, next) => {
     next();
   } catch (error) { logger.error('Failed to check chat group access', { error }); res.status(500).json({ error: 'failedToLoadData' }); }
 });
+router.get('/:id', async (req, res) => {
+  try {
+    const group = await chatGroupStorage.detail(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user));
+    if (!group) return res.status(404).json({ error: 'resourceNotFound' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(group);
+  } catch (error) { logger.error('Failed to load chat participants', { error }); res.status(500).json({ error: 'failedToLoadData' }); }
+});
+router.patch('/:id', async (req, res) => {
+  const input = renameChatGroupSchema.safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: 'chatGroupNameRequired' });
+  try {
+    const audience = await chatGroupStorage.rename(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user), input.data.name);
+    announceChange(res.locals.groupId, audience);
+    res.json({ success: true });
+  } catch (error) { managementFailure(res, error); }
+});
+router.post('/:id/participants', async (req, res) => {
+  const input = addChatGroupParticipantsSchema.safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: 'chatGroupParticipantsRequired' });
+  try {
+    const audience = await chatGroupStorage.addParticipants(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user), input.data.participantIds);
+    announceChange(res.locals.groupId, audience);
+    res.json({ success: true });
+  } catch (error) { managementFailure(res, error); }
+});
+router.delete('/:id/participants/:participantId', async (req, res) => {
+  const id = positiveIdSchema.safeParse(req.params.participantId);
+  if (!id.success) return res.status(400).json({ error: 'invalidData' });
+  try {
+    const audience = await chatGroupStorage.removeParticipant(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user), id.data);
+    announceChange(res.locals.groupId, audience);
+    res.json({ success: true });
+  } catch (error) { managementFailure(res, error); }
+});
+router.post('/:id/leave', async (req, res) => {
+  const input = leaveChatGroupSchema.safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: 'invalidData' });
+  try {
+    const audience = await chatGroupStorage.leave(res.locals.groupId, req.user!.id, input.data.nextOwnerId);
+    announceChange(res.locals.groupId, audience);
+    res.json({ success: true });
+  } catch (error) { managementFailure(res, error); }
+});
 router.get('/:id/messages', async (_req, res) => {
   try { res.json(await chatGroupStorage.messages(res.locals.groupId)); }
   catch (error) { logger.error('Failed to load group messages', { error }); res.status(500).json({ error: 'failedToLoadData' }); }
@@ -73,7 +131,11 @@ router.post('/:id/messages', parseMessageUpload, async (req, res) => {
     saved = true;
     publishRealtimeEvent({ type: 'GROUP_CHAT_UPDATED', data: { groupId: res.locals.groupId }, audienceUserIds: res.locals.memberIds });
     res.status(201).json(message);
-  } catch (error) { logger.error('Failed to send group message', { error }); res.status(500).json({ error: 'messageSendFailed' }); }
+  } catch (error) {
+    logger.error('Failed to send group message', { error });
+    const missing = (error as Error & { statusCode?: number })?.statusCode === 404;
+    res.status(missing ? 404 : 500).json({ error: missing ? 'resourceNotFound' : 'messageSendFailed' });
+  }
   finally { if (!saved) await removeMessageFiles(files).catch((error) => logger.error('Failed to remove unsent group files', { error })); }
 });
 router.put('/:id/read', async (req, res) => {

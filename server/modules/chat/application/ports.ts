@@ -1,7 +1,12 @@
-import type { ChatGroupDto, CreateChatGroupRequest, GroupMessageDto } from '@shared/contracts/chat-groups';
+import type { ChatGroupDetailsDto, ChatGroupDto, CreateChatGroupRequest, GroupMessageDto } from '@shared/contracts/chat-groups';
 import type { MessageAttachment } from '@shared/contracts/messages';
 
 export interface ChatGroupRepository {
+  detail(groupId: number, userId: number, administrator: boolean): Promise<ChatGroupDetailsDto | null>;
+  rename(groupId: number, userId: number, administrator: boolean, name: string): Promise<number[]>;
+  addParticipants(groupId: number, userId: number, administrator: boolean, participantIds: number[]): Promise<number[]>;
+  removeParticipant(groupId: number, userId: number, administrator: boolean, participantId: number): Promise<number[]>;
+  leave(groupId: number, userId: number, nextOwnerId?: number): Promise<number[]>;
   list(userId: number): Promise<ChatGroupDto[]>;
   create(userId: number, input: CreateChatGroupRequest): Promise<ChatGroupDto>;
   memberIds(groupId: number, userId: number): Promise<number[] | null>;

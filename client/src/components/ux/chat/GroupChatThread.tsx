@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Paperclip, Send, UsersRound } from 'lucide-react';
+import { ChevronDown, Loader2, Paperclip, Send, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +12,8 @@ import { chatGroupsApi, chatGroupKeys } from '@/features/messages/chat-groups-ap
 import { MAX_MESSAGE_FILE_BYTES, MAX_MESSAGE_FILES } from '@shared/contracts/messages';
 import type { ChatGroupDto, GroupMessageDto } from '@shared/contracts/chat-groups';
 import { ChatFileDrafts, ChatMessageAttachments } from './ChatAttachments';
+import { UserAvatar } from '@/components/ux/UserAvatar';
+import { ChatGroupDetailsDialog } from './ChatGroupDetailsDialog';
 
 type Draft = { text: string; files: File[] };
 const EMPTY_DRAFT: Draft = { text: '', files: [] };
@@ -21,6 +23,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
   const client = useQueryClient();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [readError, setReadError] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const lastReadAttempt = useRef('');
@@ -34,6 +37,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
   const latestId = query.data?.at(-1)?.id;
   useEffect(() => {
     setReadError(false);
+    setDetailsOpen(false);
     lastReadAttempt.current = '';
   }, [group?.id]);
   useEffect(() => {
@@ -58,21 +62,24 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
       } }; });
       void client.invalidateQueries({ queryKey: chatGroupKeys.all });
     },
-    onError: (error: Error) => toast({ title: t('messageSendFailed'), description: error.message, variant: 'destructive' }),
+    onError: () => toast({ title: t('messageSendFailed'), variant: 'destructive' }),
   });
   if (!group) return null;
   const setDraft = (next: Partial<Draft>) => setDrafts((current) => ({ ...current, [group.id]: { ...(current[group.id] ?? EMPTY_DRAFT), ...next } }));
   const submit = () => { if (!send.isPending && (draft.text.trim() || draft.files.length)) send.mutate({ groupId: group.id, ...draft }); };
   return <div className="flex min-h-0 flex-1 flex-col">
-    <div className="flex items-center gap-3 border-b p-4"><UsersRound className="size-9 shrink-0 text-primary" /><div className="min-w-0">
+    <button type="button" className="flex w-full items-center gap-3 border-b p-4 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => setDetailsOpen(true)} aria-haspopup="dialog" aria-label={t('chatGroupDetails')}>
+      <UsersRound className="size-9 shrink-0 text-primary" /><div className="min-w-0 flex-1">
       <h3 className="truncate font-medium">{group.name}</h3><p className="text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</p>
-    </div></div>
+    </div><ChevronDown className="size-4 shrink-0" /></button>
     <ScrollArea className="min-h-0 flex-1"><div className="space-y-3 p-4">
       {query.isLoading ? <Loader2 className="size-6 animate-spin" aria-label={t('loading')} /> : null}
       {query.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void query.refetch()}>{t('retry')}</Button></div> : null}
       {readError ? <div role="alert">{t('updateFailed')} <Button variant="outline" onClick={() => { if (latestId) markRead({ groupId: group.id, messageId: latestId }); }}>{t('retry')}</Button></div> : null}
-      {(query.data ?? []).map((message) => <div key={message.id} className={`flex ${message.senderId===user?.id ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${message.senderId===user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+      {(query.isError ? [] : query.data ?? []).map((message) => <div key={message.id} className={`flex items-end gap-2 ${message.senderId===user?.id ? 'justify-end' : 'justify-start'}`}>
+        {message.senderId !== user?.id ? <UserAvatar user={{ fullName: message.senderName || t('chatDeletedEmployee'), avatarUrl: message.senderAvatarUrl }} className="size-8 shrink-0 text-xs" /> : null}
+        <div className={`min-w-0 max-w-[85%] rounded-xl px-3 py-2 text-sm [overflow-wrap:anywhere] ${message.senderId===user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
           {message.senderId!==user?.id ? <p className="mb-1 font-medium">{message.senderName || t('chatDeletedEmployee')}</p> : null}
           {message.content ? <p className="whitespace-pre-wrap break-words">{message.content}</p> : null}
           {message.attachments?.length ? <ChatMessageAttachments attachments={message.attachments} /> : null}
@@ -97,5 +104,9 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
         <Button size="icon" aria-label={t('send')} disabled={send.isPending || (!draft.text.trim() && draft.files.length===0)} onClick={submit}>{send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
       </div>
     </div>
+    {detailsOpen ? <ChatGroupDetailsDialog group={group} onClose={() => setDetailsOpen(false)} onLeft={() => {
+      setDetailsOpen(false);
+      setDrafts((current) => { const { [group.id]: _removed, ...remaining } = current; return remaining; });
+    }} /> : null}
   </div>;
 }

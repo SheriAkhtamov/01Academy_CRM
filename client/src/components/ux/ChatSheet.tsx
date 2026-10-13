@@ -51,6 +51,11 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const [createChatMode, setCreateChatMode] = useState<'group' | 'direct' | null>(null);
   const groupsQuery = useQuery({ ...chatGroupQueryOptions, enabled: open });
   const selectedGroup = groupsQuery.data?.find((group) => group.id === selectedGroupId) ?? null;
+  useEffect(() => {
+    if (selectedGroupId === null || !groupsQuery.isSuccess || selectedGroup) return;
+    queryClient.removeQueries({ queryKey: ['/api/chat-groups', selectedGroupId] });
+    setSelectedGroupId(null);
+  }, [groupsQuery.isSuccess, groupsQuery.data, queryClient, selectedGroup, selectedGroupId]);
   const [draftsByEmployee, setDraftsByEmployee] = useState<Record<number, string>>({});
   const [filesByEmployee, setFilesByEmployee] = useState<Record<number, File[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -261,10 +266,9 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
       requestAnimationFrame(() => scrollThreadToBottom('smooth'));
     },
-    onError: (error: Error) => {
+    onError: () => {
       toast({
         title: t('messageSendFailed'),
-        description: error.message,
         variant: 'destructive',
       });
     },
@@ -523,7 +527,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     attachFiles(Array.from(event.target.files ?? [])); event.target.value = '';
                   }} />
                   <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="icon" title={t('messageUploadHint')} aria-label={t('attachFile')} disabled={sendMessageMutation.isPending} onClick={() => fileInputRef.current?.click()}><Paperclip className="size-4" /></Button>
+                    <Button type="button" variant="outline" size="icon" aria-label={t('attachFile')} disabled={sendMessageMutation.isPending} onClick={() => fileInputRef.current?.click()}><Paperclip className="size-4" /></Button>
                     <Input
                       className="min-w-0 flex-1"
                       placeholder={t('typeMessage')}

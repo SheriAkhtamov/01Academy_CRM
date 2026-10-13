@@ -1,13 +1,19 @@
 import { apiRequest } from '@/lib/queryClient';
-import type { ChatGroupDto, GroupMessageDto, CreateChatGroupRequest } from '@shared/contracts/chat-groups';
+import type { ChatGroupDetailsDto, ChatGroupDto, GroupMessageDto, CreateChatGroupRequest, LeaveChatGroupRequest } from '@shared/contracts/chat-groups';
 
 export const chatGroupKeys = {
   all: ['/api/chat-groups'] as const,
+  detail: (id: number) => ['/api/chat-groups', id, 'details'] as const,
   messages: (id: number) => ['/api/chat-groups', id, 'messages'] as const,
 };
 export const chatGroupsApi = {
   list: (): Promise<ChatGroupDto[]> => apiRequest('GET', '/api/chat-groups'),
   create: (input: CreateChatGroupRequest): Promise<ChatGroupDto> => apiRequest('POST', '/api/chat-groups', input),
+  detail: (id: number): Promise<ChatGroupDetailsDto> => apiRequest('GET', `/api/chat-groups/${id}`),
+  rename: (id: number, name: string) => apiRequest('PATCH', `/api/chat-groups/${id}`, { name }),
+  addParticipants: (id: number, participantIds: number[]) => apiRequest('POST', `/api/chat-groups/${id}/participants`, { participantIds }),
+  removeParticipant: (id: number, participantId: number) => apiRequest('DELETE', `/api/chat-groups/${id}/participants/${participantId}`),
+  leave: (id: number, input: LeaveChatGroupRequest = {}) => apiRequest('POST', `/api/chat-groups/${id}/leave`, input),
   messages: (id: number): Promise<GroupMessageDto[]> => apiRequest('GET', `/api/chat-groups/${id}/messages`),
   read: (id: number, messageId: number) => apiRequest('PUT', `/api/chat-groups/${id}/read`, { messageId }),
   send: (id: number, content: string, files: File[]): Promise<GroupMessageDto> => {

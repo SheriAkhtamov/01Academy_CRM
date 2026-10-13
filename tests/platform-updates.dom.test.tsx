@@ -467,45 +467,67 @@ it('supports hotkey / to focus search and Escape to clear search or return from 
   await waitFor(() => expect(location.search).toBe(''));
 });
 
-it('allows toggling employee reactions with accessible aria-pressed and localStorage sync', async () => {
-  mocks.find.mockResolvedValue(post);
-  mocks.list.mockResolvedValue([post]);
-  mount('?post=5');
-  await screen.findByText('Выберите нужную группу.');
+it.each(['ru', 'en'] as const)('does not display or access retired ratings when reading and changing posts in %s', async (language) => {
+  i18n.setLanguage(language);
+  const retiredKey = 'academy-updates:reactions';
+  const storedRatings = JSON.stringify({
+    [post.id]: { counts: { helpful: 2, awesome: 3, excited: 4 }, userReaction: 'awesome' },
+    [olderPost.id]: { counts: { helpful: 7, awesome: 8, excited: 9 }, userReaction: 'helpful' },
+  });
+  const storagePrototype = Object.getPrototypeOf(window.localStorage) as Storage;
+  const originalGetItem = storagePrototype.getItem;
+  window.localStorage.setItem(retiredKey, storedRatings);
+  mocks.find.mockImplementation(async (id: number) => id === post.id ? post : olderPost);
+  mocks.list.mockResolvedValue([post, olderPost]);
 
-  const helpfulButton = screen.getByRole('button', { name: i18n.t('updatesReactionHelpful') });
-  const awesomeButton = screen.getByRole('button', { name: i18n.t('updatesReactionAwesome') });
-  const excitedButton = screen.getByRole('button', { name: i18n.t('updatesReactionExcited') });
+  const getItem = vi.spyOn(storagePrototype, 'getItem');
+  const setItem = vi.spyOn(storagePrototype, 'setItem');
+  const removeItem = vi.spyOn(storagePrototype, 'removeItem');
+  const clear = vi.spyOn(storagePrototype, 'clear');
+  const labels = language === 'ru'
+    ? { title: 'Как вам обновление?', feedback: 'Спасибо за ваш отклик!', buttons: ['Полезно', 'Круто', 'Ждали'] }
+    : { title: 'How do you like this update?', feedback: 'Thank you for your feedback!', buttons: ['Helpful', 'Awesome', 'Excited'] };
 
-  expect(helpfulButton.getAttribute('aria-pressed')).toBe('false');
-  expect(awesomeButton.getAttribute('aria-pressed')).toBe('false');
-  expect(excitedButton.getAttribute('aria-pressed')).toBe('false');
+  const expectNoRatings = (neighborTitle: string) => {
+    const article = screen.getByRole('article');
+    expect(within(article).queryByText(labels.title)).toBeNull();
+    expect(within(article).queryByText(labels.feedback)).toBeNull();
+    for (const label of labels.buttons) {
+      expect(within(article).queryByRole('button', { name: label })).toBeNull();
+    }
+    for (const emoji of ['👍', '🔥', '🚀']) {
+      expect(within(article).queryByText(emoji)).toBeNull();
+    }
+    const lastSection = article.querySelector('section:last-of-type')!;
+    const nextBlock = lastSection.nextElementSibling as HTMLElement;
+    expect(within(nextBlock).getByRole('link', { name: neighborTitle })).toBeTruthy();
+    expect(article.parentElement!.className).toContain('bg-card');
+    expect(within(article).getByRole('button', { name: i18n.t('updatesScrollToTop') })).toBeTruthy();
+    expect(getItem).toHaveBeenCalledWith('academy-updates:read-posts');
+    expect(setItem.mock.calls.some(([key]) => key === 'academy-updates:read-posts')).toBe(true);
+    expect(getItem).not.toHaveBeenCalledWith(retiredKey);
+    expect(setItem.mock.calls.some(([key]) => key === retiredKey)).toBe(false);
+    expect(removeItem).not.toHaveBeenCalledWith(retiredKey);
+    expect(clear).not.toHaveBeenCalled();
+    expect(originalGetItem.call(window.localStorage, retiredKey)).toBe(storedRatings);
+  };
 
-  await userEvent.click(helpfulButton);
-  expect(helpfulButton.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText(i18n.t('updatesReactionFeedback'))).toBeTruthy();
-
-  let raw = window.localStorage.getItem('academy-updates:reactions');
-  let data = JSON.parse(raw || '{}');
-  expect(data['5']?.userReaction).toBe('helpful');
-  expect(data['5']?.counts?.helpful).toBe(1);
-
-  await userEvent.click(awesomeButton);
-  expect(helpfulButton.getAttribute('aria-pressed')).toBe('false');
-  expect(awesomeButton.getAttribute('aria-pressed')).toBe('true');
-
-  raw = window.localStorage.getItem('academy-updates:reactions');
-  data = JSON.parse(raw || '{}');
-  expect(data['5']?.userReaction).toBe('awesome');
-  expect(data['5']?.counts?.helpful).toBe(0);
-  expect(data['5']?.counts?.awesome).toBe(1);
-
-  await userEvent.click(awesomeButton);
-  expect(awesomeButton.getAttribute('aria-pressed')).toBe('false');
-  raw = window.localStorage.getItem('academy-updates:reactions');
-  data = JSON.parse(raw || '{}');
-  expect(data['5']?.userReaction).toBeNull();
-  expect(data['5']?.counts?.awesome).toBe(0);
+  try {
+    mount('?post=5');
+    await screen.findByRole('heading', { name: post.content.title[language] });
+    const olderLink = await screen.findByRole('link', { name: olderPost.content.title[language] });
+    expectNoRatings(olderPost.content.title[language]);
+    await userEvent.click(olderLink);
+    await screen.findByRole('heading', { name: olderPost.content.title[language] });
+    expect(location.search).toBe('?post=4');
+    expectNoRatings(post.content.title[language]);
+    expect(JSON.parse(originalGetItem.call(window.localStorage, 'academy-updates:read-posts') || '[]')).toEqual([post.id, olderPost.id]);
+  } finally {
+    getItem.mockRestore();
+    setItem.mockRestore();
+    removeItem.mockRestore();
+    clear.mockRestore();
+  }
 });
 
 it('automatically saves draft to localStorage, shows restored banner, and clears on demand', async () => {

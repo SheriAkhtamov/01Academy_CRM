@@ -7,13 +7,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  calculateReadingTime,
-  getPostReactions,
-  togglePostReaction,
-  type ReactionType,
-  type PostReactions,
-} from './utils';
+import { calculateReadingTime } from './utils';
 import { updatesApi, updateQueryKeys } from './api';
 
 export function UpdateArticle({ post }: { post: PlatformUpdate }) {
@@ -21,14 +15,8 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
   const [, navigate] = useLocation();
   const [image, setImage] = useState<{ src: string; caption: string } | null>(null);
   const [readingProgress, setReadingProgress] = useState(0);
-  const [reactions, setReactions] = useState<PostReactions>(() => getPostReactions(post.id));
 
   const locale = language === 'ru' ? 'ru' : 'en';
-
-  // Sync reactions when post changes
-  useEffect(() => {
-    setReactions(getPostReactions(post.id));
-  }, [post.id]);
 
   // Calculate reading scroll progress
   useEffect(() => {
@@ -91,11 +79,6 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [image, prevPost, nextPost, navigate]);
-
-  const handleReaction = (reaction: ReactionType) => {
-    const updated = togglePostReaction(post.id, reaction);
-    setReactions(updated);
-  };
 
   const scrollToTop = () => {
     if (typeof window.scrollTo === 'function') {
@@ -212,73 +195,6 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
             ) : null}
           </section>
         ))}
-
-        {/* Employee reactions block (ADV-06) */}
-        <div className="rounded-xl border border-border/80 bg-card/60 p-5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold tracking-tight text-foreground">
-              {t('updatesReactionsTitle')}
-            </p>
-            {reactions.userReaction ? (
-              <span className="text-xs text-muted-foreground animate-in fade-in duration-200">
-                {t('updatesReactionFeedback')}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Button
-              type="button"
-              variant={reactions.userReaction === 'helpful' ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              aria-label={t('updatesReactionHelpful')}
-              aria-pressed={reactions.userReaction === 'helpful'}
-              onClick={() => handleReaction('helpful')}
-            >
-              <span aria-hidden="true">👍</span>
-              <span>{t('updatesReactionHelpful')}</span>
-              {reactions.helpful > 0 ? (
-                <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
-                  {reactions.helpful}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              type="button"
-              variant={reactions.userReaction === 'awesome' ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              aria-label={t('updatesReactionAwesome')}
-              aria-pressed={reactions.userReaction === 'awesome'}
-              onClick={() => handleReaction('awesome')}
-            >
-              <span aria-hidden="true">🔥</span>
-              <span>{t('updatesReactionAwesome')}</span>
-              {reactions.awesome > 0 ? (
-                <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
-                  {reactions.awesome}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              type="button"
-              variant={reactions.userReaction === 'excited' ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              aria-label={t('updatesReactionExcited')}
-              aria-pressed={reactions.userReaction === 'excited'}
-              onClick={() => handleReaction('excited')}
-            >
-              <span aria-hidden="true">🚀</span>
-              <span>{t('updatesReactionExcited')}</span>
-              {reactions.excited > 0 ? (
-                <span className="ml-1 rounded-full bg-background/30 px-1.5 py-0.5 text-xs font-semibold">
-                  {reactions.excited}
-                </span>
-              ) : null}
-            </Button>
-          </div>
-        </div>
 
         {/* Bottom navigation cards: Previous and Next updates */}
         {prevPost || nextPost ? (

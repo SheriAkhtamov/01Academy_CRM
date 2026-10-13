@@ -24,6 +24,7 @@ import { resolveLearningExecution } from "../infrastructure/learning-execution";
 import { configureStudentProfileLearningPortfolioAvailability } from "../modules/academy/student-profile-data";
 import { createVoiceRemindersRuntime } from '../infrastructure/voice-reminders-runtime';
 import { createPbxCapacityProvider } from '../infrastructure/voice-telephony/provider-capacity';
+import { CrmCapacitySource } from '../infrastructure/voice-telephony/crm-capacity';
 import { onlinePbxClient } from '../services/onlinepbx';
 
 export type ApplicationRuntime = {
@@ -82,7 +83,13 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
         : sessionMiddleware(request, response, next),
     );
     learningRuntime.registerRoutes(app);
-    voiceReminders = createVoiceRemindersRuntime(createPbxCapacityProvider(onlinePbxClient));
+    // Browser reports retry every 5s and active dialogs heartbeat every 30s.
+    // Allow their durable outboxes to restore before admitting a robot on restart.
+    const crmCapacity = new CrmCapacitySource(pool, onlinePbxClient);
+    voiceReminders = createVoiceRemindersRuntime(createPbxCapacityProvider(
+      onlinePbxClient, () => crmCapacity.snapshot(),
+      (connection, excludeReservationId) => crmCapacity.readLocked(connection, excludeReservationId),
+    ), pool, { startupRecoveryMs: 45_000 });
     registerApiRoutes(app, voiceReminders);
 
     server = createServer(app);

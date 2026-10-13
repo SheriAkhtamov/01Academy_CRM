@@ -14,6 +14,7 @@ import { performVertoReminderCall } from './voice-telephony/verto-call';
 
 export interface VoiceReminderCapacityProvider {
   snapshot(): Promise<ProviderChannelSnapshot>;
+  readLocked?(connection: Pick<Pool, 'query'>, excludeReservationId?: string): Promise<ProviderChannelSnapshot>;
   getCredentials(extension: string): Promise<OnlinePbxWebRtcCredentials>;
   close?(): Promise<void>;
 }
@@ -21,11 +22,14 @@ export interface VoiceReminderCapacityProvider {
 export const createVoiceRemindersRuntime = (
   provider: VoiceReminderCapacityProvider,
   database: Pool = pool,
-  options: { audioDirectory?: string; performCall?: typeof performVertoReminderCall } = {},
+  options: { audioDirectory?: string; performCall?: typeof performVertoReminderCall; startupRecoveryMs?: number; now?: () => number } = {},
 ) => {
+  const now = options.now ?? Date.now;
+  const readyAt = now() + Math.max(0, options.startupRecoveryMs ?? 0);
   const repository = new PostgresVoiceReminderRepository(database);
   const audioStore = new LocalVoiceReminderAudioStore(options.audioDirectory);
-  const channels = new TelephonyChannelReservations(database, () => provider.snapshot());
+  const channels = new TelephonyChannelReservations(database, () => provider.snapshot(),
+    provider.readLocked ? (connection, excludeId) => provider.readLocked!(connection, excludeId) : undefined);
   const receipts = new RobotCallReceipts(database);
   const controllers = new Set<AbortController>();
   const releases = new Map<string, () => Promise<void>>();
@@ -33,13 +37,14 @@ export const createVoiceRemindersRuntime = (
 
   const gateway: VoiceReminderGateway = {
     async readiness() {
+      if (now() < readyAt) return { ready: false, code: 'transport_unavailable' };
       const status = await provider.snapshot().catch(() => ({ known: false }));
       return !stopping && status.known
         ? { ready: true, code: 'ready' }
         : { ready: false, code: 'transport_unavailable' };
     },
     async tryAcquireLine(): Promise<VoiceReminderLine | null> {
-      if (stopping) return null;
+      if (stopping || now() < readyAt) return null;
       const lease = await channels.acquire({ owner: 'robot', extensions: ['100', '101'], clientCallId: randomUUID(), phone: null });
       if (!lease) return null;
       const controller = new AbortController();
@@ -85,7 +90,7 @@ export const createVoiceRemindersRuntime = (
                 markerWritten = true;
               },
             });
-            await receipts.complete(lease.clientCallId, result.callStarted);
+            await receipts.complete(lease.clientCallId, result.callStarted, result.terminationConfirmed === true);
             return result;
           } catch {
             return { outcome: 'failed', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };

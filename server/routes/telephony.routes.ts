@@ -387,6 +387,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
 
   try {
     await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('onlinepbx:shared-external-channels'))");
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [input.clientCallId]);
     // As on the webhook side, a dialog the provider already reported under this
     // id is left alone: adopting another row on top of it would give two rows
@@ -403,6 +404,9 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
       : await findCallReportedByProvider(client, {
           direction: input.direction,
           phone,
+          status: input.status,
+          startedAt,
+          extension,
         });
     let result = await client.query(
       // $4 and $5 are pinned to text: each is both assigned to a varchar column
@@ -547,8 +551,11 @@ type CorrelatedCall = {
  */
 export const findCallHandledInCrm = async (
   executor: Queryable,
-  input: { direction: 'incoming' | 'outgoing'; phone: string },
+  input: { direction: 'incoming' | 'outgoing'; phone: string; startedAt: Date; extension?: string | null; status: CallStatus },
 ): Promise<CorrelatedCall | null> => {
+  // Outgoing SDK and provider share the INVITE UUID. A phone number cannot
+  // prove identity, especially when durable reports replay after another call.
+  if (input.direction === 'outgoing' || ['ended', 'failed', 'declined', 'missed'].includes(input.status)) return null;
   const result = await executor.query<CorrelatedCall>(
     `SELECT call.id,
             call.user_id AS "userId",
@@ -559,34 +566,43 @@ export const findCallHandledInCrm = async (
       AND employee.is_active = true
      WHERE call.client_call_id IS NOT NULL
        AND call.provider_call_id IS NULL
+       AND call.ended_at IS NULL
+       AND call.status IN ('dialing','ringing','connected')
        AND call.direction = $1
        AND call.phone = $2
        AND call.created_at >= NOW() - make_interval(secs => $3)
+       AND ABS(EXTRACT(EPOCH FROM (call.started_at - $4::timestamp))) <= 5
+       AND ($5::text IS NULL OR call.extension IS NULL OR call.extension = $5)
      ORDER BY call.user_id IS NULL, call.created_at, call.id
-     LIMIT 1`,
-    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS],
+     LIMIT 2`,
+    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS, input.startedAt, input.extension ?? null],
   );
-  return result.rows[0] ?? null;
+  return result.rows.length === 1 ? result.rows[0] : null;
 };
 
 /** The mirror of {@link findCallHandledInCrm}, for a provider row that landed first. */
-const findCallReportedByProvider = async (
+export const findCallReportedByProvider = async (
   executor: Queryable,
-  input: { direction: 'incoming' | 'outgoing'; phone: string },
+  input: { direction: 'incoming' | 'outgoing'; phone: string; status: CallStatus; startedAt: Date; extension: string },
 ): Promise<number | null> => {
+  if (input.direction === 'outgoing' || ['ended', 'failed', 'declined', 'missed'].includes(input.status)) return null;
   const result = await executor.query<{ id: number }>(
     `SELECT call.id
      FROM telephony_calls call
      WHERE call.provider_call_id IS NOT NULL
        AND call.client_call_id IS NULL
+       AND call.ended_at IS NULL
+       AND call.status IN ('dialing','ringing','connected')
        AND call.direction = $1
        AND call.phone = $2
        AND call.created_at >= NOW() - make_interval(secs => $3)
+       AND ABS(EXTRACT(EPOCH FROM (call.started_at - $4::timestamp))) <= 5
+       AND (call.extension IS NULL OR call.extension = $5)
      ORDER BY call.created_at, call.id
-     LIMIT 1`,
-    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS],
+     LIMIT 2`,
+    [input.direction, input.phone, ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS, input.startedAt, input.extension],
   );
-  return result.rows[0]?.id ?? null;
+  return result.rows.length === 1 ? result.rows[0].id : null;
 };
 
 type RobotCallObserver = (payload: Record<string, unknown>) => Promise<boolean>;
@@ -666,7 +682,8 @@ const createWebhookHandler = (observeRobotCall?: RobotCallObserver) => asyncRout
   // the identifier.
   const handledInCrm = known
     ? null
-    : await findCallHandledInCrm(pool, { direction, phone });
+    : await findCallHandledInCrm(pool, { direction, phone, startedAt, status,
+        extension: candidates.map((candidate) => onlinePbxRoutingDestination(candidate)).find(Boolean) });
   if (handledInCrm?.userId) {
     employee = { id: handledInCrm.userId, extension: handledInCrm.extension };
   }
@@ -733,6 +750,7 @@ const createWebhookHandler = (observeRobotCall?: RobotCallObserver) => asyncRout
 
   try {
     await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('onlinepbx:shared-external-channels'))");
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [providerCallId]);
     let result = await client.query(
       `UPDATE telephony_calls

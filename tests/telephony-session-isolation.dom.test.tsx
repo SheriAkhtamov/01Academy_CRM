@@ -11,14 +11,15 @@ vi.mock('@xswitch/rtc', () => ({ Verto: class { constructor(_options: any, callb
 import { TelephonyProvider, useTelephony } from '../client/src/contexts/TelephonyContext';
 function Probe() { mocks.value = useTelephony(); return null; }
 const dialog = (callID: string) => ({ callID, direction: { name: 'inbound' }, state: { name: 'ringing' }, params: { caller_id_number: '+998901234567' }, answer: vi.fn(), hangup: vi.fn(), setMute: vi.fn().mockReturnValue(true), getMute: vi.fn(), toggleHold: vi.fn(), dtmf: vi.fn(), transfer: vi.fn() });
-beforeEach(() => { vi.clearAllMocks(); mocks.onDialogState = null; mocks.value = null; });
+beforeEach(() => { vi.clearAllMocks(); mocks.onDialogState = null; mocks.value = null; window.localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it('preserves every current call control while rejecting and ignoring a second incoming dialog', async () => {
-  mocks.api.mockImplementation(async (_method: string, url: string) => {
+  mocks.api.mockImplementation(async (_method: string, url: string, data?: { clientCallId?: string }) => {
     if (url === '/api/telephony/credentials') return { extension: '100', username: 'test', password: 'fake', sipDomain: 'example.test', websocketUrl: 'wss://example.test' };
     if (url === '/api/telephony/incoming/access') return { allowed: true, delayMs: 0 };
     if (url.startsWith('/api/telephony/contacts/lookup')) return { contact: null };
-    if (url === '/api/telephony/calls/events') return { id: 1 };
+    if (url === '/api/telephony/calls/events') return { id: 1, clientCallId: data?.clientCallId };
+    if (url === '/api/telephony/lines/authorize') return { authorized: true };
     return {};
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -69,10 +70,11 @@ it('preserves every current call control while rejecting and ignoring a second i
 
 it('retains the dialog that wins incoming eligibility while another pending dialog is rejected', async () => {
   const pending: Array<(access: { allowed: boolean; delayMs: number }) => void> = [];
-  mocks.api.mockImplementation(async (_method: string, url: string) => {
+  mocks.api.mockImplementation(async (_method: string, url: string, data?: { clientCallId?: string }) => {
     if (url === '/api/telephony/credentials') return { extension: '100', username: 'test', password: 'fake', sipDomain: 'example.test', websocketUrl: 'wss://example.test' };
     if (url === '/api/telephony/incoming/access') return new Promise((resolve) => pending.push(resolve));
-    if (url === '/api/telephony/calls/events') return { id: 1 };
+    if (url === '/api/telephony/calls/events') return { id: 1, clientCallId: data?.clientCallId };
+    if (url === '/api/telephony/lines/authorize') return { authorized: true };
     return {};
   });
   const client = new QueryClient();
@@ -97,9 +99,10 @@ it('retains the dialog that wins incoming eligibility while another pending dial
 });
 
 it('preserves synchronous outgoing SDK state notifications while creating its dialog', async () => {
-  mocks.api.mockImplementation(async (_method: string, url: string) => {
+  mocks.api.mockImplementation(async (_method: string, url: string, data?: { clientCallId?: string }) => {
     if (url === '/api/telephony/credentials') return { extension: '100', username: 'test', password: 'fake', sipDomain: 'example.test', websocketUrl: 'wss://example.test' };
-    if (url === '/api/telephony/calls/events') return { id: 1 };
+    if (url === '/api/telephony/calls/events') return { id: 1, clientCallId: data?.clientCallId };
+    if (url === '/api/telephony/lines/authorize') return { authorized: true };
     return {};
   });
   const outgoing = { ...dialog('outgoing-sync'), direction: { name: 'outbound' }, state: { name: 'active' } };

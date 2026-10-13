@@ -59,8 +59,11 @@ export const telephonyApi = {
   renewLine: (id: string) => (
     apiRequest('POST', '/api/telephony/lines/renew', { id }) as Promise<{ alive: boolean }>
   ),
-  releaseLine: (id: string) => (
-    apiRequest('POST', '/api/telephony/lines/release', { id }) as Promise<{ ok: boolean }>
+  authorizeLine: (id: string) => (
+    apiRequest('POST', '/api/telephony/lines/authorize', { id }) as Promise<{ authorized: boolean }>
+  ),
+  releaseLine: (id: string, beforeInvite = false) => (
+    apiRequest('POST', '/api/telephony/lines/release', { id, beforeInvite }) as Promise<{ released: boolean }>
   ),
   getMissedCallUnread: () => (
     apiRequest('GET', '/api/telephony/calls/missed/unread') as Promise<MissedCallUnreadSummary>

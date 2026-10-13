@@ -130,6 +130,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     });
     expect(harness.errors).toEqual([]);
     expect(result.outcome).toBe('played');
+    expect(result.terminationConfirmed).toBe(true);
     expect(result.callStarted).toBe(true);
     expect(onStarted).toHaveBeenCalledOnce();
     expect(earlyPacketCount).toBe(0);
@@ -199,6 +200,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     });
     const result = await performVertoReminderCall(harness.credentials, callInput(), dependencies());
     expect(result.outcome).toBe('unanswered');
+    expect(result.terminationConfirmed).toBe(true);
     expect(result.callStarted).toBe(true);
     expect(harness.messages.filter((message) => message.method === 'verto.invite')).toHaveLength(1);
   });
@@ -218,6 +220,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     const harness = await fakeVerto((socket) => socket.terminate());
     const result = await performVertoReminderCall(harness.credentials, callInput(), dependencies());
     expect(result).toMatchObject({ outcome: 'failed', callStarted: true });
+    expect(result.terminationConfirmed).toBe(false);
     expect(harness.messages.filter((message) => message.method === 'verto.invite')).toHaveLength(1);
   });
 

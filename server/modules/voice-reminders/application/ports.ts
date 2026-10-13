@@ -29,6 +29,7 @@ export type VoiceReminderCallResult = {
   outcome: VoiceReminderCallOutcome;
   callStarted: boolean;
   callId: string | null;
+  terminationConfirmed?: boolean;
 };
 export interface VoiceReminderLine {
   call(input: {

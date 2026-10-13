@@ -29,7 +29,7 @@ describe('voice routes resolve the active CRM session before domain admission', 
   const leader = { id: 7, module: 'administration', modules: ['administration', 'sales'], isActive: true,
     isArchived: false, onlinePbxIncomingEnabled: true, onlinePbxExtension: '100' };
   const snapshot = vi.fn(async () => ({ readiness: { ready: false } }));
-  const channels = { enabled: vi.fn(async () => false), acquire: vi.fn(), renew: vi.fn(), release: vi.fn() };
+  const channels = { enabled: vi.fn(async () => false), acquire: vi.fn(), renew: vi.fn(), release: vi.fn(), authorizeManagerDial: vi.fn() };
   const destroy = vi.fn();
   const app = (sessionUserId?: number) => {
     const application = express(); application.use(express.json());
@@ -83,5 +83,14 @@ describe('voice routes resolve the active CRM session before domain admission', 
     expect((await request(app(7)).get('/api/academy/voice-reminders')).status).toBe(403);
     expect((await request(app(7)).post('/api/telephony/lines/reserve').send({})).status).toBe(403);
     expect(snapshot).not.toHaveBeenCalled(); expect(channels.enabled).not.toHaveBeenCalled();
+  });
+  it('authorizes and cancels only the authenticated manager intent', async () => {
+    const id = randomUUID();
+    channels.authorizeManagerDial.mockResolvedValue(true); channels.release.mockResolvedValue(true);
+    expect((await request(app(7)).post('/api/telephony/lines/authorize').send({ id })).body).toEqual({ authorized: true });
+    expect(channels.authorizeManagerDial).toHaveBeenCalledWith(id, 7, '100');
+    expect((await request(app(7)).post('/api/telephony/lines/release').send({ id, beforeInvite: true })).body).toEqual({ released: true });
+    expect(channels.release).toHaveBeenCalledWith(id, 'manager', 7, true);
+    expect((await request(app(7)).post('/api/telephony/lines/authorize').send({ id, extension: '101' })).status).toBe(400);
   });
 });

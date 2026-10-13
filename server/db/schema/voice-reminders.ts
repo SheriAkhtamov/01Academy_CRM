@@ -86,6 +86,7 @@ export const createVoiceReminderTables = (references: {
     phone: varchar('phone', { length: 20 }),
     jobId: bigint('job_id', { mode: 'number' }).references(() => voiceReminderJobs.id, { onDelete: 'set null' }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
+    dialAuthorizedAt: timestamp('dial_authorized_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   }, table => ({
     ownerCheck: check('telephony_line_reservations_owner_type_check', sql`${table.ownerType} IN ('manager', 'robot')`),
@@ -99,7 +100,11 @@ export const createVoiceReminderTables = (references: {
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     providerId: varchar('provider_id', { length: 160 }).unique(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
-  }, table => ({ matchIndex: index('voice_reminder_call_attempts_match_idx').on(table.phone, table.extension, table.startedAt) }));
+    terminationConfirmedAt: timestamp('termination_confirmed_at', { withTimezone: true }),
+  }, table => ({
+    matchIndex: index('voice_reminder_call_attempts_match_idx').on(table.phone, table.extension, table.startedAt),
+    unresolvedIndex: index('voice_reminder_call_attempts_unresolved_idx').on(table.startedAt).where(sql`${table.terminationConfirmedAt} IS NULL`),
+  }));
   const voiceReminderProviderQuarantine = pgTable('voice_reminder_provider_quarantine', {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

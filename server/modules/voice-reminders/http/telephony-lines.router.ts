@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { reserveTelephonyLineSchema, telephonyLineLeaseSchema } from '@shared/contracts/telephony-lines';
+import { releaseTelephonyLineSchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema } from '@shared/contracts/telephony-lines';
 import { canAccessAcademyModule } from '@shared/academy';
 import { onlinePbxRoutingDestination } from '@shared/telephony';
 import type { TelephonyChannelReservations } from '../../../infrastructure/voice-telephony/channel-reservations';
@@ -33,10 +33,21 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
     try { response.json({ alive: await channels.renew(parsed.data.id, 'manager', request.user!.id) }); }
     catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
   });
-  router.post('/lines/release', async (request, response) => {
+  router.post('/lines/authorize', async (request, response) => {
     const parsed = telephonyLineLeaseSchema.safeParse(request.body);
     if (!parsed.success) { response.status(400).json({ error: 'onlinePbxInvalidCallEvent' }); return; }
-    try { await channels.release(parsed.data.id, 'manager', request.user!.id); response.json({ ok: true }); }
+    try {
+      response.json({ authorized: await channels.authorizeManagerDial(
+        parsed.data.id, request.user!.id, request.user!.onlinePbxExtension!,
+      ) });
+    } catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
+  });
+  router.post('/lines/release', async (request, response) => {
+    const parsed = releaseTelephonyLineSchema.safeParse(request.body);
+    if (!parsed.success) { response.status(400).json({ error: 'onlinePbxInvalidCallEvent' }); return; }
+    try {
+      response.json({ released: await channels.release(parsed.data.id, 'manager', request.user!.id, parsed.data.beforeInvite) });
+    }
     catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
   });
   return router;

@@ -51,6 +51,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY, demo_lesson_id integer, student_id integer, status text NOT NULL);
       CREATE TABLE telephony_calls(id integer PRIMARY KEY, provider_call_id text,client_call_id text,user_id integer,ended_at timestamptz,status text);`);
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
     storageKey = `${randomUUID()}.wav`;
@@ -143,6 +144,28 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
     expect((await repository.results()).summary.waiting).toBe(1);
+    await runtime.close();
+  });
+
+  it('waits for robot startup recovery without delaying manager reservations', async () => {
+    let clock = Date.now();
+    const call = mockCall();
+    const runtime = createVoiceRemindersRuntime(provider(), database, {
+      audioDirectory: directory, performCall: call, startupRecoveryMs: 45_000, now: () => clock,
+    });
+    expect(await runtime.gateway.readiness()).toEqual({ ready: false, code: 'transport_unavailable' });
+    expect(await runtime.gateway.tryAcquireLine()).toBeNull();
+    const manager = await runtime.channels.acquire({ owner: 'manager', userId: 1,
+      extensions: ['100'], clientCallId: randomUUID(), phone: '+998911234567' });
+    expect(manager).not.toBeNull();
+    clock += 44_999;
+    expect(await runtime.gateway.tryAcquireLine()).toBeNull();
+    clock += 1;
+    expect(await runtime.gateway.readiness()).toEqual({ ready: true, code: 'ready' });
+    const line = await runtime.gateway.tryAcquireLine();
+    expect(line).not.toBeNull();
+    await line!.release();
+    await runtime.channels.release(manager!.id, 'manager', 1);
     await runtime.close();
   });
 });

@@ -29,6 +29,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);
       CREATE TABLE telephony_calls(id serial PRIMARY KEY,provider_call_id text,client_call_id text,ended_at timestamptz,status text);`);
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     channels = new TelephonyChannelReservations(database, async () => snapshot);
   });
   beforeEach(async () => {
@@ -92,6 +93,44 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     expect(await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] }))).not.toBeNull();
     expect(await channels.acquire(reservation())).toBeNull();
     expect(await channels.acquire(reservation({ phone: '+998911234567' }))).toMatchObject({ extension: '101' });
+  });
+
+  it('requires fresh owned authorization and never resurrects an expired pending grant', async () => {
+    const lease = (await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] })))!;
+    expect(await channels.authorizeManagerDial(lease.id, 2, '100')).toBe(false);
+    expect(await channels.authorizeManagerDial(lease.id, 1, '101')).toBe(false);
+    snapshot = { known: true, occupiedChannels: 2, busyExtensions: ['100', '101'] };
+    expect(await channels.authorizeManagerDial(lease.id, 1, '100')).toBe(false);
+    snapshot = { known: true, occupiedChannels: 0, busyExtensions: [] };
+    expect(await channels.authorizeManagerDial(lease.id, 1, '100')).toBe(true);
+    expect(await channels.authorizeManagerDial(lease.id, 1, '100')).toBe(true);
+    const pending = (await channels.acquire(reservation({ owner: 'manager', userId: 2, extensions: ['101'], phone: '+998911234567' })))!;
+    await database.query(`UPDATE telephony_line_reservations SET lease_until=now()-interval '1 second' WHERE id=$1`, [pending.id]);
+    expect(await channels.authorizeManagerDial(pending.id, 2, '101')).toBe(false);
+  });
+
+  it('retains an issued manager intent after expiry until exact terminal proof', async () => {
+    const lease = (await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] })))!;
+    expect(await channels.authorizeManagerDial(lease.id, 1, '100')).toBe(true);
+    await database.query(`UPDATE telephony_line_reservations SET lease_until=now()-interval '1 second' WHERE id=$1`, [lease.id]);
+    expect(await channels.release(lease.id, 'manager', 1)).toBe(false);
+    const other = await channels.acquire(reservation({ phone: '+998911234567' }));
+    expect(other?.extension).toBe('101');
+    expect(await channels.acquire(reservation({ phone: '+998921234567' }))).toBeNull();
+    await database.query(`INSERT INTO telephony_calls(client_call_id,status,ended_at) VALUES($1,'ended',now())`, [lease.clientCallId]);
+    expect(await channels.release(lease.id, 'manager', 1)).toBe(true);
+  });
+
+  it('cancels an owned armed grant before INVITE but refuses to cancel an active ledger call', async () => {
+    const lease = (await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] })))!;
+    expect(await channels.authorizeManagerDial(lease.id, 1, '100')).toBe(true);
+    expect(await channels.release(lease.id, 'manager', 2, true)).toBe(false);
+    expect(await channels.release(lease.id, 'manager', 1, true)).toBe(true);
+    expect(await channels.release(lease.id, 'manager', 1, true)).toBe(true);
+    const active = (await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] })))!;
+    expect(await channels.authorizeManagerDial(active.id, 1, '100')).toBe(true);
+    await database.query(`INSERT INTO telephony_calls(client_call_id,status) VALUES($1,'connected')`, [active.clientCallId]);
+    expect(await channels.release(active.id, 'manager', 1, true)).toBe(false);
   });
 
   it('reserves both unbound robot lines and allows only one to bind a shared destination', async () => {

@@ -26,6 +26,7 @@ export class RobotCallReceipts {
     const connection = await this.database.connect();
     try {
       await connection.query('BEGIN');
+      await connection.query(`SELECT pg_advisory_xact_lock(hashtext('onlinepbx:shared-external-channels'))`);
       const inserted = await connection.query(
         `INSERT INTO voice_reminder_call_attempts(call_id, job_id, extension, phone)
          SELECT $1::uuid,$2::bigint,$3::text,$4::text FROM voice_reminder_jobs job
@@ -38,6 +39,8 @@ export class RobotCallReceipts {
         [input.callId, input.jobId, input.extension, input.phone, input.jobLeaseToken, input.reservationId],
       );
       if (inserted.rowCount) {
+        await connection.query(`UPDATE telephony_line_reservations SET dial_authorized_at = now()
+          WHERE id = $1 AND owner_type = 'robot'`, [input.reservationId]);
         await connection.query(`UPDATE voice_reminder_jobs SET provider_call_id = $3
           WHERE id = $1 AND lease_token = $2 AND status = 'calling'`, [input.jobId, input.jobLeaseToken, input.callId]);
       }
@@ -49,12 +52,14 @@ export class RobotCallReceipts {
     } finally { connection.release(); }
   }
 
-  async complete(callId: string, callStarted: boolean): Promise<void> {
+  async complete(callId: string, callStarted: boolean, terminationConfirmed = false): Promise<void> {
     if (!callStarted) {
       await this.database.query(`DELETE FROM voice_reminder_call_attempts WHERE call_id = $1 AND provider_id IS NULL`, [callId]);
       return;
     }
-    await this.database.query(`UPDATE voice_reminder_call_attempts SET completed_at = now() WHERE call_id = $1`, [callId]);
+    await this.database.query(`UPDATE voice_reminder_call_attempts SET completed_at = now(),
+      termination_confirmed_at = CASE WHEN $2 THEN COALESCE(termination_confirmed_at, now()) ELSE termination_confirmed_at END
+      WHERE call_id = $1`, [callId, terminationConfirmed]);
   }
 
   async observe(payload: Record<string, unknown>): Promise<boolean> {
@@ -64,14 +69,26 @@ export class RobotCallReceipts {
       `SELECT 1 FROM voice_reminder_call_attempts WHERE call_id::text = $1 OR provider_id = $1
        UNION ALL SELECT 1 FROM voice_reminder_provider_quarantine WHERE provider_id = $1 LIMIT 1`, [providerId],
     );
-    if (exact.rowCount) return true;
+    if (exact.rowCount) {
+      await this.confirmProviderEnd(this.database, providerId, payload);
+      return true;
+    }
     const outgoing = String(payload.direction ?? '').toLowerCase().includes('out');
     const digits = fields.map(field => String(payload[field] ?? '').replace(/\D/g, '')).filter(Boolean);
     const extensions = [...new Set(digits.filter(value => /^\d{3,4}$/.test(value)))];
     const phones = [...new Set(digits.filter(value => value !== ONLINE_PBX_TRUNK_NUMBER)
       .map(normalizeReminderPhone).filter((value): value is string => Boolean(value)))];
     const startedAt = Number(payload.date);
-    return this.matchAndRecord({ providerId, extensions, phones, startedAt, outgoing });
+    const matched = await this.matchAndRecord({ providerId, extensions, phones, startedAt, outgoing });
+    if (matched) await this.confirmProviderEnd(this.database, providerId, payload);
+    return matched;
+  }
+
+  private async confirmProviderEnd(connection: Pick<Pool, 'query'>, providerId: string, payload: Record<string, unknown>): Promise<void> {
+    if (String(payload.event ?? '').toLowerCase() !== 'call_end') return;
+    await connection.query(`UPDATE voice_reminder_call_attempts
+      SET termination_confirmed_at = COALESCE(termination_confirmed_at, now())
+      WHERE call_id::text = $1 OR provider_id = $1`, [providerId]);
   }
 
   private async matchAndRecord(input: { providerId: string; extensions: string[]; phones: string[]; startedAt: number; outgoing: boolean }): Promise<boolean> {

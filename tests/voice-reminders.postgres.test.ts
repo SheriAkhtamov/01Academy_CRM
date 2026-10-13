@@ -38,6 +38,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         student_id integer REFERENCES academy_students(id), status text NOT NULL);
       CREATE TABLE telephony_calls(id serial PRIMARY KEY, client_call_id text, provider_call_id text, user_id integer);`);
     await pool.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {

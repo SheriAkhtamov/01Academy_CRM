@@ -36,6 +36,7 @@ import {
 } from '../shared/telephony';
 import {
   findCallHandledInCrm,
+  findCallReportedByProvider,
   findManagerByExtensions,
 } from '../server/routes/telephony.routes';
 
@@ -151,16 +152,19 @@ describe('call ownership on a shared extension', () => {
       rows: [{ id: 512, userId: 16, extension: '100' }],
     });
 
+    const startedAt = new Date();
     await expect(findCallHandledInCrm(
       { query: mocks.poolQuery } as never,
-      { direction: 'outgoing', phone: '+998901234567' },
+      { direction: 'incoming', phone: '+998901234567', startedAt, status: 'connected', extension: '100' },
     )).resolves.toEqual({ id: 512, userId: 16, extension: '100' });
 
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(params).toEqual([
-      'outgoing',
+      'incoming',
       '+998901234567',
       ONLINE_PBX_CALL_CORRELATION_WINDOW_SECONDS,
+      startedAt,
+      '100',
     ]);
     // Only a call the provider has not reported yet may be adopted, and the
     // window is measured on the server clock rather than the browser's.
@@ -168,5 +172,19 @@ describe('call ownership on a shared extension', () => {
     expect(sql).toContain('call.client_call_id IS NOT NULL');
     expect(sql).toContain('call.created_at >= NOW() - make_interval(secs => $3)');
     expect(sql).toContain('ORDER BY call.user_id IS NULL');
+  });
+  it.each(['incoming', 'outgoing'] as const)('never adopts a newer same-phone provider call on delayed %s end replay', async direction => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 777 }] });
+    const input = { direction, phone: '+998901234567', status: 'ended' as const, startedAt: new Date(), extension: '100' };
+    expect(await findCallReportedByProvider({ query: mocks.poolQuery } as never, input)).toBeNull();
+    expect(await findCallHandledInCrm({ query: mocks.poolQuery } as never, input)).toBeNull();
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+  it('does not guess outgoing UUID identity or choose between multiple incoming forks', async () => {
+    const input = { direction: 'outgoing' as const, phone: '+998901234567', status: 'dialing' as const, startedAt: new Date(), extension: '100' };
+    expect(await findCallReportedByProvider({ query: mocks.poolQuery } as never, input)).toBeNull();
+    expect(mocks.poolQuery).not.toHaveBeenCalled();
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 1 }, { id: 2 }] });
+    expect(await findCallReportedByProvider({ query: mocks.poolQuery } as never, { ...input, direction: 'incoming' })).toBeNull();
   });
 });

@@ -104,6 +104,7 @@ export async function performVertoReminderCall(
   let callStarted = false;
   let answered = false;
   let receivedBye = false;
+  let acknowledgedBye = false;
   let ending = false;
   let stopped: VoiceReminderCallOutcome | null = null;
   let descriptions = Promise.resolve();
@@ -259,6 +260,7 @@ export async function performVertoReminderCall(
         await rpc.request('verto.bye', {
           dialogParams: { callID: callId }, cause: result.outcome === 'played' ? 'NORMAL_CLEARING' : 'ORIGINATOR_CANCEL',
         }, 1_500);
+        acknowledgedBye = true;
       } catch {
         if (result.outcome === 'played' || result.outcome === 'unanswered') result.outcome = 'failed';
       }
@@ -268,5 +270,6 @@ export async function performVertoReminderCall(
     await peer.close();
     await monitor;
   }
+  if (callStarted) result.terminationConfirmed = receivedBye || acknowledgedBye;
   return result;
 }

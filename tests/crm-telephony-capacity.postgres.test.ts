@@ -100,6 +100,17 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
     await insertCall({ status: 'connected', ended: true });
     expect(await source.snapshot()).toEqual({ known: true, occupiedChannels: 1, busyExtensions: ['100'] });
   });
+  it('uses the answered manager extension when the provider retains the original ringing destination', async () => {
+    await insertCall({ direction: 'incoming', status: 'connected', providerId: 'incoming-parent', extension: '100', userId: 2 });
+    expect(await source.snapshot()).toEqual({ known: true, occupiedChannels: 1, busyExtensions: ['101'] });
+    expect(await gate().acquire(robotInput())).toMatchObject({ extension: '100' });
+  });
+  it('waits conservatively when incoming parent and answering fork have no proven common identity', async () => {
+    await insertCall({ clientId: 'ringing-fork', providerId: 'incoming-parent', direction: 'incoming', extension: '100', userId: 2 });
+    await insertCall({ clientId: 'answering-fork', direction: 'incoming', extension: '101', userId: 2 });
+    expect(await source.snapshot()).toMatchObject({ known: true, occupiedChannels: 2, busyExtensions: ['101'] });
+    expect(await gate().acquire(robotInput())).toBeNull();
+  });
 
   it('reports more active identities than physical channels as inconsistent without freeing old rows', async () => {
     await insertCall();

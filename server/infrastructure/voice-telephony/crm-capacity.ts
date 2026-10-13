@@ -126,7 +126,8 @@ export class CrmCapacitySource {
       const ids = aliases(call);
       join(ids.length ? ids : [`unidentified:${call.id}`]);
       if (!ids.length || !ACTIVE.has(call.status)) known = false;
-      const extension = CRM_EXTENSIONS.includes(call.extension ?? '') ? call.extension : call.ownerExtension;
+      const extension = call.status === 'connected' && call.userId && CRM_EXTENSIONS.includes(call.ownerExtension ?? '')
+        ? call.ownerExtension : CRM_EXTENSIONS.includes(call.extension ?? '') ? call.extension : call.ownerExtension;
       if (call.direction === 'incoming' && (call.status !== 'connected' || !call.userId || !CRM_EXTENSIONS.includes(extension ?? ''))) {
         CRM_EXTENSIONS.forEach(value => busy.add(value));
       } else if (extension) busy.add(extension);

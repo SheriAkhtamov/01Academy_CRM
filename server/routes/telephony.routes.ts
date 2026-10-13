@@ -422,6 +422,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
              WHEN $4::text = 'incoming'
               AND NOT $17
               AND $5::text IN ('ended', 'failed', 'declined', 'missed')
+              AND (provider_call_id IS NOT NULL OR user_id IS NOT NULL)
               AND (user_id IS NULL OR user_id <> $2) THEN status
              WHEN status IN ('ended', 'failed', 'declined', 'missed')
               AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN status
@@ -438,6 +439,7 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
              WHEN $4::text = 'incoming'
               AND NOT $17
               AND $5::text IN ('ended', 'failed', 'declined', 'missed')
+              AND (provider_call_id IS NOT NULL OR user_id IS NOT NULL)
               AND (user_id IS NULL OR user_id <> $2) THEN ended_at
              ELSE COALESCE($13, ended_at)
            END,
@@ -777,7 +779,9 @@ const createWebhookHandler = (observeRobotCall?: RobotCallObserver) => asyncRout
            recording_url = COALESCE($17, recording_url),
            metadata = metadata || $18::jsonb,
            updated_at = NOW()
-       WHERE provider_call_id = $1 OR client_call_id = $1 OR id = $19
+       WHERE provider_call_id = $1 OR client_call_id = $1
+         OR (id = $19 AND provider_call_id IS NULL AND client_call_id IS NOT NULL
+           AND ended_at IS NULL AND status IN ('dialing','ringing','connected'))
        RETURNING ${returning}`,
       [...values, handledInCrm?.id ?? null],
     );

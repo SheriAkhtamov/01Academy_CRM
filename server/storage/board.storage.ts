@@ -23,9 +23,10 @@ import { COMMENT_READ_ACTIVITY, unreadBoardCommentIds, saveBoardCommentRead, mar
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
 // any alias of it (creator/assignee/author/...), hence the loose column type.
-const userMini = (prefix: { id: any; fullName: any; position: any; module: any }) => ({
+const userMini = (prefix: { id: any; fullName: any; avatarUrl: any; position: any; module: any }) => ({
     id: prefix.id,
     fullName: prefix.fullName,
+    avatarUrl: prefix.avatarUrl,
     position: prefix.position,
     module: prefix.module,
 });

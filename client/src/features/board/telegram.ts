@@ -1,6 +1,6 @@
 import { apiRequest } from '@/lib/queryClient';
 import type { AuthSession } from '@shared/auth';
-import { configureBoardTransport } from './transport';
+import { clearMiniBoardTransportSession, configureBoardTransport } from './transport';
 
 interface TelegramWebApp {
   initData: string;
@@ -51,7 +51,7 @@ export const syncTelegramTheme = (app: TelegramWebApp) => {
   } catch { /* unsupported client version */ }
 };
 let token = '';
-export const clearMiniSession = () => { token = ''; };
+export const clearMiniSession = () => { token = ''; clearMiniBoardTransportSession(); };
 export const miniRequest = async (method: string, path: string, data?: unknown) => {
   try {
     return await apiRequest(method, `/api/miniapp${path}`, data, { headers: { Authorization: `Bearer ${token}` }, credentials: 'omit' });

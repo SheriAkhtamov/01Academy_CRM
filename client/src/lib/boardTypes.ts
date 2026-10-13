@@ -9,6 +9,7 @@ export type BoardTaskColor = 'blue' | 'emerald' | 'amber' | 'violet' | 'rose' | 
 export interface UserMini {
     id: number;
     fullName: string;
+    avatarUrl?: string | null;
     position: string | null;
     module: AcademyModule;
 }

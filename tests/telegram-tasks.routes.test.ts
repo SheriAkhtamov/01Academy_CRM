@@ -1,7 +1,9 @@
 import express from 'express';
 import request from 'supertest';
 import { createHmac } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import { nanoid } from 'nanoid';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mock = vi.hoisted(() => ({ identity: vi.fn(), bind: vi.fn(), users: vi.fn(), canDownload: vi.fn(), tasks: vi.fn(), detail: vi.fn(), task: vi.fn(), agent: vi.fn() }));
 vi.mock('../server/config', () => ({ isProductionEnvironment: false, isDevelopmentEnvironment: false, appConfig: { session: { secret: 'test-session-secret' }, server: { appUrl: 'https://crm.example.test' }, integrations: { telegramTasks: { botToken: '12345:test-only-token', webhookSecret: 'test-webhook-secret', openRouterApiKey: ['sk', 'or', 'v1-test-only-not-a-real-key'].join('-') } } } }));
@@ -11,6 +13,7 @@ vi.mock('../server/services/telegram-task-agent', () => ({ enqueueTelegramTaskAg
 vi.mock('../server/storage', () => ({ storage: { board: { getDefaultBoard: async () => ({ id: 1 }), getBoard: async () => ({ id: 1 }), getTasks: mock.tasks, getTaskDetail: mock.detail, getTask: mock.task } } }));
 import { registerTelegramTaskRoutes } from '../server/routes/telegram-tasks.routes';
 import { signTaskToken } from '../server/services/telegram-tasks-crypto';
+import { USER_PHOTO_DIR, userPhotoPath } from '../server/middleware/user-photo.middleware';
 const user = { id: 7, fullName: 'Employee Name', phone: '+998901234567', module: 'teacher', modules: ['teacher'], isActive: true, isArchived: false, password: 'never-return', credentialPasswordCiphertext: 'never-return' };
 const binding = { bot_id: '12345', telegram_user_id: '654321', user_id: 7, verified_phone: '998901234567', verification_id: 'v1' };
 const secret = 'test-session-secret:telegram-tasks:12345:test-only-token';
@@ -133,5 +136,54 @@ describe('Telegram bot and isolated task API', () => {
     expect((await request(app()).get('/api/miniapp/board/tasks').set('Authorization', `Bearer ${ticket}`)).status).toBe(401);
     mock.canDownload.mockResolvedValue(false);
     expect((await request(app()).post('/api/miniapp/attachments/8/link').set('Authorization', `Bearer ${token()}`)).status).toBe(403);
+  });
+
+  describe('authenticated miniapp profile photo pixels', () => {
+    const photoId = nanoid();
+    const unsafePhotoId = nanoid();
+    const photoUrl = `/api/miniapp/users/photos/${photoId}`;
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2nUAAAAASUVORK5CYII=', 'base64');
+    beforeEach(async () => {
+      await fs.mkdir(USER_PHOTO_DIR, { recursive: true });
+      await fs.writeFile(userPhotoPath(photoId)!, png);
+      await fs.writeFile(userPhotoPath(unsafePhotoId)!, '<svg onload="alert(1)"></svg>');
+    });
+    afterEach(async () => {
+      await Promise.all([photoId, unsafePhotoId].map((id) => fs.unlink(userPhotoPath(id)!).catch(() => undefined)));
+    });
+
+    it('returns real photo bytes to a valid task bearer without needing or issuing a CRM cookie', async () => {
+      const response = await request(app()).get(photoUrl).set('Authorization', `Bearer ${token()}`);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(png);
+      expect(response.headers['content-type']).toContain('image/png');
+      expect(response.headers['cache-control']).toBe('private, max-age=3600');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(mock.identity).toHaveBeenCalledWith('12345', '654321', expect.objectContaining({ userId: 7, verificationId: 'v1' }));
+    });
+
+    it('refuses missing, forged, URL-only or attachment-ticket credentials before looking up employee data', async () => {
+      expect((await request(app()).get(photoUrl)).status).toBe(401);
+      expect((await request(app()).get(photoUrl).set('Authorization', 'Bearer forged')).status).toBe(401);
+      expect((await request(app()).get(`${photoUrl}?token=${token()}`)).status).toBe(401);
+      expect((await request(app()).get(photoUrl).set('Authorization', `Bearer ${token('telegram-task-file')}`)).status).toBe(401);
+      expect(mock.identity).not.toHaveBeenCalled();
+    });
+
+    it('checks the current employee binding and denies a revoked session', async () => {
+      mock.identity.mockResolvedValue(null);
+      expect((await request(app()).get(photoUrl).set('Authorization', `Bearer ${token()}`)).status).toBe(401);
+    });
+
+    it('rejects invalid photo IDs, missing files and active content under the same image policy', async () => {
+      const authorized = () => request(app());
+      for (const id of ['short', '..%2Fprivate', nanoid(), unsafePhotoId]) {
+        const response = await authorized().get(`/api/miniapp/users/photos/${id}`).set('Authorization', `Bearer ${token()}`);
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({ error: 'resourceNotFound' });
+      }
+    });
   });
 });

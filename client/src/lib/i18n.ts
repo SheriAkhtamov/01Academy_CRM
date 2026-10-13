@@ -2905,6 +2905,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   unreadTaskComment: { en: 'Unread comment', ru: 'Непрочитанный комментарий' },
   taskAwaitingAcceptance: { en: 'Completed task awaiting acceptance', ru: 'Выполненная задача ожидает принятия' },
   creatorLabel: { en: 'Creator', ru: 'Автор' },
+  taskCreatorUnknown: { en: 'Unknown author', ru: 'Автор неизвестен' },
   deleteTaskConfirm: { en: 'Delete this task? Comments, checklist items, and attachments will be permanently removed.', ru: 'Удалить эту задачу? Комментарии, пункты чеклиста и вложения будут удалены без возможности восстановления.' },
   deleteTaskTitle: { en: 'Delete task', ru: 'Удалить задачу' },
   deleteCommentTitle: { en: 'Delete comment', ru: 'Удалить комментарий' },

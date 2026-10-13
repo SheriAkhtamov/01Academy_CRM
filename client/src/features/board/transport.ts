@@ -5,9 +5,24 @@ interface BoardTransport {
   download: (id: number, name: string) => Promise<void>;
 }
 let transport: BoardTransport | undefined;
+let transportSession = 0;
+const transportSessionListeners = new Set<() => void>();
+export const boardTransportSession = () => transportSession;
+export const subscribeBoardTransportSession = (listener: () => void) => {
+  transportSessionListeners.add(listener);
+  return () => { transportSessionListeners.delete(listener); };
+};
+export const clearMiniBoardTransportSession = () => {
+  transportSession += 1;
+  transportSessionListeners.forEach((listener) => listener());
+};
 // Only the separate Mini App entry configures this. The CRM keeps its existing transport.
-export const configureBoardTransport = (value: BoardTransport) => { transport = value; };
+export const configureBoardTransport = (value: BoardTransport) => {
+  transport = value;
+  clearMiniBoardTransportSession();
+};
 export const isMiniBoard = () => Boolean(transport);
+export const hasMiniBoardSession = () => Boolean(transport?.token());
 export const boardUrl = (url: string) => transport ? url.replace(/^\/api\/board(?=\/|$)/, '/api/miniapp/board') : url;
 export const boardHeaders = (): Record<string, string> => transport ? { Authorization: `Bearer ${transport.token()}` } : {};
 export function handleBoardUnauthorized(error: unknown) {

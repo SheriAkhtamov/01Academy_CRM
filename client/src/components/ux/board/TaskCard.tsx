@@ -1,16 +1,15 @@
 import { type ButtonHTMLAttributes } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { CalendarClock, CheckCircle2, CheckSquare, MessageSquare, Paperclip, UserRound } from 'lucide-react';
-import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { UnreadTaskCommentDot } from './UnreadTaskCommentDot';
+import { TaskCardPeople } from './TaskCardPeople';
 import {
     PRIORITY_META,
     TASK_COLOR_META,
@@ -90,43 +89,31 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                 ) : null}
             </div>
 
-            <div className="mt-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground">
-                    {task.checklistTotal > 0 ? (
-                        <span className="flex items-center gap-1">
-                            <CheckSquare className="size-3.5" />
-                            {task.checklistDone}/{task.checklistTotal}
-                        </span>
-                    ) : null}
-                    {task.commentCount > 0 ? (
-                        <span className="flex items-center gap-1">
-                            <MessageSquare className="size-3.5" />
-                            {task.commentCount}
-                            {(task.unreadCommentCount ?? 0) > 0 ? <UnreadTaskCommentDot /> : null}
-                        </span>
-                    ) : null}
-                    {task.attachmentCount > 0 ? (
-                        <span className="flex items-center gap-1">
-                            <Paperclip className="size-3.5" />
-                            {task.attachmentCount}
-                        </span>
-                    ) : null}
-                </div>
-
-                {task.assignee ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Avatar className="size-6 border border-border">
-                                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary-700">
-                                    {getInitials(task.assignee.fullName)}
-                                </AvatarFallback>
-                            </Avatar>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">{task.assignee.fullName}</TooltipContent>
-                    </Tooltip>
-                ) : (
-                    <span className="text-[10px] text-muted-foreground/60">{t('unassigned')}</span>
-                )}
+            <div className="mt-3 grid min-w-0 gap-2.5">
+                {task.checklistTotal > 0 || task.commentCount > 0 || task.attachmentCount > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
+                        {task.checklistTotal > 0 ? (
+                            <span className="flex items-center gap-1">
+                                <CheckSquare className="size-3.5" />
+                                {task.checklistDone}/{task.checklistTotal}
+                            </span>
+                        ) : null}
+                        {task.commentCount > 0 ? (
+                            <span className="flex items-center gap-1">
+                                <MessageSquare className="size-3.5" />
+                                {task.commentCount}
+                                {(task.unreadCommentCount ?? 0) > 0 ? <UnreadTaskCommentDot /> : null}
+                            </span>
+                        ) : null}
+                        {task.attachmentCount > 0 ? (
+                            <span className="flex items-center gap-1">
+                                <Paperclip className="size-3.5" />
+                                {task.attachmentCount}
+                            </span>
+                        ) : null}
+                    </div>
+                ) : null}
+                <TaskCardPeople creator={task.creator} assignee={task.assignee} />
             </div>
         </button>
     );

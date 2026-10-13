@@ -1,11 +1,11 @@
-import type { Router } from 'express';
+import type { RequestHandler, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { userPhotoPath } from '../middleware/user-photo.middleware';
 import { readFileMimeType } from '../lib/file-media';
 import { USER_PHOTO_MIME_TYPES } from '@shared/user-photo';
 
-export function registerUserPhotoRoutes(router: Router) {
-  router.get('/photos/:photoId', requireAuth, async (req, res) => {
+export function registerUserPhotoRoutes(router: Router, authenticate: RequestHandler = requireAuth) {
+  router.get('/photos/:photoId', authenticate, async (req, res) => {
     try {
       const filePath = userPhotoPath(req.params.photoId);
       if (!filePath) return res.status(404).json({ error: 'resourceNotFound' });

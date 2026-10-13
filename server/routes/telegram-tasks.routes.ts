@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { appConfig } from '../config';
 import { authService } from '../services/auth';
 import { createBoardRouter } from './board.routes';
+import { registerUserPhotoRoutes } from './user-photo.routes';
 import { bindTelegramTaskEmployee, getTelegramTaskIdentity, TelegramBindingDenied, telegramTaskAccess } from '../services/telegram-tasks';
 import { secureEqual, signTaskToken, validateTelegramInitData, verifyTaskToken, type TaskToken } from '../services/telegram-tasks-crypto';
 import { enqueueTelegramTaskAgentMessage } from '../services/telegram-task-agent';
@@ -164,6 +165,9 @@ export function registerTelegramTaskRoutes(app: Express) {
     }
   });
   mini.get('/auth/session', authorize, (req, res) => res.json({ kind: 'user', user: authService.sanitizeUser(req.user!) }));
+  const photos = Router();
+  registerUserPhotoRoutes(photos, authorize);
+  mini.use('/users', photos);
   mini.get('/users', authorize, async (_req, res) => {
     try {
       res.json(await telegramTaskAccess.getAssignableUsers());

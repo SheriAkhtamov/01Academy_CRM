@@ -1,12 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send, UserRound } from 'lucide-react';
+import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TaskDetailSheet } from '@/components/ux/board/TaskDetailSheet';
 import { CreateTaskDialog } from '@/components/ux/board/CreateTaskDialog';
+import { TaskCardPeople } from '@/components/ux/board/TaskCardPeople';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { boardRequest } from '@/features/board/transport';
@@ -173,8 +174,6 @@ export function TasksApp() {
   const hasCompletedAssignments = assignedTasks.some((task) => isBoardTaskAwaitingAcceptance(user, task));
 
   const renderCard = (task: TaskSummary) => {
-    const person = tab === 'mine' ? task.creator : task.assignee;
-    const personLabel = tab === 'mine' ? t('creatorLabel') : t('assigneeLabel');
     return <button key={task.id} type="button" className="mini-task-card" data-color={task.color ?? undefined} onClick={() => openTask(task.id)}>
       <span className="mini-task-card-top">
         {isBoardTaskAwaitingAcceptance(user, task) ? <span role="img" aria-label={t('taskAwaitingAcceptance')} className="mini-task-completion-dot" /> : null}
@@ -185,8 +184,8 @@ export function TasksApp() {
         <span className={cn('mini-task-date', isOverdue(task) && 'mini-task-date-overdue')}><CalendarClock className="size-4 shrink-0" />{task.status === 'accepted' && task.acceptedAt
           ? `${t('taskAcceptedOn')} ${formatBoardDateTime(task.acceptedAt, language)}`
           : task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('miniTasksNoDeadline')}</span>
-        <span className="mini-task-person"><UserRound className="size-4 shrink-0" />{personLabel}: {person?.fullName ?? t('unassigned')}</span>
       </span>
+      <TaskCardPeople creator={task.creator} assignee={task.assignee} miniMode />
       {task.checklistTotal || task.commentCount || task.attachmentCount ? <span className="mini-task-stats">
         {task.checklistTotal ? <span aria-label={`${t('checklistLabel')}: ${task.checklistDone}/${task.checklistTotal}`}><ListChecks className="size-3.5" />{task.checklistDone}/{task.checklistTotal}</span> : null}
         {task.commentCount ? <span aria-label={`${t('commentsLabel')}: ${task.commentCount}`}><MessageCircle className="size-3.5" />{task.commentCount}</span> : null}

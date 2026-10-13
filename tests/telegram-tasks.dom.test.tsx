@@ -7,8 +7,11 @@ import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { i18n } from '../client/src/lib/i18n';
 import { TasksApp } from '../client/src/miniapp/TasksApp';
 import { boardQueryKeys } from '../client/src/features/board/api';
-const mocks = vi.hoisted(() => ({ board: vi.fn(), mini: vi.fn(), detail: vi.fn(), create: vi.fn() }));
-vi.mock('../client/src/features/board/transport', () => ({ boardRequest: mocks.board }));
+const mocks = vi.hoisted(() => ({ board: vi.fn(), mini: vi.fn(), detail: vi.fn(), create: vi.fn(), photo: vi.fn() }));
+vi.mock('../client/src/features/board/transport', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../client/src/features/board/transport')>(), boardRequest: mocks.board,
+}));
+vi.mock('../client/src/features/board/user-photo', () => ({ fetchMiniBoardUserPhoto: mocks.photo }));
 vi.mock('../client/src/features/board/telegram', () => ({
   miniRequest: mocks.mini,
   telegramApp: () => undefined,
@@ -33,9 +36,86 @@ beforeEach(() => {
   mocks.mini.mockResolvedValue([{ id: 7, fullName: 'Employee' }]);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
-afterEach(() => { cleanup(); client.clear(); });
+afterEach(() => { cleanup(); client.clear(); vi.unstubAllGlobals(); });
 const setup = () => render(<QueryClientProvider client={client}><TooltipProvider><TasksApp /></TooltipProvider></QueryClientProvider>);
 describe('Mobile tasks interface', () => {
+  const assertPeople = (title: string, creator: string, assignee: string) => {
+    const card = screen.getByText(title).closest('button')!;
+    const creatorRow = within(card).getByTitle(`Creator: ${creator}`);
+    const assigneeRow = within(card).getByTitle(`Assignee: ${assignee}`);
+    expect(within(creatorRow).getByText(creator)).toBeTruthy();
+    expect(within(assigneeRow).getByText(assignee)).toBeTruthy();
+    expect(creatorRow.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    expect(assigneeRow.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    expect(creatorRow.compareDocumentPosition(assigneeRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(creatorRow.classList.contains('text-xs')).toBe(true);
+    expect(card.querySelectorAll('button, a, [role="button"]')).toHaveLength(0);
+    return card;
+  };
+
+  it('shows author and assignee in the same order on mine, delegated and archive cards', async () => {
+    setup(); await screen.findByText('My assigned task');
+    assertPeople('My assigned task', 'Creator', 'Employee');
+    fireEvent.click(screen.getByRole('button', { name: 'Assigned by me' }));
+    await screen.findByText('Delegated task');
+    const delegated = assertPeople('Delegated task', 'Employee', 'Creator');
+    fireEvent.click(within(delegated).getByText('Creator'));
+    expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('Archived task');
+    assertPeople('Archived task', 'Creator', 'Employee');
+  });
+
+  it('keeps both roles for self-assignment and distinguishes missing people in the archive', async () => {
+    mocks.board.mockImplementation(async (_method, url) => ({ tasks: url.includes('archived=true') ? [
+      { ...task, id: 4, title: 'Unassigned archived task', creator: task.assignee, assignee: null, status: 'accepted' },
+      { ...task, id: 5, title: 'Missing author archived task', creator: null, status: 'accepted' },
+    ] : [{ ...task, title: 'Personal task', creator: task.assignee }] }));
+    setup(); await screen.findByText('Personal task');
+    const personal = assertPeople('Personal task', 'Employee', 'Employee');
+    expect(within(personal).getAllByText('E')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('Unassigned archived task');
+    const unassigned = assertPeople('Unassigned archived task', 'Employee', 'Unassigned');
+    const missing = assertPeople('Missing author archived task', 'Unknown author', 'Employee');
+    expect(within(unassigned).getByTitle('Assignee: Unassigned').querySelector('svg')).toBeTruthy();
+    expect(within(missing).getByTitle('Creator: Unknown author').querySelector('svg')).toBeTruthy();
+  });
+
+  it('shows real miniapp photos from the shared authenticated avatar loader', async () => {
+    const { configureBoardTransport } = await import('../client/src/features/board/transport');
+    configureBoardTransport({ token: () => 'test-mini-session', download: vi.fn() });
+    const images: Array<EventTarget & { src: string; complete: boolean; naturalWidth: number }> = [];
+    vi.stubGlobal('Image', class extends EventTarget {
+      src = ''; complete = false; naturalWidth = 0;
+      constructor() { super(); images.push(this); }
+    });
+    const NativeURL = URL;
+    let imageId = 0;
+    vi.stubGlobal('URL', class extends NativeURL {
+      static createObjectURL = vi.fn(() => `blob:mini-photo-${++imageId}`);
+      static revokeObjectURL = vi.fn();
+    });
+    const creatorUrl = '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa';
+    const assigneeUrl = '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb';
+    mocks.photo.mockResolvedValue(new Blob(['pixels'], { type: 'image/png' }));
+    mocks.board.mockResolvedValue({ tasks: [{ ...task, creator: { ...task.creator, avatarUrl: creatorUrl }, assignee: { ...task.assignee, avatarUrl: assigneeUrl } }] });
+    setup(); await screen.findByText('My assigned task');
+    const card = assertPeople('My assigned task', 'Creator', 'Employee');
+    await waitFor(() => expect(images).toHaveLength(2));
+    act(() => {
+      for (const image of images) { image.complete = true; image.naturalWidth = 80; image.dispatchEvent(new Event('load')); }
+    });
+    expect(card.querySelectorAll('img')).toHaveLength(2);
+    for (const image of card.querySelectorAll('img')) {
+      expect(image.src).toMatch(/^blob:mini-photo-/);
+      expect(image.src).not.toContain('test-mini-session');
+      expect(image.draggable).toBe(false);
+    }
+    expect(mocks.photo).toHaveBeenCalledWith(creatorUrl, expect.any(AbortSignal));
+    expect(mocks.photo).toHaveBeenCalledWith(assigneeUrl, expect.any(AbortSignal));
+  });
+
   it('shows only assigned work by default with three bottom navigation actions', async () => {
     setup(); await screen.findByText('My assigned task');
     expect(screen.queryByText('Delegated task')).toBeNull();
@@ -49,6 +129,7 @@ describe('Mobile tasks interface', () => {
     await user.click(screen.getByRole('combobox', { name: 'Show tasks of' }));
     await user.click(screen.getByRole('option', { name: 'Creator' }));
     expect(screen.getByText('Delegated task')).toBeTruthy();
+    assertPeople('Delegated task', 'Employee', 'Creator');
     expect(screen.queryByText('My assigned task')).toBeNull();
     expect(screen.getByText('Total tasks: 1')).toBeTruthy();
     await user.click(screen.getByText('Delegated task'));

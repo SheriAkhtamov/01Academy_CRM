@@ -23,25 +23,46 @@ const audit=async(query:any)=>{
  const route=router.stack.find((layer:any)=>layer.route?.path==='/audit')!.route!;
  const json=vi.fn(),status=vi.fn().mockReturnThis();
  await route.stack[0].handle({query,user:{id:7,module:'administration',modules:['administration']}} as any,{json,status} as any,vi.fn());
- expect(status).not.toHaveBeenCalled();return mocks.query.mock.calls.find(([sql]:any)=>sql.includes('SELECT a.*'))!;
+ expect(status).not.toHaveBeenCalled();
+ const data=mocks.query.mock.calls.find(([sql]:any)=>sql.includes('SELECT a.*'))!;
+ const count=mocks.query.mock.calls.find(([sql]:any)=>sql.includes('COUNT(*)::int AS total FROM audit_logs'))!;
+ return {data,count};
 };
 it('audit date filtering uses academy day boundaries',async()=>{
- const [sql,params]=await audit({from:'2026-10-08',to:'2026-10-08'});
- expect(sql).toContain('a.created_at >= $1');expect(sql).toContain('a.created_at < $2');
- expect(params[0].toISOString()).toBe('2026-10-07T19:00:00.000Z');
- expect(params[1].toISOString()).toBe('2026-10-08T19:00:00.000Z');
+ const {data:[sql,params]}=await audit({from:'2026-10-08',to:'2026-10-08'});
+ expect(sql).toContain('a.created_at >= $2');expect(sql).toContain('a.created_at < $3');
+ expect(params[1].toISOString()).toBe('2026-10-07T19:00:00.000Z');
+ expect(params[2].toISOString()).toBe('2026-10-08T19:00:00.000Z');
  const shownAsOct8=new Date('2026-10-07T20:00:00.000Z');
  expect(formatAcademyDate(shownAsOct8,'en',{year:'numeric',month:'2-digit',day:'2-digit'})).toBe('10/08/2026');
- expect(shownAsOct8>=params[0] && shownAsOct8<params[1]).toBe(true);
+ expect(shownAsOct8>=params[1] && shownAsOct8<params[2]).toBe(true);
  const shownAsOct9=new Date('2026-10-08T20:00:00.000Z');
  expect(formatAcademyDate(shownAsOct9,'en',{year:'numeric',month:'2-digit',day:'2-digit'})).toBe('10/09/2026');
- expect(shownAsOct9>=params[0] && shownAsOct9<params[1]).toBe(false);
+ expect(shownAsOct9>=params[1] && shownAsOct9<params[2]).toBe(false);
 });
 it('archive filter excludes restoration actions',async()=>{
- const [_sql,params]=await audit({action:'ARCHIVE'});
- expect(params[0]).toBe('(^|_)ARCHIVE(_|$)');
- const selectedPredicate=new RegExp(String(params[0]),'i');
+ const {data:[_sql,params]}=await audit({action:'ARCHIVE'});
+ expect(params[1]).toBe('(^|_)ARCHIVE(_|$)');
+ const selectedPredicate=new RegExp(String(params[1]),'i');
  expect(selectedPredicate.test('ARCHIVE_ACADEMY_GROUP')).toBe(true);
  expect(selectedPredicate.test('BULK_ARCHIVE_ACADEMY_LEAD')).toBe(true);
  expect(selectedPredicate.test('UNARCHIVE_ACADEMY_GROUP')).toBe(false);
+});
+it.each([
+ {},
+ {entityType:'academy_group_code_state'},
+ {action:'SAVE_GROUP_CODE_STATE'},
+ {entityType:'academy_group_code_state',action:'SAVE_GROUP_CODE_STATE'},
+])('excludes internal numbering state from journal data and counts for %j',async(query)=>{
+ const {data:[dataSql,dataParams],count:[countSql,countParams]}=await audit(query);
+ expect(dataSql).toContain('WHERE a.entity_type <> $1');
+ expect(countSql).toContain('WHERE a.entity_type <> $1');
+ expect(countParams[0]).toBe('academy_group_code_state');
+ expect(dataParams.slice(0,-2)).toEqual(countParams);
+ const dataWhere=dataSql.match(/WHERE ([\s\S]*?)\s+ORDER BY/)![1].trim();
+ expect(countSql.slice(countSql.indexOf('WHERE ')+6).trim()).toBe(dataWhere);
+ if(query.action) expect(countParams).toContain('%SAVE_GROUP_CODE_STATE%');
+ if(query.entityType) expect(countParams).toContain('%academy_group_code_state%');
+ expect(dataSql).toContain(`LIMIT $${countParams.length+1} OFFSET $${countParams.length+2}`);
+ expect(dataParams.slice(-2)).toEqual([25,0]);
 });

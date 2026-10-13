@@ -1,4 +1,5 @@
 import { buildSalesDemoStudents } from './sales-demo-students';
+import { GROUP_CODE_STATE_ENTITY } from './group-code';
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -391,8 +392,8 @@ router.get('/audit', async (req, res) => {
     const auditLimit = paginationValue(req.query.auditLimit, 25, 100);
     const integrationPage = paginationValue(req.query.integrationPage, 1, 1_000_000);
     const integrationLimit = paginationValue(req.query.integrationLimit, 25, 100);
-    const filters: string[] = [];
-    const params: DbValue[] = [];
+    const filters: string[] = ['a.entity_type <> $1'];
+    const params: DbValue[] = [GROUP_CODE_STATE_ENTITY];
     const add = (value: DbValue) => {
       params.push(value);
       return `$${params.length}`;

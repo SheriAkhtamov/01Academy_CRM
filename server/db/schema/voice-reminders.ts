@@ -1,8 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { bigint, bigserial, boolean, check, index, integer, pgTable, real, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { bigint, bigserial, boolean, check, index, integer, pgTable, primaryKey, real, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const createVoiceReminderTables = (references: {
   userId: AnyPgColumn;
+  leadId: AnyPgColumn;
   demoLessonId: AnyPgColumn;
   participantId: AnyPgColumn;
 }) => {
@@ -48,8 +49,6 @@ export const createVoiceReminderTables = (references: {
     dayBeforeHoursCheck: check('voice_reminder_settings_day_before_hours_check', sql`${table.dayBeforeStartTime} >= '10:00' AND ${table.dayBeforeEndTime} <= '20:00' AND ${table.dayBeforeStartTime} < ${table.dayBeforeEndTime}`),
     dayBeforeStartCheck: check('voice_reminder_settings_day_before_start_time_check', sql`${table.dayBeforeStartTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
     dayBeforeEndCheck: check('voice_reminder_settings_day_before_end_time_check', sql`${table.dayBeforeEndTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
-    dayBeforeAudioCheck: check('voice_reminder_settings_day_before_audio_check', sql`NOT (${table.enabled} AND ${table.dayBeforeEnabled}) OR ${table.dayBeforeIntroAudioId} IS NOT NULL`),
-    confirmationAudioCheck: check('voice_reminder_settings_confirmation_audio_check', sql`NOT ${table.confirmationEnabled} OR (${table.confirmationYesAudioId} IS NOT NULL AND ${table.confirmationNoAudioId} IS NOT NULL)`),
     singletonCheck: check('voice_reminder_settings_id_check', sql`${table.id} = 1`),
     leadCheck: check('voice_reminder_settings_lead_minutes_check', sql`${table.leadMinutes} BETWEEN 1 AND 1440`),
     attemptsCheck: check('voice_reminder_settings_max_attempts_check', sql`${table.maxAttempts} BETWEEN 1 AND 5`),
@@ -58,7 +57,6 @@ export const createVoiceReminderTables = (references: {
     hoursCheck: check('voice_reminder_settings_hours_check', sql`${table.allowedStartTime} < ${table.allowedEndTime}`),
     startCheck: check('voice_reminder_settings_allowed_start_time_check', sql`${table.allowedStartTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
     endCheck: check('voice_reminder_settings_allowed_end_time_check', sql`${table.allowedEndTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
-    enabledAudioCheck: check('voice_reminder_settings_modular_audio_check', sql`NOT ${table.enabled} OR (${table.introAudioId} IS NOT NULL AND ${table.outroAudioId} IS NOT NULL)`),
   }));
 
   const voiceReminderTimeAudio = pgTable('voice_reminder_time_audio', {
@@ -83,14 +81,38 @@ export const createVoiceReminderTables = (references: {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   }, table => ({ minuteCheck: check('voice_reminder_minute_audio_minute_check', sql`${table.minute} ~ '^[0-5][0-9]$'`) }));
 
+  const voiceReminderLeadLanguageEpochs = pgTable('voice_reminder_lead_language_epochs', {
+    leadId: integer('lead_id').primaryKey().references(() => references.leadId, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull().default(0),
+  }, table => ({ revisionCheck: check('voice_reminder_lead_language_epochs_revision_check', sql`${table.revision}>=0`) }));
+
+  const voiceReminderLocalizedAudio = pgTable('voice_reminder_localized_audio', {
+    language: varchar('language', { length: 2 }).notNull(),
+    part: varchar('part', { length: 24 }).notNull(),
+    audioIndex: varchar('audio_index', { length: 5 }).notNull().default(''),
+    audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }).notNull(),
+    updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({
+    key: primaryKey({ columns: [table.language, table.part, table.audioIndex] }),
+    languageCheck: check('voice_reminder_localized_audio_language_check', sql`${table.language}='uz'`),
+    partCheck: check('voice_reminder_localized_audio_part_check', sql`${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo','time','hour','minute')`),
+    indexCheck: check('voice_reminder_localized_audio_check', sql`(${table.part}='time' AND ${table.audioIndex} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')
+      OR (${table.part}='hour' AND ${table.audioIndex} ~ '^([01][0-9]|2[0-3])$')
+      OR (${table.part}='minute' AND ${table.audioIndex} ~ '^[0-5][0-9]$')
+      OR (${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo') AND ${table.audioIndex}='')`),
+  }));
+
   const voiceReminderJobs = pgTable('voice_reminder_jobs', {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     demoLessonId: integer('demo_lesson_id').references(() => references.demoLessonId, { onDelete: 'cascade' }).notNull(),
     participantId: integer('participant_id').references(() => references.participantId, { onDelete: 'cascade' }).notNull(),
     reminderKind: varchar('reminder_kind', { length: 20 }).notNull().default('same_day'),
+    language: varchar('language', { length: 2 }).notNull().default('ru'),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
     lessonRevision: integer('lesson_revision').notNull().default(0),
     participantRevision: integer('participant_revision').notNull().default(0),
+    languageRevision: integer('language_revision').notNull().default(0),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
     notBeforeAt: timestamp('not_before_at', { withTimezone: true }),
     status: varchar('status', { length: 20 }).notNull().default('waiting'),
@@ -120,13 +142,15 @@ export const createVoiceReminderTables = (references: {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   }, table => ({
-    unique: uniqueIndex('voice_reminder_jobs_demo_participant_schedule_unique').on(table.demoLessonId, table.participantId, table.scheduledAt, table.lessonRevision, table.participantRevision, table.reminderKind),
+    unique: uniqueIndex('voice_reminder_jobs_demo_participant_schedule_unique').on(table.demoLessonId, table.participantId, table.scheduledAt, table.lessonRevision, table.participantRevision, table.reminderKind, table.language, table.languageRevision),
     responseIndex: index('voice_reminder_jobs_response_idx').on(table.participantId, sql`${table.responseAt} DESC`).where(sql`${table.response} IS NOT NULL`),
     dueIndex: index('voice_reminder_jobs_due_idx').on(table.status, table.dueAt),
     leaseIndex: index('voice_reminder_jobs_lease_idx').on(table.leaseUntil).where(sql`${table.status} = 'calling'`),
     confirmationPinsCheck: check('voice_reminder_jobs_confirmation_pins_check', sql`NOT ${table.confirmationEnabled} OR (${table.confirmationYesAudioId} IS NOT NULL AND ${table.confirmationNoAudioId} IS NOT NULL)`),
     responseCheck: check('voice_reminder_jobs_response_check', sql`(${table.response} IS NULL AND ${table.responseAt} IS NULL AND ${table.responseCallId} IS NULL) OR (${table.response} IS NOT NULL AND ${table.responseAt} IS NOT NULL AND ${table.responseCallId} IS NOT NULL)`),
     responseValueCheck: check('voice_reminder_jobs_response_value_check', sql`${table.response} IN ('yes','no')`),
+    languageCheck: check('voice_reminder_jobs_language_check', sql`${table.language} IN ('ru','uz')`),
+    languageRevisionCheck: check('voice_reminder_jobs_language_revision_check', sql`${table.languageRevision}>=0`),
     kindCheck: check('voice_reminder_jobs_reminder_kind_check', sql`${table.reminderKind} IN ('same_day','day_before')`),
     statusCheck: check('voice_reminder_jobs_status_check', sql`${table.status} IN ('waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled')`),
     attemptsCheck: check('voice_reminder_jobs_attempts_check', sql`${table.attempts} >= 0`),
@@ -144,6 +168,7 @@ export const createVoiceReminderTables = (references: {
     actorUserId: integer('actor_user_id').references(() => references.userId, { onDelete: 'set null' }),
     phone: varchar('phone', { length: 20 }).notNull(),
     reminderKind: varchar('reminder_kind', { length: 20 }).notNull().default('same_day'),
+    language: varchar('language', { length: 2 }).notNull().default('ru'),
     clockTime: varchar('clock_time', { length: 5 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('waiting'),
     notBeforeAt: timestamp('not_before_at', { withTimezone: true }),
@@ -175,6 +200,7 @@ export const createVoiceReminderTables = (references: {
     confirmationPinsCheck: check('voice_reminder_test_calls_confirmation_pins_check', sql`NOT ${table.confirmationEnabled} OR (${table.confirmationYesAudioId} IS NOT NULL AND ${table.confirmationNoAudioId} IS NOT NULL)`),
     responseCheck: check('voice_reminder_test_calls_response_check', sql`(${table.response} IS NULL AND ${table.responseAt} IS NULL AND ${table.responseCallId} IS NULL) OR (${table.response} IS NOT NULL AND ${table.responseAt} IS NOT NULL AND ${table.responseCallId} IS NOT NULL)`),
     responseValueCheck: check('voice_reminder_test_calls_response_value_check', sql`${table.response} IN ('yes','no')`),
+    languageCheck: check('voice_reminder_test_calls_language_check', sql`${table.language} IN ('ru','uz')`),
     kindCheck: check('voice_reminder_test_calls_reminder_kind_check', sql`${table.reminderKind} IN ('same_day','day_before')`),
     phoneCheck: check('voice_reminder_test_calls_phone_check', sql`${table.phone} ~ '^[+][1-9][0-9]{7,14}$'`),
     clockCheck: check('voice_reminder_test_calls_clock_time_check', sql`${table.clockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
@@ -223,5 +249,5 @@ export const createVoiceReminderTables = (references: {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderLeadLanguageEpochs, voiceReminderLocalizedAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
 };

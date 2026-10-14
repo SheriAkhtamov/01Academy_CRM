@@ -3,6 +3,9 @@ import { devLog } from '@/lib/debug';
 export const translations = {
   voiceRemindersTitle: { en: 'Voice reminders', ru: 'Голосовые напоминания' },
   voiceRemindersRecordings: { en: 'Recordings', ru: 'Записи' },
+  voiceRemindersLanguage: { en: 'Language', ru: 'Язык' },
+  voiceRemindersRussian: { en: 'Russian', ru: 'Русский' },
+  voiceRemindersUzbek: { en: 'Uzbek', ru: 'Узбекский' },
   voiceRemindersDay: { en: 'Day', ru: 'День' },
   voiceRemindersToday: { en: 'Today', ru: 'Сегодня' },
   voiceRemindersTomorrow: { en: 'Tomorrow', ru: 'Завтра' },

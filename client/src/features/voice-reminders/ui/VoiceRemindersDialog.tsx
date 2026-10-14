@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
-  hasVoiceReminderAudioLibrary,
+  hasReadyVoiceReminderLibrary,
   hasVoiceReminderConfirmationAudio,
   voiceReminderClockTimeSchema,
   voiceReminderHourSchema,
   voiceReminderMinuteSchema,
   voiceReminderSettingsSchema,
+  voiceReminderLibraryForLanguage,
+  type VoiceReminderLanguage,
   type VoiceReminderSettingsInput,
 } from '@shared/contracts/voice-reminders';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -22,7 +24,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { voiceReminderUnitSelection, type VoiceReminderAudioTarget, type VoiceReminderAudioUpload, type VoiceReminderRecordingRemoval } from '../api';
 import { useVoiceReminders } from '../hooks';
-import { emptyRecordingDraft, VoiceReminderRecordings, type VoiceReminderRecordingField } from './VoiceReminderRecordings';
+import { emptyRecordingDraft, VoiceReminderRecordings, type VoiceReminderRecordingDraft, type VoiceReminderRecordingField } from './VoiceReminderRecordings';
 import { VoiceReminderTestCall } from './VoiceReminderTestCall';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
@@ -53,6 +55,14 @@ const editableSettings = (settings: VoiceReminderSettingsInput): VoiceReminderSe
   maxConcurrentCalls: settings.maxConcurrentCalls,
 });
 
+const emptyRecordingDrafts = (): Record<VoiceReminderLanguage, VoiceReminderRecordingDraft> => ({
+  ru: emptyRecordingDraft(), uz: emptyRecordingDraft(),
+});
+const recordingDraftDirty = (recording: VoiceReminderRecordingDraft) => Boolean(
+  recording.intro || recording.dayBeforeIntro || recording.outro || recording.confirmationYes || recording.confirmationNo
+  || recording.hour.file || recording.minute.file || recording.time.file || recording.time.value,
+);
+
 export function VoiceRemindersDialog({ open, onOpenChange }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,22 +71,23 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const { snapshot, saveSettings, uploadAudio, removeRecording, pending: configurationPending } = useVoiceReminders(open);
   const [draft, setDraft] = useState<VoiceReminderSettingsInput | null>(null);
   const [savedSettings, setSavedSettings] = useState('');
-  const [recordings, setRecordings] = useState(emptyRecordingDraft);
+  const [recordings, setRecordings] = useState(emptyRecordingDrafts);
+  const [recordingLanguage, setRecordingLanguage] = useState<VoiceReminderLanguage>('ru');
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
   const [replacement, setReplacement] = useState<VoiceReminderAudioUpload | null>(null);
   const [removal, setRemoval] = useState<VoiceReminderRecordingRemoval | null>(null);
   const [activeTab, setActiveTab] = useState('settings');
   const [testPending, setTestPending] = useState(false);
   const pending = configurationPending || testPending;
-  const dirty = Boolean(recordings.intro || recordings.dayBeforeIntro || recordings.outro || recordings.confirmationYes || recordings.confirmationNo || recordings.hour.file || recordings.minute.file
-    || recordings.time.file || recordings.time.value
+  const dirty = Boolean(Object.values(recordings).some(recordingDraftDirty)
     || (draft && JSON.stringify(draft) !== savedSettings));
   const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
 
   useEffect(() => {
     if (!open) {
       setDraft(null);
-      setRecordings(emptyRecordingDraft());
+      setRecordings(emptyRecordingDrafts());
+      setRecordingLanguage('ru');
       setErrorKey(null);
       setReplacement(null);
       setRemoval(null);
@@ -103,14 +114,19 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
         ? 'voiceReminderInvalidHours' : 'voiceReminderInvalidSettings');
       return;
     }
-    if (draft.confirmationEnabled && !hasVoiceReminderConfirmationAudio(snapshot.data.settings.audioLibrary)) {
+    const libraries = (['ru', 'uz'] as const).map((language) => voiceReminderLibraryForLanguage(snapshot.data.settings, language));
+    if (draft.confirmationEnabled && !libraries.some(hasVoiceReminderConfirmationAudio)) {
       setErrorKey('voiceReminderConfirmationAudioRequired');
       return;
     }
     if (draft.enabled) {
-      const library = snapshot.data.settings.audioLibrary;
-      if (!hasVoiceReminderAudioLibrary(library) || (draft.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before'))) {
+      const policy = { dayBeforeEnabled: draft.dayBeforeEnabled, confirmationEnabled: false };
+      if (!hasReadyVoiceReminderLibrary(snapshot.data.settings, policy)) {
         setErrorKey('voiceReminderAudioRequired');
+        return;
+      }
+      if (!hasReadyVoiceReminderLibrary(snapshot.data.settings, { ...policy, confirmationEnabled: draft.confirmationEnabled })) {
+        setErrorKey('voiceReminderConfirmationAudioRequired');
         return;
       }
       if (snapshot.data.readiness.code === 'transport_unavailable') {
@@ -133,7 +149,10 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const selectFile = (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => {
     setErrorKey(null);
     const setFile = (selected: File | null) => setRecordings((current) => ({ ...current,
-      [field]: field === 'hour' || field === 'minute' || field === 'time' ? { ...current[field], file: selected } : selected,
+      [recordingLanguage]: { ...current[recordingLanguage],
+        [field]: field === 'hour' || field === 'minute' || field === 'time'
+          ? { ...current[recordingLanguage][field], file: selected } : selected,
+      },
     }));
     setFile(null);
     if (file && !/\.(mp3|wav)$/i.test(file.name)) {
@@ -154,13 +173,15 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     try {
       await uploadAudio.mutateAsync(selection);
       setRecordings((current) => {
+        const language = selection.language ?? 'ru';
+        const selectedDraft = current[language];
         if ('part' in selection.target) {
           const part = selection.target.part;
-          return current[part] === selection.file ? { ...current, [part]: null } : current;
+          return selectedDraft[part] === selection.file ? { ...current, [language]: { ...selectedDraft, [part]: null } } : current;
         }
         const { unit, value } = voiceReminderUnitSelection(selection.target);
-        return current[unit].value === value && current[unit].file === selection.file
-          ? { ...current, [unit]: { value: unit === 'time' ? '' : value, file: null } } : current;
+        return selectedDraft[unit].value === value && selectedDraft[unit].file === selection.file
+          ? { ...current, [language]: { ...selectedDraft, [unit]: { value: unit === 'time' ? '' : value, file: null } } } : current;
       });
       setReplacement(null);
       toast({ title: t('voiceRemindersAudioSaved') });
@@ -174,7 +195,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const requestUpload = (target: VoiceReminderAudioTarget, file: File) => {
     if (!snapshot.data || pending) return;
     setErrorKey(null);
-    const library = snapshot.data.settings.audioLibrary;
+    const library = voiceReminderLibraryForLanguage(snapshot.data.settings, recordingLanguage);
     let existing;
     if ('part' in target) existing = library[target.part];
     else {
@@ -185,7 +206,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
         : unit === 'minute' ? library.minutes.find((entry) => entry.minute === value)?.audio
           : library.times.find((entry) => entry.time === value)?.audio;
     }
-    const selection = { target, file, ...(existing ? { expectedId: existing.id } : {}) };
+    const selection = { target, file, language: recordingLanguage, ...(existing ? { expectedId: existing.id } : {}) };
     if (existing) setReplacement(selection);
     else void upload(selection);
   };
@@ -246,10 +267,17 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
                 </form>
               </TabsContent>
               <TabsContent value="recordings" forceMount hidden={activeTab !== 'recordings'} className="pt-3">
-                <VoiceReminderRecordings library={snapshot.data.settings.audioLibrary} draft={recordings} disabled={pending} confirmationEnabled={draft.confirmationEnabled}
-                  onValue={(unit, value) => { setRecordings((current) => ({ ...current, [unit]: { ...current[unit], value } })); setErrorKey(null); }}
+                <VoiceReminderRecordings library={voiceReminderLibraryForLanguage(snapshot.data.settings, recordingLanguage)}
+                  draft={recordings[recordingLanguage]} disabled={pending} confirmationEnabled={draft.confirmationEnabled}
+                  language={recordingLanguage} onLanguage={(language) => { setRecordingLanguage(language); setErrorKey(null); }}
+                  onValue={(unit, value) => {
+                    setRecordings((current) => ({ ...current, [recordingLanguage]: {
+                      ...current[recordingLanguage], [unit]: { ...current[recordingLanguage][unit], value },
+                    } }));
+                    setErrorKey(null);
+                  }}
                   onFile={selectFile} onUpload={requestUpload}
-                  onRemove={(target, expectedId) => { setRemoval({ target, expectedId }); setErrorKey(null); }}
+                  onRemove={(target, expectedId) => { setRemoval({ target, expectedId, language: recordingLanguage }); setErrorKey(null); }}
                   onPreviewError={() => setErrorKey('voiceRemindersPreviewFailed')} />
               </TabsContent>
               <TabsContent value="test-call" forceMount hidden={activeTab !== 'test-call'} className="pt-3">

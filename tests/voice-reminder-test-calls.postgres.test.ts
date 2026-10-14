@@ -26,10 +26,12 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=America/New_York`, max: 12 });
     await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text,is_active boolean,is_archived boolean);
       CREATE TABLE user_modules(id serial PRIMARY KEY,user_id integer,module text);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY,language varchar(20),languages text[]);
+      CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
     for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
-      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations']) {
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations', '0150_voice_reminder_languages']) {
       await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
     }
     repository = new PostgresVoiceReminderTestCallRepository(database);
@@ -66,6 +68,45 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     await database.query('UPDATE voice_reminder_test_calls SET dial_started_at=$2,provider_call_id=$3 WHERE id=$1', [job.id,now,callId]);
     return { job, callId, request };
   };
+
+  it('binds UZ into the immutable intent and pins only its own sources while preserving legacy RU defaults', async () => {
+    const uzSources = [];
+    for (const target of [{ part: 'intro' },{ part: 'outro' },{ part: 'hour',hour: '11' },{ part: 'minute',minute: '00' }] as const) {
+      const source = { ...audio(),sha256: 'b'.repeat(64) }; uzSources.push(source);
+      await library.saveLibraryAudio({ ...target,language: 'uz' },source,1,null);
+    }
+    const request = { ...input(),language: 'uz' as const };
+    expect(await repository.enqueue(1,request,now,expiresAt)).toMatchObject({ language: 'uz' });
+    await expect(repository.enqueue(1,{ ...request,language: 'ru' },now,expiresAt)).rejects.toMatchObject({ code: 'voiceReminderTestRequestChanged' });
+    const job = (await repository.claim(now,300))!;
+    expect(job.language).toBe('uz');
+    const prepared = await repository.prepare(job,now);
+    expect(prepared).toMatchObject({ language: 'uz',audioParts: { intro: uzSources[0],outro: uzSources[1],hour: uzSources[2],minute: uzSources[3] } });
+    expect(await repository.canContinue({ ...job,language: 'ru' },now)).toBe(false);
+    await library.saveLibraryAudio({ part: 'intro' },audio(),1,(await library.audioLibrary()).intro!.id);
+    expect(await repository.canContinue(job,now)).toBe(true);
+    await library.saveLibraryAudio({ part: 'intro',language: 'uz' },audio(),1,uzSources[0].id);
+    expect(await repository.canContinue(job,now)).toBe(false);
+    expect(await repository.canContinue(job,now,false)).toBe(true);
+    await repository.finish(job,{ outcome: 'played',callStarted: true,callId: randomUUID() },now);
+    expect(await repository.enqueue(1,request,now,expiresAt)).toMatchObject({ language: 'uz',status: 'played' });
+    expect(await repository.enqueue(6,input(),now,expiresAt)).toMatchObject({ language: 'ru' });
+  });
+
+  it('never borrows Russian audio for a missing UZ test and validates UZ acknowledgement pins', async () => {
+    await expect(repository.enqueue(1,{ ...input(),language: 'uz' },now,expiresAt)).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    for (const target of [{ part: 'intro' },{ part: 'outro' },{ part: 'time',time: '11:00' }] as const)
+      await library.saveLibraryAudio({ ...target,language: 'uz' },audio(),1,null);
+    for (const part of ['confirmationYes','confirmationNo'] as const) await library.saveLibraryAudio({ part },audio(),1,null);
+    const { audio: _audio,audioLibrary: _library,timeZone: _zone,...settings } = await library.settings();
+    await library.saveSettings({ ...settings,confirmationEnabled: true },1);
+    await expect(repository.enqueue(1,{ ...input(),language: 'uz' },now,expiresAt)).rejects.toMatchObject({ code: 'voiceReminderConfirmationAudioRequired' });
+    for (const part of ['confirmationYes','confirmationNo'] as const) await library.saveLibraryAudio({ part,language: 'uz' },audio(),1,null);
+    const request = { ...input(),language: 'uz' as const };
+    await repository.enqueue(1,request,now,expiresAt);
+    const job = (await repository.claim(now,300))!;
+    expect(await repository.prepare(job,now)).toMatchObject({ confirmation: { yesAudio: (await library.audioLibrary('uz')).confirmationYes } });
+  });
 
   it('rechecks the database clock after waiting for the test row lock past expiry', async () => {
     const { job, callId, request } = await armConfirmationTest();
@@ -167,7 +208,7 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     expect((await library.settings()).enabled).toBe(false);
     const request = input();
     const dto = await repository.enqueue(1, request, now, expiresAt);
-    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', response: null, respondedAt: null });
+    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', language: 'ru', response: null, respondedAt: null });
     expect(await repository.current(1)).toEqual(dto);
     expect(await repository.current(2)).toBeNull();
     const job = (await repository.claim(now, 300))!;

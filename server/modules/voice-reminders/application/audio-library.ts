@@ -1,8 +1,9 @@
-import { voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema } from '@shared/contracts/voice-reminders';
+import { voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderLanguageSchema } from '@shared/contracts/voice-reminders';
 import { VoiceReminderError } from '../domain/policy';
 import type { StoredVoiceReminderAudio, StoredVoiceReminderAudioLibrary, VoiceReminderAudioTarget } from './ports';
 
 export const validateAudioTarget = (target: VoiceReminderAudioTarget): void => {
+  if (!voiceReminderLanguageSchema.safeParse(target.language ?? 'ru').success) throw new VoiceReminderError('validationError', 400);
   const valid = target.part === 'time' ? voiceReminderClockTimeSchema.safeParse(target.time).success
     : target.part === 'hour' ? voiceReminderHourSchema.safeParse(target.hour).success
       : target.part === 'minute' ? voiceReminderMinuteSchema.safeParse(target.minute).success : true;

@@ -1,4 +1,4 @@
-import { hasVoiceReminderAudioLibrary } from '@shared/contracts/voice-reminders';
+import { hasReadyVoiceReminderLibrary } from '@shared/contracts/voice-reminders';
 import { nextReminderAttempt, anyReminderWindowOpen } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
@@ -40,7 +40,7 @@ export class VoiceReminderWorker {
     try {
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || (!hasVoiceReminderAudioLibrary(settings.audioLibrary) && !(settings.dayBeforeEnabled && hasVoiceReminderAudioLibrary(settings.audioLibrary, 'day_before')))
+      if (!settings.enabled || !hasReadyVoiceReminderLibrary(settings, settings)
         || !anyReminderWindowOpen(this.now(), settings)) return;
       if (!await this.gateway.readiness().then(value => value.ready).catch(() => false)) return;
       // Jobs may prepare audio concurrently. Shared external channels are only
@@ -63,7 +63,7 @@ export class VoiceReminderWorker {
       if (this.stopping) return;
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || (!hasVoiceReminderAudioLibrary(settings.audioLibrary) && !(settings.dayBeforeEnabled && hasVoiceReminderAudioLibrary(settings.audioLibrary, 'day_before')))
+      if (!settings.enabled || !hasReadyVoiceReminderLibrary(settings, settings)
         || !anyReminderWindowOpen(this.now(), settings)) return;
       const next = await this.repository.claim(this.now(), settings.maxConcurrentCalls, LEASE_SECONDS);
       if (!next) return;

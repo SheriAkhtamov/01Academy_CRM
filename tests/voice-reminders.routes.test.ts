@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, emptyVoiceReminderAudioLibrary } from '../shared/contracts/voice-reminders';
 import { createVoiceReminderRouter } from '../server/modules/voice-reminders/http/voice-reminders.router';
 import { VoiceReminderSettingsService } from '../server/modules/voice-reminders/application/settings-service';
 import type { StoredVoiceReminderAudio, StoredVoiceReminderAudioLibrary, VoiceReminderRepository, VoiceReminderTestCallRepository } from '../server/modules/voice-reminders/application/ports';
@@ -32,6 +32,48 @@ beforeEach(() => { vi.clearAllMocks(); service.snapshot.mockResolvedValue(snapsh
   service.currentTestCall.mockResolvedValue(null); });
 
 describe('voice reminder HTTP boundary', () => {
+  it('scopes every modular mutation and preview to the requested language with frozen CAS IDs', async () => {
+    const expectedId = randomUUID();
+    for (const [endpoint, target] of [['intro', { part: 'intro' }], ['day-before-intro', { part: 'dayBeforeIntro' }],
+      ['confirmation-yes', { part: 'confirmationYes' }], ['confirmation-no', { part: 'confirmationNo' }],
+      ['outro', { part: 'outro' }], ['times/11:00', { part: 'time', time: '11:00' }],
+      ['hours/11', { part: 'hour', hour: '11' }], ['minutes/00', { part: 'minute', minute: '00' }]] as const) {
+      expect((await request(app()).post(`/api/academy/voice-reminders/audio/${endpoint}?language=uz&expectedId=${expectedId}`)
+        .attach('file', Buffer.from('clip'), 'uz.wav')).status).toBe(200);
+      expect(service.uploadPart).toHaveBeenLastCalledWith(expect.anything(), { ...target,language: 'uz' }, expect.anything(),expectedId);
+    }
+    expect((await request(app()).delete(`/api/academy/voice-reminders/audio/times/11:00?language=uz&expectedId=${expectedId}`)).status).toBe(200);
+    expect(service.removeTime).toHaveBeenLastCalledWith(expect.anything(),'11:00',expectedId,'uz');
+    expect((await request(app()).delete(`/api/academy/voice-reminders/audio/minutes/00?language=uz&expectedId=${expectedId}`)).status).toBe(200);
+    expect(service.removePart).toHaveBeenLastCalledWith(expect.anything(),{ part: 'minute',minute: '00',language: 'uz' },expectedId);
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-language-route-'));
+    try {
+      const file = path.join(directory,'clip.wav'); await fs.writeFile(file,Buffer.from('RIFF'));
+      service.playbackPart.mockResolvedValue({ path: file,mimeType: 'audio/wav' });
+      service.preview.mockResolvedValue({ path: file,mimeType: 'audio/wav' });
+      expect((await request(app()).get('/api/academy/voice-reminders/audio/intro?language=uz')).status).toBe(200);
+      expect(service.playbackPart).toHaveBeenLastCalledWith(expect.anything(),{ part: 'intro',language: 'uz' });
+      expect((await request(app()).get('/api/academy/voice-reminders/preview/11:00?language=uz&reminderKind=day_before')).status).toBe(200);
+      expect(service.preview).toHaveBeenLastCalledWith(expect.anything(),'11:00','day_before','uz');
+    } finally { await fs.rm(directory,{ recursive: true,force: true }); }
+  });
+
+  it('rejects invalid or repeated language queries before consuming multipart bytes and keeps legacy audio Russian', async () => {
+    for (const query of ['language=en','language=UZ','language=uz%0A','language=ru&language=uz']) {
+      expect((await request(app()).post(`/api/academy/voice-reminders/audio/intro?${query}`)
+        .attach('file',Buffer.from('invalid'),'clip.wav')).body).toEqual({ error: 'validationError' });
+      expect((await request(app()).get(`/api/academy/voice-reminders/preview/11:00?${query}`)).status).toBe(400);
+      expect((await request(app()).delete(`/api/academy/voice-reminders/audio/minutes/00?${query}&expectedId=${randomUUID()}`)).status).toBe(400);
+    }
+    expect(service.uploadPart).not.toHaveBeenCalled(); expect(service.preview).not.toHaveBeenCalled(); expect(service.removePart).not.toHaveBeenCalled();
+    expect((await request(app('sales')).post('/api/academy/voice-reminders/audio/intro?language=invalid')
+      .attach('file',Buffer.from('invalid'),'clip.wav')).status).toBe(403);
+    expect((await request(app()).post('/api/academy/voice-reminders/audio?language=uz')
+      .attach('file',Buffer.from('invalid'),'clip.wav')).status).toBe(400);
+    expect((await request(app()).get('/api/academy/voice-reminders/audio?language=uz')).body).toEqual({ error: 'resourceNotFound' });
+    expect(service.upload).not.toHaveBeenCalled(); expect(service.playback).not.toHaveBeenCalled();
+  });
+
   it('requires leadership for settings, test calls and recording access before reading bytes', async () => {
     for (const module of [null, 'sales'] as const) {
       for (const endpoint of ['', '/test-calls/current', '/audio', '/audio/intro', '/audio/day-before-intro', '/audio/confirmation-yes', '/audio/confirmation-no', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
@@ -112,7 +154,7 @@ describe('voice reminder HTTP boundary', () => {
     const expectedId = randomUUID();
     const removed = await request(app()).delete(`/api/academy/voice-reminders/audio/times/11%3A00?expectedId=${expectedId}`);
     expect(removed.body).toEqual(snapshot);
-    expect(service.removeTime).toHaveBeenCalledWith(expect.anything(), '11:00', expectedId);
+    expect(service.removeTime).toHaveBeenCalledWith(expect.anything(), '11:00', expectedId, 'ru');
   });
 
   it('rejects malformed clock values before consuming multipart audio', async () => {
@@ -191,9 +233,9 @@ describe('voice reminder HTTP boundary', () => {
       expect(response.status).toBe(206); expect(response.headers['content-type']).toContain('audio/wav');
       expect(response.headers['cache-control']).toBe('no-store'); expect(response.headers['x-content-type-options']).toBe('nosniff');
       expect(Buffer.from(response.body).toString()).toBe('RIFF');
-      expect(service.preview).toHaveBeenCalledWith(expect.anything(), '11:00', 'same_day');
+      expect(service.preview).toHaveBeenCalledWith(expect.anything(), '11:00', 'same_day', 'ru');
       expect((await request(app()).get('/api/academy/voice-reminders/preview/11%3A00?reminderKind=day_before')).status).toBe(200);
-      expect(service.preview).toHaveBeenLastCalledWith(expect.anything(), '11:00', 'day_before');
+      expect(service.preview).toHaveBeenLastCalledWith(expect.anything(), '11:00', 'day_before', 'ru');
       expect((await request(app()).get('/api/academy/voice-reminders/preview/11%3A00?reminderKind=invalid')).status).toBe(400);
       expect((await request(app()).get('/api/academy/voice-reminders/preview/24%3A00?reminderKind=invalid')).body).toEqual({ error: 'voiceReminderInvalidTime' });
       expect(service.preview).toHaveBeenCalledTimes(2);
@@ -202,6 +244,34 @@ describe('voice reminder HTTP boundary', () => {
 });
 
 describe('voice reminder enablement', () => {
+  it('admits a complete UZ-only library and never mixes Russian main audio with Uzbek replies', async () => {
+    const actor = { userId: 1,primaryModule: 'administration' as const,modules: ['administration' as const],isLeadership: true };
+    const clip = (): StoredVoiceReminderAudio => ({ id: randomUUID(),fileName: 'clip.wav',mimeType: 'audio/wav',
+      durationSeconds: 1,sizeBytes: 24,uploadedAt: new Date().toISOString(),storageKey: `${randomUUID()}.wav`,sha256: 'b'.repeat(64) });
+    const ru = emptyVoiceReminderAudioLibrary<StoredVoiceReminderAudio>();
+    const uz: StoredVoiceReminderAudioLibrary = { intro: clip(),dayBeforeIntro: clip(),outro: clip(),confirmationYes: clip(),confirmationNo: clip(),
+      hours: [{ hour: '11',audio: clip() }],minutes: [{ minute: '00',audio: clip() }],times: [] };
+    const settings = { ...DEFAULT_VOICE_REMINDER_SETTINGS,audioLibrary: ru,audioLibraries: { ru,uz },dayBeforeEnabled: true,confirmationEnabled: true };
+    const repository = { settings: vi.fn(async () => settings),audioLibrary: vi.fn(async (language = 'ru') => language==='uz' ? uz : ru),saveSettings: vi.fn() };
+    const gateway = { readiness: vi.fn(async () => ({ ready: true,code: 'ready' as const })),tryAcquireLine: vi.fn() };
+    const composer = { compose: vi.fn(async () => ({ path: '/private/uz.wav',mimeType: 'audio/wav' as const })) };
+    const useCase = new VoiceReminderSettingsService(repository as unknown as VoiceReminderRepository,{ save: vi.fn(),resolve: vi.fn() },gateway,composer);
+    const { audio: _audio,audioLibrary: _library,timeZone: _zone,...input } = DEFAULT_VOICE_REMINDER_SETTINGS;
+    expect((await useCase.snapshot(actor)).readiness.ready).toBe(true);
+    await useCase.save(actor,{ ...input,enabled: true,dayBeforeEnabled: true,confirmationEnabled: true });
+    await useCase.preview(actor,'11:00','day_before','uz');
+    expect(composer.compose).toHaveBeenCalledWith(expect.objectContaining({ intro: uz.dayBeforeIntro,outro: uz.outro }));
+    await expect(useCase.preview(actor,'11:00','same_day','ru')).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    Object.assign(ru,{ intro: clip(),dayBeforeIntro: clip(),outro: clip(),times: [{ time: '11:00',audio: clip() }] });
+    uz.intro=null;
+    await expect(useCase.save(actor,{ ...input,enabled: true,dayBeforeEnabled: true,confirmationEnabled: true }))
+      .rejects.toMatchObject({ code: 'voiceReminderConfirmationAudioRequired' });
+    ru.dayBeforeIntro=null;
+    await expect(useCase.save(actor,{ ...input,enabled: true,dayBeforeEnabled: true,confirmationEnabled: true }))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    expect(repository.saveSettings).toHaveBeenCalledTimes(1);
+  });
+
   it('requires audio and a ready transport while allowing disablement on transport failures', async () => {
     const repository = {
       currentAudio: vi.fn(async () => null), saveSettings: vi.fn(async () => undefined),
@@ -216,6 +286,7 @@ describe('voice reminder enablement', () => {
     expect(repository.saveSettings).not.toHaveBeenCalled();
     const audio = { id: 'present', durationSeconds: 1 } as StoredVoiceReminderAudio;
     repository.audioLibrary.mockResolvedValue({ intro: audio, dayBeforeIntro: null, confirmationYes: null, confirmationNo: null, outro: audio, times: [{ time: '11:00', audio }], hours: [], minutes: [] });
+    repository.settings.mockResolvedValue({ ...DEFAULT_VOICE_REMINDER_SETTINGS, audioLibrary: await repository.audioLibrary() });
     gateway.readiness.mockRejectedValue(new Error('Provider offline'));
     await expect(useCase.save(actor, { ...input, enabled: true })).rejects.toMatchObject({ code: 'voiceReminderTransportUnavailable' });
     await useCase.save(actor, input);
@@ -311,6 +382,15 @@ describe('confirmation audio application boundary', () => {
 
 describe('test-call HTTP and application boundary', () => {
   const actor = { userId: 1, primaryModule: 'administration' as const, modules: ['administration' as const], isLeadership: true };
+  it('accepts the immutable explicit test language and rejects unsupported languages', async () => {
+    const input = { requestId: randomUUID(),phone: '+123456789',clockTime: '11:00',language: 'uz' };
+    service.requestTestCall.mockResolvedValue({ id: input.requestId,status: 'waiting',...input });
+    expect((await request(app()).post('/api/academy/voice-reminders/test-calls').send(input)).body.language).toBe('uz');
+    expect(service.requestTestCall).toHaveBeenLastCalledWith(expect.anything(),input);
+    for (const language of ['en','UZ','uz\n']) expect((await request(app()).post('/api/academy/voice-reminders/test-calls')
+      .send({ ...input,language })).status).toBe(400);
+    expect(service.requestTestCall).toHaveBeenCalledTimes(1);
+  });
   it('validates immutable intent UUID, selected clock and external phone while returning an actor-scoped DTO', async () => {
     const requestId = randomUUID();
     const dto = { id: requestId, status: 'waiting', phone: '+123456789', clockTime: '11:00', reminderKind: 'same_day' };
@@ -349,7 +429,7 @@ describe('test-call HTTP and application boundary', () => {
     gateway.readiness.mockClear();
     for (const [phone, normalized] of [['+123456789', '+123456789'], ['00123456789', '+123456789'], ['90 123 45 67', '+998901234567']]) {
       expect(await useCase.requestTestCall(actor, { requestId, phone, clockTime: '11:00' })).toMatchObject({ id: requestId, phone: normalized });
-      expect(testCalls.enqueue).toHaveBeenLastCalledWith(1, { requestId, phone: normalized, clockTime: '11:00', reminderKind: 'same_day' },
+      expect(testCalls.enqueue).toHaveBeenLastCalledWith(1, { requestId, phone: normalized, clockTime: '11:00', reminderKind: 'same_day', language: 'ru' },
         instant, new Date(instant.getTime() + 600_000));
     }
     expect(gateway.readiness).not.toHaveBeenCalled(); expect(gateway.tryAcquireLine).not.toHaveBeenCalled();

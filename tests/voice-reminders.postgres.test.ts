@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminders/infrastructure/postgres-repository';
-import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, resolveVoiceReminderLanguage } from '../shared/contracts/voice-reminders';
 import type { StoredVoiceReminderAudio } from '../server/modules/voice-reminders/application/ports';
 import { RobotCallReceipts } from '../server/infrastructure/voice-telephony/robot-call-receipts';
 import { readVoiceReminderJobs } from './helpers/voice-reminder-jobs';
@@ -31,7 +31,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     // Legacy demo timestamps are UTC even when the PostgreSQL session is not.
     pool = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=America/New_York`, max: 10 });
     await pool.query(`CREATE TABLE users(id integer PRIMARY KEY);
-      CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false, language varchar(20),languages text[]);
       CREATE TABLE academy_lead_phones(id serial PRIMARY KEY, lead_id integer REFERENCES academy_leads(id), phone text, is_primary boolean);
       CREATE TABLE academy_students(id integer PRIMARY KEY, lead_id integer REFERENCES academy_leads(id), phone text, student_name text, contact_name text);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY, scheduled_at timestamp NOT NULL, status text NOT NULL);
@@ -45,6 +45,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -210,6 +211,182 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     return { job, callId };
   };
   const currentResponse = async (participantId = 1) => (await pool.query('SELECT * FROM voice_reminder_participant_response($1)', [participantId])).rows;
+
+  const addUzLibrary = async (confirmation = false) => {
+    for (const target of [{ part: 'intro' }, { part: 'outro' }, { part: 'hour', hour: '11' },
+      { part: 'minute', minute: '00' }, ...(confirmation ? [{ part: 'confirmationYes' }, { part: 'confirmationNo' }] as const : [])] as const) {
+      await repository.saveLibraryAudio({ ...target, language: 'uz' },
+        { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, sha256: 'b'.repeat(64) }, 1, null);
+    }
+    return repository.audioLibrary('uz');
+  };
+  const onlyFirstParticipant = async () => pool.query(`UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id IN (2,3)`);
+
+  it.each([
+    [null, 'uz', 'uz'], [[], 'uz', 'ru'], [null, 'en', 'ru'], [null, null, 'ru'],
+    [['xx', 'uz'], 'ru', 'uz'], [['en', 'uz'], 'uz', 'ru'], [['ru', 'uz'], 'uz', 'ru'],
+    [['uz', 'uz', 'ru'], 'ru', 'uz'], [['xx', 'en', 'uz'], 'uz', 'ru'],
+  ] as const)('matches CRM selected-language semantics for %j and legacy %s', async (languages, legacy, expected) => {
+    const selected = languages === null ? null : [...languages];
+    expect(resolveVoiceReminderLanguage(selected, legacy)).toBe(expected);
+    expect((await pool.query('SELECT resolve_voice_reminder_language($1::text[],$2::text) AS language', [selected,legacy])).rows[0].language).toBe(expected);
+    await pool.query('UPDATE academy_leads SET languages=$1,language=$2 WHERE id=1', [selected,legacy]);
+    expect((await pool.query('SELECT voice_reminder_contact_language(1) AS language')).rows[0].language).toBe(expected);
+    await pool.query('UPDATE academy_students SET lead_id=NULL WHERE id=1');
+    expect((await pool.query('SELECT voice_reminder_contact_language(1) AS language')).rows[0].language).toBe('ru');
+  });
+
+  it('replans RU to UZ to RU before dialing without reviving an old epoch or lease', async () => {
+    await onlyFirstParticipant(); await addUzLibrary();
+    await repository.synchronize(now, await repository.settings());
+    const ru = (await repository.claim(now, 2, 300))!;
+    await repository.prepare(ru, now);
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    expect(await repository.canContinue(ru, '+998901234567', now, false)).toBe(false);
+    expect(await repository.renew(ru, now, 300)).toBe(false);
+    await repository.synchronize(now, await repository.settings());
+    const uz = (await repository.claim(now, 2, 300))!;
+    expect(uz.language).toBe('uz');
+    expect(await repository.prepare(uz, now)).toMatchObject({ language: 'uz', audioParts: { intro: (await repository.audioLibrary('uz')).intro } });
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['ru'] WHERE id=1`);
+    expect(await repository.canContinue(uz, '+998901234567', now, false)).toBe(false);
+    await repository.synchronize(now, await repository.settings());
+    const again = (await repository.claim(now, 2, 300))!;
+    expect(again.language).toBe('ru'); expect(again.id).not.toBe(ru.id);
+    expect((await pool.query('SELECT language,language_revision,status,attempts FROM voice_reminder_jobs ORDER BY id')).rows)
+      .toEqual([{ language: 'ru', language_revision: 0, status: 'cancelled', attempts: 0 },
+        { language: 'uz', language_revision: 1, status: 'cancelled', attempts: 0 },
+        { language: 'ru', language_revision: 2, status: 'calling', attempts: 0 }]);
+  });
+
+  it('leaves missing UZ audio waiting without starving a complete Russian job', async () => {
+    await pool.query(`INSERT INTO academy_leads(id,phone,languages) VALUES(2,'+998901112233',ARRAY['uz']);
+      UPDATE academy_students SET lead_id=2 WHERE id=1;
+      UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id=3`);
+    await repository.synchronize(now, await repository.settings());
+    const ru = (await repository.claim(now, 2, 300))!;
+    expect(ru.language).toBe('ru');
+    expect((await pool.query(`SELECT participant_id,status,attempts FROM voice_reminder_jobs WHERE language='uz'`)).rows)
+      .toEqual([{ participant_id: 1, status: 'waiting', attempts: 0 }]);
+    expect((await repository.settings()).audioLibraries?.uz.intro).toBeNull();
+    const uzLibrary = await addUzLibrary();
+    const uz = (await repository.claim(now, 2, 300))!;
+    expect(await repository.prepare(uz, now)).toMatchObject({ language: 'uz', audioParts: { kind: 'clock',
+      intro: uzLibrary.intro, outro: uzLibrary.outro, hour: uzLibrary.hours[0].audio, minute: uzLibrary.minutes[0].audio } });
+  });
+
+  it('rejects a stale live language answer but preserves an already accepted answer and prevents replay', async () => {
+    await onlyFirstParticipant(); await enableConfirmation(); await addUzLibrary(true);
+    const { job, callId } = await armedResponse();
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    expect(await currentResponse()).toEqual([]);
+    await repository.synchronize(now, await repository.settings());
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(1);
+    // Another original reminder accepts a response before a later language edit.
+    await pool.query(`DELETE FROM voice_reminder_call_attempts; DELETE FROM voice_reminder_jobs;
+      UPDATE academy_leads SET languages=ARRAY['ru'] WHERE id=1`);
+    const accepted = await armedResponse();
+    expect(await repository.recordResponse(accepted.job, '+998901234567', 'no', now, accepted.callId)).toBe(true);
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    expect(await currentResponse()).toEqual([{ response: 'no', response_at: now }]);
+    expect(await repository.canContinue(accepted.job, '+998901234567', now, false)).toBe(false);
+    await repository.synchronize(now, await repository.settings());
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(1);
+  });
+
+  it('blocks a new language epoch after an ambiguous INVITE even with zero counted attempts', async () => {
+    await onlyFirstParticipant(); await addUzLibrary();
+    await repository.synchronize(now, await repository.settings());
+    const job = (await repository.claim(now, 2, 300))!;
+    await repository.prepare(job, now);
+    const callId = randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+      VALUES($1,$2,'100','+998901234567',$3)`, [callId,job.id,now]);
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    await repository.synchronize(now, await repository.settings());
+    expect(await repository.claim(now, 2, 300)).toBeNull();
+    expect((await pool.query('SELECT status,attempts,lease_token FROM voice_reminder_jobs')).rows)
+      .toEqual([{ status: 'cancelled', attempts: 0, lease_token: null }]);
+    await new RobotCallReceipts(pool).complete(callId, false);
+    await repository.synchronize(now, await repository.settings());
+    expect((await repository.claim(now, 2, 300))?.language).toBe('uz');
+  });
+
+  it.each(['played', 'unanswered', 'failed'] as const)('does not reset a terminal %s reminder by changing its language', async status => {
+    await onlyFirstParticipant(); await addUzLibrary();
+    await repository.synchronize(now, await repository.settings());
+    const job = (await repository.claim(now, 2, 300))!;
+    await repository.finish(job, { outcome: status, callStarted: true, callId: randomUUID() }, now, null);
+    await pool.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    await repository.synchronize(now, await repository.settings());
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(1);
+    expect(await repository.claim(now, 2, 300)).toBeNull();
+  });
+
+  it('avoids the reservation/job lock inversion during a concurrent native marker and language edit', async () => {
+    await onlyFirstParticipant(); await repository.synchronize(now, await repository.settings());
+    const job = (await repository.claim(now, 2, 300))!;
+    await repository.prepare(job, now);
+    const callId = randomUUID(); const reservationId = randomUUID();
+    await pool.query(`INSERT INTO telephony_line_reservations(id,extension,owner_type,client_call_id,phone,job_id,lease_until)
+      VALUES($1,'100','robot',$2,'+998901234567',$3,$4)`, [reservationId,callId,job.id,scheduledAt]);
+    let releaseMarker!: () => void; let reservationLocked!: () => void;
+    const paused = new Promise<void>(resolve => { releaseMarker=resolve; });
+    const reached = new Promise<void>(resolve => { reservationLocked=resolve; });
+    const connection = await pool.connect();
+    const query = connection.query.bind(connection);
+    connection.query = (async (...args: Parameters<typeof query>) => {
+      const result = await query(...args);
+      if (typeof args[0] === 'string' && args[0].startsWith('UPDATE telephony_line_reservations SET dial_authorized_at')) {
+        reservationLocked(); await paused;
+      }
+      return result;
+    }) as typeof connection.query;
+    const receipts = new RobotCallReceipts({ query: pool.query.bind(pool), connect: async () => connection } as Pool);
+    const pending = receipts.start({ callId,jobId: job.id,jobLeaseToken: job.leaseToken,extension: '100',
+      phone: '+998901234567',reservationId });
+    await reached;
+    const editing = await pool.connect();
+    try {
+      await editing.query(`SET lock_timeout='1s'`);
+      await editing.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1`);
+    } finally { releaseMarker(); editing.release(); }
+    expect(await pending).toBe(true);
+    expect((await pool.query('SELECT status,lease_token FROM voice_reminder_jobs')).rows[0])
+      .toEqual({ status: 'cancelled', lease_token: null });
+    expect((await pool.query('SELECT count(*)::int AS count FROM telephony_line_reservations WHERE id=$1', [reservationId])).rows[0].count).toBe(1);
+    await repository.synchronize(now, await repository.settings());
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(1);
+    await pool.query('DELETE FROM telephony_line_reservations WHERE id=$1', [reservationId]);
+  });
+
+  it('scopes CAS and longest-composition duration to each complete language without mixing readiness', async () => {
+    const ru = await repository.audioLibrary(); const uz = await addUzLibrary();
+    await expect(repository.saveLibraryAudio({ part: 'intro',language: 'uz' }, { ...audio,id: randomUUID(),storageKey: `${randomUUID()}.wav` }, 1,ru.intro!.id))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioChanged' });
+    const replacements = await Promise.allSettled(Array.from({ length: 2 }, () => repository.saveLibraryAudio({ part: 'intro',language: 'uz' },
+      { ...audio,id: randomUUID(),storageKey: `${randomUUID()}.wav` }, 1,uz.intro!.id)));
+    expect(replacements.filter(result => result.status==='fulfilled')).toHaveLength(1);
+    expect((await repository.audioLibrary()).intro?.id).toBe(ru.intro!.id);
+    await repository.saveLibraryAudio({ part: 'dayBeforeIntro',language: 'uz' }, { ...audio,id: randomUUID(),storageKey: `${randomUUID()}.wav` }, 1,null);
+    await expect(repository.saveSettings({ ...input,enabled: true,dayBeforeEnabled: true }, 1)).resolves.toBeUndefined();
+    await pool.query('UPDATE voice_reminder_settings SET intro_audio_id=NULL WHERE id=1');
+    expect((await repository.settings()).audioLibrary.intro).toBeNull();
+    await expect(repository.saveSettings({ ...input,enabled: true,dayBeforeEnabled: true }, 1)).resolves.toBeUndefined();
+    const durations = await Promise.allSettled([
+      repository.saveLibraryAudio({ part: 'hour',hour: '12',language: 'uz' }, { ...audio,id: randomUUID(),storageKey: `${randomUUID()}.wav`,durationSeconds: 100 }, 1,null),
+      repository.saveLibraryAudio({ part: 'minute',minute: '30',language: 'uz' }, { ...audio,id: randomUUID(),storageKey: `${randomUUID()}.wav`,durationSeconds: 100 }, 1,null),
+    ]);
+    expect(durations.filter(result => result.status==='fulfilled')).toHaveLength(1);
+    expect(durations.filter(result => result.status==='rejected')).toHaveLength(1);
+    const publicSettings = await repository.settings();
+    expect(JSON.stringify(publicSettings)).not.toContain('storageKey'); expect(JSON.stringify(publicSettings)).not.toContain('sha256');
+    // Neither language now supplies both enabled introductions.
+    await pool.query('UPDATE voice_reminder_settings SET intro_audio_id=$1 WHERE id=1', [ru.intro!.id]);
+    await pool.query(`DELETE FROM voice_reminder_localized_audio WHERE part='intro'`);
+    await expect(repository.saveSettings({ ...input,enabled: true,dayBeforeEnabled: true }, 1)).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+  });
 
   it('accepts its native attempt after an actual webhook binds a distinct provider UUID', async () => {
     await enableConfirmation();
@@ -609,12 +786,78 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(await repository.canContinue(claim, '+998901234567', demoDay)).toBe(true);
   });
 
+  it('preserves legacy Russian answers, active receipts, leases and test intents on the language upgrade', async () => {
+    const upgradeSchema = `voice_language_upgrade_${randomUUID().replace(/-/g, '')}`;
+    await admin.query(`CREATE SCHEMA ${upgradeSchema}`);
+    const upgrade = new Pool({ connectionString: url,options: `-c search_path=${upgradeSchema}` });
+    const callId = randomUUID(); const token = randomUUID(); const testId = randomUUID(); const reservationId = randomUUID();
+    try {
+      await upgrade.query(`CREATE TABLE users(id integer PRIMARY KEY);
+        CREATE TABLE academy_leads(id integer PRIMARY KEY,phone text,is_archived boolean DEFAULT false,language varchar(20),languages text[]);
+        CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,phone text);
+        CREATE TABLE academy_lead_phones(id integer PRIMARY KEY,lead_id integer,phone text,is_primary boolean);
+        CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
+        CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
+      for (const name of ['0142_voice_reminders','0143_crm_telephony_capacity','0144_voice_reminder_audio_library',
+        '0145_voice_reminder_clock_audio','0146_voice_reminder_test_calls','0147_voice_reminder_day_before','0149_voice_reminder_confirmations'])
+        await upgrade.query(readFileSync(`migrations/${name}.sql`,'utf8'));
+      await upgrade.query(`INSERT INTO users VALUES(1);
+        INSERT INTO academy_leads(id,phone,language,languages) VALUES(1,'+998901234567','uz',NULL);
+        INSERT INTO academy_students(id,lead_id) VALUES(1,1);
+        INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(1,'2030-01-15 06:00:00','scheduled');
+        INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(1,1,1,'confirmed'),(2,1,1,'invited');`);
+      await upgrade.query(`INSERT INTO voice_reminder_audio(id,file_name,mime_type,size_bytes,duration_seconds,storage_key,sha256)
+        VALUES($1,'legacy.wav','audio/wav',24,1,'legacy.wav',$2)`,[audio.id,audio.sha256]);
+      await upgrade.query(`UPDATE voice_reminder_settings SET intro_audio_id=$1,outro_audio_id=$1,
+        confirmation_yes_audio_id=$1,confirmation_no_audio_id=$1 WHERE id=1`,[audio.id]);
+      await upgrade.query(`INSERT INTO voice_reminder_time_audio(time,audio_id) VALUES('11:00',$1)`,[audio.id]);
+      await upgrade.query(`UPDATE voice_reminder_settings SET enabled=true,confirmation_enabled=true WHERE id=1`);
+      await upgrade.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,phone,
+        attempts,response,response_at,response_call_id,response_lesson_revision,response_participant_revision)
+        VALUES(1,1,$1,$2,'played','+998901234567',1,'yes',$2,$3,0,0)`,[scheduledAt,now,randomUUID()]);
+      const activeId = (await upgrade.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,phone,
+        lease_token,lease_until,provider_call_id,intro_audio_id,time_audio_id,outro_audio_id,audio_clock_time,audio_mode)
+        VALUES(1,2,$1,$2,'calling','+998901234567',$3,$1,$4,$5,$5,$5,'11:00','time') RETURNING id`,
+      [scheduledAt,now,token,callId,audio.id])).rows[0].id;
+      await upgrade.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+        VALUES($1,$2,'100','+998901234567',$3)`,[callId,activeId,now]);
+      await upgrade.query(`INSERT INTO telephony_line_reservations(id,extension,owner_type,client_call_id,phone,job_id,lease_until,dial_authorized_at)
+        VALUES($1,'100','robot',$2,'+998901234567',$3,$4,$5)`,[reservationId,callId,activeId,scheduledAt,now]);
+      await upgrade.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,expires_at)
+        VALUES($1,1,'+123456789','11:00',$2)`,[testId,scheduledAt]);
+      const before = {
+        settings: (await upgrade.query('SELECT * FROM voice_reminder_settings')).rows,
+        jobs: (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows,
+        tests: (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows,
+        attempts: (await upgrade.query('SELECT * FROM voice_reminder_call_attempts')).rows,
+        reservations: (await upgrade.query('SELECT * FROM telephony_line_reservations')).rows,
+      };
+      await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql','utf8'));
+      expect((await upgrade.query('SELECT * FROM voice_reminder_settings')).rows).toEqual(before.settings);
+      expect((await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows)
+        .toEqual(before.jobs.map(row => ({ ...row,language: 'ru',language_revision: 0 })));
+      expect((await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows)
+        .toEqual(before.tests.map(row => ({ ...row,language: 'ru' })));
+      expect((await upgrade.query('SELECT * FROM voice_reminder_call_attempts')).rows).toEqual(before.attempts);
+      expect((await upgrade.query('SELECT * FROM telephony_line_reservations')).rows).toEqual(before.reservations);
+      expect((await upgrade.query('SELECT * FROM voice_reminder_participant_response(1)')).rows)
+        .toEqual([{ response: 'yes',response_at: now }]);
+      const migrated = new PostgresVoiceReminderRepository(upgrade);
+      await migrated.synchronize(now,await migrated.settings());
+      expect((await upgrade.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(2);
+      expect((await upgrade.query('SELECT * FROM voice_reminder_participant_response(1)')).rows[0].response).toBe('yes');
+    } finally { await upgrade.end(); await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`); }
+  });
+
   it('upgrades legacy enabled single recordings conservatively while retaining their metadata', async () => {
     const upgradeSchema = `voice_upgrade_${randomUUID().replace(/-/g, '')}`;
     await admin.query(`CREATE SCHEMA ${upgradeSchema}`);
     const upgrade = new Pool({ connectionString: url, options: `-c search_path=${upgradeSchema}` });
     try {
       await upgrade.query(`CREATE TABLE users(id integer PRIMARY KEY);
+        CREATE TABLE academy_leads(id integer PRIMARY KEY,phone text,is_archived boolean DEFAULT false,language varchar(20),languages text[]);
+        CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,phone text);
+        CREATE TABLE academy_lead_phones(id integer PRIMARY KEY,lead_id integer,phone text,is_primary boolean);
         CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
         CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
       await upgrade.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
@@ -627,6 +870,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
@@ -644,6 +888,9 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     const token = randomUUID();
     try {
       await upgrade.query(`CREATE TABLE users(id integer PRIMARY KEY);
+        CREATE TABLE academy_leads(id integer PRIMARY KEY,phone text,is_archived boolean DEFAULT false,language varchar(20),languages text[]);
+        CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,phone text);
+        CREATE TABLE academy_lead_phones(id integer PRIMARY KEY,lead_id integer,phone text,is_primary boolean);
         CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
         CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
       for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library']) {
@@ -668,11 +915,12 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       const previousTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
       const migratedJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
       const migratedTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
-      expect(migratedJobs.map(({ reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousJobs);
+      expect(migratedJobs.map(({ language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousJobs);
       expect(migratedJobs.every(row => row.reminder_kind === 'same_day')).toBe(true);
-      expect(migratedTests.map(({ reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousTests);
+      expect(migratedTests.map(({ language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousTests);
       expect(migratedTests[0].reminder_kind).toBe('same_day');
       const settings = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(settings.enabled).toBe(true); expect(settings.dayBeforeEnabled).toBe(false);

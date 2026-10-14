@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
-import type { VoiceReminderAudio, VoiceReminderAudioLibrary, VoiceReminderKind } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderAudio, VoiceReminderAudioLibrary, VoiceReminderKind, VoiceReminderLanguage } from '@shared/contracts/voice-reminders';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
+import { VoiceReminderLanguageSelect } from './VoiceReminderLanguageSelect';
 import { voiceReminderApi, voiceReminderUnitTarget, type VoiceReminderAudioPart, type VoiceReminderAudioTarget, type VoiceReminderClockUnit, type VoiceReminderUnitTarget } from '../api';
 
 export type VoiceReminderUnitDraft = { value: string; file: File | null };
@@ -47,12 +48,13 @@ function SelectedRecording({ file }: { file: File | null }) {
   </div> : null;
 }
 
-function PartRecording({ part, recording, file, disabled, confirmationEnabled, onFile, onUpload }: {
+function PartRecording({ part, recording, file, disabled, confirmationEnabled, language, onFile, onUpload }: {
   part: VoiceReminderAudioPart;
   recording: VoiceReminderAudio | null;
   file: File | null;
   disabled: boolean;
   confirmationEnabled: boolean;
+  language: VoiceReminderLanguage;
   onFile: (file: File | null, input: HTMLInputElement) => void;
   onUpload: () => void;
 }) {
@@ -76,9 +78,9 @@ function PartRecording({ part, recording, file, disabled, confirmationEnabled, o
       <Label htmlFor={`voice-reminders-${part}`}>{t(label)}</Label>
       {recording ? <>
         <p className="break-all text-sm">{recording.fileName}</p>
-        <audio controls preload="none" className="w-full"
+        <audio key={`${language}:${recording.id}`} controls preload="none" className="w-full"
           aria-label={t(playLabel)}
-          src={voiceReminderApi.audioUrl({ part }, recording.id)} />
+          src={voiceReminderApi.audioUrl({ part }, recording.id, language)} />
       </> : null}
       <Input ref={input} id={`voice-reminders-${part}`} type="file" accept={acceptedAudio}
         disabled={disabled} onChange={(event) => onFile(event.target.files?.[0] ?? null, event.target)} />
@@ -106,11 +108,12 @@ const emptyLabels: Record<VoiceReminderClockUnit, TranslationKey> = {
   hour: 'voiceRemindersNoHours', minute: 'voiceRemindersNoMinutes', time: 'voiceRemindersNoTimeRecordings',
 };
 
-function ClockRecordings({ unit, entries, draft, disabled, onValue, onFile, onUpload, onRemove }: {
+function ClockRecordings({ unit, entries, draft, disabled, language, onValue, onFile, onUpload, onRemove }: {
   unit: VoiceReminderClockUnit;
   entries: Array<{ value: string; audio: VoiceReminderAudio }>;
   draft: VoiceReminderUnitDraft;
   disabled: boolean;
+  language: VoiceReminderLanguage;
   onValue: (value: string) => void;
   onFile: (file: File | null, input: HTMLInputElement) => void;
   onUpload: (target: VoiceReminderAudioTarget, file: File) => void;
@@ -155,8 +158,8 @@ function ClockRecordings({ unit, entries, draft, disabled, onValue, onFile, onUp
         <TableCell className="whitespace-nowrap">{value}</TableCell>
         <TableCell className="min-w-52 space-y-2">
           <p className="break-all">{audio.fileName}</p>
-          <audio controls preload="none" className="w-full" aria-label={t(playbackLabels[unit], { value, time: value })}
-            src={voiceReminderApi.audioUrl(voiceReminderUnitTarget(unit, value), audio.id)} />
+          <audio key={`${language}:${audio.id}`} controls preload="none" className="w-full" aria-label={t(playbackLabels[unit], { value, time: value })}
+            src={voiceReminderApi.audioUrl(voiceReminderUnitTarget(unit, value), audio.id, language)} />
         </TableCell>
         <TableCell><div className="flex gap-2">
           <Button type="button" variant="outline" size="sm" disabled={disabled}
@@ -171,11 +174,13 @@ function ClockRecordings({ unit, entries, draft, disabled, onValue, onFile, onUp
   </section>;
 }
 
-export function VoiceReminderRecordings({ library, draft, disabled, confirmationEnabled, onValue, onFile, onUpload, onRemove, onPreviewError }: {
+export function VoiceReminderRecordings({ library, draft, disabled, confirmationEnabled, language, onLanguage, onValue, onFile, onUpload, onRemove, onPreviewError }: {
   library: VoiceReminderAudioLibrary;
   draft: VoiceReminderRecordingDraft;
   disabled: boolean;
   confirmationEnabled: boolean;
+  language: VoiceReminderLanguage;
+  onLanguage: (language: VoiceReminderLanguage) => void;
   onValue: (unit: VoiceReminderClockUnit, value: string) => void;
   onFile: (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => void;
   onUpload: (target: VoiceReminderAudioTarget, file: File) => void;
@@ -190,16 +195,18 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
     ? `${library.hours[0].hour}:${library.minutes[0].minute}` : library.times[0]?.time ?? '';
   const [previewTime, setPreviewTime] = useState(initialPreviewTime);
   const [previewKind, setPreviewKind] = useState<VoiceReminderKind>('same_day');
-  const previewUrl = voiceReminderApi.previewUrl(previewTime, library, previewKind);
+  const previewUrl = voiceReminderApi.previewUrl(previewTime, library, previewKind, language);
   const entries: Record<VoiceReminderClockUnit, Array<{ value: string; audio: VoiceReminderAudio }>> = {
     hour: library.hours.map(({ hour, audio }) => ({ value: hour, audio })),
     minute: library.minutes.map(({ minute, audio }) => ({ value: minute, audio })),
     time: library.times.map(({ time, audio }) => ({ value: time, audio })),
   };
   return <div className="space-y-5">
+    <VoiceReminderLanguageSelect id="voice-reminders-recordings-language" value={language}
+      disabled={disabled} onChange={onLanguage} />
     <div className="grid gap-4 sm:grid-cols-2">
-      {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const).map((part) => <PartRecording key={part}
-        part={part} recording={library[part]} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled}
+      {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const).map((part) => <PartRecording key={`${language}:${part}`}
+        part={part} recording={library[part]} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled} language={language}
         onFile={(file, input) => onFile(part, file, input)}
         onUpload={() => { const file = draft[part]; if (file) onUpload({ part }, file); }} />)}
     </div>
@@ -211,7 +218,7 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
       </TabsList>
       {(['hour', 'minute', ...(showLegacy ? ['time'] : [])] as VoiceReminderClockUnit[]).map((unit) => (
         <TabsContent key={unit} value={unit} forceMount hidden={activeUnit !== unit}>
-          <ClockRecordings unit={unit} entries={entries[unit]} draft={draft[unit]} disabled={disabled}
+          <ClockRecordings key={`${language}:${unit}`} unit={unit} entries={entries[unit]} draft={draft[unit]} disabled={disabled} language={language}
             onValue={(value) => onValue(unit, value)} onFile={(file, input) => onFile(unit, file, input)}
             onUpload={onUpload} onRemove={onRemove} />
         </TabsContent>

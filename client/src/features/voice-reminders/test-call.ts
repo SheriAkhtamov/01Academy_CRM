@@ -5,7 +5,9 @@ import {
   normalizeVoiceReminderTestPhone,
   voiceReminderClockTimeSchema,
   voiceReminderKindSchema,
+  voiceReminderLanguageSchema,
   type VoiceReminderKind,
+  type VoiceReminderLanguage,
   type VoiceReminderTestCall,
   type VoiceReminderTestCallInput,
 } from '@shared/contracts/voice-reminders';
@@ -35,7 +37,8 @@ const readIntent = (actorId: number): VoiceReminderTestCallInput | null => {
       && typeof input.phone === 'string' && validPhone(input.phone)
       && voiceReminderClockTimeSchema.safeParse(input.clockTime).success
       && voiceReminderKindSchema.safeParse(input.reminderKind ?? 'same_day').success
-      ? { ...input, reminderKind: input.reminderKind ?? 'same_day' } : null;
+      && voiceReminderLanguageSchema.safeParse(input.language ?? 'ru').success
+      ? { ...input, reminderKind: input.reminderKind ?? 'same_day', language: input.language ?? 'ru' } : null;
   } catch { return null; }
 };
 const storeIntent = (actorId: number, input: VoiceReminderTestCallInput | null, expectedId?: string) => {
@@ -52,7 +55,8 @@ const errorKeys = new Set<TranslationKey>([
 export const testCallIsActive = (job?: VoiceReminderTestCall | null) => job?.status === 'waiting' || job?.status === 'calling';
 const validReceipt = (job: VoiceReminderTestCall, input: VoiceReminderTestCallInput) => job?.id === input.requestId
   && job.phone === input.phone && job.clockTime === input.clockTime
-  && (job.reminderKind ?? 'same_day') === (input.reminderKind ?? 'same_day') && VOICE_REMINDER_STATUSES.includes(job.status);
+  && (job.reminderKind ?? 'same_day') === (input.reminderKind ?? 'same_day')
+  && (job.language ?? 'ru') === (input.language ?? 'ru') && VOICE_REMINDER_STATUSES.includes(job.status);
 
 export function useVoiceReminderTestCall(actorId: number, open: boolean, initialClockTime: string) {
   const queryClient = useQueryClient();
@@ -61,6 +65,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
   const [phone, setPhone] = useState(intent?.phone ?? '');
   const [clockTime, setClockTime] = useState(intent?.clockTime ?? initialClockTime);
   const [reminderKind, setReminderKind] = useState<VoiceReminderKind>(intent?.reminderKind ?? 'same_day');
+  const [language, setLanguage] = useState<VoiceReminderLanguage>(intent?.language ?? 'ru');
   const [isSending, setIsSending] = useState(false);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
   const [acknowledged, setAcknowledged] = useState<VoiceReminderTestCall | null>(null);
@@ -99,6 +104,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
       setPhone(result.phone);
       setClockTime(result.clockTime);
       setReminderKind(result.reminderKind ?? 'same_day');
+      setLanguage(result.language ?? 'ru');
     }
   }, [actorId, current.data]);
 
@@ -120,6 +126,12 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     setReminderKind(value);
     setErrorKey(null);
   };
+  const editLanguage = (value: VoiceReminderLanguage) => {
+    if (intentRef.current || submittingRef.current || testCallIsActive(job)) return;
+    touchedRef.current = true;
+    setLanguage(value);
+    setErrorKey(null);
+  };
   const send = async (audioAvailable: boolean, disabled: boolean, missingAudioKey: TranslationKey = 'voiceReminderAudioRequired') => {
     if (submittingRef.current || disabled || testCallIsActive(job)) return;
     const saved = intentRef.current;
@@ -128,7 +140,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     if (!saved && !validPhone(normalizedPhone)) { setErrorKey('voiceReminderInvalidPhone'); return; }
     if (!saved && !voiceReminderClockTimeSchema.safeParse(clockTime).success) { setErrorKey('voiceReminderInvalidTime'); return; }
     if (!saved && !audioAvailable) { setErrorKey(missingAudioKey); return; }
-    const input = saved ?? { requestId: globalThis.crypto.randomUUID(), phone: normalizedPhone, clockTime, reminderKind };
+    const input = saved ?? { requestId: globalThis.crypto.randomUUID(), phone: normalizedPhone, clockTime, reminderKind, language };
     submittingRef.current = true;
     updateIntent(input);
     setIsSending(true);
@@ -154,6 +166,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
       setPhone(receipt.phone);
       setClockTime(receipt.clockTime);
       setReminderKind(receipt.reminderKind ?? 'same_day');
+      setLanguage(receipt.language ?? 'ru');
     } catch (error) {
       if (!mountedRef.current) return;
       const apiError = error as { status?: number; rawMessage?: string };
@@ -171,7 +184,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
   };
 
   return {
-    phone, clockTime, reminderKind, editReminderKind, editPhone, editClockTime, send, intent, job, current, errorKey, isSending,
+    phone, clockTime, reminderKind, language, editLanguage, editReminderKind, editPhone, editClockTime, send, intent, job, current, errorKey, isSending,
     locked: Boolean(intent) || isSending || testCallIsActive(job),
   };
 }

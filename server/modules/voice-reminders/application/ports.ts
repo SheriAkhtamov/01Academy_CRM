@@ -4,6 +4,7 @@ import type {
   VoiceReminderAudioPartsOf,
   VoiceReminderReadiness,
   VoiceReminderKind,
+  VoiceReminderLanguage,
   VoiceReminderResponse,
   VoiceReminderSettings,
   VoiceReminderSettingsInput,
@@ -18,8 +19,8 @@ export interface VoiceReminderAudioStore {
   resolve(storageKey: string): Promise<string>;
 }
 export type StoredVoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<StoredVoiceReminderAudio>;
-export type VoiceReminderAudioTarget = { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' } | { part: 'time'; time: string }
-  | { part: 'hour'; hour: string } | { part: 'minute'; minute: string };
+export type VoiceReminderAudioTarget = ({ part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' } | { part: 'time'; time: string }
+  | { part: 'hour'; hour: string } | { part: 'minute'; minute: string }) & { language?: VoiceReminderLanguage };
 export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' }>;
 export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>;
 export type StoredVoiceReminderConfirmation = {
@@ -37,6 +38,7 @@ export type ClaimedVoiceReminder = {
   scheduledAt: Date;
   attempts: number;
   reminderKind: VoiceReminderKind;
+  language?: VoiceReminderLanguage;
 };
 export type PreparedVoiceReminder = ClaimedVoiceReminder & {
   deadline: Date;
@@ -74,9 +76,9 @@ export interface VoiceReminderRepository {
   saveSettings(input: VoiceReminderSettingsInput, actorId: number): Promise<void>;
   currentAudio(): Promise<StoredVoiceReminderAudio | null>;
   saveAudio(audio: StoredVoiceReminderAudio, actorId: number): Promise<void>;
-  audioLibrary(): Promise<StoredVoiceReminderAudioLibrary>;
+  audioLibrary(language?: VoiceReminderLanguage): Promise<StoredVoiceReminderAudioLibrary>;
   saveLibraryAudio(target: VoiceReminderAudioTarget, audio: StoredVoiceReminderAudio, actorId: number, expectedAudioId?: string | null): Promise<void>;
-  removeTimeAudio(time: string, actorId: number, expectedAudioId?: string): Promise<void>;
+  removeTimeAudio(time: string, actorId: number, expectedAudioId?: string, language?: VoiceReminderLanguage): Promise<void>;
   removeLibraryAudio(target: VoiceReminderLibraryEntryTarget, actorId: number, expectedAudioId?: string): Promise<void>;
   synchronize(now: Date, settings: VoiceReminderSettings): Promise<void>;
   claim(now: Date, maximum: number, leaseSeconds: number): Promise<ClaimedVoiceReminder | null>;
@@ -94,6 +96,7 @@ export type ClaimedVoiceReminderTestCall = {
   leaseToken: string;
   expiresAt: Date;
   reminderKind: VoiceReminderKind;
+  language?: VoiceReminderLanguage;
 };
 export type PreparedVoiceReminderTestCall = ClaimedVoiceReminderTestCall & {
   phone: string;

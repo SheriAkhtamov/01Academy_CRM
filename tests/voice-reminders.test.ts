@@ -94,7 +94,8 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     const tomorrow = new Date('2030-01-16T06:00:00Z');
     const deadline = new Date('2030-01-15T15:00:00Z');
     const claimed = { ...job(1), scheduledAt: tomorrow, reminderKind: 'day_before' as const };
-    context.repository.settings.mockResolvedValue({ ...settings, dayBeforeEnabled: true } as never);
+    context.repository.settings.mockResolvedValue({ ...settings, dayBeforeEnabled: true,
+      audioLibrary: { ...settings.audioLibrary, dayBeforeIntro: audio } } as never);
     context.repository.claim.mockResolvedValueOnce(claimed).mockResolvedValue(null);
     context.repository.prepare.mockResolvedValue({ ...claimed, phone: '+998901234567', audioParts, deadline } as never);
     await context.worker.tick();

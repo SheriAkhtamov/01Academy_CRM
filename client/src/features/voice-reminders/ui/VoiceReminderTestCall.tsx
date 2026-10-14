@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Loader2, Phone } from 'lucide-react';
-import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
+import { VoiceReminderLanguageSelect } from './VoiceReminderLanguageSelect';
 import { testCallIsActive, useVoiceReminderTestCall } from '../test-call';
 
 const statusKeys: Record<VoiceReminderStatus, TranslationKey> = {
@@ -24,14 +25,16 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   onPendingChange: (pending: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const library = data.settings.audioLibrary;
-  const initialTime = library.hours.length && library.minutes.length
-    ? `${library.hours[0].hour}:${library.minutes[0].minute}` : library.times[0]?.time ?? '';
+  const initialLibrary = data.settings.audioLibrary;
+  const initialTime = initialLibrary.hours.length && initialLibrary.minutes.length
+    ? `${initialLibrary.hours[0].hour}:${initialLibrary.minutes[0].minute}` : initialLibrary.times[0]?.time ?? '';
   const call = useVoiceReminderTestCall(actorId, open, initialTime);
+  const library = voiceReminderLibraryForLanguage(data.settings, call.language);
   const active = testCallIsActive(call.job);
   const displayedPhone = active && call.job ? call.job.phone : call.phone;
   const displayedTime = active && call.job ? call.job.clockTime : call.clockTime;
   const displayedKind = active && call.job ? call.job.reminderKind ?? 'same_day' : call.reminderKind;
+  const displayedLanguage = active && call.job ? call.job.language ?? 'ru' : call.language;
   useEffect(() => {
     onPendingChange(call.isSending);
     return () => onPendingChange(false);
@@ -60,6 +63,8 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
       </div>
       <VoiceReminderKindSelect id="voice-reminders-test-kind" value={displayedKind}
         disabled={disabled || call.locked} onChange={call.editReminderKind} />
+      <VoiceReminderLanguageSelect id="voice-reminders-test-language" value={displayedLanguage}
+        disabled={disabled || call.locked} onChange={call.editLanguage} />
       <div className="sm:col-span-2">
         <Button type="submit" disabled={submitDisabled}>
           {call.isSending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Phone data-icon="inline-start" />}

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, type VoiceReminderLanguage } from '../shared/contracts/voice-reminders';
 import { createVoiceRemindersRuntime, type VoiceReminderCapacityProvider } from '../server/infrastructure/voice-reminders-runtime';
 import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminders/infrastructure/postgres-repository';
 import { LocalVoiceReminderAudioStore, inspectReminderAudio } from '../server/modules/voice-reminders/infrastructure/audio-store';
@@ -34,10 +34,10 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
   const makeRuntime = (capacity: VoiceReminderCapacityProvider, performCall: typeof performVertoReminderCall) => (
     createVoiceRemindersRuntime(capacity, database, { audioDirectory: directory, performCall, now: () => testClock })
   );
-  const enqueueTest = async (actorId = 1, phone = '+998901234567') => {
+  const enqueueTest = async (actorId = 1, phone = '+998901234567', language: VoiceReminderLanguage = 'ru') => {
     const id = randomUUID();
-    await database.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,not_before_at,expires_at)
-      VALUES($1,$2,$3,'10:30',$4,$5)`, [id, actorId, phone, new Date(testClock), new Date(testClock + 600_000)]);
+    await database.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,not_before_at,expires_at,language)
+      VALUES($1,$2,$3,'10:30',$4,$5,$6)`, [id, actorId, phone, new Date(testClock), new Date(testClock + 600_000), language]);
     return id;
   };
   const testStatus = async (id: string) => (await database.query('SELECT status,dial_started_at FROM voice_reminder_test_calls WHERE id=$1',[id])).rows[0];
@@ -68,6 +68,38 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await repository.saveSettings({ ...settings, confirmationEnabled: true, enabled: true,
       allowedStartTime: '00:00', allowedEndTime: '23:59' }, 1);
   };
+  const prepareUzbekAudio = async () => {
+    const store = new LocalVoiceReminderAudioStore(directory);
+    const russian = await repository.audioLibrary();
+    const source = await fs.readFile(await store.resolve(russian.intro!.storageKey));
+    const targets = [
+      { part: 'intro', amplitude: 1000 }, { part: 'dayBeforeIntro', amplitude: 2000 },
+      { part: 'hour', hour: '10', amplitude: 3000 }, { part: 'minute', minute: '30', amplitude: 4000 },
+      { part: 'outro', amplitude: 5000 }, { part: 'confirmationYes', amplitude: 6000 },
+      { part: 'confirmationNo', amplitude: 7000 },
+    ] as const;
+    for (const { amplitude, ...target } of targets) {
+      const bytes = Buffer.from(source);
+      for (let offset = 44; offset < bytes.length; offset += 2) bytes.writeInt16LE(amplitude, offset);
+      const audio = await store.save({ bytes, originalName: `${target.part}-uz.wav`, mimeType: 'audio/wav' });
+      await repository.saveLibraryAudio({ ...target, language: 'uz' }, audio, 1);
+    }
+    await repository.saveSettings({ ...settings, confirmationEnabled: true, enabled: true,
+      allowedStartTime: '00:00', allowedEndTime: '23:59' }, 1);
+  };
+  const expectUzbekComposition = async (input: Parameters<typeof performVertoReminderCall>[1], introAmplitude = 1000) => {
+    const main = await fs.readFile(input.audioPath);
+    expect(await inspectReminderAudio(input.audioPath)).toMatchObject({ durationSeconds: 4 });
+    const amplitudes = [introAmplitude, 3000, 4000, 5000];
+    for (let offset = 44; offset < main.length; offset += 2) {
+      expect(main.readInt16LE(offset)).toBe(amplitudes[Math.floor((offset - 44) / 16000)]);
+    }
+    expect(input.confirmation).toBeDefined();
+    const yes = await fs.readFile(input.confirmation!.yesAudioPath);
+    const no = await fs.readFile(input.confirmation!.noAudioPath);
+    expect(yes.readInt16LE(44)).toBe(6000);
+    expect(no.readInt16LE(44)).toBe(7000);
+  };
   beforeAll(async () => {
     if (!url || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Local isolated PostgreSQL required');
     admin = new Pool({ connectionString: url });
@@ -75,7 +107,8 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=UTC` });
     await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text NOT NULL DEFAULT 'administration',is_active boolean DEFAULT true,is_archived boolean DEFAULT false);
       CREATE TABLE user_modules(user_id integer,module text);
-      CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false,
+        language text NOT NULL DEFAULT 'ru', languages text[]);
       CREATE TABLE academy_lead_phones(id serial PRIMARY KEY, lead_id integer, phone text, is_primary boolean);
       CREATE TABLE academy_students(id integer PRIMARY KEY, lead_id integer, phone text, student_name text, contact_name text);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY, scheduled_at timestamp NOT NULL, status text NOT NULL);
@@ -88,6 +121,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     await database.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -117,6 +151,103 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('composes an Uzbek lead call and its acknowledgements entirely from the Uzbek library', async () => {
+    await prepareUzbekAudio();
+    await database.query("UPDATE academy_leads SET languages=ARRAY['uz','ru'] WHERE id=1");
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      await expectUzbekComposition(input);
+      expect(await input.shouldContinue()).toBe(true);
+      await input.onStarted!();
+      expect(await input.confirmation!.onResponse('no', input.callId!)).toBe(true);
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response: 'no' };
+    });
+    const runtime = makeRuntime(provider(), call);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT language,status,response FROM voice_reminder_jobs')).rows[0])
+        .toMatchObject({ language: 'uz', status: 'played', response: 'no' });
+      expect((await database.query('SELECT * FROM voice_reminder_participant_response(1)')).rows[0].response).toBe('no');
+      expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+    } finally { await runtime.close(); }
+  });
+
+  it('uses the explicit Uzbek manual-test language and saves its response without changing demo data', async () => {
+    await prepareUzbekAudio();
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest(1, '+998901234567', 'uz');
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      await expectUzbekComposition(input);
+      await input.onStarted!();
+      expect(await input.confirmation!.onResponse('yes', input.callId!)).toBe(true);
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response: 'yes' };
+    });
+    const runtime = makeRuntime(provider(), call);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT language,status,response FROM voice_reminder_test_calls WHERE id=$1', [id])).rows[0])
+        .toMatchObject({ language: 'uz', status: 'played', response: 'yes' });
+      expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(0);
+      expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+    } finally { await runtime.close(); }
+  });
+
+  it.each(['same_day', 'day_before'] as const)('delivers a %s Uzbek reminder when the Russian library is empty', async reminderKind => {
+    await prepareUzbekAudio();
+    await database.query(`UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1;
+      UPDATE voice_reminder_settings SET intro_audio_id=NULL,day_before_intro_audio_id=NULL,outro_audio_id=NULL,
+        confirmation_yes_audio_id=NULL,confirmation_no_audio_id=NULL WHERE id=1;
+      DELETE FROM voice_reminder_hour_audio;
+      DELETE FROM voice_reminder_minute_audio;`);
+    await repository.saveSettings({ ...settings, confirmationEnabled: true, enabled: true, dayBeforeEnabled: true,
+      leadMinutes: 120, allowedStartTime: '00:00', allowedEndTime: '23:59' }, 1);
+    expect(await repository.audioLibrary()).toMatchObject({ intro: null, outro: null, hours: [], minutes: [] });
+    let clock = testClock;
+    if (reminderKind === 'day_before') {
+      const scheduledAt = new Date(testClock + 24 * 60 * 60_000 + 30 * 60_000);
+      await database.query("UPDATE academy_demo_lessons SET scheduled_at=$1::timestamptz AT TIME ZONE 'UTC' WHERE id=1", [scheduledAt]);
+      clock += 30 * 60_000;
+    }
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      await expectUzbekComposition(input, reminderKind === 'day_before' ? 2000 : 1000);
+      expect(await input.shouldContinue()).toBe(true);
+      await input.onStarted!();
+      expect(await input.confirmation!.onResponse('yes', input.callId!)).toBe(true);
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response: 'yes' };
+    });
+    const runtime = createVoiceRemindersRuntime(provider(), database,
+      { audioDirectory: directory, performCall: call, now: () => clock });
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT language,status,response FROM voice_reminder_jobs WHERE reminder_kind=$1', [reminderKind])).rows[0])
+        .toMatchObject({ language: 'uz', status: 'played', response: 'yes' });
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    } finally { await runtime.close(); }
+  });
+
+  it('lets a ready Russian lead call proceed while the earlier Uzbek job waits for its own recordings', async () => {
+    await database.query("UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1");
+    await database.query(`INSERT INTO academy_leads(id,phone,languages) VALUES(2,'+998909876543',ARRAY['ru']);
+      INSERT INTO academy_students(id,lead_id,contact_name) VALUES(2,2,'Second parent');
+      INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(2,1,2,'invited');`);
+    const call = mockCall();
+    const capacity = provider();
+    const runtime = makeRuntime(capacity, call);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect(call.mock.calls[0][1].phone).toBe('+998909876543');
+      expect((await database.query("SELECT status,attempts FROM voice_reminder_jobs WHERE language='uz'")).rows[0])
+        .toMatchObject({ status: 'waiting', attempts: 0 });
+      expect((await database.query("SELECT status FROM voice_reminder_jobs WHERE language='ru'")).rows[0].status).toBe('played');
+      expect(capacity.getCredentials).toHaveBeenCalledOnce();
+    } finally { await runtime.close(); }
   });
 
   it('routes a committed auto response through the runtime after the provider binds its own UUID', async () => {

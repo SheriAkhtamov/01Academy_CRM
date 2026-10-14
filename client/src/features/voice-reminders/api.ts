@@ -2,6 +2,7 @@ import {
   selectVoiceReminderAudioParts,
   type VoiceReminderAudioLibrary,
   type VoiceReminderKind,
+  type VoiceReminderLanguage,
   type VoiceReminderSettingsInput,
   type VoiceReminderSnapshot,
   type VoiceReminderTestCall,
@@ -14,8 +15,8 @@ export type VoiceReminderClockUnit = 'hour' | 'minute' | 'time';
 export type VoiceReminderUnitTarget = { hour: string } | { minute: string } | { time: string };
 export type VoiceReminderAudioPart = 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo';
 export type VoiceReminderAudioTarget = { part: VoiceReminderAudioPart } | VoiceReminderUnitTarget;
-export type VoiceReminderAudioUpload = { target: VoiceReminderAudioTarget; file: File; expectedId?: string };
-export type VoiceReminderRecordingRemoval = { target: VoiceReminderUnitTarget; expectedId: string };
+export type VoiceReminderAudioUpload = { target: VoiceReminderAudioTarget; file: File; expectedId?: string; language?: VoiceReminderLanguage };
+export type VoiceReminderRecordingRemoval = { target: VoiceReminderUnitTarget; expectedId: string; language?: VoiceReminderLanguage };
 
 export const voiceReminderUnitTarget = (unit: VoiceReminderClockUnit, value: string): VoiceReminderUnitTarget => {
   if (unit === 'hour') return { hour: value };
@@ -39,6 +40,12 @@ const audioPath = (target: VoiceReminderAudioTarget) => {
   return `${voiceRemindersPath}/audio/${unit}s/${encodeURIComponent(value)}`;
 };
 
+const withQuery = (path: string, values: Record<string, string | undefined>) => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) if (value !== undefined) query.set(key, value);
+  return query.size ? `${path}?${query}` : path;
+};
+
 export const voiceReminderQueryKeys = {
   snapshot: [voiceRemindersPath] as const,
   testCall: (actorId: number) => [voiceRemindersPath, 'test-calls', actorId] as const,
@@ -53,21 +60,21 @@ export const voiceReminderApi = {
   saveSettings: (settings: VoiceReminderSettingsInput) => (
     apiRequest('PUT', `${voiceRemindersPath}/settings`, settings) as Promise<VoiceReminderSnapshot>
   ),
-  uploadAudio: ({ target, file, expectedId }: VoiceReminderAudioUpload) => {
+  uploadAudio: ({ target, file, expectedId, language }: VoiceReminderAudioUpload) => {
     const data = new FormData();
     data.append('file', file);
-    const path = `${audioPath(target)}${expectedId ? `?expectedId=${encodeURIComponent(expectedId)}` : ''}`;
+    const path = withQuery(audioPath(target), { expectedId, language });
     return apiRequest('POST', path, data) as Promise<VoiceReminderSnapshot>;
   },
-  removeRecording: ({ target, expectedId }: VoiceReminderRecordingRemoval) => (
-    apiRequest('DELETE', `${audioPath(target)}?expectedId=${encodeURIComponent(expectedId)}`) as Promise<VoiceReminderSnapshot>
+  removeRecording: ({ target, expectedId, language }: VoiceReminderRecordingRemoval) => (
+    apiRequest('DELETE', withQuery(audioPath(target), { expectedId, language })) as Promise<VoiceReminderSnapshot>
   ),
-  audioUrl: (target: VoiceReminderAudioTarget, id: string) => `${audioPath(target)}?v=${encodeURIComponent(id)}`,
-  previewUrl: (time: string, library: VoiceReminderAudioLibrary, reminderKind: VoiceReminderKind = 'same_day') => {
+  audioUrl: (target: VoiceReminderAudioTarget, id: string, language?: VoiceReminderLanguage) => withQuery(audioPath(target), { v: id, language }),
+  previewUrl: (time: string, library: VoiceReminderAudioLibrary, reminderKind: VoiceReminderKind = 'same_day', language: VoiceReminderLanguage = 'ru') => {
     const parts = selectVoiceReminderAudioParts(library, time, reminderKind);
     if (!parts) return null;
     const sources = parts.kind === 'clock' ? [parts.hour.id, parts.minute.id] : [parts.time.id];
-    const version = [reminderKind, parts.intro.id, parts.kind, ...sources, parts.outro.id].join(':');
-    return `${voiceRemindersPath}/preview/${encodeURIComponent(time)}?reminderKind=${reminderKind}&v=${encodeURIComponent(version)}`;
+    const version = [language, reminderKind, parts.intro.id, parts.kind, ...sources, parts.outro.id].join(':');
+    return withQuery(`${voiceRemindersPath}/preview/${encodeURIComponent(time)}`, { reminderKind, language, v: version });
   },
 };

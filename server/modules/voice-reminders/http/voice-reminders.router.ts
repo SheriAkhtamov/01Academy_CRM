@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderKindSchema, voiceReminderSettingsSchema, voiceReminderTestCallSchema } from '@shared/contracts/voice-reminders';
-import type { VoiceReminderAudioTarget } from '../application/ports';
+import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderKindSchema, voiceReminderLanguageSchema, voiceReminderSettingsSchema, voiceReminderTestCallSchema } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderAudioTarget, VoiceReminderLibraryEntryTarget } from '../application/ports';
 import { actorContextFrom } from '../../leads/domain/actor-context';
 import type { VoiceReminderSettingsService } from '../application/settings-service';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
@@ -13,6 +13,10 @@ const sendError = (response: Response, error: unknown) => {
 
 export const createVoiceReminderRouter = (service: VoiceReminderSettingsService) => {
   const router = Router();
+  const languageFrom = (request: Request) => voiceReminderLanguageSchema.parse(request.query.language ?? 'ru');
+  const localizedTarget = <Target extends VoiceReminderAudioTarget>(request: Request, target: Target): Target => (
+    request.query.language === undefined ? target : { ...target, language: languageFrom(request) }
+  );
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: VOICE_REMINDER_MAX_AUDIO_BYTES, files: 1, fields: 0, parts: 1 },
@@ -43,7 +47,7 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
       }
       if (!request.file) { response.status(400).json({ error: 'voiceReminderAudioRequired' }); return; }
       const input = { bytes: request.file.buffer, originalName: request.file.originalname, mimeType: request.file.mimetype };
-      const action = target ? service.uploadPart(actorContextFrom(request), target, input, expected.id) : service.upload(actorContextFrom(request), input);
+      const action = target ? service.uploadPart(actorContextFrom(request), localizedTarget(request, target), input, expected.id) : service.upload(actorContextFrom(request), input);
       void action.then(result => response.json(result)).catch(failure => { sendError(response, failure); });
     });
   };
@@ -57,6 +61,9 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     try {
       requireVoiceReminderLeadership(actorContextFrom(request));
       response.setHeader('Cache-Control', 'no-store');
+      if (!voiceReminderLanguageSchema.safeParse(request.query.language ?? 'ru').success) {
+        response.status(400).json({ error: 'validationError' }); return;
+      }
       next();
     } catch (error) { sendError(response, error); }
   });
@@ -84,13 +91,19 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     catch (error) { sendError(response, error); }
   });
 
-  router.post('/voice-reminders/audio', (request, response) => uploadPart(request, response));
-  router.get('/voice-reminders/audio', (request, response) => streamFile(response, () => service.playback(actorContextFrom(request))));
+  router.post('/voice-reminders/audio', (request, response) => {
+    if (languageFrom(request) !== 'ru') { response.status(400).json({ error: 'voiceReminderAudioInvalid' }); return; }
+    uploadPart(request, response);
+  });
+  router.get('/voice-reminders/audio', (request, response) => {
+    if (languageFrom(request) !== 'ru') { response.status(404).json({ error: 'resourceNotFound' }); return; }
+    void streamFile(response, () => service.playback(actorContextFrom(request)));
+  });
   for (const part of ['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const) {
     const slug = part === 'dayBeforeIntro' ? 'day-before-intro'
       : part === 'confirmationYes' ? 'confirmation-yes' : part === 'confirmationNo' ? 'confirmation-no' : part;
     router.post(`/voice-reminders/audio/${slug}`, (request, response) => uploadPart(request, response, { part }));
-    router.get(`/voice-reminders/audio/${slug}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), { part })));
+    router.get(`/voice-reminders/audio/${slug}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), localizedTarget(request, { part }))));
   }
   router.post('/voice-reminders/audio/times/:time', (request, response) => {
     const time = timeFrom(request, response);
@@ -98,19 +111,19 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
   });
   router.get('/voice-reminders/audio/times/:time', (request, response) => {
     const time = timeFrom(request, response);
-    if (time) void streamFile(response, () => service.playbackPart(actorContextFrom(request), { part: 'time', time }));
+    if (time) void streamFile(response, () => service.playbackPart(actorContextFrom(request), localizedTarget(request, { part: 'time', time })));
   });
   router.delete('/voice-reminders/audio/times/:time', async (request, response) => {
     const time = timeFrom(request, response);
     if (!time) return;
     const expected = expectedFrom(request, response, true);
     if (!expected?.id) return;
-    try { response.json(await service.removeTime(actorContextFrom(request), time, expected.id)); }
+    try { response.json(await service.removeTime(actorContextFrom(request), time, expected.id, languageFrom(request))); }
     catch (error) { sendError(response, error); }
   });
   for (const part of ['hour', 'minute'] as const) {
     const base = `/voice-reminders/audio/${part}s/:index`;
-    const targetFrom = (request: Request, response: Response) => {
+    const targetFrom = (request: Request, response: Response): VoiceReminderLibraryEntryTarget | null => {
       const schema = part === 'hour' ? voiceReminderHourSchema : voiceReminderMinuteSchema;
       const parsed = schema.safeParse(request.params.index);
       if (!parsed.success) { response.status(400).json({ error: 'voiceReminderInvalidTime' }); return null; }
@@ -122,14 +135,14 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     });
     router.get(base, (request, response) => {
       const target = targetFrom(request, response);
-      if (target) void streamFile(response, () => service.playbackPart(actorContextFrom(request), target));
+      if (target) void streamFile(response, () => service.playbackPart(actorContextFrom(request), localizedTarget(request, target)));
     });
     router.delete(base, async (request, response) => {
       const target = targetFrom(request, response);
       if (!target) return;
       const expected = expectedFrom(request, response, true);
       if (!expected?.id) return;
-      try { response.json(await service.removePart(actorContextFrom(request), target, expected.id)); }
+      try { response.json(await service.removePart(actorContextFrom(request), localizedTarget(request, target), expected.id)); }
       catch (error) { sendError(response, error); }
     });
   }
@@ -138,7 +151,7 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     if (!time) return;
     const kind = voiceReminderKindSchema.safeParse(request.query.reminderKind ?? 'same_day');
     if (!kind.success) { response.status(400).json({ error: 'voiceReminderInvalidTestCall' }); return; }
-    if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time, kind.data));
+    if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time, kind.data, languageFrom(request)));
   });
   return router;
 };

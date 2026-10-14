@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VOICE_REMINDER_SETTINGS, type VoiceReminderSnapshot, type VoiceReminderTestCall } from '../shared/contracts/voice-reminders';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, voiceReminderLibraryForLanguage, type VoiceReminderAudio, type VoiceReminderAudioLibrary, type VoiceReminderSnapshot, type VoiceReminderTestCall } from '../shared/contracts/voice-reminders';
 import { VoiceRemindersDialog } from '../client/src/features/voice-reminders/ui/VoiceRemindersDialog';
 import { i18n } from '../client/src/lib/i18n';
 
@@ -49,6 +49,24 @@ const makeSnapshot = (): VoiceReminderSnapshot => ({
   readiness: { ready: true, code: 'ready' },
 });
 
+const makeLanguageSnapshot = (): VoiceReminderSnapshot => {
+  const data = makeSnapshot();
+  const library = structuredClone(data.settings.audioLibrary);
+  const localizedAudio = (recording: VoiceReminderAudio | null) => recording
+    ? { ...recording, id: `uz-${recording.id}`, fileName: `uz-${recording.fileName}` } : null;
+  const uz: VoiceReminderAudioLibrary = {
+    ...library,
+    intro: localizedAudio(library.intro), dayBeforeIntro: localizedAudio(library.dayBeforeIntro),
+    outro: localizedAudio(library.outro), confirmationYes: localizedAudio(library.confirmationYes),
+    confirmationNo: localizedAudio(library.confirmationNo),
+    hours: library.hours.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
+    minutes: library.minutes.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
+    times: library.times.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
+  };
+  data.settings.audioLibraries = { ru: data.settings.audioLibrary, uz };
+  return data;
+};
+
 function Host() {
   const [open, setOpen] = useState(true);
   return <><button onClick={() => setOpen(true)}>Reopen</button>
@@ -62,23 +80,32 @@ const renderDialog = async (data = makeSnapshot(), strict = false) => {
     current = { ...current, settings: { ...current.settings, ...settings } };
     return current;
   });
-  mocks.uploadAudio.mockImplementation(async ({ target, file }) => {
+  mocks.uploadAudio.mockImplementation(async ({ target, file, language = 'ru' }) => {
     const recording = { ...audio, id: `uploaded-${file.name}`, fileName: file.name };
-    const library = current.settings.audioLibrary;
+    const library = voiceReminderLibraryForLanguage(current.settings, language);
     const changed = target.part ? { ...library, [target.part]: recording }
       : target.hour ? { ...library, hours: [...library.hours.filter((entry) => entry.hour !== target.hour), { hour: target.hour, audio: recording }] }
         : target.minute ? { ...library, minutes: [...library.minutes.filter((entry) => entry.minute !== target.minute), { minute: target.minute, audio: recording }] }
           : { ...library, times: [...library.times.filter((entry) => entry.time !== target.time), { time: target.time, audio: recording }] };
-    current = { ...current, settings: { ...current.settings, audioLibrary: changed } };
+    current = { ...current, settings: { ...current.settings,
+      ...(language === 'ru' ? { audioLibrary: changed } : {}),
+      audioLibraries: { ru: current.settings.audioLibrary, uz: voiceReminderLibraryForLanguage(current.settings, 'uz'),
+        ...current.settings.audioLibraries, [language]: changed },
+    } };
     return current;
   });
-  mocks.removeRecording.mockImplementation(async ({ target }) => {
-    current = { ...current, settings: { ...current.settings, audioLibrary: {
-      ...current.settings.audioLibrary,
-      hours: current.settings.audioLibrary.hours.filter((entry) => entry.hour !== target.hour),
-      minutes: current.settings.audioLibrary.minutes.filter((entry) => entry.minute !== target.minute),
-      times: current.settings.audioLibrary.times.filter((entry) => entry.time !== target.time),
-    } } };
+  mocks.removeRecording.mockImplementation(async ({ target, language = 'ru' }) => {
+    const library = voiceReminderLibraryForLanguage(current.settings, language);
+    const changed = { ...library,
+      hours: library.hours.filter((entry) => entry.hour !== target.hour),
+      minutes: library.minutes.filter((entry) => entry.minute !== target.minute),
+      times: library.times.filter((entry) => entry.time !== target.time),
+    };
+    current = { ...current, settings: { ...current.settings,
+      ...(language === 'ru' ? { audioLibrary: changed } : {}),
+      audioLibraries: { ru: current.settings.audioLibrary, uz: voiceReminderLibraryForLanguage(current.settings, 'uz'),
+        ...current.settings.audioLibraries, [language]: changed },
+    } };
     return current;
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -117,7 +144,7 @@ describe('voice reminder settings and test calls', () => {
     mocks.actorId = 42;
     mocks.getCurrentTestCall.mockResolvedValue(null);
     mocks.startTestCall.mockImplementation(async (input) => {
-      const job = { id: input.requestId, status: 'waiting', phone: input.phone, clockTime: input.clockTime, reminderKind: input.reminderKind ?? 'same_day', response: null, respondedAt: null };
+      const job = { id: input.requestId, status: 'waiting', phone: input.phone, clockTime: input.clockTime, reminderKind: input.reminderKind ?? 'same_day', language: input.language ?? 'ru', response: null, respondedAt: null };
       mocks.getCurrentTestCall.mockResolvedValue(job);
       return job;
     });
@@ -241,7 +268,7 @@ describe('voice reminder settings and test calls', () => {
     expect((screen.getByLabelText('Opening recording', { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(file);
     await user.click(confirm.getByRole('button', { name: 'Replace recording' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ target: { part: 'intro' }, file, expectedId: 'intro-audio' });
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'ru', target: { part: 'intro' }, file, expectedId: 'intro-audio' });
     expect((screen.getByLabelText('Play the opening recording') as HTMLAudioElement).getAttribute('src')).toContain('uploaded-new-intro.wav');
   });
 
@@ -278,7 +305,7 @@ describe('voice reminder settings and test calls', () => {
     await user.click(within(screen.getByRole('region', { name: 'Closing recording' })).getByRole('button', { name: 'Upload recording' }));
     await screen.findByLabelText('Play the closing recording');
     expect(mocks.uploadAudio.mock.calls.map(([selection]) => selection)).toEqual([
-      { target: { part: 'intro' }, file: intro }, { target: { part: 'outro' }, file: outro },
+      { language: 'ru', target: { part: 'intro' }, file: intro }, { language: 'ru', target: { part: 'outro' }, file: outro },
     ]);
   });
 
@@ -297,7 +324,7 @@ describe('voice reminder settings and test calls', () => {
     expect((screen.getByLabelText('Time recording') as HTMLInputElement).files?.[0]).toBe(file);
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await screen.findByLabelText('Play the 18:30 recording');
-    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ target: { time: '18:30' }, file });
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'ru', target: { time: '18:30' }, file });
     expect((time as HTMLInputElement).value).toBe('');
     expect(screen.queryByText(/SQL|serverInternalCode/)).toBeNull();
   });
@@ -321,7 +348,7 @@ describe('voice reminder settings and test calls', () => {
     expect(mocks.uploadAudio).not.toHaveBeenCalled();
     await user.click(confirmation.getByRole('button', { name: 'Replace recording' }));
     await waitFor(() => expect(screen.getAllByText('14-00-new.mp3')).toHaveLength(1));
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { time: '14:00' }, file, expectedId: '14-00-audio' });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { time: '14:00' }, file, expectedId: '14-00-audio' });
     expect(screen.getAllByLabelText('Play the 14:00 recording')).toHaveLength(1);
   });
 
@@ -343,8 +370,8 @@ describe('voice reminder settings and test calls', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(screen.queryByText('14-00.mp3')).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Full times' })).toBeNull();
-    expect(screen.queryByLabelText('Play the full reminder')).toBeNull();
-    expect(mocks.removeRecording.mock.calls[1][0]).toEqual({ target: { time: '14:00' }, expectedId: '14-00-audio' });
+    await waitFor(() => expect(screen.queryByLabelText('Play the full reminder')).toBeNull());
+    expect(mocks.removeRecording.mock.calls[1][0]).toEqual({ language: 'ru', target: { time: '14:00' }, expectedId: '14-00-audio' });
   });
 
   it('freezes the version approved for replacement and requires new approval after a concurrent change', async () => {
@@ -361,7 +388,7 @@ describe('voice reminder settings and test calls', () => {
     mocks.uploadAudio.mockRejectedValueOnce(Object.assign(new Error('Version mismatch'), { rawMessage: 'voiceReminderAudioChanged' }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { part: 'intro' }, file, expectedId: 'intro-audio' });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { part: 'intro' }, file, expectedId: 'intro-audio' });
     expect(screen.getByRole('alert').textContent).toBe('This recording has changed');
     await screen.findByText('other-intro.mp3');
     expect((opening.getByLabelText('Opening recording', { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(file);
@@ -382,13 +409,13 @@ describe('voice reminder settings and test calls', () => {
     mocks.uploadAudio.mockRejectedValueOnce(Object.assign(new Error('Already exists'), { rawMessage: 'voiceReminderAudioChanged' }));
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await screen.findByText('other-time.mp3');
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { time: '18:30' }, file });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { time: '18:30' }, file });
     expect((clockTimeInput() as HTMLInputElement).value).toBe('18:30');
     const library = within(screen.getByRole('region', { name: 'Full times' }));
     await user.click(library.getAllByRole('button', { name: 'Replace recording' })[0]);
     expect(mocks.uploadAudio).toHaveBeenCalledTimes(1);
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
-    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ target: { time: '18:30' }, file, expectedId: 'concurrent-time' });
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'ru', target: { time: '18:30' }, file, expectedId: 'concurrent-time' });
   });
 
   it('freezes the version approved for deleting a clock recording', async () => {
@@ -402,12 +429,12 @@ describe('voice reminder settings and test calls', () => {
     mocks.removeRecording.mockRejectedValueOnce(Object.assign(new Error('Version mismatch'), { rawMessage: 'voiceReminderAudioChanged' }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.removeRecording.mock.calls[0][0]).toEqual({ target: { time: '14:00' }, expectedId: '14-00-audio' });
+    expect(mocks.removeRecording.mock.calls[0][0]).toEqual({ language: 'ru', target: { time: '14:00' }, expectedId: '14-00-audio' });
     await screen.findByText('other-time.mp3');
     expect(screen.getByRole('alert').textContent).toBe('This recording has changed');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
-    expect(mocks.removeRecording.mock.calls[1][0]).toEqual({ target: { time: '14:00' }, expectedId: 'concurrent-time' });
+    expect(mocks.removeRecording.mock.calls[1][0]).toEqual({ language: 'ru', target: { time: '14:00' }, expectedId: 'concurrent-time' });
   });
 
   it('preserves dirty settings, selected time and files across polling, tabs and another fragment upload', async () => {
@@ -533,13 +560,13 @@ describe('voice reminder settings and test calls', () => {
     await user.upload(minutes.getByLabelText('Minute recording'), minuteFile);
     await user.click(minutes.getByRole('button', { name: 'Add' }));
     await screen.findByLabelText('Play minute 00');
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { minute: '00' }, file: minuteFile });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { minute: '00' }, file: minuteFile });
     await user.click(screen.getByRole('tab', { name: 'Hours' }));
     expect(hourSelect.value).toBe('14');
     expect((hours.getByLabelText('Hour recording') as HTMLInputElement).files?.[0]).toBe(hourFile);
     await user.click(hours.getByRole('button', { name: 'Add' }));
     await screen.findByLabelText('Play hour 14');
-    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ target: { hour: '14' }, file: hourFile });
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'ru', target: { hour: '14' }, file: hourFile });
     fireEvent.change(screen.getByLabelText('Preview time'), { target: { value: '14:00' } });
     expect(screen.getByLabelText('Play the full reminder').getAttribute('src')).toContain('uploaded-minute00.wav');
   });
@@ -565,7 +592,7 @@ describe('voice reminder settings and test calls', () => {
     mocks.uploadAudio.mockRejectedValueOnce(Object.assign(new Error('Changed'), { rawMessage: 'voiceReminderAudioChanged' }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { [unit]: '00' }, file, expectedId: `old-${unit}` });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { [unit]: '00' }, file, expectedId: `old-${unit}` });
     expect((section.getByLabelText(unit === 'hour' ? 'Hour recording' : 'Minute recording') as HTMLInputElement).files?.[0]).toBe(file);
     await user.click(section.getAllByRole('button', { name: 'Replace recording' })[0]);
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
@@ -584,7 +611,7 @@ describe('voice reminder settings and test calls', () => {
     expect(mocks.removeRecording).not.toHaveBeenCalled();
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.removeRecording.mock.calls[0][0]).toEqual({ target: { [unit]: '00' }, expectedId: `${unit}-zero` });
+    expect(mocks.removeRecording.mock.calls[0][0]).toEqual({ language: 'ru', target: { [unit]: '00' }, expectedId: `${unit}-zero` });
     expect(screen.queryByLabelText(unit === 'hour' ? 'Play hour 00' : 'Play minute 00')).toBeNull();
     await user.click(screen.getByRole('tab', { name: unit === 'hour' ? 'Minutes' : 'Hours' }));
     expect(screen.getByLabelText(unit === 'hour' ? 'Play minute 00' : 'Play hour 00')).toBeTruthy();
@@ -672,7 +699,7 @@ describe('voice reminder settings and test calls', () => {
     fillTestPhone('+998 (90) 123-45-67');
     await user.click(screen.getByRole('button', { name: 'Call' }));
     const request = mocks.startTestCall.mock.calls[0][0];
-    expect(request).toEqual({ requestId: expect.stringMatching(/^[a-f0-9-]{36}$/), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day' });
+    expect(request).toEqual({ requestId: expect.stringMatching(/^[a-f0-9-]{36}$/), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day', language: 'ru' });
     expect((await screen.findByRole('status')).textContent).toBe('Waiting');
     expect(mocks.saveSettings).not.toHaveBeenCalled();
     expect(screen.queryByRole('table')).toBeNull();
@@ -977,7 +1004,7 @@ describe('voice reminder settings and test calls', () => {
     await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { part: 'dayBeforeIntro' }, file: tomorrowFile, expectedId: 'tomorrow-intro' });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { part: 'dayBeforeIntro' }, file: tomorrowFile, expectedId: 'tomorrow-intro' });
     expect((screen.getByLabelText('Opening recording', { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(todayFile);
     expect((screen.getByLabelText('Closing recording', { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(outroFile);
     expect((tomorrow.getByLabelText('Opening recording for tomorrow', { selector: 'input' }) as HTMLInputElement).files).toHaveLength(0);
@@ -1009,7 +1036,7 @@ describe('voice reminder settings and test calls', () => {
     await user.click(tomorrow.getByRole('button', { name: 'Upload recording' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     await tomorrow.findByLabelText('Play the opening recording for tomorrow');
-    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { part: 'dayBeforeIntro' }, file });
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { part: 'dayBeforeIntro' }, file });
   });
 
   it('switches preview openings by day and invalidates playback when the selected opening changes', async () => {
@@ -1068,7 +1095,7 @@ describe('voice reminder settings and test calls', () => {
     const section = within(screen.getByRole('region', { name: 'Test call' }));
     await waitFor(() => expect((section.getByLabelText('Day') as HTMLSelectElement).value).toBe('same_day'));
     await user.click(await section.findByRole('button', { name: 'Try again' }));
-    expect(mocks.startTestCall.mock.calls[0][0]).toEqual({ ...old, reminderKind: 'same_day' });
+    expect(mocks.startTestCall.mock.calls[0][0]).toEqual({ ...old, reminderKind: 'same_day', language: 'ru' });
   });
 
   it('displays the active receipt day while preserving the future dirty day after its terminal poll', async () => {
@@ -1109,7 +1136,7 @@ describe('voice reminder settings and test calls', () => {
     expect(mocks.transport.mock.calls[0][1]).toBe('/api/academy/voice-reminders/audio/day-before-intro?expectedId=old-tomorrow');
     expect(actual.voiceReminderApi.audioUrl({ part: 'dayBeforeIntro' }, 'new-tomorrow')).toBe('/api/academy/voice-reminders/audio/day-before-intro?v=new-tomorrow');
     expect(actual.voiceReminderApi.previewUrl('14:00', makeSnapshot().settings.audioLibrary, 'day_before'))
-      .toContain('reminderKind=day_before&v=day_before%3Atomorrow-intro%3Atime%3A14-00-audio%3Aoutro-audio');
+      .toContain('reminderKind=day_before&language=ru&v=ru%3Aday_before%3Atomorrow-intro%3Atime%3A14-00-audio%3Aoutro-audio');
   });
 
   it('requires both reply recordings before enabling attendance confirmation', async () => {
@@ -1129,7 +1156,7 @@ describe('voice reminder settings and test calls', () => {
       const file = new File(['reply'], `${part}.wav`, { type: 'audio/wav' });
       await user.upload(section.getByLabelText(label, { selector: 'input' }), file);
       await user.click(section.getByRole('button', { name: 'Upload recording' }));
-      await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledWith({ target: { part }, file }, expect.anything()));
+      await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledWith({ language: 'ru', target: { part }, file }, expect.anything()));
     }
     await user.click(screen.getByRole('tab', { name: 'Settings' }));
     expect((screen.getByRole('switch', { name: 'Attendance confirmation' }) as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
@@ -1156,7 +1183,7 @@ describe('voice reminder settings and test calls', () => {
       await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
       await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
       await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-      expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { part }, file, expectedId: id });
+      expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'ru', target: { part }, file, expectedId: id });
       expect((screen.getByLabelText(otherLabel, { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(otherFile);
     });
 
@@ -1217,5 +1244,254 @@ describe('voice reminder settings and test calls', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Upload both reply recordings');
     expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
     expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it('preserves independent language files, clock selections and dirty settings across switching and uploads', async () => {
+    const { user, client } = await renderDialog(makeLanguageSnapshot());
+    fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '95' } });
+    await openRecordings(user);
+    const language = () => within(screen.getByRole('tabpanel', { name: 'Recordings' })).getByLabelText('Language');
+    const ruFile = new File(['ru'], 'selected-ru.mp3', { type: 'audio/mpeg' });
+    const uzFile = new File(['uz'], 'selected-uz.wav', { type: 'audio/wav' });
+    await user.upload(screen.getByLabelText('Opening recording', { selector: 'input' }), ruFile);
+    await user.click(screen.getByRole('tab', { name: 'Hours' }));
+    await user.selectOptions(screen.getByLabelText('Hour'), '21');
+    await user.selectOptions(language(), 'uz');
+    expect(screen.queryByText('selected-ru.mp3')).toBeNull();
+    expect(screen.getByText('uz-intro.mp3')).toBeTruthy();
+    await user.upload(screen.getByLabelText('Opening recording', { selector: 'input' }), uzFile);
+    await user.selectOptions(screen.getByLabelText('Hour'), '05');
+    await act(async () => client.invalidateQueries({ queryKey: ['/api/academy/voice-reminders'] }));
+    await user.selectOptions(language(), 'ru');
+    expect(screen.getByText('selected-ru.mp3')).toBeTruthy();
+    expect((screen.getByLabelText('Hour') as HTMLSelectElement).value).toBe('21');
+    await user.selectOptions(language(), 'uz');
+    expect(screen.getByText('selected-uz.wav')).toBeTruthy();
+    expect((screen.getByLabelText('Hour') as HTMLSelectElement).value).toBe('05');
+    await user.click(within(screen.getByRole('region', { name: 'Opening recording' })).getByRole('button', { name: 'Upload recording' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'uz', target: { part: 'intro' }, file: uzFile, expectedId: 'uz-intro-audio' });
+    await user.selectOptions(language(), 'ru');
+    expect(screen.getByText('selected-ru.mp3')).toBeTruthy();
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('95');
+  });
+
+  it('switches both preview kinds and all playback URLs to the selected language without mixing missing parts', async () => {
+    const data = makeLanguageSnapshot();
+    const { user, client } = await renderDialog(data);
+    await openRecordings(user);
+    const panel = within(screen.getByRole('tabpanel', { name: 'Recordings' }));
+    const ruPreview = screen.getByLabelText('Play the full reminder');
+    expect(ruPreview.getAttribute('src')).toContain('language=ru');
+    await user.selectOptions(panel.getByLabelText('Language'), 'uz');
+    const uzPreview = screen.getByLabelText('Play the full reminder');
+    expect(uzPreview).not.toBe(ruPreview);
+    expect(uzPreview.getAttribute('src')).toContain('language=uz');
+    expect(uzPreview.getAttribute('src')).toContain('uz-intro-audio');
+    expect(screen.getByLabelText('Play the opening recording').getAttribute('src')).toContain('language=uz');
+    await user.selectOptions(within(screen.getByRole('region', { name: 'Full reminder' })).getByLabelText('Day'), 'day_before');
+    const tomorrow = screen.getByLabelText('Play the full reminder');
+    expect(tomorrow.getAttribute('src')).toContain('uz-tomorrow-intro');
+    const missing = structuredClone(data);
+    missing.settings.audioLibraries!.uz.dayBeforeIntro = null;
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], missing));
+    await waitFor(() => expect(screen.queryByLabelText('Play the full reminder')).toBeNull());
+    await user.selectOptions(panel.getByLabelText('Language'), 'ru');
+    expect(screen.getByLabelText('Play the full reminder').getAttribute('src')).toContain('ru%3Aday_before%3Atomorrow-intro');
+  });
+
+  it('keeps Uzbek replacement language and old ID frozen across a conflict and refresh', async () => {
+    const data = makeLanguageSnapshot();
+    const { user, client } = await renderDialog(data);
+    await openRecordings(user);
+    const language = within(screen.getByRole('tabpanel', { name: 'Recordings' })).getByLabelText('Language');
+    await user.selectOptions(language, 'uz');
+    const file = new File(['new'], 'uz-new.mp3', { type: 'audio/mpeg' });
+    await user.upload(screen.getByLabelText('Opening recording', { selector: 'input' }), file);
+    const upload = () => user.click(within(screen.getByRole('region', { name: 'Opening recording' })).getByRole('button', { name: 'Upload recording' }));
+    await upload();
+    const changed = structuredClone(data);
+    changed.settings.audioLibraries!.uz.intro!.id = 'uz-concurrent';
+    mocks.getSnapshot.mockResolvedValue(changed);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
+    mocks.uploadAudio.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, rawMessage: 'voiceReminderAudioChanged' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ language: 'uz', target: { part: 'intro' }, file, expectedId: 'uz-intro-audio' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.getByText('uz-new.mp3')).toBeTruthy();
+    await upload();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'uz', target: { part: 'intro' }, file, expectedId: 'uz-concurrent' });
+  });
+
+  it('confirms deletion in the selected language while leaving the Russian recording intact', async () => {
+    const { user } = await renderDialog(makeLanguageSnapshot());
+    await openRecordings(user);
+    const panel = within(screen.getByRole('tabpanel', { name: 'Recordings' }));
+    await user.selectOptions(panel.getByLabelText('Language'), 'uz');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(mocks.removeRecording).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mocks.removeRecording.mock.calls[0][0]).toEqual({ language: 'uz', target: { time: '14:00' }, expectedId: 'uz-14-00-audio' });
+    expect(screen.queryByLabelText('Play the 14:00 recording')).toBeNull();
+    await user.selectOptions(panel.getByLabelText('Language'), 'ru');
+    await user.click(screen.getByRole('tab', { name: 'Full times' }));
+    expect(screen.getByLabelText('Play the 14:00 recording').getAttribute('src')).toContain('v=14-00-audio&language=ru');
+  });
+
+  it('retains the original Uzbek test intent and UUID after a lost response and remount', async () => {
+    mocks.startTestCall.mockRejectedValueOnce(new Error('Lost ACK'));
+    const first = await renderDialog(makeLanguageSnapshot());
+    await openTestCall(first.user);
+    const section = within(screen.getByRole('region', { name: 'Test call' }));
+    await first.user.selectOptions(section.getByLabelText('Language'), 'uz');
+    fillTestPhone();
+    await first.user.click(section.getByRole('button', { name: 'Call' }));
+    const original = mocks.startTestCall.mock.calls[0][0];
+    expect(original.language).toBe('uz');
+    expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')!)).toEqual(original);
+    fireEvent.change(section.getByLabelText('Language'), { target: { value: 'ru' } });
+    expect((section.getByLabelText('Language') as HTMLSelectElement).value).toBe('uz');
+    first.unmount();
+    const second = await renderDialog(makeLanguageSnapshot());
+    await second.user.click(screen.getByRole('tab', { name: 'Test call' }));
+    const restored = within(screen.getByRole('region', { name: 'Test call' }));
+    expect((restored.getByLabelText('Language') as HTMLSelectElement).value).toBe('uz');
+    await second.user.click(await restored.findByRole('button', { name: 'Try again' }));
+    expect(mocks.startTestCall.mock.calls[1][0]).toEqual(original);
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
+  });
+
+  it('shows the actual active test language and restores the future language draft after its terminal poll', async () => {
+    const { user, client } = await renderDialog(makeLanguageSnapshot());
+    await openTestCall(user);
+    const section = within(screen.getByRole('region', { name: 'Test call' }));
+    fillTestPhone();
+    await user.selectOptions(section.getByLabelText('Language'), 'ru');
+    const active: VoiceReminderTestCall = { id: crypto.randomUUID(), phone: '+998909876543', clockTime: '14:00', reminderKind: 'day_before', language: 'uz', response: null, respondedAt: null, status: 'calling' };
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], active));
+    await waitFor(() => expect((section.getByLabelText('Language') as HTMLSelectElement).value).toBe('uz'));
+    expect((section.getByLabelText('Language') as HTMLSelectElement).disabled).toBe(true);
+    const terminal = { ...active, status: 'played' as const };
+    mocks.getCurrentTestCall.mockResolvedValue(terminal);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], terminal));
+    await waitFor(() => expect((section.getByLabelText('Language') as HTMLSelectElement).value).toBe('ru'));
+    await user.click(section.getByRole('button', { name: 'Call' }));
+    expect(mocks.startTestCall.mock.calls[0][0].language).toBe('ru');
+    expect(mocks.startTestCall.mock.calls[0][0].requestId).not.toBe(active.id);
+  });
+
+  it('rejects missing Uzbek parts and acknowledgements without substituting Russian audio', async () => {
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    const section = within(screen.getByRole('region', { name: 'Test call' }));
+    await user.selectOptions(section.getByLabelText('Language'), 'uz');
+    fillTestPhone();
+    await user.click(section.getByRole('button', { name: 'Call' }));
+    expect(section.getByRole('alert').textContent).toBe('Upload the opening, time and closing recordings');
+    expect(mocks.startTestCall).not.toHaveBeenCalled();
+    const partial = makeLanguageSnapshot();
+    partial.settings.confirmationEnabled = true;
+    partial.settings.audioLibraries!.uz.confirmationNo = null;
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], partial));
+    await waitFor(() => expect(screen.getByLabelText('Attendance question', { selector: 'input' })).toBeTruthy());
+    await user.click(section.getByRole('button', { name: 'Call' }));
+    expect(section.getByRole('alert').textContent).toBe('Upload both reply recordings');
+    expect(mocks.startTestCall).not.toHaveBeenCalled();
+    await user.selectOptions(section.getByLabelText('Language'), 'ru');
+    await user.click(section.getByRole('button', { name: 'Call' }));
+    expect(mocks.startTestCall.mock.calls[0][0].language).toBe('ru');
+  });
+
+  it('keeps an uncertain intent when a receipt unexpectedly changes its requested language', async () => {
+    mocks.startTestCall.mockImplementationOnce(async (input) => ({ id: input.requestId, phone: input.phone, clockTime: input.clockTime, reminderKind: input.reminderKind, language: 'ru', status: 'waiting', response: null, respondedAt: null }));
+    const { user } = await renderDialog(makeLanguageSnapshot());
+    await openTestCall(user);
+    const section = within(screen.getByRole('region', { name: 'Test call' }));
+    await user.selectOptions(section.getByLabelText('Language'), 'uz');
+    fillTestPhone();
+    await user.click(section.getByRole('button', { name: 'Call' }));
+    expect(section.getByRole('alert').textContent).toBe('Could not start the test call');
+    const saved = JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')!);
+    expect(saved.language).toBe('uz');
+    expect(saved.requestId).toBe(mocks.startTestCall.mock.calls[0][0].requestId);
+    expect((section.getByLabelText('Language') as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it('routes Uzbek parts and clock records through language-scoped CAS, playback and preview URLs', async () => {
+    const actual = await vi.importActual<typeof import('../client/src/features/voice-reminders/api')>('../client/src/features/voice-reminders/api');
+    mocks.transport.mockResolvedValue(makeLanguageSnapshot());
+    const file = new File(['uz'], 'uz.wav', { type: 'audio/wav' });
+    await actual.voiceReminderApi.uploadAudio({ target: { part: 'confirmationNo' }, file, expectedId: 'old-uz', language: 'uz' });
+    await actual.voiceReminderApi.uploadAudio({ target: { minute: '00' }, file, language: 'uz' });
+    await actual.voiceReminderApi.removeRecording({ target: { hour: '23' }, expectedId: 'uz-hour', language: 'uz' });
+    expect(mocks.transport.mock.calls.map(([, path]) => path)).toEqual([
+      '/api/academy/voice-reminders/audio/confirmation-no?expectedId=old-uz&language=uz',
+      '/api/academy/voice-reminders/audio/minutes/00?language=uz',
+      '/api/academy/voice-reminders/audio/hours/23?expectedId=uz-hour&language=uz',
+    ]);
+    expect([...mocks.transport.mock.calls[0][2].keys()]).toEqual(['file']);
+    expect(actual.voiceReminderApi.audioUrl({ part: 'intro' }, 'uz-id', 'uz')).toBe('/api/academy/voice-reminders/audio/intro?v=uz-id&language=uz');
+    expect(actual.voiceReminderApi.previewUrl('14:00', makeLanguageSnapshot().settings.audioLibraries!.uz, 'day_before', 'uz'))
+      .toContain('reminderKind=day_before&language=uz&v=uz%3Aday_before%3Auz-tomorrow-intro');
+  });
+
+  it('enables all reminder modes from one complete Uzbek library while Russian audio is missing', async () => {
+    const data = makeLanguageSnapshot();
+    data.settings.audioLibrary = { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, times: [], hours: [], minutes: [] };
+    const { user } = await renderDialog(data);
+    await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
+    await user.click(screen.getByRole('switch', { name: 'Day-before reminder' }));
+    await user.click(screen.getByRole('switch', { name: 'Attendance confirmation' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(mocks.saveSettings).toHaveBeenCalledTimes(1);
+    expect(mocks.saveSettings.mock.calls[0][0]).toEqual(expect.objectContaining({ enabled: true, dayBeforeEnabled: true, confirmationEnabled: true }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('does not combine Russian today audio and Uzbek tomorrow audio to enable both reminder modes', async () => {
+    const data = makeLanguageSnapshot();
+    data.settings.audioLibrary.dayBeforeIntro = null;
+    data.settings.audioLibraries!.uz.intro = null;
+    const { user } = await renderDialog(data);
+    await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
+    await user.click(screen.getByRole('switch', { name: 'Day-before reminder' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(screen.getByRole('alert').textContent).toBe('Upload the opening, time and closing recordings');
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('requires reply recordings in the same complete language before enabling attendance confirmation', async () => {
+    const data = makeLanguageSnapshot();
+    data.settings.audioLibrary.confirmationNo = null;
+    data.settings.audioLibraries!.uz.intro = null;
+    const { user } = await renderDialog(data);
+    await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
+    await user.click(screen.getByRole('switch', { name: 'Attendance confirmation' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(screen.getByRole('alert').textContent).toBe('Upload both reply recordings');
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('clears an invalid Uzbek file without discarding the selected Russian file or bypassing the close guard', async () => {
+    const { user } = await renderDialog(makeLanguageSnapshot());
+    await openRecordings(user);
+    const panel = within(screen.getByRole('tabpanel', { name: 'Recordings' }));
+    const ru = new File(['ru'], 'keep-ru.mp3', { type: 'audio/mpeg' });
+    await user.upload(screen.getByLabelText('Opening recording', { selector: 'input' }), ru);
+    await user.selectOptions(panel.getByLabelText('Language'), 'uz');
+    await user.upload(screen.getByLabelText('Opening recording', { selector: 'input' }), new File(['uz'], 'previous-uz.mp3', { type: 'audio/mpeg' }));
+    fireEvent.change(screen.getByLabelText('Opening recording', { selector: 'input' }), { target: { files: [new File(['bad'], 'invalid.txt', { type: 'text/plain' })] } });
+    expect(screen.getByRole('alert').textContent).toBe('Select an MP3 or WAV recording');
+    expect(screen.queryByText('previous-uz.mp3')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Keep editing' }));
+    await user.selectOptions(panel.getByLabelText('Language'), 'ru');
+    expect(screen.getByText('keep-ru.mp3')).toBeTruthy();
+    expect(mocks.uploadAudio).not.toHaveBeenCalled();
   });
 });

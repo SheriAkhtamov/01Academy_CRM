@@ -592,7 +592,7 @@ async function seedPayments(
     const amount = amounts[i % amounts.length];
     const methods = ['transfer', 'card', 'cash', 'card', 'transfer'];
     const method = methods[i % methods.length];
-    const types = ['full', 'full', 'installment_1_2', 'full'];
+    const types = ['full', 'full', 'monthly', 'full'];
     const type = types[i % types.length];
 
     const exist = await exec(

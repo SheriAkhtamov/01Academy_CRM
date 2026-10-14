@@ -1037,6 +1037,13 @@
       "when": 1791889606152,
       "tag": "0147_voice_reminder_day_before",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1791889606153,
+      "tag": "0148_normalize_monthly_payments",
+      "breakpoints": true
     }
   ]
 }

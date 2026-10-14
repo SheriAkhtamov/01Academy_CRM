@@ -1,0 +1,171 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { Pool } from 'pg';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminders/infrastructure/postgres-repository';
+import { PostgresVoiceReminderTestCallRepository } from '../server/modules/voice-reminders/infrastructure/postgres-test-call-repository';
+import type { StoredVoiceReminderAudio } from '../server/modules/voice-reminders/application/ports';
+
+const url = process.env.PORTAL_TEST_DATABASE_URL;
+const schema = `voice_test_calls_${randomUUID().replace(/-/g, '')}`;
+const now = new Date('2030-01-15T22:30:00Z');
+const expiresAt = new Date(now.getTime() + 600_000);
+const input = (phone = '+998901234567', clockTime = '11:00') => ({ requestId: randomUUID(), phone, clockTime });
+
+describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', () => {
+  let admin: Pool;
+  let database: Pool;
+  let repository: PostgresVoiceReminderTestCallRepository;
+  let library: PostgresVoiceReminderRepository;
+  const audio = (): StoredVoiceReminderAudio => ({ id: randomUUID(), fileName: 'clip.wav', mimeType: 'audio/wav',
+    sizeBytes: 24, durationSeconds: 1, uploadedAt: now.toISOString(), storageKey: `${randomUUID()}.wav`, sha256: 'a'.repeat(64) });
+  beforeAll(async () => {
+    if (!url || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Local isolated PostgreSQL required');
+    admin = new Pool({ connectionString: url });
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=America/New_York`, max: 12 });
+    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text,is_active boolean,is_archived boolean);
+      CREATE TABLE user_modules(id serial PRIMARY KEY,user_id integer,module text);
+      CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
+      CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
+    for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls']) {
+      await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
+    }
+    repository = new PostgresVoiceReminderTestCallRepository(database);
+    library = new PostgresVoiceReminderRepository(database);
+  });
+  beforeEach(async () => {
+    await database.query(`TRUNCATE voice_reminder_audio,voice_reminder_settings,voice_reminder_test_calls,
+      user_modules,users RESTART IDENTITY CASCADE;
+      INSERT INTO users VALUES(1,'administration',true,false),(2,'sales',true,false),(3,'sales',true,false),
+        (4,'administration',false,false),(5,'administration',true,true),(6,'administration',true,false);
+      INSERT INTO user_modules(user_id,module) VALUES(2,'administration');
+      INSERT INTO voice_reminder_settings(id) VALUES(1);`);
+    for (const target of [{ part: 'intro' }, { part: 'outro' }, { part: 'time', time: '11:00' },
+      { part: 'hour', hour: '11' }, { part: 'minute', minute: '00' }] as const) {
+      await library.saveLibraryAudio(target, audio(), 1);
+    }
+  });
+  afterAll(async () => {
+    await database?.end();
+    if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
+  });
+
+  it('runs with automatic reminders off outside their hours and returns only the current actor DTO', async () => {
+    expect((await library.settings()).enabled).toBe(false);
+    const request = input();
+    const dto = await repository.enqueue(1, request, now, expiresAt);
+    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime });
+    expect(await repository.current(1)).toEqual(dto);
+    expect(await repository.current(2)).toBeNull();
+    const job = (await repository.claim(now, 300))!;
+    expect(await repository.prepare(job, now)).toMatchObject({ phone: request.phone, clockTime: '11:00', audioParts: { kind: 'clock' } });
+    expect(await repository.canContinue(job, now)).toBe(true);
+  });
+
+  it.each([['+123456789', '+123456789'], ['00123456789', '+123456789'], ['90 123 45 67', '+998901234567']])(
+    'preserves the requested country prefix for %s', async (phone, expected) => {
+      const dto = await repository.enqueue(1, input(phone), now, expiresAt);
+      expect(dto.phone).toBe(expected);
+      const job = (await repository.claim(now, 300))!;
+      expect(await repository.prepare(job, now)).toMatchObject({ phone: expected });
+    },
+  );
+
+  it('serializes repeat intents and binds their normalized phone/time payload without resetting terminal state', async () => {
+    const request = input('90 123 45 67');
+    const accepted = await Promise.all(Array.from({ length: 12 }, () => repository.enqueue(1, request, now, expiresAt)));
+    expect(new Set(accepted.map(dto => dto.id))).toEqual(new Set([request.requestId]));
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_test_calls')).rows[0].count).toBe(1);
+    expect(await repository.enqueue(1, { ...request, phone: '+998901234567' }, now, expiresAt)).toEqual(accepted[0]);
+    await expect(repository.enqueue(1, { ...request, clockTime: '12:00' }, now, expiresAt)).rejects.toMatchObject({ code: 'voiceReminderTestRequestChanged' });
+    await expect(repository.enqueue(2, request, now, expiresAt)).rejects.toMatchObject({ code: 'voiceReminderTestRequestChanged' });
+    const job = (await repository.claim(now, 300))!;
+    await repository.prepare(job, now);
+    await repository.finish(job, { outcome: 'unanswered', callStarted: true, callId: 'provider-call' }, now);
+    await library.removeLibraryAudio({ part: 'minute', minute: '00' }, 1);
+    await library.removeTimeAudio('11:00', 1);
+    expect(await repository.enqueue(1, request, now, expiresAt)).toMatchObject({ status: 'unanswered' });
+    expect(await repository.claim(now, 300)).toBeNull();
+  });
+
+  it('allows only one active intent per actor and never hides it behind a newer terminal row', async () => {
+    const requests = [input(), input()];
+    const created = await Promise.allSettled(requests.map(request => repository.enqueue(1, request, now, expiresAt)));
+    expect(created.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(created.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'voiceReminderTestAlreadyPending' } });
+    const active = await repository.current(1);
+    await database.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,status,expires_at,created_at)
+      VALUES($1,1,'+998911234567','12:00','played',$2,$2)`, [randomUUID(), expiresAt]);
+    expect(await repository.current(1)).toEqual(active);
+  });
+
+  it('enforces current staff leadership, including assigned modules, at enqueue and before dispatch', async () => {
+    for (const actor of [3, 4, 5]) {
+      await expect(repository.enqueue(actor, input(), now, expiresAt)).rejects.toMatchObject({ code: 'accessDenied' });
+    }
+    await repository.enqueue(2, input(), now, expiresAt);
+    const job = (await repository.claim(now, 300))!;
+    await repository.prepare(job, now);
+    expect(await repository.canContinue(job, now)).toBe(true);
+    await database.query('DELETE FROM user_modules WHERE user_id=2');
+    expect(await repository.canContinue(job, now, false)).toBe(false);
+    await repository.recover(now);
+    expect((await database.query('SELECT status FROM voice_reminder_test_calls')).rows[0].status).toBe('cancelled');
+    await expect(repository.current(2)).rejects.toMatchObject({ code: 'accessDenied' });
+  });
+
+  it('rechecks selected mode before INVITE while preserving the frozen active library', async () => {
+    await library.removeLibraryAudio({ part: 'minute', minute: '00' }, 1);
+    await repository.enqueue(1, input(), now, expiresAt);
+    const job = (await repository.claim(now, 300))!;
+    expect(await repository.prepare(job, now)).toMatchObject({ audioParts: { kind: 'time' } });
+    await library.saveLibraryAudio({ part: 'minute', minute: '00' }, audio(), 1);
+    expect(await repository.canContinue(job, now)).toBe(false);
+    expect(await repository.canContinue(job, now, false)).toBe(true);
+    expect(await repository.prepare(job, now)).toMatchObject({ audioParts: { kind: 'clock' } });
+    await library.removeLibraryAudio({ part: 'hour', hour: '11' }, 1);
+    await library.removeTimeAudio('11:00', 1);
+    expect(await repository.canContinue(job, now)).toBe(false);
+    expect(await repository.canContinue(job, now, false)).toBe(true);
+  });
+
+  it('holds missing-audio jobs without starving another actor and never leases more than two tests', async () => {
+    const first = await repository.enqueue(1, input('+998901234567', '11:00'), now, expiresAt);
+    await library.saveLibraryAudio({ part: 'minute', minute: '30' }, audio(), 1);
+    await repository.enqueue(2, input('+998911234567', '11:30'), now, expiresAt);
+    await repository.enqueue(6, input('+998931234567', '11:30'), now, expiresAt);
+    await library.removeLibraryAudio({ part: 'minute', minute: '00' }, 1);
+    await library.removeTimeAudio('11:00', 1);
+    const claims = await Promise.all(Array.from({ length: 8 }, () => repository.claim(now, 300)));
+    expect(claims.filter(Boolean)).toHaveLength(2);
+    expect(claims.filter(Boolean).map(job => job!.id)).not.toContain(first.id);
+    expect(await repository.current(1)).toMatchObject({ status: 'waiting' });
+  });
+
+  it('recovers a lost preflight lease but never retries a marked or expired call and guards stale callbacks', async () => {
+    const request = input();
+    await repository.enqueue(1, request, now, expiresAt);
+    const old = (await repository.claim(now, 10))!;
+    await repository.prepare(old, now);
+    const later = new Date(now.getTime() + 11_000);
+    await repository.recover(later);
+    const next = (await repository.claim(later, 10))!;
+    expect(next.leaseToken).not.toBe(old.leaseToken);
+    await repository.finish(old, { outcome: 'played', callStarted: true, callId: 'old' }, later);
+    expect(await repository.current(1)).toMatchObject({ status: 'calling' });
+    expect(await repository.renew(old, later, 300)).toBe(false);
+    await database.query('UPDATE voice_reminder_test_calls SET dial_started_at=$1 WHERE id=$2', [later, next.id]);
+    expect(await repository.defer(next, later)).toBe(false);
+    await repository.recover(new Date(later.getTime() + 11_000));
+    expect(await repository.current(1)).toMatchObject({ status: 'failed' });
+    expect(await repository.claim(later, 300)).toBeNull();
+    expect(await repository.enqueue(1, request, later, expiresAt)).toMatchObject({ status: 'failed' });
+    const fresh = input();
+    await repository.enqueue(1, fresh, later, expiresAt);
+    await repository.recover(expiresAt);
+    expect(await repository.current(1)).toMatchObject({ id: fresh.requestId, status: 'cancelled' });
+    expect(await repository.claim(expiresAt, 300)).toBeNull();
+  });
+});

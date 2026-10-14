@@ -29,11 +29,18 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
   let directory: string;
   const provider = () => ({
     snapshot: vi.fn(async () => ({ known: true, occupiedChannels: 0, busyExtensions: [] as string[] })),
-    getCredentials: vi.fn(async () => credentials), close: vi.fn(async () => undefined),
+    getCredentials: vi.fn(async (_extension: string) => credentials), close: vi.fn(async () => undefined),
   });
   const makeRuntime = (capacity: VoiceReminderCapacityProvider, performCall: typeof performVertoReminderCall) => (
     createVoiceRemindersRuntime(capacity, database, { audioDirectory: directory, performCall, now: () => testClock })
   );
+  const enqueueTest = async (actorId = 1, phone = '+998901234567') => {
+    const id = randomUUID();
+    await database.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,not_before_at,expires_at)
+      VALUES($1,$2,$3,'10:30',$4,$5)`, [id, actorId, phone, new Date(testClock), new Date(testClock + 600_000)]);
+    return id;
+  };
+  const testStatus = async (id: string) => (await database.query('SELECT status,dial_started_at FROM voice_reminder_test_calls WHERE id=$1',[id])).rows[0];
   const mockCall = () => vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
     expect(await input.shouldContinue()).toBe(true);
     expect(await inspectReminderAudio(input.audioPath)).toEqual({ mimeType: 'audio/wav', durationSeconds: 4 });
@@ -45,7 +52,8 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     admin = new Pool({ connectionString: url });
     await admin.query(`CREATE SCHEMA ${schema}`);
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=UTC` });
-    await database.query(`CREATE TABLE users(id integer PRIMARY KEY);
+    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text NOT NULL DEFAULT 'administration',is_active boolean DEFAULT true,is_archived boolean DEFAULT false);
+      CREATE TABLE user_modules(user_id integer,module text);
       CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false);
       CREATE TABLE academy_lead_phones(id serial PRIMARY KEY, lead_id integer, phone text, is_primary boolean);
       CREATE TABLE academy_students(id integer PRIMARY KEY, lead_id integer, phone text, student_name text, contact_name text);
@@ -56,6 +64,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -63,7 +72,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(`TRUNCATE voice_reminder_provider_quarantine,voice_reminder_call_attempts,telephony_line_reservations,voice_reminder_jobs,
       voice_reminder_settings,voice_reminder_audio,academy_demo_lesson_participants,academy_demo_lessons,
       academy_students,academy_leads,users RESTART IDENTITY CASCADE`);
-    await database.query(`INSERT INTO users VALUES(1);
+    await database.query(`INSERT INTO users(id) VALUES(1),(2);
       INSERT INTO academy_leads(id,phone) VALUES(1,'+998901234567');
       INSERT INTO academy_students(id,lead_id,phone,contact_name) VALUES(1,1,NULL,'Parent');
       INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(1,1,1,'invited');
@@ -87,17 +96,164 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     if (directory) await fs.rm(directory, { recursive: true, force: true });
   });
 
+  it('plays an actor-owned test while automatic reminders are off without creating demo jobs or manager KPIs', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const call = mockCall();
+    const runtime = makeRuntime(provider(), call);
+    expect(await runtime.channels.enabled()).toBe(true);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(await testStatus(id)).toMatchObject({ status: 'played', dial_started_at: expect.any(Date) });
+    const attempt = (await database.query('SELECT call_id,job_id,test_call_id FROM voice_reminder_call_attempts')).rows[0];
+    expect(attempt).toMatchObject({ job_id: null, test_call_id: id });
+    expect(await runtime.observeRobotCall({ uuid: attempt.call_id, event: 'call_end' })).toBe(true);
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(0);
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+    expect((await database.query('SELECT termination_confirmed_at FROM voice_reminder_call_attempts')).rows[0].termination_confirmed_at).toEqual(expect.any(Date));
+    await runtime.close();
+  });
+
+  it('waits with both manager lines busy and uses the free line when one becomes available', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const capacity = provider();
+    capacity.snapshot.mockResolvedValue({ known: true, occupiedChannels: 2, busyExtensions: ['100','101'] });
+    const call = mockCall();
+    const runtime = makeRuntime(capacity, call);
+    await runtime.tick();
+    expect(call).not.toHaveBeenCalled();
+    expect(await testStatus(id)).toMatchObject({ status: 'waiting', dial_started_at: null });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(0);
+    capacity.snapshot.mockResolvedValue({ known: true, occupiedChannels: 1, busyExtensions: ['101'] });
+    await database.query('UPDATE voice_reminder_test_calls SET not_before_at=$1 WHERE id=$2',[new Date(testClock),id]);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(capacity.getCredentials).toHaveBeenCalledWith('100');
+    expect(await testStatus(id)).toMatchObject({ status: 'played' });
+    await runtime.close();
+  });
+
+  it('keeps short international test destinations intact and recognizes their provider callback', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest(1,'+642123456');
+    const call = mockCall();
+    const runtime = makeRuntime(provider(),call);
+    await runtime.tick();
+    expect(call.mock.calls[0][1].phone).toBe('+642123456');
+    const attempt = (await database.query('SELECT extension,phone,started_at FROM voice_reminder_call_attempts WHERE test_call_id=$1',[id])).rows[0];
+    const providerId = randomUUID();
+    expect(await runtime.observeRobotCall({ uuid: providerId, direction: 'outgoing', caller: attempt.extension,
+      callee: '642123456', date: Math.floor(attempt.started_at.getTime()/1000), event: 'call_end' })).toBe(true);
+    expect((await database.query('SELECT provider_id FROM voice_reminder_call_attempts WHERE test_call_id=$1',[id])).rows[0].provider_id).toBe(providerId);
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+    await runtime.close();
+  });
+
+  it('allows two different actors to test in parallel while using only the two shared lines', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const ids = [await enqueueTest(), await enqueueTest(2,'+998911234567')];
+    let joined!: () => void;
+    const both = new Promise<void>(resolve => { joined = resolve; });
+    let started = 0;
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials,input) => {
+      await input.onStarted!();
+      started += 1;
+      if (started === 2) {
+        expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(2);
+        joined();
+      }
+      await both;
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true };
+    });
+    const capacity = provider();
+    const runtime = makeRuntime(capacity,call);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(capacity.getCredentials.mock.calls.map(args => args[0]).sort()).toEqual(['100','101']);
+    for (const id of ids) expect(await testStatus(id)).toMatchObject({ status: 'played' });
+    await runtime.close();
+  });
+
+  it('never redials an ambiguous test and keeps channel admission active after the job ends', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials,input) => {
+      await input.onStarted!();
+      throw new Error('Socket lost after dial marker');
+    });
+    const runtime = makeRuntime(provider(),call);
+    await runtime.tick();
+    expect(await testStatus(id)).toMatchObject({ status: 'failed', dial_started_at: expect.any(Date) });
+    const attempt = (await database.query('SELECT completed_at,termination_confirmed_at FROM voice_reminder_call_attempts')).rows[0];
+    expect(attempt).toMatchObject({ completed_at: expect.any(Date), termination_confirmed_at: null });
+    expect(await runtime.channels.enabled()).toBe(true);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    await runtime.close();
+    const restarted = makeRuntime(provider(),call);
+    await restarted.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    await restarted.close();
+  });
+
+  it('refuses the final test dial marker when a manager takes the line after admission', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    let managerBusy = false;
+    const capacity = provider();
+    const reader = vi.fn(async () => ({ known: true, occupiedChannels: managerBusy ? 2 : 0,
+      busyExtensions: managerBusy ? ['100','101'] : [] }));
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials,input) => {
+      managerBusy = true;
+      await input.onStarted!();
+      throw new Error('Must not authorize a third call');
+    });
+    const runtime = makeRuntime({ ...capacity, readLocked: reader },call);
+    await runtime.tick();
+    expect(await testStatus(id)).toMatchObject({ status: 'waiting', dial_started_at: null });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(0);
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    await runtime.close();
+  });
+
+  it('rebuilds a test safely when the transport proves no INVITE followed its audio marker', async () => {
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const call = mockCall();
+    call.mockImplementationOnce(async (_credentials,input) => {
+      await input.onStarted!();
+      const library = await repository.audioLibrary();
+      const store = new LocalVoiceReminderAudioStore(directory);
+      const audio = await store.save({ bytes: await fs.readFile(await store.resolve(library.intro!.storageKey)),
+        originalName: 'new-intro.wav', mimeType: 'audio/wav' });
+      await repository.saveLibraryAudio({ part: 'intro' },audio,1,library.intro!.id);
+      expect(await input.shouldContinue(true)).toBe(false);
+      return { outcome: 'cancelled', callStarted: false, callId: null };
+    });
+    const runtime = makeRuntime(provider(),call);
+    await runtime.tick();
+    expect(await testStatus(id)).toMatchObject({ status: 'waiting', dial_started_at: null });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(0);
+    await database.query('UPDATE voice_reminder_test_calls SET not_before_at=$1 WHERE id=$2',[new Date(testClock),id]);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(await testStatus(id)).toMatchObject({ status: 'played' });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts WHERE test_call_id=$1',[id])).rows[0].count).toBe(1);
+    await runtime.close();
+  });
+
   it('records robot attempts before transport, preserves callback identity and avoids ordinary call KPIs', async () => {
     const call = mockCall();
     const runtime = makeRuntime(provider(), call);
     await runtime.tick();
-    expect(call, JSON.stringify(await repository.results())).toHaveBeenCalledTimes(1);
+    expect(call, JSON.stringify((await database.query('SELECT status,attempts FROM voice_reminder_jobs')).rows)).toHaveBeenCalledTimes(1);
     const calls = (await database.query('SELECT call_id FROM voice_reminder_call_attempts')).rows;
     expect(calls).toHaveLength(1);
     expect(await runtime.observeRobotCall({ uuid: calls[0].call_id })).toBe(true);
     expect((await database.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
     expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
-    expect((await repository.results()).summary.played).toBe(1);
+    expect((await database.query("SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE status='played'")).rows[0].count).toBe(1);
     await runtime.close();
   });
 
@@ -108,7 +264,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     const runtime = makeRuntime(provider(), call);
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
-    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    expect((await database.query('SELECT status,attempts FROM voice_reminder_jobs ORDER BY id')).rows[0]).toMatchObject({ status: 'waiting', attempts: 0 });
     expect((await database.query(`SELECT count(*)::int AS count FROM telephony_line_reservations WHERE owner_type='robot'`)).rows[0].count).toBe(0);
     await runtime.close();
   });
@@ -121,7 +277,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
     expect(capacity.getCredentials).not.toHaveBeenCalled();
-    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    expect((await database.query('SELECT status,attempts FROM voice_reminder_jobs ORDER BY id')).rows[0]).toMatchObject({ status: 'waiting', attempts: 0 });
     expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
     await runtime.close();
   });
@@ -137,12 +293,12 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     const runtime = makeRuntime(provider(), call);
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
-    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    expect((await database.query('SELECT status,attempts FROM voice_reminder_jobs ORDER BY id')).rows[0]).toMatchObject({ status: 'waiting', attempts: 0 });
     const minute = await store.save({ bytes, originalName: 'minute-00.wav', mimeType: 'audio/wav' });
     await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, minute, 1);
     await runtime.tick();
     expect(call).toHaveBeenCalledTimes(1);
-    expect((await repository.results()).summary.played).toBe(1);
+    expect((await database.query("SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE status='played'")).rows[0].count).toBe(1);
     await runtime.close();
   });
 
@@ -153,7 +309,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     const runtime = makeRuntime(capacity, call);
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
-    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    expect((await database.query('SELECT status,attempts FROM voice_reminder_jobs ORDER BY id')).rows[0]).toMatchObject({ status: 'waiting', attempts: 0 });
     expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
     await runtime.close();
   });
@@ -173,7 +329,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await entered;
     await runtime.close(); await running;
     expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
-    expect((await repository.results()).summary.calling).toBe(0);
+    expect((await database.query("SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE status='calling'")).rows[0].count).toBe(0);
     expect(capacity.close).toHaveBeenCalledTimes(1);
   });
 
@@ -184,7 +340,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     expect(await runtime.gateway.readiness()).toEqual({ ready: false, code: 'transport_unavailable' });
     await runtime.tick();
     expect(call).not.toHaveBeenCalled();
-    expect((await repository.results()).summary.waiting).toBe(1);
+    expect((await database.query("SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE status='waiting'")).rows[0].count).toBe(1);
     await runtime.close();
   });
 
@@ -208,5 +364,23 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await line!.release();
     await runtime.channels.release(manager!.id, 'manager', 1);
     await runtime.close();
+  });
+
+  it('drains the other worker and releases resources even when one shutdown rejects', async () => {
+    const capacity = provider();
+    const runtime = makeRuntime(capacity,mockCall());
+    const line = await runtime.gateway.tryAcquireLine();
+    expect(line).not.toBeNull();
+    let drained!: () => void;
+    const drain = new Promise<void>(resolve => { drained = resolve; });
+    vi.spyOn(runtime.worker,'close').mockRejectedValue(new Error('Automatic worker failed during shutdown'));
+    vi.spyOn(runtime.testWorker,'close').mockReturnValue(drain);
+    const closing = runtime.close();
+    expect(capacity.close).not.toHaveBeenCalled();
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(1);
+    drained();
+    await expect(closing).rejects.toThrow('Automatic worker failed during shutdown');
+    expect(capacity.close).toHaveBeenCalledTimes(1);
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
   });
 });

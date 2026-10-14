@@ -21,7 +21,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import { voiceReminderUnitSelection, type VoiceReminderAudioTarget, type VoiceReminderAudioUpload, type VoiceReminderRecordingRemoval } from '../api';
 import { useVoiceReminders } from '../hooks';
 import { emptyRecordingDraft, VoiceReminderRecordings, type VoiceReminderRecordingField } from './VoiceReminderRecordings';
-import { VoiceReminderResults } from './VoiceReminderResults';
+import { VoiceReminderTestCall } from './VoiceReminderTestCall';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
 const errorKeys = new Set<TranslationKey>([
@@ -51,7 +51,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot, saveSettings, uploadAudio, removeRecording, pending } = useVoiceReminders(open);
+  const { snapshot, saveSettings, uploadAudio, removeRecording, pending: configurationPending } = useVoiceReminders(open);
   const [draft, setDraft] = useState<VoiceReminderSettingsInput | null>(null);
   const [savedSettings, setSavedSettings] = useState('');
   const [recordings, setRecordings] = useState(emptyRecordingDraft);
@@ -59,6 +59,8 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const [replacement, setReplacement] = useState<VoiceReminderAudioUpload | null>(null);
   const [removal, setRemoval] = useState<VoiceReminderRecordingRemoval | null>(null);
   const [activeTab, setActiveTab] = useState('settings');
+  const [testPending, setTestPending] = useState(false);
+  const pending = configurationPending || testPending;
   const dirty = Boolean(recordings.intro || recordings.outro || recordings.hour.file || recordings.minute.file
     || recordings.time.file || recordings.time.value
     || (draft && JSON.stringify(draft) !== savedSettings));
@@ -206,7 +208,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
                 <TabsList>
                   <TabsTrigger value="settings">{t('settings')}</TabsTrigger>
                   <TabsTrigger value="recordings">{t('voiceRemindersRecordings')}</TabsTrigger>
-                  <TabsTrigger value="results">{t('voiceRemindersResults')}</TabsTrigger>
+                  <TabsTrigger value="test-call">{t('voiceRemindersTestCall')}</TabsTrigger>
                 </TabsList>
                 <Badge variant={snapshot.data.readiness.ready ? 'success' : 'secondary'}>
                   {t(readinessKey)}
@@ -231,8 +233,8 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
                   onRemove={(target, expectedId) => { setRemoval({ target, expectedId }); setErrorKey(null); }}
                   onPreviewError={() => setErrorKey('voiceRemindersPreviewFailed')} />
               </TabsContent>
-              <TabsContent value="results" className="pt-3">
-                <VoiceReminderResults data={snapshot.data} />
+              <TabsContent value="test-call" forceMount hidden={activeTab !== 'test-call'} className="pt-3">
+                <VoiceReminderTestCall open={open} data={snapshot.data} disabled={configurationPending} onPendingChange={setTestPending} />
               </TabsContent>
             </Tabs>
           ) : null}

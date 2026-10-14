@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_VOICE_REMINDER_SETTINGS, type VoiceReminderSnapshot } from '../shared/contracts/voice-reminders';
+import { DEFAULT_VOICE_REMINDER_SETTINGS, type VoiceReminderSnapshot, type VoiceReminderTestCall } from '../shared/contracts/voice-reminders';
 import { VoiceRemindersDialog } from '../client/src/features/voice-reminders/ui/VoiceRemindersDialog';
 import { i18n } from '../client/src/lib/i18n';
 
 const mocks = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
+  getCurrentTestCall: vi.fn(),
+  startTestCall: vi.fn(),
+  actorId: 42,
   saveSettings: vi.fn(),
   uploadAudio: vi.fn(),
   removeRecording: vi.fn(),
@@ -17,12 +20,14 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 
+vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: mocks.actorId } }) }));
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: mocks.transport }));
 vi.mock('../client/src/hooks/use-toast', () => ({ toast: mocks.toast }));
 vi.mock('../client/src/features/voice-reminders/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../client/src/features/voice-reminders/api')>();
   return { ...actual, voiceReminderApi: { ...actual.voiceReminderApi,
     getSnapshot: mocks.getSnapshot, saveSettings: mocks.saveSettings,
+    getCurrentTestCall: mocks.getCurrentTestCall, startTestCall: mocks.startTestCall,
     uploadAudio: mocks.uploadAudio, removeRecording: mocks.removeRecording,
   } };
 });
@@ -39,8 +44,6 @@ const makeSnapshot = (): VoiceReminderSnapshot => ({
     times: [{ time: '14:00', audio: { ...audio, id: '14-00-audio', fileName: '14-00.mp3' } }],
   } },
   readiness: { ready: true, code: 'ready' },
-  summary: { waiting: 0, calling: 0, played: 0, unanswered: 0, failed: 0, cancelled: 0 },
-  results: [],
 });
 
 function Host() {
@@ -49,7 +52,7 @@ function Host() {
     <VoiceRemindersDialog open={open} onOpenChange={setOpen} /></>;
 }
 
-const renderDialog = async (data = makeSnapshot()) => {
+const renderDialog = async (data = makeSnapshot(), strict = false) => {
   let current = data;
   mocks.getSnapshot.mockImplementation(async () => current);
   mocks.saveSettings.mockImplementation(async (settings) => {
@@ -76,9 +79,10 @@ const renderDialog = async (data = makeSnapshot()) => {
     return current;
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><Host /></QueryClientProvider>);
+  const tree = () => <QueryClientProvider client={client}>{strict ? <StrictMode><Host /></StrictMode> : <Host />}</QueryClientProvider>;
+  const view = render(tree());
   await screen.findByRole('switch', { name: 'Demo reminders' });
-  return { client, user: userEvent.setup() };
+  return { ...view, client, user: userEvent.setup(), refresh: () => view.rerender(tree()) };
 };
 
 const openRecordings = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -87,9 +91,33 @@ const openRecordings = async (user: ReturnType<typeof userEvent.setup>) => {
   if (legacy) await user.click(legacy);
 };
 
-describe('voice reminder settings and results', () => {
+const openTestCall = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('tab', { name: 'Test call' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Call' }) as HTMLButtonElement).disabled).toBe(false));
+};
+const clockTimeInput = () => within(screen.queryByRole('region', { name: 'Test call' })
+  ?? screen.getByRole('region', { name: 'Full times' })).getByLabelText('Time', { selector: 'input' });
+const fillTestPhone = (phone = '+998901234567') => {
+  fireEvent.change(screen.getByLabelText('Phone', { selector: 'input' }), { target: { value: phone } });
+};
+const deferred = <Value,>() => {
+  let resolve!: (value: Value) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => { resolve = resolvePromise; reject = rejectPromise; });
+  return { promise, resolve, reject };
+};
+
+describe('voice reminder settings and test calls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    mocks.actorId = 42;
+    mocks.getCurrentTestCall.mockResolvedValue(null);
+    mocks.startTestCall.mockImplementation(async (input) => {
+      const job = { id: input.requestId, status: 'waiting', phone: input.phone, clockTime: input.clockTime };
+      mocks.getCurrentTestCall.mockResolvedValue(job);
+      return job;
+    });
     i18n.setLanguage('en');
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: false, addListener: vi.fn(), removeListener: vi.fn(),
@@ -103,7 +131,7 @@ describe('voice reminder settings and results', () => {
     URL.createObjectURL = vi.fn().mockReturnValue('blob:reminder-preview');
     URL.revokeObjectURL = vi.fn();
   });
-  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it('saves enabled reminders with two parallel calls and the selected retry settings', async () => {
     const { user } = await renderDialog();
@@ -126,7 +154,7 @@ describe('voice reminder settings and results', () => {
     fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '120' } });
     await act(async () => {
       client.setQueryData(['/api/academy/voice-reminders'], {
-        ...makeSnapshot(), summary: { ...makeSnapshot().summary, waiting: 12 },
+        ...makeSnapshot(), settings: { ...makeSnapshot().settings, leadMinutes: 90 },
       });
     });
     expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('120');
@@ -253,7 +281,7 @@ describe('voice reminder settings and results', () => {
   it('binds an added recording to an exact clock time and retains the selected time on a server error', async () => {
     const { user } = await renderDialog();
     await openRecordings(user);
-    const time = screen.getByLabelText('Time', { selector: 'input' });
+    const time = clockTimeInput();
     expect(time.getAttribute('step')).toBe('60');
     fireEvent.change(time, { target: { value: '18:30' } });
     const file = new File(['18:30'], '18-30.wav', { type: 'audio/wav' });
@@ -277,12 +305,12 @@ describe('voice reminder settings and results', () => {
     await user.upload(screen.getByLabelText('Time recording'), file);
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getByRole('alert').textContent).toBe('Select a valid time');
-    fireEvent.change(screen.getByLabelText('Time', { selector: 'input' }), { target: { value: '14:00:30' } });
+    fireEvent.change(clockTimeInput(), { target: { value: '14:00:30' } });
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(mocks.uploadAudio).not.toHaveBeenCalled();
     const existing = within(screen.getByRole('row', { name: /14:00 14-00.mp3/ }));
     await user.click(existing.getByRole('button', { name: 'Replace recording' }));
-    expect((screen.getByLabelText('Time', { selector: 'input' }) as HTMLInputElement).value).toBe('14:00');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('14:00');
     const library = within(screen.getByRole('region', { name: 'Full times' }));
     await user.click(library.getAllByRole('button', { name: 'Replace recording' })[0]);
     const confirmation = within(screen.getByRole('alertdialog', { name: 'Replace the recording?' }));
@@ -342,7 +370,7 @@ describe('voice reminder settings and results', () => {
     const { user } = await renderDialog();
     await openRecordings(user);
     const file = new File(['time'], '18-30-new.mp3', { type: 'audio/mpeg' });
-    fireEvent.change(screen.getByLabelText('Time', { selector: 'input' }), { target: { value: '18:30' } });
+    fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
     await user.upload(screen.getByLabelText('Time recording'), file);
     const changed = makeSnapshot();
     changed.settings.audioLibrary.times.push({ time: '18:30', audio: { ...audio, id: 'concurrent-time', fileName: 'other-time.mp3' } });
@@ -351,7 +379,7 @@ describe('voice reminder settings and results', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await screen.findByText('other-time.mp3');
     expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { time: '18:30' }, file });
-    expect((screen.getByLabelText('Time', { selector: 'input' }) as HTMLInputElement).value).toBe('18:30');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('18:30');
     const library = within(screen.getByRole('region', { name: 'Full times' }));
     await user.click(library.getAllByRole('button', { name: 'Replace recording' })[0]);
     expect(mocks.uploadAudio).toHaveBeenCalledTimes(1);
@@ -383,7 +411,7 @@ describe('voice reminder settings and results', () => {
     fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '120' } });
     await openRecordings(user);
     const timeFile = new File(['time'], '18-30.mp3', { type: 'audio/mpeg' });
-    fireEvent.change(screen.getByLabelText('Time', { selector: 'input' }), { target: { value: '18:30' } });
+    fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
     await user.upload(screen.getByLabelText('Time recording'), timeFile);
     await act(async () => client.setQueryData(['/api/academy/voice-reminders'], makeSnapshot()));
     const intro = new File(['intro'], 'intro-new.mp3', { type: 'audio/mpeg' });
@@ -394,12 +422,12 @@ describe('voice reminder settings and results', () => {
     await user.click(screen.getByRole('tab', { name: 'Settings' }));
     expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('120');
     await openRecordings(user);
-    expect((screen.getByLabelText('Time', { selector: 'input' }) as HTMLInputElement).value).toBe('18:30');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('18:30');
     expect((screen.getByLabelText('Time recording') as HTMLInputElement).files?.[0]).toBe(timeFile);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('alertdialog')).toBeTruthy();
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Keep editing' }));
-    expect((screen.getByLabelText('Time', { selector: 'input' }) as HTMLInputElement).value).toBe('18:30');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('18:30');
     expect((screen.getByLabelText('Time recording') as HTMLInputElement).files?.[0]).toBe(timeFile);
   });
 
@@ -443,7 +471,7 @@ describe('voice reminder settings and results', () => {
   it('discards selected fragments only after confirmation and reloads clean settings when reopened', async () => {
     const { user } = await renderDialog();
     await openRecordings(user);
-    fireEvent.change(screen.getByLabelText('Time', { selector: 'input' }), { target: { value: '18:30' } });
+    fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
     await user.upload(screen.getByLabelText('Time recording'), new File(['draft'], 'draft.mp3', { type: 'audio/mpeg' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     const confirmation = within(screen.getByRole('alertdialog'));
@@ -455,7 +483,7 @@ describe('voice reminder settings and results', () => {
     await user.click(screen.getByRole('button', { name: 'Reopen' }));
     await waitFor(() => expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('90'));
     await openRecordings(user);
-    expect((screen.getByLabelText('Time', { selector: 'input' }) as HTMLInputElement).value).toBe('');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Time recording') as HTMLInputElement).files).toHaveLength(0);
     expect(screen.queryByLabelText('Play the selected recording')).toBeNull();
     expect(mocks.uploadAudio).not.toHaveBeenCalled();
@@ -633,20 +661,249 @@ describe('voice reminder settings and results', () => {
     expect(actual.voiceReminderApi.audioUrl({ hour: '23' }, 'current')).toContain('/audio/hours/23?v=current');
   });
 
-  it('shows completed playback and waiting results without claiming the person listened', async () => {
+  it('replaces results with an actor test call that works while automatic reminders are disabled', async () => {
+    const { user } = await renderDialog();
+    expect(screen.queryByRole('tab', { name: 'Call results' })).toBeNull();
+    await openTestCall(user);
+    fillTestPhone('+998 (90) 123-45-67');
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    const request = mocks.startTestCall.mock.calls[0][0];
+    expect(request).toEqual({ requestId: expect.stringMatching(/^[a-f0-9-]{36}$/), phone: '+998901234567', clockTime: '14:00' });
+    expect((await screen.findByRole('status')).textContent).toBe('Waiting');
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Call' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('validates raw phone characters and clock audio without placing a request', async () => {
+    const { user } = await renderDialog();
+    await openTestCall(user);
+    for (const invalid of ['+998abc901234567', '++998901234567', '+1234567']) {
+      fillTestPhone(invalid);
+      await user.click(screen.getByRole('button', { name: 'Call' }));
+      expect(screen.getByRole('alert').textContent).toBe('Enter a valid phone number');
+    }
+    fillTestPhone();
+    fireEvent.change(clockTimeInput(), { target: { value: '14:00:30' } });
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect(screen.getByRole('alert').textContent).toBe('Select a valid time');
+    fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect(screen.getByRole('alert').textContent).toBe('Upload the opening, time and closing recordings');
+    expect(mocks.startTestCall).not.toHaveBeenCalled();
+  });
+
+  it.each(['+642123456', '00642123456'])('preserves international number %s while the gateway is unavailable', async (phone) => {
     const data = makeSnapshot();
-    data.summary = { ...data.summary, played: 1, waiting: 1 };
-    data.results = [
-      { id: 1, demoLessonId: 8, participantId: 2, studentName: 'Ali', phone: '+998901234567', scheduledAt: '2026-10-13T09:00:00.000Z', dueAt: '2026-10-13T08:00:00.000Z', status: 'played', attempts: 1, lastCallAt: null, completedAt: null },
-      { id: 2, demoLessonId: 8, participantId: 3, studentName: 'Vali', phone: '+998901234568', scheduledAt: '2026-10-13T09:00:00.000Z', dueAt: '2026-10-13T08:00:00.000Z', status: 'waiting', attempts: 0, lastCallAt: null, completedAt: null },
-    ];
+    data.readiness = { ready: false, code: 'transport_unavailable' };
     const { user } = await renderDialog(data);
-    await user.click(screen.getByRole('tab', { name: 'Call results' }));
-    expect(screen.getByText('Played: 1')).toBeTruthy();
-    expect(screen.getByText('Waiting: 1')).toBeTruthy();
-    expect(screen.getByText('Played')).toBeTruthy();
-    expect(screen.getAllByText('Demo: 13/10, 14:00')).toHaveLength(2);
-    expect(screen.queryByText(/listened|delivered/i)).toBeNull();
+    await openTestCall(user);
+    fillTestPhone(phone);
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect(mocks.startTestCall.mock.calls[0][0].phone).toBe('+642123456');
+    expect((await screen.findByRole('status')).textContent).toBe('Waiting');
+  });
+
+  it('claims a request synchronously and blocks duplicate submits while sending or calling', async () => {
+    const pending = deferred<VoiceReminderTestCall>();
+    mocks.startTestCall.mockReturnValueOnce(pending.promise);
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    const form = screen.getByRole('button', { name: 'Call' }).closest('form')!;
+    await act(async () => { fireEvent.submit(form); fireEvent.submit(form); });
+    await waitFor(() => expect(mocks.startTestCall).toHaveBeenCalledTimes(1));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).disabled).toBe(true);
+    const input = mocks.startTestCall.mock.calls[0][0];
+    const waiting: VoiceReminderTestCall = { id: input.requestId, phone: input.phone, clockTime: input.clockTime, status: 'waiting' };
+    mocks.getCurrentTestCall.mockResolvedValue(waiting);
+    await act(async () => pending.resolve(waiting));
+    const calling = { ...waiting, status: 'calling' as const };
+    mocks.getCurrentTestCall.mockResolvedValue(calling);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], calling));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Calling'));
+    await act(async () => fireEvent.submit(form));
+    expect(mocks.startTestCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the exact request after a lost response even if selected recordings have since been removed', async () => {
+    mocks.startTestCall.mockRejectedValueOnce(new Error('Connection lost'));
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not start the test call');
+    const request = mocks.startTestCall.mock.calls[0][0];
+    expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42') ?? 'null')).toEqual(request);
+    const missing = makeSnapshot();
+    missing.settings.audioLibrary.times = [];
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], missing));
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(mocks.startTestCall.mock.calls[1][0]).toEqual(request);
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Waiting'));
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
+  });
+
+  it('recovers an accepted active request on reopen instead of sending another request', async () => {
+    mocks.startTestCall.mockRejectedValueOnce(new Error('Reply lost'));
+    const { user } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    await screen.findByRole('alert');
+    const request = mocks.startTestCall.mock.calls[0][0];
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    mocks.getCurrentTestCall.mockResolvedValue({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, status: 'calling' });
+    await user.click(screen.getByRole('button', { name: 'Reopen' }));
+    await screen.findByRole('switch', { name: 'Demo reminders' });
+    await user.click(screen.getByRole('tab', { name: 'Test call' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Calling'));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe(request.phone);
+    expect((screen.getByRole('button', { name: 'Call' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.startTestCall).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
+  });
+
+  it('restores an uncertain intent after remount and uses a new UUID only after its terminal confirmation', async () => {
+    mocks.startTestCall.mockRejectedValueOnce(new Error('Reply lost'));
+    const first = await renderDialog();
+    await openTestCall(first.user);
+    fillTestPhone();
+    await first.user.click(screen.getByRole('button', { name: 'Call' }));
+    await screen.findByRole('alert');
+    const original = mocks.startTestCall.mock.calls[0][0];
+    first.unmount();
+    const { user, client } = await renderDialog();
+    await user.click(screen.getByRole('tab', { name: 'Test call' }));
+    await user.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(mocks.startTestCall.mock.calls[1][0]).toEqual(original);
+    const terminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, status: 'played' as const };
+    mocks.getCurrentTestCall.mockResolvedValue(terminal);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], terminal));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Played'));
+    fillTestPhone('+998909876543');
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect(mocks.startTestCall.mock.calls[2][0].requestId).not.toBe(original.requestId);
+    expect(mocks.startTestCall.mock.calls[2][0].phone).toBe('+998909876543');
+  });
+
+  it('shows actual active call fields while retaining a future dirty draft after the terminal poll', async () => {
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone('+998909876543');
+    fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
+    const active = { id: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00', status: 'calling' as const };
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], active));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Calling'));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe(active.phone);
+    expect((clockTimeInput() as HTMLInputElement).value).toBe(active.clockTime);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], { ...active, status: 'played' }));
+    await waitFor(() => expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).disabled).toBe(false));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe('+998909876543');
+    expect((clockTimeInput() as HTMLInputElement).value).toBe('18:30');
+  });
+
+  it('does not let a late response from an unmounted request overwrite a successor intent or cached status', async () => {
+    const oldReply = deferred<VoiceReminderTestCall>();
+    mocks.startTestCall.mockReturnValueOnce(oldReply.promise);
+    const first = await renderDialog();
+    await openTestCall(first.user);
+    fillTestPhone();
+    await first.user.click(screen.getByRole('button', { name: 'Call' }));
+    const original = mocks.startTestCall.mock.calls[0][0];
+    first.unmount();
+    const oldTerminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, status: 'played' as const };
+    mocks.getCurrentTestCall.mockResolvedValue(oldTerminal);
+    const nextReply = deferred<VoiceReminderTestCall>();
+    mocks.startTestCall.mockReturnValueOnce(nextReply.promise);
+    const { user, client } = await renderDialog();
+    await user.click(screen.getByRole('tab', { name: 'Test call' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Played'));
+    fillTestPhone('+998909876543');
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    const successor = mocks.startTestCall.mock.calls[1][0];
+    await act(async () => oldReply.resolve({ ...oldTerminal, status: 'waiting' }));
+    expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42') ?? 'null')).toEqual(successor);
+    expect(client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 42])).toEqual(oldTerminal);
+    const waiting = { id: successor.requestId, phone: successor.phone, clockTime: successor.clockTime, status: 'waiting' as const };
+    mocks.getCurrentTestCall.mockResolvedValue(waiting);
+    await act(async () => nextReply.resolve(waiting));
+  });
+
+  it('isolates a late test response from a different actor', async () => {
+    const oldReply = deferred<VoiceReminderTestCall>();
+    mocks.startTestCall.mockReturnValueOnce(oldReply.promise);
+    const view = await renderDialog();
+    await openTestCall(view.user);
+    fillTestPhone();
+    await view.user.click(screen.getByRole('button', { name: 'Call' }));
+    const old = mocks.startTestCall.mock.calls[0][0];
+    mocks.actorId = 43;
+    await act(async () => view.refresh());
+    await waitFor(() => expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe(''));
+    fillTestPhone('+998909876543');
+    await act(async () => oldReply.resolve({ id: old.requestId, phone: old.phone, clockTime: old.clockTime, status: 'waiting' }));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe('+998909876543');
+    expect(view.client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 43])).toBeNull();
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:43')).toBeNull();
+  });
+
+  it('retains test fields when settings poll and never displays server internals', async () => {
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    const refreshed = makeSnapshot();
+    refreshed.settings.leadMinutes = 90;
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], refreshed));
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe('+998901234567');
+    mocks.startTestCall.mockRejectedValueOnce(Object.assign(new Error('SQL password'), { status: 500, rawMessage: 'InternalTableError' }));
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not start the test call');
+    expect(screen.queryByText(/SQL password|InternalTableError/)).toBeNull();
+  });
+
+  it('uses actor-current lookup and exact idempotent input through the typed API', async () => {
+    const actual = await vi.importActual<typeof import('../client/src/features/voice-reminders/api')>('../client/src/features/voice-reminders/api');
+    mocks.transport.mockResolvedValue(null);
+    await actual.voiceReminderApi.getCurrentTestCall();
+    const input = { requestId: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00' };
+    await actual.voiceReminderApi.startTestCall(input);
+    expect(mocks.transport.mock.calls).toEqual([
+      ['GET', '/api/academy/voice-reminders/test-calls/current'], ['POST', '/api/academy/voice-reminders/test-calls', input],
+    ]);
+  });
+
+  it('keeps the same intent after a request deadline and ignores the original late reply', async () => {
+    const neverReply = deferred<VoiceReminderTestCall>();
+    mocks.startTestCall.mockReturnValueOnce(neverReply.promise);
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    vi.useFakeTimers();
+    const form = screen.getByRole('button', { name: 'Call' }).closest('form')!;
+    await act(async () => { fireEvent.submit(form); await vi.advanceTimersByTimeAsync(1); });
+    const request = mocks.startTestCall.mock.calls[0][0];
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(screen.getByRole('status').textContent).toBe('Awaiting confirmation');
+    expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => neverReply.resolve({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, status: 'waiting' }));
+    expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42') ?? 'null')).toEqual(request);
+    expect(client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 42])).toBeNull();
+    await act(async () => { fireEvent.submit(form); await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.startTestCall.mock.calls[1][0]).toEqual(request);
+    expect(screen.getByRole('status').textContent).toBe('Waiting');
+  });
+
+  it('accepts a test request after StrictMode effect cleanup and setup', async () => {
+    const { user } = await renderDialog(makeSnapshot(), true);
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Waiting'));
+    expect(mocks.startTestCall).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
   });
 
   it('asks before discarding edited settings when closing the modal', async () => {

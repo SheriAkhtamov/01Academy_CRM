@@ -6,6 +6,7 @@ import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminde
 import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
 import type { StoredVoiceReminderAudio } from '../server/modules/voice-reminders/application/ports';
 import { RobotCallReceipts } from '../server/infrastructure/voice-telephony/robot-call-receipts';
+import { readVoiceReminderJobs } from './helpers/voice-reminder-jobs';
 
 const url = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `voice_${randomUUID().replace(/-/g, '')}`;
@@ -41,6 +42,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -110,7 +112,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
     await repository.synchronize(now, await repository.settings());
     expect(await repository.claim(now, 2, 300)).toBeNull();
-    expect((await repository.results()).summary.waiting).toBe(3);
+    expect((await readVoiceReminderJobs(pool)).summary.waiting).toBe(3);
     expect((await pool.query('SELECT attempts FROM voice_reminder_jobs')).rows.every(row => row.attempts === 0)).toBe(true);
     await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
     const claim = (await repository.claim(now, 2, 300))!;
@@ -316,7 +318,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     const previousDay = new Date('2030-01-14T18:30:00Z');
     await repository.synchronize(previousDay, await repository.settings());
     expect(await repository.claim(previousDay, 2, 300)).toBeNull();
-    expect((await repository.results()).summary.waiting).toBe(3);
+    expect((await readVoiceReminderJobs(pool)).summary.waiting).toBe(3);
     const demoDay = new Date('2030-01-14T19:05:00Z');
     const claim = (await repository.claim(demoDay, 2, 300))!;
     expect(await repository.prepare(claim, previousDay)).toBe('defer');
@@ -394,7 +396,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
   it('deduplicates schedule participants and uses UTC instants in a non-UTC session', async () => {
     const settings = await repository.settings();
     await Promise.all([repository.synchronize(now, settings), repository.synchronize(now, settings)]);
-    const result = await repository.results();
+    const result = await readVoiceReminderJobs(pool);
     expect(result.summary.waiting).toBe(3);
     expect(result.results.every(row => row.scheduledAt === '2030-01-15T06:00:00.000Z' && row.dueAt === now.toISOString())).toBe(true);
     const first = await repository.claim(now, 2, 300);
@@ -413,9 +415,9 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(new Set(jobs.map(value => value!.id)).size).toBe(2);
     const first = jobs[0]!;
     await repository.finish({ ...first, leaseToken: randomUUID() }, { outcome: 'played', callStarted: true, callId: 'stale' }, now, null);
-    expect((await repository.results()).summary.calling).toBe(2);
+    expect((await readVoiceReminderJobs(pool)).summary.calling).toBe(2);
     await repository.finish(first, { outcome: 'played', callStarted: true, callId: 'real' }, now, null);
-    const finished = (await repository.results()).results.find(value => value.id === first.id)!;
+    const finished = (await readVoiceReminderJobs(pool)).results.find(value => value.id === first.id)!;
     expect(finished.status).toBe('played');
     expect(finished.attempts).toBe(1);
   });
@@ -434,7 +436,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(await repository.canContinue(first, '+998901234567', now)).toBe(false);
     await repository.finish(first, { outcome: 'played', callStarted: true, callId: 'late' }, now, null);
     await repository.synchronize(now, await repository.settings());
-    const history = await repository.results();
+    const history = await readVoiceReminderJobs(pool);
     expect(history.summary.cancelled).toBe(3);
     expect(history.summary.waiting).toBe(3);
     expect(history.summary.played).toBe(0);
@@ -448,7 +450,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(`UPDATE academy_leads SET phone='+998931234567' WHERE id=1`);
     expect(await repository.canContinue(first, '+998901234567', now)).toBe(false);
     await pool.query(`UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id=1`);
-    expect((await repository.results()).results.find(value => value.id === first.id)?.status).toBe('cancelled');
+    expect((await readVoiceReminderJobs(pool)).results.find(value => value.id === first.id)?.status).toBe('cancelled');
     await pool.query(`UPDATE academy_leads SET is_archived=true WHERE id=1`);
     const second = (await repository.claim(now, 2, 300))!;
     expect(await repository.prepare(second, now)).toBeNull();
@@ -458,14 +460,14 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await repository.synchronize(now, await repository.settings());
     const first = (await repository.claim(now, 2, 300))!;
     await repository.finish(first, { outcome: 'unanswered', callStarted: true, callId: 'first' }, now, new Date('2030-01-15T05:10:00Z'));
-    expect((await repository.results()).results.find(value => value.id === first.id)).toMatchObject({ status: 'waiting', attempts: 1 });
+    expect((await readVoiceReminderJobs(pool)).results.find(value => value.id === first.id)).toMatchObject({ status: 'waiting', attempts: 1 });
     const crashed = (await repository.claim(now, 2, 300))!;
     const later = new Date('2030-01-15T05:06:00Z');
     await repository.synchronize(later, await repository.settings());
-    expect((await repository.results()).results.find(value => value.id === crashed.id)?.status).toBe('failed');
+    expect((await readVoiceReminderJobs(pool)).results.find(value => value.id === crashed.id)?.status).toBe('failed');
     expect(await repository.renew(crashed, later, 300)).toBe(false);
     await repository.finish(crashed, { outcome: 'played', callStarted: true, callId: 'late' }, later, null);
-    expect((await repository.results()).results.find(value => value.id === crashed.id)?.status).toBe('failed');
+    expect((await readVoiceReminderJobs(pool)).results.find(value => value.id === crashed.id)?.status).toBe('failed');
   });
 
   it('defers temporary disablement and never claims expired demos', async () => {
@@ -475,7 +477,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(await repository.prepare(first, now)).toBe('defer');
     await repository.defer(first, now);
     await repository.synchronize(scheduledAt, await repository.settings());
-    expect((await repository.results()).summary.cancelled).toBe(3);
+    expect((await readVoiceReminderJobs(pool)).summary.cancelled).toBe(3);
     expect(await repository.claim(scheduledAt, 2, 300)).toBeNull();
   });
 
@@ -485,7 +487,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await repository.synchronize(now, await repository.settings());
     await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 06:00:00' WHERE id=1`);
     await repository.synchronize(now, await repository.settings());
-    expect((await repository.results()).summary).toMatchObject({ waiting: 3, cancelled: 6 });
+    expect((await readVoiceReminderJobs(pool)).summary).toMatchObject({ waiting: 3, cancelled: 6 });
     const first = (await repository.claim(now, 2, 300))!;
     expect(await repository.prepare(first, now)).toMatchObject({ scheduledAt });
     expect((await pool.query(`SELECT lesson_revision FROM voice_reminder_jobs WHERE id=$1`, [first.id])).rows[0].lesson_revision).toBe(2);
@@ -495,11 +497,11 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await repository.synchronize(now, await repository.settings());
     await pool.query(`UPDATE academy_demo_lesson_participants SET status='confirmed' WHERE id=1`);
     await repository.synchronize(now, await repository.settings());
-    expect((await repository.results()).summary.waiting).toBe(3);
+    expect((await readVoiceReminderJobs(pool)).summary.waiting).toBe(3);
     await pool.query(`UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id=1`);
     await pool.query(`UPDATE academy_demo_lesson_participants SET status='confirmed' WHERE id=1`);
     await repository.synchronize(now, await repository.settings());
-    expect((await repository.results()).summary).toMatchObject({ waiting: 3, cancelled: 1 });
+    expect((await readVoiceReminderJobs(pool)).summary).toMatchObject({ waiting: 3, cancelled: 1 });
     const participant = await pool.query(`SELECT participant_revision FROM voice_reminder_jobs WHERE participant_id=1 ORDER BY id`);
     expect(participant.rows.map(row => row.participant_revision)).toEqual([0, 2]);
   });

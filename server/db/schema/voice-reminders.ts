@@ -113,6 +113,44 @@ export const createVoiceReminderTables = (references: {
       OR (${table.audioMode} = 'clock' AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NOT NULL AND ${table.minuteAudioId} IS NOT NULL)`),
     leaseCheck: check('voice_reminder_jobs_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL) OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),
   }));
+  const voiceReminderTestCalls = pgTable('voice_reminder_test_calls', {
+    id: uuid('id').primaryKey(),
+    actorUserId: integer('actor_user_id').references(() => references.userId, { onDelete: 'set null' }),
+    phone: varchar('phone', { length: 20 }).notNull(),
+    clockTime: varchar('clock_time', { length: 5 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('waiting'),
+    notBeforeAt: timestamp('not_before_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    leaseToken: uuid('lease_token'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    audioMode: varchar('audio_mode', { length: 10 }),
+    introAudioId: uuid('intro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    timeAudioId: uuid('time_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    outroAudioId: uuid('outro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    hourAudioId: uuid('hour_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    minuteAudioId: uuid('minute_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    providerCallId: varchar('provider_call_id', { length: 160 }),
+    dialStartedAt: timestamp('dial_started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({
+    actorActiveUnique: uniqueIndex('voice_reminder_test_calls_actor_active_unique').on(table.actorUserId)
+      .where(sql`${table.status} IN ('waiting','calling')`),
+    dueIndex: index('voice_reminder_test_calls_due_idx').on(table.status, table.notBeforeAt, table.expiresAt),
+    currentIndex: index('voice_reminder_test_calls_actor_current_idx').on(table.actorUserId, sql`${table.createdAt} DESC`),
+    phoneCheck: check('voice_reminder_test_calls_phone_check', sql`${table.phone} ~ '^[+][1-9][0-9]{7,14}$'`),
+    clockCheck: check('voice_reminder_test_calls_clock_time_check', sql`${table.clockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+    statusCheck: check('voice_reminder_test_calls_status_check', sql`${table.status} IN ('waiting','calling','played','unanswered','failed','cancelled')`),
+    modeCheck: check('voice_reminder_test_calls_audio_mode_check', sql`${table.audioMode} IN ('time','clock')`),
+    leaseCheck: check('voice_reminder_test_calls_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL)
+      OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),
+    partsCheck: check('voice_reminder_test_calls_audio_parts_check', sql`${table.audioMode} IS NULL
+      OR (${table.audioMode} = 'time' AND ${table.introAudioId} IS NOT NULL AND ${table.outroAudioId} IS NOT NULL
+        AND ${table.timeAudioId} IS NOT NULL AND ${table.hourAudioId} IS NULL AND ${table.minuteAudioId} IS NULL)
+      OR (${table.audioMode} = 'clock' AND ${table.introAudioId} IS NOT NULL AND ${table.outroAudioId} IS NOT NULL
+        AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NOT NULL AND ${table.minuteAudioId} IS NOT NULL)`),
+  }));
   const telephonyLineReservations = pgTable('telephony_line_reservations', {
     id: uuid('id').primaryKey(),
     extension: varchar('extension', { length: 20 }).notNull().unique(),
@@ -121,6 +159,7 @@ export const createVoiceReminderTables = (references: {
     clientCallId: varchar('client_call_id', { length: 160 }).notNull(),
     phone: varchar('phone', { length: 20 }),
     jobId: bigint('job_id', { mode: 'number' }).references(() => voiceReminderJobs.id, { onDelete: 'set null' }),
+    testCallId: uuid('test_call_id').references(() => voiceReminderTestCalls.id, { onDelete: 'set null' }),
     leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
     dialAuthorizedAt: timestamp('dial_authorized_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -131,6 +170,7 @@ export const createVoiceReminderTables = (references: {
   const voiceReminderCallAttempts = pgTable('voice_reminder_call_attempts', {
     callId: uuid('call_id').primaryKey(),
     jobId: bigint('job_id', { mode: 'number' }).references(() => voiceReminderJobs.id, { onDelete: 'set null' }),
+    testCallId: uuid('test_call_id').references(() => voiceReminderTestCalls.id, { onDelete: 'set null' }),
     extension: varchar('extension', { length: 20 }).notNull(),
     phone: varchar('phone', { length: 20 }).notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
@@ -140,10 +180,11 @@ export const createVoiceReminderTables = (references: {
   }, table => ({
     matchIndex: index('voice_reminder_call_attempts_match_idx').on(table.phone, table.extension, table.startedAt),
     unresolvedIndex: index('voice_reminder_call_attempts_unresolved_idx').on(table.startedAt).where(sql`${table.terminationConfirmedAt} IS NULL`),
+    testUnique: uniqueIndex('voice_reminder_call_attempts_test_unique').on(table.testCallId).where(sql`${table.testCallId} IS NOT NULL`),
   }));
   const voiceReminderProviderQuarantine = pgTable('voice_reminder_provider_quarantine', {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
 };

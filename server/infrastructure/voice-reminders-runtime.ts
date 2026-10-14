@@ -3,10 +3,12 @@ import type { Pool } from 'pg';
 import type { VoiceReminderGateway, VoiceReminderLine } from '../modules/voice-reminders/application/ports';
 import { VoiceReminderSettingsService } from '../modules/voice-reminders/application/settings-service';
 import { VoiceReminderWorker } from '../modules/voice-reminders/application/worker-service';
+import { VoiceReminderTestCallWorker } from '../modules/voice-reminders/application/test-call-worker-service';
 import { LocalVoiceReminderAudioStore } from '../modules/voice-reminders/infrastructure/audio-store';
 import { LocalVoiceReminderAudioComposer } from '../modules/voice-reminders/infrastructure/audio-composer';
 import path from 'node:path';
 import { PostgresVoiceReminderRepository } from '../modules/voice-reminders/infrastructure/postgres-repository';
+import { PostgresVoiceReminderTestCallRepository } from '../modules/voice-reminders/infrastructure/postgres-test-call-repository';
 import { createVoiceReminderRouter } from '../modules/voice-reminders/http/voice-reminders.router';
 import { pool } from '../db';
 import type { OnlinePbxWebRtcCredentials } from '../services/onlinepbx';
@@ -29,12 +31,14 @@ export const createVoiceRemindersRuntime = (
   const now = options.now ?? Date.now;
   const readyAt = now() + Math.max(0, options.startupRecoveryMs ?? 0);
   const repository = new PostgresVoiceReminderRepository(database);
+  const testRepository = new PostgresVoiceReminderTestCallRepository(database);
   const audioStore = new LocalVoiceReminderAudioStore(options.audioDirectory);
   const audioComposer = new LocalVoiceReminderAudioComposer(audioStore,
     options.audioDirectory ? path.join(options.audioDirectory, 'assembled') : undefined);
   const channels = new TelephonyChannelReservations(database, () => provider.snapshot(),
     provider.readLocked ? (connection, excludeId) => provider.readLocked!(connection, excludeId) : undefined);
-  const receipts = new RobotCallReceipts(database);
+  const receipts = new RobotCallReceipts(database,
+    (connection, reservationId, extension) => channels.canAuthorizeRobotLocked(connection, reservationId, extension));
   const controllers = new Set<AbortController>();
   const releases = new Map<string, () => Promise<void>>();
   let stopping = false;
@@ -69,10 +73,14 @@ export const createVoiceRemindersRuntime = (
       releases.set(lease.id, release);
       return {
         async call(input) {
-          if (!input.jobLeaseToken || stopping) return { outcome: 'cancelled', callStarted: false, callId: null };
+          const isTest = 'testCallId' in input;
+          if (!(isTest ? input.testLeaseToken : input.jobLeaseToken) || stopping) {
+            return { outcome: 'cancelled', callStarted: false, callId: null };
+          }
           let markerWritten = false;
           try {
-            const bound = await channels.bind(lease.id, { phone: input.phone, jobId: input.jobId, clientCallId: lease.clientCallId });
+            const binding = isTest ? { testCallId: input.testCallId! } : { jobId: input.jobId! };
+            const bound = await channels.bind(lease.id, { phone: input.phone, ...binding, clientCallId: lease.clientCallId });
             if (!bound) return { outcome: 'busy', callStarted: false, callId: null };
             heartbeat = setInterval(() => {
               void channels.renew(lease.id, 'robot').then(value => {
@@ -86,10 +94,11 @@ export const createVoiceRemindersRuntime = (
               ...input, callId: lease.clientCallId, signal: controller.signal,
               shouldContinue: (verifyAudio = true) => alive && !stopping ? input.shouldContinue(verifyAudio) : Promise.resolve(false),
               onStarted: async () => {
-                const recorded = await receipts.start({
-                  callId: lease.clientCallId, jobId: input.jobId, jobLeaseToken: input.jobLeaseToken!,
-                  extension: lease.extension, phone: input.phone, reservationId: lease.id,
-                });
+                const identity = { callId: lease.clientCallId, extension: lease.extension,
+                  phone: input.phone, reservationId: lease.id };
+                const recorded = isTest
+                  ? await receipts.startTest({ ...identity, testCallId: input.testCallId!, testLeaseToken: input.testLeaseToken! })
+                  : await receipts.start({ ...identity, jobId: input.jobId!, jobLeaseToken: input.jobLeaseToken! });
                 if (!recorded) throw new Error('Voice reminder lease expired');
                 markerWritten = true;
               },
@@ -97,6 +106,7 @@ export const createVoiceRemindersRuntime = (
             await receipts.complete(lease.clientCallId, result.callStarted, result.terminationConfirmed === true);
             return result;
           } catch {
+            if (markerWritten) await receipts.complete(lease.clientCallId, true, false);
             return { outcome: 'failed', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };
           }
         },
@@ -105,17 +115,20 @@ export const createVoiceRemindersRuntime = (
     },
   };
   const worker = new VoiceReminderWorker(repository, audioComposer, gateway, () => new Date(now()));
-  const service = new VoiceReminderSettingsService(repository, audioStore, gateway, audioComposer);
+  const testWorker = new VoiceReminderTestCallWorker(testRepository, audioComposer, gateway, () => new Date(now()));
+  const service = new VoiceReminderSettingsService(repository, audioStore, gateway, audioComposer, testRepository, () => new Date(now()));
   return {
-    router: createVoiceReminderRouter(service), channels, worker, gateway,
-    tick: () => worker.tick(),
+    router: createVoiceReminderRouter(service), channels, worker, testWorker, gateway,
+    tick: async () => { await Promise.all([worker.tick(), testWorker.tick()]); },
     observeRobotCall: (payload: Record<string, unknown>) => receipts.observe(payload),
     async close() {
       stopping = true;
       for (const controller of controllers) controller.abort();
-      await worker.close();
-      await Promise.allSettled([...releases.values()].map(release => release()));
-      await provider.close?.();
+      const workers = await Promise.allSettled([worker.close(), testWorker.close()]);
+      const leases = await Promise.allSettled([...releases.values()].map(release => release()));
+      const transport = await Promise.allSettled([provider.close?.()]);
+      const failed = [...workers, ...leases, ...transport].find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
     },
   };
 };

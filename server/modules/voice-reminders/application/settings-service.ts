@@ -1,7 +1,7 @@
-import { hasVoiceReminderAudioLibrary, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderSettingsInput, type VoiceReminderSnapshot } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderAudioLibrary, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderSettingsInput, type VoiceReminderSnapshot, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
 import type { ActorContext } from '../../leads/domain/actor-context';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
-import type { StoredVoiceReminderAudioLibrary, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderLibraryEntryTarget, VoiceReminderRepository } from './ports';
+import type { StoredVoiceReminderAudioLibrary, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderLibraryEntryTarget, VoiceReminderRepository, VoiceReminderTestCallRepository } from './ports';
 import { libraryAudioFor, validateAudioTarget, withLibraryAudio } from './audio-library';
 
 const validateTime = (time: string) => {
@@ -19,18 +19,19 @@ export class VoiceReminderSettingsService {
     private readonly audioStore: VoiceReminderAudioStore,
     private readonly gateway: VoiceReminderGateway,
     private readonly composer?: VoiceReminderAudioComposer,
+    private readonly testCalls?: VoiceReminderTestCallRepository,
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   async snapshot(actor: ActorContext): Promise<VoiceReminderSnapshot> {
     requireVoiceReminderLeadership(actor);
-    const [settings, history, transport] = await Promise.all([
+    const [settings, transport] = await Promise.all([
       this.repository.settings(),
-      this.repository.results(),
       this.gateway.readiness().catch(() => ({ ready: false, code: 'transport_unavailable' as const })),
     ]);
     const library = settings.audioLibrary;
     const readiness = hasVoiceReminderAudioLibrary(library) ? transport : { ready: false, code: 'audio_missing' as const };
-    return { settings, readiness, ...history };
+    return { settings, readiness };
   }
 
   async save(actor: ActorContext, input: VoiceReminderSettingsInput): Promise<VoiceReminderSnapshot> {
@@ -105,5 +106,22 @@ export class VoiceReminderSettingsService {
     validateDurations(library);
     if (!this.composer) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
     return this.composer.compose(parts);
+  }
+
+  async requestTestCall(actor: ActorContext, input: VoiceReminderTestCallInput): Promise<VoiceReminderTestCall> {
+    requireVoiceReminderLeadership(actor);
+    validateTime(input.clockTime);
+    const phone = normalizeVoiceReminderTestPhone(input.phone);
+    if (!phone) throw new VoiceReminderError('voiceReminderInvalidPhone', 400);
+    if (!this.testCalls) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
+    const now = this.now();
+    return this.testCalls.enqueue(actor.userId, { ...input, phone }, now, new Date(now.getTime() + 10 * 60_000));
+  }
+
+  async currentTestCall(actor: ActorContext): Promise<VoiceReminderTestCall | null> {
+    requireVoiceReminderLeadership(actor);
+    if (!this.testCalls) return null;
+    await this.testCalls.recover(this.now());
+    return this.testCalls.current(actor.userId);
   }
 }

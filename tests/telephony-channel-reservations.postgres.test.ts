@@ -32,6 +32,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     channels = new TelephonyChannelReservations(database, async () => snapshot);
   });
   beforeEach(async () => {
@@ -42,6 +43,17 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
   afterAll(async () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
+  });
+
+  it('requires manager reservations before any library upload and while reminders are off', async () => {
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_settings')).rows[0].count).toBe(0);
+    expect(await channels.enabled()).toBe(true);
+    const first = await channels.acquire(reservation({ owner: 'manager', userId: 1, extensions: ['100'] }));
+    expect(first).not.toBeNull();
+    const robot = await channels.acquire(reservation({ phone: '+998911234567' }));
+    expect(robot?.extension).toBe('101');
+    expect(await channels.acquire(reservation({ phone: '+998921234567' }))).toBeNull();
+    expect(await channels.authorizeManagerDial(first!.id,1,'100')).toBe(true);
   });
 
   it('caps competing manager and robot admission at two distinct extensions', async () => {

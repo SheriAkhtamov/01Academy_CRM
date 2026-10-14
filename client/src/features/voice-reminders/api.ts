@@ -3,6 +3,8 @@ import {
   type VoiceReminderAudioLibrary,
   type VoiceReminderSettingsInput,
   type VoiceReminderSnapshot,
+  type VoiceReminderTestCall,
+  type VoiceReminderTestCallInput,
 } from '@shared/contracts/voice-reminders';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -32,9 +34,14 @@ const audioPath = (target: VoiceReminderAudioTarget) => {
 
 export const voiceReminderQueryKeys = {
   snapshot: [voiceRemindersPath] as const,
+  testCall: (actorId: number) => [voiceRemindersPath, 'test-calls', actorId] as const,
 };
 
 export const voiceReminderApi = {
+  getCurrentTestCall: () => apiRequest('GET', `${voiceRemindersPath}/test-calls/current`) as Promise<VoiceReminderTestCall | null>,
+  startTestCall: (input: VoiceReminderTestCallInput) => (
+    apiRequest('POST', `${voiceRemindersPath}/test-calls`, input) as Promise<VoiceReminderTestCall>
+  ),
   getSnapshot: () => apiRequest('GET', voiceRemindersPath) as Promise<VoiceReminderSnapshot>,
   saveSettings: (settings: VoiceReminderSettingsInput) => (
     apiRequest('PUT', `${voiceRemindersPath}/settings`, settings) as Promise<VoiceReminderSnapshot>

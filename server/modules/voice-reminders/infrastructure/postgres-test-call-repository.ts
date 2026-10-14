@@ -1,0 +1,174 @@
+import { randomUUID } from 'node:crypto';
+import type { Pool, PoolClient } from 'pg';
+import { normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema,
+  type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
+import { VoiceReminderError } from '../domain/policy';
+import type { ClaimedVoiceReminderTestCall, PreparedVoiceReminderTestCall, VoiceReminderCallResult, VoiceReminderTestCallRepository } from '../application/ports';
+import { readVoiceReminderAudioLibrary } from './postgres-repository';
+import { testCallActorSql, testCallAudioPinsSql } from './test-call-queries';
+
+type TestRow = VoiceReminderTestCall & {
+  actorUserId: number | null;
+  leaseToken: string | null;
+  expiresAt: Date;
+  startedAt: Date | null;
+};
+const fields = `test.id,test.status,test.phone,test.clock_time AS "clockTime",test.actor_user_id AS "actorUserId",
+  test.lease_token AS "leaseToken",test.expires_at AS "expiresAt",test.dial_started_at AS "startedAt"`;
+const publicCall = ({ id, status, phone, clockTime }: TestRow): VoiceReminderTestCall => ({ id, status, phone, clockTime });
+const liveSql = `SELECT ${fields} FROM voice_reminder_test_calls test JOIN users staff ON staff.id=test.actor_user_id
+  WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3
+    AND test.expires_at>$3 AND ${testCallActorSql()}`;
+
+export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTestCallRepository {
+  constructor(private readonly database: Pool) {}
+
+  private async transaction<Value>(work: (connection: PoolClient) => Promise<Value>): Promise<Value> {
+    const connection = await this.database.connect();
+    try {
+      await connection.query('BEGIN');
+      const result = await work(connection);
+      await connection.query('COMMIT');
+      return result;
+    } catch (error) {
+      await connection.query('ROLLBACK'); throw error;
+    } finally { connection.release(); }
+  }
+
+  private async requireActor(connection: Pick<Pool, 'query'>, actorId: number) {
+    const eligible = await connection.query(`SELECT 1 FROM users staff WHERE staff.id=$1 AND ${testCallActorSql()}`, [actorId]);
+    if (!eligible.rowCount) throw new VoiceReminderError('accessDenied', 403);
+  }
+
+  private async recoverWith(connection: Pick<Pool, 'query'>, now: Date): Promise<void> {
+    await connection.query(`UPDATE voice_reminder_test_calls test SET status=CASE
+        WHEN test.dial_started_at IS NOT NULL THEN 'failed'
+        WHEN test.expires_at>$1 AND EXISTS (SELECT 1 FROM users staff WHERE staff.id=test.actor_user_id AND ${testCallActorSql()})
+          THEN 'waiting' ELSE 'cancelled' END,
+      lease_token=NULL,lease_until=NULL,not_before_at=$1,
+      completed_at=CASE WHEN test.dial_started_at IS NULL AND test.expires_at>$1
+        AND EXISTS (SELECT 1 FROM users staff WHERE staff.id=test.actor_user_id AND ${testCallActorSql()}) THEN NULL ELSE $1 END,updated_at=$1
+      WHERE test.status='calling' AND test.lease_until<=$1`, [now]);
+    await connection.query(`UPDATE voice_reminder_test_calls test SET status=CASE
+        WHEN test.dial_started_at IS NULL THEN 'cancelled' ELSE 'failed' END,
+      lease_token=NULL,lease_until=NULL,completed_at=$1,updated_at=$1
+      WHERE test.status IN ('waiting','calling') AND (test.expires_at<=$1 OR NOT EXISTS (
+        SELECT 1 FROM users staff WHERE staff.id=test.actor_user_id AND ${testCallActorSql()}))`, [now]);
+  }
+
+  async enqueue(actorId: number, input: VoiceReminderTestCallInput, now: Date, expiresAt: Date): Promise<VoiceReminderTestCall> {
+    const phone = normalizeVoiceReminderTestPhone(input.phone);
+    if (!phone) throw new VoiceReminderError('voiceReminderInvalidPhone', 400);
+    if (!voiceReminderClockTimeSchema.safeParse(input.clockTime).success) throw new VoiceReminderError('voiceReminderInvalidTime', 400);
+    return this.transaction(async connection => {
+      await connection.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`voice-test-actor:${actorId}`]);
+      await connection.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`voice-test-request:${input.requestId}`]);
+      await this.requireActor(connection, actorId);
+      const existing = (await connection.query<TestRow>(`SELECT ${fields} FROM voice_reminder_test_calls test WHERE test.id=$1`, [input.requestId])).rows[0];
+      if (existing) {
+        if (existing.actorUserId !== actorId || existing.phone !== phone || existing.clockTime !== input.clockTime) {
+          throw new VoiceReminderError('voiceReminderTestRequestChanged', 409);
+        }
+        return publicCall(existing);
+      }
+      await this.recoverWith(connection, now);
+      const pending = await connection.query(`SELECT 1 FROM voice_reminder_test_calls
+        WHERE actor_user_id=$1 AND status IN ('waiting','calling') LIMIT 1`, [actorId]);
+      if (pending.rowCount) throw new VoiceReminderError('voiceReminderTestAlreadyPending', 409);
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
+      const library = await readVoiceReminderAudioLibrary(connection);
+      if (!selectVoiceReminderAudioParts(library, input.clockTime)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (!voiceReminderAudioDurationValid(library)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
+      const inserted = (await connection.query<TestRow>(`INSERT INTO voice_reminder_test_calls
+        (id,actor_user_id,phone,clock_time,expires_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$6)
+        RETURNING id,status,phone,clock_time AS "clockTime",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
+          lease_token AS "leaseToken",dial_started_at AS "startedAt"`, [input.requestId,actorId,phone,input.clockTime,expiresAt,now])).rows[0];
+      return publicCall(inserted);
+    });
+  }
+
+  async current(actorId: number): Promise<VoiceReminderTestCall | null> {
+    await this.requireActor(this.database, actorId);
+    const row = (await this.database.query<TestRow>(`SELECT ${fields} FROM voice_reminder_test_calls test
+      WHERE test.actor_user_id=$1 ORDER BY (test.status IN ('waiting','calling')) DESC,test.created_at DESC,test.id DESC LIMIT 1`, [actorId])).rows[0];
+    return row ? publicCall(row) : null;
+  }
+
+  recover(now: Date) { return this.recoverWith(this.database, now); }
+
+  async claim(now: Date, leaseSeconds: number): Promise<ClaimedVoiceReminderTestCall | null> {
+    return this.transaction(async connection => {
+      await connection.query("SELECT pg_advisory_xact_lock(hashtext('voice-reminder-test-queue'))");
+      await this.recoverWith(connection, now);
+      const active = (await connection.query<{ count: number }>(`SELECT count(*)::int AS count FROM voice_reminder_test_calls
+        WHERE status='calling' AND lease_until>$1`, [now])).rows[0].count;
+      if (active >= 2) return null;
+      const token = randomUUID();
+      const row = (await connection.query<TestRow>(`UPDATE voice_reminder_test_calls test SET status='calling',lease_token=$2,
+        lease_until=$1::timestamptz+($3*interval '1 second'),not_before_at=NULL,updated_at=$1
+        WHERE test.id=(SELECT pending.id FROM voice_reminder_test_calls pending
+          JOIN users staff ON staff.id=pending.actor_user_id CROSS JOIN voice_reminder_settings settings
+          LEFT JOIN voice_reminder_hour_audio hour_audio ON hour_audio.hour=substring(pending.clock_time,1,2)
+          LEFT JOIN voice_reminder_minute_audio minute_audio ON minute_audio.minute=substring(pending.clock_time,4,2)
+          LEFT JOIN voice_reminder_time_audio whole_audio ON whole_audio.time=pending.clock_time
+          WHERE pending.status='waiting' AND pending.dial_started_at IS NULL AND pending.expires_at>$1
+            AND (pending.not_before_at IS NULL OR pending.not_before_at<=$1) AND ${testCallActorSql()}
+            AND settings.id=1 AND settings.intro_audio_id IS NOT NULL AND settings.outro_audio_id IS NOT NULL
+            AND (whole_audio.audio_id IS NOT NULL OR (hour_audio.audio_id IS NOT NULL AND minute_audio.audio_id IS NOT NULL))
+          ORDER BY pending.created_at,pending.id FOR UPDATE OF pending SKIP LOCKED LIMIT 1)
+        RETURNING id,status,phone,clock_time AS "clockTime",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
+          lease_token AS "leaseToken",dial_started_at AS "startedAt"`, [now,token,leaseSeconds])).rows[0];
+      return row ? { id: row.id, actorUserId: row.actorUserId!, leaseToken: token, expiresAt: row.expiresAt } : null;
+    });
+  }
+
+  async prepare(job: ClaimedVoiceReminderTestCall, now: Date): Promise<PreparedVoiceReminderTestCall | 'defer' | null> {
+    return this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
+      const row = (await connection.query<TestRow>(`${liveSql} FOR UPDATE OF test`, [job.id,job.leaseToken,now])).rows[0];
+      if (!row || row.startedAt) return null;
+      const library = await readVoiceReminderAudioLibrary(connection);
+      const parts = selectVoiceReminderAudioParts(library, row.clockTime);
+      if (!parts || !voiceReminderAudioDurationValid(library)) return 'defer';
+      await connection.query(`UPDATE voice_reminder_test_calls SET audio_mode=$3,intro_audio_id=$4,outro_audio_id=$5,
+        time_audio_id=$6,hour_audio_id=$7,minute_audio_id=$8 WHERE id=$1 AND lease_token=$2`, [
+        job.id,job.leaseToken,parts.kind,parts.intro.id,parts.outro.id,
+        parts.kind==='time' ? parts.time.id : null,parts.kind==='clock' ? parts.hour.id : null,
+        parts.kind==='clock' ? parts.minute.id : null,
+      ]);
+      return { ...job, phone: row.phone, clockTime: row.clockTime, audioParts: parts };
+    });
+  }
+
+  async canContinue(job: ClaimedVoiceReminderTestCall, now: Date, verifyAudio = true): Promise<boolean> {
+    return this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
+      const result = await connection.query(`SELECT 1 FROM voice_reminder_test_calls test
+        JOIN users staff ON staff.id=test.actor_user_id CROSS JOIN voice_reminder_settings settings
+        WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3 AND test.expires_at>$3
+          AND settings.id=1 AND ${testCallActorSql()} ${verifyAudio ? `AND ${testCallAudioPinsSql()}` : ''}`, [job.id,job.leaseToken,now]);
+      return Boolean(result.rowCount);
+    });
+  }
+
+  async renew(job: ClaimedVoiceReminderTestCall, now: Date, leaseSeconds: number): Promise<boolean> {
+    const result = await this.database.query(`UPDATE voice_reminder_test_calls SET lease_until=$3::timestamptz+($4*interval '1 second')
+      WHERE id=$1 AND lease_token=$2 AND status='calling' AND lease_until>$3 AND expires_at>$3`, [job.id,job.leaseToken,now,leaseSeconds]);
+    return Boolean(result.rowCount);
+  }
+
+  async finish(job: ClaimedVoiceReminderTestCall, result: VoiceReminderCallResult, now: Date): Promise<void> {
+    await this.database.query(`UPDATE voice_reminder_test_calls SET status=$3,lease_token=NULL,lease_until=NULL,not_before_at=NULL,
+      completed_at=$4,updated_at=$4,provider_call_id=COALESCE(provider_call_id,$5),
+      dial_started_at=CASE WHEN $6 THEN COALESCE(dial_started_at,$4) ELSE dial_started_at END
+      WHERE id=$1 AND lease_token=$2 AND status='calling'`, [job.id,job.leaseToken,
+      result.outcome==='busy' ? 'failed' : result.outcome,now,result.callId?.slice(0,160) ?? null,result.callStarted]);
+  }
+
+  async defer(job: ClaimedVoiceReminderTestCall, now: Date): Promise<boolean> {
+    const result = await this.database.query(`UPDATE voice_reminder_test_calls SET status='waiting',lease_token=NULL,lease_until=NULL,
+      not_before_at=$3::timestamptz+interval '5 seconds',updated_at=$3 WHERE id=$1 AND lease_token=$2 AND status='calling'
+      AND dial_started_at IS NULL AND expires_at>$3`, [job.id,job.leaseToken,now]);
+    return Boolean(result.rowCount);
+  }
+}

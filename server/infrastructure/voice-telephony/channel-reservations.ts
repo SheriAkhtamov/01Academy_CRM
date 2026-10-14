@@ -29,8 +29,10 @@ export class TelephonyChannelReservations {
   ) {}
 
   async enabled(): Promise<boolean> {
-    const result = await this.database.query<{ enabled: boolean }>('SELECT enabled FROM voice_reminder_settings WHERE id = 1');
-    return Boolean(result.rows[0]?.enabled);
+    // A manager must never hold a bypass grant while a test can be queued.
+    // The common channel gate therefore stays active before audio is uploaded
+    // and while automatic reminders are off.
+    return true;
   }
 
   private async cleanup(client: PoolClient): Promise<void> {
@@ -159,19 +161,33 @@ export class TelephonyChannelReservations {
     return Boolean(result.rowCount);
   }
 
-  async bind(id: string, input: { phone: string; jobId: number; clientCallId: string }): Promise<boolean> {
+  async bind(id: string, input: { phone: string; clientCallId: string } &
+    ({ jobId: number; testCallId?: never } | { testCallId: string; jobId?: never })): Promise<boolean> {
     return this.locked(async client => {
       const duplicate = await client.query(
         'SELECT 1 FROM telephony_line_reservations WHERE id <> $1 AND phone = $2 AND lease_until > now()', [id, input.phone],
       );
       if (duplicate.rowCount) return false;
       const result = await client.query(
-        `UPDATE telephony_line_reservations SET phone = $2, job_id = $3, client_call_id = $4
+        `UPDATE telephony_line_reservations SET phone = $2, job_id = $3, client_call_id = $4, test_call_id = $5
          WHERE id = $1 AND owner_type = 'robot' AND lease_until > now()`,
-        [id, input.phone, input.jobId, input.clientCallId],
+        [id, input.phone, input.jobId ?? null, input.clientCallId, input.testCallId ?? null],
       );
       return Boolean(result.rowCount);
     });
+  }
+
+  /** The caller holds the shared channel mutex through its durable dial marker. */
+  async canAuthorizeRobotLocked(client: PoolClient, id: string, extension: string): Promise<boolean> {
+    const current = this.readLockedCapacity
+      ? await this.readLockedCapacity(client, id)
+      : await this.snapshot().catch(() => ({ known: false, occupiedChannels: 0, busyExtensions: [] }));
+    if (!this.valid(current) || current.occupiedChannels >= 2 || current.busyExtensions.includes(extension)) return false;
+    if (this.readLockedCapacity) return true;
+    const others = (await this.readReservations(client)).filter(row => row.id !== id);
+    const pending = others.filter(row => !current.busyExtensions.includes(row.extension)).length;
+    return Math.max(others.length, current.occupiedChannels + pending) < 2
+      && !others.some(row => row.extension === extension);
   }
 
   async release(id: string, owner: 'manager' | 'robot', userId?: number, beforeInvite = false): Promise<boolean> {

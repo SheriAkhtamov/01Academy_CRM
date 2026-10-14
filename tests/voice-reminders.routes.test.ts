@@ -8,14 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
 import { createVoiceReminderRouter } from '../server/modules/voice-reminders/http/voice-reminders.router';
 import { VoiceReminderSettingsService } from '../server/modules/voice-reminders/application/settings-service';
-import type { StoredVoiceReminderAudio, StoredVoiceReminderAudioLibrary, VoiceReminderRepository } from '../server/modules/voice-reminders/application/ports';
+import type { StoredVoiceReminderAudio, StoredVoiceReminderAudioLibrary, VoiceReminderRepository, VoiceReminderTestCallRepository } from '../server/modules/voice-reminders/application/ports';
 
 const snapshot = {
   settings: DEFAULT_VOICE_REMINDER_SETTINGS, readiness: { ready: false, code: 'audio_missing' },
-  summary: { waiting: 0, calling: 0, played: 0, unanswered: 0, failed: 0, cancelled: 0 }, results: [],
 };
 const service = { snapshot: vi.fn(), save: vi.fn(), upload: vi.fn(), playback: vi.fn(),
-  uploadPart: vi.fn(), playbackPart: vi.fn(), removeTime: vi.fn(), removePart: vi.fn(), preview: vi.fn() };
+  uploadPart: vi.fn(), playbackPart: vi.fn(), removeTime: vi.fn(), removePart: vi.fn(), preview: vi.fn(),
+  requestTestCall: vi.fn(), currentTestCall: vi.fn() };
 const app = (module: 'administration' | 'sales' | null = 'administration') => {
   const application = express();
   application.use(express.json());
@@ -28,12 +28,13 @@ const app = (module: 'administration' | 'sales' | null = 'administration') => {
 };
 beforeEach(() => { vi.clearAllMocks(); service.snapshot.mockResolvedValue(snapshot); service.save.mockResolvedValue(snapshot);
   service.upload.mockResolvedValue(snapshot); service.uploadPart.mockResolvedValue(snapshot);
-  service.removeTime.mockResolvedValue(snapshot); service.removePart.mockResolvedValue(snapshot); });
+  service.removeTime.mockResolvedValue(snapshot); service.removePart.mockResolvedValue(snapshot);
+  service.currentTestCall.mockResolvedValue(null); });
 
 describe('voice reminder HTTP boundary', () => {
-  it('requires leadership for settings, results and recording access before reading bytes', async () => {
+  it('requires leadership for settings, test calls and recording access before reading bytes', async () => {
     for (const module of [null, 'sales'] as const) {
-      for (const endpoint of ['', '/audio', '/audio/intro', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
+      for (const endpoint of ['', '/test-calls/current', '/audio', '/audio/intro', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
         const response = await request(app(module)).get(`/api/academy/voice-reminders${endpoint}`);
         expect(response.status).toBe(module === null ? 401 : 403);
       }
@@ -45,11 +46,12 @@ describe('voice reminder HTTP boundary', () => {
       expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/times/11:00')).status).toBe(module === null ? 401 : 403);
       expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/hours/00')).status).toBe(module === null ? 401 : 403);
       expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/minutes/00')).status).toBe(module === null ? 401 : 403);
+      expect((await request(app(module)).post('/api/academy/voice-reminders/test-calls').send({})).status).toBe(module === null ? 401 : 403);
     }
     expect(service.snapshot).not.toHaveBeenCalled(); expect(service.upload).not.toHaveBeenCalled();
   });
 
-  it('passes a normalized leadership actor and makes private results non-cacheable', async () => {
+  it('passes a normalized leadership actor and makes private settings non-cacheable', async () => {
     const response = await request(app()).get('/api/academy/voice-reminders');
     expect(response.status).toBe(200); expect(response.body).toEqual(snapshot);
     expect(response.headers['cache-control']).toBe('no-store');
@@ -179,7 +181,6 @@ describe('voice reminder enablement', () => {
       currentAudio: vi.fn(async () => null), saveSettings: vi.fn(async () => undefined),
       audioLibrary: vi.fn(async (): Promise<StoredVoiceReminderAudioLibrary> => ({ intro: null, outro: null, times: [], hours: [], minutes: [] })),
       settings: vi.fn(async () => DEFAULT_VOICE_REMINDER_SETTINGS),
-      results: vi.fn(async () => ({ summary: snapshot.summary, results: [] })),
     };
     const gateway = { readiness: vi.fn(async () => ({ ready: true, code: 'ready' as const })), tryAcquireLine: vi.fn() };
     const useCase = new VoiceReminderSettingsService(repository as unknown as VoiceReminderRepository, { save: vi.fn(), resolve: vi.fn() }, gateway);
@@ -233,5 +234,56 @@ describe('voice reminder enablement', () => {
     library.times = [];
     await expect(useCase.preview(actor, '11:00')).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
     expect(composer.compose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('test-call HTTP and application boundary', () => {
+  const actor = { userId: 1, primaryModule: 'administration' as const, modules: ['administration' as const], isLeadership: true };
+  it('validates immutable intent UUID, selected clock and external phone while returning an actor-scoped DTO', async () => {
+    const requestId = randomUUID();
+    const dto = { id: requestId, status: 'waiting', phone: '+123456789', clockTime: '11:00' };
+    service.requestTestCall.mockResolvedValue(dto);
+    service.currentTestCall.mockResolvedValue(dto);
+    const response = await request(app()).post('/api/academy/voice-reminders/test-calls').send({ requestId, phone: '+123456789', clockTime: '11:00' });
+    expect(response.status).toBe(200); expect(response.body).toEqual(dto);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(service.requestTestCall).toHaveBeenCalledWith(expect.objectContaining({ userId: 1, isLeadership: true }),
+      { requestId, phone: '+123456789', clockTime: '11:00' });
+    expect((await request(app()).get('/api/academy/voice-reminders/test-calls/current')).body).toEqual(dto);
+    expect(service.currentTestCall).toHaveBeenCalledWith(expect.objectContaining({ userId: 1 }));
+    for (const body of [{ requestId: 'invalid', phone: '+123456789', clockTime: '11:00' },
+      { requestId, phone: '+123456789', clockTime: '11:00:00' }, { requestId, phone: 'invalid', clockTime: '11:00' },
+      { requestId, phone: '+123456789', clockTime: '11:00', password: 'unwanted' }]) {
+      expect((await request(app()).post('/api/academy/voice-reminders/test-calls').send(body)).body).toEqual({ error: 'voiceReminderInvalidTestCall' });
+    }
+    expect(service.requestTestCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps snapshot free of summary/history and queues tests even when automation and transport are unavailable', async () => {
+    const repository = { settings: vi.fn(async () => DEFAULT_VOICE_REMINDER_SETTINGS), results: vi.fn() };
+    const gateway = { readiness: vi.fn(async () => ({ ready: false, code: 'transport_unavailable' as const })), tryAcquireLine: vi.fn() };
+    const requestId = randomUUID();
+    const testCalls = {
+      enqueue: vi.fn(async (_actor: number, input: { requestId: string; phone: string; clockTime: string }) => ({
+        id: input.requestId, phone: input.phone, clockTime: input.clockTime, status: 'waiting' as const,
+      })), recover: vi.fn(async () => undefined), current: vi.fn(async () => null),
+    };
+    const instant = new Date('2030-01-15T22:30:00Z');
+    const useCase = new VoiceReminderSettingsService(repository as unknown as VoiceReminderRepository,
+      { save: vi.fn(), resolve: vi.fn() }, gateway, undefined, testCalls as unknown as VoiceReminderTestCallRepository, () => instant);
+    const visible = await useCase.snapshot(actor);
+    expect(Object.keys(visible).sort()).toEqual(['readiness', 'settings']);
+    expect(repository.results).not.toHaveBeenCalled();
+    gateway.readiness.mockClear();
+    for (const [phone, normalized] of [['+123456789', '+123456789'], ['00123456789', '+123456789'], ['90 123 45 67', '+998901234567']]) {
+      expect(await useCase.requestTestCall(actor, { requestId, phone, clockTime: '11:00' })).toMatchObject({ id: requestId, phone: normalized });
+      expect(testCalls.enqueue).toHaveBeenLastCalledWith(1, { requestId, phone: normalized, clockTime: '11:00' },
+        instant, new Date(instant.getTime() + 600_000));
+    }
+    expect(gateway.readiness).not.toHaveBeenCalled(); expect(gateway.tryAcquireLine).not.toHaveBeenCalled();
+    expect(await useCase.currentTestCall(actor)).toBeNull();
+    expect(testCalls.current).toHaveBeenCalledWith(1);
+    await expect(useCase.requestTestCall({ ...actor, isLeadership: false }, { requestId, phone: '+123456789', clockTime: '11:00' }))
+      .rejects.toMatchObject({ code: 'accessDenied' });
   });
 });

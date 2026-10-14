@@ -78,24 +78,31 @@ export type VoiceReminderReadiness = {
   ready: boolean;
   code: 'ready' | 'audio_missing' | 'transport_unavailable';
 };
-export type VoiceReminderResult = {
-  id: number;
-  demoLessonId: number;
-  participantId: number;
-  studentName: string;
-  phone: string;
-  scheduledAt: string;
-  dueAt: string;
-  status: VoiceReminderStatus;
-  attempts: number;
-  lastCallAt: string | null;
-  completedAt: string | null;
-};
 export type VoiceReminderSnapshot = {
   settings: VoiceReminderSettings;
   readiness: VoiceReminderReadiness;
-  summary: Record<VoiceReminderStatus, number>;
-  results: VoiceReminderResult[];
+};
+export const normalizeVoiceReminderTestPhone = (raw: string): string | null => {
+  const value = raw.trim();
+  if (!value || value.length > 80 || !/^\+?[\d\s().-]+$/.test(value)) return null;
+  let digits = value.replace(/\D/g, '');
+  if (!value.startsWith('+')) {
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    else if (digits.length === 9) digits = `998${digits}`;
+  }
+  return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : null;
+};
+export const voiceReminderTestCallSchema = z.object({
+  requestId: z.string().uuid(),
+  phone: z.string().trim().min(7).max(80).refine(value => normalizeVoiceReminderTestPhone(value) !== null),
+  clockTime: voiceReminderClockTimeSchema,
+}).strict();
+export type VoiceReminderTestCallInput = z.infer<typeof voiceReminderTestCallSchema>;
+export type VoiceReminderTestCall = {
+  id: string;
+  status: VoiceReminderStatus;
+  phone: string;
+  clockTime: string;
 };
 
 export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {

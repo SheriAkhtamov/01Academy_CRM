@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderSettingsSchema } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderSettingsSchema, voiceReminderTestCallSchema } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderAudioTarget } from '../application/ports';
 import { actorContextFrom } from '../../leads/domain/actor-context';
 import type { VoiceReminderSettingsService } from '../application/settings-service';
@@ -70,6 +70,17 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     const input = voiceReminderSettingsSchema.safeParse(request.body);
     if (!input.success) return response.status(400).json({ error: 'voiceReminderInvalidSettings' });
     try { response.json(await service.save(actorContextFrom(request), input.data)); }
+    catch (error) { sendError(response, error); }
+  });
+
+  router.post('/voice-reminders/test-calls', async (request, response) => {
+    const input = voiceReminderTestCallSchema.safeParse(request.body);
+    if (!input.success) return response.status(400).json({ error: 'voiceReminderInvalidTestCall' });
+    try { response.json(await service.requestTestCall(actorContextFrom(request), input.data)); }
+    catch (error) { sendError(response, error); }
+  });
+  router.get('/voice-reminders/test-calls/current', async (request, response) => {
+    try { response.json(await service.currentTestCall(actorContextFrom(request))); }
     catch (error) { sendError(response, error); }
   });
 

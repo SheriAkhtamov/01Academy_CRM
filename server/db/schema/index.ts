@@ -568,7 +568,7 @@ export const { academyDemoLessons, academyDemoLessonParticipants } = createAcade
   teacherId: academyTeachers.id, studentId: academyStudents.id, userId: users.id,
 });
 
-export const { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine } = createVoiceReminderTables({
+export const { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine } = createVoiceReminderTables({
   userId: users.id, demoLessonId: academyDemoLessons.id, participantId: academyDemoLessonParticipants.id,
 });
 

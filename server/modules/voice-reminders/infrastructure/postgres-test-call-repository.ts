@@ -1,21 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import { normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema,
-  type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderConfirmationAudio, voiceReminderResponseSchema, voiceReminderAudioIdSchema, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema,
+  type VoiceReminderResponse, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
 import { VoiceReminderError } from '../domain/policy';
 import type { ClaimedVoiceReminderTestCall, PreparedVoiceReminderTestCall, VoiceReminderCallResult, VoiceReminderTestCallRepository } from '../application/ports';
 import { readVoiceReminderAudioLibrary } from './postgres-repository';
 import { testCallActorSql, testCallAudioPinsSql } from './test-call-queries';
 
-type TestRow = VoiceReminderTestCall & {
+type TestRow = Omit<VoiceReminderTestCall, 'respondedAt'> & {
   actorUserId: number | null;
   leaseToken: string | null;
   expiresAt: Date;
   startedAt: Date | null;
+  confirmationEnabled: boolean;
+  providerCallId: string | null;
+  respondedAt: Date | null;
 };
 const fields = `test.id,test.status,test.phone,test.clock_time AS "clockTime",test.reminder_kind AS "reminderKind",test.actor_user_id AS "actorUserId",
+  test.response,test.response_at AS "respondedAt",test.confirmation_enabled AS "confirmationEnabled",test.provider_call_id AS "providerCallId",
   test.lease_token AS "leaseToken",test.expires_at AS "expiresAt",test.dial_started_at AS "startedAt"`;
-const publicCall = ({ id, status, phone, clockTime, reminderKind }: TestRow): VoiceReminderTestCall => ({ id, status, phone, clockTime, reminderKind });
+const publicCall = ({ id, status, phone, clockTime, reminderKind, response, respondedAt }: TestRow): VoiceReminderTestCall => ({
+  id, status, phone, clockTime, reminderKind, response: response ?? null, respondedAt: respondedAt?.toISOString() ?? null,
+});
 const liveSql = `SELECT ${fields} FROM voice_reminder_test_calls test JOIN users staff ON staff.id=test.actor_user_id
   WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3
     AND test.expires_at>$3 AND ${testCallActorSql()}`;
@@ -78,6 +84,8 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       if (pending.rowCount) throw new VoiceReminderError('voiceReminderTestAlreadyPending', 409);
       await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
       const library = await readVoiceReminderAudioLibrary(connection);
+      const confirmationEnabled = (await connection.query<{ enabled: boolean }>('SELECT confirmation_enabled AS enabled FROM voice_reminder_settings WHERE id=1')).rows[0]?.enabled;
+      if (confirmationEnabled && !hasVoiceReminderConfirmationAudio(library)) throw new VoiceReminderError('voiceReminderConfirmationAudioRequired', 409);
       if (!selectVoiceReminderAudioParts(library,input.clockTime,reminderKind)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
       if (!voiceReminderAudioDurationValid(library)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
       const inserted = (await connection.query<TestRow>(`INSERT INTO voice_reminder_test_calls
@@ -115,6 +123,7 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
           WHERE pending.status='waiting' AND pending.dial_started_at IS NULL AND pending.expires_at>$1
             AND (pending.not_before_at IS NULL OR pending.not_before_at<=$1) AND ${testCallActorSql()}
             AND settings.id=1 AND (CASE WHEN pending.reminder_kind='day_before' THEN settings.day_before_intro_audio_id ELSE settings.intro_audio_id END) IS NOT NULL
+            AND (NOT settings.confirmation_enabled OR (settings.confirmation_yes_audio_id IS NOT NULL AND settings.confirmation_no_audio_id IS NOT NULL))
             AND settings.outro_audio_id IS NOT NULL
             AND (whole_audio.audio_id IS NOT NULL OR (hour_audio.audio_id IS NOT NULL AND minute_audio.audio_id IS NOT NULL))
           ORDER BY pending.created_at,pending.id FOR UPDATE OF pending SKIP LOCKED LIMIT 1)
@@ -131,14 +140,18 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       if (!row || row.startedAt) return null;
       const library = await readVoiceReminderAudioLibrary(connection);
       const parts = selectVoiceReminderAudioParts(library,row.clockTime,row.reminderKind);
-      if (!parts || !voiceReminderAudioDurationValid(library)) return 'defer';
+      const confirmationEnabled = (await connection.query<{ enabled: boolean }>('SELECT confirmation_enabled AS enabled FROM voice_reminder_settings WHERE id=1')).rows[0]?.enabled ?? false;
+      if (!parts || !voiceReminderAudioDurationValid(library) || (confirmationEnabled && !hasVoiceReminderConfirmationAudio(library))) return 'defer';
       await connection.query(`UPDATE voice_reminder_test_calls SET audio_mode=$3,intro_audio_id=$4,outro_audio_id=$5,
-        time_audio_id=$6,hour_audio_id=$7,minute_audio_id=$8 WHERE id=$1 AND lease_token=$2`, [
+        time_audio_id=$6,hour_audio_id=$7,minute_audio_id=$8,confirmation_enabled=$9,
+        confirmation_yes_audio_id=$10,confirmation_no_audio_id=$11 WHERE id=$1 AND lease_token=$2`, [
         job.id,job.leaseToken,parts.kind,parts.intro.id,parts.outro.id,
         parts.kind==='time' ? parts.time.id : null,parts.kind==='clock' ? parts.hour.id : null,
-        parts.kind==='clock' ? parts.minute.id : null,
+        parts.kind==='clock' ? parts.minute.id : null,confirmationEnabled,
+        confirmationEnabled ? library.confirmationYes!.id : null,confirmationEnabled ? library.confirmationNo!.id : null,
       ]);
-      return { ...job, phone: row.phone, clockTime: row.clockTime, audioParts: parts };
+      return { ...job, phone: row.phone, clockTime: row.clockTime, audioParts: parts,
+        confirmation: confirmationEnabled ? { yesAudio: library.confirmationYes!, noAudio: library.confirmationNo!, promptDurationSeconds: parts.outro.durationSeconds } : null };
     });
   }
 
@@ -148,8 +161,30 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       const result = await connection.query(`SELECT 1 FROM voice_reminder_test_calls test
         JOIN users staff ON staff.id=test.actor_user_id CROSS JOIN voice_reminder_settings settings
         WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3 AND test.expires_at>$3
-          AND settings.id=1 AND ${testCallActorSql()} ${verifyAudio ? `AND ${testCallAudioPinsSql()}` : ''}`, [job.id,job.leaseToken,now]);
+          AND settings.id=1 AND test.confirmation_enabled=settings.confirmation_enabled AND ${testCallActorSql()} ${verifyAudio ? `AND ${testCallAudioPinsSql()}` : ''}`, [job.id,job.leaseToken,now]);
       return Boolean(result.rowCount);
+    });
+  }
+
+  async recordResponse(job: ClaimedVoiceReminderTestCall, phone: string, response: VoiceReminderResponse, now: Date, callId: string): Promise<boolean> {
+    if (!voiceReminderResponseSchema.safeParse(response).success || !voiceReminderAudioIdSchema.safeParse(callId).success) return false;
+    return this.transaction(async connection => {
+      await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
+      await connection.query('SELECT id FROM users WHERE id=$1 FOR SHARE', [job.actorUserId]);
+      const attempt = await connection.query<{ providerId: string | null }>(`SELECT provider_id AS "providerId" FROM voice_reminder_call_attempts WHERE call_id=$1::uuid AND test_call_id=$2::uuid
+        AND phone=$3 AND completed_at IS NULL AND termination_confirmed_at IS NULL FOR SHARE`, [callId,job.id,phone]);
+      if (!attempt.rowCount) return false;
+      await connection.query('SELECT id FROM voice_reminder_test_calls WHERE id=$1 AND lease_token=$2 FOR UPDATE', [job.id,job.leaseToken]);
+      const effectiveNow = (await connection.query<{ now: Date }>('SELECT GREATEST($1::timestamptz,clock_timestamp()) AS now', [now])).rows[0].now;
+      const row = (await connection.query<TestRow>(`${liveSql} FOR UPDATE OF test`, [job.id,job.leaseToken,effectiveNow])).rows[0];
+      const enabled = (await connection.query<{ enabled: boolean }>('SELECT confirmation_enabled AS enabled FROM voice_reminder_settings WHERE id=1')).rows[0]?.enabled;
+      const boundProviderId = attempt.rows[0].providerId;
+      const sameCall = row?.providerCallId===callId || Boolean(boundProviderId && row?.providerCallId===boundProviderId);
+      if (!row || !enabled || !row.confirmationEnabled || row.phone!==phone || !sameCall || !row.startedAt) return false;
+      if (row.response) return row.response===response;
+      const saved = await connection.query(`UPDATE voice_reminder_test_calls SET response=$3,response_at=$4,response_call_id=$5,updated_at=$4
+        WHERE id=$1 AND lease_token=$2 AND status='calling' AND response IS NULL`, [job.id,job.leaseToken,response,effectiveNow,callId]);
+      return saved.rowCount===1;
     });
   }
 

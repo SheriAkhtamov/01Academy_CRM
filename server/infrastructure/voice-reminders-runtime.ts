@@ -90,8 +90,15 @@ export const createVoiceRemindersRuntime = (
             }, 30_000);
             heartbeat.unref();
             const credentials = await provider.getCredentials(lease.extension);
+            const { confirmation: confirmationSources, ...callInput } = input;
+            const confirmation = confirmationSources ? {
+              yesAudioPath: await audioStore.resolve(confirmationSources.yesAudio.storageKey),
+              noAudioPath: await audioStore.resolve(confirmationSources.noAudio.storageKey),
+              promptDurationSeconds: confirmationSources.promptDurationSeconds,
+              onResponse: confirmationSources.onResponse,
+            } : undefined;
             const result = await (options.performCall ?? performVertoReminderCall)(credentials, {
-              ...input, callId: lease.clientCallId, signal: controller.signal,
+              ...callInput, confirmation, callId: lease.clientCallId, signal: controller.signal,
               shouldContinue: (verifyAudio = true) => alive && !stopping ? input.shouldContinue(verifyAudio) : Promise.resolve(false),
               onStarted: async () => {
                 const identity = { callId: lease.clientCallId, extension: lease.extension,

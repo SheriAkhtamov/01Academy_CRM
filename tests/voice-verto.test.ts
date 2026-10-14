@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { RTCPeerConnection, usePCMU as createPcmuCodec } from 'werift';
+import { RTCPeerConnection, RtpHeader, usePCMU as createPcmuCodec } from 'werift';
 import WebSocket, { WebSocketServer } from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OnlinePbxWebRtcCredentials } from '../server/services/onlinepbx';
@@ -31,7 +31,8 @@ async function fakeVerto(onInvite?: InviteHandler) {
       const message = JSON.parse(raw.toString()) as Message;
       messages.push(message);
       if (!message.method) return;
-      socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { method: message.method } }));
+      socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id,
+        result: message.method === 'verto.ping' ? { message: 'PONG' } : { method: message.method } }));
       if (message.method === 'verto.invite') {
         void Promise.resolve(onInvite?.(socket, message)).catch((error) => { errors.push(error); socket.terminate(); });
       }
@@ -63,6 +64,26 @@ const dependencies = (audio = Buffer.alloc(640, 0xcd)): VertoCallDependencies =>
   createPeer: localPeer, decodeAudio: async () => audio,
 });
 
+const confirmationInput = () => callInput({ confirmation: {
+  yesAudioPath: '/test/yes.wav', noAudioPath: '/test/no.wav', promptDurationSeconds: 0.1,
+  onResponse: vi.fn(async () => true),
+} });
+const confirmationDependencies = (): VertoCallDependencies => ({
+  createPeer: localPeer, confirmationWaitMs: 120,
+  decodeAudio: async file => Buffer.alloc(file.endsWith('yes.wav') ? 640 : file.endsWith('no.wav') ? 640 : 1600,
+    file.endsWith('yes.wav') ? 0xce : file.endsWith('no.wav') ? 0xcd : 0xff),
+});
+
+const digitOneSamples = () => Buffer.from(Array.from({ length: 640 }, (_, index) => {
+  const sample = Math.round(3000 * Math.sin(2 * Math.PI * 697 * index / 8000)
+    + 3000 * Math.sin(2 * Math.PI * 1209 * index / 8000));
+  const sign = sample < 0 ? 128 : 0;
+  const magnitude = Math.min(32635, Math.abs(sample)) + 132;
+  let exponent = 7;
+  for (let mask = 0x4000; exponent > 0 && !(magnitude & mask); mask >>= 1) exponent--;
+  return ~(sign | exponent << 4 | (magnitude >> (exponent + 3) & 15)) & 255;
+}));
+
 async function answeringPeer(socket: WebSocket, invite: Message) {
   const peer = localPeer();
   cleanups.push(() => peer.close());
@@ -83,6 +104,114 @@ async function answeringPeer(socket: WebSocket, invite: Message) {
 afterEach(async () => {
   await Promise.allSettled(cleanups.splice(0).map((cleanup) => cleanup()));
   vi.restoreAllMocks();
+});
+
+describe('reminder confirmation dialogue', () => {
+  it('receives the caller PCMU tone and commits yes before playing only its acknowledgement', async () => {
+    const input = confirmationInput();
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    let packetsAtCommit = 0;
+    input.confirmation!.onResponse = vi.fn(async () => {
+      packetsAtCommit = received.packets.length;
+      await delay(80);
+      expect(received.packets.slice(packetsAtCommit).every(payload => payload.every(byte => byte === 0xff))).toBe(true);
+      expect(received.packets.length).toBeGreaterThan(packetsAtCommit);
+      return true;
+    });
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(6), { interval: 10 });
+      const samples = digitOneSamples();
+      const transport = received.peer.dtlsTransports[0];
+      const ssrc = received.peer.getTransceivers()[0].sender.ssrc;
+      for (let offset = 0; offset < samples.length; offset += 160) {
+        await transport.sendRtp(samples.subarray(offset, offset + 160), new RtpHeader({
+          payloadType: 0, ssrc, sequenceNumber: offset / 160, timestamp: offset,
+        }));
+        await delay(20);
+      }
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(packetsAtCommit).toBeGreaterThanOrEqual(9);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(true);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xcd))).toBe(false);
+  });
+
+  it('ignores early, unrelated and invalid presses and takes the first valid own-call response', async () => {
+    const input = confirmationInput();
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(1), { interval: 10 });
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'early');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
+      event(socket, 'verto.info', { callID: 'manager-other-call', dtmf: '1' }, 'unrelated');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '9*21' }, 'valid');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: 'played', response: 'no', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('no', result.callId);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xcd))).toBe(true);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(false);
+  });
+
+  it('finishes without inventing an answer when nobody presses a valid digit', async () => {
+    const input = confirmationInput();
+    const harness = await fakeVerto(async (socket, invite) => {
+      const received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: 'played', terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  });
+
+  it.each(['rejected', 'error'] as const)('does not thank the caller when the response save is %s', async mode => {
+    const input = confirmationInput();
+    input.confirmation!.onResponse = vi.fn(async () => { if (mode === 'error') throw new Error('Save failed'); return false; });
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'digit');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: 'failed', terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce || byte === 0xcd))).toBe(false);
+  });
+});
+
+describe('Verto protocol keepalive', () => {
+  it('answers server JSON and native pings without sending unsupported client heartbeats', async () => {
+    const harness = await fakeVerto();
+    let nativePings = 0;
+    harness.server.on('connection', socket => socket.on('ping', () => { nativePings++; }));
+    let nativePongs = 0;
+    const rpc = new VertoRpcClient(harness.credentials.websocketUrl);
+    const failed = vi.fn();
+    rpc.onFailure(failed);
+    try {
+      await rpc.login(harness.credentials);
+      const socket = [...harness.server.clients][0];
+      socket.on('pong', () => { nativePongs++; });
+      socket.ping('provider');
+      event(socket, 'verto.ping', { serno: 123 }, 'provider-ping');
+      await delay(180);
+      expect(harness.messages.filter(message => message.method === 'verto.ping')).toEqual([]);
+      expect(harness.messages.find(message => message.id === 'provider-ping')?.result).toEqual({ message: 'PONG' });
+      expect(nativePings).toBe(0);
+      expect(nativePongs).toBe(1);
+      expect(failed).not.toHaveBeenCalled();
+    } finally { await rpc.close(); }
+  });
 });
 
 describe('Verto reminder signalling and real Node WebRTC audio', () => {

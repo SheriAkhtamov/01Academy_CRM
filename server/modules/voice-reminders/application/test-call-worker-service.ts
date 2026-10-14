@@ -113,6 +113,9 @@ export class VoiceReminderTestCallWorker {
         audioPath: recording.path,
         deadline: prepared.expiresAt,
         shouldContinue,
+        ...(prepared.confirmation ? { confirmation: { ...prepared.confirmation,
+          onResponse: (response, callId) => this.repository.recordResponse(job,prepared.phone,response,this.now(),callId),
+        } } : {}),
       });
       if (!result.callStarted) {
         await this.deferOrFinish(job);

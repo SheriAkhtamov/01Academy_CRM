@@ -34,6 +34,11 @@ export function VoiceReminderSettingsForm({
         <Switch id="voice-reminders-day-before-enabled" checked={draft.dayBeforeEnabled}
           onCheckedChange={(enabled) => update('dayBeforeEnabled', enabled)} disabled={disabled} />
       </div>
+      <div className="flex items-center justify-between gap-4">
+        <Label htmlFor="voice-reminders-confirmation-enabled">{t('voiceRemindersConfirmationEnabled')}</Label>
+        <Switch id="voice-reminders-confirmation-enabled" checked={draft.confirmationEnabled}
+          onCheckedChange={(enabled) => update('confirmationEnabled', enabled)} disabled={disabled} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-lead">{t('voiceRemindersLeadMinutes')}</Label>

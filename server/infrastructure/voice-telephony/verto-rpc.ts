@@ -23,8 +23,6 @@ export class VertoRpcClient {
   private nextId = 1;
   private closing = false;
   private failed = false;
-  private heartbeat?: ReturnType<typeof setInterval>;
-  private lastPong = Date.now();
 
   constructor(url: string, createSocket: (url: string) => WebSocket = (address) => new WebSocket(address, {
     handshakeTimeout: 8_000, maxPayload: 256 * 1024,
@@ -33,7 +31,6 @@ export class VertoRpcClient {
     this.socket.on('message', (data) => this.receive(data.toString()));
     this.socket.on('error', () => this.fail());
     this.socket.on('close', () => this.fail());
-    this.socket.on('pong', () => { this.lastPong = Date.now(); });
   }
 
   onEvent(listener: (event: VertoEvent) => void): () => void {
@@ -69,14 +66,10 @@ export class VertoRpcClient {
       login: `${credentials.username}@${credentials.sipDomain}`,
       passwd: credentials.password, loginParams: {}, userVariables: {},
     });
-    this.lastPong = Date.now();
-    this.heartbeat = setInterval(() => {
-      if (Date.now() - this.lastPong > 40_000) {
-        this.fail();
-        this.socket.terminate();
-      } else if (this.socket.readyState === WebSocket.OPEN) this.socket.ping();
-    }, 20_000);
-    this.heartbeat.unref();
+    // OnlinePBX's legacy gateway closes client-initiated control pings and
+    // does not expose the newer verto.ping RPC. Answer server pings instead
+    // (ws automatically answers native ones). Requests and the call/media
+    // lifecycle remain bounded; a failed/closed socket still fails the call.
   }
 
   request(method: 'login' | 'verto.invite' | 'verto.bye', params: Record<string, unknown>, timeoutMs = 8_000): Promise<unknown> {
@@ -106,7 +99,8 @@ export class VertoRpcClient {
     if (message.jsonrpc !== '2.0') return;
     if (typeof message.method === 'string') {
       if (message.id !== undefined && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { method: message.method } }));
+        const result = message.method === 'verto.ping' ? { message: 'PONG' } : { method: message.method };
+        this.socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
       }
       const params = message.params && typeof message.params === 'object' && !Array.isArray(message.params)
         ? message.params as Record<string, unknown> : {};
@@ -130,13 +124,11 @@ export class VertoRpcClient {
       request.reject(new VertoTransportError());
     }
     this.pending.clear();
-    if (this.heartbeat) clearInterval(this.heartbeat);
     for (const listener of this.failureListeners) listener();
   }
 
   async close(): Promise<void> {
     this.closing = true;
-    if (this.heartbeat) clearInterval(this.heartbeat);
     for (const request of this.pending.values()) {
       clearTimeout(request.timeout);
       request.reject(new VertoTransportError());

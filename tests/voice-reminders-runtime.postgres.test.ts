@@ -57,6 +57,17 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       allowedStartTime: '00:00', allowedEndTime: '23:59' },1);
     return audio;
   };
+  const prepareConfirmationAudio = async () => {
+    const store = new LocalVoiceReminderAudioStore(directory);
+    const library = await repository.audioLibrary();
+    for (const part of ['confirmationYes', 'confirmationNo'] as const) {
+      const audio = await store.save({ bytes: await fs.readFile(await store.resolve(library.outro!.storageKey)),
+        originalName: `${part}.wav`, mimeType: 'audio/wav' });
+      await repository.saveLibraryAudio({ part }, audio, 1);
+    }
+    await repository.saveSettings({ ...settings, confirmationEnabled: true, enabled: true,
+      allowedStartTime: '00:00', allowedEndTime: '23:59' }, 1);
+  };
   beforeAll(async () => {
     if (!url || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Local isolated PostgreSQL required');
     admin = new Pool({ connectionString: url });
@@ -76,6 +87,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -105,6 +117,53 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('routes a committed auto response through the runtime after the provider binds its own UUID', async () => {
+    await prepareConfirmationAudio();
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      expect(input.confirmation).toMatchObject({ promptDurationSeconds: 1 });
+      expect(await inspectReminderAudio(input.confirmation!.yesAudioPath)).toMatchObject({ durationSeconds: 1 });
+      expect(await inspectReminderAudio(input.confirmation!.noAudioPath)).toMatchObject({ durationSeconds: 1 });
+      await input.onStarted!();
+      const attempt = (await database.query('SELECT extension,phone,started_at FROM voice_reminder_call_attempts WHERE call_id=$1',[input.callId])).rows[0];
+      const providerId = randomUUID();
+      expect(await runtime.observeRobotCall({ uuid: providerId, direction: 'outgoing', caller: attempt.extension,
+        callee: attempt.phone.replace(/\D/g,''), date: Math.floor(attempt.started_at.getTime()/1000), event: 'call_start' })).toBe(true);
+      expect(await input.confirmation!.onResponse('yes', randomUUID())).toBe(false);
+      expect(await input.confirmation!.onResponse('yes', input.callId!)).toBe(true);
+      expect(await input.confirmation!.onResponse('yes', input.callId!)).toBe(true);
+      expect(await input.confirmation!.onResponse('no', input.callId!)).toBe(false);
+      const committed = (await database.query('SELECT response,response_call_id FROM voice_reminder_jobs')).rows[0];
+      expect(committed).toMatchObject({ response: 'yes', response_call_id: input.callId });
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response: 'yes' };
+    });
+    const runtime = makeRuntime(provider(), call);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+    expect((await database.query('SELECT * FROM voice_reminder_participant_response(1)')).rows[0].response).toBe('yes');
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    await runtime.close();
+  });
+
+  it('saves the manual no answer without changing the actual demo participant', async () => {
+    await prepareConfirmationAudio();
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      await input.onStarted!();
+      expect(await input.confirmation!.onResponse('no', input.callId!)).toBe(true);
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response: 'no' };
+    });
+    const runtime = makeRuntime(provider(), call);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect((await database.query('SELECT response,status FROM voice_reminder_test_calls WHERE id=$1',[id])).rows[0])
+      .toMatchObject({ response: 'no', status: 'played' });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE response IS NOT NULL')).rows[0].count).toBe(0);
+    expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+    await runtime.close();
   });
 
   it('delivers independent day-before and two-hour reminders with their own intro and deadline', async () => {

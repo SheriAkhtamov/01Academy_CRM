@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Loader2, Phone } from 'lucide-react';
-import { selectVoiceReminderAudioParts, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,8 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
     onPendingChange(call.isSending);
     return () => onPendingChange(false);
   }, [call.isSending, onPendingChange]);
-  const audioAvailable = Boolean(selectVoiceReminderAudioParts(library, call.clockTime, call.reminderKind));
+  const confirmationAudioMissing = data.settings.confirmationEnabled && !hasVoiceReminderConfirmationAudio(library);
+  const audioAvailable = Boolean(selectVoiceReminderAudioParts(library, call.clockTime, call.reminderKind)) && !confirmationAudioMissing;
   const statusKey: TranslationKey | null = call.isSending ? 'voiceRemindersTestSending'
     : call.intent && !testCallIsActive(call.job) ? 'voiceRemindersTestUnconfirmed'
       : call.job ? statusKeys[call.job.status] : null;
@@ -45,7 +46,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   return <section className="space-y-4" aria-label={t('voiceRemindersTestCall')}>
     <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={(event) => {
       event.preventDefault();
-      void call.send(audioAvailable, disabled);
+      void call.send(audioAvailable, disabled, confirmationAudioMissing ? 'voiceReminderConfirmationAudioRequired' : 'voiceReminderAudioRequired');
     }}>
       <div className="space-y-2">
         <Label htmlFor="voice-reminders-test-phone">{t('phone')}</Label>

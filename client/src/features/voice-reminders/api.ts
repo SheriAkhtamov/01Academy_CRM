@@ -12,7 +12,8 @@ import { apiRequest } from '@/lib/queryClient';
 const voiceRemindersPath = '/api/academy/voice-reminders';
 export type VoiceReminderClockUnit = 'hour' | 'minute' | 'time';
 export type VoiceReminderUnitTarget = { hour: string } | { minute: string } | { time: string };
-export type VoiceReminderAudioTarget = { part: 'intro' | 'dayBeforeIntro' | 'outro' } | VoiceReminderUnitTarget;
+export type VoiceReminderAudioPart = 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo';
+export type VoiceReminderAudioTarget = { part: VoiceReminderAudioPart } | VoiceReminderUnitTarget;
 export type VoiceReminderAudioUpload = { target: VoiceReminderAudioTarget; file: File; expectedId?: string };
 export type VoiceReminderRecordingRemoval = { target: VoiceReminderUnitTarget; expectedId: string };
 
@@ -28,7 +29,12 @@ export const voiceReminderUnitSelection = (target: VoiceReminderUnitTarget) => {
 };
 
 const audioPath = (target: VoiceReminderAudioTarget) => {
-  if ('part' in target) return `${voiceRemindersPath}/audio/${target.part === 'dayBeforeIntro' ? 'day-before-intro' : target.part}`;
+  if ('part' in target) {
+    const slug = target.part === 'dayBeforeIntro' ? 'day-before-intro'
+      : target.part === 'confirmationYes' ? 'confirmation-yes'
+        : target.part === 'confirmationNo' ? 'confirmation-no' : target.part;
+    return `${voiceRemindersPath}/audio/${slug}`;
+  }
   const { unit, value } = voiceReminderUnitSelection(target);
   return `${voiceRemindersPath}/audio/${unit}s/${encodeURIComponent(value)}`;
 };

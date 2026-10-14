@@ -41,6 +41,8 @@ const makeSnapshot = (): VoiceReminderSnapshot => ({
     intro: { ...audio, id: 'intro-audio', fileName: 'intro.mp3' },
     dayBeforeIntro: { ...audio, id: 'tomorrow-intro', fileName: 'tomorrow.wav' },
     outro: { ...audio, id: 'outro-audio', fileName: 'outro.wav' },
+    confirmationYes: { ...audio, id: 'yes-audio', fileName: 'yes.wav' },
+    confirmationNo: { ...audio, id: 'no-audio', fileName: 'no.wav' },
     hours: [], minutes: [],
     times: [{ time: '14:00', audio: { ...audio, id: '14-00-audio', fileName: '14-00.mp3' } }],
   } },
@@ -115,7 +117,7 @@ describe('voice reminder settings and test calls', () => {
     mocks.actorId = 42;
     mocks.getCurrentTestCall.mockResolvedValue(null);
     mocks.startTestCall.mockImplementation(async (input) => {
-      const job = { id: input.requestId, status: 'waiting', phone: input.phone, clockTime: input.clockTime, reminderKind: input.reminderKind ?? 'same_day' };
+      const job = { id: input.requestId, status: 'waiting', phone: input.phone, clockTime: input.clockTime, reminderKind: input.reminderKind ?? 'same_day', response: null, respondedAt: null };
       mocks.getCurrentTestCall.mockResolvedValue(job);
       return job;
     });
@@ -144,7 +146,7 @@ describe('voice reminder settings and test calls', () => {
     fireEvent.change(screen.getByLabelText('Minutes between attempts'), { target: { value: '15' } });
     await user.click(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith({
-      enabled: true, leadMinutes: 90, maxAttempts: 5, retryMinutes: 15,
+      enabled: true, confirmationEnabled: false, leadMinutes: 90, maxAttempts: 5, retryMinutes: 15,
       dayBeforeEnabled: false, dayBeforeStartTime: '10:00', dayBeforeEndTime: '20:00',
       allowedStartTime: '09:00', allowedEndTime: '20:00', maxConcurrentCalls: 2,
     }, expect.anything()));
@@ -191,7 +193,7 @@ describe('voice reminder settings and test calls', () => {
 
   it('rejects enabling reminders without an audio recording or working call service', async () => {
     const data = makeSnapshot();
-    data.settings.audioLibrary = { intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] };
+    data.settings.audioLibrary = { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, times: [], hours: [], minutes: [] };
     data.readiness = { ready: false, code: 'audio_missing' };
     const { user, client } = await renderDialog(data);
     await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
@@ -262,7 +264,7 @@ describe('voice reminder settings and test calls', () => {
 
   it('uploads opening and closing fragments separately without clearing the other selected file', async () => {
     const data = makeSnapshot();
-    data.settings.audioLibrary = { intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] };
+    data.settings.audioLibrary = { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, times: [], hours: [], minutes: [] };
     const { user } = await renderDialog(data);
     await openRecordings(user);
     const intro = new File(['intro'], 'intro.mp3', { type: 'audio/mpeg' });
@@ -717,7 +719,7 @@ describe('voice reminder settings and test calls', () => {
     await waitFor(() => expect(mocks.startTestCall).toHaveBeenCalledTimes(1));
     expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).disabled).toBe(true);
     const input = mocks.startTestCall.mock.calls[0][0];
-    const waiting: VoiceReminderTestCall = { id: input.requestId, phone: input.phone, clockTime: input.clockTime, reminderKind: 'same_day', status: 'waiting' };
+    const waiting: VoiceReminderTestCall = { id: input.requestId, phone: input.phone, clockTime: input.clockTime, reminderKind: 'same_day', response: null, respondedAt: null, status: 'waiting' };
     mocks.getCurrentTestCall.mockResolvedValue(waiting);
     await act(async () => pending.resolve(waiting));
     const calling = { ...waiting, status: 'calling' as const };
@@ -756,7 +758,7 @@ describe('voice reminder settings and test calls', () => {
     const request = mocks.startTestCall.mock.calls[0][0];
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    mocks.getCurrentTestCall.mockResolvedValue({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', status: 'calling' });
+    mocks.getCurrentTestCall.mockResolvedValue({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', response: null, respondedAt: null, status: 'calling' });
     await user.click(screen.getByRole('button', { name: 'Reopen' }));
     await screen.findByRole('switch', { name: 'Demo reminders' });
     await user.click(screen.getByRole('tab', { name: 'Test call' }));
@@ -780,7 +782,7 @@ describe('voice reminder settings and test calls', () => {
     await user.click(screen.getByRole('tab', { name: 'Test call' }));
     await user.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(mocks.startTestCall.mock.calls[1][0]).toEqual(original);
-    const terminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, reminderKind: 'same_day', status: 'played' as const };
+    const terminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, reminderKind: 'same_day', response: null, respondedAt: null, status: 'played' as const };
     mocks.getCurrentTestCall.mockResolvedValue(terminal);
     await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], terminal));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Played'));
@@ -795,7 +797,7 @@ describe('voice reminder settings and test calls', () => {
     await openTestCall(user);
     fillTestPhone('+998909876543');
     fireEvent.change(clockTimeInput(), { target: { value: '18:30' } });
-    const active = { id: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day', status: 'calling' as const };
+    const active = { id: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day', response: null, respondedAt: null, status: 'calling' as const };
     await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], active));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Calling'));
     expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe(active.phone);
@@ -815,7 +817,7 @@ describe('voice reminder settings and test calls', () => {
     await first.user.click(screen.getByRole('button', { name: 'Call' }));
     const original = mocks.startTestCall.mock.calls[0][0];
     first.unmount();
-    const oldTerminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, reminderKind: 'same_day' as const, status: 'played' as const };
+    const oldTerminal = { id: original.requestId, phone: original.phone, clockTime: original.clockTime, reminderKind: 'same_day' as const, response: null, respondedAt: null, status: 'played' as const };
     mocks.getCurrentTestCall.mockResolvedValue(oldTerminal);
     const nextReply = deferred<VoiceReminderTestCall>();
     mocks.startTestCall.mockReturnValueOnce(nextReply.promise);
@@ -828,7 +830,7 @@ describe('voice reminder settings and test calls', () => {
     await act(async () => oldReply.resolve({ ...oldTerminal, status: 'waiting' }));
     expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42') ?? 'null')).toEqual(successor);
     expect(client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 42])).toEqual(oldTerminal);
-    const waiting = { id: successor.requestId, phone: successor.phone, clockTime: successor.clockTime, reminderKind: 'same_day' as const, status: 'waiting' as const };
+    const waiting = { id: successor.requestId, phone: successor.phone, clockTime: successor.clockTime, reminderKind: 'same_day' as const, response: null, respondedAt: null, status: 'waiting' as const };
     mocks.getCurrentTestCall.mockResolvedValue(waiting);
     await act(async () => nextReply.resolve(waiting));
   });
@@ -845,7 +847,7 @@ describe('voice reminder settings and test calls', () => {
     await act(async () => view.refresh());
     await waitFor(() => expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe(''));
     fillTestPhone('+998909876543');
-    await act(async () => oldReply.resolve({ id: old.requestId, phone: old.phone, clockTime: old.clockTime, reminderKind: 'same_day', status: 'waiting' }));
+    await act(async () => oldReply.resolve({ id: old.requestId, phone: old.phone, clockTime: old.clockTime, reminderKind: 'same_day', response: null, respondedAt: null, status: 'waiting' }));
     expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).value).toBe('+998909876543');
     expect(view.client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 43])).toBeNull();
     expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:43')).toBeNull();
@@ -890,7 +892,7 @@ describe('voice reminder settings and test calls', () => {
     expect(screen.getByRole('status').textContent).toBe('Awaiting confirmation');
     expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false);
-    await act(async () => neverReply.resolve({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', status: 'waiting' }));
+    await act(async () => neverReply.resolve({ id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', response: null, respondedAt: null, status: 'waiting' }));
     expect(JSON.parse(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42') ?? 'null')).toEqual(request);
     expect(client.getQueryData(['/api/academy/voice-reminders', 'test-calls', 42])).toBeNull();
     await act(async () => { fireEvent.submit(form); await vi.advanceTimersByTimeAsync(1); });
@@ -1048,7 +1050,7 @@ describe('voice reminder settings and test calls', () => {
     expect((section.getByLabelText('Day') as HTMLSelectElement).disabled).toBe(true);
     await user.click(section.getByRole('button', { name: 'Try again' }));
     expect(mocks.startTestCall.mock.calls[1][0]).toEqual(request);
-    const terminal: VoiceReminderTestCall = { id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'day_before', status: 'played' };
+    const terminal: VoiceReminderTestCall = { id: request.requestId, phone: request.phone, clockTime: request.clockTime, reminderKind: 'day_before', response: null, respondedAt: null, status: 'played' };
     mocks.getCurrentTestCall.mockResolvedValue(terminal);
     await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], terminal));
     await waitFor(() => expect((section.getByLabelText('Day') as HTMLSelectElement).disabled).toBe(false));
@@ -1074,7 +1076,7 @@ describe('voice reminder settings and test calls', () => {
     await openTestCall(user);
     const section = within(screen.getByRole('region', { name: 'Test call' }));
     await user.selectOptions(section.getByLabelText('Day'), 'day_before');
-    const active: VoiceReminderTestCall = { id: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day', status: 'calling' };
+    const active: VoiceReminderTestCall = { id: crypto.randomUUID(), phone: '+998901234567', clockTime: '14:00', reminderKind: 'same_day', response: null, respondedAt: null, status: 'calling' };
     await act(async () => client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], active));
     await waitFor(() => expect((section.getByLabelText('Day') as HTMLSelectElement).value).toBe('same_day'));
     expect((section.getByLabelText('Day') as HTMLSelectElement).disabled).toBe(true);
@@ -1108,5 +1110,112 @@ describe('voice reminder settings and test calls', () => {
     expect(actual.voiceReminderApi.audioUrl({ part: 'dayBeforeIntro' }, 'new-tomorrow')).toBe('/api/academy/voice-reminders/audio/day-before-intro?v=new-tomorrow');
     expect(actual.voiceReminderApi.previewUrl('14:00', makeSnapshot().settings.audioLibrary, 'day_before'))
       .toContain('reminderKind=day_before&v=day_before%3Atomorrow-intro%3Atime%3A14-00-audio%3Aoutro-audio');
+  });
+
+  it('requires both reply recordings before enabling attendance confirmation', async () => {
+    const data = makeSnapshot();
+    data.settings.audioLibrary.confirmationYes = null;
+    data.settings.audioLibrary.confirmationNo = null;
+    const { user } = await renderDialog(data);
+    await user.click(screen.getByRole('switch', { name: 'Attendance confirmation' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(screen.getByRole('alert').textContent).toBe('Upload both reply recordings');
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    await openRecordings(user);
+    expect(screen.getByLabelText('Attendance question', { selector: 'input' })).toBeTruthy();
+    expect(screen.queryByLabelText('Closing recording', { selector: 'input' })).toBeNull();
+    for (const [part, label] of [['confirmationYes', 'Will attend reply recording'], ['confirmationNo', 'Will not attend reply recording']] as const) {
+      const section = within(screen.getByRole('region', { name: label }));
+      const file = new File(['reply'], `${part}.wav`, { type: 'audio/wav' });
+      await user.upload(section.getByLabelText(label, { selector: 'input' }), file);
+      await user.click(section.getByRole('button', { name: 'Upload recording' }));
+      await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledWith({ target: { part }, file }, expect.anything()));
+    }
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect((screen.getByRole('switch', { name: 'Attendance confirmation' }) as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ confirmationEnabled: true }), expect.anything()));
+  });
+
+  it.each([['confirmationYes', 'Will attend reply recording', 'Play the will attend reply', 'confirmation-yes', 'yes-audio'],
+    ['confirmationNo', 'Will not attend reply recording', 'Play the will not attend reply', 'confirmation-no', 'no-audio']] as const)(
+    'confirms and freezes the %s reply replacement while preserving the other selected reply', async (part, label, playLabel, slug, id) => {
+      const { user, client } = await renderDialog();
+      await openRecordings(user);
+      const section = within(screen.getByRole('region', { name: label }));
+      expect(section.getByLabelText(playLabel).getAttribute('src')).toContain(`/audio/${slug}?v=${id}`);
+      const otherLabel = part === 'confirmationYes' ? 'Will not attend reply recording' : 'Will attend reply recording';
+      const otherFile = new File(['draft'], 'other-reply.wav', { type: 'audio/wav' });
+      const file = new File(['new reply'], 'new-reply.wav', { type: 'audio/wav' });
+      await user.upload(screen.getByLabelText(otherLabel, { selector: 'input' }), otherFile);
+      await user.upload(section.getByLabelText(label, { selector: 'input' }), file);
+      await user.click(section.getByRole('button', { name: 'Upload recording' }));
+      expect(mocks.uploadAudio).not.toHaveBeenCalled();
+      const changed = structuredClone(makeSnapshot());
+      changed.settings.audioLibrary[part]!.id = 'changed-reply';
+      await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
+      await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      expect(mocks.uploadAudio.mock.calls[0][0]).toEqual({ target: { part }, file, expectedId: id });
+      expect((screen.getByLabelText(otherLabel, { selector: 'input' }) as HTMLInputElement).files?.[0]).toBe(otherFile);
+    });
+
+  it('rejects a new confirmation test with missing replies and permits an uncertain request to retry unchanged', async () => {
+    const data = makeSnapshot();
+    data.settings.confirmationEnabled = true;
+    data.settings.audioLibrary.confirmationNo = null;
+    const { user, client } = await renderDialog(data);
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect(screen.getByRole('alert').textContent).toBe('Upload both reply recordings');
+    expect(mocks.startTestCall).not.toHaveBeenCalled();
+    mocks.startTestCall.mockRejectedValueOnce(new Error('Lost reply'));
+    const complete = makeSnapshot();
+    complete.settings.confirmationEnabled = true;
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], complete));
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    await screen.findByRole('alert');
+    const request = mocks.startTestCall.mock.calls[0][0];
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], data));
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(mocks.startTestCall.mock.calls[1][0]).toEqual(request);
+  });
+
+  it('routes both reply assets through their typed CAS upload paths', async () => {
+    const actual = await vi.importActual<typeof import('../client/src/features/voice-reminders/api')>('../client/src/features/voice-reminders/api');
+    mocks.transport.mockResolvedValue(makeSnapshot());
+    const file = new File(['reply'], 'reply.wav', { type: 'audio/wav' });
+    await actual.voiceReminderApi.uploadAudio({ target: { part: 'confirmationYes' }, file, expectedId: 'yes-id' });
+    await actual.voiceReminderApi.uploadAudio({ target: { part: 'confirmationNo' }, file, expectedId: 'no-id' });
+    expect(mocks.transport.mock.calls.map(([, path]) => path)).toEqual([
+      '/api/academy/voice-reminders/audio/confirmation-yes?expectedId=yes-id',
+      '/api/academy/voice-reminders/audio/confirmation-no?expectedId=no-id',
+    ]);
+    expect(actual.voiceReminderApi.audioUrl({ part: 'confirmationNo' }, 'new-id')).toBe('/api/academy/voice-reminders/audio/confirmation-no?v=new-id');
+  });
+
+  it('shows the missing-reply validation from a settings response while preserving the confirmation draft', async () => {
+    const { user } = await renderDialog();
+    mocks.saveSettings.mockRejectedValueOnce(Object.assign(new Error('voiceReminderConfirmationAudioRequired'), {
+      status: 409, rawMessage: 'voiceReminderConfirmationAudioRequired',
+    }));
+    await user.click(screen.getByRole('switch', { name: 'Attendance confirmation' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Upload both reply recordings');
+    expect(screen.getByRole('switch', { name: 'Attendance confirmation' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('shows the missing-reply validation from a rejected test without retaining a rejected request', async () => {
+    mocks.startTestCall.mockRejectedValueOnce(Object.assign(new Error('voiceReminderConfirmationAudioRequired'), {
+      status: 409, rawMessage: 'voiceReminderConfirmationAudioRequired',
+    }));
+    const { user } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Upload both reply recordings');
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
+    expect((screen.getByLabelText('Phone', { selector: 'input' }) as HTMLInputElement).disabled).toBe(false);
   });
 });

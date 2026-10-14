@@ -28,6 +28,7 @@ export const createAcademyDemoTables = (references: {
     teacherId: integer('teacher_id').references(() => references.teacherId, { onDelete: 'restrict' }).notNull(),
     scheduledAt: timestamp('scheduled_at').notNull(),
     voiceReminderRevision: integer('voice_reminder_revision').notNull().default(0),
+    voiceResponseRevision: integer('voice_response_revision').notNull().default(0),
     durationMinutes: integer('duration_minutes').notNull().default(60),
     format: varchar('format', { length: 20 }).notNull().default('offline'),
     status: varchar('status', { length: 30 }).notNull().default('scheduled'),
@@ -46,6 +47,7 @@ export const createAcademyDemoTables = (references: {
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }, (table) => ({
+    responseRevisionCheck: check('academy_demo_lessons_voice_response_revision_check', sql`${table.voiceResponseRevision} >= 0`),
     scheduleIdx: index('academy_demo_lessons_schedule_idx').on(table.scheduledAt, table.status),
     roomIdx: index('academy_demo_lessons_room_idx').on(table.roomId, table.scheduledAt),
     teacherIdx: index('academy_demo_lessons_teacher_idx').on(table.teacherId, table.scheduledAt),
@@ -86,12 +88,14 @@ export const createAcademyDemoTables = (references: {
     studentId: integer('student_id').references(() => references.studentId, { onDelete: 'cascade' }).notNull(),
     status: varchar('status', { length: 30 }).notNull().default('invited'),
     voiceReminderRevision: integer('voice_reminder_revision').notNull().default(0),
+    voiceResponseRevision: integer('voice_response_revision').notNull().default(0),
     result: text('result'),
     noShowReasonCode: varchar('no_show_reason_code', { length: 40 }),
     noShowReasonNote: text('no_show_reason_note'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }, (table) => ({
+    responseRevisionCheck: check('academy_demo_lesson_participants_voice_response_revision_check', sql`${table.voiceResponseRevision} >= 0`),
     participantUnique: uniqueIndex('academy_demo_lesson_participants_unique')
       .on(table.demoLessonId, table.studentId),
     studentIdx: index('academy_demo_lesson_participants_student_idx').on(table.studentId, table.demoLessonId),

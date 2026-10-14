@@ -4,12 +4,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { MediaStreamTrack, RTCPeerConnection, RtpHeader, RtpPacket, usePCMU as createPcmuCodec } from 'werift';
+import { MediaStreamTrack, RTCPeerConnection, RTCRtpCodecParameters, RtpHeader, RtpPacket, usePCMU as createPcmuCodec } from 'werift';
 import type WebSocket from 'ws';
-import { VOICE_REMINDER_MAX_AUDIO_SECONDS } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_SECONDS, VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS, type VoiceReminderResponse } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderCallOutcome, VoiceReminderCallResult, VoiceReminderLine } from '../../modules/voice-reminders/application/ports';
 import type { OnlinePbxWebRtcCredentials } from '../../services/onlinepbx';
 import { VertoRpcClient, VertoTransportError, type VertoEvent } from './verto-rpc';
+import { DtmfReceiver } from './dtmf-receiver';
 
 const execute = promisify(execFile);
 const SAMPLE_RATE = 8_000;
@@ -17,7 +18,14 @@ const FRAME_BYTES = 160;
 const FRAME_MILLISECONDS = 20;
 const MAX_AUDIO_BYTES = VOICE_REMINDER_MAX_AUDIO_SECONDS * SAMPLE_RATE;
 
-export type VertoReminderCallInput = Parameters<VoiceReminderLine['call']>[0] & {
+type WithoutConfirmation<Value> = Value extends unknown ? Omit<Value, 'confirmation'> : never;
+export type VertoReminderCallInput = WithoutConfirmation<Parameters<VoiceReminderLine['call']>[0]> & {
+  confirmation?: {
+    yesAudioPath: string;
+    noAudioPath: string;
+    promptDurationSeconds: number;
+    onResponse: (response: VoiceReminderResponse, callId: string) => Promise<boolean>;
+  };
   callId?: string;
   onStarted?: () => Promise<void>;
   signal?: AbortSignal;
@@ -28,6 +36,7 @@ export type VertoCallDependencies = {
   decodeAudio?: (filePath: string, signal: AbortSignal) => Promise<Buffer>;
   ringTimeoutMs?: number;
   mediaTimeoutMs?: number;
+  confirmationWaitMs?: number;
 };
 
 /** Decode only a local, previously inspected audio file into bounded G.711 μ-law. */
@@ -80,8 +89,9 @@ export const normalizeLegacyVertoAudioAnswer = (remoteSdp: string, offerSdp: str
   ));
 };
 
-const createAudioPeer = () => new RTCPeerConnection({
-  codecs: { audio: [createPcmuCodec({ payloadType: 0, clockRate: SAMPLE_RATE, channels: 1 })], video: [] },
+const createAudioPeer = (receiveDigits: boolean) => new RTCPeerConnection({
+  codecs: { audio: [createPcmuCodec({ payloadType: 0, clockRate: SAMPLE_RATE, channels: 1 }),
+    ...(receiveDigits ? [new RTCRtpCodecParameters({ mimeType: 'audio/telephone-event', payloadType: 101, clockRate: SAMPLE_RATE, parameters: '0-16' })] : [])], video: [] },
   iceServers: [], iceUseIpv6: false, iceUseTcp: false, pendingRtp: false,
 });
 
@@ -93,9 +103,9 @@ export async function performVertoReminderCall(
 ): Promise<VoiceReminderCallResult> {
   const callId = input.callId ?? randomUUID();
   const lifecycle = new AbortController();
-  const peer = (dependencies.createPeer ?? createAudioPeer)();
+  const peer = dependencies.createPeer ? dependencies.createPeer() : createAudioPeer(Boolean(input.confirmation));
   const track = new MediaStreamTrack({ kind: 'audio' });
-  const sender = peer.addTransceiver(track, { direction: 'sendonly' }).sender;
+  const sender = peer.addTransceiver(track, { direction: input.confirmation ? 'sendrecv' : 'sendonly' }).sender;
   // werift 0.25 falls back to a public STUN service even for iceServers: [].
   // This server calls the PBX directly; keep candidate gathering local and
   // leave the full ICE connectivity checks with the negotiated PBX enabled.
@@ -110,7 +120,22 @@ export async function performVertoReminderCall(
   let descriptions = Promise.resolve();
   let result: VoiceReminderCallResult = { outcome: 'failed', callStarted: false, callId: null };
   let monitor: Promise<void> | undefined;
+  let pendingResponse: VoiceReminderResponse | undefined;
+  let savedResponse: VoiceReminderResponse | undefined;
+  let callDeadline = input.deadline.getTime();
+  let acceptingResponse = false;
+  const collectDigit = (digit: string) => {
+    if (!acceptingResponse || !answered || stopped || ending || pendingResponse) return;
+    if (digit === '1' || digit === '2') pendingResponse = digit === '1' ? 'yes' : 'no';
+  };
+  const digits = new DtmfReceiver(collectDigit);
   const unsubscribe: Array<() => void> = [];
+  if (input.confirmation) {
+    for (const transport of peer.dtlsTransports) {
+      const subscription = transport.onRtp.subscribe(packet => { if (answered && !stopped && !ending) digits.receive(packet); });
+      unsubscribe.push(() => subscription.unSubscribe());
+    }
+  }
   let interrupt!: (outcome: VoiceReminderCallOutcome) => void;
   const interrupted = new Promise<VoiceReminderCallOutcome>((resolve) => { interrupt = resolve; });
   const stop = (outcome: VoiceReminderCallOutcome) => {
@@ -137,7 +162,7 @@ export async function performVertoReminderCall(
     if (stopped) throw new CallStopped(stopped);
     const allowed = await bounded(input.shouldContinue(!callStarted).catch(() => false), 2_000).catch(() => false);
     if (stopped) throw new CallStopped(stopped);
-    if (Date.now() >= input.deadline.getTime() || input.signal?.aborted || !allowed) {
+    if (Date.now() >= callDeadline || input.signal?.aborted || !allowed) {
       stop('cancelled');
       throw new CallStopped('cancelled');
     }
@@ -155,6 +180,16 @@ export async function performVertoReminderCall(
     await check();
     const audio = await bounded((dependencies.decodeAudio ?? decodeReminderAudio)(input.audioPath, lifecycle.signal), 20_000);
     if (!audio.length || audio.length > MAX_AUDIO_BYTES) throw new VertoTransportError();
+    const replyAudio = input.confirmation ? await bounded(Promise.all([
+      (dependencies.decodeAudio ?? decodeReminderAudio)(input.confirmation.yesAudioPath, lifecycle.signal),
+      (dependencies.decodeAudio ?? decodeReminderAudio)(input.confirmation.noAudioPath, lifecycle.signal),
+    ]), 20_000) : undefined;
+    if (input.confirmation && (!Number.isFinite(input.confirmation.promptDurationSeconds)
+      || input.confirmation.promptDurationSeconds <= 0
+      || input.confirmation.promptDurationSeconds * SAMPLE_RATE > audio.length + FRAME_BYTES
+      || !replyAudio || replyAudio.some(reply => !reply.length || reply.length > MAX_AUDIO_BYTES)
+      || audio.length + Math.max(...replyAudio.map(reply => reply.length))
+        + VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * SAMPLE_RATE > MAX_AUDIO_BYTES)) throw new VertoTransportError();
     await check();
     rpc = new VertoRpcClient(credentials.websocketUrl, dependencies.createSocket);
     unsubscribe.push(rpc.onFailure(() => stop('failed')));
@@ -163,6 +198,10 @@ export async function performVertoReminderCall(
       // A shared extension may also receive the managers' inbound fork. ACK is
       // handled by the RPC client; answering or rejecting that fork is forbidden.
       if (eventCallId(event) !== callId || stopped || ending) return;
+      if (input.confirmation && event.method === 'verto.info' && typeof event.params.dtmf === 'string') {
+        for (const digit of event.params.dtmf.slice(0, 16)) collectDigit(digit);
+        return;
+      }
       if (event.method === 'verto.bye') {
         receivedBye = true;
         const cause = String(event.params.cause ?? '').toUpperCase();
@@ -176,6 +215,7 @@ export async function performVertoReminderCall(
         if (stopped || answered) return;
         const sdp = typeof event.params.sdp === 'string' ? event.params.sdp : final ? peer.remoteDescription?.sdp : undefined;
         if (!sdp) throw new VertoTransportError();
+        if (input.confirmation) digits.negotiate(sdp);
         const offerSdp = peer.localDescription?.sdp;
         if (!offerSdp) throw new VertoTransportError();
         await peer.setRemoteDescription({
@@ -221,35 +261,84 @@ export async function performVertoReminderCall(
       if (Date.now() >= mediaDeadline) throw new VertoTransportError();
       await bounded(delay(20), 1_000);
     }
+    callDeadline = Math.min(callDeadline, Date.now() + VOICE_REMINDER_MAX_AUDIO_SECONDS * 1_000);
     await check();
     let sequenceNumber = randomBytes(2).readUInt16BE();
     let timestamp = randomBytes(4).readUInt32BE();
-    const playbackStartedAt = Date.now();
-    for (let offset = 0; offset < audio.length; offset += FRAME_BYTES) {
+    let firstFrame = true;
+    const sendFrame = async (payload: Buffer) => {
       if (stopped) throw new CallStopped(stopped);
-      if (Date.now() >= input.deadline.getTime()) throw new CallStopped('cancelled');
+      if (Date.now() >= callDeadline) throw new CallStopped('cancelled');
       if (!mediaConnected()) throw new VertoTransportError();
-      const payload = Buffer.alloc(FRAME_BYTES, 0xff);
-      audio.copy(payload, 0, offset, Math.min(audio.length, offset + FRAME_BYTES));
       const packet = new RtpPacket(new RtpHeader({
-        payloadType: 0, marker: offset === 0, sequenceNumber, timestamp, ssrc: sender.ssrc,
+        payloadType: 0, marker: firstFrame, sequenceNumber, timestamp, ssrc: sender.ssrc,
       }), payload);
       await bounded(sender.sendRtp(packet), 1_000);
       if (!mediaConnected()) throw new VertoTransportError();
       sequenceNumber = (sequenceNumber + 1) & 0xffff;
       timestamp = (timestamp + FRAME_BYTES) >>> 0;
-      const nextFrameAt = playbackStartedAt + (Math.floor(offset / FRAME_BYTES) + 1) * FRAME_MILLISECONDS;
-      await bounded(delay(Math.max(0, nextFrameAt - Date.now())), 1_000);
+      firstFrame = false;
+    };
+    const play = async (samples: Buffer, main = false) => {
+      const startedAt = Date.now();
+      const promptOffset = input.confirmation ? Math.max(0, audio.length - Math.ceil(input.confirmation.promptDurationSeconds * SAMPLE_RATE)) : Infinity;
+      for (let offset = 0; offset < samples.length; offset += FRAME_BYTES) {
+        if (main && input.confirmation && !acceptingResponse && offset + FRAME_BYTES > promptOffset) {
+          acceptingResponse = true;
+          digits.arm();
+        }
+        const payload = Buffer.alloc(FRAME_BYTES, 0xff);
+        samples.copy(payload, 0, offset, Math.min(samples.length, offset + FRAME_BYTES));
+        await sendFrame(payload);
+        const nextFrameAt = startedAt + (Math.floor(offset / FRAME_BYTES) + 1) * FRAME_MILLISECONDS;
+        await bounded(delay(Math.max(0, nextFrameAt - Date.now())), 1_000);
+      }
+    };
+    await play(audio, true);
+    if (input.confirmation && replyAudio) {
+      const waitUntil = Date.now() + (dependencies.confirmationWaitMs ?? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * 1_000);
+      while (!pendingResponse && Date.now() < waitUntil) {
+        const frameStartedAt = Date.now();
+        await sendFrame(Buffer.alloc(FRAME_BYTES, 0xff));
+        await bounded(delay(Math.max(0, FRAME_MILLISECONDS - (Date.now() - frameStartedAt))), 1_000);
+      }
+      acceptingResponse = false;
+      digits.disarm();
+      if (pendingResponse) {
+        await check();
+        let stored = false;
+        let saveFinished = false;
+        let saveError: unknown;
+        const saving = bounded(input.confirmation.onResponse(pendingResponse, callId),
+          Math.max(1, Math.min(5_000, callDeadline - Date.now()))).then(value => {
+          stored = value;
+        }, error => { saveError = error; }).finally(() => { saveFinished = true; });
+        // Maintain the RTP clock while the durable response is committed. A
+        // database pause must not make the acknowledgement arrive as late RTP.
+        while (!saveFinished) {
+          const frameStartedAt = Date.now();
+          await sendFrame(Buffer.alloc(FRAME_BYTES, 0xff));
+          await bounded(delay(Math.max(0, FRAME_MILLISECONDS - (Date.now() - frameStartedAt))), 1_000);
+        }
+        await saving;
+        if (saveError) throw saveError;
+        if (!stored) throw new VertoTransportError();
+        savedResponse = pendingResponse;
+        await check();
+        await play(replyAudio[savedResponse === 'yes' ? 0 : 1]);
+      }
     }
     await check();
-    result = { outcome: 'played', callStarted, callId };
+    result = { outcome: 'played', callStarted, callId, ...(savedResponse ? { response: savedResponse } : {}) };
   } catch (error) {
     result = {
       outcome: error instanceof CallStopped ? error.outcome : stopped ?? 'failed',
       callStarted, callId: callStarted ? callId : null,
+      ...(savedResponse ? { response: savedResponse } : {}),
     };
   } finally {
     ending = true;
+    digits.disarm();
     lifecycle.abort();
     interrupt(result.outcome);
     input.signal?.removeEventListener('abort', aborted);

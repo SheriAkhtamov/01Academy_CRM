@@ -4,6 +4,7 @@ import type {
   VoiceReminderAudioPartsOf,
   VoiceReminderReadiness,
   VoiceReminderKind,
+  VoiceReminderResponse,
   VoiceReminderSettings,
   VoiceReminderSettingsInput,
   VoiceReminderTestCall,
@@ -17,10 +18,15 @@ export interface VoiceReminderAudioStore {
   resolve(storageKey: string): Promise<string>;
 }
 export type StoredVoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<StoredVoiceReminderAudio>;
-export type VoiceReminderAudioTarget = { part: 'intro' | 'dayBeforeIntro' | 'outro' } | { part: 'time'; time: string }
+export type VoiceReminderAudioTarget = { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' } | { part: 'time'; time: string }
   | { part: 'hour'; hour: string } | { part: 'minute'; minute: string };
-export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' }>;
+export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' }>;
 export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>;
+export type StoredVoiceReminderConfirmation = {
+  yesAudio: StoredVoiceReminderAudio;
+  noAudio: StoredVoiceReminderAudio;
+  promptDurationSeconds: number;
+};
 export interface VoiceReminderAudioComposer {
   compose(parts: StoredVoiceReminderAudioParts): Promise<{ path: string; mimeType: 'audio/wav' }>;
 }
@@ -36,6 +42,7 @@ export type PreparedVoiceReminder = ClaimedVoiceReminder & {
   deadline: Date;
   phone: string;
   audioParts: StoredVoiceReminderAudioParts;
+  confirmation: StoredVoiceReminderConfirmation | null;
 };
 export type VoiceReminderCallOutcome = 'played' | 'unanswered' | 'failed' | 'busy' | 'cancelled';
 export type VoiceReminderCallResult = {
@@ -43,12 +50,16 @@ export type VoiceReminderCallResult = {
   callStarted: boolean;
   callId: string | null;
   terminationConfirmed?: boolean;
+  response?: VoiceReminderResponse;
 };
 export interface VoiceReminderLine {
   call(input: ({ jobId: number; jobLeaseToken?: string } | { testCallId: string; testLeaseToken: string }) & {
     phone: string;
     audioPath: string;
     deadline: Date;
+    confirmation?: StoredVoiceReminderConfirmation & {
+      onResponse: (response: VoiceReminderResponse, callId: string) => Promise<boolean>;
+    };
     shouldContinue: (verifyAudio?: boolean) => Promise<boolean>;
   }): Promise<VoiceReminderCallResult>;
   release(): Promise<void>;
@@ -71,6 +82,7 @@ export interface VoiceReminderRepository {
   claim(now: Date, maximum: number, leaseSeconds: number): Promise<ClaimedVoiceReminder | null>;
   prepare(job: ClaimedVoiceReminder, now: Date): Promise<PreparedVoiceReminder | 'defer' | null>;
   canContinue(job: ClaimedVoiceReminder, phone: string, now: Date, verifyAudio?: boolean): Promise<boolean>;
+  recordResponse(job: ClaimedVoiceReminder, phone: string, response: VoiceReminderResponse, now: Date, callId: string): Promise<boolean>;
   renew(job: ClaimedVoiceReminder, now: Date, leaseSeconds: number): Promise<boolean>;
   finish(job: ClaimedVoiceReminder, result: VoiceReminderCallResult, now: Date, retryAt: Date | null): Promise<void>;
   defer(job: ClaimedVoiceReminder, now: Date): Promise<void>;
@@ -87,6 +99,7 @@ export type PreparedVoiceReminderTestCall = ClaimedVoiceReminderTestCall & {
   phone: string;
   clockTime: string;
   audioParts: StoredVoiceReminderAudioParts;
+  confirmation: StoredVoiceReminderConfirmation | null;
 };
 export interface VoiceReminderTestCallRepository {
   enqueue(actorId: number, input: VoiceReminderTestCallInput, now: Date, expiresAt: Date): Promise<VoiceReminderTestCall>;
@@ -95,6 +108,7 @@ export interface VoiceReminderTestCallRepository {
   claim(now: Date, leaseSeconds: number): Promise<ClaimedVoiceReminderTestCall | null>;
   prepare(job: ClaimedVoiceReminderTestCall, now: Date): Promise<PreparedVoiceReminderTestCall | 'defer' | null>;
   canContinue(job: ClaimedVoiceReminderTestCall, now: Date, verifyAudio?: boolean): Promise<boolean>;
+  recordResponse(job: ClaimedVoiceReminderTestCall, phone: string, response: VoiceReminderResponse, now: Date, callId: string): Promise<boolean>;
   renew(job: ClaimedVoiceReminderTestCall, now: Date, leaseSeconds: number): Promise<boolean>;
   finish(job: ClaimedVoiceReminderTestCall, result: VoiceReminderCallResult, now: Date): Promise<void>;
   defer(job: ClaimedVoiceReminderTestCall, now: Date): Promise<boolean>;

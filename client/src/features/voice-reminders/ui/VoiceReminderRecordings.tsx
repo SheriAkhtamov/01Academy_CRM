@@ -9,20 +9,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
-import { voiceReminderApi, voiceReminderUnitTarget, type VoiceReminderAudioTarget, type VoiceReminderClockUnit, type VoiceReminderUnitTarget } from '../api';
+import { voiceReminderApi, voiceReminderUnitTarget, type VoiceReminderAudioPart, type VoiceReminderAudioTarget, type VoiceReminderClockUnit, type VoiceReminderUnitTarget } from '../api';
 
 export type VoiceReminderUnitDraft = { value: string; file: File | null };
 export type VoiceReminderRecordingDraft = {
   intro: File | null;
   dayBeforeIntro: File | null;
   outro: File | null;
+  confirmationYes: File | null;
+  confirmationNo: File | null;
   hour: VoiceReminderUnitDraft;
   minute: VoiceReminderUnitDraft;
   time: VoiceReminderUnitDraft;
 };
-export type VoiceReminderRecordingField = 'intro' | 'dayBeforeIntro' | 'outro' | VoiceReminderClockUnit;
+export type VoiceReminderRecordingField = VoiceReminderAudioPart | VoiceReminderClockUnit;
 export const emptyRecordingDraft = (): VoiceReminderRecordingDraft => ({
-  intro: null, dayBeforeIntro: null, outro: null, hour: { value: '00', file: null }, minute: { value: '00', file: null },
+  intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null,
+  hour: { value: '00', file: null }, minute: { value: '00', file: null },
   time: { value: '', file: null },
 });
 
@@ -44,20 +47,29 @@ function SelectedRecording({ file }: { file: File | null }) {
   </div> : null;
 }
 
-function PartRecording({ part, recording, file, disabled, onFile, onUpload }: {
-  part: 'intro' | 'dayBeforeIntro' | 'outro';
+function PartRecording({ part, recording, file, disabled, confirmationEnabled, onFile, onUpload }: {
+  part: VoiceReminderAudioPart;
   recording: VoiceReminderAudio | null;
   file: File | null;
   disabled: boolean;
+  confirmationEnabled: boolean;
   onFile: (file: File | null, input: HTMLInputElement) => void;
   onUpload: () => void;
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
-  const label: TranslationKey = part === 'intro' ? 'voiceRemindersIntro'
-    : part === 'dayBeforeIntro' ? 'voiceRemindersDayBeforeIntro' : 'voiceRemindersOutro';
-  const playLabel: TranslationKey = part === 'intro' ? 'voiceRemindersPlayIntro'
-    : part === 'dayBeforeIntro' ? 'voiceRemindersPlayDayBeforeIntro' : 'voiceRemindersPlayOutro';
+  const labels: Record<VoiceReminderAudioPart, TranslationKey> = {
+    intro: 'voiceRemindersIntro', dayBeforeIntro: 'voiceRemindersDayBeforeIntro',
+    outro: confirmationEnabled ? 'voiceRemindersConfirmationQuestion' : 'voiceRemindersOutro',
+    confirmationYes: 'voiceRemindersConfirmationYesRecording', confirmationNo: 'voiceRemindersConfirmationNoRecording',
+  };
+  const playbackLabels: Record<VoiceReminderAudioPart, TranslationKey> = {
+    intro: 'voiceRemindersPlayIntro', dayBeforeIntro: 'voiceRemindersPlayDayBeforeIntro',
+    outro: confirmationEnabled ? 'voiceRemindersPlayConfirmationQuestion' : 'voiceRemindersPlayOutro',
+    confirmationYes: 'voiceRemindersPlayConfirmationYes', confirmationNo: 'voiceRemindersPlayConfirmationNo',
+  };
+  const label = labels[part];
+  const playLabel = playbackLabels[part];
   useEffect(() => { if (!file && input.current) input.current.value = ''; }, [file]);
   return (
     <section className="space-y-3 rounded-lg border p-4" aria-label={t(label)}>
@@ -159,10 +171,11 @@ function ClockRecordings({ unit, entries, draft, disabled, onValue, onFile, onUp
   </section>;
 }
 
-export function VoiceReminderRecordings({ library, draft, disabled, onValue, onFile, onUpload, onRemove, onPreviewError }: {
+export function VoiceReminderRecordings({ library, draft, disabled, confirmationEnabled, onValue, onFile, onUpload, onRemove, onPreviewError }: {
   library: VoiceReminderAudioLibrary;
   draft: VoiceReminderRecordingDraft;
   disabled: boolean;
+  confirmationEnabled: boolean;
   onValue: (unit: VoiceReminderClockUnit, value: string) => void;
   onFile: (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => void;
   onUpload: (target: VoiceReminderAudioTarget, file: File) => void;
@@ -185,8 +198,8 @@ export function VoiceReminderRecordings({ library, draft, disabled, onValue, onF
   };
   return <div className="space-y-5">
     <div className="grid gap-4 sm:grid-cols-2">
-      {(['intro', 'dayBeforeIntro', 'outro'] as const).map((part) => <PartRecording key={part}
-        part={part} recording={library[part]} file={draft[part]} disabled={disabled}
+      {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const).map((part) => <PartRecording key={part}
+        part={part} recording={library[part]} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled}
         onFile={(file, input) => onFile(part, file, input)}
         onUpload={() => { const file = draft[part]; if (file) onUpload({ part }, file); }} />)}
     </div>

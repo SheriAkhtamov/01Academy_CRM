@@ -44,6 +44,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -189,6 +190,160 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(replacements.filter(result => result.status === 'rejected')).toHaveLength(1);
     expect((await repository.audioLibrary()).dayBeforeIntro?.durationSeconds).toBe(170);
     await expect(pool.query(`UPDATE voice_reminder_settings SET day_before_start_time='09:59' WHERE id=1`)).rejects.toMatchObject({ code: '23514' });
+  });
+
+  const enableConfirmation = async () => {
+    for (const part of ['confirmationYes', 'confirmationNo'] as const) {
+      await repository.saveLibraryAudio({ part }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1, null);
+    }
+    await repository.saveSettings({ ...input, enabled: true, confirmationEnabled: true }, 1);
+  };
+  const armedResponse = async (at = now) => {
+    await repository.synchronize(at, await repository.settings());
+    const job = (await repository.claim(at, 2, 300))!;
+    const prepared = await repository.prepare(job, at);
+    expect(prepared).toMatchObject({ confirmation: { promptDurationSeconds: 1 } });
+    const callId = randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+      VALUES($1,$2,'100','+998901234567',$3)`, [callId,job.id,at]);
+    await pool.query('UPDATE voice_reminder_jobs SET provider_call_id=$2 WHERE id=$1', [job.id,callId]);
+    return { job, callId };
+  };
+  const currentResponse = async (participantId = 1) => (await pool.query('SELECT * FROM voice_reminder_participant_response($1)', [participantId])).rows;
+
+  it('accepts its native attempt after an actual webhook binds a distinct provider UUID', async () => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    const providerId = randomUUID();
+    await pool.query('UPDATE voice_reminder_jobs SET provider_call_id=NULL WHERE id=$1', [job.id]);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    await pool.query('UPDATE voice_reminder_jobs SET provider_call_id=$2 WHERE id=$1', [job.id,callId]);
+    const receipts = new RobotCallReceipts(pool);
+    expect(await receipts.observe({ uuid: providerId, caller: '100', callee: '998901234567', direction: 'outbound',
+      event: 'call_start', date: Math.floor(now.getTime()/1000) })).toBe(true);
+    expect((await pool.query('SELECT provider_call_id FROM voice_reminder_jobs WHERE id=$1', [job.id])).rows[0].provider_call_id).toBe(providerId);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, randomUUID())).toBe(false);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, providerId)).toBe(false);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(true);
+    expect((await currentResponse())[0].response).toBe('yes');
+  });
+
+  it('never invents a response from a completed transport result without a durable digit callback', async () => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    await repository.finish(job, { outcome: 'played', callStarted: true, callId, response: 'yes' }, now, null);
+    expect(await currentResponse()).toEqual([]);
+    expect((await pool.query('SELECT response,response_at FROM voice_reminder_jobs WHERE id=$1', [job.id])).rows[0])
+      .toEqual({ response: null, response_at: null });
+  });
+
+  it('requires both acknowledgements and serializes main-plus-wait-plus-ack duration under the settings lock', async () => {
+    await expect(repository.saveSettings({ ...input, enabled: true, confirmationEnabled: true }, 1))
+      .rejects.toMatchObject({ code: 'voiceReminderConfirmationAudioRequired' });
+    await repository.saveLibraryAudio({ part: 'confirmationYes' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await expect(repository.saveSettings({ ...input, enabled: false, confirmationEnabled: true }, 1))
+      .rejects.toMatchObject({ code: 'voiceReminderConfirmationAudioRequired' });
+    await repository.saveLibraryAudio({ part: 'confirmationNo' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await repository.saveSettings({ ...input, enabled: true, confirmationEnabled: true }, 1);
+    const concurrent = await Promise.allSettled([
+      repository.saveLibraryAudio({ part: 'intro' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds: 161 }, 1),
+      repository.saveLibraryAudio({ part: 'confirmationYes' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds: 5 }, 1),
+    ]);
+    expect(concurrent.filter(result => result.status==='fulfilled')).toHaveLength(1);
+    expect(concurrent.filter(result => result.status==='rejected')).toHaveLength(1);
+    const library = await repository.audioLibrary();
+    await expect(repository.saveLibraryAudio({ part: 'confirmationYes' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1, randomUUID()))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioChanged' });
+    expect(library.confirmationYes).toBeTruthy(); expect(library.confirmationNo).toBeTruthy();
+  });
+
+  it('persists the first real answer immediately, serializes duplicates and never changes attendance', async () => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(true);
+    const concurrent = await Promise.all(Array.from({ length: 12 }, (_, index) => repository.recordResponse(job, '+998901234567', index%2 ? 'yes' : 'no', now, callId)));
+    expect(concurrent).toEqual(Array.from({ length: 12 }, (_, index) => Boolean(index%2)));
+    expect((await pool.query('SELECT status,response,response_call_id FROM voice_reminder_jobs WHERE id=$1', [job.id])).rows[0])
+      .toEqual({ status: 'calling', response: 'yes', response_call_id: callId });
+    expect(await currentResponse()).toEqual([{ response: 'yes', response_at: now }]);
+    expect((await pool.query('SELECT status FROM academy_demo_lesson_participants ORDER BY id')).rows.map(row => row.status)).toEqual(['invited','confirmed','invited']);
+    expect((await pool.query('SELECT status FROM academy_demo_lessons')).rows[0].status).toBe('scheduled');
+    await repository.finish(job, { outcome: 'failed', callStarted: true, callId }, now, null);
+    expect((await currentResponse())[0].response).toBe('yes');
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+  });
+
+  it.each(['attended', 'no_show'])('keeps the expected answer beside %s after lesson completion', async status => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    expect(await repository.recordResponse(job, '+998901234567', 'no', now, callId)).toBe(true);
+    await pool.query('UPDATE academy_demo_lesson_participants SET status=$1 WHERE id=1', [status]);
+    expect((await currentResponse())[0].response).toBe('no');
+    await pool.query(`UPDATE academy_demo_lessons SET status='completed' WHERE id=1`);
+    expect((await currentResponse())[0].response).toBe('no');
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+  });
+
+  it('does not revive old answers after moving a demo away/back or cancelling/re-inviting a participant', async () => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    await repository.recordResponse(job, '+998901234567', 'yes', now, callId);
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 07:00:00' WHERE id=1`);
+    expect(await currentResponse()).toEqual([]);
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 06:00:00' WHERE id=1`);
+    expect(await currentResponse()).toEqual([]);
+    const renewed = await armedResponse();
+    await repository.recordResponse(renewed.job, '+998901234567', 'no', now, renewed.callId);
+    expect((await currentResponse())[0].response).toBe('no');
+    await pool.query(`UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id=1`);
+    expect(await currentResponse()).toEqual([]);
+    await pool.query(`UPDATE academy_demo_lesson_participants SET status='confirmed' WHERE id=1`);
+    expect(await currentResponse()).toEqual([]);
+  });
+
+  it('shows the latest valid answer across the two independent reminder kinds', async () => {
+    await enableDayBefore(); await enableConfirmation();
+    await repository.saveSettings({ ...input, enabled: true, confirmationEnabled: true, dayBeforeEnabled: true }, 1);
+    const previousDay = new Date('2030-01-14T06:00:00Z');
+    const first = await armedResponse(previousDay);
+    expect(first.job.reminderKind).toBe('day_before');
+    await repository.recordResponse(first.job, '+998901234567', 'yes', previousDay, first.callId);
+    await repository.finish(first.job, { outcome: 'played', callStarted: true, callId: first.callId }, previousDay, null);
+    const second = await armedResponse();
+    expect(second.job.reminderKind).toBe('same_day');
+    await repository.recordResponse(second.job, '+998901234567', 'no', now, second.callId);
+    expect(await currentResponse()).toEqual([{ response: 'no', response_at: now }]);
+    expect((await pool.query('SELECT response FROM voice_reminder_jobs WHERE response IS NOT NULL ORDER BY response_at')).rows.map(row => row.response)).toEqual(['yes','no']);
+  });
+
+  it('rejects wrong call/token/phone, terminated attempts, archived leads and window rollover', async () => {
+    await enableConfirmation();
+    const { job, callId } = await armedResponse();
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, randomUUID())).toBe(false);
+    expect(await repository.recordResponse({ ...job, leaseToken: randomUUID() }, '+998901234567', 'yes', now, callId)).toBe(false);
+    expect(await repository.recordResponse(job, '+998991111111', 'yes', now, callId)).toBe(false);
+    await pool.query(`UPDATE academy_leads SET phone='+998901111111' WHERE id=1`);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    await pool.query(`UPDATE academy_leads SET phone='+998901234567',is_archived=true WHERE id=1`);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    await pool.query(`UPDATE academy_leads SET is_archived=false WHERE id=1`);
+    await pool.query('UPDATE voice_reminder_call_attempts SET termination_confirmed_at=$2 WHERE call_id=$1', [callId,now]);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', new Date('2030-01-15T15:00:00Z'), callId)).toBe(false);
+    expect((await pool.query('SELECT response FROM voice_reminder_jobs WHERE id=$1', [job.id])).rows[0].response).toBeNull();
+  });
+
+  it('invalidates changed confirmation pins before INVITE, freezes active clips and stops on flag changes', async () => {
+    await enableConfirmation();
+    const { job } = await armedResponse();
+    const library = await repository.audioLibrary();
+    const oldYes = library.confirmationYes!.id;
+    await repository.saveLibraryAudio({ part: 'confirmationYes' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1, oldYes);
+    expect(await repository.canContinue(job, '+998901234567', now)).toBe(false);
+    expect(await repository.canContinue(job, '+998901234567', now, false)).toBe(true);
+    await repository.saveSettings({ ...input, enabled: true, confirmationEnabled: false }, 1);
+    expect(await repository.canContinue(job, '+998901234567', now, false)).toBe(false);
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_audio WHERE id=$1', [oldYes])).rows[0].count).toBe(1);
   });
 
   it('defaults to disabled and stores only public audio metadata in settings', async () => {
@@ -471,10 +626,11 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
-      expect(upgraded.audioLibrary).toEqual({ intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] });
+      expect(upgraded.audioLibrary).toEqual({ intro: null, dayBeforeIntro: null, confirmationYes: null, confirmationNo: null, outro: null, times: [], hours: [], minutes: [] });
     } finally {
       await upgrade.end();
       await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
@@ -511,11 +667,12 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       const previousJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
       const previousTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
       const migratedJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
       const migratedTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
-      expect(migratedJobs.map(({ reminder_kind, ...row }) => row)).toEqual(previousJobs);
+      expect(migratedJobs.map(({ reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousJobs);
       expect(migratedJobs.every(row => row.reminder_kind === 'same_day')).toBe(true);
-      expect(migratedTests.map(({ reminder_kind, ...row }) => row)).toEqual(previousTests);
+      expect(migratedTests.map(({ reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousTests);
       expect(migratedTests[0].reminder_kind).toBe('same_day');
       const settings = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(settings.enabled).toBe(true); expect(settings.dayBeforeEnabled).toBe(false);

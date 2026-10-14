@@ -2,11 +2,14 @@ import { z } from 'zod';
 
 export const VOICE_REMINDER_MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 export const VOICE_REMINDER_MAX_AUDIO_SECONDS = 180;
+export const VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS = 15;
 export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled'] as const;
 export type VoiceReminderStatus = typeof VOICE_REMINDER_STATUSES[number];
 export const VOICE_REMINDER_KINDS = ['same_day', 'day_before'] as const;
 export const voiceReminderKindSchema = z.enum(VOICE_REMINDER_KINDS);
 export type VoiceReminderKind = typeof VOICE_REMINDER_KINDS[number];
+export const voiceReminderResponseSchema = z.enum(['yes', 'no']);
+export type VoiceReminderResponse = z.infer<typeof voiceReminderResponseSchema>;
 
 export const voiceReminderClockTimeSchema = z.string().length(5).regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 export const voiceReminderHourSchema = z.string().length(2).regex(/^(?:[01]\d|2[0-3])$/);
@@ -15,6 +18,7 @@ export const voiceReminderAudioIdSchema = z.string().uuid();
 const wallClock = voiceReminderClockTimeSchema;
 export const voiceReminderSettingsSchema = z.object({
   enabled: z.boolean(),
+  confirmationEnabled: z.boolean().default(false),
   leadMinutes: z.number().int().min(1).max(1440),
   dayBeforeEnabled: z.boolean().default(false),
   dayBeforeStartTime: wallClock.default('10:00'),
@@ -51,6 +55,8 @@ export type VoiceReminderAudioLibraryOf<Audio extends VoiceReminderAudio> = {
   intro: Audio | null;
   dayBeforeIntro: Audio | null;
   outro: Audio | null;
+  confirmationYes: Audio | null;
+  confirmationNo: Audio | null;
   times: Array<{ time: string; audio: Audio }>;
   hours: Array<{ hour: string; audio: Audio }>;
   minutes: Array<{ minute: string; audio: Audio }>;
@@ -64,6 +70,10 @@ export type VoiceReminderAudioPartsOf<Audio extends VoiceReminderAudio> = {
 
 export const hasVoiceReminderAudioLibrary = (library: VoiceReminderAudioLibrary, reminderKind: VoiceReminderKind = 'same_day'): boolean => (
   Boolean((reminderKind === 'day_before' ? library.dayBeforeIntro : library.intro) && library.outro && (library.times.length || (library.hours.length && library.minutes.length)))
+);
+
+export const hasVoiceReminderConfirmationAudio = (library: VoiceReminderAudioLibrary): boolean => (
+  Boolean(library.confirmationYes && library.confirmationNo)
 );
 
 export const selectVoiceReminderAudioParts = <Audio extends VoiceReminderAudio>(
@@ -81,7 +91,10 @@ export const selectVoiceReminderAudioParts = <Audio extends VoiceReminderAudio>(
 };
 
 export const voiceReminderAudioDurationValid = (library: VoiceReminderAudioLibrary): boolean => {
-  const base = Math.max(library.intro?.durationSeconds ?? 0, library.dayBeforeIntro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
+  const base = Math.max(library.intro?.durationSeconds ?? 0, library.dayBeforeIntro?.durationSeconds ?? 0)
+    + (library.outro?.durationSeconds ?? 0)
+    + Math.max(library.confirmationYes?.durationSeconds ?? 0, library.confirmationNo?.durationSeconds ?? 0)
+    + (library.confirmationYes || library.confirmationNo ? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS : 0);
   const longestHour = Math.max(0, ...library.hours.map(entry => entry.audio.durationSeconds));
   const longestMinute = Math.max(0, ...library.minutes.map(entry => entry.audio.durationSeconds));
   return base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
@@ -119,10 +132,13 @@ export type VoiceReminderTestCall = {
   phone: string;
   clockTime: string;
   reminderKind: VoiceReminderKind;
+  response: VoiceReminderResponse | null;
+  respondedAt: string | null;
 };
 
 export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   enabled: false,
+  confirmationEnabled: false,
   leadMinutes: 120,
   dayBeforeEnabled: false,
   dayBeforeStartTime: '10:00',
@@ -134,5 +150,5 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   maxConcurrentCalls: 2,
   timeZone: 'Asia/Tashkent',
   audio: null,
-  audioLibrary: { intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] },
+  audioLibrary: { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, times: [], hours: [], minutes: [] },
 };

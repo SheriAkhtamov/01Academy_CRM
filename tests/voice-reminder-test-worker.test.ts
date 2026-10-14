@@ -16,8 +16,9 @@ const setup = (jobs = 1) => {
   const pending = Array.from({ length: jobs }, (_, index) => job(index + 1));
   const repository = {
     recover: vi.fn(async () => undefined), claim: vi.fn(async () => pending.shift() ?? null),
-    prepare: vi.fn(async (current: ClaimedVoiceReminderTestCall) => ({ ...current, phone: '+123456789', clockTime: '11:00', audioParts: parts })),
+    prepare: vi.fn(async (current: ClaimedVoiceReminderTestCall) => ({ ...current, phone: '+123456789', clockTime: '11:00', audioParts: parts, confirmation: null })),
     canContinue: vi.fn(async () => true), renew: vi.fn(async () => true),
+    recordResponse: vi.fn(async () => true),
     finish: vi.fn(async () => undefined), defer: vi.fn(async () => true),
   };
   const composer = { compose: vi.fn(async () => ({ path: '/private/assembled.wav', mimeType: 'audio/wav' as const })) };
@@ -39,6 +40,19 @@ describe('manual one-shot test worker', () => {
     expect(line.call.mock.calls[0][0]).not.toHaveProperty('jobId');
     expect(repository.finish).toHaveBeenCalledWith(expect.anything(), played, now);
     expect(line.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes a confirmation response only to its test job with its exact foreign phone', async () => {
+    const fixture = setup();
+    fixture.repository.prepare.mockImplementation(async current => ({ ...current, phone: '+123456789', clockTime: '11:00', audioParts: parts,
+      confirmation: { yesAudio: audio, noAudio: audio, promptDurationSeconds: 1 } } as never));
+    const callId = randomUUID();
+    fixture.line.call.mockImplementation(async input => {
+      expect(await input.confirmation?.onResponse('no',callId)).toBe(true);
+      return { ...played, response: 'no' };
+    });
+    await fixture.worker.tick();
+    expect(fixture.repository.recordResponse).toHaveBeenCalledWith(expect.objectContaining({ id: expect.any(String) }), '+123456789', 'no', now, callId);
   });
 
   it('waits without transport when the provider is unknown and composes before waiting for shared channels', async () => {

@@ -46,6 +46,7 @@ const storeIntent = (actorId: number, input: VoiceReminderTestCallInput | null, 
 };
 const errorKeys = new Set<TranslationKey>([
   'voiceReminderInvalidPhone', 'voiceReminderInvalidTime', 'voiceReminderAudioRequired',
+  'voiceReminderConfirmationAudioRequired',
   'voiceReminderTestAlreadyPending', 'voiceReminderTestRequestChanged', 'voiceReminderInvalidTestCall',
 ]);
 export const testCallIsActive = (job?: VoiceReminderTestCall | null) => job?.status === 'waiting' || job?.status === 'calling';
@@ -119,14 +120,14 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     setReminderKind(value);
     setErrorKey(null);
   };
-  const send = async (audioAvailable: boolean, disabled: boolean) => {
+  const send = async (audioAvailable: boolean, disabled: boolean, missingAudioKey: TranslationKey = 'voiceReminderAudioRequired') => {
     if (submittingRef.current || disabled || testCallIsActive(job)) return;
     const saved = intentRef.current;
     if (!saved && (current.isPending || current.isError)) return;
     const normalizedPhone = normalizeVoiceReminderTestPhone(phone) ?? '';
     if (!saved && !validPhone(normalizedPhone)) { setErrorKey('voiceReminderInvalidPhone'); return; }
     if (!saved && !voiceReminderClockTimeSchema.safeParse(clockTime).success) { setErrorKey('voiceReminderInvalidTime'); return; }
-    if (!saved && !audioAvailable) { setErrorKey('voiceReminderAudioRequired'); return; }
+    if (!saved && !audioAvailable) { setErrorKey(missingAudioKey); return; }
     const input = saved ?? { requestId: globalThis.crypto.randomUUID(), phone: normalizedPhone, clockTime, reminderKind };
     submittingRef.current = true;
     updateIntent(input);

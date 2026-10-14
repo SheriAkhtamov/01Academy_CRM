@@ -10,6 +10,7 @@ import type {
   DemoLessonTeacherChange,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
+import type { VoiceReminderResponse } from '@shared/contracts/voice-reminders';
 
 export interface DemoLessonParticipant {
   id: number;
@@ -27,6 +28,8 @@ export interface DemoLessonParticipant {
   attendanceManagerId?: number | null;
   funnelRole?: 'hunter' | 'closer' | null;
   canManage?: boolean;
+  reminderResponse?: VoiceReminderResponse | null;
+  reminderRespondedAt?: string | null;
 }
 
 export interface DemoLesson {

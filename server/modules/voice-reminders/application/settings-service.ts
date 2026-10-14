@@ -1,4 +1,4 @@
-import { hasVoiceReminderAudioLibrary, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderKind, type VoiceReminderSettingsInput, type VoiceReminderSnapshot, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderAudioLibrary, hasVoiceReminderConfirmationAudio, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderKind, type VoiceReminderSettingsInput, type VoiceReminderSnapshot, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
 import type { ActorContext } from '../../leads/domain/actor-context';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
 import type { StoredVoiceReminderAudioLibrary, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderLibraryEntryTarget, VoiceReminderRepository, VoiceReminderTestCallRepository } from './ports';
@@ -30,17 +30,19 @@ export class VoiceReminderSettingsService {
       this.gateway.readiness().catch(() => ({ ready: false, code: 'transport_unavailable' as const })),
     ]);
     const library = settings.audioLibrary;
-    const readiness = hasVoiceReminderAudioLibrary(library) && (!settings.dayBeforeEnabled || hasVoiceReminderAudioLibrary(library, 'day_before')) ? transport : { ready: false, code: 'audio_missing' as const };
+    const readiness = hasVoiceReminderAudioLibrary(library) && (!settings.dayBeforeEnabled || hasVoiceReminderAudioLibrary(library, 'day_before'))
+      && (!settings.confirmationEnabled || hasVoiceReminderConfirmationAudio(library)) ? transport : { ready: false, code: 'audio_missing' as const };
     return { settings, readiness };
   }
 
   async save(actor: ActorContext, input: VoiceReminderSettingsInput): Promise<VoiceReminderSnapshot> {
     requireVoiceReminderLeadership(actor);
-    if (input.enabled) {
+    if (input.enabled || input.confirmationEnabled) {
       const library = await this.repository.audioLibrary();
-      if (!hasVoiceReminderAudioLibrary(library) || (input.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before'))) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (input.enabled && (!hasVoiceReminderAudioLibrary(library) || (input.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before')))) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (input.confirmationEnabled && !hasVoiceReminderConfirmationAudio(library)) throw new VoiceReminderError('voiceReminderConfirmationAudioRequired', 409);
       validateDurations(library);
-      const readiness = await this.gateway.readiness().catch(() => ({ ready: false }));
+      const readiness = input.enabled ? await this.gateway.readiness().catch(() => ({ ready: false })) : { ready: true };
       if (!readiness.ready) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
     }
     await this.repository.saveSettings(input, actor.userId);

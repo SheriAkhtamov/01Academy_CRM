@@ -29,7 +29,7 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
     for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
-      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before']) {
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations']) {
       await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
     }
     repository = new PostgresVoiceReminderTestCallRepository(database);
@@ -50,6 +50,74 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
   afterAll(async () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
+  });
+
+  const armConfirmationTest = async () => {
+    for (const part of ['confirmationYes', 'confirmationNo'] as const) await library.saveLibraryAudio({ part }, audio(), 1);
+    const { audio: _audio, audioLibrary: _library, timeZone: _zone, ...settings } = await library.settings();
+    await library.saveSettings({ ...settings, enabled: false, confirmationEnabled: true }, 1);
+    const request = input('+123456789');
+    await repository.enqueue(1, request, now, expiresAt);
+    const job = (await repository.claim(now, 300))!;
+    expect(await repository.prepare(job, now)).toMatchObject({ confirmation: { promptDurationSeconds: 1 } });
+    const callId = randomUUID();
+    await database.query(`INSERT INTO voice_reminder_call_attempts(call_id,test_call_id,extension,phone,started_at)
+      VALUES($1,$2,'100',$3,$4)`, [callId,job.id,request.phone,now]);
+    await database.query('UPDATE voice_reminder_test_calls SET dial_started_at=$2,provider_call_id=$3 WHERE id=$1', [job.id,now,callId]);
+    return { job, callId, request };
+  };
+
+  it('rechecks the database clock after waiting for the test row lock past expiry', async () => {
+    const { job, callId, request } = await armConfirmationTest();
+    const locked = await database.connect();
+    try {
+      await locked.query('BEGIN');
+      await locked.query('SELECT id FROM voice_reminder_test_calls WHERE id=$1 FOR UPDATE', [job.id]);
+      const timestamp = new Date();
+      await locked.query('UPDATE voice_reminder_test_calls SET expires_at=$2 WHERE id=$1', [job.id,new Date(timestamp.getTime()+200)]);
+      const pending = repository.recordResponse(job, request.phone, 'yes', timestamp, callId);
+      await new Promise(resolve => setTimeout(resolve, 350));
+      await locked.query('COMMIT');
+      expect(await pending).toBe(false);
+      expect((await repository.current(1))?.response).toBeNull();
+    } finally { await locked.query('ROLLBACK'); locked.release(); }
+  });
+
+  it('persists an actor-scoped test answer once without touching any demo participant', async () => {
+    const { job, callId, request } = await armConfirmationTest();
+    expect(await repository.recordResponse(job, request.phone, 'no', now, callId)).toBe(true);
+    const duplicate = await Promise.all(Array.from({ length: 10 }, () => repository.recordResponse(job, request.phone, 'yes', now, callId)));
+    expect(duplicate).toEqual(Array(10).fill(false));
+    expect(await repository.recordResponse(job, request.phone, 'no', now, callId)).toBe(true);
+    expect(await repository.current(1)).toMatchObject({ id: job.id, status: 'calling', response: 'no', respondedAt: now.toISOString() });
+    expect(await repository.current(2)).toBeNull();
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(0);
+    await repository.finish(job, { outcome: 'failed', callStarted: true, callId }, now);
+    expect(await repository.enqueue(1, request, now, expiresAt)).toMatchObject({ response: 'no', status: 'failed' });
+    expect(await repository.recordResponse(job, request.phone, 'no', now, callId)).toBe(false);
+  });
+
+  it('keeps test confirmation pins immutable after INVITE and rejects actor/phone/call/expiry changes', async () => {
+    const { job, callId, request } = await armConfirmationTest();
+    await database.query('UPDATE voice_reminder_test_calls SET provider_call_id=NULL WHERE id=$1', [job.id]);
+    expect(await repository.recordResponse(job, request.phone, 'yes', now, callId)).toBe(false);
+    await database.query('UPDATE voice_reminder_test_calls SET provider_call_id=$2 WHERE id=$1', [job.id,callId]);
+    expect(await repository.recordResponse(job, request.phone, 'yes', now, randomUUID())).toBe(false);
+    expect(await repository.recordResponse(job, '+998901234567', 'yes', now, callId)).toBe(false);
+    expect(await repository.recordResponse({ ...job, leaseToken: randomUUID() }, request.phone, 'yes', now, callId)).toBe(false);
+    const before = await library.audioLibrary();
+    await library.saveLibraryAudio({ part: 'confirmationNo' }, audio(), 1, before.confirmationNo!.id);
+    expect(await repository.canContinue(job, now)).toBe(false);
+    expect(await repository.canContinue(job, now, false)).toBe(true);
+    await database.query(`UPDATE users SET is_active=false WHERE id=1`);
+    expect(await repository.recordResponse(job, request.phone, 'yes', now, callId)).toBe(false);
+    await database.query(`UPDATE users SET is_active=true WHERE id=1`);
+    expect(await repository.recordResponse(job, request.phone, 'yes', expiresAt, callId)).toBe(false);
+    const { audio: _audio, audioLibrary: _library, timeZone: _zone, ...settings } = await library.settings();
+    await library.saveSettings({ ...settings, confirmationEnabled: false }, 1);
+    expect(await repository.canContinue(job, now, false)).toBe(false);
+    expect(await repository.recordResponse(job, request.phone, 'yes', now, callId)).toBe(false);
+    expect((await repository.current(1))?.response).toBeNull();
   });
 
   it('keeps legacy omitted kind idempotent and rejects changing the kind of an accepted intent', async () => {
@@ -99,7 +167,7 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     expect((await library.settings()).enabled).toBe(false);
     const request = input();
     const dto = await repository.enqueue(1, request, now, expiresAt);
-    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day' });
+    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', response: null, respondedAt: null });
     expect(await repository.current(1)).toEqual(dto);
     expect(await repository.current(2)).toBeNull();
     const job = (await repository.claim(now, 300))!;

@@ -114,6 +114,9 @@ export class VoiceReminderWorker {
       const result = await line.call({
         jobId: job.id, jobLeaseToken: job.leaseToken, phone: prepared.phone, audioPath: recording.path,
         deadline: prepared.deadline, shouldContinue,
+        ...(prepared.confirmation ? { confirmation: { ...prepared.confirmation,
+          onResponse: (response, callId) => this.repository.recordResponse(job,prepared.phone,response,this.now(),callId),
+        } } : {}),
       });
       if (!result.callStarted) {
         // A library or phone change before INVITE is safe to prepare again.

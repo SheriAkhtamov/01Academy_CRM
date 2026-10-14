@@ -1,10 +1,9 @@
 import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpRight,
   CalendarClock,
-  CircleAlert,
   Copy,
   LoaderCircle,
   MapPin,
@@ -30,7 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -144,6 +142,10 @@ export function DemoLessonDetailsDialog({
   const [teacherDraftId, setTeacherDraftId] = useState('');
   const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
   const [copyingReport, setCopyingReport] = useState(false);
+  const draftIdentity = demo ? JSON.stringify({ ...demo, participants: demo.participants.map(({
+    reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt, ...participant
+  }) => participant) }) : null;
+  const draftIdentityRef = useRef<string | null>(null);
 
   const teacherOptions = useQuery({
     queryKey: [...demoLessonQueryKeys.teacherOptions, demo?.id ?? 0],
@@ -159,7 +161,21 @@ export function DemoLessonDetailsDialog({
   });
 
   useEffect(() => {
-    if (!demo || !open) return;
+    if (!open || context !== 'sales' || !demo?.id) return;
+    let active = true;
+    const refresh = () => {
+      if (!active) return;
+      void queryClient.refetchQueries({ queryKey: demoLessonQueryKeys.all, type: 'active' }, { cancelRefetch: false });
+    };
+    void Promise.resolve().then(refresh);
+    const timer = window.setInterval(refresh, 5_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [context, demo?.id, open, queryClient]);
+
+  useEffect(() => {
+    if (!demo || !open) { draftIdentityRef.current = null; return; }
+    if (draftIdentityRef.current === draftIdentity) return;
+    draftIdentityRef.current = draftIdentity;
     setAttendance(Object.fromEntries(demo.participants.map((participant) => [
       participant.id,
       participant.status === 'attended' || participant.status === 'no_show'
@@ -191,7 +207,7 @@ export function DemoLessonDetailsDialog({
     setChangeTeacherOpen(false);
     setTeacherDraftId(String(demo.teacherId));
     setParticipantToRemove(null);
-  }, [demo, open]);
+  }, [demo, draftIdentity, open]);
 
   const invalidate = async (updated: DemoLesson) => {
     await Promise.all([
@@ -587,6 +603,11 @@ export function DemoLessonDetailsDialog({
                           <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
                         </SelectContent>
                       </Select>
+                      {participant.reminderResponse === 'yes' || participant.reminderResponse === 'no' ? (
+                        <Badge variant={participant.reminderResponse === 'yes' ? 'success' : 'secondary'}>
+                          {t(participant.reminderResponse === 'yes' ? 'voiceRemindersResponseYes' : 'voiceRemindersResponseNo')}
+                        </Badge>
+                      ) : null}
                       {attendance[participant.id] === 'no_show' ? (
                         <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">
                           <span className="min-w-0 truncate">
@@ -717,11 +738,6 @@ export function DemoLessonDetailsDialog({
                   </>
                 ) : null}
               </div>
-              {canManageScheduledDemo && !attendanceComplete ? (
-                <p className="text-xs text-muted-foreground">{t('demoCompleteAttendanceBeforeConducted')}</p>
-              ) : canManageScheduledDemo && dirtyParticipantIds.size > 0 ? (
-                <p className="text-xs text-muted-foreground">{t('demoSaveAttendanceBeforeConducted')}</p>
-              ) : null}
             </div>
           ) : null}
           </div>
@@ -801,7 +817,6 @@ export function DemoLessonDetailsDialog({
                 id="demo-no-show-reason-note"
                 value={reasonNote}
                 onChange={(event) => setReasonNote(event.target.value)}
-                placeholder={t('demoNoShowReasonCommentPlaceholder')}
                 maxLength={500}
                 rows={3}
               />
@@ -928,7 +943,6 @@ export function DemoLessonDetailsDialog({
                 id="demo-not-conducted-note"
                 value={notConductedReasonNote}
                 onChange={(event) => setNotConductedReasonNote(event.target.value)}
-                placeholder={t('demoNotConductedCommentPlaceholder')}
                 maxLength={500}
                 rows={3}
               />
@@ -1014,29 +1028,23 @@ export function DemoLessonDetailsDialog({
                   {t('checkingAvailability')}
                 </p>
               ) : teacherOptions.isError ? (
-                <Alert variant="destructive">
-                  <CircleAlert />
-                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-                    <span>{teacherOptions.error.message}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => teacherOptions.refetch()}
-                    >
-                      {t('retry')}
-                    </Button>
-                  </AlertDescription>
-                </Alert>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => teacherOptions.refetch()}
+                  >
+                    {t('retry')}
+                  </Button>
+                </div>
               ) : selectedTeacherOption && !selectedTeacherOption.available ? (
-                <Alert variant="destructive">
-                  <CircleAlert />
-                  <AlertDescription>
-                    {selectedTeacherOption.reason === 'inactive'
-                      ? t('teacherNotActive')
-                      : t('demoTeacherBusy')}
-                  </AlertDescription>
-                </Alert>
+                <p role="alert" className="text-sm text-destructive">
+                  {selectedTeacherOption.reason === 'inactive'
+                    ? t('teacherNotActive')
+                    : t('demoTeacherBusy')}
+                </p>
               ) : null}
             </div>
 
@@ -1106,7 +1114,6 @@ export function DemoLessonDetailsDialog({
                 id="demo-reschedule-reason"
                 value={rescheduleReason}
                 onChange={(event) => setRescheduleReason(event.target.value)}
-                placeholder={t('demoRescheduleReasonPlaceholder')}
                 maxLength={500}
                 rows={3}
                 required
@@ -1142,7 +1149,6 @@ export function DemoLessonDetailsDialog({
               onKeyDown={submitOnEnter(() => cancelDemo.mutate(), {
                 disabled: !cancelReason.trim() || cancelDemo.isPending,
               })}
-              placeholder={t('cancellationReasonPlaceholder')}
               maxLength={500}
             />
           </div>

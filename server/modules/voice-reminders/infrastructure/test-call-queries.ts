@@ -11,6 +11,9 @@ export const testCallActorSql = (staff = 'staff'): string => {
 /** A preferred split pair invalidates a prepared legacy clock before INVITE. */
 export const testCallAudioPinsSql = (test = 'test', settings = 'settings'): string => `
   ${test}.intro_audio_id = CASE WHEN ${test}.reminder_kind='day_before' THEN ${settings}.day_before_intro_audio_id ELSE ${settings}.intro_audio_id END AND ${test}.outro_audio_id = ${settings}.outro_audio_id
+  AND ${test}.confirmation_enabled=${settings}.confirmation_enabled
+  AND (NOT ${test}.confirmation_enabled OR (${test}.confirmation_yes_audio_id=${settings}.confirmation_yes_audio_id
+    AND ${test}.confirmation_no_audio_id=${settings}.confirmation_no_audio_id))
   AND (
     (${test}.audio_mode = 'clock' AND EXISTS (
       SELECT 1 FROM voice_reminder_hour_audio hour_audio, voice_reminder_minute_audio minute_audio

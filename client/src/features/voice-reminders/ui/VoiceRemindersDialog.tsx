@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
   hasVoiceReminderAudioLibrary,
+  hasVoiceReminderConfirmationAudio,
   voiceReminderClockTimeSchema,
   voiceReminderHourSchema,
   voiceReminderMinuteSchema,
@@ -27,6 +28,7 @@ import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
 const errorKeys = new Set<TranslationKey>([
   'voiceReminderInvalidSettings', 'voiceReminderInvalidHours', 'voiceReminderInvalidDayBeforeHours', 'voiceReminderAudioRequired',
+  'voiceReminderConfirmationAudioRequired',
   'voiceReminderTransportUnavailable', 'voiceReminderAudioInvalid', 'voiceReminderAudioTooLarge',
   'voiceReminderInvalidTime', 'voiceReminderAudioChanged', 'voiceReminderAudioTooLong',
   'voiceReminderAudioProcessingUnavailable', 'voiceReminderSaveFailed',
@@ -39,6 +41,7 @@ const mutationErrorKey = (error: unknown, fallback: TranslationKey): Translation
 
 const editableSettings = (settings: VoiceReminderSettingsInput): VoiceReminderSettingsInput => ({
   enabled: settings.enabled,
+  confirmationEnabled: settings.confirmationEnabled,
   dayBeforeEnabled: settings.dayBeforeEnabled,
   dayBeforeStartTime: settings.dayBeforeStartTime,
   dayBeforeEndTime: settings.dayBeforeEndTime,
@@ -65,7 +68,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const [activeTab, setActiveTab] = useState('settings');
   const [testPending, setTestPending] = useState(false);
   const pending = configurationPending || testPending;
-  const dirty = Boolean(recordings.intro || recordings.dayBeforeIntro || recordings.outro || recordings.hour.file || recordings.minute.file
+  const dirty = Boolean(recordings.intro || recordings.dayBeforeIntro || recordings.outro || recordings.confirmationYes || recordings.confirmationNo || recordings.hour.file || recordings.minute.file
     || recordings.time.file || recordings.time.value
     || (draft && JSON.stringify(draft) !== savedSettings));
   const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
@@ -100,6 +103,10 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
         ? 'voiceReminderInvalidHours' : 'voiceReminderInvalidSettings');
       return;
     }
+    if (draft.confirmationEnabled && !hasVoiceReminderConfirmationAudio(snapshot.data.settings.audioLibrary)) {
+      setErrorKey('voiceReminderConfirmationAudioRequired');
+      return;
+    }
     if (draft.enabled) {
       const library = snapshot.data.settings.audioLibrary;
       if (!hasVoiceReminderAudioLibrary(library) || (draft.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before'))) {
@@ -126,7 +133,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const selectFile = (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => {
     setErrorKey(null);
     const setFile = (selected: File | null) => setRecordings((current) => ({ ...current,
-      [field]: field === 'intro' || field === 'dayBeforeIntro' || field === 'outro' ? selected : { ...current[field], file: selected },
+      [field]: field === 'hour' || field === 'minute' || field === 'time' ? { ...current[field], file: selected } : selected,
     }));
     setFile(null);
     if (file && !/\.(mp3|wav)$/i.test(file.name)) {
@@ -239,7 +246,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
                 </form>
               </TabsContent>
               <TabsContent value="recordings" forceMount hidden={activeTab !== 'recordings'} className="pt-3">
-                <VoiceReminderRecordings library={snapshot.data.settings.audioLibrary} draft={recordings} disabled={pending}
+                <VoiceReminderRecordings library={snapshot.data.settings.audioLibrary} draft={recordings} disabled={pending} confirmationEnabled={draft.confirmationEnabled}
                   onValue={(unit, value) => { setRecordings((current) => ({ ...current, [unit]: { ...current[unit], value } })); setErrorKey(null); }}
                   onFile={selectFile} onUpload={requestUpload}
                   onRemove={(target, expectedId) => { setRemoval({ target, expectedId }); setErrorKey(null); }}

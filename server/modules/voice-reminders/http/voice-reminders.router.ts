@@ -86,8 +86,9 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
 
   router.post('/voice-reminders/audio', (request, response) => uploadPart(request, response));
   router.get('/voice-reminders/audio', (request, response) => streamFile(response, () => service.playback(actorContextFrom(request))));
-  for (const part of ['intro', 'dayBeforeIntro', 'outro'] as const) {
-    const slug = part === 'dayBeforeIntro' ? 'day-before-intro' : part;
+  for (const part of ['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const) {
+    const slug = part === 'dayBeforeIntro' ? 'day-before-intro'
+      : part === 'confirmationYes' ? 'confirmation-yes' : part === 'confirmationNo' ? 'confirmation-no' : part;
     router.post(`/voice-reminders/audio/${slug}`, (request, response) => uploadPart(request, response, { part }));
     router.get(`/voice-reminders/audio/${slug}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), { part })));
   }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { VoiceReminderResponse } from './voice-reminders';
 
 export const DEMO_LESSON_FORMATS = ['offline', 'online'] as const;
 export const DEMO_LESSON_STATUSES = ['scheduled', 'completed', 'not_conducted', 'cancelled'] as const;
@@ -160,6 +161,8 @@ export type LeadDemoParticipant = {
   status: typeof DEMO_PARTICIPANT_STATUSES[number];
   lessonStatus: typeof DEMO_LESSON_STATUSES[number];
   managerId: number | null; attendanceManagerId: number | null;
+  reminderResponse: VoiceReminderResponse | null;
+  reminderRespondedAt: string | null;
   funnelRole: 'hunter' | 'closer' | null; canManage: boolean;
 };
 export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];

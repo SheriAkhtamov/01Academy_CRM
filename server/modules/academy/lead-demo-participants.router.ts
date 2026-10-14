@@ -17,12 +17,14 @@ export function registerLeadDemoParticipantRoutes(router: Router) {
       const participants = await query<LeadDemoParticipant>(
         `SELECT participant.id AS participant_id, demo.id AS demo_lesson_id,
           student.id AS student_id, student.student_name, course.name AS course_name,
-          demo.scheduled_at, participant.status, demo.status AS lesson_status,
+          demo.scheduled_at, participant.status,reminder_response.response AS reminder_response,
+          reminder_response.response_at AS reminder_responded_at, demo.status AS lesson_status,
           COALESCE(student.manager_id, lead.manager_id) AS manager_id,
           ${demoAttendanceManagerSql()} AS attendance_manager_id,
           ${demoFunnelRoleSql()} AS funnel_role
          FROM academy_demo_lesson_participants participant
          JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+         LEFT JOIN LATERAL voice_reminder_participant_response(participant.id) reminder_response ON true
          JOIN academy_students student ON student.id = participant.student_id
          JOIN academy_leads lead ON lead.id = student.lead_id
          JOIN academy_courses course ON course.id = demo.course_id
@@ -31,6 +33,8 @@ export function registerLeadDemoParticipantRoutes(router: Router) {
          ORDER BY demo.scheduled_at DESC, participant.id`, [id],
       );
       res.json(participants.map((participant) => ({ ...participant,
+        reminderResponse: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderResponse : null,
+        reminderRespondedAt: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderRespondedAt : null,
         canManage: !lead.isArchived && canManageDemoParticipant(req, participant),
       })));
     } catch (error) {

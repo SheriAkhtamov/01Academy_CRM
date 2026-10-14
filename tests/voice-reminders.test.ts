@@ -14,7 +14,7 @@ const audioParts = { kind: 'clock' as const, intro: audio,
   hour: { ...audio, id: '37a036fe-332b-449b-bc7b-3d63f4010220' },
   minute: { ...audio, id: '71708cfa-de5d-4f2a-a996-e578f908c0dc' }, outro: audio, clockTime: '11:00' };
 const settings = { ...DEFAULT_VOICE_REMINDER_SETTINGS, enabled: true, audioLibrary: {
-  intro: audio, dayBeforeIntro: null, outro: audio, times: [], hours: [{ hour: '11', audio: audioParts.hour }], minutes: [{ minute: '00', audio: audioParts.minute }],
+  intro: audio, dayBeforeIntro: null, confirmationYes: null, confirmationNo: null, outro: audio, times: [], hours: [{ hour: '11', audio: audioParts.hour }], minutes: [{ minute: '00', audio: audioParts.minute }],
 } };
 const completed: VoiceReminderCallResult = { outcome: 'played', callStarted: true, callId: 'call-1' };
 const job = (id: number): ClaimedVoiceReminder => ({ id, leaseToken: `lease-${id}`, scheduledAt, attempts: 0, reminderKind: 'same_day' });
@@ -24,8 +24,9 @@ const setup = (jobs = 2) => {
   const repository = {
     settings: vi.fn(async () => settings), synchronize: vi.fn(async () => undefined),
     claim: vi.fn(async () => queue.shift() ?? null),
-    prepare: vi.fn(async (claimed: ClaimedVoiceReminder) => ({ ...claimed, phone: '+998901234567', audioParts, deadline: scheduledAt })),
+    prepare: vi.fn(async (claimed: ClaimedVoiceReminder) => ({ ...claimed, phone: '+998901234567', audioParts, confirmation: null, deadline: scheduledAt })),
     canContinue: vi.fn(async () => true), renew: vi.fn(async () => true),
+    recordResponse: vi.fn(async () => true),
     finish: vi.fn(async () => undefined), defer: vi.fn(async () => undefined),
   };
   const lines: VoiceReminderLine[] = [];
@@ -72,6 +73,20 @@ describe('voice reminder scheduling and safe parallel calls', () => {
       .toBe('2030-01-15T14:59:00.000Z');
     expect(nextReminderAttempt({ now: new Date('2030-01-15T14:50:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
     expect(nextReminderAttempt({ now: new Date('2030-01-15T14:59:59Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
+  });
+
+  it('passes immutable confirmation clips and a durable response callback to the shared line', async () => {
+    const context = setup(1);
+    const confirmation = { yesAudio: audio, noAudio: { ...audio, id: '91d67d28-62dd-4e7d-a6ac-32e42e25cc19' }, promptDurationSeconds: 1 };
+    context.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts, confirmation, deadline: scheduledAt } as never);
+    const callId = 'a69a471c-5d04-4ca1-98a1-107736fa5fdf';
+    context.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async (input) => {
+      expect(input.confirmation?.yesAudio).toBe(audio);
+      expect(await input.confirmation?.onResponse('yes',callId)).toBe(true);
+      return { ...completed, response: 'yes' as const };
+    }), release: vi.fn(async () => undefined) });
+    await context.worker.tick();
+    expect(context.repository.recordResponse).toHaveBeenCalledWith(job(1), '+998901234567', 'yes', now, callId);
   });
 
   it('passes the prepared day-before deadline instead of the future demo start and avoids retries after 20:00', async () => {
@@ -226,7 +241,7 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     expect(fixture.repository.defer).toHaveBeenCalledTimes(1);
     expect(fixture.repository.finish).not.toHaveBeenCalled();
     const updated = { ...audioParts, hour: { ...audioParts.hour, id: '48645c93-d194-4b20-96c2-2917df38475b' } };
-    fixture.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts: updated, deadline: scheduledAt });
+    fixture.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts: updated, confirmation: null, deadline: scheduledAt });
     fixture.repository.claim.mockResolvedValueOnce(job(1)).mockResolvedValue(null);
     await fixture.worker.tick();
     expect(fixture.composer.compose).toHaveBeenLastCalledWith(updated);

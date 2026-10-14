@@ -43,6 +43,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -63,6 +64,131 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
   afterAll(async () => {
     await pool?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
+  });
+
+  const enableDayBefore = async () => {
+    const intro = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part: 'dayBeforeIntro' }, intro, 1, null);
+    await repository.saveSettings({ ...input, enabled: true, leadMinutes: 120, dayBeforeEnabled: true }, 1);
+    return intro;
+  };
+
+  it.each([
+    ['08:00', '03:00:00', '05:00:00'],
+    ['10:00', '05:00:00', '05:00:00'],
+    ['19:59', '14:59:00', '14:59:00'],
+    ['20:00', '15:00:00', '14:59:00'],
+    ['22:00', '17:00:00', '14:59:00'],
+  ])('clamps the 24-hour reminder for %s to the previous Tashkent day window', async (clock, demoUtc, dueUtc) => {
+    await enableDayBefore();
+    await pool.query('UPDATE academy_demo_lessons SET scheduled_at=$1 WHERE id=1', [`2030-01-16 ${demoUtc}`]);
+    const earlier = new Date('2030-01-15T04:00:00Z');
+    await repository.synchronize(earlier, await repository.settings());
+    const jobs = (await pool.query(`SELECT reminder_kind,due_at,scheduled_at FROM voice_reminder_jobs ORDER BY id`)).rows;
+    expect(jobs.filter(row => row.reminder_kind === 'day_before')).toHaveLength(3);
+    expect(jobs.filter(row => row.reminder_kind === 'day_before').every(row => row.due_at.toISOString() === `2030-01-15T${dueUtc}.000Z`)).toBe(true);
+    expect(jobs.filter(row => row.reminder_kind === 'same_day').every(row => row.due_at.getTime() === row.scheduled_at.getTime()-120*60_000)).toBe(true);
+    expect(await repository.claim(earlier, 2, 300)).toBeNull();
+    expect(clock).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('keeps the two reminder kinds independent and never replays a completed day-before job', async () => {
+    const tomorrowIntro = await enableDayBefore();
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1;
+      UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id IN (2,3)`);
+    const previousDay = new Date('2030-01-15T06:00:00Z');
+    await Promise.all([repository.synchronize(previousDay, await repository.settings()), repository.synchronize(previousDay, await repository.settings())]);
+    const tomorrow = (await repository.claim(previousDay, 2, 300))!;
+    expect(tomorrow.reminderKind).toBe('day_before');
+    expect(await repository.prepare(tomorrow, previousDay)).toMatchObject({
+      reminderKind: 'day_before', deadline: new Date('2030-01-15T15:00:00Z'),
+      audioParts: { intro: tomorrowIntro, clockTime: '11:00' },
+    });
+    await repository.finish(tomorrow, { outcome: 'played', callStarted: true, callId: 'tomorrow-call' }, previousDay, null);
+    await repository.synchronize(previousDay, await repository.settings());
+    expect(await repository.claim(previousDay, 2, 300)).toBeNull();
+    const demoDay = new Date('2030-01-16T04:00:00Z');
+    const today = (await repository.claim(demoDay, 2, 300))!;
+    expect(today.reminderKind).toBe('same_day'); expect(today.id).not.toBe(tomorrow.id);
+    expect(await repository.prepare(today, demoDay)).toMatchObject({ deadline: new Date('2030-01-16T06:00:00Z'),
+      audioParts: { intro: (await repository.audioLibrary()).intro, clockTime: '11:00' } });
+    expect((await pool.query('SELECT reminder_kind,status,attempts FROM voice_reminder_jobs ORDER BY reminder_kind')).rows)
+      .toEqual([{ reminder_kind: 'day_before', status: 'played', attempts: 1 }, { reminder_kind: 'same_day', status: 'calling', attempts: 0 }]);
+  });
+
+  it('checks day-before window and calendar fences before INVITE and during pinned playback', async () => {
+    await enableDayBefore();
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 03:00:00' WHERE id=1`);
+    await repository.saveLibraryAudio({ part: 'time', time: '08:00' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    const before = new Date('2030-01-15T04:59:59Z');
+    await repository.synchronize(before, await repository.settings());
+    expect(await repository.claim(before, 2, 300)).toBeNull();
+    const open = new Date('2030-01-15T05:00:00Z');
+    const first = (await repository.claim(open, 2, 300))!;
+    const prepared = await repository.prepare(first, open);
+    expect(prepared).toMatchObject({ deadline: new Date('2030-01-15T15:00:00Z') });
+    expect(await repository.prepare(first, before)).toBe('defer');
+    expect(await repository.canContinue(first, '+998901234567', before, false)).toBe(false);
+    await repository.defer(first, open);
+    const last = new Date('2030-01-15T14:59:59Z');
+    const job = (await repository.claim(last, 2, 300))!;
+    await repository.prepare(job, last);
+    expect(await repository.canContinue(job, '+998901234567', last, false)).toBe(true);
+    for (const forbidden of ['2030-01-15T15:00:00Z', '2030-01-15T19:00:00Z']) {
+      expect(await repository.canContinue(job, '+998901234567', new Date(forbidden), false)).toBe(false);
+    }
+    await repository.defer(job, new Date('2030-01-15T15:00:00Z'));
+    await repository.synchronize(new Date('2030-01-15T15:00:00Z'), await repository.settings());
+    expect((await pool.query(`SELECT status,attempts FROM voice_reminder_jobs WHERE reminder_kind='day_before'`)).rows)
+      .toEqual(Array(3).fill({ status: 'cancelled', attempts: 0 }));
+    expect(await repository.claim(new Date('2030-01-16T04:00:00Z'), 2, 300)).toBeNull();
+  });
+
+  it('pins the selected introduction and freezes it only after INVITE while preserving enablement guards', async () => {
+    const original = await enableDayBefore();
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1`);
+    const previousDay = new Date('2030-01-15T06:00:00Z');
+    await repository.synchronize(previousDay, await repository.settings());
+    const job = (await repository.claim(previousDay, 2, 300))!;
+    await repository.prepare(job, previousDay);
+    const replacement = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part: 'dayBeforeIntro' }, replacement, 1, original.id);
+    expect(await repository.canContinue(job, '+998901234567', previousDay)).toBe(false);
+    expect(await repository.canContinue(job, '+998901234567', previousDay, false)).toBe(true);
+    expect(await repository.prepare(job, previousDay)).toMatchObject({ audioParts: { intro: replacement } });
+    expect(await repository.canContinue(job, '+998901234567', previousDay)).toBe(true);
+    await repository.saveSettings({ ...input, enabled: true, dayBeforeEnabled: false }, 1);
+    expect(await repository.canContinue(job, '+998901234567', previousDay, false)).toBe(false);
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_audio WHERE id=$1', [original.id])).rows[0].count).toBe(1);
+  });
+
+  it('does not let missing day-before clock parts starve a due same-day job', async () => {
+    await enableDayBefore();
+    await pool.query(`INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(2,'2030-01-16 06:30:00','scheduled');
+      INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(4,2,1,'invited')`);
+    const current = new Date('2030-01-15T06:30:00Z');
+    await repository.synchronize(current, await repository.settings());
+    expect(await repository.claim(current, 2, 300)).toBeNull();
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 07:00:00' WHERE id=1`);
+    await repository.synchronize(current, await repository.settings());
+    const playable = (await repository.claim(current, 2, 300))!;
+    expect(playable.reminderKind).toBe('same_day');
+    expect(await repository.prepare(playable, current)).toMatchObject({ audioParts: { clockTime: '12:00' } });
+    expect((await pool.query(`SELECT status,attempts FROM voice_reminder_jobs WHERE demo_lesson_id=2 AND reminder_kind='day_before'`)).rows[0])
+      .toEqual({ status: 'waiting', attempts: 0 });
+  });
+
+  it('serializes tomorrow intro replacement CAS and applies the longest-intro duration bound', async () => {
+    const original = await enableDayBefore();
+    await repository.saveLibraryAudio({ part: 'intro' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds: 160 }, 1);
+    await expect(repository.saveLibraryAudio({ part: 'dayBeforeIntro' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds: 179 }, 1, original.id))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioTooLong' });
+    const replacements = await Promise.allSettled(Array.from({ length: 2 }, () => repository.saveLibraryAudio({ part: 'dayBeforeIntro' },
+      { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds: 170 }, 1, original.id)));
+    expect(replacements.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(replacements.filter(result => result.status === 'rejected')).toHaveLength(1);
+    expect((await repository.audioLibrary()).dayBeforeIntro?.durationSeconds).toBe(170);
+    await expect(pool.query(`UPDATE voice_reminder_settings SET day_before_start_time='09:59' WHERE id=1`)).rejects.toMatchObject({ code: '23514' });
   });
 
   it('defaults to disabled and stores only public audio metadata in settings', async () => {
@@ -343,17 +469,19 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query('UPDATE voice_reminder_settings SET audio_id=$1,enabled=true WHERE id=1', [audio.id]);
       await upgrade.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
-      expect(upgraded.audioLibrary).toEqual({ intro: null, outro: null, times: [], hours: [], minutes: [] });
+      expect(upgraded.audioLibrary).toEqual({ intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] });
     } finally {
       await upgrade.end();
       await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
     }
   });
 
-  it('preserves enabled whole-clock settings and current/historical pins when upgrading 0144 to 0145', async () => {
+  it('preserves enabled settings, current/historical pins and test intents through 0145 and 0147', async () => {
     const upgradeSchema = `voice_clock_upgrade_${randomUUID().replace(/-/g, '')}`;
     await admin.query(`CREATE SCHEMA ${upgradeSchema}`);
     const upgrade = new Pool({ connectionString: url, options: `-c search_path=${upgradeSchema}` });
@@ -377,8 +505,21 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         VALUES(1,1,'2030-01-15T06:00:00Z','2030-01-15T05:00:00Z','calling',$2,'2030-01-15T05:05:00Z',$1,$1,$1,'11:00'),
           (1,2,'2030-01-15T06:00:00Z','2030-01-15T05:00:00Z','played',NULL,NULL,$1,$1,$1,'11:00')`, [audio.id, token]);
       await upgrade.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
+      const testId = randomUUID();
+      await upgrade.query(`INSERT INTO voice_reminder_test_calls(id,phone,clock_time,expires_at) VALUES($1,'+123456789','11:00','2030-01-15T06:10:00Z')`, [testId]);
+      const previousJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
+      const previousTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
+      await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+      const migratedJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
+      const migratedTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
+      expect(migratedJobs.map(({ reminder_kind, ...row }) => row)).toEqual(previousJobs);
+      expect(migratedJobs.every(row => row.reminder_kind === 'same_day')).toBe(true);
+      expect(migratedTests.map(({ reminder_kind, ...row }) => row)).toEqual(previousTests);
+      expect(migratedTests[0].reminder_kind).toBe('same_day');
       const settings = await new PostgresVoiceReminderRepository(upgrade).settings();
-      expect(settings.enabled).toBe(true);
+      expect(settings.enabled).toBe(true); expect(settings.dayBeforeEnabled).toBe(false);
+      expect(settings.audioLibrary.dayBeforeIntro).toBeNull();
       expect(settings.audioLibrary.times[0].audio.id).toBe(audio.id);
       expect(settings.audioLibrary.hours).toEqual([]); expect(settings.audioLibrary.minutes).toEqual([]);
       const rows = (await upgrade.query(`SELECT status,lease_token,audio_mode,time_audio_id,hour_audio_id,minute_audio_id
@@ -398,7 +539,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await Promise.all([repository.synchronize(now, settings), repository.synchronize(now, settings)]);
     const result = await readVoiceReminderJobs(pool);
     expect(result.summary.waiting).toBe(3);
-    expect(result.results.every(row => row.scheduledAt === '2030-01-15T06:00:00.000Z' && row.dueAt === now.toISOString())).toBe(true);
+    expect(result.results.every(row => row.scheduledAt === '2030-01-15T06:00:00.000Z' && row.dueAt === '2030-01-15T04:00:00.000Z')).toBe(true);
     const first = await repository.claim(now, 2, 300);
     expect(first).not.toBeNull();
     const prepared = await repository.prepare(first!, now);

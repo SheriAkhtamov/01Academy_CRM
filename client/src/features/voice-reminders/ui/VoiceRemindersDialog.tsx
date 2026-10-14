@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
+  hasVoiceReminderAudioLibrary,
   voiceReminderClockTimeSchema,
   voiceReminderHourSchema,
   voiceReminderMinuteSchema,
@@ -25,7 +26,7 @@ import { VoiceReminderTestCall } from './VoiceReminderTestCall';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
 const errorKeys = new Set<TranslationKey>([
-  'voiceReminderInvalidSettings', 'voiceReminderInvalidHours', 'voiceReminderAudioRequired',
+  'voiceReminderInvalidSettings', 'voiceReminderInvalidHours', 'voiceReminderInvalidDayBeforeHours', 'voiceReminderAudioRequired',
   'voiceReminderTransportUnavailable', 'voiceReminderAudioInvalid', 'voiceReminderAudioTooLarge',
   'voiceReminderInvalidTime', 'voiceReminderAudioChanged', 'voiceReminderAudioTooLong',
   'voiceReminderAudioProcessingUnavailable', 'voiceReminderSaveFailed',
@@ -38,6 +39,9 @@ const mutationErrorKey = (error: unknown, fallback: TranslationKey): Translation
 
 const editableSettings = (settings: VoiceReminderSettingsInput): VoiceReminderSettingsInput => ({
   enabled: settings.enabled,
+  dayBeforeEnabled: settings.dayBeforeEnabled,
+  dayBeforeStartTime: settings.dayBeforeStartTime,
+  dayBeforeEndTime: settings.dayBeforeEndTime,
   leadMinutes: settings.leadMinutes,
   maxAttempts: settings.maxAttempts,
   retryMinutes: settings.retryMinutes,
@@ -61,7 +65,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const [activeTab, setActiveTab] = useState('settings');
   const [testPending, setTestPending] = useState(false);
   const pending = configurationPending || testPending;
-  const dirty = Boolean(recordings.intro || recordings.outro || recordings.hour.file || recordings.minute.file
+  const dirty = Boolean(recordings.intro || recordings.dayBeforeIntro || recordings.outro || recordings.hour.file || recordings.minute.file
     || recordings.time.file || recordings.time.value
     || (draft && JSON.stringify(draft) !== savedSettings));
   const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
@@ -90,14 +94,22 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     if (!draft || !snapshot.data) return;
     const validation = voiceReminderSettingsSchema.safeParse(draft);
     if (!validation.success) {
-      setErrorKey(validation.error.issues.some((issue) => issue.path[0] === 'allowedEndTime')
+      setErrorKey(validation.error.issues.some((issue) => issue.message === 'voiceReminderInvalidDayBeforeHours')
+        ? 'voiceReminderInvalidDayBeforeHours'
+        : validation.error.issues.some((issue) => issue.path[0] === 'allowedEndTime' || issue.path[0] === 'dayBeforeEndTime')
         ? 'voiceReminderInvalidHours' : 'voiceReminderInvalidSettings');
       return;
     }
-    if (draft.enabled && !snapshot.data.readiness.ready) {
-      setErrorKey(snapshot.data.readiness.code === 'audio_missing'
-        ? 'voiceReminderAudioRequired' : 'voiceReminderTransportUnavailable');
-      return;
+    if (draft.enabled) {
+      const library = snapshot.data.settings.audioLibrary;
+      if (!hasVoiceReminderAudioLibrary(library) || (draft.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before'))) {
+        setErrorKey('voiceReminderAudioRequired');
+        return;
+      }
+      if (snapshot.data.readiness.code === 'transport_unavailable') {
+        setErrorKey('voiceReminderTransportUnavailable');
+        return;
+      }
     }
     setErrorKey(null);
     try {
@@ -114,7 +126,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const selectFile = (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => {
     setErrorKey(null);
     const setFile = (selected: File | null) => setRecordings((current) => ({ ...current,
-      [field]: field === 'intro' || field === 'outro' ? selected : { ...current[field], file: selected },
+      [field]: field === 'intro' || field === 'dayBeforeIntro' || field === 'outro' ? selected : { ...current[field], file: selected },
     }));
     setFile(null);
     if (file && !/\.(mp3|wav)$/i.test(file.name)) {

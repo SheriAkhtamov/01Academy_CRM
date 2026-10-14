@@ -5,10 +5,11 @@ import {
   hasVoiceReminderAudioLibrary,
   selectVoiceReminderAudioParts,
   voiceReminderAudioDurationValid,
+  type VoiceReminderKind,
   type VoiceReminderSettings,
   type VoiceReminderSettingsInput,
 } from '@shared/contracts/voice-reminders';
-import { normalizeReminderPhone, reminderWithinAllowedHours, VoiceReminderError } from '../domain/policy';
+import { normalizeReminderPhone, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline, reminderKindEnabled, VoiceReminderError } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   PreparedVoiceReminder,
@@ -21,7 +22,7 @@ import type {
 } from '../application/ports';
 import { libraryAudioFor, validateAudioTarget, withLibraryAudio } from '../application/audio-library';
 
-type SettingsRow = VoiceReminderSettingsInput & { audioId: string | null; introAudioId: string | null; outroAudioId: string | null };
+type SettingsRow = VoiceReminderSettingsInput & { audioId: string | null; introAudioId: string | null; dayBeforeIntroAudioId: string | null; outroAudioId: string | null };
 type AudioRow = Omit<StoredVoiceReminderAudio, 'uploadedAt'> & { uploadedAt: Date };
 type LiveJobRow = {
   id: string;
@@ -29,6 +30,7 @@ type LiveJobRow = {
   leaseUntil: Date;
   scheduledAt: Date;
   attempts: number;
+  reminderKind: VoiceReminderKind;
   phone: string | null;
   studentPhone: string | null;
   primaryPhone: string | null;
@@ -44,9 +46,10 @@ type LiveJobRow = {
 };
 
 const settingsSql = `SELECT enabled, lead_minutes AS "leadMinutes", max_attempts AS "maxAttempts",
+  day_before_enabled AS "dayBeforeEnabled",day_before_start_time AS "dayBeforeStartTime",day_before_end_time AS "dayBeforeEndTime",
   retry_minutes AS "retryMinutes", allowed_start_time AS "allowedStartTime",
   allowed_end_time AS "allowedEndTime", max_concurrent_calls AS "maxConcurrentCalls", audio_id AS "audioId",
-  intro_audio_id AS "introAudioId", outro_audio_id AS "outroAudioId"
+  day_before_intro_audio_id AS "dayBeforeIntroAudioId",intro_audio_id AS "introAudioId", outro_audio_id AS "outroAudioId"
   FROM voice_reminder_settings WHERE id = 1`;
 const audioSql = `SELECT id, file_name AS "fileName", mime_type AS "mimeType", size_bytes AS "sizeBytes",
   duration_seconds AS "durationSeconds", storage_key AS "storageKey", sha256, uploaded_at AS "uploadedAt"
@@ -58,7 +61,7 @@ const validLiveJobSql = `demo.status = 'scheduled'
   AND job.scheduled_at > $3 AND participant.status IN ('invited', 'confirmed')
   AND (student.lead_id IS NULL OR (lead.id IS NOT NULL AND lead.is_archived = false))`;
 const liveJobSql = `SELECT job.id, job.lease_token AS "leaseToken", job.lease_until AS "leaseUntil",
-  job.scheduled_at AS "scheduledAt", job.attempts, job.phone,
+  job.scheduled_at AS "scheduledAt", job.attempts, job.reminder_kind AS "reminderKind", job.phone,
   job.intro_audio_id AS "introAudioId", job.time_audio_id AS "timeAudioId", job.outro_audio_id AS "outroAudioId",
   job.audio_clock_time AS "audioClockTime",
   job.audio_mode AS "audioMode", job.hour_audio_id AS "hourAudioId", job.minute_audio_id AS "minuteAudioId",
@@ -89,10 +92,6 @@ const clockFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
 const clockTime = (date: Date) => clockFormatter.format(date);
-const dateFormatter = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit',
-});
-const isDemoDay = (scheduledAt: Date, now: Date) => dateFormatter.format(scheduledAt) === dateFormatter.format(now);
 const entryStorage = (target: VoiceReminderLibraryEntryTarget) => {
   switch (target.part) {
     case 'hour': return { table: 'voice_reminder_hour_audio', column: 'hour', value: target.hour };
@@ -102,8 +101,8 @@ const entryStorage = (target: VoiceReminderLibraryEntryTarget) => {
 };
 
 export const readVoiceReminderAudioLibrary = async (connection: Pick<PoolClient, 'query'>): Promise<StoredVoiceReminderAudioLibrary> => {
-  const row = (await connection.query<{ introAudioId: string | null; outroAudioId: string | null }>(
-    `SELECT intro_audio_id AS "introAudioId",outro_audio_id AS "outroAudioId" FROM voice_reminder_settings WHERE id=1`,
+  const row = (await connection.query<{ introAudioId: string | null; dayBeforeIntroAudioId: string | null; outroAudioId: string | null }>(
+    `SELECT day_before_intro_audio_id AS "dayBeforeIntroAudioId",intro_audio_id AS "introAudioId",outro_audio_id AS "outroAudioId" FROM voice_reminder_settings WHERE id=1`,
   )).rows[0];
   const part = async (id: string | null | undefined) => {
     if (!id) return null;
@@ -112,6 +111,7 @@ export const readVoiceReminderAudioLibrary = async (connection: Pick<PoolClient,
   };
   const intro = await part(row?.introAudioId);
   const outro = await part(row?.outroAudioId);
+  const dayBeforeIntro = await part(row?.dayBeforeIntroAudioId);
   const entries = (await connection.query<AudioRow & { part: 'time' | 'hour' | 'minute'; audioIndex: string }>(
     `SELECT entry.part,entry.audio_index AS "audioIndex",audio.id,audio.file_name AS "fileName",
     audio.mime_type AS "mimeType",audio.size_bytes AS "sizeBytes",audio.duration_seconds AS "durationSeconds",
@@ -120,7 +120,7 @@ export const readVoiceReminderAudioLibrary = async (connection: Pick<PoolClient,
       UNION ALL SELECT 'hour',hour,audio_id FROM voice_reminder_hour_audio
       UNION ALL SELECT 'minute',minute,audio_id FROM voice_reminder_minute_audio) entry
     JOIN voice_reminder_audio audio ON audio.id=entry.audio_id ORDER BY entry.part,entry.audio_index`)).rows;
-  const library: StoredVoiceReminderAudioLibrary = { intro, outro, times: [], hours: [], minutes: [] };
+  const library: StoredVoiceReminderAudioLibrary = { intro, dayBeforeIntro, outro, times: [], hours: [], minutes: [] };
   for (const { part: entryPart, audioIndex, ...rowAudio } of entries) {
     const audio = asAudio(rowAudio);
     if (entryPart === 'time') library.times.push({ time: audioIndex, audio });
@@ -153,9 +153,10 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
     if (!row) return { ...DEFAULT_VOICE_REMINDER_SETTINGS };
     const audio = row.audioId ? (await connection.query<AudioRow>(audioSql, [row.audioId])).rows[0] : null;
     const library = await readVoiceReminderAudioLibrary(connection);
-    const { audioId: _audioId, introAudioId: _introId, outroAudioId: _outroId, ...settings } = row;
+    const { audioId: _audioId, introAudioId: _introId, dayBeforeIntroAudioId: _dayBeforeIntroId, outroAudioId: _outroId, ...settings } = row;
     return { ...settings, timeZone: 'Asia/Tashkent', audio: audio ? publicAudio(asAudio(audio)) : null,
       audioLibrary: { intro: library.intro ? publicAudio(library.intro) : null,
+        dayBeforeIntro: library.dayBeforeIntro ? publicAudio(library.dayBeforeIntro) : null,
         outro: library.outro ? publicAudio(library.outro) : null,
         times: library.times.map(entry => ({ time: entry.time, audio: publicAudio(entry.audio) })),
         hours: library.hours.map(entry => ({ hour: entry.hour, audio: publicAudio(entry.audio) })),
@@ -180,13 +181,15 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
     await this.transaction(async connection => {
       await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR UPDATE');
       const library = await readVoiceReminderAudioLibrary(connection);
-      if (input.enabled && !hasVoiceReminderAudioLibrary(library)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (input.enabled && (!hasVoiceReminderAudioLibrary(library) || (input.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before')))) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
       if (!voiceReminderAudioDurationValid(library)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
       await connection.query(`UPDATE voice_reminder_settings SET enabled = $1, lead_minutes = $2,
       max_attempts = $3, retry_minutes = $4, allowed_start_time = $5, allowed_end_time = $6,
-      max_concurrent_calls = $7, updated_by = $8, updated_at = now() WHERE id = 1`, [
+      max_concurrent_calls = $7, updated_by = $8,
+      day_before_enabled=$9,day_before_start_time=$10,day_before_end_time=$11, updated_at = now() WHERE id = 1`, [
       input.enabled, input.leadMinutes, input.maxAttempts, input.retryMinutes,
       input.allowedStartTime, input.allowedEndTime, input.maxConcurrentCalls, actorId,
+      input.dayBeforeEnabled,input.dayBeforeStartTime,input.dayBeforeEndTime,
       ]);
     });
   }
@@ -224,7 +227,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
           ON CONFLICT(${column}) DO UPDATE SET audio_id=EXCLUDED.audio_id,updated_by=EXCLUDED.updated_by,updated_at=now()`, [value, audio.id, actorId]);
         await connection.query('UPDATE voice_reminder_settings SET updated_by=$1,updated_at=now() WHERE id=1', [actorId]);
       } else {
-        const column = target.part === 'intro' ? 'intro_audio_id' : 'outro_audio_id';
+        const column = target.part === 'intro' ? 'intro_audio_id' : target.part === 'dayBeforeIntro' ? 'day_before_intro_audio_id' : 'outro_audio_id';
         await connection.query(`UPDATE voice_reminder_settings SET ${column}=$1,updated_by=$2,updated_at=now() WHERE id=1`, [audio.id, actorId]);
       }
     });
@@ -256,7 +259,9 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
         lease_until = NULL, completed_at = $1, updated_at = $1
         WHERE status = 'calling' AND lease_until <= $1`, [now]);
       await connection.query(`UPDATE voice_reminder_jobs job SET status = 'cancelled', completed_at = $1, updated_at = $1
-        WHERE job.status = 'waiting' AND (job.scheduled_at <= $1 OR NOT EXISTS (
+        WHERE job.status = 'waiting' AND (job.scheduled_at <= $1 OR (job.reminder_kind='day_before' AND
+          ((job.scheduled_at AT TIME ZONE 'Asia/Tashkent')::date - 1
+            + (SELECT day_before_end_time::time FROM voice_reminder_settings WHERE id=1)) AT TIME ZONE 'Asia/Tashkent' <= $1) OR NOT EXISTS (
           SELECT 1 FROM academy_demo_lessons demo
           JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
           JOIN academy_students student ON student.id = participant.student_id
@@ -269,21 +274,31 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
             AND (student.lead_id IS NULL OR (lead.id IS NOT NULL AND lead.is_archived = false))))`, [now]);
       if (!settings.enabled) return;
       await connection.query(`INSERT INTO voice_reminder_jobs
-        (demo_lesson_id, participant_id, scheduled_at, due_at, lesson_revision, participant_revision)
+        (demo_lesson_id, participant_id, scheduled_at, due_at, lesson_revision, participant_revision, reminder_kind)
         SELECT demo.id, participant.id, demo.scheduled_at AT TIME ZONE 'UTC',
-          (demo.scheduled_at AT TIME ZONE 'UTC') - ($2 * interval '1 minute'),
-          demo.voice_reminder_revision, participant.voice_reminder_revision
+          CASE WHEN kind.reminder_kind='same_day' THEN (demo.scheduled_at AT TIME ZONE 'UTC') - ($2 * interval '1 minute')
+            ELSE GREATEST(previous_day.day + $3::time, LEAST(
+              demo.scheduled_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent' - interval '1 day',
+              previous_day.day + $4::time - interval '1 minute')) AT TIME ZONE 'Asia/Tashkent' END,
+          demo.voice_reminder_revision, participant.voice_reminder_revision,kind.reminder_kind
         FROM academy_demo_lessons demo
+        CROSS JOIN (VALUES ('same_day'),('day_before')) kind(reminder_kind)
+        CROSS JOIN LATERAL (SELECT (demo.scheduled_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date - 1 AS day) previous_day
         JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
         JOIN academy_students student ON student.id = participant.student_id
         LEFT JOIN academy_leads lead ON lead.id = student.lead_id
         WHERE demo.status = 'scheduled' AND demo.scheduled_at AT TIME ZONE 'UTC' > $1
+          AND (kind.reminder_kind='same_day' OR $5::boolean)
           AND demo.scheduled_at AT TIME ZONE 'UTC' <= $1 + interval '30 days'
           AND participant.status IN ('invited', 'confirmed')
           AND (student.lead_id IS NULL OR (lead.id IS NOT NULL AND lead.is_archived = false))
-        ON CONFLICT (demo_lesson_id, participant_id, scheduled_at, lesson_revision, participant_revision) DO NOTHING`, [now, settings.leadMinutes]);
-      await connection.query(`UPDATE voice_reminder_jobs SET due_at = scheduled_at - ($1 * interval '1 minute')
-        WHERE status = 'waiting' AND attempts = 0`, [settings.leadMinutes]);
+        ON CONFLICT (demo_lesson_id, participant_id, scheduled_at, lesson_revision, participant_revision, reminder_kind) DO NOTHING`,
+      [now,settings.leadMinutes,settings.dayBeforeStartTime,settings.dayBeforeEndTime,settings.dayBeforeEnabled]);
+      await connection.query(`UPDATE voice_reminder_jobs SET due_at = CASE WHEN reminder_kind='same_day' THEN scheduled_at - ($1 * interval '1 minute')
+        ELSE GREATEST((scheduled_at AT TIME ZONE 'Asia/Tashkent')::date - 1 + $2::time, LEAST(
+          scheduled_at AT TIME ZONE 'Asia/Tashkent' - interval '1 day',
+          (scheduled_at AT TIME ZONE 'Asia/Tashkent')::date - 1 + $3::time - interval '1 minute')) AT TIME ZONE 'Asia/Tashkent' END
+        WHERE status = 'waiting' AND attempts = 0`, [settings.leadMinutes,settings.dayBeforeStartTime,settings.dayBeforeEndTime]);
     });
   }
 
@@ -295,7 +310,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       )).rows[0].count;
       if (active >= Math.min(2, maximum)) return null;
       const token = crypto.randomUUID();
-      const row = (await connection.query<{ id: string; scheduledAt: Date; attempts: number }>(
+      const row = (await connection.query<{ id: string; scheduledAt: Date; attempts: number; reminderKind: VoiceReminderKind }>(
         `UPDATE voice_reminder_jobs job SET status = 'calling', lease_token = $2, not_before_at = NULL,
           lease_until = $1::timestamptz + ($3 * interval '1 second'), updated_at = $1
          WHERE job.id = (SELECT pending.id FROM voice_reminder_jobs pending
@@ -304,15 +319,23 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
            LEFT JOIN voice_reminder_hour_audio hour_audio ON hour_audio.hour=to_char(pending.scheduled_at AT TIME ZONE 'Asia/Tashkent','HH24')
            LEFT JOIN voice_reminder_minute_audio minute_audio ON minute_audio.minute=to_char(pending.scheduled_at AT TIME ZONE 'Asia/Tashkent','MI')
            WHERE pending.status = 'waiting' AND settings.id=1 AND settings.enabled
-           AND settings.intro_audio_id IS NOT NULL AND settings.outro_audio_id IS NOT NULL
+           AND (CASE WHEN pending.reminder_kind='day_before' THEN settings.day_before_intro_audio_id ELSE settings.intro_audio_id END) IS NOT NULL
+           AND settings.outro_audio_id IS NOT NULL AND pending.attempts<settings.max_attempts
            AND (time_audio.audio_id IS NOT NULL OR (hour_audio.audio_id IS NOT NULL AND minute_audio.audio_id IS NOT NULL))
            AND pending.due_at <= $1 AND (pending.not_before_at IS NULL OR pending.not_before_at <= $1)
            AND pending.scheduled_at > $1
-           AND (pending.scheduled_at AT TIME ZONE 'Asia/Tashkent')::date = ($1::timestamptz AT TIME ZONE 'Asia/Tashkent')::date
+           AND (
+             (pending.reminder_kind='same_day' AND (pending.scheduled_at AT TIME ZONE 'Asia/Tashkent')::date = ($1::timestamptz AT TIME ZONE 'Asia/Tashkent')::date
+               AND to_char($1::timestamptz AT TIME ZONE 'Asia/Tashkent','HH24:MI')>=settings.allowed_start_time
+               AND to_char($1::timestamptz AT TIME ZONE 'Asia/Tashkent','HH24:MI')<settings.allowed_end_time)
+             OR (pending.reminder_kind='day_before' AND settings.day_before_enabled
+               AND (pending.scheduled_at AT TIME ZONE 'Asia/Tashkent')::date - 1 = ($1::timestamptz AT TIME ZONE 'Asia/Tashkent')::date
+               AND to_char($1::timestamptz AT TIME ZONE 'Asia/Tashkent','HH24:MI')>=settings.day_before_start_time
+               AND to_char($1::timestamptz AT TIME ZONE 'Asia/Tashkent','HH24:MI')<settings.day_before_end_time))
            ORDER BY pending.scheduled_at,pending.due_at,pending.id FOR UPDATE OF pending SKIP LOCKED LIMIT 1)
-         RETURNING id, scheduled_at AS "scheduledAt", attempts`, [now, token, leaseSeconds],
+         RETURNING id, scheduled_at AS "scheduledAt", attempts, reminder_kind AS "reminderKind"`, [now, token, leaseSeconds],
       )).rows[0];
-      return row ? { id: Number(row.id), scheduledAt: row.scheduledAt, attempts: row.attempts, leaseToken: token } : null;
+      return row ? { id: Number(row.id), scheduledAt: row.scheduledAt, attempts: row.attempts, reminderKind: row.reminderKind, leaseToken: token } : null;
     });
   }
 
@@ -323,10 +346,10 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const settings = await this.readSettings(connection);
       const phone = row ? currentPhone(row) : null;
       if (!row?.valid || !phone) return null;
-      if (!settings.enabled || !isDemoDay(row.scheduledAt, now) || row.attempts >= settings.maxAttempts
-        || !reminderWithinAllowedHours(now, settings)) return 'defer';
+      if (!reminderKindEnabled(settings,row.reminderKind) || !reminderOnEligibleDay(row.scheduledAt,now,row.reminderKind) || row.attempts >= settings.maxAttempts
+        || !reminderWithinAllowedHours(now,settings,row.reminderKind)) return 'defer';
       const library = await readVoiceReminderAudioLibrary(connection);
-      const parts = selectVoiceReminderAudioParts(library, clockTime(row.scheduledAt));
+      const parts = selectVoiceReminderAudioParts(library,clockTime(row.scheduledAt),row.reminderKind);
       if (!parts || !voiceReminderAudioDurationValid(library)) return 'defer';
       await connection.query(`UPDATE voice_reminder_jobs SET phone=$3,intro_audio_id=$4,time_audio_id=$5,outro_audio_id=$6,audio_clock_time=$7,
         audio_mode=$8,hour_audio_id=$9,minute_audio_id=$10 WHERE id=$1 AND lease_token=$2`, [
@@ -334,7 +357,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
         parts.outro.id, parts.clockTime, parts.kind, parts.kind === 'clock' ? parts.hour.id : null,
         parts.kind === 'clock' ? parts.minute.id : null,
       ]);
-      return { ...job, phone, audioParts: parts };
+      return { ...job, reminderKind: row.reminderKind, phone, audioParts: parts, deadline: reminderDeadline(row.scheduledAt,settings,row.reminderKind) };
     });
   }
 
@@ -344,9 +367,10 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const row = (await connection.query<LiveJobRow>(liveJobSql, [job.id,job.leaseToken,now])).rows[0];
       const settings = await this.readSettings(connection);
       const library = await readVoiceReminderAudioLibrary(connection);
-      const parts = row ? selectVoiceReminderAudioParts(library,clockTime(row.scheduledAt)) : null;
-      const eligible = row?.valid && isDemoDay(row.scheduledAt, now) && currentPhone(row) === phone && settings.enabled
-        && row.attempts<settings.maxAttempts && reminderWithinAllowedHours(now,settings);
+      const parts = row ? selectVoiceReminderAudioParts(library,clockTime(row.scheduledAt),row.reminderKind) : null;
+      const eligible = row?.valid && row.reminderKind === job.reminderKind && reminderOnEligibleDay(row.scheduledAt,now,row.reminderKind)
+        && currentPhone(row)===phone && reminderKindEnabled(settings,row.reminderKind)
+        && row.attempts<settings.maxAttempts && reminderWithinAllowedHours(now,settings,row.reminderKind);
       if (!eligible) return false;
       if (!verifyAudio) return true;
       if (!parts || !voiceReminderAudioDurationValid(library) || parts.kind !== row.audioMode

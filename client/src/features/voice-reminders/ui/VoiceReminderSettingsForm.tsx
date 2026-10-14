@@ -29,6 +29,11 @@ export function VoiceReminderSettingsForm({
           disabled={disabled}
         />
       </div>
+      <div className="flex items-center justify-between gap-4">
+        <Label htmlFor="voice-reminders-day-before-enabled">{t('voiceRemindersDayBeforeEnabled')}</Label>
+        <Switch id="voice-reminders-day-before-enabled" checked={draft.dayBeforeEnabled}
+          onCheckedChange={(enabled) => update('dayBeforeEnabled', enabled)} disabled={disabled} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-lead">{t('voiceRemindersLeadMinutes')}</Label>
@@ -97,6 +102,18 @@ export function VoiceReminderSettingsForm({
             value={draft.allowedEndTime}
             onChange={(event) => update('allowedEndTime', event.target.value)}
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voice-reminders-day-before-start">{t('voiceRemindersDayBeforeStart')}</Label>
+          <Input id="voice-reminders-day-before-start" type="time" step={60} min="10:00" max="20:00" required
+            value={draft.dayBeforeStartTime}
+            onChange={(event) => update('dayBeforeStartTime', event.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voice-reminders-day-before-end">{t('voiceRemindersDayBeforeEnd')}</Label>
+          <Input id="voice-reminders-day-before-end" type="time" step={60} min="10:00" max="20:00" required
+            value={draft.dayBeforeEndTime}
+            onChange={(event) => update('dayBeforeEndTime', event.target.value)} />
         </div>
       </div>
     </fieldset>

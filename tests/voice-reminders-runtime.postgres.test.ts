@@ -45,8 +45,18 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     expect(await input.shouldContinue()).toBe(true);
     expect(await inspectReminderAudio(input.audioPath)).toEqual({ mimeType: 'audio/wav', durationSeconds: 4 });
     await input.onStarted!();
-    return { outcome: 'played', callStarted: true, callId: input.callId! };
+    return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true };
   });
+  const prepareTomorrowAudio = async () => {
+    const store = new LocalVoiceReminderAudioStore(directory);
+    const library = await repository.audioLibrary();
+    const audio = await store.save({ bytes: await fs.readFile(await store.resolve(library.intro!.storageKey)),
+      originalName: 'tomorrow.wav', mimeType: 'audio/wav' });
+    await repository.saveLibraryAudio({ part: 'dayBeforeIntro' },audio,1);
+    await repository.saveSettings({ ...settings, enabled: true, dayBeforeEnabled: true,
+      allowedStartTime: '00:00', allowedEndTime: '23:59' },1);
+    return audio;
+  };
   beforeAll(async () => {
     if (!url || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Local isolated PostgreSQL required');
     admin = new Pool({ connectionString: url });
@@ -65,6 +75,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -94,6 +105,79 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('delivers independent day-before and two-hour reminders with their own intro and deadline', async () => {
+    const tomorrowAudio = await prepareTomorrowAudio();
+    const scheduledAt = new Date(testClock + 24 * 60 * 60_000 + 30 * 60_000);
+    await database.query("UPDATE academy_demo_lessons SET scheduled_at=$1::timestamptz AT TIME ZONE 'UTC' WHERE id=1",[scheduledAt]);
+    await repository.saveSettings({ ...settings, enabled: true, dayBeforeEnabled: true, leadMinutes: 120,
+      allowedStartTime: '00:00', allowedEndTime: '23:59' },1);
+    let clock = scheduledAt.getTime() - 24 * 60 * 60_000;
+    const call = mockCall();
+    const runtime = createVoiceRemindersRuntime(provider(),database,{ audioDirectory: directory, performCall: call, now: () => clock });
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(call.mock.calls[0][1].deadline.toISOString()).toBe('2030-01-15T15:00:00.000Z');
+    const jobs = (await database.query('SELECT id,reminder_kind,status,intro_audio_id FROM voice_reminder_jobs ORDER BY reminder_kind')).rows;
+    expect(jobs).toHaveLength(2);
+    expect(jobs.find(row => row.reminder_kind === 'day_before')).toMatchObject({ status: 'played', intro_audio_id: tomorrowAudio.id });
+    expect(jobs.find(row => row.reminder_kind === 'same_day')).toMatchObject({ status: 'waiting' });
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    clock = scheduledAt.getTime() - 120 * 60_000;
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls[1][1].deadline).toEqual(scheduledAt);
+    const todayAudio = (await repository.audioLibrary()).intro!;
+    expect((await database.query("SELECT status,intro_audio_id FROM voice_reminder_jobs WHERE reminder_kind='same_day'")).rows[0])
+      .toMatchObject({ status: 'played', intro_audio_id: todayAudio.id });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(2);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(2);
+    await runtime.close();
+  });
+
+  it('stops a day-before call at 20:00 without reusing its tomorrow intro on the demo day', async () => {
+    await prepareTomorrowAudio();
+    const scheduledAt = new Date('2030-01-16T05:30:00Z');
+    await database.query("UPDATE academy_demo_lessons SET scheduled_at=$1::timestamptz AT TIME ZONE 'UTC' WHERE id=1",[scheduledAt]);
+    let clock = new Date('2030-01-15T14:59:00Z').getTime();
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials,input) => {
+      expect(input.deadline.toISOString()).toBe('2030-01-15T15:00:00.000Z');
+      await input.onStarted!();
+      clock = input.deadline.getTime();
+      expect(await input.shouldContinue(false)).toBe(false);
+      return { outcome: 'cancelled', callStarted: true, callId: input.callId!, terminationConfirmed: true };
+    });
+    const runtime = createVoiceRemindersRuntime(provider(),database,{ audioDirectory: directory, performCall: call, now: () => clock });
+    await runtime.tick();
+    expect((await database.query("SELECT status,attempts FROM voice_reminder_jobs WHERE reminder_kind='day_before'")).rows[0])
+      .toMatchObject({ status: 'cancelled', attempts: 1 });
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    clock = new Date('2030-01-15T19:00:00Z').getTime();
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    await runtime.close();
+  });
+
+  it('pins the tomorrow intro for a manual test outside the automatic reminder window', async () => {
+    const tomorrowAudio = await prepareTomorrowAudio();
+    await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    const id = await enqueueTest();
+    const clock = new Date('2030-01-15T15:00:00Z').getTime();
+    await database.query("UPDATE voice_reminder_test_calls SET reminder_kind='day_before',not_before_at=$2,expires_at=$3 WHERE id=$1",
+      [id,new Date(clock),new Date(clock+600_000)]);
+    const call = mockCall();
+    const runtime = createVoiceRemindersRuntime(provider(),database,{ audioDirectory: directory, performCall: call, now: () => clock });
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect((await database.query('SELECT status,intro_audio_id FROM voice_reminder_test_calls WHERE id=$1',[id])).rows[0])
+      .toMatchObject({ status: 'played', intro_audio_id: tomorrowAudio.id });
+    expect((await database.query('SELECT test_call_id,job_id FROM voice_reminder_call_attempts')).rows[0])
+      .toMatchObject({ test_call_id: id, job_id: null });
+    await runtime.close();
   });
 
   it('plays an actor-owned test while automatic reminders are off without creating demo jobs or manager KPIs', async () => {

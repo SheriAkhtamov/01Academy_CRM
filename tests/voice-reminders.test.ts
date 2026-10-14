@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VOICE_REMINDER_SETTINGS, voiceReminderSettingsSchema } from '../shared/contracts/voice-reminders';
-import { normalizeReminderPhone, nextReminderAttempt, reminderWithinAllowedHours } from '../server/modules/voice-reminders/domain/policy';
+import { normalizeReminderPhone, nextReminderAttempt, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline } from '../server/modules/voice-reminders/domain/policy';
 import { VoiceReminderWorker } from '../server/modules/voice-reminders/application/worker-service';
 import type { ClaimedVoiceReminder, VoiceReminderCallResult, VoiceReminderGateway, VoiceReminderLine, VoiceReminderRepository } from '../server/modules/voice-reminders/application/ports';
 
@@ -14,17 +14,17 @@ const audioParts = { kind: 'clock' as const, intro: audio,
   hour: { ...audio, id: '37a036fe-332b-449b-bc7b-3d63f4010220' },
   minute: { ...audio, id: '71708cfa-de5d-4f2a-a996-e578f908c0dc' }, outro: audio, clockTime: '11:00' };
 const settings = { ...DEFAULT_VOICE_REMINDER_SETTINGS, enabled: true, audioLibrary: {
-  intro: audio, outro: audio, times: [], hours: [{ hour: '11', audio: audioParts.hour }], minutes: [{ minute: '00', audio: audioParts.minute }],
+  intro: audio, dayBeforeIntro: null, outro: audio, times: [], hours: [{ hour: '11', audio: audioParts.hour }], minutes: [{ minute: '00', audio: audioParts.minute }],
 } };
 const completed: VoiceReminderCallResult = { outcome: 'played', callStarted: true, callId: 'call-1' };
-const job = (id: number): ClaimedVoiceReminder => ({ id, leaseToken: `lease-${id}`, scheduledAt, attempts: 0 });
+const job = (id: number): ClaimedVoiceReminder => ({ id, leaseToken: `lease-${id}`, scheduledAt, attempts: 0, reminderKind: 'same_day' });
 
 const setup = (jobs = 2) => {
   const queue = Array.from({ length: jobs }, (_, index) => job(index + 1));
   const repository = {
     settings: vi.fn(async () => settings), synchronize: vi.fn(async () => undefined),
     claim: vi.fn(async () => queue.shift() ?? null),
-    prepare: vi.fn(async (claimed: ClaimedVoiceReminder) => ({ ...claimed, phone: '+998901234567', audioParts })),
+    prepare: vi.fn(async (claimed: ClaimedVoiceReminder) => ({ ...claimed, phone: '+998901234567', audioParts, deadline: scheduledAt })),
     canContinue: vi.fn(async () => true), renew: vi.fn(async () => true),
     finish: vi.fn(async () => undefined), defer: vi.fn(async () => undefined),
   };
@@ -58,6 +58,32 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     expect(nextReminderAttempt({ now, scheduledAt, attempts: 1, settings })?.toISOString()).toBe('2030-01-15T05:10:00.000Z');
     expect(nextReminderAttempt({ now, scheduledAt, attempts: 2, settings })).toBeNull();
     expect(nextReminderAttempt({ now, scheduledAt: new Date('2030-01-15T05:10:00Z'), attempts: 1, settings })).toBeNull();
+  });
+
+  it('bounds day-before retries and transport deadlines by the previous Tashkent day window', () => {
+    const tomorrow = new Date('2030-01-16T06:00:00Z');
+    const previousDay = { ...settings, dayBeforeEnabled: true };
+    expect(reminderDeadline(tomorrow, previousDay, 'day_before').toISOString()).toBe('2030-01-15T15:00:00.000Z');
+    expect(reminderOnEligibleDay(tomorrow, now, 'day_before')).toBe(true);
+    expect(reminderOnEligibleDay(tomorrow, new Date('2030-01-15T19:00:00Z'), 'day_before')).toBe(false);
+    expect(reminderWithinAllowedHours(new Date('2030-01-15T04:59:59Z'), previousDay, 'day_before')).toBe(false);
+    expect(reminderWithinAllowedHours(new Date('2030-01-15T05:00:00Z'), previousDay, 'day_before')).toBe(true);
+    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:49:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })?.toISOString())
+      .toBe('2030-01-15T14:59:00.000Z');
+    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:50:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
+    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:59:59Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
+  });
+
+  it('passes the prepared day-before deadline instead of the future demo start and avoids retries after 20:00', async () => {
+    const context = setup(0);
+    const tomorrow = new Date('2030-01-16T06:00:00Z');
+    const deadline = new Date('2030-01-15T15:00:00Z');
+    const claimed = { ...job(1), scheduledAt: tomorrow, reminderKind: 'day_before' as const };
+    context.repository.settings.mockResolvedValue({ ...settings, dayBeforeEnabled: true } as never);
+    context.repository.claim.mockResolvedValueOnce(claimed).mockResolvedValue(null);
+    context.repository.prepare.mockResolvedValue({ ...claimed, phone: '+998901234567', audioParts, deadline } as never);
+    await context.worker.tick();
+    expect(context.lines[0].call).toHaveBeenCalledWith(expect.objectContaining({ deadline }));
   });
 
   it('rejects third channel, crossing/invalid hours and secret-bearing settings', () => {
@@ -200,7 +226,7 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     expect(fixture.repository.defer).toHaveBeenCalledTimes(1);
     expect(fixture.repository.finish).not.toHaveBeenCalled();
     const updated = { ...audioParts, hour: { ...audioParts.hour, id: '48645c93-d194-4b20-96c2-2917df38475b' } };
-    fixture.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts: updated });
+    fixture.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts: updated, deadline: scheduledAt });
     fixture.repository.claim.mockResolvedValueOnce(job(1)).mockResolvedValue(null);
     await fixture.worker.tick();
     expect(fixture.composer.compose).toHaveBeenLastCalledWith(updated);

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
 import { testCallIsActive, useVoiceReminderTestCall } from '../test-call';
 
 const statusKeys: Record<VoiceReminderStatus, TranslationKey> = {
@@ -30,11 +31,12 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   const active = testCallIsActive(call.job);
   const displayedPhone = active && call.job ? call.job.phone : call.phone;
   const displayedTime = active && call.job ? call.job.clockTime : call.clockTime;
+  const displayedKind = active && call.job ? call.job.reminderKind ?? 'same_day' : call.reminderKind;
   useEffect(() => {
     onPendingChange(call.isSending);
     return () => onPendingChange(false);
   }, [call.isSending, onPendingChange]);
-  const audioAvailable = Boolean(selectVoiceReminderAudioParts(library, call.clockTime));
+  const audioAvailable = Boolean(selectVoiceReminderAudioParts(library, call.clockTime, call.reminderKind));
   const statusKey: TranslationKey | null = call.isSending ? 'voiceRemindersTestSending'
     : call.intent && !testCallIsActive(call.job) ? 'voiceRemindersTestUnconfirmed'
       : call.job ? statusKeys[call.job.status] : null;
@@ -55,6 +57,8 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
         <Input id="voice-reminders-test-time" type="time" step={60} value={displayedTime}
           disabled={disabled || call.locked} onChange={(event) => call.editClockTime(event.target.value)} />
       </div>
+      <VoiceReminderKindSelect id="voice-reminders-test-kind" value={displayedKind}
+        disabled={disabled || call.locked} onChange={call.editReminderKind} />
       <div className="sm:col-span-2">
         <Button type="submit" disabled={submitDisabled}>
           {call.isSending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Phone data-icon="inline-start" />}

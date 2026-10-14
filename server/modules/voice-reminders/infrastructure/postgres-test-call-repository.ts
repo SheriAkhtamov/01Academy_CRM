@@ -13,9 +13,9 @@ type TestRow = VoiceReminderTestCall & {
   expiresAt: Date;
   startedAt: Date | null;
 };
-const fields = `test.id,test.status,test.phone,test.clock_time AS "clockTime",test.actor_user_id AS "actorUserId",
+const fields = `test.id,test.status,test.phone,test.clock_time AS "clockTime",test.reminder_kind AS "reminderKind",test.actor_user_id AS "actorUserId",
   test.lease_token AS "leaseToken",test.expires_at AS "expiresAt",test.dial_started_at AS "startedAt"`;
-const publicCall = ({ id, status, phone, clockTime }: TestRow): VoiceReminderTestCall => ({ id, status, phone, clockTime });
+const publicCall = ({ id, status, phone, clockTime, reminderKind }: TestRow): VoiceReminderTestCall => ({ id, status, phone, clockTime, reminderKind });
 const liveSql = `SELECT ${fields} FROM voice_reminder_test_calls test JOIN users staff ON staff.id=test.actor_user_id
   WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3
     AND test.expires_at>$3 AND ${testCallActorSql()}`;
@@ -57,6 +57,7 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
   }
 
   async enqueue(actorId: number, input: VoiceReminderTestCallInput, now: Date, expiresAt: Date): Promise<VoiceReminderTestCall> {
+    const reminderKind = input.reminderKind ?? 'same_day';
     const phone = normalizeVoiceReminderTestPhone(input.phone);
     if (!phone) throw new VoiceReminderError('voiceReminderInvalidPhone', 400);
     if (!voiceReminderClockTimeSchema.safeParse(input.clockTime).success) throw new VoiceReminderError('voiceReminderInvalidTime', 400);
@@ -66,7 +67,7 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       await this.requireActor(connection, actorId);
       const existing = (await connection.query<TestRow>(`SELECT ${fields} FROM voice_reminder_test_calls test WHERE test.id=$1`, [input.requestId])).rows[0];
       if (existing) {
-        if (existing.actorUserId !== actorId || existing.phone !== phone || existing.clockTime !== input.clockTime) {
+        if (existing.actorUserId !== actorId || existing.phone !== phone || existing.clockTime !== input.clockTime || existing.reminderKind !== reminderKind) {
           throw new VoiceReminderError('voiceReminderTestRequestChanged', 409);
         }
         return publicCall(existing);
@@ -77,12 +78,12 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       if (pending.rowCount) throw new VoiceReminderError('voiceReminderTestAlreadyPending', 409);
       await connection.query('SELECT id FROM voice_reminder_settings WHERE id=1 FOR SHARE');
       const library = await readVoiceReminderAudioLibrary(connection);
-      if (!selectVoiceReminderAudioParts(library, input.clockTime)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (!selectVoiceReminderAudioParts(library,input.clockTime,reminderKind)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
       if (!voiceReminderAudioDurationValid(library)) throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
       const inserted = (await connection.query<TestRow>(`INSERT INTO voice_reminder_test_calls
-        (id,actor_user_id,phone,clock_time,expires_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$6)
-        RETURNING id,status,phone,clock_time AS "clockTime",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
-          lease_token AS "leaseToken",dial_started_at AS "startedAt"`, [input.requestId,actorId,phone,input.clockTime,expiresAt,now])).rows[0];
+        (id,actor_user_id,phone,clock_time,expires_at,created_at,updated_at,reminder_kind) VALUES($1,$2,$3,$4,$5,$6,$6,$7)
+        RETURNING id,status,phone,clock_time AS "clockTime",reminder_kind AS "reminderKind",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
+          lease_token AS "leaseToken",dial_started_at AS "startedAt"`, [input.requestId,actorId,phone,input.clockTime,expiresAt,now,reminderKind])).rows[0];
       return publicCall(inserted);
     });
   }
@@ -113,12 +114,13 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
           LEFT JOIN voice_reminder_time_audio whole_audio ON whole_audio.time=pending.clock_time
           WHERE pending.status='waiting' AND pending.dial_started_at IS NULL AND pending.expires_at>$1
             AND (pending.not_before_at IS NULL OR pending.not_before_at<=$1) AND ${testCallActorSql()}
-            AND settings.id=1 AND settings.intro_audio_id IS NOT NULL AND settings.outro_audio_id IS NOT NULL
+            AND settings.id=1 AND (CASE WHEN pending.reminder_kind='day_before' THEN settings.day_before_intro_audio_id ELSE settings.intro_audio_id END) IS NOT NULL
+            AND settings.outro_audio_id IS NOT NULL
             AND (whole_audio.audio_id IS NOT NULL OR (hour_audio.audio_id IS NOT NULL AND minute_audio.audio_id IS NOT NULL))
           ORDER BY pending.created_at,pending.id FOR UPDATE OF pending SKIP LOCKED LIMIT 1)
-        RETURNING id,status,phone,clock_time AS "clockTime",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
+        RETURNING id,status,phone,clock_time AS "clockTime",reminder_kind AS "reminderKind",actor_user_id AS "actorUserId",expires_at AS "expiresAt",
           lease_token AS "leaseToken",dial_started_at AS "startedAt"`, [now,token,leaseSeconds])).rows[0];
-      return row ? { id: row.id, actorUserId: row.actorUserId!, leaseToken: token, expiresAt: row.expiresAt } : null;
+      return row ? { id: row.id, actorUserId: row.actorUserId!, leaseToken: token, expiresAt: row.expiresAt, reminderKind: row.reminderKind } : null;
     });
   }
 
@@ -128,7 +130,7 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
       const row = (await connection.query<TestRow>(`${liveSql} FOR UPDATE OF test`, [job.id,job.leaseToken,now])).rows[0];
       if (!row || row.startedAt) return null;
       const library = await readVoiceReminderAudioLibrary(connection);
-      const parts = selectVoiceReminderAudioParts(library, row.clockTime);
+      const parts = selectVoiceReminderAudioParts(library,row.clockTime,row.reminderKind);
       if (!parts || !voiceReminderAudioDurationValid(library)) return 'defer';
       await connection.query(`UPDATE voice_reminder_test_calls SET audio_mode=$3,intro_audio_id=$4,outro_audio_id=$5,
         time_audio_id=$6,hour_audio_id=$7,minute_audio_id=$8 WHERE id=$1 AND lease_token=$2`, [

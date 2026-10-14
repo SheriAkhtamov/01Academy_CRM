@@ -9,7 +9,7 @@ const expiresAt = new Date(now.getTime() + 600_000);
 const audio = { id: randomUUID(), fileName: 'clip.wav', mimeType: 'audio/wav' as const, sizeBytes: 24,
   durationSeconds: 1, uploadedAt: now.toISOString(), storageKey: 'clip.wav', sha256: 'a'.repeat(64) };
 const parts = { kind: 'clock' as const, intro: audio, hour: audio, minute: audio, outro: audio, clockTime: '11:00' };
-const job = (actorUserId = 1): ClaimedVoiceReminderTestCall => ({ id: randomUUID(), actorUserId, leaseToken: randomUUID(), expiresAt });
+const job = (actorUserId = 1): ClaimedVoiceReminderTestCall => ({ id: randomUUID(), actorUserId, leaseToken: randomUUID(), expiresAt, reminderKind: 'same_day' });
 const played: VoiceReminderCallResult = { outcome: 'played', callStarted: true, callId: 'provider-id' };
 
 const setup = (jobs = 1) => {

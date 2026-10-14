@@ -1,4 +1,4 @@
-import { hasVoiceReminderAudioLibrary, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderSettingsInput, type VoiceReminderSnapshot, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderAudioLibrary, normalizeVoiceReminderTestPhone, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderKind, type VoiceReminderSettingsInput, type VoiceReminderSnapshot, type VoiceReminderTestCall, type VoiceReminderTestCallInput } from '@shared/contracts/voice-reminders';
 import type { ActorContext } from '../../leads/domain/actor-context';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
 import type { StoredVoiceReminderAudioLibrary, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderLibraryEntryTarget, VoiceReminderRepository, VoiceReminderTestCallRepository } from './ports';
@@ -30,7 +30,7 @@ export class VoiceReminderSettingsService {
       this.gateway.readiness().catch(() => ({ ready: false, code: 'transport_unavailable' as const })),
     ]);
     const library = settings.audioLibrary;
-    const readiness = hasVoiceReminderAudioLibrary(library) ? transport : { ready: false, code: 'audio_missing' as const };
+    const readiness = hasVoiceReminderAudioLibrary(library) && (!settings.dayBeforeEnabled || hasVoiceReminderAudioLibrary(library, 'day_before')) ? transport : { ready: false, code: 'audio_missing' as const };
     return { settings, readiness };
   }
 
@@ -38,7 +38,7 @@ export class VoiceReminderSettingsService {
     requireVoiceReminderLeadership(actor);
     if (input.enabled) {
       const library = await this.repository.audioLibrary();
-      if (!hasVoiceReminderAudioLibrary(library)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (!hasVoiceReminderAudioLibrary(library) || (input.dayBeforeEnabled && !hasVoiceReminderAudioLibrary(library, 'day_before'))) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
       validateDurations(library);
       const readiness = await this.gateway.readiness().catch(() => ({ ready: false }));
       if (!readiness.ready) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
@@ -97,11 +97,11 @@ export class VoiceReminderSettingsService {
     return this.snapshot(actor);
   }
 
-  async preview(actor: ActorContext, time: string): Promise<{ path: string; mimeType: 'audio/wav' }> {
+  async preview(actor: ActorContext, time: string, reminderKind: VoiceReminderKind = 'same_day'): Promise<{ path: string; mimeType: 'audio/wav' }> {
     requireVoiceReminderLeadership(actor);
     validateTime(time);
     const library = await this.repository.audioLibrary();
-    const parts = selectVoiceReminderAudioParts(library, time);
+    const parts = selectVoiceReminderAudioParts(library, time, reminderKind);
     if (!parts) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
     validateDurations(library);
     if (!this.composer) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
@@ -115,7 +115,7 @@ export class VoiceReminderSettingsService {
     if (!phone) throw new VoiceReminderError('voiceReminderInvalidPhone', 400);
     if (!this.testCalls) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
     const now = this.now();
-    return this.testCalls.enqueue(actor.userId, { ...input, phone }, now, new Date(now.getTime() + 10 * 60_000));
+    return this.testCalls.enqueue(actor.userId, { ...input, phone, reminderKind: input.reminderKind ?? 'same_day' }, now, new Date(now.getTime() + 10 * 60_000));
   }
 
   async currentTestCall(actor: ActorContext): Promise<VoiceReminderTestCall | null> {

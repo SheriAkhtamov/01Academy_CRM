@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
-import type { VoiceReminderAudio, VoiceReminderAudioLibrary } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderAudio, VoiceReminderAudioLibrary, VoiceReminderKind } from '@shared/contracts/voice-reminders';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,19 +8,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
 import { voiceReminderApi, voiceReminderUnitTarget, type VoiceReminderAudioTarget, type VoiceReminderClockUnit, type VoiceReminderUnitTarget } from '../api';
 
 export type VoiceReminderUnitDraft = { value: string; file: File | null };
 export type VoiceReminderRecordingDraft = {
   intro: File | null;
+  dayBeforeIntro: File | null;
   outro: File | null;
   hour: VoiceReminderUnitDraft;
   minute: VoiceReminderUnitDraft;
   time: VoiceReminderUnitDraft;
 };
-export type VoiceReminderRecordingField = 'intro' | 'outro' | VoiceReminderClockUnit;
+export type VoiceReminderRecordingField = 'intro' | 'dayBeforeIntro' | 'outro' | VoiceReminderClockUnit;
 export const emptyRecordingDraft = (): VoiceReminderRecordingDraft => ({
-  intro: null, outro: null, hour: { value: '00', file: null }, minute: { value: '00', file: null },
+  intro: null, dayBeforeIntro: null, outro: null, hour: { value: '00', file: null }, minute: { value: '00', file: null },
   time: { value: '', file: null },
 });
 
@@ -43,7 +45,7 @@ function SelectedRecording({ file }: { file: File | null }) {
 }
 
 function PartRecording({ part, recording, file, disabled, onFile, onUpload }: {
-  part: 'intro' | 'outro';
+  part: 'intro' | 'dayBeforeIntro' | 'outro';
   recording: VoiceReminderAudio | null;
   file: File | null;
   disabled: boolean;
@@ -52,7 +54,10 @@ function PartRecording({ part, recording, file, disabled, onFile, onUpload }: {
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
-  const label: TranslationKey = part === 'intro' ? 'voiceRemindersIntro' : 'voiceRemindersOutro';
+  const label: TranslationKey = part === 'intro' ? 'voiceRemindersIntro'
+    : part === 'dayBeforeIntro' ? 'voiceRemindersDayBeforeIntro' : 'voiceRemindersOutro';
+  const playLabel: TranslationKey = part === 'intro' ? 'voiceRemindersPlayIntro'
+    : part === 'dayBeforeIntro' ? 'voiceRemindersPlayDayBeforeIntro' : 'voiceRemindersPlayOutro';
   useEffect(() => { if (!file && input.current) input.current.value = ''; }, [file]);
   return (
     <section className="space-y-3 rounded-lg border p-4" aria-label={t(label)}>
@@ -60,7 +65,7 @@ function PartRecording({ part, recording, file, disabled, onFile, onUpload }: {
       {recording ? <>
         <p className="break-all text-sm">{recording.fileName}</p>
         <audio controls preload="none" className="w-full"
-          aria-label={t(part === 'intro' ? 'voiceRemindersPlayIntro' : 'voiceRemindersPlayOutro')}
+          aria-label={t(playLabel)}
           src={voiceReminderApi.audioUrl({ part }, recording.id)} />
       </> : null}
       <Input ref={input} id={`voice-reminders-${part}`} type="file" accept={acceptedAudio}
@@ -171,7 +176,8 @@ export function VoiceReminderRecordings({ library, draft, disabled, onValue, onF
   const initialPreviewTime = library.hours.length && library.minutes.length
     ? `${library.hours[0].hour}:${library.minutes[0].minute}` : library.times[0]?.time ?? '';
   const [previewTime, setPreviewTime] = useState(initialPreviewTime);
-  const previewUrl = voiceReminderApi.previewUrl(previewTime, library);
+  const [previewKind, setPreviewKind] = useState<VoiceReminderKind>('same_day');
+  const previewUrl = voiceReminderApi.previewUrl(previewTime, library, previewKind);
   const entries: Record<VoiceReminderClockUnit, Array<{ value: string; audio: VoiceReminderAudio }>> = {
     hour: library.hours.map(({ hour, audio }) => ({ value: hour, audio })),
     minute: library.minutes.map(({ minute, audio }) => ({ value: minute, audio })),
@@ -179,7 +185,7 @@ export function VoiceReminderRecordings({ library, draft, disabled, onValue, onF
   };
   return <div className="space-y-5">
     <div className="grid gap-4 sm:grid-cols-2">
-      {(['intro', 'outro'] as const).map((part) => <PartRecording key={part}
+      {(['intro', 'dayBeforeIntro', 'outro'] as const).map((part) => <PartRecording key={part}
         part={part} recording={library[part]} file={draft[part]} disabled={disabled}
         onFile={(file, input) => onFile(part, file, input)}
         onUpload={() => { const file = draft[part]; if (file) onUpload({ part }, file); }} />)}
@@ -199,6 +205,8 @@ export function VoiceReminderRecordings({ library, draft, disabled, onValue, onF
       ))}
     </Tabs>
     <section className="space-y-3 rounded-lg border p-4" aria-label={t('voiceRemindersFullPreview')}>
+      <VoiceReminderKindSelect id="voice-reminders-preview-kind" value={previewKind}
+        disabled={disabled} onChange={setPreviewKind} />
       <Label htmlFor="voice-reminders-preview-time">{t('voiceRemindersFullPreview')}</Label>
       <Input id="voice-reminders-preview-time" aria-label={t('voiceRemindersPreviewTime')}
         type="time" step={60} value={previewTime} onChange={(event) => setPreviewTime(event.target.value)} disabled={disabled} />

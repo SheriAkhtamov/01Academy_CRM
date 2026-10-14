@@ -4,6 +4,8 @@ import {
   VOICE_REMINDER_STATUSES,
   normalizeVoiceReminderTestPhone,
   voiceReminderClockTimeSchema,
+  voiceReminderKindSchema,
+  type VoiceReminderKind,
   type VoiceReminderTestCall,
   type VoiceReminderTestCallInput,
 } from '@shared/contracts/voice-reminders';
@@ -31,7 +33,9 @@ const readIntent = (actorId: number): VoiceReminderTestCallInput | null => {
     const input = JSON.parse(window.localStorage.getItem(intentKey(actorId)) ?? 'null');
     return input && typeof input.requestId === 'string' && validUuid(input.requestId)
       && typeof input.phone === 'string' && validPhone(input.phone)
-      && voiceReminderClockTimeSchema.safeParse(input.clockTime).success ? input : null;
+      && voiceReminderClockTimeSchema.safeParse(input.clockTime).success
+      && voiceReminderKindSchema.safeParse(input.reminderKind ?? 'same_day').success
+      ? { ...input, reminderKind: input.reminderKind ?? 'same_day' } : null;
   } catch { return null; }
 };
 const storeIntent = (actorId: number, input: VoiceReminderTestCallInput | null, expectedId?: string) => {
@@ -46,7 +50,8 @@ const errorKeys = new Set<TranslationKey>([
 ]);
 export const testCallIsActive = (job?: VoiceReminderTestCall | null) => job?.status === 'waiting' || job?.status === 'calling';
 const validReceipt = (job: VoiceReminderTestCall, input: VoiceReminderTestCallInput) => job?.id === input.requestId
-  && job.phone === input.phone && job.clockTime === input.clockTime && VOICE_REMINDER_STATUSES.includes(job.status);
+  && job.phone === input.phone && job.clockTime === input.clockTime
+  && (job.reminderKind ?? 'same_day') === (input.reminderKind ?? 'same_day') && VOICE_REMINDER_STATUSES.includes(job.status);
 
 export function useVoiceReminderTestCall(actorId: number, open: boolean, initialClockTime: string) {
   const queryClient = useQueryClient();
@@ -54,6 +59,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
   const intentRef = useRef(intent);
   const [phone, setPhone] = useState(intent?.phone ?? '');
   const [clockTime, setClockTime] = useState(intent?.clockTime ?? initialClockTime);
+  const [reminderKind, setReminderKind] = useState<VoiceReminderKind>(intent?.reminderKind ?? 'same_day');
   const [isSending, setIsSending] = useState(false);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
   const [acknowledged, setAcknowledged] = useState<VoiceReminderTestCall | null>(null);
@@ -91,6 +97,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     if (!touchedRef.current) {
       setPhone(result.phone);
       setClockTime(result.clockTime);
+      setReminderKind(result.reminderKind ?? 'same_day');
     }
   }, [actorId, current.data]);
 
@@ -106,6 +113,12 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     setClockTime(value);
     setErrorKey(null);
   };
+  const editReminderKind = (value: VoiceReminderKind) => {
+    if (intentRef.current || submittingRef.current || testCallIsActive(job)) return;
+    touchedRef.current = true;
+    setReminderKind(value);
+    setErrorKey(null);
+  };
   const send = async (audioAvailable: boolean, disabled: boolean) => {
     if (submittingRef.current || disabled || testCallIsActive(job)) return;
     const saved = intentRef.current;
@@ -114,7 +127,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
     if (!saved && !validPhone(normalizedPhone)) { setErrorKey('voiceReminderInvalidPhone'); return; }
     if (!saved && !voiceReminderClockTimeSchema.safeParse(clockTime).success) { setErrorKey('voiceReminderInvalidTime'); return; }
     if (!saved && !audioAvailable) { setErrorKey('voiceReminderAudioRequired'); return; }
-    const input = saved ?? { requestId: globalThis.crypto.randomUUID(), phone: normalizedPhone, clockTime };
+    const input = saved ?? { requestId: globalThis.crypto.randomUUID(), phone: normalizedPhone, clockTime, reminderKind };
     submittingRef.current = true;
     updateIntent(input);
     setIsSending(true);
@@ -139,6 +152,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
       setAcknowledged(receipt);
       setPhone(receipt.phone);
       setClockTime(receipt.clockTime);
+      setReminderKind(receipt.reminderKind ?? 'same_day');
     } catch (error) {
       if (!mountedRef.current) return;
       const apiError = error as { status?: number; rawMessage?: string };
@@ -156,7 +170,7 @@ export function useVoiceReminderTestCall(actorId: number, open: boolean, initial
   };
 
   return {
-    phone, clockTime, editPhone, editClockTime, send, intent, job, current, errorKey, isSending,
+    phone, clockTime, reminderKind, editReminderKind, editPhone, editClockTime, send, intent, job, current, errorKey, isSending,
     locked: Boolean(intent) || isSending || testCallIsActive(job),
   };
 }

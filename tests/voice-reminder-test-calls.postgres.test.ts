@@ -29,7 +29,7 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
     for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
-      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls']) {
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before']) {
       await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
     }
     repository = new PostgresVoiceReminderTestCallRepository(database);
@@ -52,11 +52,54 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
   });
 
+  it('keeps legacy omitted kind idempotent and rejects changing the kind of an accepted intent', async () => {
+    const request = input();
+    const accepted = await repository.enqueue(1, request, now, expiresAt);
+    expect(accepted.reminderKind).toBe('same_day');
+    expect(await repository.enqueue(1, { ...request, reminderKind: 'same_day' }, now, expiresAt)).toEqual(accepted);
+    await expect(repository.enqueue(1, { ...request, reminderKind: 'day_before' }, now, expiresAt))
+      .rejects.toMatchObject({ code: 'voiceReminderTestRequestChanged' });
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_test_calls')).rows[0].count).toBe(1);
+  });
+
+  it('tests the tomorrow introduction with automation off outside the automatic day/window, retaining active pins', async () => {
+    const tomorrow = audio();
+    await library.saveLibraryAudio({ part: 'dayBeforeIntro' }, tomorrow, 1, null);
+    const request = { ...input(), reminderKind: 'day_before' as const };
+    const accepted = await repository.enqueue(1, request, now, expiresAt);
+    expect(accepted.reminderKind).toBe('day_before');
+    const job = (await repository.claim(now, 300))!;
+    expect(job.reminderKind).toBe('day_before');
+    expect(await repository.prepare(job, now)).toMatchObject({ audioParts: { intro: tomorrow, clockTime: '11:00' } });
+    expect(await repository.canContinue(job, now)).toBe(true);
+    await library.saveLibraryAudio({ part: 'intro' }, audio(), 1);
+    expect(await repository.canContinue(job, now)).toBe(true);
+    await library.saveLibraryAudio({ part: 'dayBeforeIntro' }, audio(), 1, tomorrow.id);
+    expect(await repository.canContinue(job, now)).toBe(false);
+    expect(await repository.canContinue(job, now, false)).toBe(true);
+    expect(await repository.prepare(job, now)).toMatchObject({ audioParts: { intro: (await library.audioLibrary()).dayBeforeIntro } });
+    expect(await repository.canContinue(job, now)).toBe(true);
+  });
+
+  it('requires the selected introduction and does not starve another test kind after a missing exact clock', async () => {
+    await expect(repository.enqueue(1, { ...input(), reminderKind: 'day_before' }, now, expiresAt))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    await library.saveLibraryAudio({ part: 'dayBeforeIntro' }, audio(), 1, null);
+    const first = await repository.enqueue(1, { ...input(), reminderKind: 'day_before' }, now, expiresAt);
+    await library.removeLibraryAudio({ part: 'minute', minute: '00' }, 1);
+    await library.removeTimeAudio('11:00', 1);
+    await library.saveLibraryAudio({ part: 'time', time: '12:30' }, audio(), 1);
+    const second = await repository.enqueue(2, input('+123456789', '12:30'), now, expiresAt);
+    const claimed = (await repository.claim(now, 300))!;
+    expect(claimed.id).toBe(second.id);
+    expect(await repository.current(1)).toMatchObject({ id: first.id, status: 'waiting', reminderKind: 'day_before' });
+  });
+
   it('runs with automatic reminders off outside their hours and returns only the current actor DTO', async () => {
     expect((await library.settings()).enabled).toBe(false);
     const request = input();
     const dto = await repository.enqueue(1, request, now, expiresAt);
-    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime });
+    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day' });
     expect(await repository.current(1)).toEqual(dto);
     expect(await repository.current(2)).toBeNull();
     const job = (await repository.claim(now, 300))!;

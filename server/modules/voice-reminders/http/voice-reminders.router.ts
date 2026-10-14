@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderSettingsSchema, voiceReminderTestCallSchema } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderKindSchema, voiceReminderSettingsSchema, voiceReminderTestCallSchema } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderAudioTarget } from '../application/ports';
 import { actorContextFrom } from '../../leads/domain/actor-context';
 import type { VoiceReminderSettingsService } from '../application/settings-service';
@@ -86,9 +86,10 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
 
   router.post('/voice-reminders/audio', (request, response) => uploadPart(request, response));
   router.get('/voice-reminders/audio', (request, response) => streamFile(response, () => service.playback(actorContextFrom(request))));
-  for (const part of ['intro', 'outro'] as const) {
-    router.post(`/voice-reminders/audio/${part}`, (request, response) => uploadPart(request, response, { part }));
-    router.get(`/voice-reminders/audio/${part}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), { part })));
+  for (const part of ['intro', 'dayBeforeIntro', 'outro'] as const) {
+    const slug = part === 'dayBeforeIntro' ? 'day-before-intro' : part;
+    router.post(`/voice-reminders/audio/${slug}`, (request, response) => uploadPart(request, response, { part }));
+    router.get(`/voice-reminders/audio/${slug}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), { part })));
   }
   router.post('/voice-reminders/audio/times/:time', (request, response) => {
     const time = timeFrom(request, response);
@@ -133,7 +134,10 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
   }
   router.get('/voice-reminders/preview/:time', (request, response) => {
     const time = timeFrom(request, response);
-    if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time));
+    if (!time) return;
+    const kind = voiceReminderKindSchema.safeParse(request.query.reminderKind ?? 'same_day');
+    if (!kind.success) { response.status(400).json({ error: 'voiceReminderInvalidTestCall' }); return; }
+    if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time, kind.data));
   });
   return router;
 };

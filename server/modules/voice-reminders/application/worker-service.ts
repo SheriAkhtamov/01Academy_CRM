@@ -1,5 +1,5 @@
 import { hasVoiceReminderAudioLibrary } from '@shared/contracts/voice-reminders';
-import { nextReminderAttempt, reminderWithinAllowedHours } from '../domain/policy';
+import { nextReminderAttempt, anyReminderWindowOpen } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   VoiceReminderAudioComposer,
@@ -40,8 +40,8 @@ export class VoiceReminderWorker {
     try {
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || !hasVoiceReminderAudioLibrary(settings.audioLibrary)
-        || !reminderWithinAllowedHours(this.now(), settings)) return;
+      if (!settings.enabled || (!hasVoiceReminderAudioLibrary(settings.audioLibrary) && !(settings.dayBeforeEnabled && hasVoiceReminderAudioLibrary(settings.audioLibrary, 'day_before')))
+        || !anyReminderWindowOpen(this.now(), settings)) return;
       if (!await this.gateway.readiness().then(value => value.ready).catch(() => false)) return;
       // Jobs may prepare audio concurrently. Shared external channels are only
       // reserved after the corresponding recording is ready to be played.
@@ -63,8 +63,8 @@ export class VoiceReminderWorker {
       if (this.stopping) return;
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || !hasVoiceReminderAudioLibrary(settings.audioLibrary)
-        || !reminderWithinAllowedHours(this.now(), settings)) return;
+      if (!settings.enabled || (!hasVoiceReminderAudioLibrary(settings.audioLibrary) && !(settings.dayBeforeEnabled && hasVoiceReminderAudioLibrary(settings.audioLibrary, 'day_before')))
+        || !anyReminderWindowOpen(this.now(), settings)) return;
       const next = await this.repository.claim(this.now(), settings.maxConcurrentCalls, LEASE_SECONDS);
       if (!next) return;
       job = next;
@@ -113,7 +113,7 @@ export class VoiceReminderWorker {
       dispatched = true;
       const result = await line.call({
         jobId: job.id, jobLeaseToken: job.leaseToken, phone: prepared.phone, audioPath: recording.path,
-        deadline: prepared.scheduledAt, shouldContinue,
+        deadline: prepared.deadline, shouldContinue,
       });
       if (!result.callStarted) {
         // A library or phone change before INVITE is safe to prepare again.
@@ -128,7 +128,7 @@ export class VoiceReminderWorker {
       }
       const settings = await this.repository.settings();
       const retryAt = result.outcome === 'unanswered' && result.callStarted
-        ? nextReminderAttempt({ now: this.now(), scheduledAt: job.scheduledAt, attempts: job.attempts + 1, settings })
+        ? nextReminderAttempt({ now: this.now(), scheduledAt: job.scheduledAt, attempts: job.attempts + 1, settings, reminderKind: job.reminderKind })
         : null;
       await this.repository.finish(job, result, this.now(), retryAt);
       return result.outcome !== 'busy';

@@ -4,6 +4,9 @@ export const VOICE_REMINDER_MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 export const VOICE_REMINDER_MAX_AUDIO_SECONDS = 180;
 export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled'] as const;
 export type VoiceReminderStatus = typeof VOICE_REMINDER_STATUSES[number];
+export const VOICE_REMINDER_KINDS = ['same_day', 'day_before'] as const;
+export const voiceReminderKindSchema = z.enum(VOICE_REMINDER_KINDS);
+export type VoiceReminderKind = typeof VOICE_REMINDER_KINDS[number];
 
 export const voiceReminderClockTimeSchema = z.string().length(5).regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 export const voiceReminderHourSchema = z.string().length(2).regex(/^(?:[01]\d|2[0-3])$/);
@@ -13,12 +16,21 @@ const wallClock = voiceReminderClockTimeSchema;
 export const voiceReminderSettingsSchema = z.object({
   enabled: z.boolean(),
   leadMinutes: z.number().int().min(1).max(1440),
+  dayBeforeEnabled: z.boolean().default(false),
+  dayBeforeStartTime: wallClock.default('10:00'),
+  dayBeforeEndTime: wallClock.default('20:00'),
   maxAttempts: z.number().int().min(1).max(5),
   retryMinutes: z.number().int().min(1).max(60),
   allowedStartTime: wallClock,
   allowedEndTime: wallClock,
   maxConcurrentCalls: z.number().int().min(1).max(2),
-}).strict().refine(value => value.allowedStartTime < value.allowedEndTime, {
+}).strict().refine(value => value.dayBeforeStartTime >= '10:00', {
+  path: ['dayBeforeStartTime'], message: 'voiceReminderInvalidDayBeforeHours',
+}).refine(value => value.dayBeforeEndTime <= '20:00', {
+  path: ['dayBeforeEndTime'], message: 'voiceReminderInvalidDayBeforeHours',
+}).refine(value => value.dayBeforeStartTime < value.dayBeforeEndTime, {
+  path: ['dayBeforeEndTime'], message: 'voiceReminderInvalidHours',
+}).refine(value => value.allowedStartTime < value.allowedEndTime, {
   path: ['allowedEndTime'], message: 'voiceReminderInvalidHours',
 });
 export type VoiceReminderSettingsInput = z.infer<typeof voiceReminderSettingsSchema>;
@@ -37,6 +49,7 @@ export type VoiceReminderSettings = VoiceReminderSettingsInput & {
 };
 export type VoiceReminderAudioLibraryOf<Audio extends VoiceReminderAudio> = {
   intro: Audio | null;
+  dayBeforeIntro: Audio | null;
   outro: Audio | null;
   times: Array<{ time: string; audio: Audio }>;
   hours: Array<{ hour: string; audio: Audio }>;
@@ -49,25 +62,26 @@ export type VoiceReminderAudioPartsOf<Audio extends VoiceReminderAudio> = {
   clockTime: string;
 } & ({ kind: 'time'; time: Audio } | { kind: 'clock'; hour: Audio; minute: Audio });
 
-export const hasVoiceReminderAudioLibrary = (library: VoiceReminderAudioLibrary): boolean => (
-  Boolean(library.intro && library.outro && (library.times.length || (library.hours.length && library.minutes.length)))
+export const hasVoiceReminderAudioLibrary = (library: VoiceReminderAudioLibrary, reminderKind: VoiceReminderKind = 'same_day'): boolean => (
+  Boolean((reminderKind === 'day_before' ? library.dayBeforeIntro : library.intro) && library.outro && (library.times.length || (library.hours.length && library.minutes.length)))
 );
 
 export const selectVoiceReminderAudioParts = <Audio extends VoiceReminderAudio>(
-  library: VoiceReminderAudioLibraryOf<Audio>, clockTime: string,
+  library: VoiceReminderAudioLibraryOf<Audio>, clockTime: string, reminderKind: VoiceReminderKind = 'same_day',
 ): VoiceReminderAudioPartsOf<Audio> | null => {
-  if (!voiceReminderClockTimeSchema.safeParse(clockTime).success || !library.intro || !library.outro) return null;
+  const intro = reminderKind === 'day_before' ? library.dayBeforeIntro : library.intro;
+  if (!voiceReminderClockTimeSchema.safeParse(clockTime).success || !intro || !library.outro) return null;
   const [hourIndex, minuteIndex] = clockTime.split(':');
   const hour = library.hours.find(entry => entry.hour === hourIndex)?.audio;
   const minute = library.minutes.find(entry => entry.minute === minuteIndex)?.audio;
-  const base = { intro: library.intro, outro: library.outro, clockTime };
+  const base = { intro, outro: library.outro, clockTime };
   if (hour && minute) return { ...base, kind: 'clock', hour, minute };
   const time = library.times.find(entry => entry.time === clockTime)?.audio;
   return time ? { ...base, kind: 'time', time } : null;
 };
 
 export const voiceReminderAudioDurationValid = (library: VoiceReminderAudioLibrary): boolean => {
-  const base = (library.intro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
+  const base = Math.max(library.intro?.durationSeconds ?? 0, library.dayBeforeIntro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
   const longestHour = Math.max(0, ...library.hours.map(entry => entry.audio.durationSeconds));
   const longestMinute = Math.max(0, ...library.minutes.map(entry => entry.audio.durationSeconds));
   return base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
@@ -96,6 +110,7 @@ export const voiceReminderTestCallSchema = z.object({
   requestId: z.string().uuid(),
   phone: z.string().trim().min(7).max(80).refine(value => normalizeVoiceReminderTestPhone(value) !== null),
   clockTime: voiceReminderClockTimeSchema,
+  reminderKind: voiceReminderKindSchema.optional(),
 }).strict();
 export type VoiceReminderTestCallInput = z.infer<typeof voiceReminderTestCallSchema>;
 export type VoiceReminderTestCall = {
@@ -103,11 +118,15 @@ export type VoiceReminderTestCall = {
   status: VoiceReminderStatus;
   phone: string;
   clockTime: string;
+  reminderKind: VoiceReminderKind;
 };
 
 export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   enabled: false,
-  leadMinutes: 60,
+  leadMinutes: 120,
+  dayBeforeEnabled: false,
+  dayBeforeStartTime: '10:00',
+  dayBeforeEndTime: '20:00',
   maxAttempts: 2,
   retryMinutes: 10,
   allowedStartTime: '09:00',
@@ -115,5 +134,5 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   maxConcurrentCalls: 2,
   timeZone: 'Asia/Tashkent',
   audio: null,
-  audioLibrary: { intro: null, outro: null, times: [], hours: [], minutes: [] },
+  audioLibrary: { intro: null, dayBeforeIntro: null, outro: null, times: [], hours: [], minutes: [] },
 };

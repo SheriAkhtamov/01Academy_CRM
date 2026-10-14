@@ -3,6 +3,7 @@ import type {
   VoiceReminderAudioLibraryOf,
   VoiceReminderAudioPartsOf,
   VoiceReminderReadiness,
+  VoiceReminderKind,
   VoiceReminderSettings,
   VoiceReminderSettingsInput,
   VoiceReminderTestCall,
@@ -16,9 +17,9 @@ export interface VoiceReminderAudioStore {
   resolve(storageKey: string): Promise<string>;
 }
 export type StoredVoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<StoredVoiceReminderAudio>;
-export type VoiceReminderAudioTarget = { part: 'intro' | 'outro' } | { part: 'time'; time: string }
+export type VoiceReminderAudioTarget = { part: 'intro' | 'dayBeforeIntro' | 'outro' } | { part: 'time'; time: string }
   | { part: 'hour'; hour: string } | { part: 'minute'; minute: string };
-export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'outro' }>;
+export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' }>;
 export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>;
 export interface VoiceReminderAudioComposer {
   compose(parts: StoredVoiceReminderAudioParts): Promise<{ path: string; mimeType: 'audio/wav' }>;
@@ -29,8 +30,10 @@ export type ClaimedVoiceReminder = {
   leaseToken: string;
   scheduledAt: Date;
   attempts: number;
+  reminderKind: VoiceReminderKind;
 };
 export type PreparedVoiceReminder = ClaimedVoiceReminder & {
+  deadline: Date;
   phone: string;
   audioParts: StoredVoiceReminderAudioParts;
 };
@@ -78,6 +81,7 @@ export type ClaimedVoiceReminderTestCall = {
   actorUserId: number;
   leaseToken: string;
   expiresAt: Date;
+  reminderKind: VoiceReminderKind;
 };
 export type PreparedVoiceReminderTestCall = ClaimedVoiceReminderTestCall & {
   phone: string;

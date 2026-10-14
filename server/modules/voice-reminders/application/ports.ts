@@ -1,5 +1,7 @@
 import type {
   VoiceReminderAudio,
+  VoiceReminderAudioLibraryOf,
+  VoiceReminderAudioPartsOf,
   VoiceReminderReadiness,
   VoiceReminderResult,
   VoiceReminderSettings,
@@ -13,18 +15,11 @@ export interface VoiceReminderAudioStore {
   save(upload: VoiceReminderAudioUpload): Promise<StoredVoiceReminderAudio>;
   resolve(storageKey: string): Promise<string>;
 }
-export type StoredVoiceReminderAudioLibrary = {
-  intro: StoredVoiceReminderAudio | null;
-  outro: StoredVoiceReminderAudio | null;
-  times: Array<{ time: string; audio: StoredVoiceReminderAudio }>;
-};
-export type VoiceReminderAudioTarget = { part: 'intro' | 'outro' } | { part: 'time'; time: string };
-export type StoredVoiceReminderAudioParts = {
-  intro: StoredVoiceReminderAudio;
-  time: StoredVoiceReminderAudio;
-  outro: StoredVoiceReminderAudio;
-  clockTime: string;
-};
+export type StoredVoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<StoredVoiceReminderAudio>;
+export type VoiceReminderAudioTarget = { part: 'intro' | 'outro' } | { part: 'time'; time: string }
+  | { part: 'hour'; hour: string } | { part: 'minute'; minute: string };
+export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'outro' }>;
+export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>;
 export interface VoiceReminderAudioComposer {
   compose(parts: StoredVoiceReminderAudioParts): Promise<{ path: string; mimeType: 'audio/wav' }>;
 }
@@ -70,6 +65,7 @@ export interface VoiceReminderRepository {
   audioLibrary(): Promise<StoredVoiceReminderAudioLibrary>;
   saveLibraryAudio(target: VoiceReminderAudioTarget, audio: StoredVoiceReminderAudio, actorId: number, expectedAudioId?: string | null): Promise<void>;
   removeTimeAudio(time: string, actorId: number, expectedAudioId?: string): Promise<void>;
+  removeLibraryAudio(target: VoiceReminderLibraryEntryTarget, actorId: number, expectedAudioId?: string): Promise<void>;
   results(): Promise<{ summary: Record<VoiceReminderStatus, number>; results: VoiceReminderResult[] }>;
   synchronize(now: Date, settings: VoiceReminderSettings): Promise<void>;
   claim(now: Date, maximum: number, leaseSeconds: number): Promise<ClaimedVoiceReminder | null>;

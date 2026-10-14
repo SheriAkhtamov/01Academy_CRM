@@ -1,18 +1,34 @@
-import type {
-  VoiceReminderAudioLibrary,
-  VoiceReminderSettingsInput,
-  VoiceReminderSnapshot,
+import {
+  selectVoiceReminderAudioParts,
+  type VoiceReminderAudioLibrary,
+  type VoiceReminderSettingsInput,
+  type VoiceReminderSnapshot,
 } from '@shared/contracts/voice-reminders';
 import { apiRequest } from '@/lib/queryClient';
 
 const voiceRemindersPath = '/api/academy/voice-reminders';
-export type VoiceReminderAudioTarget = { part: 'intro' | 'outro' } | { time: string };
+export type VoiceReminderClockUnit = 'hour' | 'minute' | 'time';
+export type VoiceReminderUnitTarget = { hour: string } | { minute: string } | { time: string };
+export type VoiceReminderAudioTarget = { part: 'intro' | 'outro' } | VoiceReminderUnitTarget;
 export type VoiceReminderAudioUpload = { target: VoiceReminderAudioTarget; file: File; expectedId?: string };
-export type VoiceReminderTimeRemoval = { time: string; expectedId: string };
+export type VoiceReminderRecordingRemoval = { target: VoiceReminderUnitTarget; expectedId: string };
 
-const audioPath = (target: VoiceReminderAudioTarget) => 'part' in target
-  ? `${voiceRemindersPath}/audio/${target.part}`
-  : `${voiceRemindersPath}/audio/times/${encodeURIComponent(target.time)}`;
+export const voiceReminderUnitTarget = (unit: VoiceReminderClockUnit, value: string): VoiceReminderUnitTarget => {
+  if (unit === 'hour') return { hour: value };
+  if (unit === 'minute') return { minute: value };
+  return { time: value };
+};
+export const voiceReminderUnitSelection = (target: VoiceReminderUnitTarget) => {
+  if ('hour' in target) return { unit: 'hour' as const, value: target.hour };
+  if ('minute' in target) return { unit: 'minute' as const, value: target.minute };
+  return { unit: 'time' as const, value: target.time };
+};
+
+const audioPath = (target: VoiceReminderAudioTarget) => {
+  if ('part' in target) return `${voiceRemindersPath}/audio/${target.part}`;
+  const { unit, value } = voiceReminderUnitSelection(target);
+  return `${voiceRemindersPath}/audio/${unit}s/${encodeURIComponent(value)}`;
+};
 
 export const voiceReminderQueryKeys = {
   snapshot: [voiceRemindersPath] as const,
@@ -29,14 +45,15 @@ export const voiceReminderApi = {
     const path = `${audioPath(target)}${expectedId ? `?expectedId=${encodeURIComponent(expectedId)}` : ''}`;
     return apiRequest('POST', path, data) as Promise<VoiceReminderSnapshot>;
   },
-  removeTime: ({ time, expectedId }: VoiceReminderTimeRemoval) => (
-    apiRequest('DELETE', `${audioPath({ time })}?expectedId=${encodeURIComponent(expectedId)}`) as Promise<VoiceReminderSnapshot>
+  removeRecording: ({ target, expectedId }: VoiceReminderRecordingRemoval) => (
+    apiRequest('DELETE', `${audioPath(target)}?expectedId=${encodeURIComponent(expectedId)}`) as Promise<VoiceReminderSnapshot>
   ),
   audioUrl: (target: VoiceReminderAudioTarget, id: string) => `${audioPath(target)}?v=${encodeURIComponent(id)}`,
   previewUrl: (time: string, library: VoiceReminderAudioLibrary) => {
-    const recording = library.times.find((entry) => entry.time === time);
-    if (!library.intro || !library.outro || !recording) return null;
-    const version = [library.intro.id, recording.audio.id, library.outro.id].join(':');
+    const parts = selectVoiceReminderAudioParts(library, time);
+    if (!parts) return null;
+    const sources = parts.kind === 'clock' ? [parts.hour.id, parts.minute.id] : [parts.time.id];
+    const version = [parts.intro.id, parts.kind, ...sources, parts.outro.id].join(':');
     return `${voiceRemindersPath}/preview/${encodeURIComponent(time)}?v=${encodeURIComponent(version)}`;
   },
 };

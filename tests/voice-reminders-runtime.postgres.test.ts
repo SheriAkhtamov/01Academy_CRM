@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { DEFAULT_VOICE_REMINDER_SETTINGS } from '../shared/contracts/voice-reminders';
 import { createVoiceRemindersRuntime, type VoiceReminderCapacityProvider } from '../server/infrastructure/voice-reminders-runtime';
 import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminders/infrastructure/postgres-repository';
-import { LocalVoiceReminderAudioStore } from '../server/modules/voice-reminders/infrastructure/audio-store';
+import { LocalVoiceReminderAudioStore, inspectReminderAudio } from '../server/modules/voice-reminders/infrastructure/audio-store';
 import type { performVertoReminderCall } from '../server/infrastructure/voice-telephony/verto-call';
 import type { OnlinePbxWebRtcCredentials } from '../server/services/onlinepbx';
 
@@ -36,6 +36,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
   );
   const mockCall = () => vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
     expect(await input.shouldContinue()).toBe(true);
+    expect(await inspectReminderAudio(input.audioPath)).toEqual({ mimeType: 'audio/wav', durationSeconds: 4 });
     await input.onStarted!();
     return { outcome: 'played', callStarted: true, callId: input.callId! };
   });
@@ -54,6 +55,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     await database.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -73,7 +75,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     bytes.writeUInt16LE(1, 22); bytes.writeUInt32LE(8000, 24); bytes.writeUInt32LE(16000, 28);
     bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34); bytes.write('data', 36); bytes.writeUInt32LE(16000, 40);
     const store = new LocalVoiceReminderAudioStore(directory);
-    for (const target of [{ part: 'intro' }, { part: 'time', time: '10:30' }, { part: 'outro' }] as const) {
+    for (const target of [{ part: 'intro' }, { part: 'hour', hour: '10' }, { part: 'minute', minute: '30' }, { part: 'outro' }] as const) {
       const audio = await store.save({ bytes, originalName: 'part.wav', mimeType: 'audio/wav' });
       await repository.saveLibraryAudio(target, audio, 1);
     }
@@ -108,6 +110,39 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     expect(call).not.toHaveBeenCalled();
     expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
     expect((await database.query(`SELECT count(*)::int AS count FROM telephony_line_reservations WHERE owner_type='robot'`)).rows[0].count).toBe(0);
+    await runtime.close();
+  });
+
+  it('waits without an attempt or channel when the exact minute clip is missing', async () => {
+    await repository.removeLibraryAudio({ part: 'minute', minute: '30' }, 1);
+    const capacity = provider();
+    const call = mockCall();
+    const runtime = makeRuntime(capacity, call);
+    await runtime.tick();
+    expect(call).not.toHaveBeenCalled();
+    expect(capacity.getCredentials).not.toHaveBeenCalled();
+    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    await runtime.close();
+  });
+
+  it('requires zero-zero minutes at a whole hour and resumes once that recording is uploaded', async () => {
+    await database.query("UPDATE academy_demo_lessons SET scheduled_at=$1::timestamptz AT TIME ZONE 'UTC' WHERE id=1", [new Date(testClock + 60 * 60_000)]);
+    const library = await repository.audioLibrary();
+    const store = new LocalVoiceReminderAudioStore(directory);
+    const bytes = await fs.readFile(await store.resolve(library.hours[0].audio.storageKey));
+    const hour = await store.save({ bytes, originalName: 'hour-11.wav', mimeType: 'audio/wav' });
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, hour, 1);
+    const call = mockCall();
+    const runtime = makeRuntime(provider(), call);
+    await runtime.tick();
+    expect(call).not.toHaveBeenCalled();
+    expect((await repository.results()).results[0]).toMatchObject({ status: 'waiting', attempts: 0 });
+    const minute = await store.save({ bytes, originalName: 'minute-00.wav', mimeType: 'audio/wav' });
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, minute, 1);
+    await runtime.tick();
+    expect(call).toHaveBeenCalledTimes(1);
+    expect((await repository.results()).summary.played).toBe(1);
     await runtime.close();
   });
 

@@ -10,9 +10,11 @@ const audio = {
   id: '6700d6f9-e152-45ae-9e43-16beb3a6f633', fileName: 'demo.wav', mimeType: 'audio/wav' as const,
   sizeBytes: 16044, durationSeconds: 1, uploadedAt: now.toISOString(), storageKey: 'demo.wav', sha256: 'a'.repeat(64),
 };
-const audioParts = { intro: audio, time: { ...audio, id: '37a036fe-332b-449b-bc7b-3d63f4010220' }, outro: audio, clockTime: '11:00' };
+const audioParts = { kind: 'clock' as const, intro: audio,
+  hour: { ...audio, id: '37a036fe-332b-449b-bc7b-3d63f4010220' },
+  minute: { ...audio, id: '71708cfa-de5d-4f2a-a996-e578f908c0dc' }, outro: audio, clockTime: '11:00' };
 const settings = { ...DEFAULT_VOICE_REMINDER_SETTINGS, enabled: true, audioLibrary: {
-  intro: audio, outro: audio, times: [{ time: '11:00', audio: audioParts.time }],
+  intro: audio, outro: audio, times: [], hours: [{ hour: '11', audio: audioParts.hour }], minutes: [{ minute: '00', audio: audioParts.minute }],
 } };
 const completed: VoiceReminderCallResult = { outcome: 'played', callStarted: true, callId: 'call-1' };
 const job = (id: number): ClaimedVoiceReminder => ({ id, leaseToken: `lease-${id}`, scheduledAt, attempts: 0 });
@@ -168,7 +170,7 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     finishSlow(); await running;
     expect(fixture.repository.finish).toHaveBeenCalledTimes(4);
   });
-  it('assembles the three pinned parts before reserving any manager channel', async () => {
+  it('assembles the four pinned parts before reserving any manager channel', async () => {
     const fixture = setup(1);
     let ready!: () => void;
     fixture.composer.compose.mockImplementation(() => new Promise(resolve => {
@@ -197,7 +199,7 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     await fixture.worker.tick();
     expect(fixture.repository.defer).toHaveBeenCalledTimes(1);
     expect(fixture.repository.finish).not.toHaveBeenCalled();
-    const updated = { ...audioParts, time: { ...audioParts.time, id: '48645c93-d194-4b20-96c2-2917df38475b' } };
+    const updated = { ...audioParts, hour: { ...audioParts.hour, id: '48645c93-d194-4b20-96c2-2917df38475b' } };
     fixture.repository.prepare.mockResolvedValue({ ...job(1), phone: '+998901234567', audioParts: updated });
     fixture.repository.claim.mockResolvedValueOnce(job(1)).mockResolvedValue(null);
     await fixture.worker.tick();

@@ -17,8 +17,8 @@ export function useVoiceReminders(open: boolean) {
   };
   const saveSettings = useMutation({ mutationFn: voiceReminderApi.saveSettings, ...mutationOptions });
   const uploadAudio = useMutation({ mutationFn: voiceReminderApi.uploadAudio, ...mutationOptions });
-  const removeTime = useMutation({ mutationFn: voiceReminderApi.removeTime, ...mutationOptions });
-  const pending = saveSettings.isPending || uploadAudio.isPending || removeTime.isPending;
+  const removeRecording = useMutation({ mutationFn: voiceReminderApi.removeRecording, ...mutationOptions });
+  const pending = saveSettings.isPending || uploadAudio.isPending || removeRecording.isPending;
   const snapshot = useQuery({
     queryKey: voiceReminderQueryKeys.snapshot,
     queryFn: voiceReminderApi.getSnapshot,
@@ -27,5 +27,5 @@ export function useVoiceReminders(open: boolean) {
     refetchInterval: open && !pending ? 10_000 : false,
   });
 
-  return { snapshot, saveSettings, uploadAudio, removeTime, pending };
+  return { snapshot, saveSettings, uploadAudio, removeRecording, pending };
 }

@@ -33,12 +33,12 @@ const setup = async () => {
   const [intro, time, outro] = await Promise.all([[440, 48_000, 2], [880, 16_000, 1], [1320, 8_000, 1]].map(async ([frequency, rate, channels]) => (
     store.save({ bytes: tone(frequency, rate, channels), originalName: `${frequency}.wav`, mimeType: 'audio/wav' })
   )));
-  const parts: StoredVoiceReminderAudioParts = { intro, time, outro, clockTime: '14:30' };
+  const parts: Extract<StoredVoiceReminderAudioParts, { kind: 'time' }> = { kind: 'time', intro, time, outro, clockTime: '14:30' };
   const cache = path.join(directory, 'assembled');
   return { directory, store, parts, cache };
 };
 const dominantFrequency = (samples: Buffer): number => {
-  const scores = [440, 880, 1320].map(frequency => {
+  const scores = [440, 880, 1320, 1760].map(frequency => {
     let sine = 0; let cosine = 0;
     for (let index = 0; index < samples.length / 2; index++) {
       const amplitude = samples.readInt16LE(index * 2);
@@ -51,6 +51,52 @@ const dominantFrequency = (samples: Buffer): number => {
 };
 
 describe('immutable modular reminder recordings', () => {
+  it('joins separate hours and minutes in speech order with playable normalized audio', async () => {
+    const fixture = await setup();
+    const minute = await fixture.store.save({ bytes: tone(1760, 44_100, 2), originalName: 'minute-30.wav', mimeType: 'audio/wav' });
+    const composer = new LocalVoiceReminderAudioComposer(fixture.store, fixture.cache);
+    const parts: StoredVoiceReminderAudioParts = {
+      kind: 'clock', intro: fixture.parts.intro, hour: fixture.parts.time, minute, outro: fixture.parts.outro, clockTime: '14:30',
+    };
+    const output = await composer.compose(parts);
+    expect(await inspectReminderAudio(output.path)).toEqual({ mimeType: 'audio/wav', durationSeconds: 0.2 });
+    const bytes = await fs.readFile(output.path);
+    expect([0, 1, 2, 3].map(segment => dominantFrequency(bytes.subarray(44 + segment * 800, 44 + (segment + 1) * 800))))
+      .toEqual([440, 880, 1760, 1320]);
+    expect((await decodeReminderAudio(output.path, new AbortController().signal)).length).toBe(1600);
+  });
+  it('includes the zero-zero minute clip at a whole hour and refuses missing minutes', async () => {
+    const fixture = await setup();
+    const decode = vi.fn(async () => Buffer.alloc(800));
+    const composer = new LocalVoiceReminderAudioComposer(fixture.store, fixture.cache, decode);
+    const parts: StoredVoiceReminderAudioParts = {
+      kind: 'clock', intro: fixture.parts.intro, hour: fixture.parts.time, minute: fixture.parts.time, outro: fixture.parts.outro, clockTime: '14:00',
+    };
+    const output = await composer.compose(parts);
+    expect(decode).toHaveBeenCalledTimes(4);
+    expect(await inspectReminderAudio(output.path)).toEqual({ mimeType: 'audio/wav', durationSeconds: 0.2 });
+    await expect(composer.compose({ ...parts, minute: null } as unknown as StoredVoiceReminderAudioParts))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioInvalid' });
+    await expect(composer.compose({ ...parts, clockTime: '14:30', minute: null } as unknown as StoredVoiceReminderAudioParts))
+      .rejects.toMatchObject({ code: 'voiceReminderAudioInvalid' });
+    expect(decode).toHaveBeenCalledTimes(4);
+  });
+  it('keeps the old four-part composition immutable when either clock clip is replaced', async () => {
+    const fixture = await setup();
+    const minute = await fixture.store.save({ bytes: tone(1760, 8000, 1), originalName: 'minute-30.wav', mimeType: 'audio/wav' });
+    const parts: StoredVoiceReminderAudioParts = {
+      kind: 'clock', intro: fixture.parts.intro, hour: fixture.parts.time, minute, outro: fixture.parts.outro, clockTime: '14:30',
+    };
+    const composer = new LocalVoiceReminderAudioComposer(fixture.store, fixture.cache, async () => Buffer.alloc(800));
+    const original = await composer.compose(parts);
+    const originalBytes = await fs.readFile(original.path);
+    const newHour = await fixture.store.save({ bytes: tone(500, 8000, 1), originalName: 'hour-14.wav', mimeType: 'audio/wav' });
+    const newMinute = await fixture.store.save({ bytes: tone(600, 8000, 1), originalName: 'minute-30.wav', mimeType: 'audio/wav' });
+    expect((await composer.compose({ ...parts, hour: newHour })).path).not.toBe(original.path);
+    expect((await composer.compose({ ...parts, minute: newMinute })).path).not.toBe(original.path);
+    expect(await fs.readFile(original.path)).toEqual(originalBytes);
+    expect((await composer.compose(parts)).path).toBe(original.path);
+  });
   it('normalizes mixed rates/stereo and preserves beginning → time → ending in playable PCMU audio', async () => {
     const fixture = await setup();
     const composer = new LocalVoiceReminderAudioComposer(fixture.store, fixture.cache);

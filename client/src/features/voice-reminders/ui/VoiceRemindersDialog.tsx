@@ -3,6 +3,8 @@ import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
   voiceReminderClockTimeSchema,
+  voiceReminderHourSchema,
+  voiceReminderMinuteSchema,
   voiceReminderSettingsSchema,
   type VoiceReminderSettingsInput,
 } from '@shared/contracts/voice-reminders';
@@ -16,9 +18,9 @@ import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/Un
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
-import type { VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderTimeRemoval } from '../api';
+import { voiceReminderUnitSelection, type VoiceReminderAudioTarget, type VoiceReminderAudioUpload, type VoiceReminderRecordingRemoval } from '../api';
 import { useVoiceReminders } from '../hooks';
-import { emptyRecordingDraft, VoiceReminderRecordings } from './VoiceReminderRecordings';
+import { emptyRecordingDraft, VoiceReminderRecordings, type VoiceReminderRecordingField } from './VoiceReminderRecordings';
 import { VoiceReminderResults } from './VoiceReminderResults';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
 
@@ -49,15 +51,16 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot, saveSettings, uploadAudio, removeTime, pending } = useVoiceReminders(open);
+  const { snapshot, saveSettings, uploadAudio, removeRecording, pending } = useVoiceReminders(open);
   const [draft, setDraft] = useState<VoiceReminderSettingsInput | null>(null);
   const [savedSettings, setSavedSettings] = useState('');
   const [recordings, setRecordings] = useState(emptyRecordingDraft);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
   const [replacement, setReplacement] = useState<VoiceReminderAudioUpload | null>(null);
-  const [removal, setRemoval] = useState<VoiceReminderTimeRemoval | null>(null);
+  const [removal, setRemoval] = useState<VoiceReminderRecordingRemoval | null>(null);
   const [activeTab, setActiveTab] = useState('settings');
-  const dirty = Boolean(recordings.intro || recordings.outro || recordings.timeFile || recordings.time
+  const dirty = Boolean(recordings.intro || recordings.outro || recordings.hour.file || recordings.minute.file
+    || recordings.time.file || recordings.time.value
     || (draft && JSON.stringify(draft) !== savedSettings));
   const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
 
@@ -106,9 +109,12 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     }
   };
 
-  const selectFile = (field: 'intro' | 'outro' | 'timeFile', file: File | null, input: HTMLInputElement) => {
+  const selectFile = (field: VoiceReminderRecordingField, file: File | null, input: HTMLInputElement) => {
     setErrorKey(null);
-    setRecordings((current) => ({ ...current, [field]: null }));
+    const setFile = (selected: File | null) => setRecordings((current) => ({ ...current,
+      [field]: field === 'intro' || field === 'outro' ? selected : { ...current[field], file: selected },
+    }));
+    setFile(null);
     if (file && !/\.(mp3|wav)$/i.test(file.name)) {
       setErrorKey('voiceReminderAudioInvalid');
       input.value = '';
@@ -119,7 +125,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       input.value = '';
       return;
     }
-    setRecordings((current) => ({ ...current, [field]: file }));
+    setFile(file);
   };
 
   const upload = async (selection: VoiceReminderAudioUpload) => {
@@ -131,8 +137,9 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
           const part = selection.target.part;
           return current[part] === selection.file ? { ...current, [part]: null } : current;
         }
-        return current.time === selection.target.time && current.timeFile === selection.file
-          ? { ...current, time: '', timeFile: null } : current;
+        const { unit, value } = voiceReminderUnitSelection(selection.target);
+        return current[unit].value === value && current[unit].file === selection.file
+          ? { ...current, [unit]: { value: unit === 'time' ? '' : value, file: null } } : current;
       });
       setReplacement(null);
       toast({ title: t('voiceRemindersAudioSaved') });
@@ -146,13 +153,17 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const requestUpload = (target: VoiceReminderAudioTarget, file: File) => {
     if (!snapshot.data || pending) return;
     setErrorKey(null);
-    if ('time' in target && !voiceReminderClockTimeSchema.safeParse(target.time).success) {
-      setErrorKey('voiceReminderInvalidTime');
-      return;
-    }
     const library = snapshot.data.settings.audioLibrary;
-    const existing = 'part' in target ? library[target.part]
-      : library.times.find((entry) => entry.time === target.time)?.audio;
+    let existing;
+    if ('part' in target) existing = library[target.part];
+    else {
+      const { unit, value } = voiceReminderUnitSelection(target);
+      const schema = unit === 'hour' ? voiceReminderHourSchema : unit === 'minute' ? voiceReminderMinuteSchema : voiceReminderClockTimeSchema;
+      if (!schema.safeParse(value).success) { setErrorKey('voiceReminderInvalidTime'); return; }
+      existing = unit === 'hour' ? library.hours.find((entry) => entry.hour === value)?.audio
+        : unit === 'minute' ? library.minutes.find((entry) => entry.minute === value)?.audio
+          : library.times.find((entry) => entry.time === value)?.audio;
+    }
     const selection = { target, file, ...(existing ? { expectedId: existing.id } : {}) };
     if (existing) setReplacement(selection);
     else void upload(selection);
@@ -162,7 +173,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     if (!removal || pending) return;
     setErrorKey(null);
     try {
-      await removeTime.mutateAsync(removal);
+      await removeRecording.mutateAsync(removal);
       setRemoval(null);
     } catch (error) {
       const key = mutationErrorKey(error, 'voiceRemindersDeleteFailed');
@@ -215,9 +226,9 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
               </TabsContent>
               <TabsContent value="recordings" forceMount hidden={activeTab !== 'recordings'} className="pt-3">
                 <VoiceReminderRecordings library={snapshot.data.settings.audioLibrary} draft={recordings} disabled={pending}
-                  onTime={(time) => { setRecordings((current) => ({ ...current, time })); setErrorKey(null); }}
+                  onValue={(unit, value) => { setRecordings((current) => ({ ...current, [unit]: { ...current[unit], value } })); setErrorKey(null); }}
                   onFile={selectFile} onUpload={requestUpload}
-                  onRemove={(time, expectedId) => { setRemoval({ time, expectedId }); setErrorKey(null); }}
+                  onRemove={(target, expectedId) => { setRemoval({ target, expectedId }); setErrorKey(null); }}
                   onPreviewError={() => setErrorKey('voiceRemindersPreviewFailed')} />
               </TabsContent>
               <TabsContent value="results" className="pt-3">
@@ -252,10 +263,10 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       />
       <ConfirmDialog
         open={removal !== null} onOpenChange={(next) => { if (!next) { setRemoval(null); setErrorKey(null); } }}
-        title={t('voiceRemindersDeleteTimeTitle')}
-        description={t('voiceRemindersDeleteTimeDescription', { time: removal?.time ?? '' })}
+        title={t('voiceRemindersDeleteRecordingTitle')}
+        description={t('voiceRemindersDeleteRecordingDescription', { value: removal ? voiceReminderUnitSelection(removal.target).value : '' })}
         confirmLabel={t('delete')} variant="destructive"
-        onConfirm={() => void deleteRecording()} isPending={removeTime.isPending} keepOpenOnConfirm
+        onConfirm={() => void deleteRecording()} isPending={removeRecording.isPending} keepOpenOnConfirm
         error={errorKey ? t(errorKey) : undefined}
       />
     </>

@@ -6,6 +6,8 @@ export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'unanswe
 export type VoiceReminderStatus = typeof VOICE_REMINDER_STATUSES[number];
 
 export const voiceReminderClockTimeSchema = z.string().length(5).regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+export const voiceReminderHourSchema = z.string().length(2).regex(/^(?:[01]\d|2[0-3])$/);
+export const voiceReminderMinuteSchema = z.string().length(2).regex(/^[0-5]\d$/);
 export const voiceReminderAudioIdSchema = z.string().uuid();
 const wallClock = voiceReminderClockTimeSchema;
 export const voiceReminderSettingsSchema = z.object({
@@ -33,10 +35,44 @@ export type VoiceReminderSettings = VoiceReminderSettingsInput & {
   audio: VoiceReminderAudio | null;
   audioLibrary: VoiceReminderAudioLibrary;
 };
-export type VoiceReminderAudioLibrary = {
-  intro: VoiceReminderAudio | null;
-  outro: VoiceReminderAudio | null;
-  times: Array<{ time: string; audio: VoiceReminderAudio }>;
+export type VoiceReminderAudioLibraryOf<Audio extends VoiceReminderAudio> = {
+  intro: Audio | null;
+  outro: Audio | null;
+  times: Array<{ time: string; audio: Audio }>;
+  hours: Array<{ hour: string; audio: Audio }>;
+  minutes: Array<{ minute: string; audio: Audio }>;
+};
+export type VoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<VoiceReminderAudio>;
+export type VoiceReminderAudioPartsOf<Audio extends VoiceReminderAudio> = {
+  intro: Audio;
+  outro: Audio;
+  clockTime: string;
+} & ({ kind: 'time'; time: Audio } | { kind: 'clock'; hour: Audio; minute: Audio });
+
+export const hasVoiceReminderAudioLibrary = (library: VoiceReminderAudioLibrary): boolean => (
+  Boolean(library.intro && library.outro && (library.times.length || (library.hours.length && library.minutes.length)))
+);
+
+export const selectVoiceReminderAudioParts = <Audio extends VoiceReminderAudio>(
+  library: VoiceReminderAudioLibraryOf<Audio>, clockTime: string,
+): VoiceReminderAudioPartsOf<Audio> | null => {
+  if (!voiceReminderClockTimeSchema.safeParse(clockTime).success || !library.intro || !library.outro) return null;
+  const [hourIndex, minuteIndex] = clockTime.split(':');
+  const hour = library.hours.find(entry => entry.hour === hourIndex)?.audio;
+  const minute = library.minutes.find(entry => entry.minute === minuteIndex)?.audio;
+  const base = { intro: library.intro, outro: library.outro, clockTime };
+  if (hour && minute) return { ...base, kind: 'clock', hour, minute };
+  const time = library.times.find(entry => entry.time === clockTime)?.audio;
+  return time ? { ...base, kind: 'time', time } : null;
+};
+
+export const voiceReminderAudioDurationValid = (library: VoiceReminderAudioLibrary): boolean => {
+  const base = (library.intro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
+  const longestHour = Math.max(0, ...library.hours.map(entry => entry.audio.durationSeconds));
+  const longestMinute = Math.max(0, ...library.minutes.map(entry => entry.audio.durationSeconds));
+  return base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
+    && library.times.every(entry => base + entry.audio.durationSeconds <= VOICE_REMINDER_MAX_AUDIO_SECONDS)
+    && (!library.hours.length || !library.minutes.length || base + longestHour + longestMinute <= VOICE_REMINDER_MAX_AUDIO_SECONDS);
 };
 export type VoiceReminderReadiness = {
   ready: boolean;
@@ -72,5 +108,5 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   maxConcurrentCalls: 2,
   timeZone: 'Asia/Tashkent',
   audio: null,
-  audioLibrary: { intro: null, outro: null, times: [] },
+  audioLibrary: { intro: null, outro: null, times: [], hours: [], minutes: [] },
 };

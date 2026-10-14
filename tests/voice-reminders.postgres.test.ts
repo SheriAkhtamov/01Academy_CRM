@@ -40,6 +40,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -87,6 +88,123 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       outro_audio_id: library.outro!.id, audio_clock_time: '11:00' });
   });
 
+  it('prefers separate hour and minute clips including 00 over an exact legacy recording', async () => {
+    const hour = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    const minute = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, hour, 1, null);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, minute, 1, null);
+    await repository.synchronize(now, await repository.settings());
+    const claim = (await repository.claim(now, 2, 300))!;
+    expect(await repository.prepare(claim, now)).toMatchObject({ audioParts: { kind: 'clock', clockTime: '11:00', hour, minute } });
+    const pinned = (await pool.query('SELECT audio_mode,time_audio_id,hour_audio_id,minute_audio_id FROM voice_reminder_jobs WHERE id=$1', [claim.id])).rows[0];
+    expect(pinned).toEqual({ audio_mode: 'clock', time_audio_id: null, hour_audio_id: hour.id, minute_audio_id: minute.id });
+    const settings = await repository.settings();
+    expect(settings.audioLibrary.hours).toEqual([{ hour: '11', audio: expect.objectContaining({ id: hour.id }) }]);
+    expect(settings.audioLibrary.minutes[0].minute).toBe('00');
+    expect(settings.audioLibrary.hours[0].audio).not.toHaveProperty('storageKey');
+    expect(settings.audioLibrary.minutes[0].audio).not.toHaveProperty('sha256');
+  });
+
+  it('waits for a required 00 minute clip without claiming a line and resumes after it is uploaded', async () => {
+    await repository.removeTimeAudio('11:00', 1);
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await repository.synchronize(now, await repository.settings());
+    expect(await repository.claim(now, 2, 300)).toBeNull();
+    expect((await repository.results()).summary.waiting).toBe(3);
+    expect((await pool.query('SELECT attempts FROM voice_reminder_jobs')).rows.every(row => row.attempts === 0)).toBe(true);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    const claim = (await repository.claim(now, 2, 300))!;
+    expect(await repository.prepare(claim, now)).toMatchObject({ audioParts: { kind: 'clock', clockTime: '11:00', minute: expect.anything() } });
+  });
+
+  it('does not starve a later playable split clock when an earlier demo minute has no recording', async () => {
+    await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 06:30:00' WHERE id=1;
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(2,'2030-01-15 06:45:00','scheduled');
+      INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(4,2,1,'invited');`);
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '45' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    const due = new Date('2030-01-15T05:50:00Z');
+    await repository.synchronize(due, await repository.settings());
+    const claim = (await repository.claim(due, 2, 300))!;
+    expect(claim.scheduledAt.toISOString()).toBe('2030-01-15T06:45:00.000Z');
+    expect(await repository.prepare(claim, due)).toMatchObject({ audioParts: { kind: 'clock', clockTime: '11:45' } });
+    expect((await pool.query("SELECT status,attempts FROM voice_reminder_jobs WHERE demo_lesson_id=1")).rows)
+      .toEqual(Array(3).fill({ status: 'waiting', attempts: 0 }));
+  });
+
+  it('invalidates before-invite mode switches and replacements while preserving frozen active parts', async () => {
+    await repository.synchronize(now, await repository.settings());
+    const claim = (await repository.claim(now, 2, 300))!;
+    expect(await repository.prepare(claim, now)).toMatchObject({ audioParts: { kind: 'time' } });
+    const hour = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    const minute = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, hour, 1);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, minute, 1);
+    expect(await repository.canContinue(claim, '+998901234567', now)).toBe(false);
+    expect(await repository.canContinue(claim, '+998901234567', now, false)).toBe(true);
+    expect(await repository.prepare(claim, now)).toMatchObject({ audioParts: { kind: 'clock', hour, minute } });
+    const replaced = { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, replaced, 1, minute.id);
+    expect(await repository.canContinue(claim, '+998901234567', now)).toBe(false);
+    expect(await repository.canContinue(claim, '+998901234567', now, false)).toBe(true);
+    await repository.removeLibraryAudio({ part: 'hour', hour: '11' }, 1, hour.id);
+    expect(await repository.prepare(claim, now)).toMatchObject({ audioParts: { kind: 'time' } });
+    const pinned = (await pool.query('SELECT audio_mode,hour_audio_id,minute_audio_id FROM voice_reminder_jobs WHERE id=$1', [claim.id])).rows[0];
+    expect(pinned).toEqual({ audio_mode: 'time', hour_audio_id: null, minute_audio_id: null });
+    expect((await pool.query('SELECT id FROM voice_reminder_audio WHERE id=ANY($1::uuid[])', [[hour.id, minute.id]])).rowCount).toBe(2);
+  });
+
+  it.each([{ part: 'hour', hour: '11' }, { part: 'minute', minute: '00' }] as const)(
+    'enforces create-only and stale confirmation guards for %j under the shared settings lock', async target => {
+      const uploaded = () => ({ ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` });
+      const changes = await Promise.allSettled([
+        repository.saveLibraryAudio(target, uploaded(), 1, null), repository.saveLibraryAudio(target, uploaded(), 1, null),
+      ]);
+      expect(changes.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+      expect(changes.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'voiceReminderAudioChanged' } });
+      const library = await repository.audioLibrary();
+      const original = target.part === 'hour' ? library.hours[0].audio : library.minutes[0].audio;
+      const replacement = uploaded();
+      await repository.saveLibraryAudio(target, replacement, 1, original.id);
+      await expect(repository.removeLibraryAudio(target, 1, original.id)).rejects.toMatchObject({ code: 'voiceReminderAudioChanged' });
+      await expect(repository.saveLibraryAudio(target, uploaded(), 1, original.id)).rejects.toMatchObject({ code: 'voiceReminderAudioChanged' });
+      await repository.removeLibraryAudio(target, 1, replacement.id);
+      const after = await repository.audioLibrary();
+      expect(target.part === 'hour' ? after.hours : after.minutes).toEqual([]);
+      expect((await pool.query('SELECT id FROM voice_reminder_audio WHERE id=$1', [original.id])).rowCount).toBe(1);
+    },
+  );
+
+  it('guards every hour/minute combination against concurrent duration increases', async () => {
+    const uploaded = (durationSeconds: number) => ({ ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav`, durationSeconds });
+    await repository.saveLibraryAudio({ part: 'hour', hour: '00' }, uploaded(1), 1);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, uploaded(1), 1);
+    await repository.saveLibraryAudio({ part: 'hour', hour: '23' }, uploaded(85), 1);
+    await repository.saveLibraryAudio({ part: 'minute', minute: '59' }, uploaded(92), 1);
+    const changes = await Promise.allSettled([
+      repository.saveLibraryAudio({ part: 'hour', hour: '23' }, uploaded(86), 1),
+      repository.saveLibraryAudio({ part: 'minute', minute: '59' }, uploaded(93), 1),
+    ]);
+    expect(changes.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(changes.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'voiceReminderAudioTooLong' } });
+    const library = await repository.audioLibrary();
+    expect(library.intro!.durationSeconds + library.outro!.durationSeconds + library.hours[1].audio.durationSeconds + library.minutes[1].audio.durationSeconds).toBe(180);
+    await expect(pool.query(`INSERT INTO voice_reminder_minute_audio(minute,audio_id) VALUES('60',$1)`, [audio.id])).rejects.toMatchObject({ code: '23514' });
+    await expect(repository.saveLibraryAudio({ part: 'hour', hour: '24' }, uploaded(1), 1)).rejects.toMatchObject({ code: 'voiceReminderInvalidTime' });
+  });
+
+  it('requires both clock groups for enablement while allowing legacy fallback to remain enabled', async () => {
+    await repository.removeTimeAudio('11:00', 1);
+    await repository.removeTimeAudio('12:00', 1);
+    await repository.saveSettings({ ...input, enabled: false }, 1);
+    await repository.saveLibraryAudio({ part: 'hour', hour: '11' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await expect(repository.saveSettings({ ...input, enabled: true }, 1)).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    await expect(pool.query('UPDATE voice_reminder_settings SET enabled=true WHERE id=1')).rejects.toMatchObject({ code: '23514' });
+    await repository.saveLibraryAudio({ part: 'minute', minute: '00' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
+    await repository.saveSettings({ ...input, enabled: true }, 1);
+    expect((await repository.settings()).enabled).toBe(true);
+  });
+
   it('does not claim missing-clock jobs and does not let them starve a later playable demo', async () => {
     await pool.query(`UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 06:30:00' WHERE id=1;
       INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(2,'2030-01-15 06:45:00','scheduled');
@@ -117,7 +235,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await repository.synchronize(now, await repository.settings());
     const claim = (await repository.claim(now, 2, 300))!;
     const ready = await repository.prepare(claim, now);
-    if (!ready || ready === 'defer') throw new Error('Expected prepared reminder');
+    if (!ready || ready === 'defer' || ready.audioParts.kind !== 'time') throw new Error('Expected prepared whole-clock reminder');
     const oldId = ready.audioParts.time.id;
     await repository.saveLibraryAudio({ part: 'time', time: '11:00' }, { ...audio, id: randomUUID(), storageKey: `${randomUUID()}.wav` }, 1);
     expect(await repository.canContinue(claim, ready.phone, now)).toBe(false);
@@ -222,13 +340,54 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         VALUES($1,'legacy.wav','audio/wav',24,1,'legacy.wav',$2)`, [audio.id, audio.sha256]);
       await upgrade.query('UPDATE voice_reminder_settings SET audio_id=$1,enabled=true WHERE id=1', [audio.id]);
       await upgrade.query(readFileSync('migrations/0144_voice_reminder_audio_library.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
-      expect(upgraded.audioLibrary).toEqual({ intro: null, outro: null, times: [] });
+      expect(upgraded.audioLibrary).toEqual({ intro: null, outro: null, times: [], hours: [], minutes: [] });
     } finally {
       await upgrade.end();
       await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
+    }
+  });
+
+  it('preserves enabled whole-clock settings and current/historical pins when upgrading 0144 to 0145', async () => {
+    const upgradeSchema = `voice_clock_upgrade_${randomUUID().replace(/-/g, '')}`;
+    await admin.query(`CREATE SCHEMA ${upgradeSchema}`);
+    const upgrade = new Pool({ connectionString: url, options: `-c search_path=${upgradeSchema}` });
+    const token = randomUUID();
+    try {
+      await upgrade.query(`CREATE TABLE users(id integer PRIMARY KEY);
+        CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
+        CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
+      for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library']) {
+        await upgrade.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
+      }
+      await upgrade.query(`INSERT INTO voice_reminder_audio(id,file_name,mime_type,size_bytes,duration_seconds,storage_key,sha256)
+        VALUES($1,'whole-clock.wav','audio/wav',24,1,'whole-clock.wav',$2)`, [audio.id, audio.sha256]);
+      await upgrade.query('UPDATE voice_reminder_settings SET intro_audio_id=$1,outro_audio_id=$1 WHERE id=1', [audio.id]);
+      await upgrade.query(`INSERT INTO voice_reminder_time_audio(time,audio_id) VALUES('11:00',$1)`, [audio.id]);
+      await upgrade.query('UPDATE voice_reminder_settings SET enabled=true WHERE id=1');
+      await upgrade.query(`INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(1,'2030-01-15 06:00:00','scheduled');
+        INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(1,1,1,'invited'),(2,1,1,'confirmed');`);
+      await upgrade.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,lease_token,lease_until,
+        intro_audio_id,time_audio_id,outro_audio_id,audio_clock_time)
+        VALUES(1,1,'2030-01-15T06:00:00Z','2030-01-15T05:00:00Z','calling',$2,'2030-01-15T05:05:00Z',$1,$1,$1,'11:00'),
+          (1,2,'2030-01-15T06:00:00Z','2030-01-15T05:00:00Z','played',NULL,NULL,$1,$1,$1,'11:00')`, [audio.id, token]);
+      await upgrade.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
+      const settings = await new PostgresVoiceReminderRepository(upgrade).settings();
+      expect(settings.enabled).toBe(true);
+      expect(settings.audioLibrary.times[0].audio.id).toBe(audio.id);
+      expect(settings.audioLibrary.hours).toEqual([]); expect(settings.audioLibrary.minutes).toEqual([]);
+      const rows = (await upgrade.query(`SELECT status,lease_token,audio_mode,time_audio_id,hour_audio_id,minute_audio_id
+        FROM voice_reminder_jobs ORDER BY id`)).rows;
+      expect(rows).toEqual([
+        { status: 'calling', lease_token: token, audio_mode: 'time', time_audio_id: audio.id, hour_audio_id: null, minute_audio_id: null },
+        { status: 'played', lease_token: null, audio_mode: 'time', time_audio_id: audio.id, hour_audio_id: null, minute_audio_id: null },
+      ]);
+      expect((await upgrade.query('SELECT count(*)::int AS count FROM voice_reminder_audio')).rows[0].count).toBe(1);
+    } finally {
+      await upgrade.end(); await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
     }
   });
 

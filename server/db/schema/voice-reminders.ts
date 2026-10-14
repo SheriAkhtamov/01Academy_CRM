@@ -58,6 +58,19 @@ export const createVoiceReminderTables = (references: {
     timeCheck: check('voice_reminder_time_audio_time_check', sql`${table.time} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
   }));
 
+  const voiceReminderHourAudio = pgTable('voice_reminder_hour_audio', {
+    hour: varchar('hour', { length: 2 }).primaryKey(),
+    audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }).notNull(),
+    updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({ hourCheck: check('voice_reminder_hour_audio_hour_check', sql`${table.hour} ~ '^([01][0-9]|2[0-3])$'`) }));
+  const voiceReminderMinuteAudio = pgTable('voice_reminder_minute_audio', {
+    minute: varchar('minute', { length: 2 }).primaryKey(),
+    audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }).notNull(),
+    updatedBy: integer('updated_by').references(() => references.userId, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({ minuteCheck: check('voice_reminder_minute_audio_minute_check', sql`${table.minute} ~ '^[0-5][0-9]$'`) }));
+
   const voiceReminderJobs = pgTable('voice_reminder_jobs', {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     demoLessonId: integer('demo_lesson_id').references(() => references.demoLessonId, { onDelete: 'cascade' }).notNull(),
@@ -75,6 +88,9 @@ export const createVoiceReminderTables = (references: {
     timeAudioId: uuid('time_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     outroAudioId: uuid('outro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     audioClockTime: varchar('audio_clock_time', { length: 5 }),
+    audioMode: varchar('audio_mode', { length: 10 }),
+    hourAudioId: uuid('hour_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    minuteAudioId: uuid('minute_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     leaseToken: uuid('lease_token'),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
     lastCallAt: timestamp('last_call_at', { withTimezone: true }),
@@ -91,6 +107,10 @@ export const createVoiceReminderTables = (references: {
     lessonRevisionCheck: check('voice_reminder_jobs_lesson_revision_check', sql`${table.lessonRevision} >= 0`),
     participantRevisionCheck: check('voice_reminder_jobs_participant_revision_check', sql`${table.participantRevision} >= 0`),
     clockTimeCheck: check('voice_reminder_jobs_audio_clock_time_check', sql`${table.audioClockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+    audioModeCheck: check('voice_reminder_jobs_audio_mode_check', sql`${table.audioMode} IN ('time', 'clock')`),
+    audioPartsCheck: check('voice_reminder_jobs_audio_parts_check', sql`${table.audioMode} IS NULL
+      OR (${table.audioMode} = 'time' AND ${table.timeAudioId} IS NOT NULL AND ${table.hourAudioId} IS NULL AND ${table.minuteAudioId} IS NULL)
+      OR (${table.audioMode} = 'clock' AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NOT NULL AND ${table.minuteAudioId} IS NOT NULL)`),
     leaseCheck: check('voice_reminder_jobs_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL) OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),
   }));
   const telephonyLineReservations = pgTable('telephony_line_reservations', {
@@ -125,5 +145,5 @@ export const createVoiceReminderTables = (references: {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
 };

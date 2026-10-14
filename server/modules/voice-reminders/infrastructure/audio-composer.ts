@@ -59,8 +59,10 @@ export class LocalVoiceReminderAudioComposer implements VoiceReminderAudioCompos
   ) {}
 
   compose(parts: StoredVoiceReminderAudioParts): Promise<{ path: string; mimeType: 'audio/wav' }> {
-    const sources = [parts.intro, parts.time, parts.outro];
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(parts.clockTime)
+    const sources = parts.kind === 'clock'
+      ? [parts.intro, parts.hour, parts.minute, parts.outro]
+      : [parts.intro, parts.time, parts.outro];
+    if (parts.clockTime.length !== 5 || !/^([01]\d|2[0-3]):[0-5]\d$/.test(parts.clockTime)
       || sources.some(source => !source || !Number.isFinite(source.durationSeconds) || source.durationSeconds <= 0)) {
       return Promise.reject(new VoiceReminderError('voiceReminderAudioInvalid'));
     }

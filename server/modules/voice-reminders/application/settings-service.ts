@@ -1,14 +1,14 @@
-import { VOICE_REMINDER_MAX_AUDIO_SECONDS, voiceReminderClockTimeSchema, type VoiceReminderSettingsInput, type VoiceReminderSnapshot } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderAudioLibrary, selectVoiceReminderAudioParts, voiceReminderAudioDurationValid, voiceReminderClockTimeSchema, type VoiceReminderSettingsInput, type VoiceReminderSnapshot } from '@shared/contracts/voice-reminders';
 import type { ActorContext } from '../../leads/domain/actor-context';
 import { requireVoiceReminderLeadership, VoiceReminderError } from '../domain/policy';
-import type { StoredVoiceReminderAudioLibrary, StoredVoiceReminderAudioParts, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderRepository } from './ports';
+import type { StoredVoiceReminderAudioLibrary, VoiceReminderAudioComposer, VoiceReminderAudioStore, VoiceReminderAudioTarget, VoiceReminderAudioUpload, VoiceReminderGateway, VoiceReminderLibraryEntryTarget, VoiceReminderRepository } from './ports';
+import { libraryAudioFor, validateAudioTarget, withLibraryAudio } from './audio-library';
 
 const validateTime = (time: string) => {
   if (!voiceReminderClockTimeSchema.safeParse(time).success) throw new VoiceReminderError('voiceReminderInvalidTime', 400);
 };
 const validateDurations = (library: StoredVoiceReminderAudioLibrary) => {
-  const base = (library.intro?.durationSeconds ?? 0) + (library.outro?.durationSeconds ?? 0);
-  if (base > VOICE_REMINDER_MAX_AUDIO_SECONDS || library.times.some(entry => base + entry.audio.durationSeconds > VOICE_REMINDER_MAX_AUDIO_SECONDS)) {
+  if (!voiceReminderAudioDurationValid(library)) {
     throw new VoiceReminderError('voiceReminderAudioTooLong', 400);
   }
 };
@@ -29,7 +29,7 @@ export class VoiceReminderSettingsService {
       this.gateway.readiness().catch(() => ({ ready: false, code: 'transport_unavailable' as const })),
     ]);
     const library = settings.audioLibrary;
-    const readiness = library.intro && library.outro && library.times.length ? transport : { ready: false, code: 'audio_missing' as const };
+    const readiness = hasVoiceReminderAudioLibrary(library) ? transport : { ready: false, code: 'audio_missing' as const };
     return { settings, readiness, ...history };
   }
 
@@ -37,7 +37,7 @@ export class VoiceReminderSettingsService {
     requireVoiceReminderLeadership(actor);
     if (input.enabled) {
       const library = await this.repository.audioLibrary();
-      if (!library.intro || !library.outro || !library.times.length) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+      if (!hasVoiceReminderAudioLibrary(library)) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
       validateDurations(library);
       const readiness = await this.gateway.readiness().catch(() => ({ ready: false }));
       if (!readiness.ready) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
@@ -62,14 +62,12 @@ export class VoiceReminderSettingsService {
 
   async uploadPart(actor: ActorContext, target: VoiceReminderAudioTarget, input: VoiceReminderAudioUpload, expectedAudioId: string | null = null): Promise<VoiceReminderSnapshot> {
     requireVoiceReminderLeadership(actor);
-    if (target.part === 'time') validateTime(target.time);
+    validateAudioTarget(target);
     const library = await this.repository.audioLibrary();
-    const current = target.part === 'time' ? library.times.find(entry => entry.time === target.time)?.audio : library[target.part];
+    const current = libraryAudioFor(library, target);
     if ((current?.id ?? null) !== expectedAudioId) throw new VoiceReminderError('voiceReminderAudioChanged', 409);
     const audio = await this.audioStore.save(input);
-    const candidate = target.part === 'time'
-      ? { ...library, times: [...library.times.filter(entry => entry.time !== target.time), { time: target.time, audio }] }
-      : { ...library, [target.part]: audio };
+    const candidate = withLibraryAudio(library, target, audio);
     validateDurations(candidate);
     await this.repository.saveLibraryAudio(target, audio, actor.userId, expectedAudioId);
     return this.snapshot(actor);
@@ -77,9 +75,9 @@ export class VoiceReminderSettingsService {
 
   async playbackPart(actor: ActorContext, target: VoiceReminderAudioTarget): Promise<{ path: string; mimeType: string }> {
     requireVoiceReminderLeadership(actor);
-    if (target.part === 'time') validateTime(target.time);
+    validateAudioTarget(target);
     const library = await this.repository.audioLibrary();
-    const audio = target.part === 'time' ? library.times.find(entry => entry.time === target.time)?.audio : library[target.part];
+    const audio = libraryAudioFor(library, target);
     if (!audio) throw new VoiceReminderError('resourceNotFound', 404);
     return { path: await this.audioStore.resolve(audio.storageKey), mimeType: audio.mimeType };
   }
@@ -91,15 +89,21 @@ export class VoiceReminderSettingsService {
     return this.snapshot(actor);
   }
 
+  async removePart(actor: ActorContext, target: VoiceReminderLibraryEntryTarget, expectedAudioId: string): Promise<VoiceReminderSnapshot> {
+    requireVoiceReminderLeadership(actor);
+    validateAudioTarget(target);
+    await this.repository.removeLibraryAudio(target, actor.userId, expectedAudioId);
+    return this.snapshot(actor);
+  }
+
   async preview(actor: ActorContext, time: string): Promise<{ path: string; mimeType: 'audio/wav' }> {
     requireVoiceReminderLeadership(actor);
     validateTime(time);
     const library = await this.repository.audioLibrary();
-    const timeAudio = library.times.find(entry => entry.time === time)?.audio;
-    if (!library.intro || !library.outro || !timeAudio) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
+    const parts = selectVoiceReminderAudioParts(library, time);
+    if (!parts) throw new VoiceReminderError('voiceReminderAudioRequired', 409);
     validateDurations(library);
     if (!this.composer) throw new VoiceReminderError('voiceReminderTransportUnavailable', 409);
-    const parts: StoredVoiceReminderAudioParts = { intro: library.intro, time: timeAudio, outro: library.outro, clockTime: time };
     return this.composer.compose(parts);
   }
 }

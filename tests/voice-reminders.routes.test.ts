@@ -15,7 +15,7 @@ const snapshot = {
   summary: { waiting: 0, calling: 0, played: 0, unanswered: 0, failed: 0, cancelled: 0 }, results: [],
 };
 const service = { snapshot: vi.fn(), save: vi.fn(), upload: vi.fn(), playback: vi.fn(),
-  uploadPart: vi.fn(), playbackPart: vi.fn(), removeTime: vi.fn(), preview: vi.fn() };
+  uploadPart: vi.fn(), playbackPart: vi.fn(), removeTime: vi.fn(), removePart: vi.fn(), preview: vi.fn() };
 const app = (module: 'administration' | 'sales' | null = 'administration') => {
   const application = express();
   application.use(express.json());
@@ -27,21 +27,24 @@ const app = (module: 'administration' | 'sales' | null = 'administration') => {
   return application;
 };
 beforeEach(() => { vi.clearAllMocks(); service.snapshot.mockResolvedValue(snapshot); service.save.mockResolvedValue(snapshot);
-  service.upload.mockResolvedValue(snapshot); service.uploadPart.mockResolvedValue(snapshot); service.removeTime.mockResolvedValue(snapshot); });
+  service.upload.mockResolvedValue(snapshot); service.uploadPart.mockResolvedValue(snapshot);
+  service.removeTime.mockResolvedValue(snapshot); service.removePart.mockResolvedValue(snapshot); });
 
 describe('voice reminder HTTP boundary', () => {
   it('requires leadership for settings, results and recording access before reading bytes', async () => {
     for (const module of [null, 'sales'] as const) {
-      for (const endpoint of ['', '/audio', '/audio/intro', '/audio/outro', '/audio/times/11:00', '/preview/11:00']) {
+      for (const endpoint of ['', '/audio', '/audio/intro', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
         const response = await request(app(module)).get(`/api/academy/voice-reminders${endpoint}`);
         expect(response.status).toBe(module === null ? 401 : 403);
       }
       const upload = await request(app(module)).post('/api/academy/voice-reminders/audio').attach('file', Buffer.from('bytes'), 'demo.wav');
       expect(upload.status).toBe(module === null ? 401 : 403);
-      for (const endpoint of ['intro', 'outro', 'times/11:00']) {
+      for (const endpoint of ['intro', 'outro', 'times/11:00', 'hours/00', 'minutes/00']) {
         expect((await request(app(module)).post(`/api/academy/voice-reminders/audio/${endpoint}`).attach('file', Buffer.from('bytes'), 'demo.wav')).status).toBe(module === null ? 401 : 403);
       }
       expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/times/11:00')).status).toBe(module === null ? 401 : 403);
+      expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/hours/00')).status).toBe(module === null ? 401 : 403);
+      expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/minutes/00')).status).toBe(module === null ? 401 : 403);
     }
     expect(service.snapshot).not.toHaveBeenCalled(); expect(service.upload).not.toHaveBeenCalled();
   });
@@ -112,6 +115,49 @@ describe('voice reminder HTTP boundary', () => {
     expect(service.uploadPart).toHaveBeenCalledTimes(1);
   });
 
+  it('uploads hour and minute clips including 00 and enforces confirmed deletion IDs', async () => {
+    const expectedId = randomUUID();
+    for (const [endpoint, target] of [['hours/00', { part: 'hour', hour: '00' }], ['hours/23', { part: 'hour', hour: '23' }], ['minutes/00', { part: 'minute', minute: '00' }], ['minutes/05', { part: 'minute', minute: '05' }], ['minutes/59', { part: 'minute', minute: '59' }]] as const) {
+      expect((await request(app()).post(`/api/academy/voice-reminders/audio/${endpoint}`)
+        .attach('file', Buffer.from('audio'), 'clip.wav')).body).toEqual(snapshot);
+      expect(service.uploadPart).toHaveBeenLastCalledWith(expect.anything(), target, expect.anything(), null);
+      expect((await request(app()).post(`/api/academy/voice-reminders/audio/${endpoint}?expectedId=${expectedId}`)
+        .attach('file', Buffer.from('replacement'), 'clip.wav')).status).toBe(200);
+      expect(service.uploadPart).toHaveBeenLastCalledWith(expect.anything(), target, expect.anything(), expectedId);
+      expect((await request(app()).delete(`/api/academy/voice-reminders/audio/${endpoint}`)).status).toBe(400);
+      expect((await request(app()).delete(`/api/academy/voice-reminders/audio/${endpoint}?expectedId=${expectedId}`)).body).toEqual(snapshot);
+      expect(service.removePart).toHaveBeenLastCalledWith(expect.anything(), target, expectedId);
+    }
+  });
+
+  it('rejects invalid hour/minute ranges and non-two-digit indexes before reading multipart bytes', async () => {
+    for (const endpoint of ['hours/24', 'hours/1', 'hours/01%0A', 'minutes/60', 'minutes/5', 'minutes/00%0A']) {
+      const path = `/api/academy/voice-reminders/audio/${endpoint}`;
+      expect((await request(app()).post(path).attach('file', Buffer.from('audio'), 'clip.wav')).body).toEqual({ error: 'voiceReminderInvalidTime' });
+      expect((await request(app()).get(path)).status).toBe(400);
+      expect((await request(app()).delete(path)).status).toBe(400);
+    }
+    expect(service.uploadPart).not.toHaveBeenCalled(); expect(service.playbackPart).not.toHaveBeenCalled(); expect(service.removePart).not.toHaveBeenCalled();
+    expect((await request(app()).post('/api/academy/voice-reminders/audio/hours/01')
+      .attach('file', Buffer.from('audio'), 'clip.wav').field('unexpected', 'value')).status).toBe(400);
+    expect(service.uploadPart).not.toHaveBeenCalled();
+  });
+
+  it('streams individual private hour/minute recordings with range support', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-clock-route-'));
+    try {
+      const file = path.join(directory, 'clock.wav');
+      await fs.writeFile(file, Buffer.from('RIFF private clip'));
+      service.playbackPart.mockResolvedValue({ path: file, mimeType: 'audio/wav' });
+      for (const [endpoint, target] of [['hours/01', { part: 'hour', hour: '01' }], ['minutes/00', { part: 'minute', minute: '00' }]] as const) {
+        const response = await request(app()).get(`/api/academy/voice-reminders/audio/${endpoint}`).set('Range', 'bytes=0-3');
+        expect(response.status).toBe(206); expect(response.headers['cache-control']).toBe('no-store');
+        expect(Buffer.from(response.body).toString()).toBe('RIFF');
+        expect(service.playbackPart).toHaveBeenLastCalledWith(expect.anything(), target);
+      }
+    } finally { await fs.rm(directory, { recursive: true, force: true }); }
+  });
+
   it('streams a private assembled preview and accepts audio ranges without exposing its path', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-preview-route-'));
     try {
@@ -131,7 +177,7 @@ describe('voice reminder enablement', () => {
   it('requires audio and a ready transport while allowing disablement on transport failures', async () => {
     const repository = {
       currentAudio: vi.fn(async () => null), saveSettings: vi.fn(async () => undefined),
-      audioLibrary: vi.fn(async (): Promise<StoredVoiceReminderAudioLibrary> => ({ intro: null, outro: null, times: [] })),
+      audioLibrary: vi.fn(async (): Promise<StoredVoiceReminderAudioLibrary> => ({ intro: null, outro: null, times: [], hours: [], minutes: [] })),
       settings: vi.fn(async () => DEFAULT_VOICE_REMINDER_SETTINGS),
       results: vi.fn(async () => ({ summary: snapshot.summary, results: [] })),
     };
@@ -142,7 +188,7 @@ describe('voice reminder enablement', () => {
     await expect(useCase.save(actor, { ...input, enabled: true })).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
     expect(repository.saveSettings).not.toHaveBeenCalled();
     const audio = { id: 'present', durationSeconds: 1 } as StoredVoiceReminderAudio;
-    repository.audioLibrary.mockResolvedValue({ intro: audio, outro: audio, times: [{ time: '11:00', audio }] });
+    repository.audioLibrary.mockResolvedValue({ intro: audio, outro: audio, times: [{ time: '11:00', audio }], hours: [], minutes: [] });
     gateway.readiness.mockRejectedValue(new Error('Provider offline'));
     await expect(useCase.save(actor, { ...input, enabled: true })).rejects.toMatchObject({ code: 'voiceReminderTransportUnavailable' });
     await useCase.save(actor, input);
@@ -153,16 +199,39 @@ describe('voice reminder enablement', () => {
     const actor = { userId: 1, primaryModule: 'administration' as const, modules: ['administration' as const], isLeadership: true };
     const audio = (name: string, durationSeconds = 1): StoredVoiceReminderAudio => ({ id: randomUUID(), fileName: `${name}.wav`,
       mimeType: 'audio/wav', sizeBytes: 24, durationSeconds, uploadedAt: new Date().toISOString(), storageKey: `${name}.wav`, sha256: 'a'.repeat(64) });
-    const library = { intro: audio('intro'), outro: audio('outro'), times: [{ time: '11:00', audio: audio('time') }] };
+    const library = { intro: audio('intro'), outro: audio('outro'), times: [{ time: '11:00', audio: audio('time') }], hours: [], minutes: [] };
     const repository = { audioLibrary: vi.fn(async () => library), saveLibraryAudio: vi.fn() };
     const store = { save: vi.fn(async () => audio('large', 179)), resolve: vi.fn() };
     const composer = { compose: vi.fn(async () => ({ path: '/private/assembled.wav', mimeType: 'audio/wav' as const })) };
     const useCase = new VoiceReminderSettingsService(repository as unknown as VoiceReminderRepository, store, { readiness: vi.fn(), tryAcquireLine: vi.fn() }, composer);
     await expect(useCase.preview(actor, '11:00')).resolves.toEqual({ path: '/private/assembled.wav', mimeType: 'audio/wav' });
-    expect(composer.compose).toHaveBeenCalledWith({ intro: library.intro, time: library.times[0].audio, outro: library.outro, clockTime: '11:00' });
+    expect(composer.compose).toHaveBeenCalledWith({ kind: 'time', intro: library.intro, time: library.times[0].audio, outro: library.outro, clockTime: '11:00' });
     await expect(useCase.uploadPart(actor, { part: 'time', time: '11:00' }, { bytes: Buffer.from('audio'), originalName: 'long.wav', mimeType: 'audio/wav' }, library.times[0].audio.id)).rejects.toMatchObject({ code: 'voiceReminderAudioTooLong' });
     expect(repository.saveLibraryAudio).not.toHaveBeenCalled();
     await expect(useCase.preview(actor, '12:00')).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
     expect(composer.compose).toHaveBeenCalledTimes(1);
+  });
+
+  it('previews required digital 00 minutes and falls back to a legacy whole clock when one split part is absent', async () => {
+    const actor = { userId: 1, primaryModule: 'administration' as const, modules: ['administration' as const], isLeadership: true };
+    const audio = (name: string): StoredVoiceReminderAudio => ({ id: randomUUID(), fileName: `${name}.wav`,
+      mimeType: 'audio/wav', sizeBytes: 24, durationSeconds: 1, uploadedAt: new Date().toISOString(), storageKey: `${name}.wav`, sha256: 'a'.repeat(64) });
+    const library: StoredVoiceReminderAudioLibrary = { intro: audio('intro'), outro: audio('outro'),
+      times: [{ time: '11:00', audio: audio('whole') }], hours: [{ hour: '11', audio: audio('hour') }],
+      minutes: [{ minute: '00', audio: audio('zero-zero') }] };
+    const repository = { audioLibrary: vi.fn(async () => library) };
+    const composer = { compose: vi.fn(async () => ({ path: '/private/clock.wav', mimeType: 'audio/wav' as const })) };
+    const useCase = new VoiceReminderSettingsService(repository as unknown as VoiceReminderRepository, { save: vi.fn(), resolve: vi.fn() },
+      { readiness: vi.fn(), tryAcquireLine: vi.fn() }, composer);
+    await useCase.preview(actor, '11:00');
+    expect(composer.compose).toHaveBeenLastCalledWith({ kind: 'clock', intro: library.intro, outro: library.outro,
+      clockTime: '11:00', hour: library.hours[0].audio, minute: library.minutes[0].audio });
+    library.minutes = [];
+    await useCase.preview(actor, '11:00');
+    expect(composer.compose).toHaveBeenLastCalledWith({ kind: 'time', intro: library.intro, outro: library.outro,
+      clockTime: '11:00', time: library.times[0].audio });
+    library.times = [];
+    await expect(useCase.preview(actor, '11:00')).rejects.toMatchObject({ code: 'voiceReminderAudioRequired' });
+    expect(composer.compose).toHaveBeenCalledTimes(2);
   });
 });

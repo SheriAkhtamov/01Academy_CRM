@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderSettingsSchema } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_BYTES, voiceReminderAudioIdSchema, voiceReminderClockTimeSchema, voiceReminderHourSchema, voiceReminderMinuteSchema, voiceReminderSettingsSchema } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderAudioTarget } from '../application/ports';
 import { actorContextFrom } from '../../leads/domain/actor-context';
 import type { VoiceReminderSettingsService } from '../application/settings-service';
@@ -95,6 +95,31 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     try { response.json(await service.removeTime(actorContextFrom(request), time, expected.id)); }
     catch (error) { sendError(response, error); }
   });
+  for (const part of ['hour', 'minute'] as const) {
+    const base = `/voice-reminders/audio/${part}s/:index`;
+    const targetFrom = (request: Request, response: Response) => {
+      const schema = part === 'hour' ? voiceReminderHourSchema : voiceReminderMinuteSchema;
+      const parsed = schema.safeParse(request.params.index);
+      if (!parsed.success) { response.status(400).json({ error: 'voiceReminderInvalidTime' }); return null; }
+      return part === 'hour' ? { part, hour: parsed.data } : { part, minute: parsed.data };
+    };
+    router.post(base, (request, response) => {
+      const target = targetFrom(request, response);
+      if (target) uploadPart(request, response, target);
+    });
+    router.get(base, (request, response) => {
+      const target = targetFrom(request, response);
+      if (target) void streamFile(response, () => service.playbackPart(actorContextFrom(request), target));
+    });
+    router.delete(base, async (request, response) => {
+      const target = targetFrom(request, response);
+      if (!target) return;
+      const expected = expectedFrom(request, response, true);
+      if (!expected?.id) return;
+      try { response.json(await service.removePart(actorContextFrom(request), target, expected.id)); }
+      catch (error) { sendError(response, error); }
+    });
+  }
   router.get('/voice-reminders/preview/:time', (request, response) => {
     const time = timeFrom(request, response);
     if (time) void streamFile(response, () => service.preview(actorContextFrom(request), time));

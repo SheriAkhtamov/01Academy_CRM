@@ -245,11 +245,13 @@ function PaymentDetails({ item }: { item: PortalPaymentDto }) {
       ? "paymentTypeFull"
       : item.type === "prepayment"
         ? "paymentTypePrepayment"
-        : item.type === "installment_1_2"
-          ? "paymentTypeInstallmentOne"
-          : item.type === "installment_2_2"
-            ? "paymentTypeInstallmentTwo"
-            : "portalPaymentOtherType";
+        : item.type === "monthly"
+          ? "paymentTypeMonthly"
+          : item.type === "installment_1_2"
+            ? "paymentTypeInstallmentOne"
+            : item.type === "installment_2_2"
+              ? "paymentTypeInstallmentTwo"
+              : "portalPaymentOtherType";
   return (
     <div className="space-y-6">
       <dl className="grid gap-3 sm:grid-cols-2">

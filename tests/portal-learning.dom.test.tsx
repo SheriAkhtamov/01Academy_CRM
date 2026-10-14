@@ -1367,6 +1367,36 @@ it("reuses the same submission idempotency key when retrying a lost response", a
   expect(mocks.submit.mock.calls[0]).toEqual(mocks.submit.mock.calls[1]);
   expect(mocks.draft).toHaveBeenCalledOnce();
 });
+it.each([
+  ["monthly", "paymentTypeMonthly"],
+  ["installment_1_2", "paymentTypeInstallmentOne"],
+  ["installment_2_2", "paymentTypeInstallmentTwo"],
+] as const)("displays payment type %s in the portal payment Dialog", async (type, translationKey) => {
+  mocks.payments.mockResolvedValue({
+    state: "ready",
+    items: [{
+      id: 88,
+      amountUzs: 500000,
+      status: "paid",
+      method: "card",
+      type,
+      period: null,
+      paidAt: "2026-10-01T10:00:00Z",
+      dueAt: null,
+      paidUntil: null,
+    }],
+    summary: null,
+  });
+  mount(<PortalPayments />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: i18n.t("portalOpen") }),
+  );
+
+  const dialog = screen.getByRole("dialog", { name: i18n.t("portalPaymentDetails") });
+  expect(within(dialog).getByText(i18n.t(translationKey))).toBeTruthy();
+  expect(within(dialog).queryByText(i18n.t("portalPaymentOtherType"))).toBeNull();
+});
+
 it("opens a payment in a Dialog and sends a question with that operation context", async () => {
   mount(<PortalPayments />);
   await userEvent.click(

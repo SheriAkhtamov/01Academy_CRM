@@ -52,7 +52,6 @@ export function PaymentFilesField({ files, onChange, disabled }: {
         disabled={disabled}
         onChange={selectFiles}
       />
-      <p className="text-xs text-muted-foreground">{t('paymentFilesHint')}</p>
       {files.length > 0 ? (
         <ul className="space-y-1" aria-label={t('paymentReceiptFiles')}>
           {files.map((file, index) => (

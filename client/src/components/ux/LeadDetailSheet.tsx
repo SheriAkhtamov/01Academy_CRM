@@ -336,9 +336,10 @@ const paymentMethodTranslationKeys = {
 const paymentTypeTranslationKeys = {
   full: 'paymentTypeFull',
   prepayment: 'paymentTypePrepayment',
+  monthly: 'paymentTypeMonthly',
   installment_1_2: 'paymentTypeInstallmentOne',
   installment_2_2: 'paymentTypeInstallmentTwo',
-} as const satisfies Record<(typeof PAYMENT_TYPES)[number], TranslationKey>;
+} as const satisfies Record<(typeof PAYMENT_TYPES)[number] | 'installment_1_2' | 'installment_2_2', TranslationKey>;
 
 const taskSchema = z.object({
   title: z.string().trim().min(1, 'fillRequiredFields'),

@@ -2239,10 +2239,11 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_students"'))).toBe(false);
   });
 
-  it('anchors the default paid-until date to paidAt and links student-only payments to the lead', async () => {
+  it.each([undefined, 'monthly'])('persists payment type %s, anchors paid-until to paidAt, and links the student payment to its lead', async (type) => {
     const paidAt = new Date('2026-01-15T10:00:00.000Z');
     let insertedLeadId: unknown;
     let insertedPaidUntil: unknown;
+    let insertedType: unknown;
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
@@ -2252,7 +2253,8 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('INSERT INTO "academy_payments"')) {
         insertedLeadId = readInsertValue(sql, values, 'lead_id');
         insertedPaidUntil = readInsertValue(sql, values, 'paid_until');
-        return { rows: [{ id: 99, lead_id: insertedLeadId, student_id: 5, paid_until: insertedPaidUntil }] };
+        insertedType = readInsertValue(sql, values, 'type');
+        return { rows: [{ id: 99, lead_id: insertedLeadId, student_id: 5, type: insertedType, paid_until: insertedPaidUntil }] };
       }
       if (sql.includes('UPDATE "academy_students"')) {
         return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
@@ -2265,10 +2267,12 @@ describe('academy route logic boundaries', () => {
 
     const response = await request(await createApp())
       .post('/api/academy/payments')
-      .send({ studentId: 5, amountUzs: 100_000, paidAt: paidAt.toISOString() });
+      .send({ studentId: 5, amountUzs: 100_000, type, paidAt: paidAt.toISOString() });
 
     expect(response.status).toBe(201);
     expect(insertedLeadId).toBe(42);
+    expect(insertedType).toBe(type ?? 'full');
+    expect(response.body.payment.type).toBe(type ?? 'full');
     expect(insertedPaidUntil).toBeInstanceOf(Date);
     expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
   });
@@ -2894,6 +2898,38 @@ describe('academy route logic boundaries', () => {
     expect(invalidMethod.status).toBe(400);
     expect(invalidMethod.body.error).toBe('Invalid payment method');
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it.each(['installment_1_2', 'installment_2_2'])('rejects retired payment type %s before writing anything', async (type) => {
+    const response = await request(await createApp())
+      .post('/api/academy/payments')
+      .send({ studentId: 5, amountUzs: 100_000, type });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid payment type');
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it('preserves retired installment types in payment history while publishing current creation options', async () => {
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_company_settings')) return { rows: [{ id: 1 }] };
+      if (sql.includes('FROM academy_payments p')) {
+        return { rows: [
+          { id: 99, student_id: 5, amount_uzs: 450_000, type: 'installment_1_2', status: 'paid' },
+          { id: 100, student_id: 5, amount_uzs: 450_000, type: 'installment_2_2', status: 'paid' },
+        ] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).get('/api/academy/modules/sales');
+
+    expect(response.status).toBe(200);
+    expect(response.body.constants.paymentTypes).toEqual(['full', 'prepayment', 'monthly']);
+    expect(response.body.payments).toEqual([
+      expect.objectContaining({ id: 99, type: 'installment_1_2', amountUzs: 450_000 }),
+      expect.objectContaining({ id: 100, type: 'installment_2_2', amountUzs: 450_000 }),
+    ]);
   });
 
   it('ignores requested discounts and leaves old referral discount benefits unused', async () => {

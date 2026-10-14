@@ -27,7 +27,7 @@ const initialLead = {
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
   students: [{ id: 50, studentName: 'Test student', status: 'studying', expectedPaymentUzs: 100_000, updatedAt: '2026-08-01T08:00:00.000Z' }],
-  payments: [] as Array<{ id: number; status: string; amountUzs: number; paidAt: string }>, comments: [],
+  payments: [] as Array<{ id: number; status: string; amountUzs: number; paidAt: string; type?: string }>, comments: [],
   tasks: [
     { id: 1, title: 'Future task', status: 'todo', dueAt: '2099-08-02T08:00:00.000Z' },
     { id: 2, title: 'Overdue callback', status: 'todo', dueAt: '2020-08-01T08:00:00.000Z' },
@@ -147,6 +147,48 @@ describe('calling from the lead workspace', () => {
 });
 
 describe('lead workspace navigation and drafts', () => {
+  it.each(['ru', 'en'] as const)('offers full, prepayment and monthly payment and submits monthly in %s', async (language) => {
+    i18n.setLanguage(language);
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+    await user.click(screen.getByRole('button', { name: i18n.t('recordPayment') }));
+
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('recordPayment') });
+    const type = within(dialog).getByRole('combobox', { name: i18n.t('paymentType') });
+    expect(type.textContent).toBe(i18n.t('paymentTypeFull'));
+    await user.click(type);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      i18n.t('paymentTypeFull'), i18n.t('paymentTypePrepayment'), i18n.t('paymentTypeMonthly'),
+    ]);
+    await user.click(screen.getByRole('option', { name: i18n.t('paymentTypeMonthly') }));
+    expect(type.textContent).toBe(i18n.t('paymentTypeMonthly'));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: i18n.t('amount') }), {
+      target: { value: '250000' },
+    });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]).toMatchObject({
+      url: '/api/academy/payments', method: 'POST',
+      body: { type: 'monthly', amountUzs: 250000, studentId: 50 },
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
+  });
+
+  it('displays monthly and existing installment types in payment history', async () => {
+    lead.payments = ['monthly', 'installment_1_2', 'installment_2_2'].map((type, index) => ({
+      id: 700 + index, status: 'paid', amountUzs: 100000, paidAt: '2026-09-01T08:00:00Z', type,
+    }));
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));
+
+    for (const key of ['paymentTypeMonthly', 'paymentTypeInstallmentOne', 'paymentTypeInstallmentTwo'] as const) {
+      expect(screen.getByText(i18n.t(key), { exact: false })).toBeTruthy();
+    }
+  });
+
   it('records the chosen payment date without showing or sending a paid-through date', async () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });

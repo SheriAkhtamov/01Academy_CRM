@@ -113,6 +113,7 @@ export async function performVertoReminderCall(
   let rpc: VertoRpcClient | undefined;
   let callStarted = false;
   let answered = false;
+  let remoteAudioApplied = false;
   let receivedBye = false;
   let acknowledgedBye = false;
   let ending = false;
@@ -212,16 +213,22 @@ export async function performVertoReminderCall(
       if (event.method !== 'verto.media' && event.method !== 'verto.answer') return;
       const final = event.method === 'verto.answer';
       descriptions = descriptions.then(async () => {
-        if (stopped || answered) return;
-        const sdp = typeof event.params.sdp === 'string' ? event.params.sdp : final ? peer.remoteDescription?.sdp : undefined;
-        if (!sdp) throw new VertoTransportError();
-        if (input.confirmation) digits.negotiate(sdp);
-        const offerSdp = peer.localDescription?.sdp;
-        if (!offerSdp) throw new VertoTransportError();
-        await peer.setRemoteDescription({
-          type: final ? 'answer' : 'pranswer',
-          sdp: normalizeLegacyVertoAudioAnswer(sdp, offerSdp),
-        });
+        if (stopped || ending || answered) return;
+        if (!remoteAudioApplied) {
+          const sdp = typeof event.params.sdp === 'string' ? event.params.sdp : undefined;
+          const offerSdp = peer.localDescription?.sdp;
+          if (!sdp || !offerSdp) throw new VertoTransportError();
+          // Verto's early media supplies a complete WebRTC answer, as in the
+          // browser SDK. Werift starts ICE/DTLS only for an answer. This does
+          // not establish a telephone answer or permit prompt/DTMF playback.
+          await peer.setRemoteDescription({
+            type: 'answer',
+            sdp: normalizeLegacyVertoAudioAnswer(sdp, offerSdp),
+          });
+          if (stopped || ending) return;
+          if (input.confirmation) digits.negotiate(sdp);
+          remoteAudioApplied = true;
+        }
         if (final) answered = true;
       }).catch(() => { stop('failed'); });
     }));

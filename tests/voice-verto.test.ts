@@ -160,6 +160,134 @@ describe('reminder confirmation dialogue', () => {
     expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(false);
   });
 
+  it('connects early media without sending audio or accepting digits before the own final answer', async () => {
+    const input = confirmationInput();
+    const robot = localPeer();
+    const applyRemote = vi.spyOn(robot, 'setRemoteDescription');
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early');
+      await vi.waitFor(() => expect(robot.connectionState).toBe('connected'), { timeout: 5_000 });
+      expect(received.peer.connectionState).toBe('connected');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '2' }, 'before-answer');
+      const samples = digitOneSamples();
+      const transport = received.peer.dtlsTransports[0];
+      const ssrc = received.peer.getTransceivers()[0].sender.ssrc;
+      for (let offset = 0; offset < samples.length; offset += 160) {
+        await transport.sendRtp(samples.subarray(offset, offset + 160), new RtpHeader({
+          payloadType: 0, ssrc, sequenceNumber: offset / 160, timestamp: offset,
+        }));
+        await delay(20);
+      }
+      event(socket, 'verto.answer', { callID: 'other-manager-call', sdp: received.sdp }, 'foreign-final');
+      // Duplicate early messages must not renegotiate an established transport.
+      event(socket, 'verto.media', { callID: received.callID, sdp: 'invalid duplicate' }, 'duplicate-early');
+      await delay(40);
+      expect(received.packets).toHaveLength(0);
+      expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+      expect(applyRemote).toHaveBeenCalledOnce();
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'final');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'after-prompt');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...confirmationDependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
+    expect(applyRemote).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'answer' }));
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+  }, 15_000);
+
+  it('waits for a queued early SDP before treating an immediate final answer as answered', async () => {
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    const applyRemote = vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+      await delay(100);
+      return setRemote(description);
+    });
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'queued-early');
+      event(socket, 'verto.answer', { callID: received.callID }, 'queued-final');
+      await delay(50);
+      expect(received.packets).toHaveLength(0);
+      expect(robot.remoteDescription).toBeNull();
+    });
+    const result = await performVertoReminderCall(harness.credentials, callInput(), {
+      ...dependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', terminationConfirmed: true });
+    expect(applyRemote).toHaveBeenCalledOnce();
+    expect(received.packets).toHaveLength(4);
+  }, 15_000);
+
+  it('does not treat connected early media followed by BYE as a telephone answer', async () => {
+    const input = confirmationInput();
+    const robot = localPeer();
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early');
+      await vi.waitFor(() => expect(robot.connectionState).toBe('connected'), { timeout: 5_000 });
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'early-digit');
+      event(socket, 'verto.bye', { callID: received.callID, cause: 'NO_ANSWER' }, 'early-bye');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...confirmationDependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'unanswered', callStarted: true, terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(received.packets).toHaveLength(0);
+    expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  }, 15_000);
+
+  it('rejects invalid initial early SDP without playing or saving a response', async () => {
+    const input = confirmationInput();
+    const harness = await fakeVerto((socket, invite) => {
+      const callID = invite.params!.dialogParams.callID;
+      event(socket, 'verto.media', { callID, sdp: 'not SDP' }, 'bad-early');
+      event(socket, 'verto.answer', { callID }, 'final-after-invalid');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  });
+
+  it('does not activate a queued final answer after cancellation during early SDP application', async () => {
+    const input = confirmationInput();
+    const abort = new AbortController();
+    input.signal = abort.signal;
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+      await delay(100);
+      return setRemote(description);
+    });
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early');
+      event(socket, 'verto.answer', { callID: received.callID }, 'queued-final');
+      await delay(30);
+      abort.abort();
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...confirmationDependencies(), createPeer: () => robot,
+    });
+    await delay(120);
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'cancelled', callStarted: true, terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(received.packets).toHaveLength(0);
+    expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  }, 15_000);
+
   it('finishes without inventing an answer when nobody presses a valid digit', async () => {
     const input = confirmationInput();
     const harness = await fakeVerto(async (socket, invite) => {
@@ -240,6 +368,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
   it('plays all PCMU RTP bytes only after the final answer and ignores unrelated incoming forks', async () => {
     const expectedAudio = Buffer.from(Array.from({ length: 640 }, (_, index) => index & 0xff));
     const robot = localPeer();
+    const applyRemote = vi.spyOn(robot, 'setRemoteDescription');
     let received!: Awaited<ReturnType<typeof answeringPeer>>;
     let earlyPacketCount = -1;
     let libraryUnchanged = true;
@@ -249,7 +378,9 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
       received = await answeringPeer(socket, invite);
       event(socket, 'verto.invite', { callID: 'manager-incoming-fork', sdp: received.sdp }, 'incoming-event');
       event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early-event');
-      await vi.waitFor(() => expect(robot.signalingState).toBe('have-remote-pranswer'), { timeout: 5_000 });
+      // Some PBX routes wait for client ICE/DTLS before ringing the callee.
+      await vi.waitFor(() => expect(robot.connectionState).toBe('connected'), { timeout: 5_000 });
+      expect(robot.signalingState).toBe('stable');
       await delay(100);
       earlyPacketCount = received.packets.length;
       event(socket, 'verto.bye', { callID: 'manager-incoming-fork', cause: 'NORMAL_CLEARING' }, 'other-bye-event');
@@ -270,6 +401,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     expect(guards).toContain(true);
     expect(guards).toContain(false);
     expect(earlyPacketCount).toBe(0);
+    expect(applyRemote).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'answer' }));
     expect(Buffer.concat(received.packets)).toEqual(expectedAudio);
     expect(received.packets.map((packet) => packet.length)).toEqual([160, 160, 160, 160]);
     expect(received.headers.every((header) => header.payloadType === 0)).toBe(true);
@@ -303,7 +435,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
     } finally { await Promise.all([first.close(), second.close()]); }
   });
 
-  it('plays real RTP through a legacy MID-less provisional answer followed by an answer without SDP', async () => {
+  it('connects real RTP through legacy MID-less early media before a final answer without SDP', async () => {
     const expectedAudio = Buffer.from(Array.from({ length: 640 }, (_, index) => (index * 7) & 0xff));
     const robot = localPeer();
     let received!: Awaited<ReturnType<typeof answeringPeer>>;
@@ -313,7 +445,7 @@ describe('Verto reminder signalling and real Node WebRTC audio', () => {
       const legacySdp = received.sdp.replace(/^a=mid:[^\r\n]*(?:\r\n|\n|\r)/gm, '');
       expect(legacySdp).not.toMatch(/^a=mid:/m);
       event(socket, 'verto.media', { callID: received.callID, sdp: legacySdp }, 'legacy-early');
-      await vi.waitFor(() => expect(robot.signalingState).toBe('have-remote-pranswer'), { timeout: 5_000 });
+      await vi.waitFor(() => expect(robot.connectionState).toBe('connected'), { timeout: 5_000 });
       await delay(80);
       earlyPacketCount = received.packets.length;
       event(socket, 'verto.answer', { callID: received.callID }, 'legacy-final');

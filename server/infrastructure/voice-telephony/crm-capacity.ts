@@ -159,7 +159,10 @@ export class CrmCapacitySource {
   private probes(records: CapacityRecords): Probe[] {
     const probes: Probe[] = [];
     for (const call of records.calls) {
-      if (!terminal(call) && this.now() - call.updatedAtMs >= this.staleAfterMs) {
+      // A restored browser can keep replaying an old active snapshot even when
+      // its SDK never recovered that dialog. Heartbeats must not suppress an
+      // exact history check forever. Age triggers a read, never a free channel.
+      if (!terminal(call) && this.now() - Math.min(call.startedAtMs,call.updatedAtMs) >= this.staleAfterMs) {
         const issuedAt = records.leases.filter(lease => aliases(call).includes(lease.clientCallId))
           .map(lease => lease.authorizedAtMs ?? lease.createdAtMs);
         probes.push({ key: `call:${call.id}`, ids: aliases(call), phone: call.phone,
@@ -184,7 +187,12 @@ export class CrmCapacitySource {
     const probes = this.probes(records);
     const keys = new Set(probes.map(probe => probe.key));
     for (const key of this.checkedAt.keys()) if (!keys.has(key)) { this.checkedAt.delete(key); this.failed.delete(key); }
-    const due = probes.filter(probe => this.now() - (this.checkedAt.get(probe.key) ?? 0) >= 30_000).slice(0, 4);
+    // A permanently unresolved old call must not monopolize every batch. Give
+    // never/least recently checked identities a turn while retaining the same
+    // bounded provider load and exact positive-end proof requirement.
+    const due = probes.filter(probe => this.now() - (this.checkedAt.get(probe.key) ?? 0) >= 30_000)
+      .sort((left,right) => (this.checkedAt.get(left.key) ?? 0)-(this.checkedAt.get(right.key) ?? 0))
+      .slice(0,4);
     await Promise.all(due.map(async probe => {
       this.checkedAt.set(probe.key, this.now());
       try {

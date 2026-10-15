@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetTitle } from '../client/src/components/ui/she
 
 const mocks = vi.hoisted(() => ({
   stage: 'reserve' as 'reserve' | 'authorize' | 'free' | 'failed',
+  admissionFailure: null as { error: string; status: number } | null,
   value: null as any,
   callbacks: null as any,
   fetch: vi.fn(), newCall: vi.fn(), microphone: vi.fn(), stop: vi.fn(), toast: vi.fn(),
@@ -57,6 +58,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
   mocks.stage = 'reserve';
+  mocks.admissionFailure = null;
   mocks.value = null;
   mocks.callbacks = null;
   i18n.setLanguage('en');
@@ -73,6 +75,7 @@ beforeEach(() => {
   mocks.fetch.mockImplementation(async (url: string, options?: { body?: string }) => {
     if (url.endsWith('/credentials')) return json({ extension: '100', username: 'synthetic', password: 'synthetic', sipDomain: 'example.test', websocketUrl: 'wss://example.test' });
     if (url.endsWith('/lines/reserve')) {
+      if (mocks.admissionFailure) return json({ error: mocks.admissionFailure.error }, mocks.admissionFailure.status);
       if (mocks.stage === 'reserve') return json({ error: 'onlinePbxLineBusyWithReminder' }, 409);
       if (mocks.stage === 'failed') return json({ error: 'unrecognizedInternalFailure' }, 500);
       return json({ id: 'manager-lease' });
@@ -173,6 +176,38 @@ describe('reminder-busy feedback at call entry points', () => {
     expect(requestsTo('/lines/reserve')).toHaveLength(2);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(requestsTo('/calls/events')).toHaveLength(1);
+  });
+
+  it.each([
+    ['onlinePbxTooManyCalls', 409], ['onlinePbxUnavailable', 503], ['onlinePbxManagerNotAssigned', 403], ['onlinePbxInvalidCallEvent', 400],
+  ] as const)('shows the exact %s refusal through a CRM sheet and its widget without a generic toast', async (key, status) => {
+    i18n.setLanguage('ru');
+    mocks.admissionFailure = { error: key, status };
+    const user = await renderPhone(true);
+    await user.click(screen.getByRole('button', { name: 'CRM card call' }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({ title: i18n.t(key), variant: 'destructive' }));
+    expect(mocks.value.activeCall.errorCode).toBe(key);
+    expect(mocks.newCall).not.toHaveBeenCalled();
+    expect(mocks.stop).toHaveBeenCalledOnce();
+    expect(requestsTo('/calls/events')).toHaveLength(0);
+    expect(screen.getByRole('dialog', { name: 'CRM card' })).toBeTruthy();
+  });
+
+  it.each([
+    ['onlinePbxTooManyCalls', 409], ['onlinePbxUnavailable', 503],
+  ] as const)('keeps %s readable inline for the widget without a duplicate toast or automatic redial', async (key, status) => {
+    mocks.admissionFailure = { error: key, status };
+    const user = await renderPhone();
+    await user.click(screen.getByRole('button', { name: i18n.t('telephonyOpen') }));
+    const phone = screen.getByRole('dialog', { name: i18n.t('telephonyTitle') });
+    fireEvent.change(within(phone).getByRole('textbox'), { target: { value: '+998901234567' } });
+    await user.click(within(phone).getByRole('button', { name: i18n.t('call') }));
+    expect((await screen.findByRole('alert')).textContent).toBe(i18n.t(key));
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.newCall).not.toHaveBeenCalled();
+    expect(requestsTo('/calls/events')).toHaveLength(0);
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(requestsTo('/lines/reserve')).toHaveLength(1);
   });
 
   it('keeps an unrelated server failure generic instead of claiming the reminder is on the line', async () => {

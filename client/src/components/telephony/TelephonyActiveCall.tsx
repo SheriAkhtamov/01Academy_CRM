@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatCallDuration, isEditableTarget, telephonyStatusTranslationKey } from '@/lib/telephony';
 import { telephonyApi, telephonyQueryKeys } from '@/features/telephony/api';
-import { REMINDER_LINE_BUSY_ERROR } from '@/features/telephony/call-errors';
+import { callAdmissionErrorKey } from '@/features/telephony/call-errors';
 import type { ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -131,6 +131,7 @@ export function TelephonyActiveCall({
   // empty box over an existing note — and saving that box wiped it.
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const finished = isFinishedCall(call.status);
+  const admissionError = callAdmissionErrorKey({ rawMessage: call.errorCode });
   const connected = call.status === 'connected';
   const isRingingIncoming = call.direction === 'incoming' && call.status === 'ringing';
   const displayName = call.contact?.name || t('telephonyUnknownContact');
@@ -346,9 +347,9 @@ export function TelephonyActiveCall({
 
       </div>
 
-      {call.status === 'failed' && call.errorCode === REMINDER_LINE_BUSY_ERROR ? (
+      {call.status === 'failed' && admissionError ? (
         <p role="alert" className="shrink-0 px-4 pb-3 text-sm text-destructive">
-          {t('onlinePbxLineBusyWithReminder')}
+          {t(admissionError)}
         </p>
       ) : null}
       <div className="flex w-full shrink-0 items-center justify-center gap-3 border-t bg-background/95 px-4 py-3" data-no-drag>

@@ -3,7 +3,8 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getUser: vi.fn(), warn: vi.fn() }));
+vi.mock('../server/lib/logger', () => ({ logger: { warn: mocks.warn } }));
 vi.mock('../server/storage', () => ({ storage: { getUser: mocks.getUser } }));
 vi.mock('../server/modules/academy', () => ({ default: express.Router() }));
 vi.mock('../server/routes/auth.routes', () => ({ default: express.Router() }));
@@ -99,6 +100,39 @@ describe('voice routes resolve the active CRM session before domain admission', 
     expect((await request(app(7)).get('/api/academy/voice-reminders')).status).toBe(403);
     expect((await request(app(7)).post('/api/telephony/lines/reserve').send({})).status).toBe(403);
     expect(snapshot).not.toHaveBeenCalled(); expect(channels.enabled).not.toHaveBeenCalled();
+  });
+  it('records the authenticated line and safe refusal reason without phone or provider details', async () => {
+    channels.enabled.mockResolvedValue(true);
+    const clientCallId = randomUUID();
+    channels.acquire.mockResolvedValueOnce(null);
+    expect((await request(app(7)).post('/api/telephony/lines/reserve')
+      .send({ clientCallId, phone: '+998901234567' })).status).toBe(409);
+    expect(mocks.warn).toHaveBeenLastCalledWith('Telephony line admission denied', {
+      phase: 'reserve', reason: 'onlinePbxTooManyCalls', userId: 7, extension: '100', clientCallId,
+    });
+    const reservationId = randomUUID();
+    channels.authorizeManagerDial.mockResolvedValueOnce(false);
+    expect((await request(app(7)).post('/api/telephony/lines/authorize')
+      .send({ id: reservationId })).body).toEqual({ authorized: false });
+    expect(mocks.warn).toHaveBeenLastCalledWith('Telephony line admission denied', {
+      phase: 'authorize', reason: 'onlinePbxTooManyCalls', userId: 7, extension: '100', reservationId,
+    });
+    channels.acquire.mockRejectedValueOnce(new Error('private provider payload'));
+    expect((await request(app(7)).post('/api/telephony/lines/reserve')
+      .send({ clientCallId, phone: '+998901234567' })).status).toBe(503);
+    expect(mocks.warn).toHaveBeenLastCalledWith('Telephony line admission denied', {
+      phase: 'reserve', reason: 'onlinePbxUnavailable', userId: 7, extension: '100', clientCallId,
+    });
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toMatch(/private provider payload|998901234567/);
+  });
+  it('preserves the refusal response even if diagnostic logging fails', async () => {
+    channels.enabled.mockResolvedValue(true);
+    channels.acquire.mockRejectedValueOnce(new TelephonyReminderLineBusyError());
+    mocks.warn.mockImplementationOnce(() => { throw new Error('Log transport failed'); });
+    const response = await request(app(7)).post('/api/telephony/lines/reserve')
+      .send({ clientCallId: randomUUID(), phone: '+998901234567' });
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ error: 'onlinePbxLineBusyWithReminder' });
   });
   it('authorizes and cancels only the authenticated manager intent', async () => {
     const id = randomUUID();

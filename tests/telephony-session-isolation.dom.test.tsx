@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ onDialogState: null as any, value: null as any
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user, isAuthenticated: true }) }));
 vi.mock('@/lib/queryClient', () => ({ apiRequest: mocks.api }));
 vi.mock('@/lib/incomingCallRingtone', () => ({ shouldPlayIncomingRingtone: () => false, IncomingCallRingtone: class { start() {return Promise.resolve();} stop() {} destroy() {} unlock() {return Promise.resolve(true);} } }));
-vi.mock('@xswitch/rtc', () => ({ Verto: class { constructor(_options: any, callbacks: any) { mocks.onDialogState = callbacks.onDialogState; } newCall() { return mocks.newCall(); } socketReady() {return true;} closeSocket() {} } }));
+vi.mock('@xswitch/rtc', () => ({ Verto: class { constructor(_options: any, callbacks: any) { mocks.onDialogState = callbacks.onDialogState; } newCall(options: { callID: string }) { return mocks.newCall(options); } socketReady() {return true;} closeSocket() {} } }));
 import { TelephonyProvider, useTelephony } from '../client/src/contexts/TelephonyContext';
 function Probe() { mocks.value = useTelephony(); return null; }
 const dialog = (callID: string) => ({ callID, direction: { name: 'inbound' }, state: { name: 'ringing' }, params: { caller_id_number: '+998901234567' }, answer: vi.fn(), hangup: vi.fn(), setMute: vi.fn().mockReturnValue(true), getMute: vi.fn(), toggleHold: vi.fn(), dtmf: vi.fn(), transfer: vi.fn() });
@@ -106,7 +106,7 @@ it('preserves synchronous outgoing SDK state notifications while creating its di
     return {};
   });
   const outgoing = { ...dialog('outgoing-sync'), direction: { name: 'outbound' }, state: { name: 'active' } };
-  mocks.newCall.mockImplementation(() => { mocks.onDialogState(outgoing); return outgoing; });
+  mocks.newCall.mockImplementation((options: { callID: string }) => { outgoing.callID = options.callID; mocks.onDialogState(outgoing); return outgoing; });
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
     getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [] }),
   } });
@@ -114,7 +114,7 @@ it('preserves synchronous outgoing SDK state notifications while creating its di
   render(<QueryClientProvider client={client}><TelephonyProvider><Probe /></TelephonyProvider></QueryClientProvider>);
   await waitFor(() => expect(mocks.onDialogState).toBeTruthy());
   await act(async () => mocks.value.startCall('+998901234567'));
-  expect(mocks.value.activeCall.clientCallId).toBe('outgoing-sync');
+  expect(mocks.value.activeCall.clientCallId).toBe(mocks.newCall.mock.calls[0][0].callID);
   expect(mocks.value.activeCall.status).toBe('connected');
   await act(async () => mocks.value.toggleMute());
   expect(outgoing.setMute).toHaveBeenCalledExactlyOnceWith('toggle');

@@ -13,7 +13,8 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
 import { telephonyApi } from '@/features/telephony/api';
-import { isReminderLineBusyError, REMINDER_LINE_BUSY_ERROR, ReminderLineBusyError } from '@/features/telephony/call-errors';
+import { callAdmissionErrorKey, CallAdmissionError } from '@/features/telephony/call-errors';
+import { withTelephonyRequestDeadline } from '@/features/telephony/request-deadline';
 import {
   hasOnlinePbxManagerAssignment,
   ONLINE_PBX_EXTENSION_MAX,
@@ -106,6 +107,10 @@ type OutgoingAttempt = {
 type StoredCallReport = {
   id?: number | null;
   clientCallId: string;
+  status?: TelephonyCallStatus;
+  startedAt?: string;
+  answeredAt?: string | null;
+  endedAt?: string | null;
   contactType?: 'lead' | 'student' | null;
   contactId?: number | null;
   contactName?: string | null;
@@ -324,8 +329,10 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [isRingtoneMuted, setIsRingtoneMuted] = useState(readStoredRingtoneMuted);
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
+  const uncertainDialogsRef = useRef(new WeakSet<VertoDialogLike>());
   const outgoingSetupRef = useRef(false);
   const outgoingAttemptRef = useRef<OutgoingAttempt | null>(null);
+  const answeringRef = useRef<{ actorId: number; callId: string; session: VertoDialogLike } | null>(null);
   const lineLeaseRef = useRef<{ id: string; attempt: OutgoingAttempt } | null>(null);
   const credentialsRef = useRef<Credentials | null>(null);
   const activeCallRef = useRef<ActiveTelephonyCall | null>(null);
@@ -358,6 +365,26 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     return next;
   }, [setActiveCall]);
 
+  const stopRingtone = useCallback(() => {
+    ringtoneRef.current?.stop();
+  }, []);
+
+  const startRingtone = useCallback(() => {
+    if (ringtoneMutedRef.current) return;
+    void ringtoneRef.current?.start();
+  }, []);
+
+  const stopLocalMedia = useCallback(() => {
+    localMediaRef.current?.getTracks().forEach((track) => track.stop());
+    localMediaRef.current = null;
+  }, []);
+
+  const clearCallSetupTimer = useCallback(() => {
+    if (callSetupTimerRef.current === null) return;
+    window.clearTimeout(callSetupTimerRef.current);
+    callSetupTimerRef.current = null;
+  }, []);
+
   const lookupContact = useCallback(async (phone: string) => {
     try {
       const result = await apiRequest('GET', `/api/telephony/contacts/lookup?phone=${encodeURIComponent(phone)}`) as {
@@ -376,9 +403,9 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       const record = leaseReleasesRef.current.get(key);
       if (!record || reportActorRef.current !== record.actorId) return;
       try {
-        const receipt = record.beforeInvite
-          ? await telephonyApi.releaseLine(record.id, true)
-          : await telephonyApi.releaseLine(record.id);
+        const receipt = await withTelephonyRequestDeadline(record.beforeInvite
+          ? telephonyApi.releaseLine(record.id, true)
+          : telephonyApi.releaseLine(record.id));
         if (!receipt.released || leaseReleasesRef.current.get(key) !== record) return;
         leaseReleasesRef.current.delete(key);
         persistLeaseReleases(leaseReleasesRef.current, record.actorId);
@@ -415,7 +442,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         const { call } = record;
         const end = call.endedAt ? new Date(call.endedAt).getTime() : Date.now();
         try {
-          const storedCall = await apiRequest('POST', '/api/telephony/calls/events', {
+          const storedCall = await withTelephonyRequestDeadline(apiRequest('POST', '/api/telephony/calls/events', {
             clientCallId: call.clientCallId,
             direction: call.direction,
             status: call.status,
@@ -426,19 +453,57 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             durationSeconds: durationFrom(call.startedAt, end),
             talkSeconds: durationFrom(call.answeredAt, end),
             hangupCause: record.hangupCause,
-          }) as StoredCallReport;
+          })) as StoredCallReport;
           if (storedCall.clientCallId !== call.clientCallId || !(Number(storedCall.id) > 0)) break;
+          if (reportActorRef.current !== record.actorId || !mountedRef.current) break;
           receipt = storedCall;
-          if (callReportsRef.current.get(key) === record) {
-            if (terminalStatuses.includes(call.status)) {
-              if (record.leaseId) void queueLeaseRelease(record.actorId, record.leaseId);
+          const canonicalStart = typeof storedCall.startedAt === 'string' && Number.isFinite(Date.parse(storedCall.startedAt))
+            ? Date.parse(storedCall.startedAt) : Date.parse(call.startedAt);
+          const terminalReceipt = storedCall.status && terminalStatuses.includes(storedCall.status)
+            && typeof storedCall.endedAt === 'string'
+            && Number.isFinite(Date.parse(storedCall.endedAt))
+            && Date.parse(storedCall.endedAt) + 1_000 >= canonicalStart;
+          if (storedCall.status !== undefined && terminalStatuses.includes(storedCall.status) && !terminalReceipt) break;
+          if (terminalStatuses.includes(call.status) && storedCall.status !== undefined && !terminalReceipt) break;
+          const latest = callReportsRef.current.get(key);
+          // A terminal server snapshot is authoritative for this exact UUID.
+          // Preserve a newer local terminal snapshot until its details are ACKed.
+          const newerTerminal = latest !== record && latest && terminalStatuses.includes(latest.call.status);
+          if (!newerTerminal && (latest === record || terminalReceipt)) {
+            if (terminalReceipt || (terminalStatuses.includes(call.status) && storedCall.status === undefined)) {
+              if (latest?.leaseId ?? record.leaseId) void queueLeaseRelease(record.actorId, (latest?.leaseId ?? record.leaseId)!);
               callReportsRef.current.delete(key);
-            }
-            else record.pending = false;
+            } else if (!terminalStatuses.includes(call.status)) record.pending = false;
             persistCallReports(callReportsRef.current, record.actorId);
           }
-          if (reportActorRef.current !== record.actorId || !mountedRef.current) break;
-          if (activeCallRef.current?.clientCallId === call.clientCallId) {
+          const current = activeCallRef.current;
+          if (current?.clientCallId === call.clientCallId) {
+            if (terminalReceipt && !terminalStatuses.includes(current.status)) {
+              const attempt = outgoingAttemptRef.current;
+              const session = sessionRef.current;
+              // Do not touch a successor's SDK dialog or microphone.
+              if ((!attempt || attempt.callId === call.clientCallId)
+                && (!session || session.callID === call.clientCallId)) {
+                if (attempt) {
+                  attempt.cancelled = true;
+                  outgoingAttemptRef.current = null;
+                }
+                answeringRef.current = null;
+                outgoingSetupRef.current = false;
+                sessionRef.current = null;
+                setPendingPhone(null);
+                clearCallSetupTimer();
+                stopRingtone();
+                stopLocalMedia();
+                patchActiveCall({ status: storedCall.status!, endedAt: storedCall.endedAt!, held: false, errorCode: null });
+                // Mark terminal before SDK cleanup: its synchronous callbacks
+                // must not fabricate another event or reopen this exact call.
+                if (session && !['hangup', 'destroy', 'purge'].includes(session.state?.name ?? '')) {
+                  try { session.hangup({ cause: 'NORMAL_CLEARING' }); } catch { /* Server proof remains authoritative. */ }
+                  finally { if (sessionRef.current === session) sessionRef.current = null; }
+                }
+              }
+            }
             patchActiveCall({
               storedCallId: Number(storedCall.id),
               ...(storedCall.contactType && storedCall.contactId && storedCall.contactName
@@ -470,7 +535,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       if (reportingRef.current.get(key) === pending) reportingRef.current.delete(key);
     });
     return pending;
-  }, [patchActiveCall, queryClient, queueLeaseRelease]);
+  }, [clearCallSetupTimer, patchActiveCall, queryClient, queueLeaseRelease, stopLocalMedia, stopRingtone]);
 
   const reportCall = useCallback((call: ActiveTelephonyCall, hangupCause?: string | null) => {
     const actorId = user?.id;
@@ -543,26 +608,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     };
   }, [flushCallReport, flushLeaseRelease, isManagerAssigned, replayCallReports, user?.id]);
 
-  const stopRingtone = useCallback(() => {
-    ringtoneRef.current?.stop();
-  }, []);
-
-  const startRingtone = useCallback(() => {
-    if (ringtoneMutedRef.current) return;
-    void ringtoneRef.current?.start();
-  }, []);
-
-  const stopLocalMedia = useCallback(() => {
-    localMediaRef.current?.getTracks().forEach((track) => track.stop());
-    localMediaRef.current = null;
-  }, []);
-
-  const clearCallSetupTimer = useCallback(() => {
-    if (callSetupTimerRef.current === null) return;
-    window.clearTimeout(callSetupTimerRef.current);
-    callSetupTimerRef.current = null;
-  }, []);
-
   const releaseLine = useCallback((expected?: OutgoingAttempt) => {
     const lease = lineLeaseRef.current;
     const owner = expected ?? lease?.attempt;
@@ -597,6 +642,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         : 'failed';
     const finished = { ...current, status, endedAt, errorCode: cause ?? current.errorCode };
     sessionRef.current = null;
+    answeringRef.current = null;
     setPendingPhone(null);
     clearCallSetupTimer();
     stopRingtone();
@@ -690,11 +736,22 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           const state = dialog.state?.name ?? 'unknown';
           const direction = dialog.direction?.name === 'inbound' ? 'incoming' : 'outgoing';
           const callId = String(dialog.callID || `call-${Date.now()}`);
+          if (state === 'purge' || (['hangup', 'destroy'].includes(state) && !manager?.socketReady())) {
+            uncertainDialogsRef.current.add(dialog);
+          } else if (['recovering', 'trying', 'early', 'active', 'held'].includes(state)) {
+            uncertainDialogsRef.current.delete(dialog);
+          }
 
-          if (!activeCallRef.current && ['recovering', 'active', 'early', 'held'].includes(state)) {
+          const previous = activeCallRef.current;
+          if (previous?.clientCallId === callId && terminalStatuses.includes(previous.status)
+            && !['hangup', 'destroy', 'purge'].includes(state)) return;
+
+          if (!activeCallRef.current && (['recovering', 'active', 'early', 'held'].includes(state)
+            || (['hangup', 'destroy'].includes(state) && manager?.socketReady() && !uncertainDialogsRef.current.has(dialog)))) {
             const actorId = reportActorRef.current;
             const saved = actorId ? callReportsRef.current.get(callReportKey(actorId, callId)) : undefined;
-            if (saved && !terminalStatuses.includes(saved.call.status)) {
+            if (saved && !terminalStatuses.includes(saved.call.status)
+              && (!['hangup', 'destroy'].includes(state) || saved.confirmed)) {
               setActiveCall({ ...saved.call, muted: false, held: state === 'held' });
               if (saved.call.direction === 'outgoing' && managerRef.current) {
                 const restored: OutgoingAttempt = {
@@ -790,10 +847,6 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          if (direction === 'outgoing' && outgoingSetupRef.current && outgoingAttemptRef.current && !sessionRef.current) {
-            outgoingAttemptRef.current.callId = callId;
-            patchActiveCall({ clientCallId: callId });
-          }
           if (activeCallRef.current?.clientCallId !== callId) {
             if (['hangup', 'destroy', 'purge'].includes(state)) {
               const timer = incomingTimers.get(callId);
@@ -806,7 +859,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           if (direction === 'outgoing' && !outgoingAttemptRef.current && !['hangup', 'destroy', 'purge'].includes(state)) return;
           sessionRef.current = dialog;
 
-          if (state === 'purge' || (['hangup', 'destroy'].includes(state) && !manager?.socketReady())) {
+          if (uncertainDialogsRef.current.has(dialog) && ['purge', 'hangup', 'destroy'].includes(state)) {
             // Verto purges local media on signalling loss. That is not a
             // provider hangup receipt and cannot free the shared channel.
             setConnectionState('offline');
@@ -910,6 +963,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         if (!attempt.inviteInvoked) releaseLine(attempt);
       }
       outgoingSetupRef.current = false;
+      answeringRef.current = null;
       stopLocalMedia();
       credentialsRef.current = null;
       managerRef.current = null;
@@ -979,7 +1033,18 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       };
       setActiveCall(started);
       const contactPromise = lookupContact(phone);
-      const lease = await telephonyApi.reserveLine(provisionalId, `+${digits}`);
+      const reservation = telephonyApi.reserveLine(provisionalId, `+${digits}`);
+      let lease: Awaited<typeof reservation>;
+      try {
+        lease = await withTelephonyRequestDeadline(reservation);
+      } catch (error) {
+        // A timed-out request can still return its own pending lease later.
+        // Its release must never touch a successor or place a call.
+        void reservation.then((lateLease) => {
+          if (lateLease.id) void queueLeaseRelease(attempt.actorId, lateLease.id, true);
+        }).catch(() => undefined);
+        throw error;
+      }
       attempt.leaseId = lease.id;
       // An abandoned request may finish after a new user/call has taken over.
       // Its returned lease belongs to this attempt and must not replace theirs.
@@ -987,7 +1052,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       if (!manager.socketReady()) throw new Error('onlinePbxWebPhoneOffline');
       if (lease.id) lineLeaseRef.current = { id: lease.id, attempt };
       if (lease.id) {
-        const authorization = await telephonyApi.authorizeLine(lease.id);
+        const authorization = await withTelephonyRequestDeadline(telephonyApi.authorizeLine(lease.id));
         if (!authorization.authorized) throw new Error('onlinePbxTooManyCalls');
         assertCurrent();
         if (!manager.socketReady()) throw new Error('onlinePbxWebPhoneOffline');
@@ -1020,7 +1085,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         replayCallReports();
       });
       outgoingSetupRef.current = false;
-      if (!session) throw new Error('onlinePbxWebPhoneOffline');
+      if (!session || session.callID !== provisionalId) throw new Error('onlinePbxWebPhoneOffline');
       if (!ownsAttempt()) {
         session.hangup({ cause: 'NORMAL_CLEARING' });
         throw new Error('onlinePbxWebPhoneOffline');
@@ -1057,7 +1122,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       releaseLine(attempt);
       if (localMediaRef.current === attempt.microphone && attempt.microphone) stopLocalMedia();
       else attempt.microphone?.getTracks().forEach((track) => track.stop());
-      let busyCallId: string | null = null;
+      const admissionError = callAdmissionErrorKey(error);
+      let failedCallId: string | null = null;
       if (ownsAttempt()) {
         clearCallSetupTimer();
         attempt.cancelled = true;
@@ -1070,16 +1136,16 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             ...started,
             status: 'failed' as const,
             endedAt: new Date().toISOString(),
-            errorCode: isReminderLineBusyError(error) ? REMINDER_LINE_BUSY_ERROR : 'CALL_SETUP_FAILED',
+            errorCode: admissionError ?? 'CALL_SETUP_FAILED',
           };
           setActiveCall(failed);
-          if (isReminderLineBusyError(error)) busyCallId = failed.clientCallId;
+          if (admissionError) failedCallId = failed.clientCallId;
           // Admission failed before the SDK was invoked, so the journal and
           // manager KPIs must not receive a call attempt.
         }
         setPendingPhone(null);
       }
-      if (isReminderLineBusyError(error)) throw new ReminderLineBusyError(busyCallId);
+      if (admissionError) throw new CallAdmissionError(admissionError, failedCallId);
       throw error;
     } finally {
       // A synchronous SDK error may already have ended this attempt. Never
@@ -1089,16 +1155,27 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         setPendingPhone(null);
       }
     }
-  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, releaseLine, replayCallReports, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
+  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, queueLeaseRelease, releaseLine, replayCallReports, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
 
   const answerCall = useCallback(async () => {
     const session = sessionRef.current;
     const current = activeCallRef.current;
-    if (!session || current?.direction !== 'incoming') return;
+    const actorId = reportActorRef.current;
+    if (!session || current?.direction !== 'incoming' || current.status !== 'ringing' || !actorId || answeringRef.current) return;
+    const attempt = { actorId, callId: current.clientCallId, session };
+    answeringRef.current = attempt;
+    const ownsAnswer = () => answeringRef.current === attempt && mountedRef.current
+      && reportActorRef.current === actorId && sessionRef.current === session
+      && activeCallRef.current?.clientCallId === attempt.callId && activeCallRef.current.status === 'ringing'
+      && !['hangup', 'destroy', 'purge'].includes(session.state?.name ?? '');
     stopRingtone();
     setPendingPhone(current.phone);
     try {
       const microphone = await requestMicrophone();
+      if (!ownsAnswer() || !managerRef.current?.socketReady()) {
+        microphone.getTracks().forEach((track) => track.stop());
+        return;
+      }
       stopLocalMedia();
       localMediaRef.current = microphone;
       session.answer({
@@ -1109,10 +1186,15 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         useStream: microphone,
       });
     } catch (error) {
-      startRingtone();
-      throw error;
+      if (ownsAnswer()) {
+        startRingtone();
+        throw error;
+      }
     } finally {
-      setPendingPhone(null);
+      if (answeringRef.current === attempt) {
+        answeringRef.current = null;
+        if (reportActorRef.current === actorId && activeCallRef.current?.clientCallId === attempt.callId) setPendingPhone(null);
+      }
     }
   }, [startRingtone, stopLocalMedia, stopRingtone]);
 
@@ -1137,6 +1219,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       return;
     }
     stopRingtone();
+    answeringRef.current = null;
+    setPendingPhone(null);
     try {
       if (current.direction === 'incoming' && current.status === 'ringing') {
         session.hangup({ cause: 'CALL_REJECTED' });

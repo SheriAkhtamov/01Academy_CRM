@@ -1,9 +1,26 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { releaseTelephonyLineSchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema, TELEPHONY_REMINDER_LINE_BUSY } from '@shared/contracts/telephony-lines';
 import { canAccessAcademyModule } from '@shared/academy';
 import { onlinePbxRoutingDestination } from '@shared/telephony';
 import type { TelephonyChannelReservations } from '../../../infrastructure/voice-telephony/channel-reservations';
 import { TelephonyReminderLineBusyError } from '../domain/telephony-line-policy';
+import { logger } from '../../../lib/logger';
+
+const logAdmissionDenied = (
+  request: Request,
+  phase: 'reserve' | 'authorize',
+  reason: string,
+  identity: { clientCallId: string } | { reservationId: string },
+) => {
+  try {
+    logger.warn('Telephony line admission denied', {
+      phase, reason, userId: request.user?.id,
+      extension: request.user?.onlinePbxExtension, ...identity,
+    });
+  } catch {
+    // Diagnostic transport failure must preserve the actual admission result.
+  }
+};
 
 export const createTelephonyLinesRouter = (channels: TelephonyChannelReservations) => {
   const router = Router();
@@ -24,11 +41,15 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
       const lease = await channels.acquire({
         owner: 'manager', userId: request.user!.id, extensions: [request.user!.onlinePbxExtension!], ...parsed.data,
       });
-      if (!lease) { response.status(409).json({ error: 'onlinePbxTooManyCalls' }); return; }
+      if (!lease) {
+        logAdmissionDenied(request, 'reserve', 'onlinePbxTooManyCalls', { clientCallId: parsed.data.clientCallId });
+        response.status(409).json({ error: 'onlinePbxTooManyCalls' }); return;
+      }
       response.json({ id: lease.id });
     } catch (error) {
-      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503)
-        .json({ error: error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable' });
+      const reason = error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable';
+      logAdmissionDenied(request, 'reserve', reason, { clientCallId: parsed.data.clientCallId });
+      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503).json({ error: reason });
     }
   });
   router.post('/lines/renew', async (request, response) => {
@@ -41,12 +62,15 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
     const parsed = telephonyLineLeaseSchema.safeParse(request.body);
     if (!parsed.success) { response.status(400).json({ error: 'onlinePbxInvalidCallEvent' }); return; }
     try {
-      response.json({ authorized: await channels.authorizeManagerDial(
+      const authorized = await channels.authorizeManagerDial(
         parsed.data.id, request.user!.id, request.user!.onlinePbxExtension!,
-      ) });
+      );
+      if (!authorized) logAdmissionDenied(request, 'authorize', 'onlinePbxTooManyCalls', { reservationId: parsed.data.id });
+      response.json({ authorized });
     } catch (error) {
-      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503)
-        .json({ error: error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable' });
+      const reason = error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable';
+      logAdmissionDenied(request, 'authorize', reason, { reservationId: parsed.data.id });
+      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503).json({ error: reason });
     }
   });
   router.post('/lines/release', async (request, response) => {

@@ -2005,7 +2005,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   onlinePbxMicrophonePermissionTimeout: { en: 'Microphone permission was not granted in time', ru: 'Доступ к микрофону не был разрешён вовремя' },
   onlinePbxMicrophoneUnavailable: { en: 'No available microphone was found', ru: 'Не найден доступный микрофон' },
   onlinePbxInvalidTransferTarget: { en: 'Enter a colleague extension or a full phone number', ru: 'Укажите добавочный коллеги или полный номер телефона' },
-  onlinePbxInvalidCallEvent: { en: 'Invalid call event', ru: 'Некорректное событие звонка' },
+  onlinePbxInvalidCallEvent: { en: 'Could not start the call. Please try again.', ru: 'Не удалось начать звонок. Попробуйте снова.' },
   onlinePbxInvalidCallNote: { en: 'The note is too long', ru: 'Заметка слишком длинная' },
   onlinePbxInvalidCallId: { en: "This call is unavailable.", ru: "Этот звонок недоступен." },
   onlinePbxCallNotFound: { en: 'Call not found', ru: 'Звонок не найден' },

@@ -329,6 +329,16 @@ const claimUnassignedLeadForAnsweredCall = async (leadId: number | null, userId:
 const isCallEventInput = (value: unknown): value is CallEventInput => {
   if (!value || typeof value !== 'object') return false;
   const event = value as Partial<CallEventInput>;
+  const terminal = ['ended','failed','declined','missed'].includes(String(event.status));
+  const startedAt = safeDate(event.startedAt);
+  const answeredAt = safeDate(event.answeredAt);
+  const endedAt = safeDate(event.endedAt);
+  if ((event.startedAt !== undefined && !startedAt)
+    || (event.answeredAt != null && !answeredAt)
+    || (terminal && !endedAt)
+    || (!terminal && event.endedAt != null)
+    || (endedAt && startedAt && endedAt < startedAt)
+    || (endedAt && answeredAt && endedAt < answeredAt)) return false;
   return Boolean(
     typeof event.clientCallId === 'string'
       && event.clientCallId.length > 0
@@ -434,7 +444,9 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
            contact_name = COALESCE(contact_name, $9),
            lead_id = COALESCE(lead_id, $10),
            started_at = LEAST(started_at, $11),
-           answered_at = COALESCE(answered_at, $12),
+           answered_at = CASE WHEN status IN ('ended', 'failed', 'declined', 'missed')
+             AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN answered_at
+             ELSE COALESCE(answered_at, $12) END,
            ended_at = CASE
              WHEN $4::text = 'incoming'
               AND NOT $17
@@ -443,9 +455,15 @@ const upsertClientCall = async (userId: number, extension: string, input: CallEv
               AND (user_id IS NULL OR user_id <> $2) THEN ended_at
              ELSE COALESCE($13, ended_at)
            END,
-           duration_seconds = GREATEST(duration_seconds, $14),
-           talk_seconds = GREATEST(talk_seconds, $15),
-           hangup_cause = COALESCE($16, hangup_cause),
+           duration_seconds = CASE WHEN status IN ('ended', 'failed', 'declined', 'missed')
+             AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN duration_seconds
+             ELSE GREATEST(duration_seconds, $14) END,
+           talk_seconds = CASE WHEN status IN ('ended', 'failed', 'declined', 'missed')
+             AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN talk_seconds
+             ELSE GREATEST(talk_seconds, $15) END,
+           hangup_cause = CASE WHEN status IN ('ended', 'failed', 'declined', 'missed')
+             AND $5::text NOT IN ('ended', 'failed', 'declined', 'missed') THEN hangup_cause
+             ELSE COALESCE($16, hangup_cause) END,
            updated_at = NOW()
        WHERE client_call_id = $1 OR provider_call_id = $1 OR id = $18
        RETURNING ${returning}`,

@@ -3,27 +3,27 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { useTelephony } from '@/contexts/TelephonyContext';
-import { isReminderLineBusyError, REMINDER_LINE_BUSY_ERROR, ReminderLineBusyError } from '@/features/telephony/call-errors';
+import { callAdmissionErrorKey, CallAdmissionError } from '@/features/telephony/call-errors';
 
 export const useOnlinePbxCall = () => {
   const { t } = useTranslation();
   const telephony = useTelephony();
-  const [blockedCallId, setBlockedCallId] = useState<string | null>(null);
+  const [blockedCall, setBlockedCall] = useState<CallAdmissionError | null>(null);
 
   useEffect(() => {
-    if (!blockedCallId) return;
+    if (!blockedCall?.clientCallId) return;
     const call = telephony.activeCall;
-    if (call?.clientCallId === blockedCallId && call.status === 'dialing') return;
-    if (call?.clientCallId === blockedCallId && call.status === 'failed' && call.errorCode === REMINDER_LINE_BUSY_ERROR) {
-      toast({ title: t('onlinePbxLineBusyWithReminder'), variant: 'destructive' });
+    if (call?.clientCallId === blockedCall.clientCallId && call.status === 'dialing') return;
+    if (call?.clientCallId === blockedCall.clientCallId && call.status === 'failed' && call.errorCode === blockedCall.rawMessage) {
+      toast({ title: t(blockedCall.rawMessage), variant: 'destructive' });
     }
-    setBlockedCallId(null);
-  }, [blockedCallId, t, telephony.activeCall]);
+    setBlockedCall(null);
+  }, [blockedCall, t, telephony.activeCall]);
 
   const startCall = useCallback((phone: string) => {
     void telephony.startCall(phone).catch((error: unknown) => {
-      if (isReminderLineBusyError(error)) {
-        if (error instanceof ReminderLineBusyError && error.clientCallId) setBlockedCallId(error.clientCallId);
+      if (callAdmissionErrorKey(error)) {
+        if (error instanceof CallAdmissionError && error.clientCallId) setBlockedCall(error);
         return;
       }
       const message = error instanceof Error ? error.message : 'onlinePbxCallFailed';

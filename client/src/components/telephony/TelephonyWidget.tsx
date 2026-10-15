@@ -22,7 +22,7 @@ import { toast } from '@/hooks/use-toast';
 import { formatCallDuration, isEditableTarget } from '@/lib/telephony';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
-import { isReminderLineBusyError } from '@/features/telephony/call-errors';
+import { callAdmissionErrorKey } from '@/features/telephony/call-errors';
 import { useTelephony, type ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { TelephonyActiveCall, isFinishedCall } from '@/components/telephony/TelephonyActiveCall';
 import { TelephonyCallHistory } from '@/components/telephony/TelephonyCallHistory';
@@ -158,7 +158,7 @@ export function TelephonyWidget() {
   }, [t, telephony.connectionState]);
 
   const presentError = useCallback((error: unknown) => {
-    if (isReminderLineBusyError(error)) return;
+    if (callAdmissionErrorKey(error)) return;
     const message = error instanceof Error ? error.message : 'onlinePbxCallFailed';
     toast({
       title: t('onlinePbxCallFailed'),

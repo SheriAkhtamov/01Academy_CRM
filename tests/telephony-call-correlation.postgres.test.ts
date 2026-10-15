@@ -9,6 +9,8 @@ vi.mock('../server/config', () => ({ appConfig: { integrations: { onlinePbx: { w
   isDevelopmentEnvironment: false, isProductionEnvironment: false }));
 vi.mock('../server/db', () => ({ pool: { query: mocks.query, connect: mocks.connect } }));
 vi.mock('../server/realtime/realtime-hub', () => ({ publishRealtimeEvent: vi.fn() }));
+vi.mock('express-rate-limit', () => ({ default: () => (_req: express.Request,_res: express.Response,next: express.NextFunction) => next(),
+  ipKeyGenerator: (ip: string) => ip }));
 vi.mock('../server/middleware/auth.middleware', () => ({ requireAuth: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
   req.user = { id: 7, module: 'sales', modules: ['sales'], onlinePbxIncomingEnabled: true, onlinePbxExtension: '100' } as typeof req.user;
   next();
@@ -75,6 +77,69 @@ describe.skipIf(!url)('incoming call correlation on PostgreSQL', () => {
     application.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => res.status(500).json({ error: error instanceof Error ? error.message : 'Fixture failure' }));
     return application;
   };
+
+  it.each(['ended','failed','declined','missed'])('rejects a malformed %s end proof without changing the live call', async status => {
+    const callId = randomUUID();
+    await insert(callId,null,'connected');
+    await database.query(`UPDATE telephony_calls SET direction='outgoing',user_id=7`);
+    const body = { clientCallId: callId,direction: 'outgoing',phone: input.phone,status,startedAt: startedAt.toISOString() };
+    mocks.query.mockClear(); mocks.connect.mockClear();
+    for (const endedAt of [undefined,null,'invalid',{},new Date(startedAt.getTime()-1).toISOString()]) {
+      const response = await request(app()).post('/telephony/calls/events').send({ ...body,endedAt });
+      expect(response.status).toBe(400); expect(response.body).toEqual({ error: 'onlinePbxInvalidCallEvent' });
+    }
+    expect(mocks.query).not.toHaveBeenCalled(); expect(mocks.connect).not.toHaveBeenCalled();
+    expect((await database.query('SELECT status,ended_at FROM telephony_calls')).rows).toEqual([{ status: 'connected',ended_at: null }]);
+  });
+
+  it('does not create an inconsistent active row with a terminal timestamp or fabricate an end proof', async () => {
+    const body = { clientCallId: randomUUID(),direction: 'outgoing',phone: input.phone,status: 'dialing',startedAt: startedAt.toISOString(),
+      endedAt: new Date(startedAt.getTime()+1000).toISOString() };
+    expect((await request(app()).post('/telephony/calls/events').send(body)).status).toBe(400);
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+  });
+
+  it('rejects invalid source timestamps and a terminal time before the answered time before any contact lookup', async () => {
+    const body = { clientCallId: randomUUID(),direction: 'outgoing',phone: input.phone,status: 'ended',
+      startedAt: startedAt.toISOString(),endedAt: new Date(startedAt.getTime()+1000).toISOString() };
+    mocks.query.mockClear(); mocks.connect.mockClear();
+    for (const invalid of [{ startedAt: 'invalid' },{ answeredAt: 'invalid' },
+      { answeredAt: new Date(startedAt.getTime()+2000).toISOString() }]) {
+      expect((await request(app()).post('/telephony/calls/events').send({ ...body,...invalid })).status).toBe(400);
+    }
+    expect(mocks.query).not.toHaveBeenCalled(); expect(mocks.connect).not.toHaveBeenCalled();
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+  });
+
+  it('accepts a valid exact terminal proof and never reopens it when an older active report arrives later', async () => {
+    const callId = randomUUID();
+    await insert(callId,null,'dialing');
+    await database.query(`UPDATE telephony_calls SET direction='outgoing',user_id=7`);
+    const terminalAt = new Date(startedAt.getTime()+1000).toISOString();
+    const body = { clientCallId: callId,direction: 'outgoing',phone: input.phone,startedAt: startedAt.toISOString() };
+    expect((await request(app()).post('/telephony/calls/events').send({ ...body,status: 'failed',endedAt: terminalAt })).status).toBe(202);
+    expect((await request(app()).post('/telephony/calls/events').send({ ...body,status: 'dialing',endedAt: null })).status).toBe(202);
+    expect((await database.query('SELECT status,ended_at FROM telephony_calls')).rows)
+      .toEqual([{ status: 'failed',ended_at: new Date(terminalAt) }]);
+  });
+
+  it('preserves exact closed metrics against late active elapsed time while allowing a later terminal refinement', async () => {
+    const callId = randomUUID();
+    await insert(callId,null,'connected');
+    await database.query(`UPDATE telephony_calls SET direction='outgoing',user_id=7`);
+    const body = { clientCallId: callId,direction: 'outgoing',phone: input.phone,startedAt: startedAt.toISOString() };
+    const endedAt = new Date(startedAt.getTime()+10_000).toISOString();
+    expect((await request(app()).post('/telephony/calls/events').send({ ...body,status: 'failed',endedAt,
+      durationSeconds: 10,talkSeconds: 0,hangupCause: 'NORMAL_CLEARING' })).status).toBe(202);
+    expect((await request(app()).post('/telephony/calls/events').send({ ...body,status: 'connected',endedAt: null,
+      answeredAt: startedAt.toISOString(),durationSeconds: 600,talkSeconds: 590,hangupCause: 'STALE_BROWSER' })).status).toBe(202);
+    expect((await database.query('SELECT status,ended_at,answered_at,duration_seconds,talk_seconds,hangup_cause FROM telephony_calls')).rows[0])
+      .toEqual({ status: 'failed',ended_at: new Date(endedAt),answered_at: null,duration_seconds: 10,talk_seconds: 0,hangup_cause: 'NORMAL_CLEARING' });
+    expect((await request(app()).post('/telephony/calls/events').send({ ...body,status: 'ended',endedAt,
+      answeredAt: startedAt.toISOString(),durationSeconds: 10,talkSeconds: 9,hangupCause: 'NORMAL_CLEARING' })).status).toBe(202);
+    expect((await database.query('SELECT status,duration_seconds,talk_seconds FROM telephony_calls')).rows[0])
+      .toEqual({ status: 'ended',duration_seconds: 10,talk_seconds: 9 });
+  });
 
   it('does not adopt an ended same-phone call when a new incoming call starts seconds later', async () => {
     await insert(null, 'old-provider', 'missed', new Date(startedAt.getTime() - 2_000));

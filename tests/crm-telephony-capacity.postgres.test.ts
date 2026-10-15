@@ -305,6 +305,46 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
     expect(await gate().acquire(robotInput())).toBeNull();
   });
 
+  it('fairly reconciles later identities without freeing older calls whose completed history is empty', async () => {
+    const calls: string[] = [];
+    for (let index=0; index<9; index+=1) calls.push((await insertCall({ stale: true }))!);
+    let clock = Date.now();
+    const verifiedEnded = endedCall(calls[8]);
+    history.mockImplementation(async input => input.uuid===calls[8] ? [verifiedEnded] : []);
+    source = new CrmCapacitySource(database,{ getCallHistory: history },{ now: () => clock });
+    for (let tick=0; tick<3; tick+=1) { await source.snapshot(); clock+=31_000; }
+    const rows = (await database.query(`SELECT client_call_id,status,ended_at AT TIME ZONE 'UTC' AS ended_at FROM telephony_calls ORDER BY id`)).rows;
+    expect(rows.slice(0,8).every(row => row.status==='connected' && row.ended_at===null)).toBe(true);
+    expect(rows[8]).toMatchObject({ client_call_id: calls[8],status: 'ended',ended_at: new Date(verifiedEnded.endStamp*1000) });
+    expect(history.mock.calls.some(([input]) => input.uuid===calls[8])).toBe(true);
+    expect((await source.snapshot()).known).toBe(false);
+  });
+
+  it('reconciles exact ended calls even when restored active heartbeats keep updated_at fresh', async () => {
+    const callId = (await insertCall())!;
+    const ended = endedCall(callId);
+    let clock = Date.now();
+    source = new CrmCapacitySource(database,{ getCallHistory: history },{ now: () => clock });
+    await database.query(`UPDATE telephony_calls SET updated_at=timezone('UTC',now())`);
+    expect(await source.snapshot()).toEqual({ known: true,occupiedChannels: 1,busyExtensions: ['100'] });
+    expect(history).toHaveBeenCalledWith({ uuid: callId });
+    history.mockResolvedValue([ended]); clock+=31_000;
+    await database.query(`UPDATE telephony_calls SET updated_at=timezone('UTC',now())`);
+    expect(await source.snapshot()).toEqual({ known: true,occupiedChannels: 0,busyExtensions: [] });
+    expect((await database.query(`SELECT status,ended_at AT TIME ZONE 'UTC' AS ended_at FROM telephony_calls`)).rows[0])
+      .toEqual({ status: 'ended',ended_at: new Date(ended.endStamp*1000) });
+  });
+
+  it('keeps an old but freshly heartbeating call busy on empty or failed history instead of releasing it by age', async () => {
+    await insertCall();
+    await database.query(`UPDATE telephony_calls SET started_at=timezone('UTC',now()-interval '2 days'),updated_at=timezone('UTC',now())`);
+    expect(await source.snapshot()).toEqual({ known: true,occupiedChannels: 1,busyExtensions: ['100'] });
+    history.mockRejectedValue(new Error('unavailable'));
+    source = new CrmCapacitySource(database,{ getCallHistory: history });
+    expect(await source.snapshot()).toEqual({ known: false,occupiedChannels: 1,busyExtensions: ['100'] });
+    expect((await database.query('SELECT status,ended_at FROM telephony_calls')).rows[0]).toEqual({ status: 'connected',ended_at: null });
+  });
+
   it('fails closed when durable ledger cannot be read', async () => {
     const failed = new CrmCapacitySource({ query: vi.fn(async () => { throw new Error('Database unavailable'); }), connect: database.connect.bind(database) } as Pick<Pool, 'query' | 'connect'>, { getCallHistory: history });
     expect(await failed.snapshot()).toEqual({ known: false, occupiedChannels: 0, busyExtensions: [] });

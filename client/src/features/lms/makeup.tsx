@@ -212,7 +212,7 @@ function MakeupDetail({
         <section className="space-y-3">
           <h3 className="font-semibold">{t("portalMaterial")}</h3>
           {plan.materials.length === 0 ? (
-            <p className="text-muted-foreground">{t("portalMaterialLater")}</p>
+            <p className="text-muted-foreground">{t("portalMaterialsEmpty")}</p>
           ) : (
             plan.materials.map((material) => (
               <Button

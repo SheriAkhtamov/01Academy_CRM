@@ -5,7 +5,7 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderWithoutTheme,
   renderHook,
   screen,
   waitFor,
@@ -27,6 +27,7 @@ import type {
 } from "../shared/contracts/lms";
 import type { PortalProjectDto } from "../shared/contracts/portal-resources";
 import { i18n } from "../client/src/lib/i18n";
+import { ThemeProvider } from "../client/src/components/ux/ThemeProvider";
 import {
   PortalSessionProvider,
   portalSubjectKey,
@@ -320,6 +321,17 @@ let client: QueryClient;
 beforeEach(() => {
   vi.clearAllMocks();
   i18n.setLanguage("ru");
+  localStorage.removeItem("academy-crm-theme");
+  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
   sessionStorage.clear();
   history.replaceState(null, "", "/learn");
   client = new QueryClient({
@@ -510,6 +522,13 @@ afterEach(() => {
 function Ready({ children }: { children: ReactNode }) {
   const { account: current } = usePortal();
   return current ? <>{children}</> : null;
+}
+function render(children: ReactNode) {
+  return renderWithoutTheme(children, {
+    wrapper: ({ children }) => (
+      <ThemeProvider defaultTheme="light">{children}</ThemeProvider>
+    ),
+  });
 }
 function mount(children: ReactNode) {
   return render(
@@ -1946,6 +1965,42 @@ it("shows a single context as a static header name and avatar without an unneces
     within(header).queryByRole("button", { name: "Solo Learner" }),
   ).toBeNull();
   expect(within(header).queryByRole("menu")).toBeNull();
+});
+it("keeps the course navigation current while viewing a nested learning route", async () => {
+  history.replaceState(null, "", "/learn/courses/2/materials/3");
+  const mounted = mount(
+    <PortalShell>
+      <p>Material content</p>
+    </PortalShell>,
+  );
+  await screen.findByText("Material content");
+  const sidebar = within(mounted.container.querySelector("aside")!);
+  expect(
+    sidebar.getByRole("button", { name: i18n.t("portalCourses") })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  expect(
+    sidebar.getByRole("button", { name: i18n.t("portalToday") })
+      .getAttribute("aria-current"),
+  ).toBeNull();
+});
+it("changes the portal theme and language using the shared platform controls", async () => {
+  mount(
+    <PortalShell>
+      <p>Content</p>
+    </PortalShell>,
+  );
+  const theme = await screen.findByRole("button", { name: i18n.t("toggleTheme") });
+  await userEvent.click(theme);
+  await userEvent.click(await screen.findByRole("menuitem", { name: i18n.t("darkTheme") }));
+  await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true));
+  expect(localStorage.getItem("academy-crm-theme")).toBe("dark");
+
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("switchLanguage") }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: new RegExp(i18n.t("english")) }));
+  await waitFor(() => expect(i18n.getCurrentLanguage()).toBe("en"));
+  const header = document.querySelector("header")!;
+  expect(within(header).getByRole("button", { name: i18n.t("portalNotifications") })).toBeTruthy();
 });
 it("updates the header avatar fallback when switching from own learning to a child", async () => {
   mocks.session.mockResolvedValue({

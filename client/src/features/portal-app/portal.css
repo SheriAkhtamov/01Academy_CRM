@@ -1,11 +1,16 @@
-.portal-ui {
-  font-size: 1rem;
+@media (pointer: coarse) {
+  .portal-ui button,
+  .portal-ui [role="button"],
+  .portal-ui [role="menuitem"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
-.portal-ui button,
-.portal-ui [role="button"],
-.portal-ui [role="menuitem"] {
-  min-width: 44px;
-  min-height: 44px;
+@media (max-width: 767px) {
+  .portal-header-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 .portal-ui[role="dialog"] > h2,
 .portal-ui[role="dialog"] > div:first-child > h2 {

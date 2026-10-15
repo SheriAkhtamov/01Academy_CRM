@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowRight, CalendarDays, Trophy } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  CalendarDays,
+  ClipboardCheck,
+  ListChecks,
+  MessageSquare,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react";
 import { LearningText } from "@/features/learning-content/text";
 import type {
   LmsAssignmentDto,
@@ -44,36 +53,47 @@ export function ProgressMetric({
   metric,
   labelKey,
   emptyKey,
+  icon: Icon = CalendarDays,
 }: {
   metric: LmsProgressMetric;
   labelKey: TranslationKey;
   emptyKey: TranslationKey;
+  icon?: LucideIcon;
 }) {
   const { t } = useTranslation();
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{t(labelKey)}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <Card className="h-full">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t(labelKey)}
+            </p>
+            <p className="mt-1 text-[26px] font-bold tabular-nums tracking-tight">
+              {metric.percent === null || metric.total === 0
+                ? "—"
+                : `${Math.round(metric.percent)}%`}
+            </p>
+          </div>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
+        </div>
         {metric.total === 0 ? (
           <p className="text-sm text-muted-foreground">{t(emptyKey)}</p>
         ) : (
-          <>
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-2xl font-semibold">
-                {metric.percent === null
-                  ? "—"
-                  : `${Math.round(metric.percent)}%`}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {t("portalCompletedCount")
-                  .replace("{done}", String(metric.completed))
-                  .replace("{total}", String(metric.total))}
-              </span>
-            </div>
-            <Progress value={metric.percent ?? 0} aria-label={t(labelKey)} />
-          </>
+          <div className="space-y-2">
+            <Progress
+              className="h-1.5"
+              value={metric.percent ?? 0}
+              aria-label={t(labelKey)}
+            />
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {t("portalCompletedCount")
+                .replace("{done}", String(metric.completed))
+                .replace("{total}", String(metric.total))}
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -82,7 +102,7 @@ export function ProgressMetric({
 export function ProgressCards({ data }: { data: LmsProgressDto }) {
   const { allowed } = usePortal();
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {allowed("attendance.read") && (
         <ProgressMetric
           metric={data.attendance}
@@ -94,16 +114,19 @@ export function ProgressCards({ data }: { data: LmsProgressDto }) {
         metric={data.assignments}
         labelKey="portalAssignments"
         emptyKey="portalNoAssignments"
+        icon={ClipboardCheck}
       />
       <ProgressMetric
         metric={data.quizzes}
         labelKey="portalTests"
         emptyKey="portalNoTests"
+        icon={ListChecks}
       />
       <ProgressMetric
         metric={data.materials}
         labelKey="portalMaterialsProgress"
-        emptyKey="portalNoLessons"
+        emptyKey="portalMaterialsEmpty"
+        icon={BookOpen}
       />
     </div>
   );
@@ -218,46 +241,58 @@ export function PortalDay() {
           {format.date(new Date())}
         </p>
       </PortalTitle>
-      {next && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="h-5 w-5" />
-              {t("portalUpcomingLesson")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="text-xl font-semibold">
-                {next.topic || next.courseName}
-              </h2>
-              <p className="text-muted-foreground">{next.courseName}</p>
-              <p>
-                {format.date(next.scheduledAt)} ·{" "}
-                {format.time(next.scheduledAt)} · {t("portalTashkent")}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {next.teacherName} {next.roomName ? `· ${next.roomName}` : ""}
-              </p>
-            </div>
-            {next.meetingUrl && (
-              <Button asChild className="min-h-11">
-                <a
-                  href={next.meetingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t("portalJoin")}
-                </a>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      <Card className="border-primary/25 bg-primary/5">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-6">
-          <div>
-            <p className="text-sm text-muted-foreground">
+      <ProgressCards data={data.progress} />
+      <div className={`grid gap-4${next ? " xl:grid-cols-2" : ""}`}>
+        {next && (
+          <Card className="flex min-w-0 flex-col">
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <CalendarDays className="size-4" aria-hidden="true" />
+                </span>
+                {t("portalUpcomingLesson")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-wrap items-center justify-between gap-4 p-4">
+              <div className="min-w-0 space-y-1">
+                <h2 className="break-words text-lg font-semibold tracking-tight">
+                  {next.topic || next.courseName}
+                </h2>
+                <p className="text-sm text-muted-foreground">{next.courseName}</p>
+                <p className="text-sm">
+                  {format.date(next.scheduledAt)} ·{" "}
+                  {format.time(next.scheduledAt)} · {t("portalTashkent")}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {next.teacherName} {next.roomName ? `· ${next.roomName}` : ""}
+                </p>
+              </div>
+              {next.meetingUrl && (
+                <Button asChild>
+                  <a
+                    href={next.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {t("portalJoin")}
+                  </a>
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        <Card className="flex min-w-0 flex-col">
+          <CardHeader className="p-4 pb-0">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                {action ? (
+                  <ClipboardCheck className="size-4" aria-hidden="true" />
+                ) : reply ? (
+                  <MessageSquare className="size-4" aria-hidden="true" />
+                ) : (
+                  <BookOpen className="size-4" aria-hidden="true" />
+                )}
+              </span>
               {t(
                 action
                   ? "portalAssignments"
@@ -265,52 +300,57 @@ export function PortalDay() {
                     ? "portalFeedback"
                     : "portalCourses",
               )}
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">
-              {action?.title ??
-                (reply
-                  ? replyTitle
-                  : (nextMaterial?.title ?? t("portalContinue")))}
-            </h2>
-            {action && (
-              <p className="mt-1 text-sm">
-                {action.courseName}
-                {action.dueAt && ` · ${format.date(action.dueAt)}`}
-              </p>
-            )}
-          </div>
-          <Button
-            className="min-h-11 gap-2"
-            onClick={() =>
-              action
-                ? setAssignmentId(action.id)
-                : guarded(() => {
-                    if (reply?.href?.startsWith("/learn")) {
-                      markNotification.mutate(reply.id);
-                      navigate(reply.href);
-                    } else if (nextMaterial)
-                      navigate(
-                        `/learn/courses/${nextMaterial.runId}/materials/${nextMaterial.publicationId}`,
-                      );
-                    else navigate("/learn/courses");
-                  })
-            }
-          >
-            {t(
-              action || reply || subject?.kind !== "self"
-                ? "portalOpen"
-                : "portalContinue",
-            )}
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </CardContent>
-      </Card>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-wrap items-center justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <h2 className="break-words text-lg font-semibold tracking-tight">
+                {action?.title ??
+                  (reply
+                    ? replyTitle
+                    : (nextMaterial?.title ?? t("portalContinue")))}
+              </h2>
+              {action && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {action.courseName}
+                  {action.dueAt && ` · ${format.date(action.dueAt)}`}
+                </p>
+              )}
+            </div>
+            <Button
+              className="gap-2"
+              onClick={() =>
+                action
+                  ? setAssignmentId(action.id)
+                  : guarded(() => {
+                      if (reply?.href?.startsWith("/learn")) {
+                        markNotification.mutate(reply.id);
+                        navigate(reply.href);
+                      } else if (nextMaterial)
+                        navigate(
+                          `/learn/courses/${nextMaterial.runId}/materials/${nextMaterial.publicationId}`,
+                        );
+                      else navigate("/learn/courses");
+                    })
+              }
+            >
+              {t(
+                action || reply || subject?.kind !== "self"
+                  ? "portalOpen"
+                  : "portalContinue",
+              )}
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
       {data.assignments.length > 0 && (
         <section className="space-y-3">
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">{t("portalAssignments")}</h2>
             <Button
-              variant="link"
+              variant="ghost"
+              size="sm"
               onClick={() => guarded(() => navigate("/learn/assignments"))}
             >
               {t("portalOpen")}
@@ -407,7 +447,6 @@ export function PortalDay() {
           })}
         </section>
       )}
-      <ProgressCards data={data.progress} />
       {subject?.kind === "representative" &&
         subject.permissions.includes("finance.read") && (
           <PortalPaymentSummary />

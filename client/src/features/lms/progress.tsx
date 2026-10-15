@@ -261,7 +261,7 @@ export function PortalProgress() {
               }}
             />
           ) : !history.data.pages.flatMap((page) => page.items).length ? (
-            <PortalEmpty labelKey="portalNoHistory" />
+            <PortalEmpty labelKey="portalHistoryEmpty" />
           ) : (
             history.data.pages
               .flatMap((page) => page.items)
@@ -304,7 +304,7 @@ export function PortalProgress() {
               }}
             />
           ) : achievements.data.length === 0 ? (
-            <PortalEmpty labelKey="portalNoAchievements" />
+            <PortalEmpty labelKey="portalAchievementsEmpty" />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {achievements.data.map((item) => (
@@ -490,7 +490,7 @@ export function ProjectComparison() {
     ).entries(),
   ];
   const courseId = course ? Number(course) : courses[0]?.[0];
-  if (!courseId) return <PortalEmpty labelKey="portalNoProjects" />;
+  if (!courseId) return <PortalEmpty labelKey="noProjects" />;
   return (
     <div className="space-y-4">
       <Label htmlFor="comparison-course">{t("portalCourses")}</Label>

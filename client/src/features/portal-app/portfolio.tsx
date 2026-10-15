@@ -153,7 +153,7 @@ export function PortalPortfolio() {
         ))}
       </select>
       {items.length === 0 && !query.hasNextPage && (
-        <PortalEmpty labelKey="portalNoProjects" />
+        <PortalEmpty labelKey="noProjects" />
       )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Inbox, XCircle } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { toast } from "@/hooks/use-toast";
 import { translations, type TranslationKey } from "@/lib/i18n";
@@ -6,6 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ux/EmptyState";
+import { PageHeader } from "@/components/ux/PageHeader";
 import {
   AlertDialog,
   AlertDialogTitle,
@@ -68,13 +71,17 @@ export function PortalError({
   const message = usePortalError();
   return (
     <Card>
-      <CardContent className="space-y-4 p-6" role="alert">
-        <p>{message(error)}</p>
-        {retry && (
-          <Button variant="outline" className="min-h-11" onClick={retry}>
-            {t("portalRetry")}
-          </Button>
-        )}
+      <CardContent className="p-6" role="alert">
+        <EmptyState
+          icon={XCircle}
+          title={message(error)}
+          action={retry && (
+            <Button variant="outline" onClick={retry}>
+              {t("portalRetry")}
+            </Button>
+          )}
+          className="py-6"
+        />
       </CardContent>
     </Card>
   );
@@ -83,8 +90,8 @@ export function PortalEmpty({ labelKey }: { labelKey: TranslationKey }) {
   const { t } = useTranslation();
   return (
     <Card>
-      <CardContent className="p-6 text-muted-foreground">
-        {t(labelKey)}
+      <CardContent className="p-6">
+        <EmptyState icon={Inbox} title={t(labelKey)} className="py-6" />
       </CardContent>
     </Card>
   );
@@ -97,14 +104,7 @@ export function PortalTitle({
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-        {t(labelKey)}
-      </h1>
-      {children}
-    </div>
-  );
+  return <PageHeader title={t(labelKey)} actions={children} />;
 }
 export function ConfirmAction({
   open,

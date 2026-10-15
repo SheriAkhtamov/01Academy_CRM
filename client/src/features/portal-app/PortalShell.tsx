@@ -21,6 +21,12 @@ import type { TranslationKey } from "@/lib/i18n";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import Logo from "@/components/Logo";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { ThemeToggle } from "@/components/ux/ThemeToggle";
+import { ModulePage } from "@/components/ux/ModulePage";
+import { UnreadCountBadge } from "@/components/ux/UnreadCountBadge";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +40,6 @@ import { portalIdentityApi } from "./api";
 import { usePortal, portalSessionKey, portalGrantFingerprint } from "./context";
 import { useQueryClient } from "@tanstack/react-query";
 import { PortalSheetContent as SheetContent, usePortalError } from "./ui";
-import { Badge } from "@/components/ui/badge";
 import { PortalNotifications } from "./notifications";
 import { portalResourcesApi } from "./resources-api";
 
@@ -214,62 +219,95 @@ export function PortalShell({ children }: { children: ReactNode }) {
       navigate(route);
     });
   function navigation(items: NavItem[], bottom = false) {
-    return items.map((item) => (
-      <Button
-        key={item.route}
-        variant={
-          path === item.route ||
-          (item.route !== "/learn" && path.startsWith(`${item.route}/`))
-            ? "secondary"
-            : "ghost"
-        }
-        className={
-          bottom
-            ? "flex min-h-14 min-w-0 flex-1 flex-col gap-1 px-1 text-[11px]"
-            : "min-h-11 justify-start gap-3"
-        }
-        aria-current={path === item.route ? "page" : undefined}
-        onClick={() => go(item.route)}
-      >
-        <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-        <span>
-          {t(
-            item.route === "/learn" && parent
-              ? "portalFamilyOverview"
-              : item.route === "/learn/progress" && parent
-                ? "portalResults"
-                : item.key,
+    return items.map((item) => {
+      const active =
+        path === item.route ||
+        (item.route !== "/learn" && path.startsWith(`${item.route}/`));
+      return (
+        <button
+          key={item.route}
+          type="button"
+          className={cn(
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            bottom
+              ? "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium transition-colors"
+              : "sidebar-nav-item w-full text-left",
+            active && (bottom ? "bg-primary/10 text-primary" : "active"),
+            bottom && !active && "hover:bg-accent hover:text-accent-foreground",
           )}
-        </span>
-      </Button>
-    ));
+          aria-current={active ? "page" : undefined}
+          onClick={() => go(item.route)}
+        >
+          {active && !bottom && (
+            <span
+              className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100"
+              aria-hidden="true"
+            >
+              <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary-600 shadow-[0_0_10px_0_var(--primary-glow)]" />
+            </span>
+          )}
+          <item.icon
+            className={bottom ? "h-5 w-5 shrink-0" : "sidebar-nav-item__icon"}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 truncate">
+            {t(
+              item.route === "/learn" && parent
+                ? "portalFamilyOverview"
+                : item.route === "/learn/progress" && parent
+                  ? "portalResults"
+                  : item.key,
+            )}
+          </span>
+          {active && !bottom && (
+            <span
+              className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary-600"
+              aria-hidden="true"
+            />
+          )}
+        </button>
+      );
+    });
   }
   return (
-    <div className="portal-ui min-h-dvh bg-muted/20 text-base">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r bg-background px-4 py-6 lg:flex lg:flex-col print:hidden">
-        <div className="mb-8 px-3 text-xl font-semibold">
-          {t("publicAttendanceBrand")}
+    <div className="portal-ui min-h-dvh text-foreground">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm lg:flex print:hidden">
+        <div className="flex shrink-0 items-center border-b border-border/70 px-3 py-4">
+          <Logo size="sm" className="shrink-0" />
+          <div className="ml-2 flex min-w-0 flex-col gap-0.5">
+            <span className="whitespace-nowrap text-base font-semibold leading-tight tracking-tight">
+              {t("platformName")}
+            </span>
+            <span className="text-[11px] leading-tight text-muted-foreground">
+              {t("portalTitle")}
+            </span>
+          </div>
         </div>
-        <nav aria-label={t("portalTitle")} className="flex flex-col gap-1">
+        <nav
+          aria-label={t("portalTitle")}
+          className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 py-4"
+        >
           {navigation(visible)}
         </nav>
-        <Button
-          variant="ghost"
-          className="mt-auto min-h-11 justify-start gap-3"
-          disabled={logout.isPending}
-          onClick={() => guarded(() => logout.mutate())}
-        >
-          <LogOut className="h-5 w-5" />
-          {t("portalSignOut")}
-        </Button>
+        <div className="shrink-0 border-t border-border/70 p-3">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-muted-foreground"
+            disabled={logout.isPending}
+            onClick={() => guarded(() => logout.mutate())}
+          >
+            <LogOut className="h-5 w-5" aria-hidden="true" />
+            {t("portalSignOut")}
+          </Button>
+        </div>
       </aside>
-      <div className="lg:pl-60">
-        <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b bg-background/95 px-4 backdrop-blur lg:px-8 print:hidden">
-          <div className="flex min-w-0 items-center gap-2">
+      <div className="min-w-0 lg:pl-64 print:pl-0">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:gap-3 sm:px-4 sm:py-3 lg:px-6 print:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
-              className="hidden min-h-11 min-w-11 md:flex lg:hidden"
+              className="hidden min-h-11 min-w-11 rounded-full md:flex lg:hidden"
               aria-label={t("portalMore")}
               onClick={() => setMenu(true)}
             >
@@ -280,14 +318,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
-                    className="min-h-11 max-w-[65vw] justify-start gap-2"
+                    className="h-auto min-w-0 max-w-full justify-start gap-2 px-2 py-1.5"
                   >
                     {contextLabel}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="start"
-                  className="max-h-[60dvh] overflow-auto"
+                  className="portal-ui max-h-[60dvh] overflow-auto"
                 >
                   <DropdownMenuLabel>{t("portalMyLearning")}</DropdownMenuLabel>
                   {subjects
@@ -295,7 +333,6 @@ export function PortalShell({ children }: { children: ReactNode }) {
                     .map((item) => (
                       <DropdownMenuItem
                         key={item.linkId}
-                        className="min-h-11"
                         onSelect={() => selectSubject(item.linkId)}
                       >
                         {item.studentName}
@@ -305,10 +342,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
                   <DropdownMenuLabel>{t("portalChildren")}</DropdownMenuLabel>
                   {subjects.filter((item) => item.kind === "representative")
                     .length > 1 && (
-                    <DropdownMenuItem
-                      className="min-h-11"
-                      onSelect={() => selectSubject(null)}
-                    >
+                    <DropdownMenuItem onSelect={() => selectSubject(null)}>
                       {t("portalFamilyOverview")}
                     </DropdownMenuItem>
                   )}
@@ -317,7 +351,6 @@ export function PortalShell({ children }: { children: ReactNode }) {
                     .map((item) => (
                       <DropdownMenuItem
                         key={item.linkId}
-                        className="min-h-11"
                         onSelect={() => selectSubject(item.linkId)}
                       >
                         {item.studentName}
@@ -326,36 +359,35 @@ export function PortalShell({ children }: { children: ReactNode }) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <div className="flex min-h-11 min-w-0 max-w-[65vw] items-center gap-2">
+              <div className="flex min-h-10 min-w-0 items-center gap-2">
                 {contextLabel}
               </div>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="portal-header-actions flex shrink-0 items-center gap-1 sm:gap-1.5">
+            <LanguageSwitcher className="rounded-full" />
+            <ThemeToggle />
             <Button
               size="icon"
               variant="ghost"
-              className="relative min-h-11 min-w-11"
+              className="relative rounded-full"
               aria-label={t("portalNotifications")}
               onClick={() => setNotificationsOpen(true)}
             >
               <Bell className="h-5 w-5" />
-              {Boolean(notifications.data?.unreadCount) && (
-                <Badge
-                  className="absolute -right-1 -top-1 px-1"
-                  aria-label={t("portalUnreadCount").replace(
-                    "{count}",
-                    String(notifications.data?.unreadCount),
-                  )}
-                >
-                  {notifications.data?.unreadCount}
-                </Badge>
-              )}
+              <UnreadCountBadge
+                count={notifications.data?.unreadCount ?? 0}
+                className="pointer-events-none absolute -right-1.5 -top-2"
+                label={t("portalUnreadCount").replace(
+                  "{count}",
+                  String(notifications.data?.unreadCount ?? 0),
+                )}
+              />
             </Button>
             <Button
               size="icon"
               variant="ghost"
-              className="min-h-11 min-w-11"
+              className="rounded-full"
               aria-label={t("portalProfile")}
               onClick={() => go("/learn/profile")}
             >
@@ -363,18 +395,20 @@ export function PortalShell({ children }: { children: ReactNode }) {
             </Button>
           </div>
         </header>
-        <main className="mx-auto max-w-[1200px] space-y-6 px-4 py-6 pb-28 md:px-8 lg:pb-8 print:px-0 print:pb-0">
-          {logout.error && (
-            <p role="alert" className="text-destructive">
-              {errorMessage(logout.error)}
-            </p>
-          )}
-          {children}
+        <main>
+          <ModulePage className="space-y-6 pb-28 sm:pb-28 md:pb-6 lg:pb-8 print:p-0">
+            {logout.error && (
+              <p role="alert" className="text-destructive">
+                {errorMessage(logout.error)}
+              </p>
+            )}
+            {children}
+          </ModulePage>
         </main>
       </div>
       <nav
         aria-label={t("portalTitle")}
-        className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border/70 bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden print:hidden"
       >
         {navigation(mobile, true)}
         <Button
@@ -389,23 +423,34 @@ export function PortalShell({ children }: { children: ReactNode }) {
       <Sheet open={menu} onOpenChange={setMenu}>
         <SheetContent
           side="left"
-          className="portal-ui flex w-[min(320px,85vw)] flex-col"
+          className="portal-ui flex w-[min(320px,85vw)] flex-col gap-0 bg-card p-0"
         >
-          <SheetHeader>
-            <SheetTitle>{t("portalTitle")}</SheetTitle>
+          <SheetHeader className="shrink-0 border-b border-border/70 px-3 py-4 pr-12">
+            <SheetTitle className="flex items-center gap-2 text-left text-base">
+              <Logo size="sm" className="shrink-0" />
+              <span>{t("portalTitle")}</span>
+            </SheetTitle>
           </SheetHeader>
-          <nav className="mt-4 flex flex-col gap-1">{navigation(visible)}</nav>
-          <p className="mt-auto text-sm text-muted-foreground">
-            {account?.fullName}
-          </p>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={logout.isPending}
-            onClick={() => guarded(() => logout.mutate())}
+          <nav
+            aria-label={t("portalTitle")}
+            className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-3 py-4"
           >
-            {t("portalSignOut")}
-          </Button>
+            {navigation(visible)}
+          </nav>
+          <div className="shrink-0 space-y-3 border-t border-border/70 p-3">
+            <p className="truncate px-3 text-sm font-medium">
+              {account?.fullName}
+            </p>
+            <Button
+              variant="ghost"
+              className="min-h-11 w-full justify-start gap-3 text-muted-foreground"
+              disabled={logout.isPending}
+              onClick={() => guarded(() => logout.mutate())}
+            >
+              <LogOut className="h-5 w-5" aria-hidden="true" />
+              {t("portalSignOut")}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
       <Sheet

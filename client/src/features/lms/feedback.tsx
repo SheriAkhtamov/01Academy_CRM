@@ -44,7 +44,7 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
   return (
     <>
       <div className="space-y-3">
-        {items.length === 0 && <PortalEmpty labelKey="portalNoHistory" />}
+        {items.length === 0 && <PortalEmpty labelKey="portalHistoryEmpty" />}
         {items.map((item) => (
           <Card key={item.id}>
             <CardContent className="p-0">

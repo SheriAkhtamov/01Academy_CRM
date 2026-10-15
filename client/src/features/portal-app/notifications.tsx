@@ -12,7 +12,15 @@ import { translations, type TranslationKey } from "@/lib/i18n";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
 import { usePortal, portalGrantFingerprint } from "./context";
 import {
@@ -97,28 +105,29 @@ export function PortalNotifications({
         }}
       />
     );
-  return (
+  const actions = (
     <>
-      {!embedded && <PortalTitle labelKey="portalNotifications" />}
-      <div className="flex flex-wrap gap-2">
+      <Button variant="outline" onClick={() => setSettings(true)}>
+        {t("portalNotificationSettings")}
+      </Button>
+      {query.data.pages[0].unreadCount > 0 && (
         <Button
           variant="outline"
-          className="min-h-11"
-          onClick={() => setSettings(true)}
+          disabled={all.isPending}
+          onClick={() => all.mutate()}
         >
-          {t("portalNotificationSettings")}
+          {t("portalMarkAllRead")}
         </Button>
-        {query.data.pages[0].unreadCount > 0 && (
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={all.isPending}
-            onClick={() => all.mutate()}
-          >
-            {t("portalMarkAllRead")}
-          </Button>
-        )}
-      </div>
+      )}
+    </>
+  );
+  return (
+    <>
+      {embedded ? (
+        <div className="flex flex-wrap gap-2">{actions}</div>
+      ) : (
+        <PortalTitle labelKey="portalNotifications">{actions}</PortalTitle>
+      )}
       {(read.error || all.error) && (
         <p role="alert" className="text-destructive">
           {message(read.error || all.error, "portalSaveError")}
@@ -127,71 +136,81 @@ export function PortalNotifications({
       {query.data.pages.flatMap((page) => page.items).length === 0 && (
         <PortalEmpty labelKey="portalNoNotifications" />
       )}
-      <div className="space-y-3">
-        {query.data.pages
-          .flatMap((page) => page.items)
-          .map((item) => {
-            const key = item.code as TranslationKey;
-            let copy =
-              key in translations
-                ? t(key)
-                : t(categoryKeys[item.category] ?? "portalNotifications");
-            Object.entries(item.params).forEach(([name, value]) => {
-              copy = copy.split(`{${name}}`).join(String(value));
-            });
-            const child = subjects.find(
-              (subject) => subject.linkId === item.linkId,
-            );
-            return (
-              <Card
-                key={item.id}
-                className={!item.readAt ? "border-primary/40" : ""}
-              >
-                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-                  <div className="min-w-0 space-y-1">
-                    <p className="break-words font-medium">{copy}</p>
-                    {child && <p className="text-sm">{child.studentName}</p>}
-                    <p className="text-sm text-muted-foreground">
-                      {format.date(item.createdAt)} ·{" "}
-                      {format.time(item.createdAt)}
-                    </p>
+      {query.data.pages.some((page) => page.items.length > 0) && (
+        <Card className="overflow-hidden">
+          <CardContent className="divide-y divide-border/60 p-0">
+            {query.data.pages
+              .flatMap((page) => page.items)
+              .map((item) => {
+                const key = item.code as TranslationKey;
+                let copy =
+                  key in translations
+                    ? t(key)
+                    : t(categoryKeys[item.category] ?? "portalNotifications");
+                Object.entries(item.params).forEach(([name, value]) => {
+                  copy = copy.split(`{${name}}`).join(String(value));
+                });
+                const child = subjects.find(
+                  (subject) => subject.linkId === item.linkId,
+                );
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex flex-wrap items-start justify-between gap-3 p-4${!item.readAt ? " bg-primary/5" : ""}`}
+                  >
+                    <div className="min-w-0 flex-1 basis-60 space-y-1">
+                      <p className="flex items-start gap-2 break-words text-sm font-medium">
+                        {!item.readAt && (
+                          <span
+                            className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {copy}
+                      </p>
+                      {child && <p className="text-sm">{child.studentName}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        {format.date(item.createdAt)} ·{" "}
+                        {format.time(item.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {item.href?.startsWith("/learn") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            guarded(() => {
+                              if (child) selectSubject(child.linkId);
+                              read.mutate(item.id);
+                              onNavigate?.();
+                              navigate(item.href!);
+                            })
+                          }
+                        >
+                          {t("portalOpen")}
+                        </Button>
+                      )}
+                      {!item.readAt && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={read.isPending}
+                          onClick={() => read.mutate(item.id)}
+                        >
+                          {t("portalMarkRead")}
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {item.href?.startsWith("/learn") && (
-                      <Button
-                        className="min-h-11"
-                        onClick={() =>
-                          guarded(() => {
-                            if (child) selectSubject(child.linkId);
-                            read.mutate(item.id);
-                            onNavigate?.();
-                            navigate(item.href!);
-                          })
-                        }
-                      >
-                        {t("portalOpen")}
-                      </Button>
-                    )}
-                    {!item.readAt && (
-                      <Button
-                        variant="outline"
-                        className="min-h-11"
-                        disabled={read.isPending}
-                        onClick={() => read.mutate(item.id)}
-                      >
-                        {t("portalMarkRead")}
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-      </div>
+                );
+              })}
+          </CardContent>
+        </Card>
+      )}
       {query.hasNextPage && (
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={query.isFetchingNextPage}
           onClick={() => {
             void query.fetchNextPage();
@@ -207,8 +226,10 @@ export function PortalNotifications({
         }}
       >
         <DialogContent className="portal-ui max-w-2xl">
-          <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
-          <DialogDescription>{account?.fullName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
+            <DialogDescription>{account?.fullName}</DialogDescription>
+          </DialogHeader>
           {settings && <NotificationPreferences />}
         </DialogContent>
       </Dialog>
@@ -263,49 +284,50 @@ function PreferencesForm({
         action.mutate();
       }}
     >
-      <div className="space-y-3">
+      <div className="divide-y divide-border/60 rounded-lg border border-border/70">
         {PORTAL_NOTIFICATION_CATEGORIES.map((category) => (
-          <fieldset key={category} className="space-y-2 rounded-md border p-3">
-            <legend className="px-1 text-sm font-medium">
+          <div
+            key={category}
+            className="flex items-center justify-between gap-4 p-4"
+          >
+            <Label
+              htmlFor={`notification-${category}`}
+              className="cursor-pointer"
+            >
               {t(categoryKeys[category])}
-            </legend>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex min-h-11 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={values.categories[category].inApp}
-                  disabled={category === "security"}
-                  onChange={(event) =>
-                    setValues({
-                      ...values,
-                      categories: {
-                        ...values.categories,
-                        [category]: {
-                          ...values.categories[category],
-                          inApp: event.target.checked,
-                        },
-                      },
-                    })
-                  }
-                />
-                {t("portalInAppNotifications")}
-              </label>
-
-            </div>
-          </fieldset>
+            </Label>
+            <Switch
+              id={`notification-${category}`}
+              checked={values.categories[category].inApp}
+              disabled={category === "security"}
+              onCheckedChange={(checked) =>
+                setValues({
+                  ...values,
+                  categories: {
+                    ...values.categories,
+                    [category]: {
+                      ...values.categories[category],
+                      inApp: checked,
+                    },
+                  },
+                })
+              }
+            />
+          </div>
         ))}
       </div>
-
-      <label className="flex min-h-11 items-center gap-3">
-        <input
-          type="checkbox"
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border/70 p-4">
+        <Label htmlFor="notification-weekly" className="cursor-pointer">
+          {t("portalWeeklySummary")}
+        </Label>
+        <Switch
+          id="notification-weekly"
           checked={values.weeklySummary}
-          onChange={(event) =>
-            setValues({ ...values, weeklySummary: event.target.checked })
+          onCheckedChange={(checked) =>
+            setValues({ ...values, weeklySummary: checked })
           }
         />
-        {t("portalWeeklySummary")}
-      </label>
+      </div>
       {action.error && (
         <p role="alert" className="text-destructive">
           {message(action.error, "portalSaveError")}
@@ -316,9 +338,9 @@ function PreferencesForm({
           {t("portalSaved")}
         </p>
       )}
-      <Button className="min-h-11" disabled={action.isPending}>
-        {t("portalSave")}
-      </Button>
+      <DialogFooter className="border-t border-border/70 pt-4">
+        <Button disabled={action.isPending}>{t("portalSave")}</Button>
+      </DialogFooter>
     </form>
   );
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Inbox, XCircle } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { toast } from "@/hooks/use-toast";
@@ -76,7 +76,7 @@ export function PortalError({
           icon={XCircle}
           title={message(error)}
           action={retry && (
-            <Button variant="outline" onClick={retry}>
+            <Button type="button" variant="outline" onClick={retry}>
               {t("portalRetry")}
             </Button>
           )}
@@ -106,6 +106,16 @@ export function PortalTitle({
   const { t } = useTranslation();
   return <PageHeader title={t(labelKey)} actions={children} />;
 }
+const destructiveActions = new Set<TranslationKey>([
+  "portalRemove",
+  "portalWithdraw",
+  "portalArchiveProject",
+  "portalRevoke",
+  "portalRevokeSession",
+  "portalLeave",
+  "lmsStaffReload",
+]);
+
 export function ConfirmAction({
   open,
   onOpenChange,
@@ -116,6 +126,7 @@ export function ConfirmAction({
   pending = false,
   error,
   objectName,
+  variant,
 }: {
   open: boolean;
   onOpenChange: (value: boolean) => void;
@@ -126,6 +137,7 @@ export function ConfirmAction({
   pending?: boolean;
   error?: string;
   objectName?: string;
+  variant?: "default" | "destructive";
 }) {
   const { t } = useTranslation();
   return (
@@ -152,7 +164,12 @@ export function ConfirmAction({
           <AlertDialogCancel disabled={pending}>
             {t("portalCancel")}
           </AlertDialogCancel>
-          <Button disabled={pending} onClick={onConfirm}>
+          <Button
+            type="button"
+            variant={variant ?? (destructiveActions.has(action) ? "destructive" : "default")}
+            disabled={pending}
+            onClick={onConfirm}
+          >
             {t(action)}
           </Button>
         </AlertDialogFooter>
@@ -179,11 +196,37 @@ const statusKeys: Record<string, TranslationKey> = {
   open: "portalOpenQuestion",
   answered: "portalAnswered",
   resolved: "portalResolved",
+  soon: "portalUpcoming",
+  available: "portalAvailable",
+  studied: "portalLearned",
 };
+const statusVariants: Record<string, ComponentProps<typeof Badge>["variant"]> = {
+  assigned: "info",
+  submitted: "warning",
+  revision_required: "warning",
+  accepted: "success",
+  present: "success",
+  absent: "destructive",
+  planned: "info",
+  scheduled: "info",
+  completed: "success",
+  conducted: "success",
+  needed: "warning",
+  in_progress: "info",
+  open: "info",
+  answered: "success",
+  resolved: "success",
+  soon: "secondary",
+  available: "info",
+  studied: "success",
+};
+export function portalStatusVariant(status: string | null) {
+  return statusVariants[status ?? ""] ?? "secondary";
+}
 export function PortalStatus({ status }: { status: string | null }) {
   const { t } = useTranslation();
   return (
-    <Badge variant="secondary">
+    <Badge variant={portalStatusVariant(status)}>
       {t(statusKeys[status ?? ""] ?? "portalUnmarked")}
     </Badge>
   );

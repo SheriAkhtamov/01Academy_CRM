@@ -5,9 +5,15 @@ import type { LmsMakeupDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { DataTable } from "@/components/ux/DataTable";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
   usePortal,
@@ -20,17 +26,19 @@ import {
   PortalLoading,
   PortalError,
   PortalEmpty,
+  portalStatusVariant,
   usePortalError,
   usePortalFormat,
 } from "../portal-app/ui";
 import { AssignmentDialog } from "./assignments";
 import { PortalQuizzes } from "./quizzes";
 import { HelpDialog } from "./communication";
+import { PortalActionRow } from "../portal-app/controls";
 
 export function MakeupStatus({ status }: { status: LmsMakeupDto["status"] }) {
   const { t } = useTranslation();
   return (
-    <Badge variant="secondary">
+    <Badge variant={portalStatusVariant(status)}>
       {t(
         status === "needed"
           ? "portalMakeupNeeded"
@@ -81,47 +89,65 @@ export function PortalMakeup({
   if (embedded && !items.length) return null;
   return (
     <>
-      <PortalTitle labelKey="portalMakeup" />
+      {embedded ? (
+        <h2 className="text-base font-semibold">{t("portalMakeup")}</h2>
+      ) : (
+        <PortalTitle labelKey="portalMakeup" />
+      )}
       {!embedded && (
         <Tabs value={section} onValueChange={setSection}>
           <TabsList>
-            <TabsTrigger value="current" className="min-h-11">
-              {t("portalCurrent")}
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="min-h-11">
-              {t("portalCompleted")}
-            </TabsTrigger>
+            <TabsTrigger value="current">{t("portalCurrent")}</TabsTrigger>
+            <TabsTrigger value="completed">{t("portalCompleted")}</TabsTrigger>
           </TabsList>
         </Tabs>
       )}
-      {!items.length && <PortalEmpty labelKey="portalNoLessons" />}
-      <div className="space-y-3">
-        {items.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <div>
-                <h2 className="font-semibold">{item.topic}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {format.date(item.scheduledAt)}
-                </p>
-                {item.dueAt && (
-                  <p className="text-sm">
-                    {t("portalDue")}: {format.date(item.dueAt)}
-                  </p>
-                )}
-              </div>
-              <MakeupStatus status={item.status} />
+      <DataTable
+        data={items}
+        keyExtractor={(item) => String(item.id)}
+        rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
+        filterKey={`${courseId ?? "all"}:${section}`}
+        onRowClick={setSelected}
+        emptyState={<PortalEmpty labelKey="portalNoLessons" />}
+        columns={[
+          {
+            key: "topic",
+            header: t("portalLessons"),
+            mobilePrimary: true,
+            cellClassName: "font-medium",
+          },
+          {
+            key: "scheduledAt",
+            header: t("portalDate"),
+            render: (item) => format.date(item.scheduledAt),
+          },
+          {
+            key: "dueAt",
+            header: t("portalDue"),
+            render: (item) => (item.dueAt ? format.date(item.dueAt) : "—"),
+          },
+          {
+            key: "status",
+            header: t("status"),
+            render: (item) => <MakeupStatus status={item.status} />,
+          },
+          {
+            key: "actions",
+            header: "",
+            mobileHidden: true,
+            cellClassName: "w-24 text-right",
+            render: (item) => (
               <Button
-                className="min-h-11"
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={() => setSelected(item)}
               >
                 {t("portalOpen")}
               </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            ),
+          },
+        ]}
+      />
       <MakeupDialog plan={selected} onClose={() => setSelected(null)} />
     </>
   );
@@ -143,8 +169,10 @@ export function MakeupDialog({
       }}
     >
       <DialogContent className="portal-ui max-w-2xl">
-        <DialogTitle>{t("portalMakeup")}</DialogTitle>
-        <DialogDescription>{subject?.studentName}</DialogDescription>
+        <DialogHeader>
+          <DialogTitle>{t("portalMakeup")}</DialogTitle>
+          <DialogDescription>{subject?.studentName}</DialogDescription>
+        </DialogHeader>
         {plan && (
           <MakeupDetail key={plan.id} initial={plan} onClose={onClose} />
         )}
@@ -202,8 +230,8 @@ function MakeupDetail({
   if (!canonical.data.some((item) => item.id === initial.id))
     return <PortalEmpty labelKey="portalMakeupNotRequired" />;
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">{plan.topic}</h2>
+    <div className="space-y-4 text-sm">
+      <h2 className="text-base font-semibold">{plan.topic}</h2>
       <p className="text-sm text-muted-foreground">
         {format.date(plan.scheduledAt)}
       </p>
@@ -215,10 +243,8 @@ function MakeupDetail({
             <p className="text-muted-foreground">{t("portalMaterialsEmpty")}</p>
           ) : (
             plan.materials.map((material) => (
-              <Button
+              <PortalActionRow
                 key={material.publicationId}
-                variant="outline"
-                className="h-auto min-h-11 w-full justify-start whitespace-normal text-left"
                 onClick={() =>
                   guarded(() => {
                     onClose();
@@ -229,7 +255,7 @@ function MakeupDetail({
                 }
               >
                 {material.title}
-              </Button>
+              </PortalActionRow>
             ))
           )}
         </section>
@@ -239,19 +265,14 @@ function MakeupDetail({
           {message(begin.error, "portalSaveError")}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
+      <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
         {plan.status === "needed" && subject?.kind === "self" && available && (
-          <Button
-            className="min-h-11"
-            disabled={begin.isPending}
-            onClick={() => begin.mutate()}
-          >
+          <Button disabled={begin.isPending} onClick={() => begin.mutate()}>
             {t("portalMakeupStart")}
           </Button>
         )}
         {canRead && plan.recipientId !== null && (
           <Button
-            className="min-h-11"
             variant="outline"
             onClick={() => setAssignment(plan.recipientId)}
           >
@@ -259,30 +280,29 @@ function MakeupDetail({
           </Button>
         )}
         {canRead && plan.quizRecipientId !== null && (
-          <Button
-            className="min-h-11"
-            variant="outline"
-            onClick={() => setTest(true)}
-          >
+          <Button variant="outline" onClick={() => setTest(true)}>
             {t("portalTests")}
           </Button>
         )}
         {allowed("communication.create") && (
-          <Button
-            className="min-h-11"
-            variant="outline"
-            onClick={() => setHelp(true)}
-          >
+          <Button variant="outline" onClick={() => setHelp(true)}>
             {t("portalNeedHelp")}
           </Button>
         )}
-      </div>
+      </DialogFooter>
       <AssignmentDialog id={assignment} onClose={() => setAssignment(null)} />
       <Dialog open={test} onOpenChange={setTest}>
         <DialogContent className="portal-ui max-w-2xl">
-          <DialogTitle>{t("portalTests")}</DialogTitle>
-          <DialogDescription>{plan.topic}</DialogDescription>
-          {test && <PortalQuizzes quizId={plan.quizRecipientId ?? undefined} />}
+          <DialogHeader>
+            <DialogTitle>{t("portalTests")}</DialogTitle>
+            <DialogDescription>{plan.topic}</DialogDescription>
+          </DialogHeader>
+          {test && (
+            <PortalQuizzes
+              quizId={plan.quizRecipientId ?? undefined}
+              embedded
+            />
+          )}
         </DialogContent>
       </Dialog>
       <HelpDialog

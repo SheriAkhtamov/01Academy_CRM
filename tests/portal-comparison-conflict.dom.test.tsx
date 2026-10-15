@@ -114,15 +114,19 @@ const mount = () =>
   );
 const firstSelect = () =>
   screen.getByLabelText(i18n.t("portalFirstWork"), {
-    selector: "select",
-  }) as HTMLSelectElement;
+    selector: '[role="combobox"]',
+  }) as HTMLButtonElement;
 const lastSelect = () =>
   screen.getByLabelText(i18n.t("portalLatestWork"), {
-    selector: "select",
-  }) as HTMLSelectElement;
+    selector: '[role="combobox"]',
+  }) as HTMLButtonElement;
 beforeEach(() => {
   i18n.setLanguage("ru");
   vi.clearAllMocks();
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
+  Element.prototype.setPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
   client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -143,10 +147,11 @@ describe("learner comparison draft version", () => {
   it("keeps both editing selections and the original CAS version through a teacher refresh and a conflict", async () => {
     mount();
     await screen.findByText(/Teacher/);
-    await userEvent.selectOptions(firstSelect(), "2");
+    await userEvent.click(firstSelect());
+    await userEvent.click(await screen.findByRole("option", { name: "Project 2" }));
     act(() => client.setQueryData(["project-comparison", 2], saved(8, 4, 1)));
-    expect(firstSelect().value).toBe("2");
-    expect(lastSelect().value).toBe("3");
+    expect(firstSelect().textContent).toBe("Project 2");
+    expect(lastSelect().textContent).toBe("Project 3");
     await userEvent.click(
       screen.getByRole("button", { name: i18n.t("portalComparisonSave") }),
     );
@@ -159,14 +164,15 @@ describe("learner comparison draft version", () => {
       }),
     );
     await screen.findByText(i18n.t("lmsVersionConflict"));
-    expect(firstSelect().value).toBe("2");
-    expect(lastSelect().value).toBe("3");
+    expect(firstSelect().textContent).toBe("Project 2");
+    expect(lastSelect().textContent).toBe("Project 3");
   });
 
   it("retains the draft when reload is cancelled and adopts the new baseline only after explicit confirmation", async () => {
     mount();
     await screen.findByText(/Teacher/);
-    await userEvent.selectOptions(firstSelect(), "2");
+    await userEvent.click(firstSelect());
+    await userEvent.click(await screen.findByRole("option", { name: "Project 2" }));
     act(() => client.setQueryData(["project-comparison", 2], saved(8, 4, 1)));
     mocks.comparison.mockResolvedValue(saved(8, 4, 1));
     await userEvent.click(
@@ -181,8 +187,8 @@ describe("learner comparison draft version", () => {
         name: i18n.t("portalCancel"),
       }),
     );
-    expect(firstSelect().value).toBe("2");
-    expect(lastSelect().value).toBe("3");
+    expect(firstSelect().textContent).toBe("Project 2");
+    expect(lastSelect().textContent).toBe("Project 3");
     expect(mocks.comparison).toHaveBeenCalledOnce();
     await userEvent.click(
       screen.getByRole("button", { name: i18n.t("lmsStaffReload") }),
@@ -192,9 +198,10 @@ describe("learner comparison draft version", () => {
         name: i18n.t("lmsStaffReload"),
       }),
     );
-    await waitFor(() => expect(firstSelect().value).toBe("4"));
-    expect(lastSelect().value).toBe("1");
-    await userEvent.selectOptions(firstSelect(), "2");
+    await waitFor(() => expect(firstSelect().textContent).toBe("Project 4"));
+    expect(lastSelect().textContent).toBe("Project 1");
+    await userEvent.click(firstSelect());
+    await userEvent.click(await screen.findByRole("option", { name: "Project 2" }));
     await userEvent.click(
       screen.getByRole("button", { name: i18n.t("portalComparisonSave") }),
     );
@@ -211,13 +218,14 @@ describe("learner comparison draft version", () => {
   it("adopts current server choices when the view is reopened instead of restoring its discarded draft", async () => {
     const view = mount();
     await screen.findByText(/Teacher/);
-    await userEvent.selectOptions(firstSelect(), "2");
+    await userEvent.click(firstSelect());
+    await userEvent.click(await screen.findByRole("option", { name: "Project 2" }));
     mocks.comparison.mockResolvedValue(saved(8, 4, 1));
     act(() => client.setQueryData(["project-comparison", 2], saved(8, 4, 1)));
     view.unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
     mount();
-    await waitFor(() => expect(firstSelect().value).toBe("4"));
-    expect(lastSelect().value).toBe("1");
+    await waitFor(() => expect(firstSelect().textContent).toBe("Project 4"));
+    expect(lastSelect().textContent).toBe("Project 1");
   });
 });

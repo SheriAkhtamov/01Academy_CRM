@@ -7,6 +7,7 @@ import {
 import { DialogContent as PrimitiveDialogContent } from "@/components/ui/dialog";
 import { SheetContent as PrimitiveSheetContent } from "@/components/ui/sheet";
 import { AlertDialogContent as PrimitiveAlertDialogContent } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 function usePortalModalFocus(props: {
   onOpenAutoFocus?: (event: Event) => void;
@@ -41,19 +42,40 @@ export const PortalDialogContent = forwardRef<
   ComponentPropsWithoutRef<typeof PrimitiveDialogContent>
 >(function PortalDialogContent(props, ref) {
   const focus = usePortalModalFocus(props);
-  return <PrimitiveDialogContent ref={ref} {...props} {...focus} />;
+  return (
+    <PrimitiveDialogContent
+      ref={ref}
+      {...props}
+      className={cn("portal-ui text-sm", props.className)}
+      {...focus}
+    />
+  );
 });
 export const PortalSheetContent = forwardRef<
   ElementRef<typeof PrimitiveSheetContent>,
   ComponentPropsWithoutRef<typeof PrimitiveSheetContent>
 >(function PortalSheetContent(props, ref) {
   const focus = usePortalModalFocus(props);
-  return <PrimitiveSheetContent ref={ref} {...props} {...focus} />;
+  return (
+    <PrimitiveSheetContent
+      ref={ref}
+      {...props}
+      className={cn("portal-ui text-sm", props.className)}
+      {...focus}
+    />
+  );
 });
 export const PortalAlertDialogContent = forwardRef<
   ElementRef<typeof PrimitiveAlertDialogContent>,
   ComponentPropsWithoutRef<typeof PrimitiveAlertDialogContent>
 >(function PortalAlertDialogContent(props, ref) {
   const focus = usePortalModalFocus(props);
-  return <PrimitiveAlertDialogContent ref={ref} {...props} {...focus} />;
+  return (
+    <PrimitiveAlertDialogContent
+      ref={ref}
+      {...props}
+      className={cn("portal-ui text-sm", props.className)}
+      {...focus}
+    />
+  );
 });

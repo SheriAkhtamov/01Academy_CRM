@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DataTable } from "@/components/ux/DataTable";
+import {
+  Dialog,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
   usePortal,
@@ -28,6 +35,7 @@ import {
   safeHttps,
 } from "../portal-app/ui";
 import { PortalFiles, PortalUploads } from "../portal-app/files";
+import { PortalSelect } from "../portal-app/controls";
 
 export function HelpDialog({
   open,
@@ -56,8 +64,10 @@ export function HelpDialog({
       }}
     >
       <DialogContent className="portal-ui">
-        <DialogTitle>{t("portalNeedHelp")}</DialogTitle>
-        <DialogDescription>{subject?.studentName}</DialogDescription>
+        <DialogHeader>
+          <DialogTitle>{t("portalNeedHelp")}</DialogTitle>
+          <DialogDescription>{subject?.studentName}</DialogDescription>
+        </DialogHeader>
         {open && (
           <HelpForm
             runId={runId}
@@ -160,20 +170,19 @@ function HelpForm({
       {!runId && (
         <div className="space-y-2">
           <Label htmlFor="help-course">{t("portalCourses")}</Label>
-          <select
+          <PortalSelect
             id="help-course"
             required
-            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={course}
-            onChange={(event) => setCourse(event.target.value)}
-          >
-            <option value="">{t("portalSelectCourse")}</option>
-            {courses.data?.map((item) => (
-              <option key={item.runId} value={item.runId}>
-                {item.courseName} · {item.groupName}
-              </option>
-            ))}
-          </select>
+            onValueChange={setCourse}
+            options={[
+              { value: "", label: t("portalSelectCourse") },
+              ...(courses.data ?? []).map((item) => ({
+                value: String(item.runId),
+                label: `${item.courseName} · ${item.groupName}`,
+              })),
+            ]}
+          />
           {courses.error && (
             <PortalError
               error={courses.error}
@@ -186,32 +195,25 @@ function HelpForm({
       )}
       <div className="space-y-2">
         <Label htmlFor="help-topic">{t("portalQuestionTitle")}</Label>
-        <select
+        <PortalSelect
           id="help-topic"
-          className="min-h-11 w-full rounded-md border bg-background px-3"
           value={topic}
-          onChange={(event) => setTopic(event.target.value as TranslationKey)}
-        >
-          {(
+          onValueChange={(value) => setTopic(value as TranslationKey)}
+          options={(
             [
               "portalHelpTopic",
               "portalHelpAssignment",
               "portalHelpFeedback",
               "portalHelpOther",
             ] as const
-          ).map((key) => (
-            <option key={key} value={key}>
-              {t(key)}
-            </option>
-          ))}
-        </select>
+          ).map((key) => ({ value: key, label: t(key) }))}
+        />
         {topic === "portalHelpOther" && (
           <Input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             aria-label={t("portalQuestionTitle")}
             required
-            className="min-h-11"
           />
         )}
       </div>
@@ -221,7 +223,6 @@ function HelpForm({
           id="help-step"
           type="url"
           maxLength={2000}
-          className="min-h-11"
           value={stepUrl}
           onChange={(event) => setStepUrl(event.target.value)}
         />
@@ -239,21 +240,18 @@ function HelpForm({
       {subject?.kind === "representative" && (
         <div className="space-y-2">
           <Label htmlFor="help-audience">{t("portalAudience")}</Label>
-          <select
+          <PortalSelect
             id="help-audience"
-            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={audience}
-            onChange={(event) =>
-              setAudience(event.target.value as typeof audience)
-            }
-          >
-            <option value="representative_teacher">
-              {t("portalAudienceRepresentatives")}
-            </option>
-            <option value="student_teacher">
-              {t("portalAudienceLearning")}
-            </option>
-          </select>
+            onValueChange={(value) => setAudience(value as typeof audience)}
+            options={[
+              {
+                value: "representative_teacher",
+                label: t("portalAudienceRepresentatives"),
+              },
+              { value: "student_teacher", label: t("portalAudienceLearning") },
+            ]}
+          />
         </div>
       )}
       <PortalUploads
@@ -267,12 +265,13 @@ function HelpForm({
           {validation || message(action.error, "portalSaveError")}
         </p>
       )}
-      <Button
-        className="min-h-11"
-        disabled={action.isPending || uploading || !course || !body.trim()}
-      >
-        {t("portalSend")}
-      </Button>
+      <DialogFooter className="border-t border-border/70 pt-4">
+        <Button
+          disabled={action.isPending || uploading || !course || !body.trim()}
+        >
+          {t("portalSend")}
+        </Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -325,32 +324,56 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
   return (
     <>
       <PortalTitle labelKey="portalHelp">
-        <Button className="min-h-11" onClick={() => setOpen(true)}>
-          {t("portalAskQuestion")}
-        </Button>
+        <Button onClick={() => setOpen(true)}>{t("portalAskQuestion")}</Button>
       </PortalTitle>
-      {query.data.length === 0 && <PortalEmpty labelKey="portalNoQuestions" />}
-      <div className="space-y-3">
-        {query.data.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="p-0">
-              <Button
-                variant="ghost"
-                className="h-auto min-h-16 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-                onClick={() => setSelected(item)}
-              >
-                <span>
-                  <span className="block font-medium">{item.title}</span>
-                  <span className="block text-sm text-muted-foreground">
-                    {format.date(item.createdAt)}
-                  </span>
-                </span>
-                <PortalStatus status={item.status} />
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {query.data.length === 0 ? (
+        <PortalEmpty labelKey="portalNoQuestions" />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <DataTable
+              data={query.data}
+              keyExtractor={(item) => String(item.id)}
+              onRowClick={setSelected}
+              pageSize={0}
+              showPagination={false}
+              columns={[
+                {
+                  key: "title",
+                  header: t("portalQuestionTitle"),
+                  mobilePrimary: true,
+                  cellClassName: "font-medium",
+                },
+                {
+                  key: "status",
+                  header: t("status"),
+                  render: (item) => <PortalStatus status={item.status} />,
+                },
+                {
+                  key: "createdAt",
+                  header: t("portalDate"),
+                  sortable: true,
+                  render: (item) => format.date(item.createdAt),
+                },
+                {
+                  key: "actions",
+                  header: "",
+                  className: "w-24",
+                  render: (item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(item)}
+                    >
+                      {t("portalOpen")}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          </CardContent>
+        </Card>
+      )}
       <HelpDialog open={open} onClose={() => setOpen(false)} />
       <Dialog
         open={Boolean(selected)}
@@ -359,8 +382,10 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{selected?.title}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{selected?.title}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {selected && (
             <ThreadConversation
               key={selected.id}
@@ -451,7 +476,6 @@ function ThreadConversation({
         <PortalStatus status={thread.status} />
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={status.isPending}
           onClick={() => status.mutate()}
         >
@@ -459,7 +483,10 @@ function ThreadConversation({
         </Button>
       </div>
       {thread.comments.map((item) => (
-        <div key={item.id} className="space-y-2 rounded-md border p-3">
+        <div
+          key={item.id}
+          className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-4"
+        >
           <p className="text-sm font-medium">
             {item.authorName} · {format.date(item.createdAt)}
           </p>
@@ -468,7 +495,7 @@ function ThreadConversation({
         </div>
       ))}
       {thread.stepUrl && safeHttps(thread.stepUrl) && (
-        <Button asChild variant="outline" className="min-h-11">
+        <Button asChild variant="outline">
           <a href={thread.stepUrl} target="_blank" rel="noopener noreferrer">
             {t("portalStepLink")}
           </a>
@@ -481,24 +508,25 @@ function ThreadConversation({
           if (body.trim()) action.mutate();
         }}
       >
-        <Label htmlFor="thread-comment">{t("portalComment")}</Label>
-        <Textarea
-          id="thread-comment"
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          required
-        />
+        <div className="space-y-2">
+          <Label htmlFor="thread-comment">{t("portalComment")}</Label>
+          <Textarea
+            id="thread-comment"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            required
+          />
+        </div>
         {(action.error || status.error) && (
           <p role="alert" className="text-destructive">
             {message(action.error || status.error, "portalSaveError")}
           </p>
         )}
-        <Button
-          className="min-h-11"
-          disabled={action.isPending || !body.trim()}
-        >
-          {t("portalSend")}
-        </Button>
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button disabled={action.isPending || !body.trim()}>
+            {t("portalSend")}
+          </Button>
+        </DialogFooter>
       </form>
     </div>
   );

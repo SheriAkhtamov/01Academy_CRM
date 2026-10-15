@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ux/PageHeader";
 import { portalLmsApi } from "../portal-app/api";
 import {
   usePortal,
@@ -18,12 +19,14 @@ import {
   PortalError,
   PortalEmpty,
   PortalTitle,
+  PortalStatus,
   usePortalFormat,
   safeHttps,
   usePortalError,
   usePortalSuccess,
 } from "../portal-app/ui";
 import { PortalFiles } from "../portal-app/files";
+import { PortalActionRow } from "../portal-app/controls";
 import { PortalAssignments } from "./assignments";
 import { PortalQuizzes } from "./quizzes";
 import { PortalMakeup } from "./makeup";
@@ -65,23 +68,19 @@ export function PortalCourses() {
       <PortalTitle labelKey="portalCourses" />
       <Tabs value={tab} onValueChange={(value) => setView({ tab: value })}>
         <TabsList>
-          <TabsTrigger value="current" className="min-h-11">
-            {t("portalCurrent")}
-          </TabsTrigger>
-          <TabsTrigger value="completed" className="min-h-11">
-            {t("portalCompleted")}
-          </TabsTrigger>
+          <TabsTrigger value="current">{t("portalCurrent")}</TabsTrigger>
+          <TabsTrigger value="completed">{t("portalCompleted")}</TabsTrigger>
         </TabsList>
       </Tabs>
       {items.length === 0 && <PortalEmpty labelKey="portalNoCourses" />}
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <Card key={item.enrollmentId}>
-            <CardHeader>
-              <CardTitle>{item.courseName}</CardTitle>
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-base">{item.courseName}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p>{item.groupName}</p>
+            <CardContent className="space-y-3 p-4 text-sm">
+              <p className="font-medium">{item.groupName}</p>
               <p className="text-sm text-muted-foreground">
                 {format.date(item.enrolledAt)}
                 {item.endedAt && ` – ${format.date(item.endedAt)}`}
@@ -106,7 +105,6 @@ export function PortalCourses() {
                 </p>
               )}
               <Button
-                className="min-h-11"
                 onClick={() =>
                   guarded(() => navigate(`/learn/courses/${item.runId}`))
                 }
@@ -147,62 +145,56 @@ export function PortalCourse({ id }: { id: number }) {
   const course = query.data;
   return (
     <>
-      <Button
-        variant="ghost"
-        className="min-h-11"
-        onClick={() => guarded(() => navigate("/learn/courses"))}
-      >
-        {t("portalBack")}
-      </Button>
-      <div>
-        <h1 className="text-2xl font-semibold">{course.courseName}</h1>
-        <p className="mt-2 text-muted-foreground">
-          {course.groupName} · {course.teacherName}
-        </p>
-        {course.currentUnit && (
-          <p className="mt-3 font-medium">
-            {t("portalCurrentTopic")}: {course.currentUnit.title}
-          </p>
-        )}
-      </div>
+      <PageHeader
+        title={course.courseName}
+        subtitle={[course.groupName, course.teacherName]
+          .filter(Boolean)
+          .join(" · ")}
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => guarded(() => navigate("/learn/courses"))}
+          >
+            {t("portalBack")}
+          </Button>
+        }
+      />
+      {course.currentUnit && (
+        <Card>
+          <CardContent className="space-y-1 p-4 text-sm">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t("portalCurrentTopic")}
+            </p>
+            <p className="font-medium">{course.currentUnit.title}</p>
+          </CardContent>
+        </Card>
+      )}
       <Tabs value={view.tab} onValueChange={(value) => setView({ tab: value })}>
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-          <TabsTrigger value="lessons" className="min-h-11">
-            {t("portalLessons")}
-          </TabsTrigger>
-          <TabsTrigger value="assignments" className="min-h-11">
+        <TabsList className="max-w-full">
+          <TabsTrigger value="lessons">{t("portalLessons")}</TabsTrigger>
+          <TabsTrigger value="assignments">
             {t("portalAssignments")}
           </TabsTrigger>
           {(allowed("feedback.read") || allowed("learning.read")) && (
-            <TabsTrigger value="results" className="min-h-11">
-              {t("portalResults")}
-            </TabsTrigger>
+            <TabsTrigger value="results">{t("portalResults")}</TabsTrigger>
           )}
-          <TabsTrigger value="announcements" className="min-h-11">
+          <TabsTrigger value="announcements">
             {t("portalAnnouncements")}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="lessons" className="space-y-5">
+        <TabsContent value="lessons" className="space-y-4 pt-2">
           <PortalMakeup embedded courseId={id} />
           {course.units.map((unit, index) => (
             <section key={unit.id} className="space-y-3">
               {unit.sectionTitle &&
                 unit.sectionTitle !== course.units[index - 1]?.sectionTitle && (
-                  <h2 className="text-xl font-semibold">{unit.sectionTitle}</h2>
+                  <h2 className="text-base font-semibold">
+                    {unit.sectionTitle}
+                  </h2>
                 )}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold">{unit.title}</h3>
-                {unit.status && (
-                  <Badge variant="secondary">
-                    {t(
-                      unit.status === "soon"
-                        ? "portalUpcoming"
-                        : unit.status === "studied"
-                          ? "portalLearned"
-                          : "portalAvailable",
-                    )}
-                  </Badge>
-                )}
+                <h3 className="text-sm font-semibold">{unit.title}</h3>
+                {unit.status && <PortalStatus status={unit.status} />}
               </div>
               {unit.status === "soon" && unit.openAt && (
                 <p className="text-sm text-muted-foreground">
@@ -210,10 +202,8 @@ export function PortalCourse({ id }: { id: number }) {
                 </p>
               )}
               {unit.materials.map((material) => (
-                <Button
+                <PortalActionRow
                   key={material.publicationId}
-                  className="h-auto min-h-16 w-full justify-between gap-4 whitespace-normal p-4 text-left"
-                  variant="outline"
                   disabled={unit.status === "soon"}
                   onClick={() =>
                     guarded(() =>
@@ -223,21 +213,21 @@ export function PortalCourse({ id }: { id: number }) {
                     )
                   }
                 >
-                  <span>{material.title}</span>
-                  <Badge variant="secondary">
-                    {t(material.read ? "portalLearned" : "portalAvailable")}
-                  </Badge>
-                </Button>
+                  <span className="min-w-0 break-words font-medium">
+                    {material.title}
+                  </span>
+                  <PortalStatus
+                    status={material.read ? "studied" : "available"}
+                  />
+                </PortalActionRow>
               ))}
             </section>
           ))}
           {course.materials
             .filter((material) => material.unitId === null)
             .map((material) => (
-              <Button
+              <PortalActionRow
                 key={material.publicationId}
-                className="h-auto min-h-16 w-full justify-between whitespace-normal p-4 text-left"
-                variant="outline"
                 onClick={() =>
                   guarded(() =>
                     navigate(
@@ -246,22 +236,24 @@ export function PortalCourse({ id }: { id: number }) {
                   )
                 }
               >
-                <span>{material.title}</span>
-                <Badge variant="secondary">
-                  {t(material.read ? "portalLearned" : "portalAvailable")}
-                </Badge>
-              </Button>
+                <span className="min-w-0 break-words font-medium">
+                  {material.title}
+                </span>
+                <PortalStatus
+                  status={material.read ? "studied" : "available"}
+                />
+              </PortalActionRow>
             ))}
           {course.materials.length === 0 &&
             course.units.every((unit) => unit.materials.length === 0) && (
-              <PortalEmpty labelKey="portalNoLessons" />
+              <PortalEmpty labelKey="portalMaterialsEmpty" />
             )}
         </TabsContent>
         <TabsContent value="assignments">
           <PortalAssignments courseId={id} />
         </TabsContent>
         <TabsContent value="results">
-          <PortalQuizzes courseId={id} />
+          <PortalQuizzes courseId={id} embedded />
         </TabsContent>
         <TabsContent value="announcements">
           <CourseAnnouncements id={id} />
@@ -323,13 +315,6 @@ export function PortalMaterial({
         : "portalForLesson";
   return (
     <>
-      <Button
-        variant="ghost"
-        className="min-h-11"
-        onClick={() => guarded(() => navigate(`/learn/courses/${courseId}`))}
-      >
-        {t("portalBack")}
-      </Button>
       <article className="space-y-6">
         <nav
           aria-label={t("portalBreadcrumbs")}
@@ -337,7 +322,7 @@ export function PortalMaterial({
         >
           <Button
             variant="link"
-            className="min-h-11 px-0"
+            className="h-auto px-0 py-0 text-sm"
             onClick={() => guarded(() => navigate("/learn/courses"))}
           >
             {t("portalCourses")}
@@ -345,7 +330,7 @@ export function PortalMaterial({
           <span aria-hidden="true">/</span>
           <Button
             variant="link"
-            className="min-h-11 px-0"
+            className="h-auto px-0 py-0 text-sm"
             onClick={() =>
               guarded(() => navigate(`/learn/courses/${courseId}`))
             }
@@ -353,88 +338,93 @@ export function PortalMaterial({
             {query.data.courseName}
           </Button>
         </nav>
-        <header className="space-y-3">
-          <Badge variant="secondary">{t(category)}</Badge>
-          <h1 className="text-2xl font-semibold md:text-3xl">
-            {material.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {query.data.courseName} · {format.date(material.publishedAt)}
-          </p>
-          {material.lessonAt && (
-            <p className="text-sm">
-              {t("portalLessonDetails")}: {format.date(material.lessonAt)} ·{" "}
-              {format.time(material.lessonAt)}
-            </p>
-          )}
-          {material.authorName && (
-            <p className="text-sm text-muted-foreground">
-              {t("portalAuthor")}: {material.authorName}
-            </p>
-          )}
-          {material.durationMinutes != null && (
-            <p className="text-sm text-muted-foreground">
-              {t("portalDurationMinutes").replace(
-                "{minutes}",
-                String(material.durationMinutes),
-              )}
-            </p>
-          )}
-        </header>
-        <LearningText text={material.body} />
-        {material.videoUrl && (
-          <PortalVideo source={material.videoUrl} title={material.title} />
-        )}
-        {material.links.filter(safeHttps).map((link) => (
-          <Button
-            key={link}
-            asChild
-            variant="outline"
-            className="min-h-11 max-w-full"
-          >
-            <a
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="truncate"
-            >
-              {link}
-            </a>
-          </Button>
-        ))}
-        <PortalFiles ids={material.fileIds} />
-        {mark.error && (
-          <p role="alert" className="text-destructive">
-            {message(mark.error, "portalSaveError")}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-3">
-          {subject?.kind === "self" && (
-            <Button
-              className="min-h-11"
-              disabled={mark.isPending}
-              onClick={() => mark.mutate()}
-            >
-              {t(material.read ? "portalUnmarkLearned" : "portalMarkLearned")}
-            </Button>
-          )}
-          {allowed("communication.create") && (
+        <PageHeader
+          title={material.title}
+          titleAccessory={<Badge variant="secondary">{t(category)}</Badge>}
+          subtitle={`${query.data.courseName} · ${format.date(material.publishedAt)}`}
+          actions={
             <Button
               variant="outline"
-              className="min-h-11"
-              onClick={() => setHelp(true)}
+              onClick={() =>
+                guarded(() => navigate(`/learn/courses/${courseId}`))
+              }
             >
-              {t("portalNeedHelp")}
+              {t("portalBack")}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            className="min-h-11"
-            onClick={() => guarded(() => navigate("/learn/assignments"))}
-          >
-            {t("portalAssignments")}
-          </Button>
-        </div>
+          }
+        />
+        <Card>
+          <CardContent className="space-y-4 p-4 text-sm sm:p-6">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+              {material.lessonAt && (
+                <p className="text-sm">
+                  {t("portalLessonDetails")}: {format.date(material.lessonAt)} ·{" "}
+                  {format.time(material.lessonAt)}
+                </p>
+              )}
+              {material.authorName && (
+                <p className="text-sm text-muted-foreground">
+                  {t("portalAuthor")}: {material.authorName}
+                </p>
+              )}
+              {material.durationMinutes != null && (
+                <p className="text-sm text-muted-foreground">
+                  {t("portalDurationMinutes").replace(
+                    "{minutes}",
+                    String(material.durationMinutes),
+                  )}
+                </p>
+              )}
+            </div>
+            <LearningText text={material.body} />
+            {material.videoUrl && (
+              <PortalVideo source={material.videoUrl} title={material.title} />
+            )}
+            {material.links.filter(safeHttps).map((link) => (
+              <Button
+                key={link}
+                asChild
+                variant="outline"
+                className="max-w-full"
+              >
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate"
+                >
+                  {link}
+                </a>
+              </Button>
+            ))}
+            <PortalFiles ids={material.fileIds} />
+            {mark.error && (
+              <p role="alert" className="text-destructive">
+                {message(mark.error, "portalSaveError")}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-4">
+              {subject?.kind === "self" && (
+                <Button disabled={mark.isPending} onClick={() => mark.mutate()}>
+                  {t(
+                    material.read ? "portalUnmarkLearned" : "portalMarkLearned",
+                  )}
+                </Button>
+              )}
+              {allowed("communication.create") && (
+                <Button variant="outline" onClick={() => setHelp(true)}>
+                  {t("portalNeedHelp")}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => guarded(() => navigate("/learn/assignments"))}
+              >
+                {t("portalAssignments")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </article>
       {material.unitId && (
         <PortalAssignments
@@ -488,10 +478,10 @@ function CourseAnnouncements({ id }: { id: number }) {
       {items.length === 0 && <PortalEmpty labelKey="portalNoAnnouncements" />}
       {items.map((item) => (
         <Card key={item.id}>
-          <CardHeader>
-            <CardTitle className="text-lg">{item.title}</CardTitle>
+          <CardHeader className="p-4 pb-0">
+            <CardTitle className="text-base">{item.title}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 p-4 text-sm">
             <LearningText text={item.body} />
             <PortalFiles ids={item.fileIds} />
             <p className="text-sm text-muted-foreground">

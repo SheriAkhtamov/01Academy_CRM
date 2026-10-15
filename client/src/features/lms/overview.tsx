@@ -44,6 +44,7 @@ import {
 } from "../portal-app/ui";
 import { PortalFiles } from "../portal-app/files";
 import { portalResourcesApi } from "../portal-app/resources-api";
+import { PortalActionRow } from "../portal-app/controls";
 import { PortalPaymentSummary } from "../portal-app/payments";
 import { MakeupDialog, MakeupStatus } from "./makeup";
 import type { LmsMakeupDto } from "@shared/contracts/lms";
@@ -347,7 +348,7 @@ export function PortalDay() {
       {data.assignments.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">{t("portalAssignments")}</h2>
+            <h2 className="text-base font-semibold">{t("portalAssignments")}</h2>
             <Button
               variant="ghost"
               size="sm"
@@ -363,10 +364,8 @@ export function PortalDay() {
             )
             .slice(0, 3)
             .map((item) => (
-              <Button
+              <PortalActionRow
                 key={item.id}
-                variant="outline"
-                className="h-auto min-h-16 w-full justify-between gap-4 whitespace-normal p-4 text-left"
                 onClick={() => setAssignmentId(item.id)}
               >
                 <span>
@@ -376,45 +375,40 @@ export function PortalDay() {
                   </span>
                 </span>
                 <PortalStatus status={item.status} />
-              </Button>
+              </PortalActionRow>
             ))}
         </section>
       )}
       {(feedback.length > 0 || replies.length > 0) && (
         <section className="space-y-3" aria-labelledby="portal-day-feedback">
-          <h2 id="portal-day-feedback" className="text-lg font-semibold">
+          <h2 id="portal-day-feedback" className="text-base font-semibold">
             {t("portalRecentFeedback")}
           </h2>
           {feedback.map((item) => (
-            <Card key={`feedback-${item.id}`}>
-              <CardContent className="p-0">
-                <Button
-                  variant="ghost"
-                  className="h-auto min-h-16 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-                  onClick={() =>
-                    guarded(() =>
-                      navigate(
-                        `/learn/feedback?review=${item.id}&linkId=${subject?.linkId}`,
-                      ),
-                    )
-                  }
-                >
-                  <span className="min-w-0 space-y-1">
-                    <span className="block font-semibold">
-                      {item.assignmentTitle}
-                    </span>
-                    <span className="block text-sm text-muted-foreground">
-                      {item.courseName} · {item.reviewerName} ·{" "}
-                      {format.date(item.createdAt)}
-                    </span>
-                    <span className="block line-clamp-2 font-normal">
-                      {item.comment}
-                    </span>
-                  </span>
-                  <PortalStatus status={item.decision} />
-                </Button>
-              </CardContent>
-            </Card>
+            <PortalActionRow
+              key={`feedback-${item.id}`}
+              onClick={() =>
+                guarded(() =>
+                  navigate(
+                    `/learn/feedback?review=${item.id}&linkId=${subject?.linkId}`,
+                  ),
+                )
+              }
+            >
+              <span className="min-w-0 space-y-1">
+                <span className="block font-semibold">
+                  {item.assignmentTitle}
+                </span>
+                <span className="block text-sm text-muted-foreground">
+                  {item.courseName} · {item.reviewerName} ·{" "}
+                  {format.date(item.createdAt)}
+                </span>
+                <span className="block line-clamp-2 font-normal">
+                  {item.comment}
+                </span>
+              </span>
+              <PortalStatus status={item.decision} />
+            </PortalActionRow>
           ))}
           {replies.map((item) => {
             let title = content(item.code);
@@ -422,10 +416,8 @@ export function PortalDay() {
               title = title.split(`{${key}}`).join(String(value));
             });
             return (
-              <Button
+              <PortalActionRow
                 key={`reply-${item.id}`}
-                variant="outline"
-                className="h-auto min-h-16 w-full justify-between gap-3 whitespace-normal p-4 text-left"
                 onClick={() =>
                   guarded(() => {
                     if (item.href?.startsWith("/learn")) {
@@ -442,7 +434,7 @@ export function PortalDay() {
                   </span>
                 </span>
                 <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
-              </Button>
+              </PortalActionRow>
             );
           })}
         </section>
@@ -453,7 +445,7 @@ export function PortalDay() {
         )}
       {data.latestAchievement && (
         <Card>
-          <CardContent className="flex items-center gap-4 p-6">
+          <CardContent className="flex items-center gap-4 p-4">
             <Trophy className="h-8 w-8 text-primary" />
             <div>
               <h2 className="font-semibold">
@@ -468,7 +460,7 @@ export function PortalDay() {
       )}
       {data.makeup.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">{t("portalMakeup")}</h2>
+          <h2 className="text-base font-semibold">{t("portalMakeup")}</h2>
           {data.makeup
             .filter((item) => item.status !== "not_required")
             .map((item) => (
@@ -491,19 +483,17 @@ export function PortalDay() {
       )}
       {data.announcements.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">{t("portalAnnouncements")}</h2>
+          <h2 className="text-base font-semibold">{t("portalAnnouncements")}</h2>
           {data.announcements.map((item) => (
-            <Button
+            <PortalActionRow
               key={item.id}
-              variant="outline"
-              className="h-auto min-h-14 w-full justify-start whitespace-normal p-4 text-left"
               onClick={() => {
                 readAnnouncement.reset();
                 setAnnouncement(item.id);
               }}
             >
               {item.title}
-            </Button>
+            </PortalActionRow>
           ))}
         </section>
       )}
@@ -607,10 +597,10 @@ export function FamilyOverview() {
       <div className="grid gap-4 md:grid-cols-2">
         {representatives.map((subject, index) => (
           <Card key={subject.linkId}>
-            <CardHeader>
+            <CardHeader className="p-4 pb-3">
               <CardTitle>{subject.studentName}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 p-4 pt-0">
               {queries[index].isFetching ? (
                 <PortalLoading />
               ) : queries[index].error ? (
@@ -705,7 +695,6 @@ export function FamilyOverview() {
                   </div>
                 ) : null)}
               <Button
-                className="min-h-11"
                 onClick={() => selectSubject(subject.linkId)}
               >
                 {t("portalOpen")}
@@ -763,10 +752,10 @@ function AttendanceOverview() {
   const next = query.data.find((lesson) => lesson.status !== "cancelled");
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="p-4 pb-3">
         <CardTitle className="text-lg">{t("portalUpcomingLesson")}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 p-4 pt-0">
         {next ? (
           <>
             <p className="font-semibold">{next.topic || next.courseName}</p>
@@ -780,7 +769,6 @@ function AttendanceOverview() {
         )}
         <Button
           variant="outline"
-          className="min-h-11"
           onClick={() => guarded(() => navigate("/learn/schedule"))}
         >
           {t("portalSchedule")}
@@ -813,10 +801,10 @@ function FeedbackOverview() {
   const report = query.data[0];
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="p-4 pb-3">
         <CardTitle className="text-lg">{t("portalReports")}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 p-4 pt-0">
         {report ? (
           <>
             <p className="text-sm text-muted-foreground">
@@ -826,8 +814,7 @@ function FeedbackOverview() {
             <p className="text-sm text-muted-foreground">{report.authorName}</p>
             <Button
               variant="outline"
-              className="min-h-11"
-              onClick={() => guarded(() => navigate("/learn/progress"))}
+                  onClick={() => guarded(() => navigate("/learn/progress"))}
             >
               {t("portalOpen")}
             </Button>

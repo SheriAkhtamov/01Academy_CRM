@@ -12,8 +12,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import Logo from "@/components/Logo";
+import { PageHeader } from "@/components/ux/PageHeader";
+import { ModulePage } from "@/components/ux/ModulePage";
+import { PortalSelect, PortalToolbar } from "./controls";
 import {
   usePortal,
   useSubjectQuery,
@@ -134,30 +145,32 @@ export function PortalPortfolio() {
     <>
       <PortalTitle labelKey="portalPortfolio">
         {allowed("portfolio.edit", true) && (
-          <Button className="min-h-11" onClick={() => setEditing("new")}>
+          <Button onClick={() => setEditing("new")}>
             {t("portalAddProject")}
           </Button>
         )}
       </PortalTitle>
-      <select
-        className="min-h-11 rounded-md border bg-background px-3"
-        aria-label={t("portalCourses")}
-        value={course}
-        onChange={(event) => setCourse(event.target.value)}
-      >
-        <option value="">{t("portalAllCourses")}</option>
-        {courses.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
-          </option>
-        ))}
-      </select>
+      <PortalToolbar>
+        <PortalSelect
+          className="w-full sm:w-72"
+          aria-label={t("portalCourses")}
+          value={course}
+          onValueChange={setCourse}
+          options={[
+            { value: "", label: t("portalAllCourses") },
+            ...courses.map(([id, name]) => ({
+              value: String(id),
+              label: name,
+            })),
+          ]}
+        />
+      </PortalToolbar>
       {items.length === 0 && !query.hasNextPage && (
         <PortalEmpty labelKey="noProjects" />
       )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
-          <Card key={item.id} className="overflow-hidden">
+          <Card key={item.id} className="flex h-full flex-col overflow-hidden">
             {item.coverFileId && (
               <img
                 src={`/api/portal/files/${item.coverFileId}/download?linkId=${subject?.linkId}`}
@@ -166,31 +179,19 @@ export function PortalPortfolio() {
                 loading="lazy"
               />
             )}
-            <CardHeader>
-              <CardTitle className="text-lg">{item.title}</CardTitle>
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="flex flex-1 flex-col gap-3 p-4">
               <p className="line-clamp-3 text-sm text-muted-foreground">
                 {item.description}
               </p>
-              <p className="text-sm">{item.courseName}</p>
-              <Badge variant="secondary">
-                {t(
-                  item.shares.some((value) => value.status === "published")
-                    ? "portalPublished"
-                    : item.shares.some((value) =>
-                          ["awaiting_approval", "awaiting_moderation"].includes(
-                            value.status,
-                          ),
-                        )
-                      ? "portalPendingApproval"
-                      : "portalPrivate",
-                )}
-              </Badge>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-xs text-muted-foreground">{item.courseName}</p>
+              <ProjectPublicationStatus project={item} />
+              <div className="mt-auto flex flex-wrap gap-2 pt-1">
                 <Button
                   variant="outline"
-                  className="min-h-11"
+                  size="sm"
                   onClick={() => setSelected(item)}
                 >
                   {t("portalOpen")}
@@ -201,7 +202,7 @@ export function PortalPortfolio() {
                     .map((value) => (
                       <Button
                         key={value.id}
-                        className="min-h-11"
+                        size="sm"
                         onClick={() =>
                           setApproval({ project: item, share: value })
                         }
@@ -217,7 +218,6 @@ export function PortalPortfolio() {
       {query.hasNextPage && (
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={query.isFetchingNextPage}
           onClick={() => {
             void query.fetchNextPage();
@@ -233,8 +233,10 @@ export function PortalPortfolio() {
         }}
       >
         <DialogContent className="portal-ui max-w-3xl">
-          <DialogTitle>{selected?.title}</DialogTitle>
-          <DialogDescription>{selected?.courseName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{selected?.title}</DialogTitle>
+            <DialogDescription>{selected?.courseName}</DialogDescription>
+          </DialogHeader>
           {selected && (
             <div className="space-y-4">
               <p className="whitespace-pre-wrap">{selected.description}</p>
@@ -279,7 +281,6 @@ export function PortalPortfolio() {
                       allowed("portfolio.approve")) && (
                       <Button
                         variant="outline"
-                        className="min-h-11"
                         onClick={() => setRevoke(value)}
                       >
                         {t("portalRevoke")}
@@ -288,10 +289,9 @@ export function PortalPortfolio() {
                   </div>
                 ))}
               {allowed("portfolio.edit", true) && (
-                <div className="flex flex-wrap gap-2">
+                <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
                   <Button
                     variant="outline"
-                    className="min-h-11"
                     onClick={() => {
                       setSelected(null);
                       setEditing(selected);
@@ -301,7 +301,6 @@ export function PortalPortfolio() {
                   </Button>
                   {subject?.studentClassification !== "unverified" && (
                     <Button
-                      className="min-h-11"
                       onClick={() => {
                         setSelected(null);
                         setShare(selected);
@@ -312,12 +311,11 @@ export function PortalPortfolio() {
                   )}
                   <Button
                     variant="outline"
-                    className="min-h-11"
                     onClick={() => setArchive(selected)}
                   >
                     {t("portalArchiveProject")}
                   </Button>
-                </div>
+                </DialogFooter>
               )}
             </div>
           )}
@@ -330,10 +328,12 @@ export function PortalPortfolio() {
         }}
       >
         <DialogContent className="portal-ui max-w-2xl">
-          <DialogTitle>
-            {t(editing === "new" ? "portalAddProject" : "portalEditProject")}
-          </DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>
+              {t(editing === "new" ? "portalAddProject" : "portalEditProject")}
+            </DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {editing && (
             <ProjectEditor
               key={editing === "new" ? "new" : editing.id}
@@ -353,8 +353,10 @@ export function PortalPortfolio() {
         }}
       >
         <DialogContent className="portal-ui max-w-2xl">
-          <DialogTitle>{t("portalShareTitle")}</DialogTitle>
-          <DialogDescription>{share?.title}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalShareTitle")}</DialogTitle>
+            <DialogDescription>{share?.title}</DialogDescription>
+          </DialogHeader>
           {share && (
             <ShareForm
               key={share.id}
@@ -415,8 +417,10 @@ export function PortalPortfolio() {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{t("portalApprove")}</DialogTitle>
-          <DialogDescription>{approval?.share.displayName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalApprove")}</DialogTitle>
+            <DialogDescription>{approval?.share.displayName}</DialogDescription>
+          </DialogHeader>
           {approval && (
             <div className="space-y-4">
               <h2 className="font-semibold">{approval.share.preview.title}</h2>
@@ -437,13 +441,14 @@ export function PortalPortfolio() {
                   {message(approveAction.error, "portalSaveError")}
                 </p>
               )}
-              <Button
-                className="min-h-11"
-                disabled={approveAction.isPending}
-                onClick={() => approveAction.mutate()}
-              >
-                {t("portalApprove")}
-              </Button>
+              <DialogFooter className="border-t border-border/70 pt-4">
+                <Button
+                  disabled={approveAction.isPending}
+                  onClick={() => approveAction.mutate()}
+                >
+                  {t("portalApprove")}
+                </Button>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>
@@ -451,6 +456,30 @@ export function PortalPortfolio() {
     </>
   );
 }
+function ProjectPublicationStatus({ project }: { project: PortalProjectDto }) {
+  const { t } = useTranslation();
+  const published = project.shares.some(
+    (share) => share.status === "published",
+  );
+  const pending = project.shares.some((share) =>
+    ["awaiting_approval", "awaiting_moderation"].includes(share.status),
+  );
+  return (
+    <Badge
+      variant={published ? "success" : pending ? "warning" : "secondary"}
+      className="self-start"
+    >
+      {t(
+        published
+          ? "portalPublished"
+          : pending
+            ? "portalPendingApproval"
+            : "portalPrivate",
+      )}
+    </Badge>
+  );
+}
+
 function ProjectEditor({
   project,
   sourceSubmissionId,
@@ -576,29 +605,27 @@ function ProjectForm({
           onChange={(event) =>
             setValues({ ...values, title: event.target.value })
           }
-          className="min-h-11"
         />
       </div>
       <div className="space-y-2">
         <Label htmlFor="project-course">{t("portalCourses")}</Label>
-        <select
+        <PortalSelect
           id="project-course"
-          className="min-h-11 w-full rounded-md border bg-background px-3"
-          value={values.runId ?? ""}
-          onChange={(event) =>
+          value={String(values.runId ?? "")}
+          onValueChange={(value) =>
             setValues({
               ...values,
-              runId: event.target.value ? Number(event.target.value) : null,
+              runId: value ? Number(value) : null,
             })
           }
-        >
-          <option value="">{t("portalSelectCourse")}</option>
-          {courses.data?.map((item) => (
-            <option key={item.runId} value={item.runId}>
-              {item.courseName} · {item.groupName}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: t("portalSelectCourse") },
+            ...(courses.data ?? []).map((item) => ({
+              value: String(item.runId),
+              label: `${item.courseName} · ${item.groupName}`,
+            })),
+          ]}
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="project-description">{t("portalDescription")}</Label>
@@ -615,7 +642,6 @@ function ProjectForm({
         <Label htmlFor="project-links">{t("portalLinks")}</Label>
         <Textarea
           id="project-links"
-          placeholder={t("portalLinkPlaceholder")}
           value={links}
           onChange={(event) => {
             setLinks(event.target.value);
@@ -645,26 +671,23 @@ function ProjectForm({
       {values.fileIds.length > 0 && (
         <div className="space-y-2">
           <Label htmlFor="project-cover">{t("portalCover")}</Label>
-          <select
+          <PortalSelect
             id="project-cover"
-            className="min-h-11 w-full rounded-md border bg-background px-3"
-            value={values.coverFileId ?? ""}
-            onChange={(event) =>
+            value={String(values.coverFileId ?? "")}
+            onValueChange={(value) =>
               setValues({
                 ...values,
-                coverFileId: event.target.value
-                  ? Number(event.target.value)
-                  : null,
+                coverFileId: value ? Number(value) : null,
               })
             }
-          >
-            <option value="">{t("portalCover")}</option>
-            {values.fileIds.map((id, index) => (
-              <option key={id} value={id}>
-                {t("portalFiles")} {index + 1}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: t("portalCover") },
+              ...values.fileIds.map((id, index) => ({
+                value: String(id),
+                label: `${t("portalFiles")} ${index + 1}`,
+              })),
+            ]}
+          />
         </div>
       )}
       {(validation || action.error) && (
@@ -672,9 +695,9 @@ function ProjectForm({
           {validation || message(action.error, "portalSaveError")}
         </p>
       )}
-      <Button className="min-h-11" disabled={action.isPending || busy}>
-        {t("portalSave")}
-      </Button>
+      <DialogFooter className="border-t border-border/70 pt-4">
+        <Button disabled={action.isPending || busy}>{t("portalSave")}</Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -731,30 +754,24 @@ function ShareForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="share-project">{t("portalShareProject")}</Label>
-        <select
+        <PortalSelect
           id="share-project"
-          className="min-h-11 w-full rounded-md border bg-background px-3"
-          value={project.id}
+          value={String(project.id)}
           disabled={action.isPending}
-          onChange={(event) => {
+          onValueChange={(value) => {
             if (action.isPending) return;
-            const selected = projects.find(
-              (item) => item.id === Number(event.target.value),
-            );
+            const selected = projects.find((item) => item.id === Number(value));
             if (selected && selected.id !== project.id)
               guarded(() => onProjectChange(selected));
           }}
-        >
-          {projects.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.title}
-            </option>
-          ))}
-        </select>
+          options={projects.map((item) => ({
+            value: String(item.id),
+            label: item.title,
+          }))}
+        />
         {loadMore && (
           <Button
             variant="outline"
-            className="min-h-11"
             disabled={loadingMore || action.isPending}
             onClick={loadMore}
           >
@@ -772,58 +789,59 @@ function ShareForm({
               onChange={(event) =>
                 setValues({ ...values, displayName: event.target.value })
               }
-              className="min-h-11"
             />
           </div>
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
+          <label className="flex min-h-9 cursor-pointer items-center gap-3 py-1 text-sm [@media(pointer:coarse)]:min-h-11">
+            <Checkbox
               checked={values.includeDescription}
-              onChange={(event) =>
+              onCheckedChange={(checked) =>
                 setValues({
                   ...values,
-                  includeDescription: event.target.checked,
+                  includeDescription: checked === true,
                 })
               }
             />
             {t("portalDescription")}
           </label>
           {project.teacherReview && (
-            <label className="flex min-h-11 items-center gap-3">
-              <input
-                type="checkbox"
+            <label className="flex min-h-9 cursor-pointer items-center gap-3 py-1 text-sm [@media(pointer:coarse)]:min-h-11">
+              <Checkbox
                 checked={values.includeReview}
-                onChange={(event) =>
-                  setValues({ ...values, includeReview: event.target.checked })
+                onCheckedChange={(checked) =>
+                  setValues({ ...values, includeReview: checked === true })
                 }
               />
               {t("portalFeedback")}
             </label>
           )}
           {project.files.map((file) => (
-            <label key={file.id} className="flex min-h-11 items-center gap-3">
-              <input
-                type="checkbox"
+            <label
+              key={file.id}
+              className="flex min-h-9 cursor-pointer items-center gap-3 py-1 text-sm [@media(pointer:coarse)]:min-h-11"
+            >
+              <Checkbox
                 checked={values.fileIds.includes(file.id)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setValues({
                     ...values,
-                    fileIds: event.target.checked
-                      ? [...values.fileIds, file.id]
-                      : values.fileIds.filter((id) => id !== file.id),
+                    fileIds:
+                      checked === true
+                        ? [...values.fileIds, file.id]
+                        : values.fileIds.filter((id) => id !== file.id),
                   })
                 }
               />
               <span className="break-words">{file.name}</span>
             </label>
           ))}
-          <Button
-            className="min-h-11"
-            disabled={!values.displayName.trim()}
-            onClick={() => setPreview(true)}
-          >
-            {t("portalSharePreview")}
-          </Button>
+          <DialogFooter className="border-t border-border/70 pt-4">
+            <Button
+              disabled={!values.displayName.trim()}
+              onClick={() => setPreview(true)}
+            >
+              {t("portalSharePreview")}
+            </Button>
+          </DialogFooter>
         </>
       ) : (
         <>
@@ -841,12 +859,11 @@ function ShareForm({
             <PortalFiles ids={values.fileIds} />
           </div>
           {subject?.studentClassification === "adult" && (
-            <label className="flex min-h-11 items-start gap-3">
-              <input
+            <label className="flex min-h-9 cursor-pointer items-start gap-3 text-sm leading-6 [@media(pointer:coarse)]:min-h-11">
+              <Checkbox
                 className="mt-1"
-                type="checkbox"
                 checked={consent}
-                onChange={(event) => setConsent(event.target.checked)}
+                onCheckedChange={(checked) => setConsent(checked === true)}
               />
               <span>{t("portalConsentDescription")}</span>
             </label>
@@ -856,16 +873,11 @@ function ShareForm({
               {message(action.error, "portalSaveError")}
             </p>
           )}
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              className="min-h-11"
-              onClick={() => setPreview(false)}
-            >
+          <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
+            <Button variant="outline" onClick={() => setPreview(false)}>
               {t("portalBack")}
             </Button>
             <Button
-              className="min-h-11"
               disabled={
                 action.isPending ||
                 (subject?.studentClassification === "adult" && !consent)
@@ -874,7 +886,7 @@ function ShareForm({
             >
               {t("portalPublish")}
             </Button>
-          </div>
+          </DialogFooter>
         </>
       )}
     </div>
@@ -896,67 +908,72 @@ export function PublicPortfolio({ token }: { token: string }) {
     return () => tag.remove();
   }, []);
   return (
-    <main className="portal-ui mx-auto min-h-dvh max-w-3xl space-y-6 px-4 py-10">
-      <p className="text-xl font-semibold">{t("publicAttendanceBrand")}</p>
-      {query.isPending ? (
-        <PortalLoading />
-      ) : query.error ? (
-        <PortalEmpty labelKey="portalPublicPortfolioUnavailable" />
-      ) : (
-        <article className="space-y-6">
-          <header className="space-y-2">
-            <p className="text-muted-foreground">{query.data.displayName}</p>
-            <h1 className="text-3xl font-semibold">{query.data.title}</h1>
-          </header>
-          {query.data.coverUrl && (
-            <img
-              src={query.data.coverUrl}
-              alt={query.data.title}
-              className="w-full rounded-xl"
+    <main className="portal-ui min-h-dvh text-sm">
+      <ModulePage className="max-w-3xl space-y-6">
+        <div className="flex items-center gap-2">
+          <Logo size="sm" />
+          <p className="font-semibold">{t("publicAttendanceBrand")}</p>
+        </div>
+        {query.isPending ? (
+          <PortalLoading />
+        ) : query.error ? (
+          <PortalEmpty labelKey="portalPublicPortfolioUnavailable" />
+        ) : (
+          <article className="space-y-6">
+            <PageHeader
+              title={query.data.title}
+              subtitle={query.data.displayName}
             />
-          )}
-          {query.data.description && (
-            <p className="whitespace-pre-wrap leading-relaxed">
-              {query.data.description}
-            </p>
-          )}
-          {query.data.teacherReview && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {t("portalFeedback")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="whitespace-pre-wrap">
-                {query.data.teacherReview}
-              </CardContent>
-            </Card>
-          )}
-          {query.data.links.filter(safeHttps).map((link) => (
-            <a
-              key={link}
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block break-all text-primary underline"
-            >
-              {link}
-            </a>
-          ))}
-          {query.data.files.map((file) => (
-            <Button
-              key={file.downloadUrl}
-              asChild
-              variant="outline"
-              className="min-h-11 max-w-full"
-            >
-              <a href={file.downloadUrl} download className="truncate">
-                {file.name}
+            {query.data.coverUrl && (
+              <img
+                src={query.data.coverUrl}
+                alt={query.data.title}
+                className="w-full rounded-xl"
+              />
+            )}
+            {query.data.description && (
+              <p className="whitespace-pre-wrap leading-relaxed">
+                {query.data.description}
+              </p>
+            )}
+            {query.data.teacherReview && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t("portalFeedback")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="whitespace-pre-wrap">
+                  {query.data.teacherReview}
+                </CardContent>
+              </Card>
+            )}
+            {query.data.links.filter(safeHttps).map((link) => (
+              <a
+                key={link}
+                href={link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block break-all text-primary underline"
+              >
+                {link}
               </a>
-            </Button>
-          ))}
-        </article>
-      )}
+            ))}
+            {query.data.files.map((file) => (
+              <Button
+                key={file.downloadUrl}
+                asChild
+                variant="outline"
+                className="max-w-full"
+              >
+                <a href={file.downloadUrl} download className="truncate">
+                  {file.name}
+                </a>
+              </Button>
+            ))}
+          </article>
+        )}
+      </ModulePage>
     </main>
   );
 }

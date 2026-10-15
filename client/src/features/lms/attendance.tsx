@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { DataTable } from "@/components/ux/DataTable";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { portalLmsApi } from "../portal-app/api";
@@ -15,6 +16,7 @@ import {
 } from "../portal-app/ui";
 import { ProgressMetric } from "./overview";
 import { PortalMakeup } from "./makeup";
+import { PortalSelect, PortalToolbar } from "../portal-app/controls";
 
 export function portalMonthRange(month: string) {
   const [year, number] = month.split("-").map(Number);
@@ -70,13 +72,12 @@ export function PortalAttendance() {
   return (
     <>
       <PortalTitle labelKey="portalAttendance" />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-2">
+      <PortalToolbar>
+        <div className="w-full space-y-2 sm:w-48">
           <Label htmlFor="attendance-month">{t("portalMonth")}</Label>
           <Input
             id="attendance-month"
             type="month"
-            className="min-h-11"
             value={month}
             onChange={(event) => {
               if (/^\d{4}-\d{2}$/.test(event.target.value))
@@ -84,37 +85,36 @@ export function PortalAttendance() {
             }}
           />
         </div>
-        <div className="space-y-2">
+        <div className="w-full space-y-2 sm:min-w-48 sm:flex-1">
           <Label htmlFor="attendance-course">{t("portalCourses")}</Label>
-          <select
+          <PortalSelect
             id="attendance-course"
-            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={course}
-            onChange={(event) => setCourse(event.target.value)}
-          >
-            <option value="">{t("portalAllCourses")}</option>
-            {courses.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setCourse}
+            options={[
+              { value: "", label: t("portalAllCourses") },
+              ...courses.map(([id, name]) => ({
+                value: String(id),
+                label: name,
+              })),
+            ]}
+          />
         </div>
-        <div className="space-y-2">
+        <div className="w-full space-y-2 sm:w-56">
           <Label htmlFor="attendance-status">{t("portalAttendance")}</Label>
-          <select
+          <PortalSelect
             id="attendance-status"
-            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">{t("portalAllAttendance")}</option>
-            <option value="present">{t("portalPresent")}</option>
-            <option value="absent">{t("portalAbsent")}</option>
-            <option value="unmarked">{t("portalUnmarked")}</option>
-          </select>
+            onValueChange={setStatus}
+            options={[
+              { value: "", label: t("portalAllAttendance") },
+              { value: "present", label: t("portalPresent") },
+              { value: "absent", label: t("portalAbsent") },
+              { value: "unmarked", label: t("portalUnmarked") },
+            ]}
+          />
         </div>
-      </div>
+      </PortalToolbar>
       {query.isPending ? (
         <PortalLoading />
       ) : query.error ? (
@@ -126,7 +126,7 @@ export function PortalAttendance() {
         />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ProgressMetric
               labelKey="portalAttendance"
               emptyKey="portalNoLessons"
@@ -144,37 +144,52 @@ export function PortalAttendance() {
               ] as const
             ).map(([label, count]) => (
               <Card key={label}>
-                <CardHeader>
-                  <CardTitle className="text-base">{t(label)}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-2xl font-semibold">
-                  {count}
+                <CardContent className="space-y-1 p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t(label)}
+                  </p>
+                  <p className="text-[26px] font-bold tabular-nums tracking-tight">
+                    {count}
+                  </p>
                 </CardContent>
               </Card>
             ))}
           </div>
-          {items.length === 0 ? (
-            <PortalEmpty labelKey="portalNoLessons" />
-          ) : (
-            <div className="space-y-3">
-              {items.map((item) => (
-                <Card key={`${item.runId}:${item.lessonId}`}>
-                  <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-                    <div>
-                      <h2 className="font-semibold">
-                        {item.topic || item.courseName}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        {item.courseName} · {format.date(item.scheduledAt)} ·{" "}
-                        {format.time(item.scheduledAt)}
-                      </p>
-                    </div>
-                    <PortalStatus status={item.attendance} />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <DataTable
+            data={items}
+            keyExtractor={(item) => `${item.runId}:${item.lessonId}`}
+            rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
+            filterKey={`${month}:${course}:${status}`}
+            emptyState={<PortalEmpty labelKey="portalNoLessons" />}
+            columns={[
+              {
+                key: "topic",
+                header: t("portalLessons"),
+                mobilePrimary: true,
+                render: (item) => (
+                  <span className="font-medium">
+                    {item.topic || item.courseName}
+                  </span>
+                ),
+              },
+              { key: "courseName", header: t("portalCourses") },
+              {
+                key: "scheduledAt",
+                header: t("portalDate"),
+                render: (item) => (
+                  <span>
+                    {format.date(item.scheduledAt)} ·{" "}
+                    {format.time(item.scheduledAt)}
+                  </span>
+                ),
+              },
+              {
+                key: "attendance",
+                header: t("portalAttendance"),
+                render: (item) => <PortalStatus status={item.attendance} />,
+              },
+            ]}
+          />
         </>
       )}
       <PortalMakeup embedded courseId={course ? Number(course) : undefined} />

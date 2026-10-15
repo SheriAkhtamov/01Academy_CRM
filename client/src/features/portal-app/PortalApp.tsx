@@ -290,20 +290,21 @@ function NoPortalAccess() {
   });
   return (
     <div className="space-y-4">
+      <PortalTitle labelKey="portalTitle" />
       <PortalEmpty labelKey="portalNoAccess" />
       {query.data && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{query.data.schoolName}</CardTitle>
+          <CardHeader className="p-4">
+            <CardTitle className="text-base">{query.data.schoolName}</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
+          <CardContent className="flex flex-wrap gap-3 p-4 pt-0">
             {query.data.phone && (
-              <Button asChild variant="outline" className="min-h-11">
+              <Button asChild variant="outline">
                 <a href={`tel:${query.data.phone}`}>{query.data.phone}</a>
               </Button>
             )}
             {query.data.email && (
-              <Button asChild variant="outline" className="min-h-11">
+              <Button asChild variant="outline">
                 <a href={`mailto:${query.data.email}`}>{query.data.email}</a>
               </Button>
             )}

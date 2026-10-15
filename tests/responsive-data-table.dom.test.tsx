@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataTable, type DataTableColumn } from '../client/src/components/ux/DataTable';
 import { Tabs, TabsList, TabsTrigger } from '../client/src/components/ui/tabs';
 import { i18n } from '../client/src/lib/i18n';
+import { Dialog, DialogTitle } from '../client/src/components/ui/dialog';
+import { PortalDialogContent } from '../client/src/features/learning-content/modal-content';
 
 /**
  * jsdom ships no `matchMedia`, which is exactly why `useMediaQuery` treats its
@@ -192,6 +195,27 @@ describe('data table on a phone', () => {
     await user.keyboard('{Enter}');
     expect(onRestore).toHaveBeenCalledTimes(2);
     expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it.each([375, 1280])('returns focus to the selected record after closing its dialog at %ipx', async (width) => {
+    setViewportWidth(width);
+    function RecordDialog() {
+      const [open, setOpen] = useState(false);
+      return <>
+        <DataTable columns={columns} data={rows} keyExtractor={(row) => String(row.id)} onRowClick={() => setOpen(true)} />
+        <Dialog open={open} onOpenChange={setOpen}>
+          <PortalDialogContent aria-describedby={undefined}>
+            <DialogTitle>Record details</DialogTitle>
+            <button type="button" onClick={() => setOpen(false)}>Close record</button>
+          </PortalDialogContent>
+        </Dialog>
+      </>;
+    }
+    render(<RecordDialog />);
+    const row = screen.getByRole('button', { name: /Zara Usmanova/ });
+    await userEvent.click(within(row).getByText('Zara Usmanova'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Close record' }));
+    await waitFor(() => expect(document.activeElement).toBe(row));
   });
 
   it('shows the empty state as itself rather than inside a table cell', () => {

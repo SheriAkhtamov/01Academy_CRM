@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { Download, Eye, FileText, Paperclip, Trash2 } from "lucide-react";
 import {
   PORTAL_MAX_FILE_BYTES,
   type PortalFileDto,
@@ -8,7 +9,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   PortalDialogContent as DialogContent,
   ConfirmAction,
@@ -46,7 +47,13 @@ export function usePortalFiles(ids: number[]) {
     })),
   });
 }
-export function PortalFiles({ ids }: { ids: number[] }) {
+export function PortalFiles({
+  ids,
+  onRemove,
+}: {
+  ids: number[];
+  onRemove?: (id: number) => void;
+}) {
   const { t } = useTranslation();
   const { subject } = usePortal();
   const files = usePortalFiles(ids);
@@ -57,12 +64,15 @@ export function PortalFiles({ ids }: { ids: number[] }) {
         {files.map((query, index) => (
           <div
             key={ids[index]}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"
+            className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 bg-muted/20 p-3"
           >
-            <span className="min-w-0 break-words text-sm">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground" aria-hidden="true">
+              <FileText className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1 break-words text-sm font-medium">
               {query.data?.name ?? t("portalFiles")}
               {query.data && (
-                <span className="block text-xs text-muted-foreground">
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                   {query.data.name.includes(".") &&
                     `${query.data.name.split(".").pop()?.toLocaleUpperCase()} · `}
                   {t("portalFileSize").replace(
@@ -72,54 +82,73 @@ export function PortalFiles({ ids }: { ids: number[] }) {
                 </span>
               )}
             </span>
-            {query.error ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  void query.refetch();
-                }}
-              >
-                {t("portalRetry")}
-              </Button>
-            ) : query.data?.state !== "ready" ? (
-              <span className="text-sm text-muted-foreground" role="status">
-                {t(
-                  query.data?.state === "rejected"
-                    ? "portalFileRejected"
-                    : "portalFileChecking",
-                )}
-              </span>
-            ) : (
-              <div className="flex gap-2">
-                {[
-                  "image/png",
-                  "image/jpeg",
-                  "image/webp",
-                  "application/pdf",
-                ].includes(query.data.mime) && (
-                  <Button
-                    variant="outline"
-                    className="min-h-11"
-                    onClick={() => setPreview(query.data ?? null)}
-                  >
-                    {t("portalOpen")}
-                  </Button>
-                )}
-                <Button asChild variant="outline" className="min-h-11">
-                  <a
-                    href={
-                      query.data.downloadUrl ??
-                      `/api/portal/files/${ids[index]}/download?linkId=${subject?.linkId}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    {t("portalDownload")}
-                  </a>
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              {query.error ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void query.refetch();
+                  }}
+                >
+                  {t("portalRetry")}
                 </Button>
-              </div>
-            )}
+              ) : query.data?.state !== "ready" ? (
+                <span className="text-sm text-muted-foreground" role="status">
+                  {t(
+                    query.data?.state === "rejected"
+                      ? "portalFileRejected"
+                      : "portalFileChecking",
+                  )}
+                </span>
+              ) : (
+                <div className="flex items-center gap-1">
+                  {[
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp",
+                    "application/pdf",
+                  ].includes(query.data.mime) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreview(query.data ?? null)}
+                    >
+                      <Eye aria-hidden="true" />
+                      {t("portalOpen")}
+                    </Button>
+                  )}
+                  <Button asChild variant="ghost" size="sm">
+                    <a
+                      href={
+                        query.data.downloadUrl ??
+                        `/api/portal/files/${ids[index]}/download?linkId=${subject?.linkId}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                    >
+                      <Download aria-hidden="true" />
+                      {t("portalDownload")}
+                    </a>
+                  </Button>
+                </div>
+              )}
+              {onRemove && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-muted-foreground hover:text-destructive"
+                  aria-label={`${t("portalRemove")} ${query.data?.name ?? ""}`}
+                  onClick={() => onRemove(ids[index])}
+                >
+                  <Trash2 aria-hidden="true" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -130,14 +159,16 @@ export function PortalFiles({ ids }: { ids: number[] }) {
         }}
       >
         <DialogContent className="portal-ui max-w-4xl">
-          <DialogTitle>{preview?.name}</DialogTitle>
-          <DialogDescription>
-            {preview &&
-              t("portalFileSize").replace(
-                "{size}",
-                (preview.size / 1024 / 1024).toFixed(1),
-              )}
-          </DialogDescription>
+          <DialogHeader className="pr-8 text-left">
+            <DialogTitle>{preview?.name}</DialogTitle>
+            <DialogDescription>
+              {preview &&
+                t("portalFileSize").replace(
+                  "{size}",
+                  (preview.size / 1024 / 1024).toFixed(1),
+                )}
+            </DialogDescription>
+          </DialogHeader>
           {preview?.mime.startsWith("image/") ? (
             <img
               src={previewUrl(preview, subject?.linkId)}
@@ -304,10 +335,11 @@ export function PortalUploads({
       <Button
         type="button"
         variant="outline"
-        className="min-h-11"
+        size="sm"
         onClick={() => input.current?.click()}
         disabled={ids.length + uploads.length >= max}
       >
+        <Paperclip aria-hidden="true" />
         {t("portalUpload")}
       </Button>
       {validation && (
@@ -315,23 +347,10 @@ export function PortalUploads({
           {validation}
         </p>
       )}
-      <PortalFiles ids={ids} />
-      {ids.map((id, index) => (
-        <div key={id} className="flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            className="min-h-11"
-            aria-label={`${t("portalRemove")} ${files[index]?.data?.name ?? ""}`}
-            onClick={() => setRemove(id)}
-          >
-            {t("portalRemove")}
-          </Button>
-        </div>
-      ))}
+      <PortalFiles ids={ids} onRemove={setRemove} />
       <div aria-live="polite" className="space-y-3">
         {uploads.map((item) => (
-          <div key={item.key} className="space-y-2 rounded-md border p-3">
+          <div key={item.key} className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
             <p className="break-words text-sm">{item.file.name}</p>
             {item.error ? (
               <>

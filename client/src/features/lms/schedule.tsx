@@ -1,10 +1,17 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LmsScheduleDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import { usePortal, useSubjectQuery } from "../portal-app/context";
 import {
@@ -20,6 +27,11 @@ import {
 import { HelpDialog } from "./communication";
 import { AssignmentDialog } from "./assignments";
 import { usePortalViewState } from "../portal-app/view-state";
+import {
+  PortalActionRow,
+  PortalSelect,
+  PortalToolbar,
+} from "../portal-app/controls";
 
 export function portalWeekRange(offset: number) {
   const now = new Date();
@@ -80,50 +92,48 @@ export function PortalSchedule() {
   return (
     <>
       <PortalTitle labelKey="portalSchedule" />
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          className="min-h-11 min-w-11"
-          aria-label={t("portalPreviousWeek")}
-          onClick={() => setOffset(offset - 1)}
-        >
-          ←
-        </Button>
-        <Button
-          variant="outline"
-          className="min-h-11"
-          onClick={() => setOffset(0)}
-        >
-          {t("portalTodayDate")}
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          className="min-h-11 min-w-11"
-          aria-label={t("portalNextWeek")}
-          onClick={() => setOffset(offset + 1)}
-        >
-          →
-        </Button>
-        <span className="text-sm">
+      <PortalToolbar className="items-center">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t("portalPreviousWeek")}
+            onClick={() => setOffset(offset - 1)}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </Button>
+          <Button variant="outline" onClick={() => setOffset(0)}>
+            {t("portalTodayDate")}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t("portalNextWeek")}
+            onClick={() => setOffset(offset + 1)}
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+        <span className="text-sm font-medium">
           {format.date(range.from)} – {format.date(range.days[6])}
         </span>
-        <select
-          className="min-h-11 rounded-md border bg-background px-3"
+        <span className="text-xs text-muted-foreground">
+          {t("portalTashkent")}
+        </span>
+        <PortalSelect
+          className="w-full sm:ml-auto sm:w-56"
           aria-label={t("portalCourses")}
           value={course}
-          onChange={(event) => setCourse(event.target.value)}
-        >
-          <option value="">{t("portalAllCourses")}</option>
-          {courses.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <p className="text-sm text-muted-foreground">{t("portalTashkent")}</p>
+          onValueChange={setCourse}
+          options={[
+            { value: "", label: t("portalAllCourses") },
+            ...courses.map(([id, name]) => ({
+              value: String(id),
+              label: name,
+            })),
+          ]}
+        />
+      </PortalToolbar>
       {query.isPending ? (
         <PortalLoading />
       ) : query.error ? (
@@ -136,7 +146,7 @@ export function PortalSchedule() {
       ) : items.length === 0 ? (
         <PortalEmpty labelKey="portalNoLessons" />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-7">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-7">
           {range.days.map((day) => (
             <section key={day} className="min-w-0 space-y-3">
               <h2 className="text-sm font-semibold">{format.date(day)}</h2>
@@ -147,9 +157,8 @@ export function PortalSchedule() {
                 .map((item) => (
                   <Card key={item.lessonId}>
                     <CardContent className="p-0">
-                      <Button
-                        variant="ghost"
-                        className="h-auto min-h-20 w-full flex-col items-start justify-start gap-2 whitespace-normal p-3 text-left"
+                      <PortalActionRow
+                        className="flex-col items-start justify-start gap-2 rounded-xl border-0 p-4"
                         onClick={() => setSelected(item)}
                       >
                         <span className="text-sm font-semibold">
@@ -166,7 +175,7 @@ export function PortalSchedule() {
                         {allowed("attendance.read") && (
                           <PortalStatus status={item.attendance} />
                         )}
-                      </Button>
+                      </PortalActionRow>
                     </CardContent>
                   </Card>
                 ))}
@@ -186,23 +195,27 @@ export function PortalSchedule() {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>
-            {selected?.topic ||
-              selected?.courseName ||
-              t("portalLessonDetails")}
-          </DialogTitle>
-          <DialogDescription>{selected?.courseName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>
+              {selected?.topic ||
+                selected?.courseName ||
+                t("portalLessonDetails")}
+            </DialogTitle>
+            <DialogDescription>{selected?.courseName}</DialogDescription>
+          </DialogHeader>
           {selected && (
-            <div className="space-y-4">
+            <div className="space-y-4 text-sm">
               <p>
                 {format.date(selected.scheduledAt)} ·{" "}
                 {format.time(selected.scheduledAt)}–
                 {format.time(selected.endsAt)} · {t("portalTashkent")}
               </p>
-              <PortalStatus status={selected.status} />
-              {allowed("attendance.read") && (
-                <PortalStatus status={selected.attendance} />
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <PortalStatus status={selected.status} />
+                {allowed("attendance.read") && (
+                  <PortalStatus status={selected.attendance} />
+                )}
+              </div>
               {selected.rescheduled && (
                 <p className="text-sm text-muted-foreground">
                   {t("portalRescheduled")}
@@ -220,11 +233,47 @@ export function PortalSchedule() {
                   {t("portalRoom")}: {selected.schoolName} · {selected.roomName}
                 </p>
               )}
-              <div className="flex flex-wrap gap-2">
+              {allowed("learning.read") &&
+                Boolean(selected.materials?.length) && (
+                  <section className="space-y-2">
+                    <h2 className="font-semibold">{t("portalMaterial")}</h2>
+                    {selected.materials?.map((material) => (
+                      <PortalActionRow
+                        key={material.publicationId}
+                        onClick={() =>
+                          guarded(() => {
+                            setSelected(null);
+                            navigate(
+                              `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
+                            );
+                          })
+                        }
+                      >
+                        {material.title}
+                      </PortalActionRow>
+                    ))}
+                  </section>
+                )}
+              {allowed("learning.read") &&
+                Boolean(selected.assignments?.length) && (
+                  <section className="space-y-2">
+                    <h2 className="font-semibold">{t("portalAssignments")}</h2>
+                    {selected.assignments?.map((assignment) => (
+                      <PortalActionRow
+                        key={assignment.recipientId}
+                        onClick={() => setAssignmentId(assignment.recipientId)}
+                      >
+                        {assignment.title}
+                        <PortalStatus status={assignment.status} />
+                      </PortalActionRow>
+                    ))}
+                  </section>
+                )}
+              <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
                 {selected.meetingUrl &&
                   safeHttps(selected.meetingUrl) &&
                   selected.status !== "cancelled" && (
-                    <Button asChild className="min-h-11">
+                    <Button asChild>
                       <a
                         href={selected.meetingUrl}
                         target="_blank"
@@ -237,7 +286,6 @@ export function PortalSchedule() {
                 {allowed("learning.read") && (
                   <Button
                     variant="outline"
-                    className="min-h-11"
                     onClick={() =>
                       guarded(() => {
                         setSelected(null);
@@ -249,55 +297,11 @@ export function PortalSchedule() {
                   </Button>
                 )}
                 {allowed("communication.create") && (
-                  <Button
-                    variant="outline"
-                    className="min-h-11"
-                    onClick={() => setHelp(true)}
-                  >
+                  <Button variant="outline" onClick={() => setHelp(true)}>
                     {t("portalNeedHelp")}
                   </Button>
                 )}
-              </div>
-              {allowed("learning.read") &&
-                Boolean(selected.materials?.length) && (
-                  <section className="space-y-2">
-                    <h2 className="font-semibold">{t("portalMaterial")}</h2>
-                    {selected.materials?.map((material) => (
-                      <Button
-                        key={material.publicationId}
-                        variant="outline"
-                        className="min-h-11 w-full justify-start whitespace-normal text-left"
-                        onClick={() =>
-                          guarded(() => {
-                            setSelected(null);
-                            navigate(
-                              `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
-                            );
-                          })
-                        }
-                      >
-                        {material.title}
-                      </Button>
-                    ))}
-                  </section>
-                )}
-              {allowed("learning.read") &&
-                Boolean(selected.assignments?.length) && (
-                  <section className="space-y-2">
-                    <h2 className="font-semibold">{t("portalAssignments")}</h2>
-                    {selected.assignments?.map((assignment) => (
-                      <Button
-                        key={assignment.recipientId}
-                        variant="outline"
-                        className="min-h-11 w-full justify-between gap-3 whitespace-normal text-left"
-                        onClick={() => setAssignmentId(assignment.recipientId)}
-                      >
-                        {assignment.title}
-                        <PortalStatus status={assignment.status} />
-                      </Button>
-                    ))}
-                  </section>
-                )}
+              </DialogFooter>
             </div>
           )}
         </DialogContent>

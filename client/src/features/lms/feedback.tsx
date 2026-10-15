@@ -3,7 +3,13 @@ import { useLocation } from "wouter";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DataTable } from "@/components/ux/DataTable";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
   usePortal,
@@ -43,33 +49,57 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
   const items = query.data.pages.flatMap((page) => page.items);
   return (
     <>
-      <div className="space-y-3">
-        {items.length === 0 && <PortalEmpty labelKey="portalHistoryEmpty" />}
-        {items.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="p-0">
-              <Button
-                variant="ghost"
-                className="h-auto min-h-16 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-                onClick={() => setSelected(item.id)}
-              >
-                <span>
-                  <span className="block font-semibold">
-                    {item.assignmentTitle}
-                  </span>
-                  <span className="block text-sm text-muted-foreground">
-                    {item.courseName} · {format.date(item.createdAt)}
-                  </span>
-                </span>
-                <PortalStatus status={item.decision} />
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {items.length === 0 ? (
+        <PortalEmpty labelKey="portalHistoryEmpty" />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <DataTable
+              data={items}
+              keyExtractor={(item) => String(item.id)}
+              onRowClick={(item) => setSelected(item.id)}
+              pageSize={0}
+              showPagination={false}
+              columns={[
+                {
+                  key: "assignmentTitle",
+                  header: t("portalAssignments"),
+                  mobilePrimary: true,
+                  cellClassName: "font-medium",
+                },
+                { key: "courseName", header: t("portalCourses") },
+                {
+                  key: "decision",
+                  header: t("portalFeedback"),
+                  render: (item) => <PortalStatus status={item.decision} />,
+                },
+                {
+                  key: "createdAt",
+                  header: t("portalDate"),
+                  sortable: true,
+                  render: (item) => format.date(item.createdAt),
+                },
+                {
+                  key: "actions",
+                  header: "",
+                  className: "w-24",
+                  render: (item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(item.id)}
+                    >
+                      {t("portalOpen")}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          </CardContent>
+        </Card>
+      )}
       {query.hasNextPage && (
         <Button
-          className="min-h-11"
           variant="outline"
           disabled={query.isFetchingNextPage}
           onClick={() => {
@@ -86,8 +116,10 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{t("portalFeedback")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalFeedback")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {selected !== null && (
             <FeedbackDetail id={selected} onClose={() => setSelected(null)} />
           )}
@@ -121,7 +153,7 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">{data.assignmentTitle}</h2>
+        <h2 className="text-lg font-semibold">{data.assignmentTitle}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {data.courseName} · {data.groupName}
         </p>
@@ -139,7 +171,6 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
       </p>
       {allowed("learning.read") && (
         <Button
-          className="min-h-11"
           variant="outline"
           onClick={() =>
             guarded(() => {

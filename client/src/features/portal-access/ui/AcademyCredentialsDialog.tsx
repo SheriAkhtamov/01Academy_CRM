@@ -39,7 +39,7 @@ export function AcademyCredentialsDialog({ leadId, account, initial, onClose, on
     const parsed = academyPortalCredentialChangeSchema.safeParse({ version: current.version,
       ...(generateLogin ? {} : login !== current.login ? { login } : {}),
       ...(password && !generatePassword ? { password } : {}), generateLogin, generatePassword });
-    if (!parsed.success) { setValidation(t(password ? 'portalPasswordRules' : 'portalInvalidData')); return; }
+    if (!parsed.success) { setValidation(t(password ? 'portalPasswordLengthInvalid' : 'portalInvalidData')); return; }
     setConfirmation(parsed.data);
   };
   const copy = async () => {

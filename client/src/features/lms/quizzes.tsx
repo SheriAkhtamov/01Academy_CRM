@@ -6,7 +6,15 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { portalLmsApi, PortalApiError } from "../portal-app/api";
 import {
   usePortal,
@@ -24,13 +32,16 @@ import {
   usePortalFormat,
 } from "../portal-app/ui";
 import { HelpDialog } from "./communication";
+import { PortalActionRow } from "../portal-app/controls";
 
 export function PortalQuizzes({
   courseId,
   quizId,
+  embedded = false,
 }: {
   courseId?: number;
   quizId?: number;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
@@ -69,7 +80,11 @@ export function PortalQuizzes({
   );
   return (
     <>
-      <PortalTitle labelKey="portalTests" />
+      {embedded ? (
+        <h2 className="text-base font-semibold">{t("portalTests")}</h2>
+      ) : (
+        <PortalTitle labelKey="portalTests" />
+      )}
       {items.length === 0 && <PortalEmpty labelKey="portalNoTests" />}
       {(start.error || result.error) && (
         <p role="alert" className="text-destructive">
@@ -79,10 +94,10 @@ export function PortalQuizzes({
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <Card key={item.id}>
-            <CardHeader>
-              <CardTitle className="text-lg">{item.title}</CardTitle>
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 p-4 text-sm">
               <p className="whitespace-pre-wrap text-sm">{item.instructions}</p>
               <p>
                 {t("portalAttemptsRemaining")}:{" "}
@@ -94,41 +109,41 @@ export function PortalQuizzes({
                   {t(item.passed ? "portalPassed" : "portalNotPassed")}
                 </p>
               )}
-              {item.latestFinishedAttemptId && allowed("feedback.read") && (
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  disabled={result.isPending}
-                  onClick={() => {
-                    setTitle(item.title);
-                    setRunId(item.runId);
-                    result.mutate(item.id);
-                  }}
-                >
-                  {t("portalTestResult")}
-                </Button>
-              )}
-              {allowed("quizzes.attempt", true) && (
-                <Button
-                  className="min-h-11"
-                  disabled={
-                    start.isPending ||
-                    (item.attemptsUsed >= item.maxAttempts &&
-                      !item.activeAttemptId)
-                  }
-                  onClick={() => {
-                    setTitle(item.title);
-                    setRunId(item.runId);
-                    start.mutate(item.id);
-                  }}
-                >
-                  {t(
-                    item.activeAttemptId
-                      ? "portalResumeTest"
-                      : "portalStartTest",
-                  )}
-                </Button>
-              )}
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-3">
+                {item.latestFinishedAttemptId && allowed("feedback.read") && (
+                  <Button
+                    variant="outline"
+                    disabled={result.isPending}
+                    onClick={() => {
+                      setTitle(item.title);
+                      setRunId(item.runId);
+                      result.mutate(item.id);
+                    }}
+                  >
+                    {t("portalTestResult")}
+                  </Button>
+                )}
+                {allowed("quizzes.attempt", true) && (
+                  <Button
+                    disabled={
+                      start.isPending ||
+                      (item.attemptsUsed >= item.maxAttempts &&
+                        !item.activeAttemptId)
+                    }
+                    onClick={() => {
+                      setTitle(item.title);
+                      setRunId(item.runId);
+                      start.mutate(item.id);
+                    }}
+                  >
+                    {t(
+                      item.activeAttemptId
+                        ? "portalResumeTest"
+                        : "portalStartTest",
+                    )}
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -144,8 +159,10 @@ export function PortalQuizzes({
         }}
       >
         <DialogContent className="portal-ui max-w-2xl">
-          <DialogTitle>{title || t("portalTests")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{title || t("portalTests")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {attempt && (
             <QuizAttempt
               key={`${subject?.linkId}:${attempt.id}`}
@@ -268,12 +285,14 @@ export function QuizAttempt({
   ).length;
   if (!active)
     return (
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">{t("portalTestResult")}</h2>
-        <p className="text-3xl font-semibold">
+      <div className="space-y-4 text-sm">
+        <h2 className="text-base font-semibold">{t("portalTestResult")}</h2>
+        <p className="text-[26px] font-bold tabular-nums tracking-tight">
           {attempt.percent?.toFixed(1) ?? "—"}%
         </p>
-        <p>{t(attempt.passed ? "portalPassed" : "portalNotPassed")}</p>
+        <Badge variant={attempt.passed ? "success" : "warning"}>
+          {t(attempt.passed ? "portalPassed" : "portalNotPassed")}
+        </Badge>
         {attempt.score !== null && (
           <p>
             {t("portalPoints")}: {attempt.score} / {attempt.totalScore}
@@ -307,11 +326,7 @@ export function QuizAttempt({
             <QuizRelatedMaterials items={attempt.relatedMaterials!} />
           )}
         {runId && allowed("communication.create") && (
-          <Button
-            variant="outline"
-            className="min-h-11"
-            onClick={() => setHelp(true)}
-          >
+          <Button variant="outline" onClick={() => setHelp(true)}>
             {t("portalNeedHelp")}
           </Button>
         )}
@@ -323,8 +338,22 @@ export function QuizAttempt({
         />
       </div>
     );
+  const answerDisabled =
+    save.isPending ||
+    end.isPending ||
+    Boolean(attempt.deadlineAt && serverNow >= +new Date(attempt.deadlineAt));
+  const chooseOption = (optionId: string) => {
+    const ids =
+      question.type === "multiple"
+        ? checked.includes(optionId)
+          ? checked.filter((id) => id !== optionId)
+          : [...checked, optionId]
+        : [optionId];
+    setSelection(ids);
+    save.mutate(ids);
+  };
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 text-sm">
       <div className="flex flex-wrap justify-between gap-3">
         <p>
           {t("portalQuestionNumber")
@@ -345,36 +374,31 @@ export function QuizAttempt({
         aria-label={t("portalProgress")}
       />
       <fieldset className="space-y-3">
-        <legend className="mb-4 text-lg font-medium">{question.text}</legend>
+        <legend className="mb-3 text-base font-semibold">
+          {question.text}
+        </legend>
         {question.options.map((option) => (
           <label
             key={option.id}
-            className="flex min-h-12 cursor-pointer items-start gap-3 rounded-md border p-3"
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 ${checked.includes(option.id) ? "border-primary/40 bg-primary/5" : "border-border/70"}`}
           >
-            <input
-              className="mt-1 h-4 w-4"
-              type={question.type === "multiple" ? "checkbox" : "radio"}
-              name={question.id}
-              checked={checked.includes(option.id)}
-              disabled={
-                save.isPending ||
-                end.isPending ||
-                Boolean(
-                  attempt.deadlineAt &&
-                  serverNow >= +new Date(attempt.deadlineAt),
-                )
-              }
-              onChange={() => {
-                const ids =
-                  question.type === "multiple"
-                    ? checked.includes(option.id)
-                      ? checked.filter((id) => id !== option.id)
-                      : [...checked, option.id]
-                    : [option.id];
-                setSelection(ids);
-                save.mutate(ids);
-              }}
-            />
+            {question.type === "multiple" ? (
+              <Checkbox
+                className="mt-0.5"
+                checked={checked.includes(option.id)}
+                disabled={answerDisabled}
+                onCheckedChange={() => chooseOption(option.id)}
+              />
+            ) : (
+              <input
+                className="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                type="radio"
+                name={question.id}
+                checked={checked.includes(option.id)}
+                disabled={answerDisabled}
+                onChange={() => chooseOption(option.id)}
+              />
+            )}
             <span className="min-w-0 break-words">{option.text}</span>
           </label>
         ))}
@@ -397,10 +421,9 @@ export function QuizAttempt({
           {t(conflict ? "lmsStaffReload" : "portalRetry")}
         </Button>
       )}
-      <div className="flex flex-wrap justify-between gap-3">
+      <DialogFooter className="border-t border-border/70 pt-4 sm:justify-between">
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={index === 0 || save.isPending || selection !== null}
           onClick={() => {
             setIndex(index - 1);
@@ -411,7 +434,6 @@ export function QuizAttempt({
         </Button>
         {index < attempt.questions.length - 1 ? (
           <Button
-            className="min-h-11"
             disabled={save.isPending || selection !== null}
             onClick={() => {
               setIndex(index + 1);
@@ -422,14 +444,13 @@ export function QuizAttempt({
           </Button>
         ) : (
           <Button
-            className="min-h-11"
             disabled={save.isPending || selection !== null || end.isPending}
             onClick={() => setFinish(true)}
           >
             {t("portalFinishTest")}
           </Button>
         )}
-      </div>
+      </DialogFooter>
       <ConfirmAction
         open={finish}
         onOpenChange={setFinish}
@@ -472,10 +493,8 @@ function QuizRelatedMaterials({
     <section className="space-y-2">
       <h3 className="font-semibold">{t("portalRepeatMaterials")}</h3>
       {items.map((item) => (
-        <Button
+        <PortalActionRow
           key={item.publicationId}
-          variant="outline"
-          className="min-h-11 w-full justify-start whitespace-normal text-left"
           onClick={() =>
             guarded(() =>
               navigate(
@@ -485,7 +504,7 @@ function QuizRelatedMaterials({
           }
         >
           {item.title}
-        </Button>
+        </PortalActionRow>
       ))}
     </section>
   );

@@ -9,10 +9,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DataTable } from "@/components/ux/DataTable";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogHeader,
+  DialogFooter,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -35,6 +38,7 @@ import {
   usePortalFormat,
 } from "../portal-app/ui";
 import { PortalFiles, PortalUploads } from "../portal-app/files";
+import { PortalSelect, PortalToolbar } from "../portal-app/controls";
 import { HelpDialog } from "./communication";
 import { useAssignmentDraft } from "./useAssignmentDraft";
 import {
@@ -102,14 +106,16 @@ export function PortalAssignments({
     );
   return (
     <>
-      {embedded ? (
-        <h2 className="text-xl font-semibold">{t("portalPractice")}</h2>
+      {embedded || courseId ? (
+        <h2 className="text-base font-semibold">
+          {t(embedded ? "portalPractice" : "portalAssignments")}
+        </h2>
       ) : (
         <PortalTitle labelKey="portalAssignments" />
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <PortalToolbar>
         <Input
-          className="min-h-11"
+          className="w-full sm:max-w-sm"
           aria-label={t("portalSearch")}
           placeholder={t("portalSearch")}
           value={search}
@@ -118,75 +124,102 @@ export function PortalAssignments({
           }
         />
         {!courseId && (
-          <select
-            className="min-h-11 rounded-md border bg-background px-3"
+          <PortalSelect
+            className="w-full sm:w-64"
             aria-label={t("portalCourses")}
             value={course}
-            onChange={(event) =>
+            onValueChange={(value) =>
               setView((previous) => ({
                 ...previous,
-                course: event.target.value,
+                course: value,
               }))
             }
-          >
-            <option value="">{t("portalAllCourses")}</option>
-            {courses.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: t("portalAllCourses") },
+              ...courses.map(([id, name]) => ({
+                value: String(id),
+                label: name,
+              })),
+            ]}
+          />
         )}
-      </div>
+      </PortalToolbar>
       <Tabs
         value={status}
         onValueChange={(value) =>
           setView((previous) => ({ ...previous, status: value }))
         }
       >
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+        <TabsList className="max-w-full">
           {statuses.map(([value, key]) => (
-            <TabsTrigger key={value} className="min-h-11" value={value}>
+            <TabsTrigger key={value} value={value}>
               {t(key)}
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
-      {items.length === 0 && <PortalEmpty labelKey="portalNoAssignments" />}
-      <div className="space-y-3">
-        {items.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-              <div className="min-w-0 space-y-2">
-                <h2 className="break-words font-semibold">{item.title}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {item.courseName} · {item.groupName}
+      <DataTable
+        data={items}
+        keyExtractor={(item) => String(item.id)}
+        rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
+        filterKey={`${status}:${course}:${search}`}
+        onRowClick={(item) => setSelected(item.id)}
+        emptyState={<PortalEmpty labelKey="portalNoAssignments" />}
+        columns={[
+          {
+            key: "title",
+            header: t("portalAssignments"),
+            mobilePrimary: true,
+            render: (item) => <span className="font-medium">{item.title}</span>,
+          },
+          {
+            key: "courseName",
+            header: t("portalCourses"),
+            render: (item) => (
+              <div className="space-y-1">
+                <p>{item.courseName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.groupName}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <PortalStatus status={item.status} />
-                  {item.dueAt && (
-                    <span>
-                      {t("portalDue")}: {format.date(item.dueAt)}
-                    </span>
-                  )}
-                  {item.overdue && (
-                    <span className="text-amber-700 dark:text-amber-400">
-                      {t("portalOverdue")}
-                    </span>
-                  )}
-                </div>
               </div>
+            ),
+          },
+          {
+            key: "dueAt",
+            header: t("portalDue"),
+            render: (item) => (
+              <div className="space-y-1">
+                <span>{item.dueAt ? format.date(item.dueAt) : "—"}</span>
+                {item.overdue && (
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                    {t("portalOverdue")}
+                  </p>
+                )}
+              </div>
+            ),
+          },
+          {
+            key: "status",
+            header: t("status"),
+            render: (item) => <PortalStatus status={item.status} />,
+          },
+          {
+            key: "actions",
+            header: "",
+            mobileHidden: true,
+            cellClassName: "w-24 text-right",
+            render: (item) => (
               <Button
-                variant="outline"
-                className="min-h-11"
+                variant="ghost"
+                size="sm"
                 onClick={() => setSelected(item.id)}
               >
                 {t("portalOpen")}
               </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            ),
+          },
+        ]}
+      />
       <AssignmentDialog id={selected} onClose={() => setSelected(null)} />
     </>
   );
@@ -311,9 +344,9 @@ export function AssignmentContent({
     },
   });
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 text-sm">
       <div className="space-y-2">
-        <h2 className="text-xl font-semibold">{detail.title}</h2>
+        <h2 className="text-base font-semibold">{detail.title}</h2>
         <p className="text-sm text-muted-foreground">
           {detail.courseName} · {detail.groupName}
         </p>
@@ -346,12 +379,7 @@ export function AssignmentContent({
       )}
       <PortalFiles ids={detail.fileIds} />
       {allowed("communication.create") && (
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          onClick={() => setHelp(true)}
-        >
+        <Button type="button" variant="outline" onClick={() => setHelp(true)}>
           {t("portalNeedHelp")}
         </Button>
       )}
@@ -454,10 +482,10 @@ export function AssignmentContent({
                 {allowed("feedback.read") &&
                   Boolean(
                     submission.reviewHistory &&
-                    submission.reviewHistory.length > 1,
+                      submission.reviewHistory.length > 1,
                   ) && (
                     <details className="rounded-md border p-3">
-                      <summary className="min-h-11 cursor-pointer font-medium">
+                      <summary className="cursor-pointer font-medium">
                         {t("portalReviewHistory")}
                       </summary>
                       <div className="space-y-3 pt-3">
@@ -499,22 +527,14 @@ export function AssignmentContent({
         detail.canWithdraw !== false &&
         !detail.reviewStarted &&
         !detail.submissions[0]?.review && (
-          <Button
-            variant="outline"
-            className="min-h-11"
-            onClick={() => setWithdraw(true)}
-          >
+          <Button variant="outline" onClick={() => setWithdraw(true)}>
             {t("portalWithdraw")}
           </Button>
         )}
       {detail.status === "submitted" &&
         detail.reviewStarted &&
         allowed("communication.create") && (
-          <Button
-            className="min-h-11"
-            variant="outline"
-            onClick={() => setHelp(true)}
-          >
+          <Button variant="outline" onClick={() => setHelp(true)}>
             {t("portalRequestRevision")}
           </Button>
         )}
@@ -546,11 +566,10 @@ export function AssignmentContent({
                 required
               />
               {subject?.kind === "representative" && (
-                <label className="flex min-h-11 items-center gap-3">
-                  <input
-                    type="checkbox"
+                <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                  <Checkbox
                     checked={shareComment}
-                    onChange={(event) => setShareComment(event.target.checked)}
+                    onCheckedChange={(value) => setShareComment(value === true)}
                   />
                   {t("portalShareCommentFamily")}
                 </label>
@@ -560,12 +579,11 @@ export function AssignmentContent({
                   {message(commentAction.error, "portalSaveError")}
                 </p>
               )}
-              <Button
-                className="min-h-11"
-                disabled={commentAction.isPending || !comment.trim()}
-              >
-                {t("portalSendComment")}
-              </Button>
+              <DialogFooter className="pt-2">
+                <Button disabled={commentAction.isPending || !comment.trim()}>
+                  {t("portalSendComment")}
+                </Button>
+              </DialogFooter>
             </form>
           )}
         </section>
@@ -679,7 +697,7 @@ function AssignmentAnswer({
   }
   return (
     <form
-      className="space-y-4 rounded-xl border bg-muted/20 p-4"
+      className="space-y-4 rounded-xl border border-border/70 bg-card p-4"
       onSubmit={send}
     >
       <h3 className="font-semibold">{t("portalAnswer")}</h3>
@@ -705,7 +723,6 @@ function AssignmentAnswer({
           <Label htmlFor="assignment-links">{t("portalLinks")}</Label>
           <Textarea
             id="assignment-links"
-            placeholder={t("portalLinkPlaceholder")}
             value={linkText}
             onChange={(event) => {
               setLinkText(event.target.value);
@@ -744,10 +761,9 @@ function AssignmentAnswer({
           {validation || message(submit.error, "portalSaveError")}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
+      <DialogFooter className="border-t border-border/70 pt-4">
         <Button
           type="submit"
-          className="min-h-11"
           disabled={submit.isPending || uploading || draft.saving}
         >
           {t("portalSubmit")}
@@ -756,7 +772,6 @@ function AssignmentAnswer({
           <Button
             type="button"
             variant="outline"
-            className="min-h-11"
             onClick={() => {
               void draft.save().catch(() => {});
             }}
@@ -768,13 +783,12 @@ function AssignmentAnswer({
           <Button
             type="button"
             variant="outline"
-            className="min-h-11"
             onClick={() => setReloadOpen(true)}
           >
             {t("lmsStaffReload")}
           </Button>
         )}
-      </div>
+      </DialogFooter>
       <ConfirmAction
         open={reloadOpen}
         onOpenChange={setReloadOpen}

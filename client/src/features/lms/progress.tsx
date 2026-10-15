@@ -12,7 +12,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { DataTable } from "@/components/ux/DataTable";
+import { Badge } from "@/components/ui/badge";
+import { Trophy } from "lucide-react";
 import { portalLmsApi, PortalApiError } from "../portal-app/api";
 import { portalResourcesApi } from "../portal-app/resources-api";
 import {
@@ -37,6 +45,11 @@ import { PortalFiles } from "../portal-app/files";
 import { PortalFeedback } from "./feedback";
 import { ProgressCards } from "./overview";
 import { usePortalViewState } from "../portal-app/view-state";
+import {
+  PortalSelect,
+  PortalToolbar,
+  PortalActionRow,
+} from "../portal-app/controls";
 
 const historyLabels: Record<string, TranslationKey> = {
   submission_created: "portalSubmitted",
@@ -82,10 +95,10 @@ export function PortalProgress() {
     Boolean(from) !== Boolean(to) ||
     Boolean(
       from &&
-      to &&
-      (from > to ||
-        !Number.isFinite(Date.parse(`${from}T00:00:00+05:00`)) ||
-        !Number.isFinite(Date.parse(`${to}T00:00:00+05:00`))),
+        to &&
+        (from > to ||
+          !Number.isFinite(Date.parse(`${from}T00:00:00+05:00`)) ||
+          !Number.isFinite(Date.parse(`${to}T00:00:00+05:00`))),
     );
   const filter = {
     ...(course ? { runId: Number(course) } : {}),
@@ -137,24 +150,23 @@ export function PortalProgress() {
   );
   const [report, setReport] = useState<LmsReportDto | null>(null);
   const filters = (
-    <div className="grid gap-3 sm:grid-cols-3">
-      <div className="space-y-2">
+    <PortalToolbar>
+      <div className="min-w-0 flex-1 basis-60 space-y-2">
         <Label htmlFor="progress-course">{t("portalCourses")}</Label>
-        <select
+        <PortalSelect
           id="progress-course"
-          className="min-h-11 w-full rounded-md border bg-background px-3"
           value={course}
-          onChange={(event) => setCourse(event.target.value)}
-        >
-          <option value="">{t("portalAllCourses")}</option>
-          {courses.data?.map((item) => (
-            <option key={item.runId} value={item.runId}>
-              {item.courseName} · {item.groupName}
-            </option>
-          ))}
-        </select>
+          onValueChange={setCourse}
+          options={[
+            { value: "", label: t("portalAllCourses") },
+            ...(courses.data ?? []).map((item) => ({
+              value: String(item.runId),
+              label: `${item.courseName} · ${item.groupName}`,
+            })),
+          ]}
+        />
       </div>
-      <div className="space-y-2">
+      <div className="min-w-0 flex-1 basis-44 space-y-2">
         <Label htmlFor="progress-from">{t("portalPeriodFrom")}</Label>
         <Input
           id="progress-from"
@@ -162,10 +174,9 @@ export function PortalProgress() {
           value={from}
           max={to || undefined}
           onChange={(event) => setFrom(event.target.value)}
-          className="min-h-11"
         />
       </div>
-      <div className="space-y-2">
+      <div className="min-w-0 flex-1 basis-44 space-y-2">
         <Label htmlFor="progress-to">{t("portalPeriodTo")}</Label>
         <Input
           id="progress-to"
@@ -173,10 +184,9 @@ export function PortalProgress() {
           value={to}
           min={from || undefined}
           onChange={(event) => setTo(event.target.value)}
-          className="min-h-11"
         />
       </div>
-    </div>
+    </PortalToolbar>
   );
   if (invalidPeriod)
     return (
@@ -220,29 +230,23 @@ export function PortalProgress() {
             : "history"
         }
       >
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+        <TabsList className="h-10 max-w-full justify-start overflow-x-auto">
           {allowed("feedback.read") && (
-            <TabsTrigger value="feedback" className="min-h-11">
-              {t("portalFeedback")}
-            </TabsTrigger>
+            <TabsTrigger value="feedback">{t("portalFeedback")}</TabsTrigger>
           )}
           {allowed("learning.read") && (
-            <TabsTrigger value="history" className="min-h-11">
-              {t("portalGrowth")}
-            </TabsTrigger>
+            <TabsTrigger value="history">{t("portalGrowth")}</TabsTrigger>
           )}
           {allowed("learning.read") && (
-            <TabsTrigger value="achievements" className="min-h-11">
+            <TabsTrigger value="achievements">
               {t("portalAchievements")}
             </TabsTrigger>
           )}
           {allowed("feedback.read") && (
-            <TabsTrigger value="reports" className="min-h-11">
-              {t("portalReports")}
-            </TabsTrigger>
+            <TabsTrigger value="reports">{t("portalReports")}</TabsTrigger>
           )}
           {allowed("learning.read") && (
-            <TabsTrigger value="comparison" className="min-h-11">
+            <TabsTrigger value="comparison">
               {t("portalComparison")}
             </TabsTrigger>
           )}
@@ -263,27 +267,37 @@ export function PortalProgress() {
           ) : !history.data.pages.flatMap((page) => page.items).length ? (
             <PortalEmpty labelKey="portalHistoryEmpty" />
           ) : (
-            history.data.pages
-              .flatMap((page) => page.items)
-              .map((item) => (
-                <Card key={item.id}>
-                  <CardContent className="flex items-center justify-between gap-3 p-4">
-                    <span>
-                      {typeof item.data.title === "string"
-                        ? content(item.data.title)
-                        : t(historyLabels[item.type] ?? "portalGrowth")}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {format.date(item.occurredAt)}
-                    </span>
-                  </CardContent>
-                </Card>
-              ))
+            <Card>
+              <CardContent className="p-0">
+                <DataTable
+                  data={history.data.pages.flatMap((page) => page.items)}
+                  keyExtractor={(item) => String(item.id)}
+                  pageSize={0}
+                  showPagination={false}
+                  columns={[
+                    {
+                      key: "title",
+                      header: t("portalGrowth"),
+                      mobilePrimary: true,
+                      render: (item) =>
+                        typeof item.data.title === "string"
+                          ? content(item.data.title)
+                          : t(historyLabels[item.type] ?? "portalGrowth"),
+                    },
+                    {
+                      key: "occurredAt",
+                      header: t("portalDate"),
+                      sortable: true,
+                      render: (item) => format.date(item.occurredAt),
+                    },
+                  ]}
+                />
+              </CardContent>
+            </Card>
           )}
           {history.hasNextPage && (
             <Button
               variant="outline"
-              className="min-h-11"
               disabled={history.isFetchingNextPage}
               onClick={() => {
                 void history.fetchNextPage();
@@ -308,20 +322,24 @@ export function PortalProgress() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {achievements.data.map((item) => (
-                <Button
+                <PortalActionRow
                   key={item.id}
-                  variant="outline"
-                  className="h-auto min-h-28 flex-col items-start gap-2 whitespace-normal p-4 text-left"
+                  className="h-full flex-col items-start gap-3 p-4"
                   onClick={() => setAchievement(item)}
                 >
+                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Trophy className="size-4" aria-hidden="true" />
+                  </span>
                   <span className="font-semibold">{content(item.title)}</span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {format.date(item.awardedAt)}
                   </span>
                   {item.revokedAt && (
-                    <span>{t("portalAchievementRevoked")}</span>
+                    <Badge variant="secondary">
+                      {t("portalAchievementRevoked")}
+                    </Badge>
                   )}
-                </Button>
+                </PortalActionRow>
               ))}
             </div>
           )}
@@ -339,19 +357,41 @@ export function PortalProgress() {
           ) : reports.data.length === 0 ? (
             <PortalEmpty labelKey="portalNoReports" />
           ) : (
-            reports.data.map((item) => (
-              <Button
-                key={item.id}
-                variant="outline"
-                className="h-auto min-h-16 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-                onClick={() => setReport(item)}
-              >
-                <span>
-                  {format.date(item.periodFrom)} – {format.date(item.periodTo)}
-                </span>
-                <span>{item.authorName}</span>
-              </Button>
-            ))
+            <Card>
+              <CardContent className="p-0">
+                <DataTable
+                  data={reports.data}
+                  keyExtractor={(item) => String(item.id)}
+                  onRowClick={setReport}
+                  pageSize={0}
+                  showPagination={false}
+                  columns={[
+                    {
+                      key: "periodFrom",
+                      header: t("portalDate"),
+                      mobilePrimary: true,
+                      render: (item) =>
+                        `${format.date(item.periodFrom)} – ${format.date(item.periodTo)}`,
+                    },
+                    { key: "authorName", header: t("portalAuthor") },
+                    {
+                      key: "actions",
+                      header: "",
+                      className: "w-24",
+                      render: (item) => (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setReport(item)}
+                        >
+                          {t("portalOpen")}
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
         <TabsContent value="comparison">
@@ -365,10 +405,14 @@ export function PortalProgress() {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{achievement && content(achievement.title)}</DialogTitle>
-          <DialogDescription>
-            {achievement && format.date(achievement.awardedAt)}
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle>
+              {achievement && content(achievement.title)}
+            </DialogTitle>
+            <DialogDescription>
+              {achievement && format.date(achievement.awardedAt)}
+            </DialogDescription>
+          </DialogHeader>
           <p className="whitespace-pre-wrap">
             {achievement && content(achievement.reason)}
           </p>
@@ -390,16 +434,18 @@ export function PortalProgress() {
         }}
       >
         <DialogContent className="portal-ui max-w-4xl">
-          <DialogTitle>{t("portalReports")}</DialogTitle>
-          <DialogDescription>
-            {report &&
-              `${format.date(report.periodFrom)} – ${format.date(report.periodTo)}`}
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalReports")}</DialogTitle>
+            <DialogDescription>
+              {report &&
+                `${format.date(report.periodFrom)} – ${format.date(report.periodTo)}`}
+            </DialogDescription>
+          </DialogHeader>
           {report && (
             <>
               <Button
                 variant="outline"
-                className="min-h-11 print:hidden"
+                className="print:hidden"
                 onClick={() => window.print()}
               >
                 {t("portalPrint")}
@@ -493,19 +539,20 @@ export function ProjectComparison() {
   if (!courseId) return <PortalEmpty labelKey="noProjects" />;
   return (
     <div className="space-y-4">
-      <Label htmlFor="comparison-course">{t("portalCourses")}</Label>
-      <select
-        id="comparison-course"
-        className="min-h-11 w-full rounded-md border bg-background px-3"
-        value={courseId}
-        onChange={(event) => guarded(() => setCourse(event.target.value))}
-      >
-        {courses.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
-          </option>
-        ))}
-      </select>
+      <PortalToolbar>
+        <div className="min-w-0 flex-1 basis-60 space-y-2">
+          <Label htmlFor="comparison-course">{t("portalCourses")}</Label>
+          <PortalSelect
+            id="comparison-course"
+            value={String(courseId)}
+            onValueChange={(value) => guarded(() => setCourse(value))}
+            options={courses.map(([id, name]) => ({
+              value: String(id),
+              label: name,
+            }))}
+          />
+        </div>
+      </PortalToolbar>
       <CourseComparison
         key={courseId}
         runId={courseId}
@@ -617,14 +664,13 @@ function CourseComparison({
               <Label htmlFor={`comparison-${kind}`}>
                 {t(kind === "first" ? "portalFirstWork" : "portalLatestWork")}
               </Label>
-              <select
+              <PortalSelect
                 id={`comparison-${kind}`}
-                className="min-h-11 w-full rounded-md border bg-background px-3"
-                value={value.id}
+                value={String(value.id)}
                 disabled={action.isPending}
-                onChange={(event) => {
+                onValueChange={(next) => {
                   const selected = choices.find(
-                    (item) => item.id === Number(event.target.value),
+                    (item) => item.id === Number(next),
                   );
                   if (!selected) return;
                   setDraft((previous) => ({
@@ -639,13 +685,11 @@ function CourseComparison({
                     version: previous?.version ?? query.data?.version ?? 0,
                   }));
                 }}
-              >
-                {choices.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
+                options={choices.map((item) => ({
+                  value: String(item.id),
+                  label: item.title,
+                }))}
+              />
             </div>
           )}
           <h3 className="font-semibold">{value.title}</h3>
@@ -700,12 +744,8 @@ function CourseComparison({
       )}
       <Tabs defaultValue="first">
         <TabsList className="md:hidden">
-          <TabsTrigger value="first" className="min-h-11">
-            {t("portalFirstWork")}
-          </TabsTrigger>
-          <TabsTrigger value="last" className="min-h-11">
-            {t("portalLatestWork")}
-          </TabsTrigger>
+          <TabsTrigger value="first">{t("portalFirstWork")}</TabsTrigger>
+          <TabsTrigger value="last">{t("portalLatestWork")}</TabsTrigger>
         </TabsList>
         <div className="grid gap-4 md:grid-cols-2">
           <TabsContent
@@ -736,7 +776,6 @@ function CourseComparison({
       )}
       {canEdit && (
         <Button
-          className="min-h-11"
           disabled={
             !valid || action.isPending || (Boolean(query.data) && !dirty)
           }
@@ -746,11 +785,7 @@ function CourseComparison({
         </Button>
       )}
       {canEdit && conflict && (
-        <Button
-          variant="outline"
-          className="min-h-11"
-          onClick={() => setReloadOpen(true)}
-        >
+        <Button variant="outline" onClick={() => setReloadOpen(true)}>
           {t("lmsStaffReload")}
         </Button>
       )}

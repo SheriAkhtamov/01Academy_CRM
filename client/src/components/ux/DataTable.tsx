@@ -342,7 +342,9 @@ export function DataTable<T extends Record<string, any>>({
                 not nest inside a button.
               */
               onClick={onRowClick ? (event) => {
-                if (!isNestedControl(event)) onRowClick(row);
+                if (isNestedControl(event)) return;
+                event.currentTarget.focus({ preventScroll: true });
+                onRowClick(row);
               } : undefined}
               tabIndex={onRowClick ? 0 : undefined}
               role={onRowClick ? 'button' : undefined}
@@ -475,7 +477,9 @@ export function DataTable<T extends Record<string, any>>({
                     rowClassName?.(row)
                   )}
                   onClick={onRowClick ? (event) => {
-                    if (!isNestedControl(event)) onRowClick(row);
+                    if (isNestedControl(event)) return;
+                    event.currentTarget.focus({ preventScroll: true });
+                    onRowClick(row);
                   } : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                   role={onRowClick ? 'button' : undefined}

@@ -37,27 +37,27 @@ export function PortalVideo({
   const embed = portalVideoEmbed(source);
   if (!safeHttps(source)) return null;
   return (
-    <section className="space-y-3">
-      {embed &&
-        (play ? (
-          <iframe
-            src={embed}
-            title={title}
-            className="aspect-video w-full rounded-lg border"
-            allow="fullscreen; picture-in-picture"
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
-        ) : (
-          <Button className="min-h-11" onClick={() => setPlay(true)}>
-            {t("portalPlayVideo")}
-          </Button>
-        ))}
-      <Button asChild variant="outline" className="min-h-11">
-        <a href={source} target="_blank" rel="noopener noreferrer">
-          {t("portalOpenVideoSource")}
-        </a>
-      </Button>
+    <section className="space-y-4">
+      {embed && play && (
+        <iframe
+          src={embed}
+          title={title}
+          className="aspect-video w-full rounded-lg border"
+          allow="fullscreen; picture-in-picture"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {embed && !play && (
+          <Button onClick={() => setPlay(true)}>{t("portalPlayVideo")}</Button>
+        )}
+        <Button asChild variant="outline">
+          <a href={source} target="_blank" rel="noopener noreferrer">
+            {t("portalOpenVideoSource")}
+          </a>
+        </Button>
+      </div>
     </section>
   );
 }

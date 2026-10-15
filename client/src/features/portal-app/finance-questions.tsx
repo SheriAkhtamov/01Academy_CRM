@@ -4,8 +4,16 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { DataTable } from "@/components/ux/DataTable";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
 import {
   usePortal,
@@ -52,11 +60,7 @@ export function FinanceQuestions({
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">{t("portalFinanceQuestions")}</h2>
-        <Button
-          variant="outline"
-          className="min-h-11"
-          onClick={() => setAsk(true)}
-        >
+        <Button variant="outline" onClick={() => setAsk(true)}>
           {t("portalPaymentQuestion")}
         </Button>
       </div>
@@ -72,27 +76,53 @@ export function FinanceQuestions({
       ) : items.length === 0 && !query.hasNextPage ? (
         <PortalEmpty labelKey="portalNoFinanceQuestions" />
       ) : (
-        items.map((item) => (
-          <Button
-            key={item.id}
-            variant="outline"
-            className="h-auto min-h-14 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-            onClick={() => setSelected(item.id)}
-          >
-            <span>
-              <span className="block font-medium">{item.subject}</span>
-              <span className="block text-sm text-muted-foreground">
-                {format.date(item.updatedAt)}
-              </span>
-            </span>
-            <PortalStatus status={item.status} />
-          </Button>
-        ))
+        <Card>
+          <CardContent className="p-0">
+            <DataTable
+              data={items}
+              keyExtractor={(item) => String(item.id)}
+              onRowClick={(item) => setSelected(item.id)}
+              pageSize={0}
+              showPagination={false}
+              columns={[
+                {
+                  key: "subject",
+                  header: t("portalQuestionTitle"),
+                  mobilePrimary: true,
+                  cellClassName: "font-medium",
+                },
+                {
+                  key: "updatedAt",
+                  header: t("portalDate"),
+                  render: (item) => format.date(item.updatedAt),
+                },
+                {
+                  key: "status",
+                  header: t("status"),
+                  render: (item) => <PortalStatus status={item.status} />,
+                },
+                {
+                  key: "actions",
+                  header: "",
+                  className: "w-24",
+                  render: (item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(item.id)}
+                    >
+                      {t("portalOpen")}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          </CardContent>
+        </Card>
       )}
       {query.hasNextPage && (
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={query.isFetchingNextPage}
           onClick={() => {
             void query.fetchNextPage();
@@ -108,8 +138,10 @@ export function FinanceQuestions({
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{t("portalPaymentQuestion")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalPaymentQuestion")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {ask && (
             <FinanceQuestionForm
               paymentId={paymentId}
@@ -129,8 +161,10 @@ export function FinanceQuestions({
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{t("portalFinanceQuestions")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalFinanceQuestions")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {selected !== null && (
             <FinanceConversation key={selected} id={selected} />
           )}
@@ -181,35 +215,37 @@ function FinanceQuestionForm({
         action.mutate();
       }}
     >
-      <Label htmlFor="finance-title">{t("portalQuestionTitle")}</Label>
-      <Input
-        id="finance-title"
-        required
-        maxLength={255}
-        value={title}
-        onChange={(event) => setTitle(event.target.value)}
-        className="min-h-11"
-      />
-      <Label htmlFor="finance-body">{t("portalQuestionText")}</Label>
-      <Textarea
-        id="finance-body"
-        required
-        maxLength={10000}
-        value={body}
-        onChange={(event) => setBody(event.target.value)}
-        rows={5}
-      />
+      <div className="space-y-2">
+        <Label htmlFor="finance-title">{t("portalQuestionTitle")}</Label>
+        <Input
+          id="finance-title"
+          required
+          maxLength={255}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="finance-body">{t("portalQuestionText")}</Label>
+        <Textarea
+          id="finance-body"
+          required
+          maxLength={10000}
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          rows={5}
+        />
+      </div>
       {action.error && (
         <p role="alert" className="text-destructive">
           {message(action.error, "portalSaveError")}
         </p>
       )}
-      <Button
-        className="min-h-11"
-        disabled={action.isPending || !title.trim() || !body.trim()}
-      >
-        {t("portalSend")}
-      </Button>
+      <DialogFooter className="border-t border-border/70 pt-4">
+        <Button disabled={action.isPending || !title.trim() || !body.trim()}>
+          {t("portalSend")}
+        </Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -258,10 +294,13 @@ function FinanceConversation({ id }: { id: number }) {
     );
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">{query.data.subject}</h2>
+      <h2 className="text-lg font-semibold">{query.data.subject}</h2>
       <PortalStatus status={query.data.status} />
       {query.data.messages.map((item) => (
-        <div key={item.id} className="space-y-2 rounded-md border p-3">
+        <div
+          key={item.id}
+          className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-4"
+        >
           <p className="text-sm font-medium">
             {item.author === "staff"
               ? t("portalFinanceDepartment")
@@ -278,25 +317,26 @@ function FinanceConversation({ id }: { id: number }) {
           action.mutate();
         }}
       >
-        <Label htmlFor="finance-reply">{t("portalComment")}</Label>
-        <Textarea
-          id="finance-reply"
-          required
-          maxLength={10000}
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-        />
+        <div className="space-y-2">
+          <Label htmlFor="finance-reply">{t("portalComment")}</Label>
+          <Textarea
+            id="finance-reply"
+            required
+            maxLength={10000}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+          />
+        </div>
         {action.error && (
           <p role="alert" className="text-destructive">
             {message(action.error, "portalSaveError")}
           </p>
         )}
-        <Button
-          className="min-h-11"
-          disabled={action.isPending || !body.trim()}
-        >
-          {t("portalSend")}
-        </Button>
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button disabled={action.isPending || !body.trim()}>
+            {t("portalSend")}
+          </Button>
+        </DialogFooter>
       </form>
     </div>
   );

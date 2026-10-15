@@ -270,7 +270,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
     });
   }
   return (
-    <div className="portal-ui min-h-dvh text-foreground">
+    <div className="portal-ui min-h-dvh text-sm text-foreground">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm lg:flex print:hidden">
         <div className="flex shrink-0 items-center border-b border-border/70 px-3 py-4">
           <Logo size="sm" className="shrink-0" />

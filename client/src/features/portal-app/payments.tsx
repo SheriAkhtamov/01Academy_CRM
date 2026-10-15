@@ -1,20 +1,18 @@
 import { useState } from "react";
 import type { PortalPaymentDto } from "@shared/contracts/portal-resources";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { FinanceQuestions } from "./finance-questions";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ux/DataTable";
 import { portalResourcesApi } from "./resources-api";
 import { useSubjectQuery, useSubjectInfiniteQuery, usePortal } from "./context";
 import {
@@ -61,25 +59,23 @@ export function PortalPayments() {
     <>
       <PortalTitle labelKey="portalPayments" />
       {summary && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground">
                 {t("portalPaidUntil")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold">
-              {summary.paidUntil ? format.date(summary.paidUntil) : "—"}
+              </p>
+              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
+                {summary.paidUntil ? format.date(summary.paidUntil) : "—"}
+              </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground">
                 {t("portalDueAmount")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="text-2xl font-semibold">
+              </p>
+              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
                 {format.money(summary.dueUzs)}
               </p>
               {summary.nextPaymentAt && (
@@ -90,13 +86,15 @@ export function PortalPayments() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground">
                 {t("portalNextPayment")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold">
-              {summary.nextPaymentAt ? format.date(summary.nextPaymentAt) : "—"}
+              </p>
+              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
+                {summary.nextPaymentAt
+                  ? format.date(summary.nextPaymentAt)
+                  : "—"}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -105,93 +103,72 @@ export function PortalPayments() {
         <PortalEmpty labelKey="portalNoPayments" />
       ) : (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
+          <CardHeader className="p-4">
+            <CardTitle className="text-base">
               {t("portalPaymentHistory")}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-3 md:hidden">
-              {items.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="outline"
-                  className="h-auto min-h-20 w-full justify-between gap-3 whitespace-normal p-4 text-left"
-                  onClick={() => setSelected(item)}
-                >
-                  <span>
-                    <span className="block font-medium">
-                      {format.money(item.amountUzs)}
-                    </span>
-                    <span className="block text-sm text-muted-foreground">
+          <CardContent className="p-0">
+            <DataTable
+              data={items}
+              keyExtractor={(item) => String(item.id)}
+              onRowClick={setSelected}
+              pageSize={0}
+              showPagination={false}
+              columns={[
+                {
+                  key: "date",
+                  header: t("portalDate"),
+                  accessor: (item) => item.paidAt ?? item.dueAt,
+                  sortable: true,
+                  render: (item) => (
+                    <div>
                       {item.paidAt || item.dueAt
                         ? format.date(item.paidAt ?? item.dueAt!)
                         : "—"}
-                    </span>
-                    {item.period && (
-                      <span className="block text-sm text-muted-foreground">
-                        {item.period}
-                      </span>
-                    )}
-                  </span>
-                  <PaymentStatus item={item} />
-                </Button>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("portalDate")}</TableHead>
-                    <TableHead>{t("portalAmount")}</TableHead>
-                    <TableHead>{t("portalPaymentStatus")}</TableHead>
-                    <TableHead>
-                      <span className="sr-only">
-                        {t("portalPaymentDetails")}
-                      </span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        {item.paidAt || item.dueAt
-                          ? format.date(item.paidAt ?? item.dueAt!)
-                          : "—"}
-                        {item.period && (
-                          <span className="block text-sm text-muted-foreground">
-                            {item.period}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {format.money(item.amountUzs)}
-                      </TableCell>
-                      <TableCell>
-                        <PaymentStatus item={item} />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          className="min-h-11"
-                          onClick={() => setSelected(item)}
-                        >
-                          {t("portalOpen")}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                      {item.period && (
+                        <p className="text-xs text-muted-foreground">
+                          {item.period}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  key: "amountUzs",
+                  header: t("portalAmount"),
+                  sortable: true,
+                  mobilePrimary: true,
+                  cellClassName: "font-semibold tabular-nums whitespace-nowrap",
+                  render: (item) => format.money(item.amountUzs),
+                },
+                {
+                  key: "status",
+                  header: t("portalPaymentStatus"),
+                  render: (item) => <PaymentStatus item={item} />,
+                },
+                {
+                  key: "actions",
+                  header: "",
+                  className: "w-24",
+                  render: (item) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(item)}
+                    >
+                      {t("portalOpen")}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
       )}
       {query.hasNextPage && (
         <Button
           variant="outline"
-          className="min-h-11"
           disabled={query.isFetchingNextPage}
           onClick={() => {
             void query.fetchNextPage();
@@ -208,8 +185,10 @@ export function PortalPayments() {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{t("portalPaymentDetails")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{t("portalPaymentDetails")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
           {selected && <PaymentDetails key={selected.id} item={selected} />}
         </DialogContent>
       </Dialog>
@@ -227,7 +206,15 @@ function PaymentStatus({ item }: { item: PortalPaymentDto }) {
         : ["paid", "completed", "confirmed"].includes(item.status)
           ? "portalPaid"
           : "portalUnpaid";
-  return <Badge variant="secondary">{t(status)}</Badge>;
+  const variant =
+    status === "portalPaid"
+      ? "success"
+      : status === "paymentStatusOverdue"
+        ? "destructive"
+        : status === "portalUnpaid"
+          ? "warning"
+          : "secondary";
+  return <Badge variant={variant}>{t(status)}</Badge>;
 }
 function PaymentDetails({ item }: { item: PortalPaymentDto }) {
   const { t } = useTranslation();
@@ -343,10 +330,10 @@ export function PortalPaymentSummary() {
   const summary = query.data.summary;
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">{t("portalPayments")}</CardTitle>
+      <CardHeader className="p-4">
+        <CardTitle className="text-base">{t("portalPayments")}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 p-4 pt-0">
         {summary?.paidUntil && (
           <p>
             {t("portalPaidUntil")}: {format.date(summary.paidUntil)}
@@ -360,7 +347,6 @@ export function PortalPaymentSummary() {
           </p>
         )}
         <Button
-          className="min-h-11"
           variant="outline"
           onClick={() => guarded(() => navigate("/learn/payments"))}
         >

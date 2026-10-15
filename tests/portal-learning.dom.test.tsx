@@ -28,6 +28,7 @@ import type {
 import type { PortalProjectDto } from "../shared/contracts/portal-resources";
 import { i18n } from "../client/src/lib/i18n";
 import { ThemeProvider } from "../client/src/components/ux/ThemeProvider";
+import { PortalSelect } from "../client/src/features/portal-app/controls";
 import {
   PortalSessionProvider,
   portalSubjectKey,
@@ -320,6 +321,11 @@ const attempt: LmsQuizAttemptDto = {
 let client: QueryClient;
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   i18n.setLanguage("ru");
   localStorage.removeItem("academy-crm-theme");
   window.matchMedia = vi.fn().mockImplementation((media: string) => ({
@@ -560,6 +566,34 @@ function projectFixture(id: number, title: string): PortalProjectDto {
   };
 }
 
+it("keeps required course selection invalid until chosen and submits the empty optional filter correctly", async () => {
+  const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
+  function CourseFilters() {
+    const [course, setCourse] = useState("");
+    const [filter, setFilter] = useState("2");
+    return <form aria-label="Course filters" onSubmit={submit}>
+      <PortalSelect name="course" aria-label="Course" required value={course} onValueChange={setCourse} options={[
+        { value: "2", label: "Design course" },
+      ]} />
+      <PortalSelect name="filter" aria-label="Filter" value={filter} onValueChange={setFilter} options={[
+        { value: "", label: "All courses" }, { value: "2", label: "Design course" },
+      ]} />
+    </form>;
+  }
+  render(<CourseFilters />);
+  const form = screen.getByRole("form", { name: "Course filters" }) as HTMLFormElement;
+  expect(form.checkValidity()).toBe(false);
+  form.requestSubmit();
+  expect(submit).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Course" }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Course" }));
+  await userEvent.click(await screen.findByRole("option", { name: "Design course" }));
+  expect(form.checkValidity()).toBe(true);
+  expect(new FormData(form).get("course")).toBe("2");
+  await userEvent.click(screen.getByRole("combobox", { name: "Filter" }));
+  await userEvent.click(await screen.findByRole("option", { name: "All courses" }));
+  expect(new FormData(form).get("filter")).toBe("");
+});
 it("scopes cached data to account, link, student and effective permissions", () => {
   const key = portalSubjectKey(account, own, "assignment", 1);
   expect(key).not.toEqual(
@@ -876,6 +910,31 @@ it("uses the configured school file size limit before starting an upload", async
   );
   expect(mocks.upload).not.toHaveBeenCalled();
 });
+it("retries and previews an attached file without submitting its form and confirms removal beside the file", async () => {
+  const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
+  const change = vi.fn();
+  mocks.file.mockRejectedValueOnce(new PortalApiError(0, "portalOffline"))
+    .mockResolvedValue({
+      id: 82,
+      name: "Practice sheet.pdf",
+      mime: "application/pdf",
+      size: 100,
+      state: "ready",
+      downloadUrl: "/api/portal/files/82/download?linkId=10",
+    });
+  mount(<form onSubmit={submit}><PortalUploads ids={[82]} onChange={change} /></form>);
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalRetry") }));
+  await screen.findByText("Practice sheet.pdf");
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalOpen") }));
+  const preview = await screen.findByRole("dialog", { name: "Practice sheet.pdf" });
+  expect(submit).not.toHaveBeenCalled();
+  await userEvent.click(within(preview).getByRole("button", { name: i18n.t("close") }));
+  await userEvent.click(screen.getByRole("button", { name: `${i18n.t("portalRemove")} Practice sheet.pdf` }));
+  expect(change).not.toHaveBeenCalled();
+  await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: i18n.t("portalRemove") }));
+  expect(change).toHaveBeenCalledWith([]);
+  expect(submit).not.toHaveBeenCalled();
+});
 it("saves the learner’s selected comparison with course scope and server version", async () => {
   const first = projectFixture(70, "First project");
   const last = projectFixture(71, "Latest project");
@@ -1097,7 +1156,9 @@ it("selects a paginated own project inside the share dialog and keeps the origin
     screen.getByRole("button", { name: i18n.t("portalShare") }),
   );
   let dialog = screen.getByRole("dialog", { name: i18n.t("portalShareTitle") });
-  expect(within(dialog).getAllByRole("option")).toHaveLength(20);
+  await userEvent.click(within(dialog).getByLabelText(i18n.t("portalShareProject")));
+  expect(screen.getAllByRole("option")).toHaveLength(20);
+  await userEvent.keyboard("{Escape}");
   expect(mocks.projectsPage).toHaveBeenCalledOnce();
   await userEvent.clear(
     within(dialog).getByLabelText(i18n.t("portalDisplayName")),
@@ -1125,36 +1186,28 @@ it("selects a paginated own project inside the share dialog and keeps the origin
   await userEvent.click(
     within(dialog).getByRole("button", { name: i18n.t("portalLoadMore") }),
   );
-  await within(dialog).findByRole("option", { name: "Older selected work" });
-  expect(within(dialog).getAllByRole("option")).toHaveLength(21);
+  await userEvent.click(within(dialog).getByLabelText(i18n.t("portalShareProject")));
+  await screen.findByRole("option", { name: "Older selected work" });
+  expect(screen.getAllByRole("option")).toHaveLength(21);
   expect(
-    within(dialog).queryByRole("option", { name: "Foreign work" }),
+    screen.queryByRole("option", { name: "Foreign work" }),
   ).toBeNull();
   expect(
-    within(dialog).queryByRole("option", { name: "Archived work" }),
+    screen.queryByRole("option", { name: "Archived work" }),
   ).toBeNull();
-  await userEvent.selectOptions(
-    within(dialog).getByLabelText(i18n.t("portalShareProject")),
-    "50",
-  );
+  await userEvent.click(screen.getByRole("option", { name: "Older selected work" }));
   await userEvent.click(
     within(screen.getByRole("alertdialog")).getByRole("button", {
       name: i18n.t("portalCancel"),
     }),
   );
   expect(
-    (
-      within(dialog).getByLabelText(
-        i18n.t("portalShareProject"),
-      ) as HTMLSelectElement
-    ).value,
-  ).toBe("70");
+    within(dialog).getByLabelText(i18n.t("portalShareProject")).textContent,
+  ).toBe("First work");
   expect(within(dialog).getByText("First alias")).toBeTruthy();
   expect(mocks.share).toHaveBeenCalledOnce();
-  await userEvent.selectOptions(
-    within(dialog).getByLabelText(i18n.t("portalShareProject")),
-    "50",
-  );
+  await userEvent.click(within(dialog).getByLabelText(i18n.t("portalShareProject")));
+  await userEvent.click(await screen.findByRole("option", { name: "Older selected work" }));
   await userEvent.click(
     within(screen.getByRole("alertdialog")).getByRole("button", {
       name: i18n.t("portalLeave"),
@@ -1222,9 +1275,8 @@ it("keeps representative help private unless the representative explicitly selec
       stepUrl: "https://example.org/lesson#step-two",
     }),
   );
-  fireEvent.change(screen.getByLabelText(i18n.t("portalAudience")), {
-    target: { value: "student_teacher" },
-  });
+  await userEvent.click(screen.getByLabelText(i18n.t("portalAudience")));
+  await userEvent.click(await screen.findByRole("option", { name: i18n.t("portalAudienceLearning") }));
   await userEvent.click(
     screen.getByRole("button", { name: i18n.t("portalSend") }),
   );
@@ -1579,7 +1631,10 @@ it("loads older payment history using the server cursor without replacing the su
     expect.any(AbortSignal),
     88,
   );
-  expect(screen.getAllByText("October")).toHaveLength(2);
+  const history = within(screen.getByRole("table"));
+  expect(history.getByText("October")).toBeTruthy();
+  expect(history.getByText("September")).toBeTruthy();
+  expect(history.getAllByRole("button", { name: /October|September/ })).toHaveLength(2);
   expect(
     screen.queryByRole("button", { name: i18n.t("portalLoadMore") }),
   ).toBeNull();

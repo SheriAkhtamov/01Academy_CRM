@@ -1,6 +1,7 @@
 import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
 import { groupConfigurationKey } from '@/features/groups/queries';
 import type { Group, GroupConfiguration, GroupTeacher } from '@/features/groups/types';
+import { TimezoneSelect } from '@/features/academy-resources/TimezoneSelect';
 import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable } from '@/features/academy-resources/ResourceSettingsTables';
 import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -155,6 +156,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const [activeTab, setActiveTab] = useState(requestedTabValue);
   const tabsListRef = useRef<HTMLDivElement | null>(null);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
+  const schoolTimezonePopupRef = useRef(false);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -846,7 +848,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent onEscapeKeyDown={event => { if (schoolTimezonePopupRef.current) event.preventDefault(); }} aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle>{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
           </DialogHeader>
@@ -870,7 +872,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <FormField control={schoolForm.control} name="timezone" render={({ field }) => (
                 <FormItem>
                   <FormLabel required>{t('timezone')}</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
+                  <FormControl><TimezoneSelect {...field} onPopupOpenChange={open => { schoolTimezonePopupRef.current = open; }} /></FormControl>
                   <LocalizedFormMessage />
                 </FormItem>
               )} />

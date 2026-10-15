@@ -8,7 +8,8 @@ import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { i18n } from '../client/src/lib/i18n';
 import { salesQueryKeys } from '../client/src/features/sales/queries';
 
-const onlinePbxCall = vi.hoisted(() => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }));
+const onlinePbxCall = vi.hoisted(() => ({ startCall: vi.fn(), isPending: false, pendingPhone: null,
+  isLineBusyWithReminder: false, callButtonLabel: '' }));
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 vi.mock('../client/src/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 7, fullName: 'Manager', module: 'sales' } }),
@@ -27,6 +28,8 @@ beforeEach(() => {
   window.localStorage.clear();
   onlinePbxCall.startCall.mockClear();
   onlinePbxCall.isPending = false;
+  onlinePbxCall.isLineBusyWithReminder = false;
+  onlinePbxCall.callButtonLabel = i18n.t('telephonyLineBusyWithReminder');
   HTMLElement.prototype.scrollIntoView = vi.fn();
   queryClient = new QueryClient({ defaultOptions: { queries: {
     retry: false, queryFn: async () => [], staleTime: Infinity,
@@ -48,11 +51,20 @@ async function openCallMenu(phoneNumbers = phones) {
   </QueryClientProvider>);
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: i18n.t('actions') }));
-  await user.click(screen.getByRole('menuitem', { name: i18n.t('call') }));
+  await user.click(screen.getByRole('menuitem', { name: onlinePbxCall.isLineBusyWithReminder
+    ? onlinePbxCall.callButtonLabel : i18n.t('call') }));
   return user;
 }
 
 describe('calling from the sales pipeline card', () => {
+  it('disables the quick call menu item with the robot line message', async () => {
+    onlinePbxCall.isLineBusyWithReminder = true;
+    await openCallMenu();
+    const item = screen.getByRole('menuitem', { name: onlinePbxCall.callButtonLabel });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
   it('offers every saved number and calls the third number only after selection', async () => {
     const user = await openCallMenu();
     const dialog = screen.getByRole('dialog', { name: i18n.t('chooseLeadCallPhone') });

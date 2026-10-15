@@ -27,7 +27,6 @@ import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -84,7 +83,6 @@ import {
   TARGET_ATTENDANCE_PERCENT,
 } from '@shared/academy';
 import {
-  AlertCircle,
   Archive,
   Plus,
   Trash2,
@@ -253,11 +251,7 @@ function ArchiveLeadDialog({
 
         <div className="space-y-4">
           {needsManager ? (
-            <Alert>
-              <AlertCircle />
-              <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
-              <AlertDescription>{t('leadRequiresResponsibleManagerDescription')}</AlertDescription>
-            </Alert>
+            <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
           ) : null}
 
           <div className="space-y-2">
@@ -294,7 +288,6 @@ function ArchiveLeadDialog({
                 onKeyDown={submitOnEnter(() => onConfirm(lead, needsManager), {
                   disabled: !customReason.trim() || isPending,
                 })}
-                placeholder={t('archiveCustomReasonPlaceholder')}
                 maxLength={80}
                 disabled={isPending}
                 autoFocus
@@ -358,7 +351,6 @@ function AssignLeadBeforeMoveDialog({
       <AssignLeadToSelfDialog
         open
         leadName={pendingMove.lead.contactName}
-        description={t('leadMoveRequiresResponsibleManagerDescription')}
         confirmLabel={t('assignToMeAndMove')}
         isPending={isPending}
         confirmDisabled={!canConfirm}
@@ -377,10 +369,7 @@ function AssignLeadBeforeMoveDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{t('leadRequiresResponsibleManager')}</DialogTitle>
-          <DialogDescription>
-            {pendingMove.lead.contactName ? `${pendingMove.lead.contactName}. ` : null}
-            {t('leadMoveRequiresResponsibleManagerDescription')}
-          </DialogDescription>
+          <DialogDescription>{pendingMove.lead.contactName}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
@@ -424,7 +413,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const ceoCopy = useCeoCopy();
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const { user } = useAuth();
-  const { startCall: startOnlinePbxCall, isPending: isCallPending } = useOnlinePbxCall();
+  const { startCall: startOnlinePbxCall, isPending: isCallPending,
+    isLineBusyWithReminder, callButtonLabel } = useOnlinePbxCall();
   const isAdministrationModule = hasLeadershipAccess(user);
   const hasSalesModule = getAssignedModules(user).includes('sales');
   const queryClient = useQueryClient();
@@ -481,7 +471,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     setLocation(query ? `${pagePath}?${query}` : pagePath, { replace: !options?.push });
   }, [pagePath, routeSearch, setLocation]);
 
-  const { data, error, isError, isLoading, refetch } = useQuery<any>({
+  const { data, isError, isLoading, refetch } = useQuery<any>({
     queryKey: salesQueryKeys.module,
     staleTime: 10_000,
     refetchInterval: 30_000,
@@ -931,7 +921,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       return;
     }
     if (action === 'call') {
-      if (isCallPending) return;
+      if (isCallPending || isLineBusyWithReminder) return;
       const phones = visibleLeadPhones(lead);
       const phone = phones[0];
       if (!phone) {
@@ -955,7 +945,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       return;
     }
-  }, [isCallPending, openLead, setLocation, startOnlinePbxCall, t]);
+  }, [isCallPending, isLineBusyWithReminder, openLead, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -1008,16 +998,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return (
       <ModulePage contained={contained}>
         <ModulePageBody contained={contained} ariaLabel={t('failedToLoadData')}>
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-            <AlertDescription className="flex flex-col items-start gap-3">
-              <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
-              <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-                {t('retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
+          <div role="alert" className="flex flex-col items-start gap-3">
+            <p>{t('failedToLoadData')}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>{t('retry')}</Button>
+          </div>
         </ModulePageBody>
       </ModulePage>
     );
@@ -1121,6 +1105,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           activePipelineStatuses={activePipelineStatuses}
           onLeadClick={(lead) => openLead(lead.id)}
           onQuickAction={handleQuickAction}
+          callActionDisabled={isCallPending || isLineBusyWithReminder}
+          callActionLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
           onArchiveLead={openArchiveDialog}
           onStatusChange={requestLeadStatusChange}
           isPending={updateLead.isPending || assignAndMoveLead.isPending}
@@ -1290,6 +1276,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         phoneNumbers={visibleLeadPhones(callDialogLead)}
         onCall={startOnlinePbxCall}
         disabled={isCallPending}
+        disabledLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
       />
       <LeadDetailSheet
         leadId={selectedLeadId}

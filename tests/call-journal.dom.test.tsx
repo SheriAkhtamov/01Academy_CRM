@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '../client/src/lib/i18n';
 import { academyToday } from '../client/src/lib/localeFormat';
 const mocks = vi.hoisted(() => ({ api: vi.fn() }));
+const onlinePbxCall = vi.hoisted(() => ({ startCall: vi.fn(), isPending: false,
+  isLineBusyWithReminder: false, callButtonLabel: '' }));
 vi.mock('../client/src/lib/queryClient', async () => ({ ...await vi.importActual('../client/src/lib/queryClient'), apiRequest: mocks.api }));
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 1, fullName: 'Me', onlinePbxExtension: '101', onlinePbxIncomingEnabled: true } }) }));
-vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => ({ startCall: vi.fn() }) }));
+vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 vi.mock('../client/src/components/telephony/CallRecordingPlayer', () => ({ CallRecordingPlayer: () => null }));
 import CallJournalPage from '../client/src/pages/sales/CallJournalPage';
 
@@ -21,6 +23,8 @@ const call = (id: number) => ({ id, userId: null, userName: null, extension: nul
   durationSeconds: 20, talkSeconds: 0, hangupCause: null, note: null, hasRecording: false, requiresCallback: true });
 beforeEach(() => {
   i18n.setLanguage('ru'); mocks.api.mockReset();
+  onlinePbxCall.startCall.mockClear(); onlinePbxCall.isPending = false;
+  onlinePbxCall.isLineBusyWithReminder = false; onlinePbxCall.callButtonLabel = i18n.t('telephonyLineBusyWithReminder');
   HTMLElement.prototype.scrollTo = vi.fn(); HTMLElement.prototype.scrollIntoView = vi.fn();
   Element.prototype.hasPointerCapture = () => false; Element.prototype.setPointerCapture = () => undefined; Element.prototype.releasePointerCapture = () => undefined;
   mocks.api.mockImplementation(async (_method, path: string) => {
@@ -35,8 +39,9 @@ afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear(
 const mount = (path = '/sales/calls') => {
   const location = memoryLocation({ path });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
-  render(<Router hook={location.hook} searchHook={location.searchHook}><QueryClientProvider client={client}><CallJournalPage /></QueryClientProvider></Router>);
-  return location;
+  const content = () => <Router hook={location.hook} searchHook={location.searchHook}><QueryClientProvider client={client}><CallJournalPage /></QueryClientProvider></Router>;
+  const view = render(content());
+  return { ...location, refresh: () => view.rerender(content()) };
 };
 const latestRequest = () => {
   const path = mocks.api.mock.calls.filter(([, path]) => path.includes('/journal?')).at(-1)?.[1];
@@ -48,6 +53,23 @@ const select = async (label: string, option: string) => {
   await user.click(screen.getByRole('option', { name: option }));
 };
 describe('call journal controls and URL state', () => {
+  it('updates both desktop and mobile callback buttons while the reminder owns the line', async () => {
+    onlinePbxCall.isLineBusyWithReminder = true;
+    const view = mount(); await screen.findAllByText('Missed 1');
+    const blocked = screen.getAllByRole('button', { name: onlinePbxCall.callButtonLabel });
+    expect(blocked).toHaveLength(2);
+    for (const button of blocked) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      await userEvent.setup().click(button);
+    }
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    onlinePbxCall.isLineBusyWithReminder = false;
+    view.refresh();
+    const ready = screen.getAllByRole('button', { name: i18n.t('telephonyCallBack') });
+    expect(ready.every(button => !(button as HTMLButtonElement).disabled)).toBe(true);
+    await userEvent.setup().click(ready[1]);
+    expect(onlinePbxCall.startCall).toHaveBeenCalledExactlyOnceWith(call(1).phone);
+  });
   it('defaults to my operator while displaying unassigned missed calls', async () => {
     mount(); await screen.findAllByText('Missed 1');
     expect(latestRequest().get('userId')).toBe('1');

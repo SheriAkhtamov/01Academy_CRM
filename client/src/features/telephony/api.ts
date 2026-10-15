@@ -1,6 +1,7 @@
 import { apiRequest } from '@/lib/queryClient';
 import type { TelephonyCallStatus } from '@/lib/telephony';
-import type { TelephonyLineLease } from '@shared/contracts/telephony-lines';
+import { withTelephonyRequestDeadline } from './request-deadline';
+import { ownTelephonyLineStatusSchema, type OwnTelephonyLineStatus, type TelephonyLineLease } from '@shared/contracts/telephony-lines';
 
 export type MissedCallUnreadSummary = {
   count: number;
@@ -46,13 +47,23 @@ export type TelephonyContactMatch = {
 
 export const telephonyQueryKeys = {
   missedCallUnread: ['/api/telephony/calls/missed/unread'] as const,
+  lineStatus: (actorId: number | null, extension: string | null) => ['/api/telephony/lines/status', actorId, extension] as const,
   calls: ['/api/telephony/calls'] as const,
   extensions: ['/api/telephony/extensions'] as const,
   journalOperators: ['/api/telephony/calls/journal/operators'] as const,
   contactLookup: (phone: string) => ['/api/telephony/contacts/lookup', phone] as const,
 };
 
+const lineStatusResult = async (request: Promise<unknown>): Promise<OwnTelephonyLineStatus> => {
+  const result = await withTelephonyRequestDeadline(request);
+  const parsed = ownTelephonyLineStatusSchema.safeParse(result);
+  if (!parsed.success) throw new Error('onlinePbxUnavailable');
+  return parsed.data;
+};
+
 export const telephonyApi = {
+  getLineStatus: () => lineStatusResult(apiRequest('GET', '/api/telephony/lines/status')),
+  requestLinePriority: () => lineStatusResult(apiRequest('POST', '/api/telephony/lines/request-priority', {})),
   reserveLine: (clientCallId: string, phone: string) => (
     apiRequest('POST', '/api/telephony/lines/reserve', { clientCallId, phone }) as Promise<TelephonyLineLease>
   ),

@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { releaseTelephonyLineSchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema, TELEPHONY_REMINDER_LINE_BUSY } from '@shared/contracts/telephony-lines';
+import { releaseTelephonyLineSchema, requestTelephonyLinePrioritySchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema, TELEPHONY_REMINDER_LINE_BUSY } from '@shared/contracts/telephony-lines';
 import { canAccessAcademyModule } from '@shared/academy';
 import { onlinePbxRoutingDestination } from '@shared/telephony';
 import type { TelephonyChannelReservations } from '../../../infrastructure/voice-telephony/channel-reservations';
@@ -51,6 +51,27 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
       logAdmissionDenied(request, 'reserve', reason, { clientCallId: parsed.data.clientCallId });
       response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503).json({ error: reason });
     }
+  });
+  router.get('/lines/status', async (request,response) => {
+    if (!requestTelephonyLinePrioritySchema.safeParse(request.query).success) {
+      response.status(400).json({ error: 'onlinePbxInvalidCallEvent' }); return;
+    }
+    try {
+      const status = await channels.managerLineStatus(request.user!.id,request.user!.onlinePbxExtension!);
+      if (!status) { response.status(403).json({ error: 'onlinePbxManagerNotAssigned' }); return; }
+      response.json(status);
+    } catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
+  });
+  router.post('/lines/request-priority', async (request,response) => {
+    if (!requestTelephonyLinePrioritySchema.safeParse(request.body === undefined ? {} : request.body).success
+      || !requestTelephonyLinePrioritySchema.safeParse(request.query).success) {
+      response.status(400).json({ error: 'onlinePbxInvalidCallEvent' }); return;
+    }
+    try {
+      const status = await channels.requestManagerLinePriority(request.user!.id,request.user!.onlinePbxExtension!);
+      if (!status) { response.status(403).json({ error: 'onlinePbxManagerNotAssigned' }); return; }
+      response.json(status);
+    } catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
   });
   router.post('/lines/renew', async (request, response) => {
     const parsed = telephonyLineLeaseSchema.safeParse(request.body);

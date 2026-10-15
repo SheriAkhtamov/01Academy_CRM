@@ -274,6 +274,8 @@ export default function CallJournalPage() {
                         dateTime={dateTime}
                         requiresCallback={call.requiresCallback}
                         onCall={() => onlinePbxCall.startCall(call.phone)}
+                        callDisabled={onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
+                        callDisabledLabel={onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : undefined}
                       />
                     ))}
                   </tbody>
@@ -287,6 +289,8 @@ export default function CallJournalPage() {
                     dateTime={dateTime}
                     requiresCallback={call.requiresCallback}
                     onCall={() => onlinePbxCall.startCall(call.phone)}
+                    callDisabled={onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
+                    callDisabledLabel={onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : undefined}
                   />
                 ))}
               </div>
@@ -333,11 +337,15 @@ function JournalTableRow({
   dateTime,
   requiresCallback,
   onCall,
+  callDisabled,
+  callDisabledLabel,
 }: {
   call: JournalCall;
   dateTime: (value: string) => string;
   requiresCallback: boolean;
   onCall: () => void;
+  callDisabled: boolean;
+  callDisabledLabel?: string;
 }) {
   const { t } = useTranslation();
   const DirectionIcon = call.direction === 'incoming' ? PhoneIncoming : PhoneCall;
@@ -360,7 +368,11 @@ function JournalTableRow({
       <td className="px-4 py-3 font-mono tabular-nums">{formatCallDuration(duration)}</td>
       <td className="px-4 py-3"><CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} /></td>
       <td className="px-4 py-3 text-right">
-        <Button type="button" variant="ghost" size="icon" onClick={onCall} aria-label={t('telephonyCallBack')}><Phone /></Button>
+        <Button type="button" variant="ghost" size={callDisabledLabel ? 'sm' : 'icon'}
+          className={callDisabledLabel ? 'h-auto min-h-9 max-w-56 whitespace-normal py-2' : undefined}
+          disabled={callDisabled} onClick={onCall} aria-label={callDisabledLabel ?? t('telephonyCallBack')}>
+          <Phone className="shrink-0" />{callDisabledLabel ? <span>{callDisabledLabel}</span> : null}
+        </Button>
       </td>
     </tr>
   );
@@ -371,11 +383,15 @@ function JournalMobileCard({
   dateTime,
   requiresCallback,
   onCall,
+  callDisabled,
+  callDisabledLabel,
 }: {
   call: JournalCall;
   dateTime: (value: string) => string;
   requiresCallback: boolean;
   onCall: () => void;
+  callDisabled: boolean;
+  callDisabledLabel?: string;
 }) {
   const { t } = useTranslation();
   const DirectionIcon = call.direction === 'incoming' ? PhoneIncoming : PhoneCall;
@@ -394,7 +410,10 @@ function JournalMobileCard({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} />
-        <Button type="button" variant="outline" size="sm" onClick={onCall}><Phone />{t('telephonyCallBack')}</Button>
+        <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full whitespace-normal py-2"
+          disabled={callDisabled} onClick={onCall}>
+          <Phone className="shrink-0" />{callDisabledLabel ?? t('telephonyCallBack')}
+        </Button>
       </div>
     </article>
   );

@@ -108,9 +108,9 @@ export function LeadWorkspaceHeader({
         {primaryPhone ? (
           <Button
             type="button"
-            size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
+            size="sm" className="h-auto min-h-8 max-w-full whitespace-normal px-2 py-2 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
             variant="default"
-            disabled={actionsDisabled || onlinePbxCall.isPending}
+            disabled={actionsDisabled || onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
             onClick={() => {
               if (visiblePhoneNumbers.length > 1) setCallDialogOpen(true);
               else onlinePbxCall.startCall(primaryPhone);
@@ -121,7 +121,7 @@ export function LeadWorkspaceHeader({
             ) : (
               <Phone data-icon="inline-start" />
             )}
-            {t('callShort')}
+            {onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : t('callShort')}
           </Button>
         ) : null}
         {messageTarget && !actionsDisabled ? (
@@ -147,6 +147,7 @@ export function LeadWorkspaceHeader({
         phoneNumbers={visiblePhoneNumbers}
         onCall={onlinePbxCall.startCall}
         disabled={actionsDisabled || onlinePbxCall.isPending}
+        disabledLabel={onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : undefined}
       />
     </SheetHeader>
   );

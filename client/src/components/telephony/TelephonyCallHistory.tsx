@@ -75,9 +75,11 @@ const CallGlyph = ({ call }: { call: CallHistoryItem }) => {
 export function TelephonyCallHistory({
   onCallBack,
   onCollapse,
+  isLineBusyWithReminder = false,
 }: {
   onCallBack: (phone: string) => void;
   onCollapse: () => void;
+  isLineBusyWithReminder?: boolean;
 }) {
   const { t, language } = useTranslation();
   const [filter, setFilter] = useState<CallHistoryFilter>('all');
@@ -161,7 +163,7 @@ export function TelephonyCallHistory({
             const noteOpen = expandedNoteCallId === call.id;
             return (
               <div key={call.id} className="px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                   <CallGlyph call={call} />
                   <div className="min-w-0 flex-1 text-left">
                     <p className="truncate text-sm font-medium text-foreground">
@@ -211,12 +213,14 @@ export function TelephonyCallHistory({
                     </button>
                     <button
                       type="button"
-                      className="flex size-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50"
-                      onClick={() => onCallBack(call.phone)}
-                      aria-label={t('telephonyCallBack')}
-                      title={t('telephonyCallBack')}
+                      className={cn('flex min-h-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50 disabled:opacity-60',
+                        isLineBusyWithReminder ? 'max-w-40 gap-1 px-2 py-1 text-center text-xs' : 'size-8')}
+                      disabled={isLineBusyWithReminder}
+                      onClick={() => { if (!isLineBusyWithReminder) onCallBack(call.phone); }}
+                      aria-label={isLineBusyWithReminder ? t('telephonyLineBusyWithReminder') : t('telephonyCallBack')}
                     >
-                      <Phone className="size-4" />
+                      <Phone className="size-4 shrink-0" />
+                      {isLineBusyWithReminder ? <span>{t('telephonyLineBusyWithReminder')}</span> : null}
                     </button>
                   </div>
                 </div>

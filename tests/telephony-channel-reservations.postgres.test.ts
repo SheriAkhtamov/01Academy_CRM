@@ -74,6 +74,95 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     finally { connection.release(); }
   };
 
+  it('reads own robot status in a read-only connection without reconciling, refreshing priority or cleaning leases', async () => {
+    const robot = await issuedRobot();
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: true });
+    await database.query('UPDATE voice_reminder_call_attempts SET termination_confirmed_at=clock_timestamp() WHERE call_id=$1', [robot.clientCallId]);
+    const state = async () => ({ priorities: await priority(),
+      leases: (await database.query('SELECT * FROM telephony_line_reservations ORDER BY id')).rows,
+      attempts: (await database.query('SELECT * FROM voice_reminder_call_attempts ORDER BY call_id')).rows });
+    const before = await state();
+    const readonly = new Pool({ connectionString: url,options: `-c search_path=${schema} -c default_transaction_read_only=on` });
+    try {
+      const view = new TelephonyChannelReservations(readonly,async () => { throw new Error('Status must not call the provider'); });
+      for (let index=0;index<3;index+=1) expect(await view.managerLineStatus(1,'100')).toEqual({ busyWithReminder: false });
+      expect(await view.managerLineStatus(2,'101')).toEqual({ busyWithReminder: false });
+      expect(await state()).toEqual(before);
+      expect(before.priorities[0].ended_at).toBeNull();
+      expect(before.leases).toHaveLength(1);
+    } finally { await readonly.end(); }
+  });
+
+  it('reports only the assigned own line and differentiates active robot leases from manager leases and cooldowns', async () => {
+    const robot = (await channels.acquire(reservation({ extensions: ['101'] })))!;
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: false });
+    expect(await channels.managerLineStatus(2,'101')).toEqual({ busyWithReminder: true });
+    expect(await channels.managerLineStatus(1,'101')).toBeNull();
+    expect(await channels.managerLineStatus(99,'101')).toBeNull();
+    expect(await priority()).toEqual([]);
+    expect(await channels.requestManagerLinePriority(2,'101')).toEqual({ busyWithReminder: true });
+    await channels.release(robot.id,'robot');
+    expect(await channels.managerLineStatus(2,'101')).toEqual({ busyWithReminder: false });
+    expect((await priority())[0].priority_until).toBeInstanceOf(Date);
+    const managerLease = (await channels.acquire(manager('101',2)))!;
+    expect(managerLease.extension).toBe('101');
+    expect(await channels.managerLineStatus(2,'101')).toEqual({ busyWithReminder: false });
+    expect(await channels.requestManagerLinePriority(2,'101')).toEqual({ busyWithReminder: false });
+    expect(await channels.acquire(reservation({ extensions: ['101'] }))).toBeNull();
+  });
+
+  it('ignores an expired no-INVITE lease but retains an ambiguous native receipt after lease removal', async () => {
+    const robot = (await channels.acquire(reservation({ extensions: ['100'] })))!;
+    await database.query('UPDATE telephony_line_reservations SET lease_until=now()-interval \'1 second\' WHERE id=$1', [robot.id]);
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: false });
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: false });
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(1);
+    await database.query(`INSERT INTO voice_reminder_call_attempts(call_id,extension,phone,completed_at)
+      VALUES($1,'100','+998901234567',now())`, [robot.clientCallId]);
+    await database.query('DELETE FROM telephony_line_reservations');
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: true });
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: true });
+    expect((await priority())[0]).toMatchObject({ ended_at: null,priority_until: null });
+  });
+
+  it('commits one automatic priority episode and immediately re-enables the manager on confirmed native end', async () => {
+    const robot = await issuedRobot();
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: true });
+    expect(await priority()).toEqual([]);
+    const results = await Promise.all(Array.from({ length: 8 },() => channels.requestManagerLinePriority(1,'100')));
+    expect(results).toEqual(Array(8).fill({ busyWithReminder: true }));
+    const first = (await priority())[0];
+    for (let index=0;index<3;index+=1) expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: true });
+    expect((await priority())[0]).toEqual(first);
+    expect(await channels.renew(robot.id,'robot')).toBe(true);
+    await new RobotCallReceipts(database).complete(robot.clientCallId,true,true);
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: false });
+    expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(1);
+    const granted = await channels.acquire(manager());
+    expect(granted?.extension).toBe('100');
+    const fixed = (await priority())[0];
+    expect(fixed.priority_until.getTime()-fixed.ended_at.getTime()).toBe(180_000);
+    expect(fixed.requested_at).toEqual(first.requested_at);
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: false });
+    expect((await priority())[0]).toEqual(fixed);
+    expect((await channels.acquire(reservation({ extensions: ['101'],phone: '+998911234567' })))?.extension).toBe('101');
+  });
+
+  it('keeps status and priority local and actor-scoped on unknown provider state and reassigned users', async () => {
+    await issuedRobot();
+    channels=new TelephonyChannelReservations(database,async () => { throw new Error('No provider call allowed'); });
+    expect(await channels.managerLineStatus(1,'100')).toEqual({ busyWithReminder: true });
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: true });
+    const first = await priority();
+    expect(await channels.requestManagerLinePriority(2,'100')).toBeNull();
+    await database.query(`UPDATE users SET online_pbx_extension='101' WHERE id=1`);
+    expect(await channels.managerLineStatus(1,'100')).toBeNull();
+    expect(await channels.requestManagerLinePriority(1,'100')).toBeNull();
+    await database.query(`UPDATE users SET is_active=false WHERE id=2`);
+    expect(await channels.managerLineStatus(2,'101')).toBeNull();
+    expect(await priority()).toEqual(first);
+  });
+
   it.each([
     [true,false,'101'], [false,true,'100'], [true,true,'100'], [false,false,'100'],
   ])('prefers free offline owners (100:%s,101:%s) without forbidding online robot calls', async (firstOnline,secondOnline,expected) => {
@@ -135,7 +224,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     expect(await channels.renew(robot.id,'robot')).toBe(true);
     const ended = (await database.query(`UPDATE voice_reminder_call_attempts SET termination_confirmed_at=clock_timestamp()
       WHERE call_id=$1 RETURNING termination_confirmed_at`, [robot.clientCallId])).rows[0].termination_confirmed_at;
-    await expect(channels.acquire(manager())).rejects.toBeInstanceOf(TelephonyReminderLineBusyError);
+    expect(await channels.acquire(reservation({ extensions: ['100'] }))).toBeNull();
     const fixed = (await priority())[0];
     expect(fixed.ended_at).toEqual(ended);
     expect(fixed.priority_until.getTime()-ended.getTime()).toBe(180_000);
@@ -207,12 +296,13 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
 
   it('gives a fresh denied manager three minutes when an old terminal proof is discovered', async () => {
     const robot = await issuedRobot();
-    await database.query(`UPDATE voice_reminder_call_attempts SET termination_confirmed_at=now()-interval '10 minutes' WHERE call_id=$1`, [robot.clientCallId]);
     await expect(channels.acquire(manager())).rejects.toBeInstanceOf(TelephonyReminderLineBusyError);
+    await database.query(`UPDATE voice_reminder_call_attempts SET termination_confirmed_at=now()-interval '10 minutes' WHERE call_id=$1`, [robot.clientCallId]);
+    expect(await channels.acquire(reservation({ extensions: ['100'] }))).toBeNull();
     const fixed = (await priority())[0];
     expect(fixed.ended_at).toEqual(fixed.requested_at);
     expect(fixed.priority_until.getTime()-fixed.requested_at.getTime()).toBe(180_000);
-    await expect(channels.acquire(manager())).rejects.toBeInstanceOf(TelephonyReminderLineBusyError);
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: false });
     expect((await priority())[0]).toEqual(fixed);
   });
 
@@ -243,7 +333,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     expect(await priority()).toEqual([]);
   });
 
-  it('uses the real durable marker fence when manager demand wins the shared mutex', async () => {
+  it('uses the real durable marker fence when an automatic manager priority command wins the shared mutex', async () => {
     const robot = (await channels.acquire(reservation({ extensions: ['100'] })))!;
     await database.query(`INSERT INTO academy_demo_lessons VALUES(1,timezone('UTC',now()+interval '1 hour'),'scheduled');
       INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(1,1,1,'invited')`);
@@ -251,7 +341,7 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     const job = (await database.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,lease_token,lease_until)
       VALUES(1,1,now()+interval '1 hour',now(),'calling',$1,now()+interval '5 minutes') RETURNING id`, [token])).rows[0].id;
     expect(await channels.bind(robot.id,{ jobId: Number(job),clientCallId: robot.clientCallId,phone: '+998901234567' })).toBe(true);
-    await expect(channels.acquire(manager())).rejects.toBeInstanceOf(TelephonyReminderLineBusyError);
+    expect(await channels.requestManagerLinePriority(1,'100')).toEqual({ busyWithReminder: true });
     const receipts = new RobotCallReceipts(database,(client,id,extension) => channels.canAuthorizeRobotLocked(client,id,extension));
     expect(await receipts.start({ callId: robot.clientCallId,jobId: Number(job),jobLeaseToken: token,
       extension: '100',phone: '+998901234567',reservationId: robot.id })).toBe(false);

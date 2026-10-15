@@ -11,6 +11,7 @@ vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) 
 
 const onlinePbxCall = vi.hoisted(() => ({
   startCall: vi.fn(), isPending: false, pendingPhone: null as string | null,
+  isLineBusyWithReminder: false, callButtonLabel: '',
 }));
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 
@@ -43,6 +44,8 @@ beforeEach(() => {
   onlinePbxCall.startCall.mockClear();
   onlinePbxCall.isPending = false;
   onlinePbxCall.pendingPhone = null;
+  onlinePbxCall.isLineBusyWithReminder = false;
+  onlinePbxCall.callButtonLabel = i18n.t('telephonyLineBusyWithReminder');
   lead = structuredClone(initialLead);
   requests = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -94,6 +97,40 @@ function renderSheet() {
 }
 
 describe('calling from the lead workspace', () => {
+  it('shows an unavailable call action while a robot owns the line and restores it when free', async () => {
+    onlinePbxCall.isLineBusyWithReminder = true;
+    const { user, switchTab } = renderSheet();
+    const blocked = await screen.findByRole('button', { name: onlinePbxCall.callButtonLabel });
+    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+    await user.click(blocked);
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();
+    onlinePbxCall.isLineBusyWithReminder = false;
+    switchTab('deal');
+    const ready = screen.getByRole('button', { name: i18n.t('callShort') });
+    expect((ready as HTMLButtonElement).disabled).toBe(false);
+    await user.click(ready);
+    expect(screen.getByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeTruthy();
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+  });
+
+  it('updates an already open phone picker without closing its dialog or starting a call', async () => {
+    const { user, switchTab } = renderSheet();
+    await user.click(await screen.findByRole('button', { name: i18n.t('callShort') }));
+    onlinePbxCall.isLineBusyWithReminder = true;
+    switchTab('deal');
+    const picker = screen.getByRole('dialog', { name: i18n.t('chooseLeadCallPhone') });
+    for (const phone of lead.phoneNumbers) {
+      const button = within(picker).getByRole('button', { name: `${phone}. ${onlinePbxCall.callButtonLabel}` });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      await user.click(button);
+    }
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    onlinePbxCall.isLineBusyWithReminder = false;
+    switchTab('deal');
+    await user.click(within(picker).getByRole('button', { name: lead.phoneNumbers[1] }));
+    expect(onlinePbxCall.startCall).toHaveBeenCalledExactlyOnceWith(lead.phoneNumbers[1]);
+  });
   it.each([0, 1, 2])('calls the chosen number at index %s from a separate dialog', async (index) => {
     lead.phoneNumbers.push('+998901234569');
     const { user, onOpenChange } = renderSheet();

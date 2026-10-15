@@ -1,7 +1,28 @@
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+import type { OwnTelephonyLineStatus } from '@shared/contracts/telephony-lines';
 
-/** Every method runs under the shared external-channel transaction mutex. */
+// Select only the manager's extension. A terminated receipt overrides a lease
+// that its owner has not released yet; an unresolved receipt outlives any TTL.
+const robotBlockerSql = `
+  SELECT lease.client_call_id AS call_id,lease.id AS reservation_id,0 AS preference,lease.created_at AS started_at
+  FROM telephony_line_reservations lease
+  LEFT JOIN voice_reminder_call_attempts receipt ON receipt.call_id::text=lease.client_call_id AND receipt.extension=lease.extension
+  WHERE lease.owner_type='robot' AND lease.extension=staff.online_pbx_extension
+    AND lease.lease_until>clock_timestamp() AND receipt.termination_confirmed_at IS NULL
+  UNION ALL
+  SELECT attempt.call_id::text,NULL::uuid,1,attempt.started_at FROM voice_reminder_call_attempts attempt
+  WHERE attempt.extension=staff.online_pbx_extension AND attempt.termination_confirmed_at IS NULL
+  ORDER BY preference,started_at LIMIT 1`;
+
+/** Mutations run under the shared external-channel transaction mutex. */
 export class ManagerLinePriorities {
+  async ownLineStatus(connection: Pick<Pool,'query'>, userId: number, extension: string, lockAssignment = false): Promise<OwnTelephonyLineStatus | null> {
+    const row = (await connection.query<OwnTelephonyLineStatus>(`SELECT EXISTS(${robotBlockerSql}) AS "busyWithReminder"
+      FROM users staff WHERE staff.id=$1 AND staff.is_active AND NOT staff.is_archived
+        AND staff.online_pbx_extension=$2 ${lockAssignment ? 'FOR SHARE OF staff' : ''}`, [userId,extension])).rows[0];
+    return row ?? null;
+  }
+
   async refresh(client: PoolClient): Promise<void> {
     // A receipt's bookkeeping completion is not proof that the PBX has ended
     // the call. A missing receipt is safe only after its lease is gone/expired:
@@ -15,9 +36,9 @@ export class ManagerLinePriorities {
           WHEN attempt.call_id IS NULL AND lease.lease_until<=clock_timestamp() THEN lease.lease_until
         END AS ended_at
         FROM telephony_manager_line_priorities pending
-        LEFT JOIN voice_reminder_call_attempts attempt ON attempt.call_id::text=pending.blocking_client_call_id
+        LEFT JOIN voice_reminder_call_attempts attempt ON attempt.call_id::text=pending.blocking_client_call_id AND attempt.extension=pending.extension
         LEFT JOIN telephony_line_reservations lease ON lease.id=pending.blocking_reservation_id
-          AND lease.owner_type='robot' AND lease.client_call_id=pending.blocking_client_call_id
+          AND lease.owner_type='robot' AND lease.client_call_id=pending.blocking_client_call_id AND lease.extension=pending.extension
         WHERE pending.ended_at IS NULL) proof
       WHERE priority.extension=proof.extension AND priority.ended_at IS NULL AND proof.ended_at IS NOT NULL`);
   }
@@ -26,16 +47,9 @@ export class ManagerLinePriorities {
     const blocked = await client.query<{ extension: string; callId: string; reservationId: string | null }>(
       `SELECT staff.online_pbx_extension AS extension, blocker.call_id AS "callId",blocker.reservation_id AS "reservationId"
        FROM users staff
-       CROSS JOIN LATERAL (
-         SELECT lease.client_call_id AS call_id,lease.id AS reservation_id,0 AS preference,lease.created_at AS started_at
-         FROM telephony_line_reservations lease WHERE lease.owner_type='robot' AND lease.extension=staff.online_pbx_extension
-         UNION ALL
-         SELECT attempt.call_id::text,NULL::uuid,1,attempt.started_at FROM voice_reminder_call_attempts attempt
-         WHERE attempt.extension=staff.online_pbx_extension AND attempt.termination_confirmed_at IS NULL
-         ORDER BY preference,started_at LIMIT 1
-       ) blocker
+       CROSS JOIN LATERAL (${robotBlockerSql}) blocker
        WHERE staff.id=$1 AND staff.is_active AND NOT staff.is_archived
-         AND staff.online_pbx_extension=ANY($2::text[])`, [userId,extensions],
+         AND staff.online_pbx_extension=ANY($2::text[]) FOR SHARE OF staff`, [userId,extensions],
     );
     const blocker = blocked.rows[0];
     if (!blocker) return false;

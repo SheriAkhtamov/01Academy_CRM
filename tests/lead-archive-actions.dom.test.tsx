@@ -192,7 +192,7 @@ describe('lead sheet archive quick actions', () => {
     lead = { ...lead, managerId: null };
     renderSheet();
     const dialog = await openAction();
-    expect(within(dialog).getByText(i18n.t('leadRequiresResponsibleManagerDescription'))).toBeTruthy();
+    expect(within(dialog).getByText(i18n.t('leadRequiresResponsibleManager'))).toBeTruthy();
     await choose(dialog, 'archiveReason', i18n.t('archiveReasonNoAnswer'));
     expect(requests).toHaveLength(0);
     fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('assignToMeAndArchive') }));

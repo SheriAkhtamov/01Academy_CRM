@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
 import { telephonyApi } from '@/features/telephony/api';
 import { callAdmissionErrorKey, CallAdmissionError } from '@/features/telephony/call-errors';
+import { useTelephonyLineStatus } from '@/features/telephony/use-line-status';
 import { withTelephonyRequestDeadline } from '@/features/telephony/request-deadline';
 import {
   hasOnlinePbxManagerAssignment,
@@ -161,6 +162,7 @@ type TelephonyContextValue = {
   activeCall: ActiveTelephonyCall | null;
   pendingPhone: string | null;
   isPending: boolean;
+  isLineBusyWithReminder: boolean;
   /**
    * Silences the ringer only. An incoming call still lights the widget up and
    * still lands in the history, because muting the sound must never quietly
@@ -327,6 +329,13 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   const [activeCall, setActiveCallState] = useState<ActiveTelephonyCall | null>(null);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [isRingtoneMuted, setIsRingtoneMuted] = useState(readStoredRingtoneMuted);
+  const { isLineBusyWithReminder, markBusy, refresh: refreshLineStatus } = useTelephonyLineStatus(
+    isManagerAssigned && user?.id ? user.id : null,
+    isManagerAssigned ? String(user?.onlinePbxExtension ?? '') : null,
+    connectionState === 'ready',
+  );
+  const lineBusyRef = useRef(isLineBusyWithReminder);
+  lineBusyRef.current = isLineBusyWithReminder;
   const managerRef = useRef<VertoClientLike | null>(null);
   const sessionRef = useRef<VertoDialogLike | null>(null);
   const uncertainDialogsRef = useRef(new WeakSet<VertoDialogLike>());
@@ -916,7 +925,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             if (!disposed) {
               setConnectionState(success ? 'ready' : 'error');
               refreshIncomingRouting();
-              if (success) replayCallReports();
+              if (success) { replayCallReports(); refreshLineStatus(); }
             }
           },
           onWSClose: () => {
@@ -970,9 +979,10 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       sessionRef.current = null;
       manager?.closeSocket(1000);
     };
-  }, [clearCallSetupTimer, finishSession, isManagerAssigned, lookupContact, patchActiveCall, releaseLine, replayCallReports, reportCall, setActiveCall, stopLocalMedia, stopRingtone, user?.id, user?.onlinePbxExtension]);
+  }, [clearCallSetupTimer, finishSession, isManagerAssigned, lookupContact, patchActiveCall, releaseLine, replayCallReports, reportCall, refreshLineStatus, setActiveCall, stopLocalMedia, stopRingtone, user?.id, user?.onlinePbxExtension]);
 
   const startCall = useCallback(async (rawPhone: string) => {
+    if (lineBusyRef.current) return;
     const manager = managerRef.current;
     const credentials = credentialsRef.current;
     if (!manager || !credentials) throw new Error('onlinePbxWebPhoneOffline');
@@ -1140,6 +1150,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
           };
           setActiveCall(failed);
           if (admissionError) failedCallId = failed.clientCallId;
+          if (admissionError === 'onlinePbxLineBusyWithReminder') markBusy();
           // Admission failed before the SDK was invoked, so the journal and
           // manager KPIs must not receive a call attempt.
         }
@@ -1155,7 +1166,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
         setPendingPhone(null);
       }
     }
-  }, [clearCallSetupTimer, finishSession, lookupContact, patchActiveCall, queueLeaseRelease, releaseLine, replayCallReports, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
+  }, [clearCallSetupTimer, finishSession, lookupContact, markBusy, patchActiveCall, queueLeaseRelease, releaseLine, replayCallReports, reportCall, setActiveCall, stopLocalMedia, user?.fullName]);
 
   const answerCall = useCallback(async () => {
     const session = sessionRef.current;
@@ -1280,6 +1291,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     activeCall,
     pendingPhone,
     isPending: Boolean(pendingPhone),
+    isLineBusyWithReminder,
     isRingtoneMuted,
     toggleRingtoneMuted,
     startCall,
@@ -1298,6 +1310,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
     extension,
     hangupCall,
     isManagerAssigned,
+    isLineBusyWithReminder,
     isRingtoneMuted,
     pendingPhone,
     sendDtmf,

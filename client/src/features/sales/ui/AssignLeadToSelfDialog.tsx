@@ -12,7 +12,7 @@ import {
 type AssignLeadToSelfDialogProps = {
   open: boolean;
   leadName?: string | null;
-  description: string;
+  description?: string;
   confirmLabel: string;
   isPending: boolean;
   confirmDisabled?: boolean;

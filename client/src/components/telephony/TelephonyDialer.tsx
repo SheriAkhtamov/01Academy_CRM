@@ -36,6 +36,7 @@ export function TelephonyDialer({
   connectionCopy,
   isReady,
   isPending,
+  isLineBusyWithReminder = false,
   dialedNumber,
   onDialedNumberChange,
   onCall,
@@ -43,6 +44,7 @@ export function TelephonyDialer({
   connectionCopy: string;
   isReady: boolean;
   isPending: boolean;
+  isLineBusyWithReminder?: boolean;
   dialedNumber: string;
   onDialedNumberChange: (value: string) => void;
   onCall: (phone: string) => void;
@@ -113,7 +115,7 @@ export function TelephonyDialer({
   };
 
   const placeCall = () => {
-    if (!isDiallable || !isReady || isPending) return;
+    if (!isDiallable || !isReady || isPending || isLineBusyWithReminder) return;
     try {
       window.localStorage.setItem(TELEPHONY_LAST_NUMBER_KEY, dialedNumber);
     } catch {
@@ -126,7 +128,7 @@ export function TelephonyDialer({
   return (
     <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-3">
       {!isReady ? (
-        <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
+        <div className="mb-3 text-sm" role="status">
           {connectionCopy}
         </div>
       ) : null}
@@ -216,14 +218,14 @@ export function TelephonyDialer({
         type="button"
         data-no-drag
         className={cn(
-          'mx-auto mt-4 flex h-11 rounded-full bg-emerald-600 px-7 text-white shadow-lg shadow-emerald-600/25',
+          'mx-auto mt-4 flex h-auto min-h-11 max-w-full whitespace-normal rounded-full bg-emerald-600 px-7 py-2 text-center text-white shadow-lg shadow-emerald-600/25',
           'hover:bg-emerald-700',
         )}
-        disabled={!isDiallable || !isReady || isPending}
+        disabled={!isDiallable || !isReady || isPending || isLineBusyWithReminder}
         onClick={placeCall}
       >
         {isPending ? <Loader2 className="size-5 animate-spin" /> : <PhoneCall className="size-5" />}
-        {isPending ? t('telephonyStatusDialing') : t('call')}
+        {isLineBusyWithReminder ? t('telephonyLineBusyWithReminder') : isPending ? t('telephonyStatusDialing') : t('call')}
       </Button>
     </div>
   );

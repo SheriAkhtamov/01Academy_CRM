@@ -11,3 +11,6 @@ export const releaseTelephonyLineSchema = z.object({
 }).strict();
 export type TelephonyLineLease = { id: string | null };
 export const TELEPHONY_REMINDER_LINE_BUSY = 'onlinePbxLineBusyWithReminder' as const;
+export const ownTelephonyLineStatusSchema = z.object({ busyWithReminder: z.boolean() }).strict();
+export type OwnTelephonyLineStatus = z.infer<typeof ownTelephonyLineStatusSchema>;
+export const requestTelephonyLinePrioritySchema = z.object({}).strict();

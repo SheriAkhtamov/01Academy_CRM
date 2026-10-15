@@ -167,7 +167,7 @@ export function LeadArchiveActions({
         ) : (
           <div className="space-y-4">
             {needsManager ? (
-              <p className="text-sm text-muted-foreground">{t('leadRequiresResponsibleManagerDescription')}</p>
+              <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
             ) : null}
             <div className="space-y-2">
               <Label htmlFor={`${fieldId}-reason`}>{t('archiveReason')}</Label>
@@ -189,7 +189,6 @@ export function LeadArchiveActions({
                   id={`${fieldId}-custom-reason`}
                   value={customReason}
                   onChange={(event) => setCustomReason(event.target.value)}
-                  placeholder={t('archiveCustomReasonPlaceholder')}
                   maxLength={80}
                   disabled={mutation.isPending}
                 />

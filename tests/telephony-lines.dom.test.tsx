@@ -17,9 +17,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user, isAuthenticated: mocks.authenticated }) }));
 vi.mock('@/lib/queryClient', () => ({ apiRequest: mocks.api }));
-vi.mock('@/features/telephony/api', () => ({ telephonyApi: {
-  reserveLine: mocks.reserveLine, authorizeLine: mocks.authorizeLine, releaseLine: mocks.releaseLine, renewLine: mocks.renewLine,
-} }));
+vi.mock('@/features/telephony/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../client/src/features/telephony/api')>();
+  return { ...actual, telephonyApi: { ...actual.telephonyApi,
+    reserveLine: mocks.reserveLine, authorizeLine: mocks.authorizeLine, releaseLine: mocks.releaseLine, renewLine: mocks.renewLine,
+  } };
+});
 vi.mock('@/lib/incomingCallRingtone', () => ({
   shouldPlayIncomingRingtone: () => false,
   IncomingCallRingtone: class { start() { return Promise.resolve(); } stop() {} destroy() {} unlock() { return Promise.resolve(true); } },

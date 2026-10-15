@@ -2070,6 +2070,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   telephonyAddNote: { en: 'Write a note', ru: 'Записать заметку' },
   telephonyTransferTarget: { en: 'Extension or phone number', ru: 'Добавочный или номер телефона' },
   telephonyTransferToNumber: { en: 'Transfer to the number entered', ru: 'Перевести на введённый номер' },
+  telephonyLineBusyWithReminder: { en: 'Please wait: the bot is using your line', ru: 'Подождите: бот использует вашу линию' },
   telephonyCallAgain: { en: 'Call again', ru: 'Позвонить ещё раз' },
   telephonyNumberTooShort: { en: 'At least 7 digits are needed', ru: 'Нужно минимум 7 цифр' },
   telephonyContactFound: { en: 'Already in the CRM', ru: 'Уже есть в CRM' },
@@ -2089,7 +2090,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   archiveReasonNotInterested: { en: 'Not interested', ru: 'Не заинтересован' },
   archiveReasonOther: { en: 'Other reason', ru: 'Другая причина' },
   archiveCustomReason: { en: 'Specify the reason', ru: 'Укажите причину' },
-  archiveCustomReasonPlaceholder: { en: 'Describe why the lead is being archived', ru: 'Напишите, почему лид переносится в архив' },
   archiveCustomReasonRequired: { en: 'Enter the archive reason', ru: 'Введите причину архива' },
   archiveCustomReasonTooLong: { en: 'The archive reason is too long', ru: 'Причина архива слишком длинная' },
   archiveReasonRequired: { en: 'Select an archive reason', ru: 'Выберите причину архива' },
@@ -2116,8 +2116,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadAssignmentRequired: { en: 'Assign the lead to continue', ru: 'Присвойте лид, чтобы продолжить' },
   leadActionRequiresAssignmentDescription: { en: "Assign a responsible manager first.", ru: "Сначала назначьте ответственного менеджера." },
   leadRequiresResponsibleManager: { en: 'Lead has no responsible manager', ru: 'У лида нет ответственного менеджера' },
-  leadRequiresResponsibleManagerDescription: { en: 'To archive this lead, assign it to yourself first.', ru: 'Чтобы отправить лида в архив, сначала присвойте его себе.' },
-  leadMoveRequiresResponsibleManagerDescription: { en: 'Assign a responsible manager before moving this lead to another stage.', ru: 'Перед переносом на другой этап назначьте ответственного менеджера.' },
   selectResponsibleManager: { en: 'Select responsible manager', ru: 'Выберите ответственного менеджера' },
   salesModuleLeadsTransferTitle: { en: 'Transfer assigned leads', ru: 'Передайте назначенные лиды' },
   salesModuleLeadsTransferDescription: { en: 'Assigned items: {count}', ru: 'Назначенных объектов: {count}' },
@@ -3354,10 +3352,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   bulkArchiveAssignUnassigned: {
     en: 'Assign unassigned leads to me',
     ru: 'Присвоить неназначенных лидов мне',
-  },
-  bulkArchiveAssignUnassignedDescription: {
-    en: 'Some selected leads have no responsible manager. Assign them to yourself before archiving.',
-    ru: 'У некоторых выбранных лидов нет ответственного менеджера. Перед архивацией присвойте их себе.',
   },
   bulkArchiveConfirmTitle: { en: 'Archive selected leads?', ru: 'Добавить выбранных лидов в архив?' },
   bulkArchiveConfirmDescription: {

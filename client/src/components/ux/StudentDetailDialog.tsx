@@ -71,7 +71,25 @@ export function StudentDetailDialog({ student, open, onOpenChange, initialTab = 
   return <Sheet open={open} onOpenChange={guard.handleOpenChange}>
     <SheetContent side="right" className="flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl">
       <SheetHeader className="max-h-[45dvh] shrink-0 space-y-4 overflow-y-auto overscroll-contain border-b px-4 pb-4 pt-5 text-left sm:px-6">
-        <div className="flex items-start gap-3 pr-8"><Avatar className="size-11 shrink-0"><AvatarFallback className="bg-primary/10 font-semibold text-primary">{getInitials(name)}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><SheetTitle className="break-words text-xl">{name}</SheetTitle><SheetDescription asChild><div className="mt-1.5 flex flex-wrap items-center gap-2"><Badge variant="secondary">{statusLabel}</Badge>{context !== 'teacher' && currentStudent.phone ? <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={onlinePbxCall.isPending} onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}><Phone data-icon="inline-start" />{currentStudent.phone}</Button> : null}</div></SheetDescription></div></div>
+        <div className="flex items-start gap-3 pr-8">
+          <Avatar className="size-11 shrink-0"><AvatarFallback className="bg-primary/10 font-semibold text-primary">{getInitials(name)}</AvatarFallback></Avatar>
+          <div className="min-w-0 flex-1">
+            <SheetTitle className="break-words text-xl">{name}</SheetTitle>
+            <SheetDescription asChild>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{statusLabel}</Badge>
+                {context !== 'teacher' && currentStudent.phone ? (
+                  <Button size="sm" variant="ghost" className="h-auto min-h-7 max-w-full whitespace-normal px-2 py-1.5 text-xs"
+                    disabled={onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
+                    onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}>
+                    <Phone className="shrink-0" data-icon="inline-start" />
+                    {onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : currentStudent.phone}
+                  </Button>
+                ) : null}
+              </div>
+            </SheetDescription>
+          </div>
+        </div>
         {context !== 'teacher' ? <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5"><UserRound className="size-4 shrink-0 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="text-[11px] font-medium text-muted-foreground">{t('studentLinkedLead')}</p><p className="break-words text-sm font-medium">{leadId ? profile?.lead?.contactName || currentStudent.contactName : t('studentNoLinkedLead')}</p></div>{leadId && onOpenLead ? <Button size="sm" variant="outline" className="shrink-0" onClick={() => openLinkedLead(false)}>{t('openLead')}<ArrowUpRight data-icon="inline-end" /></Button> : null}</div> : null}
       </SheetHeader>
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StudentDetailTab)} className="flex min-h-0 flex-1 flex-col">

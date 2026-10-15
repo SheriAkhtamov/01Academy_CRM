@@ -42,5 +42,7 @@ export const useOnlinePbxCall = () => {
     startCall,
     isPending: telephony.isPending,
     pendingPhone: telephony.pendingPhone,
+    isLineBusyWithReminder: telephony.isLineBusyWithReminder,
+    callButtonLabel: telephony.isLineBusyWithReminder ? t('telephonyLineBusyWithReminder') : t('call'),
   };
 };

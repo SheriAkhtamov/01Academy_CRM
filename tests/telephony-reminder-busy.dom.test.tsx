@@ -74,6 +74,9 @@ beforeEach(() => {
   }));
   mocks.fetch.mockImplementation(async (url: string, options?: { body?: string }) => {
     if (url.endsWith('/credentials')) return json({ extension: '100', username: 'synthetic', password: 'synthetic', sipDomain: 'example.test', websocketUrl: 'wss://example.test' });
+    if (url.endsWith('/lines/status') || url.endsWith('/lines/request-priority')) {
+      return json({ busyWithReminder: requestsTo('/lines/reserve').length > 0 && (mocks.stage === 'reserve' || mocks.stage === 'authorize') && !mocks.admissionFailure });
+    }
     if (url.endsWith('/lines/reserve')) {
       if (mocks.admissionFailure) return json({ error: mocks.admissionFailure.error }, mocks.admissionFailure.status);
       if (mocks.stage === 'reserve') return json({ error: 'onlinePbxLineBusyWithReminder' }, 409);
@@ -101,7 +104,7 @@ describe('reminder-busy feedback at call entry points', () => {
     expect(error.textContent).toBe(i18n.t('onlinePbxLineBusyWithReminder'));
     const phone = screen.getByRole('dialog', { name: i18n.t('telephonyTitle') });
     expect(phone.contains(error)).toBe(true);
-    expect(within(phone).getByRole('button', { name: i18n.t('telephonyCallAgain') })).toBeTruthy();
+    expect((within(phone).getByRole('button', { name: i18n.t('telephonyLineBusyWithReminder') }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.value.activeCall.errorCode).toBe('onlinePbxLineBusyWithReminder');
     expect(mocks.stop).toHaveBeenCalledOnce();
     expect(mocks.newCall).not.toHaveBeenCalled();

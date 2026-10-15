@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import type { OwnTelephonyLineStatus } from '@shared/contracts/telephony-lines';
 import { ManagerLinePriorities } from './manager-line-priorities';
 import { TelephonyReminderLineBusyError } from '../../modules/voice-reminders/domain/telephony-line-policy';
 export { TelephonyReminderLineBusyError } from '../../modules/voice-reminders/domain/telephony-line-policy';
@@ -39,8 +40,29 @@ export class TelephonyChannelReservations {
     return true;
   }
 
+  managerLineStatus(userId: number, extension: string): Promise<OwnTelephonyLineStatus | null> {
+    // Status polling is intentionally a single read: no capacity reconciliation,
+    // priority refresh, lease cleanup or side effects from a GET request.
+    return this.priorities.ownLineStatus(this.database,userId,extension);
+  }
+
+  requestManagerLinePriority(userId: number, extension: string): Promise<OwnTelephonyLineStatus | null> {
+    return this.locked(async client => {
+      const own = await this.priorities.ownLineStatus(client,userId,extension,true);
+      if (!own || !own.busyWithReminder) return own;
+      await this.cleanup(client);
+      return { busyWithReminder: await this.priorities.requestForBlockedManager(client,userId,[extension]) };
+    });
+  }
+
   private async cleanup(client: PoolClient): Promise<void> {
     await this.priorities.refresh(client);
+    // The native PBX end proof makes this channel free even if its worker died
+    // before releasing the lease. Bookkeeping completion alone is not enough.
+    await client.query(`DELETE FROM telephony_line_reservations lease WHERE lease.owner_type='robot'
+      AND EXISTS(SELECT 1 FROM voice_reminder_call_attempts receipt
+        WHERE receipt.call_id::text=lease.client_call_id AND receipt.extension=lease.extension
+          AND receipt.termination_confirmed_at IS NOT NULL)`);
     // A pending manager cannot INVITE after expiry: authorization checks the
     // lease again. An issued intent survives expiry until exact end proof.
     // Robot INVITEs have separate durable receipts which survive lease removal.

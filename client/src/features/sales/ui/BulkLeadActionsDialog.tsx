@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
+import { Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -249,28 +248,23 @@ export function BulkLeadActionsDialog({
                     id="bulk-archive-custom-reason"
                     value={archiveCustomReason}
                     onChange={(event) => setArchiveCustomReason(event.target.value)}
-                    placeholder={t('archiveCustomReasonPlaceholder')}
                     maxLength={80}
                     disabled={isPending}
                   />
                 </div>
               ) : null}
               {archiveNeedsManagerAssignment ? (
-                <Alert>
-                  <AlertCircle />
-                  <AlertTitle>{t('leadRequiresResponsibleManager')}</AlertTitle>
-                  <AlertDescription className="space-y-3">
-                    <p>{t('bulkArchiveAssignUnassignedDescription')}</p>
-                    <label className="flex cursor-pointer items-center gap-2 text-foreground">
-                      <Checkbox
-                        checked={assignUnassignedToSelf}
-                        onCheckedChange={(checked) => setAssignUnassignedToSelf(checked === true)}
-                        disabled={isPending}
-                      />
-                      <span>{t('bulkArchiveAssignUnassigned')}</span>
-                    </label>
-                  </AlertDescription>
-                </Alert>
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <Checkbox
+                      checked={assignUnassignedToSelf}
+                      onCheckedChange={(checked) => setAssignUnassignedToSelf(checked === true)}
+                      disabled={isPending}
+                    />
+                    <span>{t('bulkArchiveAssignUnassigned')}</span>
+                  </label>
+                </div>
               ) : null}
             </TabsContent>
 

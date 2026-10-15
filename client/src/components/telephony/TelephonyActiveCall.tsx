@@ -96,6 +96,7 @@ export function TelephonyActiveCall({
   callDuration,
   elapsedSeconds,
   isPending,
+  isLineBusyWithReminder = false,
   activeCallId,
   onAnswer,
   onHangup,
@@ -111,6 +112,7 @@ export function TelephonyActiveCall({
   callDuration: number;
   elapsedSeconds: number;
   isPending: boolean;
+  isLineBusyWithReminder?: boolean;
   activeCallId: number | null;
   onAnswer: () => void;
   onHangup: () => void;
@@ -401,11 +403,12 @@ export function TelephonyActiveCall({
             <Button
               type="button"
               size="sm"
-              className="h-9 bg-emerald-600 text-white hover:bg-emerald-700"
-              onClick={() => onRedial(call.phone)}
+              className="h-auto min-h-9 min-w-0 whitespace-normal bg-emerald-600 py-2 text-center text-white hover:bg-emerald-700"
+              disabled={isPending || isLineBusyWithReminder}
+              onClick={() => { if (!isLineBusyWithReminder && !isPending) onRedial(call.phone); }}
             >
               <RotateCcw />
-              {call.direction === 'incoming' ? t('telephonyCallBack') : t('telephonyCallAgain')}
+              {isLineBusyWithReminder ? t('telephonyLineBusyWithReminder') : call.direction === 'incoming' ? t('telephonyCallBack') : t('telephonyCallAgain')}
             </Button>
             <Button type="button" variant="ghost" size="sm" className="h-9" onClick={onClose}>
               {t('close')}

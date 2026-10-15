@@ -9,8 +9,10 @@ vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) 
 import { i18n } from '../client/src/lib/i18n';
 
 const mocks = vi.hoisted(() => ({ profile: vi.fn(), addProject: vi.fn() }));
+const onlinePbxCall = vi.hoisted(() => ({ isPending: false, startCall: vi.fn(),
+  isLineBusyWithReminder: false, callButtonLabel: '' }));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: mocks }));
-vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => ({ isPending: false, startCall: vi.fn() }) }));
+vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 const student = { id: 321, studentName: 'Child', contactName: 'Old parent name', status: 'studying', leadId: 12 };
 const groups = [{ groupId: 5, groupName: 'CYP-VC-GRP-26-0001', courseName: 'Vibe Coding', schoolName: 'Cyberpark', teacherName: 'Teacher', isPrimary: true, enrolledAt: null, totalLessons: 16, completedLessons: 4, remainingLessons: 11, attendedLessons: 4, missedLessons: 1 }];
 const attendance = [{ lessonId: 8, topic: 'Project lesson', scheduledAt: '2026-10-04', groupName: 'Group', status: 'present' as const, note: null }, { lessonId: 9, topic: 'Unmarked lesson', scheduledAt: '2026-10-05', groupName: 'Group', status: null, note: null }];
@@ -20,10 +22,14 @@ const clients: QueryClient[] = [];
 function show(props = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); clients.push(client);
   const onOpenLead = vi.fn(); const onOpenChange = vi.fn(); const onRecordPayment = vi.fn();
-  render(<QueryClientProvider client={client}><StudentDetailDialog student={student} open onOpenChange={onOpenChange} onOpenLead={onOpenLead} onRecordPayment={onRecordPayment} dateTime={(value) => value ?? ''} {...props} /></QueryClientProvider>);
-  return { onOpenLead, onOpenChange, onRecordPayment };
+  const content = () => <QueryClientProvider client={client}><StudentDetailDialog student={student} open onOpenChange={onOpenChange} onOpenLead={onOpenLead} onRecordPayment={onRecordPayment} dateTime={(value) => value ?? ''} {...props} /></QueryClientProvider>;
+  const view = render(content());
+  return { onOpenLead, onOpenChange, onRecordPayment, refresh: () => view.rerender(content()) };
 }
-beforeEach(() => { vi.clearAllMocks(); i18n.setLanguage('ru'); mocks.profile.mockResolvedValue(profile); mocks.addProject.mockResolvedValue({ id: 45, title: 'Project', createdAt: '2026-10-05' }); HTMLElement.prototype.scrollIntoView = vi.fn(); });
+beforeEach(() => { vi.clearAllMocks(); i18n.setLanguage('ru'); mocks.profile.mockResolvedValue(profile); mocks.addProject.mockResolvedValue({ id: 45, title: 'Project', createdAt: '2026-10-05' }); HTMLElement.prototype.scrollIntoView = vi.fn();
+  onlinePbxCall.isPending = false; onlinePbxCall.isLineBusyWithReminder = false;
+  onlinePbxCall.callButtonLabel = i18n.t('telephonyLineBusyWithReminder');
+});
 afterEach(async () => {
   cleanup(); clients.splice(0).forEach((client) => client.clear());
   // Radix restores focus on the next timer; finish it before jsdom replaces this realm.
@@ -32,6 +38,23 @@ afterEach(async () => {
 });
 
 describe('new student detail dialog', () => {
+  it('keeps the student sheet open while disabling and restoring its phone call button', async () => {
+    const phone = '+998901234567';
+    mocks.profile.mockResolvedValue({ ...profile, student: { ...student, phone } });
+    onlinePbxCall.isLineBusyWithReminder = true;
+    const view = show({ student: { ...student, phone } });
+    await screen.findByText('Current parent');
+    const blocked = screen.getByRole('button', { name: onlinePbxCall.callButtonLabel });
+    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.setup().click(blocked);
+    expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
+    onlinePbxCall.isLineBusyWithReminder = false;
+    view.refresh();
+    await userEvent.setup().click(screen.getByRole('button', { name: phone }));
+    expect(onlinePbxCall.startCall).toHaveBeenCalledExactlyOnceWith(phone);
+    expect(view.onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Child' })).toBeTruthy();
+  });
   it('has four compact sections and opens the currently linked lead', async () => {
     const callbacks = show();
     await screen.findByText('Current parent');

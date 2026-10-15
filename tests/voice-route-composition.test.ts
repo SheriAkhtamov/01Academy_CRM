@@ -31,7 +31,8 @@ describe('voice routes resolve the active CRM session before domain admission', 
   const leader = { id: 7, module: 'administration', modules: ['administration', 'sales'], isActive: true,
     isArchived: false, onlinePbxIncomingEnabled: true, onlinePbxExtension: '100' };
   const snapshot = vi.fn(async () => ({ readiness: { ready: false } }));
-  const channels = { enabled: vi.fn(async () => false), acquire: vi.fn(), renew: vi.fn(), release: vi.fn(), authorizeManagerDial: vi.fn() };
+  const channels = { enabled: vi.fn(async () => false), acquire: vi.fn(), renew: vi.fn(), release: vi.fn(), authorizeManagerDial: vi.fn(),
+    managerLineStatus: vi.fn(),requestManagerLinePriority: vi.fn() };
   const destroy = vi.fn();
   const app = (sessionUserId?: number) => {
     const application = express(); application.use(express.json());
@@ -55,6 +56,45 @@ describe('voice routes resolve the active CRM session before domain admission', 
     expect((await request(app(7)).get('/api/academy/voice-reminders')).status).toBe(200);
     expect(mocks.getUser).toHaveBeenCalledWith(7);
     expect(snapshot).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, isLeadership: true }));
+  });
+  it('reads only the current authenticated line status and requests priority with an empty command', async () => {
+    channels.managerLineStatus.mockResolvedValue({ busyWithReminder: true });
+    channels.requestManagerLinePriority.mockResolvedValue({ busyWithReminder: true });
+    const status = await request(app(7)).get('/api/telephony/lines/status');
+    expect(status.status).toBe(200); expect(status.body).toEqual({ busyWithReminder: true });
+    expect(status.headers['cache-control']).toBe('no-store');
+    expect(channels.managerLineStatus).toHaveBeenCalledExactlyOnceWith(7,'100');
+    expect(channels.requestManagerLinePriority).not.toHaveBeenCalled();
+    const requested = await request(app(7)).post('/api/telephony/lines/request-priority').send({});
+    expect(requested.status).toBe(200); expect(requested.body).toEqual({ busyWithReminder: true });
+    expect(channels.requestManagerLinePriority).toHaveBeenCalledExactlyOnceWith(7,'100');
+    expect(channels.acquire).not.toHaveBeenCalled(); expect(channels.enabled).not.toHaveBeenCalled();
+    channels.requestManagerLinePriority.mockResolvedValue({ busyWithReminder: false });
+    expect((await request(app(7)).post('/api/telephony/lines/request-priority')).body).toEqual({ busyWithReminder: false });
+  });
+  it('rejects unauthenticated, unassigned or spoofed status and priority requests before repository access', async () => {
+    expect((await request(app()).get('/api/telephony/lines/status')).status).toBe(401);
+    expect((await request(app()).post('/api/telephony/lines/request-priority').send({})).status).toBe(401);
+    for (const query of ['extension=101','userId=8','phone=%2B998901234567'])
+      expect((await request(app(7)).get(`/api/telephony/lines/status?${query}`)).status).toBe(400);
+    for (const body of [{ extension: '101' },{ userId: 8 },{ phone: '+998901234567' },[]])
+      expect((await request(app(7)).post('/api/telephony/lines/request-priority').send(body)).status).toBe(400);
+    expect((await request(app(7)).post('/api/telephony/lines/request-priority?extension=101').send({})).status).toBe(400);
+    mocks.getUser.mockResolvedValue({ ...leader,onlinePbxIncomingEnabled: false });
+    expect((await request(app(7)).get('/api/telephony/lines/status')).status).toBe(403);
+    expect((await request(app(7)).post('/api/telephony/lines/request-priority').send({})).status).toBe(403);
+    expect(channels.managerLineStatus).not.toHaveBeenCalled(); expect(channels.requestManagerLinePriority).not.toHaveBeenCalled();
+  });
+  it('keeps stale assignments and unavailable status distinct from a free line without leaking diagnostics', async () => {
+    channels.managerLineStatus.mockResolvedValue(null); channels.requestManagerLinePriority.mockResolvedValue(null);
+    expect((await request(app(7)).get('/api/telephony/lines/status')).body).toEqual({ error: 'onlinePbxManagerNotAssigned' });
+    expect((await request(app(7)).post('/api/telephony/lines/request-priority').send({})).status).toBe(403);
+    channels.managerLineStatus.mockRejectedValue(new Error('Private SQL/provider secret'));
+    channels.requestManagerLinePriority.mockRejectedValue(new Error('Private SQL/provider secret'));
+    const status = await request(app(7)).get('/api/telephony/lines/status');
+    expect(status.status).toBe(503); expect(status.body).toEqual({ error: 'onlinePbxUnavailable' });
+    const priority = await request(app(7)).post('/api/telephony/lines/request-priority').send({});
+    expect(priority.status).toBe(503); expect(priority.body).toEqual({ error: 'onlinePbxUnavailable' });
   });
   it('preserves normal manager dialing when reminders are disabled', async () => {
     mocks.getUser.mockResolvedValue({ ...leader, module: 'sales', modules: ['sales'] });

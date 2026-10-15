@@ -18,10 +18,11 @@ interface LeadCallDialogProps {
   phoneNumbers: string[];
   onCall: (phone: string) => void;
   disabled?: boolean;
+  disabledLabel?: string;
 }
 
 export function LeadCallDialog({
-  open, onOpenChange, leadName, phoneNumbers, onCall, disabled = false,
+  open, onOpenChange, leadName, phoneNumbers, onCall, disabled = false, disabledLabel,
 }: LeadCallDialogProps) {
   const { t } = useTranslation();
   const openerRef = useRef<HTMLElement | null>(null);
@@ -49,15 +50,19 @@ export function LeadCallDialog({
               key={phone}
               type="button"
               variant="outline"
-              className="h-auto min-h-12 justify-start py-3"
-              disabled={disabled}
+              className="h-auto min-h-12 justify-start whitespace-normal py-3 text-left"
+              disabled={disabled || Boolean(disabledLabel)}
+              aria-label={disabledLabel ? `${phone}. ${disabledLabel}` : phone}
               onClick={() => {
                 onOpenChange(false);
                 onCall(phone);
               }}
             >
               <Phone className="shrink-0" data-icon="inline-start" aria-hidden="true" />
-              <span className="min-w-0 break-all tabular-nums">{phone}</span>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="break-all tabular-nums">{phone}</span>
+                {disabledLabel ? <span className="break-words">{disabledLabel}</span> : null}
+              </span>
             </Button>
           ))}
         </div>

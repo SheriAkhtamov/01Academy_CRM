@@ -280,6 +280,7 @@ export function TelephonyWidget() {
                 callDuration={callDuration}
                 elapsedSeconds={callElapsed}
                 isPending={telephony.isPending}
+                isLineBusyWithReminder={telephony.isLineBusyWithReminder}
                 activeCallId={activeCall.storedCallId}
                 onAnswer={() => runCallAction(telephony.answerCall)}
                 onHangup={() => runCallAction(telephony.hangupCall)}
@@ -348,12 +349,13 @@ export function TelephonyWidget() {
                       connectionCopy={connectionCopy}
                       isReady={telephony.connectionState === 'ready'}
                       isPending={telephony.isPending}
-                      dialedNumber={dialedNumber}
+                      isLineBusyWithReminder={telephony.isLineBusyWithReminder}
+                          dialedNumber={dialedNumber}
                       onDialedNumberChange={setDialedNumber}
                       onCall={startCall}
                     />
                   ) : (
-                    <TelephonyCallHistory onCallBack={startCall} onCollapse={collapse} />
+                    <TelephonyCallHistory onCallBack={startCall} onCollapse={collapse} isLineBusyWithReminder={telephony.isLineBusyWithReminder} />
                   )}
                 </div>
               </>

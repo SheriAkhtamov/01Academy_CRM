@@ -40,6 +40,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
   activePipelineStatuses,
   onLeadClick,
   onQuickAction,
+  callActionDisabled,
+  callActionLabel,
   onArchiveLead,
   onStatusChange,
   isPending,
@@ -55,6 +57,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
   activePipelineStatuses: KanbanStatus[];
   onLeadClick: (lead: TLead) => void;
   onQuickAction: (action: QuickAction, lead: TLead) => void;
+  callActionDisabled?: boolean;
+  callActionLabel?: string;
   onArchiveLead: (lead: TLead) => void;
   onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
   isPending: boolean;
@@ -90,6 +94,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
           leads={leads}
           onStatusChange={onStatusChange}
           onQuickAction={(action, lead) => onQuickAction(action, lead as TLead)}
+          callActionDisabled={callActionDisabled}
+          callActionLabel={callActionLabel}
           onArchiveLead={(lead) => onArchiveLead(lead as TLead)}
           onLeadClick={(lead) => onLeadClick(lead as TLead)}
           isPending={isPending}

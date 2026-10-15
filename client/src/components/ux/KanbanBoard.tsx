@@ -106,6 +106,8 @@ interface KanbanBoardProps {
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
   onQuickAction?: (action: 'payment' | 'call' | 'message', lead: KanbanLead) => void;
+  callActionDisabled?: boolean;
+  callActionLabel?: string;
   onArchiveLead?: (lead: KanbanLead) => void;
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
@@ -134,6 +136,8 @@ interface LeadCardContentProps {
   lead: KanbanLead;
   currentStatus: KanbanStatus;
   onQuickAction?: KanbanBoardProps['onQuickAction'];
+  callActionDisabled?: boolean;
+  callActionLabel?: string;
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   onEnrollDemo?: (lead: KanbanLead) => void;
   isPending?: boolean;
@@ -150,6 +154,8 @@ function LeadCardContent({
   lead,
   currentStatus,
   onQuickAction,
+  callActionDisabled,
+  callActionLabel,
   onArchiveLead,
   onEnrollDemo,
   isPending,
@@ -230,8 +236,8 @@ function LeadCardContent({
               onClick={stopCardInteraction}
             >
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)} disabled={!canCall}>
-                  <Phone /> {t('call')}
+                <DropdownMenuItem onClick={() => onQuickAction?.('call', lead)} disabled={!canCall || callActionDisabled}>
+                  <Phone className="shrink-0" /> <span className="whitespace-normal">{callActionLabel ?? t('call')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onQuickAction?.('message', lead)} disabled={!canMessage}>
                   <Send /> {t('write')}
@@ -404,6 +410,8 @@ interface KanbanColumnProps {
   status: KanbanStatus;
   leads: KanbanLead[];
   onQuickAction?: KanbanBoardProps['onQuickAction'];
+  callActionDisabled?: boolean;
+  callActionLabel?: string;
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
   onEnrollDemo?: LeadCardContentProps['onEnrollDemo'];
   isPending?: boolean;
@@ -423,6 +431,8 @@ function KanbanColumn({
   leads,
   dragDisabled = false,
   onQuickAction,
+  callActionDisabled,
+  callActionLabel,
   onArchiveLead,
   onEnrollDemo,
   isPending,
@@ -543,6 +553,8 @@ function KanbanColumn({
               statuses={statuses}
               onMove={onMove}
               onQuickAction={onQuickAction}
+              callActionDisabled={callActionDisabled}
+              callActionLabel={callActionLabel}
               onArchiveLead={onArchiveLead}
               onEnrollDemo={onEnrollDemo}
               isPending={isPending}
@@ -575,6 +587,8 @@ export function KanbanBoard({
   leads,
   onStatusChange,
   onQuickAction,
+  callActionDisabled,
+  callActionLabel,
   onArchiveLead,
   onLeadClick,
   isPending,
@@ -724,6 +738,8 @@ export function KanbanBoard({
                 onMove={moveLead}
                 leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
                 onQuickAction={onQuickAction}
+                callActionDisabled={callActionDisabled}
+                callActionLabel={callActionLabel}
                 onArchiveLead={onArchiveLead}
                 onEnrollDemo={setDemoEnrollmentLead}
                 isPending={isPending}

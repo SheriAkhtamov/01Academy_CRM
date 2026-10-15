@@ -94,14 +94,14 @@
 абонент завершил звонок во время благодарности.
 
 Подготовлены две записи Eleven v4: Victoria — Warm & Cinematic (русская,
-14,08 секунды) и Malika — Warm, Calm, Gentle (узбекская, 18,72 секунды).
+11,44 секунды) и Malika — Warm, Calm, Gentle (узбекская, 14,48 секунды).
+Повтор начинается сразу с напоминания, без приветствия и представления компании.
 Тексты:
 
-- RU: «Здравствуйте! Это ZeroOneAcademy. Мы уже напоминали вам о пробном уроке,
+- RU: «Мы уже напоминали вам о пробном уроке,
   но пока не получили ваш ответ. Нам важно знать, сможете ли вы прийти.
   Если придёте — нажмите один. Если не сможете — нажмите два».
-- UZ: «Assalomu alaykum! Sizga ZeroOne Academy’dan qo‘ng‘iroq qilyapmiz.
-  Sinov darsingiz haqida eslatgan edik, lekin hali javobingizni olmadik.
+- UZ: «Sinov darsingiz haqida eslatgan edik, lekin hali javobingizni olmadik.
   Darsga qatnasha olishingizni bilish biz uchun muhim. Keladigan bo‘lsangiz —
   bir tugmasini bosing. Kela olmasangiz — ikki tugmasini bosing».
 

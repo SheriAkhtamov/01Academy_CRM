@@ -20,7 +20,7 @@ const localPeer = () => new RTCPeerConnection({
   iceAdditionalHostAddresses: ['127.0.0.1'], iceInterfaceAddresses: { udp4: '127.0.0.1' },
 });
 
-async function fakeVerto(onInvite?: InviteHandler) {
+async function fakeVerto(onInvite?: InviteHandler, loginError?: { code: number; message: string }) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const messages: Message[] = [];
@@ -31,6 +31,10 @@ async function fakeVerto(onInvite?: InviteHandler) {
       const message = JSON.parse(raw.toString()) as Message;
       messages.push(message);
       if (!message.method) return;
+      if (message.method === 'login' && loginError) {
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: loginError }));
+        return;
+      }
       socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id,
         result: message.method === 'verto.ping' ? { message: 'PONG' } : { method: message.method } }));
       if (message.method === 'verto.invite') {
@@ -104,6 +108,63 @@ async function answeringPeer(socket: WebSocket, invite: Message) {
 afterEach(async () => {
   await Promise.allSettled(cleanups.splice(0).map((cleanup) => cleanup()));
   vi.restoreAllMocks();
+});
+
+describe('safe reminder transport diagnostics', () => {
+  it('identifies a rejected login without logging credentials or the provider message', async () => {
+    const onDiagnostic = vi.fn();
+    const harness = await fakeVerto(undefined, { code: -32000, message: 'private-provider-detail test-password' });
+    const result = await performVertoReminderCall(harness.credentials, callInput({ onDiagnostic }), dependencies());
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: false, callId: null });
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'rpc_error', method: 'login', code: -32000, phase: 'login', callStarted: false, answered: false,
+    }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'finished', outcome: 'failed' }));
+    expect(harness.messages.some(message => message.method === 'verto.invite')).toBe(false);
+    const logged = JSON.stringify(onDiagnostic.mock.calls);
+    for (const sensitive of ['test-password', 'private-provider-detail', 'test-user', '+998901234567', 'a=ice-pwd:']) {
+      expect(logged).not.toContain(sensitive);
+    }
+  });
+
+  it('identifies a displaced session after INVITE without answering another call', async () => {
+    const onDiagnostic = vi.fn();
+    const harness = await fakeVerto((socket) => event(socket, 'verto.punt', {}, 'displaced'));
+    const result = await performVertoReminderCall(harness.credentials, callInput({ onDiagnostic }), dependencies());
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'session_replaced', callStarted: true, answered: false,
+    }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'finished', outcome: 'failed', callStarted: true, terminationConfirmed: true,
+    }));
+    expect(harness.messages.filter(message => message.method === 'verto.invite')).toHaveLength(1);
+  });
+
+  it.each(['NORMAL_CLEARING', 'private-provider-detail test-password'])('reports a pre-answer hangup with a safe cause (%s)', async cause => {
+    const onDiagnostic = vi.fn();
+    const harness = await fakeVerto((socket, invite) => event(socket, 'verto.bye', {
+      callID: invite.params!.dialogParams.callID, cause,
+    }, 'early-hangup'));
+    const result = await performVertoReminderCall(harness.credentials, callInput({ onDiagnostic }), dependencies());
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'remote_end', callStarted: true, answered: false,
+      cause: cause === 'NORMAL_CLEARING' ? cause : 'UNSPECIFIED',
+    }));
+    expect(JSON.stringify(onDiagnostic.mock.calls)).not.toContain('test-password');
+  });
+
+  it('completes media playback even when a diagnostic observer throws', async () => {
+    const harness = await fakeVerto(async (socket, invite) => {
+      const received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+    });
+    const onDiagnostic = vi.fn(() => { throw new Error('Observer unavailable'); });
+    const result = await performVertoReminderCall(harness.credentials, callInput({ onDiagnostic }), dependencies());
+    expect(result).toMatchObject({ outcome: 'played', callStarted: true, terminationConfirmed: true });
+    expect(onDiagnostic).toHaveBeenCalled();
+  });
 });
 
 describe('reminder confirmation dialogue', () => {

@@ -9,7 +9,7 @@ import type WebSocket from 'ws';
 import { VOICE_REMINDER_MAX_AUDIO_SECONDS, VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS, type VoiceReminderResponse } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderCallOutcome, VoiceReminderCallResult, VoiceReminderLine } from '../../modules/voice-reminders/application/ports';
 import type { OnlinePbxWebRtcCredentials } from '../../services/onlinepbx';
-import { VertoRpcClient, VertoTransportError, type VertoEvent } from './verto-rpc';
+import { VertoRpcClient, VertoTransportError, type VertoEvent, type VertoRpcDiagnostic } from './verto-rpc';
 import { DtmfReceiver } from './dtmf-receiver';
 
 const execute = promisify(execFile);
@@ -19,6 +19,24 @@ const FRAME_MILLISECONDS = 20;
 const MAX_AUDIO_BYTES = VOICE_REMINDER_MAX_AUDIO_SECONDS * SAMPLE_RATE;
 
 type WithoutConfirmation<Value> = Value extends unknown ? Omit<Value, 'confirmation'> : never;
+export type VertoCallPhase = 'preflight' | 'audio_decode' | 'login' | 'offer' | 'authorize' | 'invite'
+  | 'ringing' | 'media_connect' | 'playback' | 'confirmation' | 'acknowledgement' | 'hangup';
+export type VertoCallDiagnostic = {
+  event: 'phase' | 'peer_state' | 'early_media' | 'answer' | 'remote_description_failed' | 'remote_end'
+    | 'session_replaced' | 'timeout' | 'failed' | 'finished' | VertoRpcDiagnostic['event'];
+  phase: VertoCallPhase;
+  elapsedMs: number;
+  callStarted: boolean;
+  answered: boolean;
+  peerState: string;
+  iceState: string;
+  dtlsState: string | null;
+  cause?: string;
+  method?: VertoRpcDiagnostic['method'];
+  code?: number;
+  outcome?: VoiceReminderCallOutcome;
+  terminationConfirmed?: boolean;
+};
 export type VertoReminderCallInput = WithoutConfirmation<Parameters<VoiceReminderLine['call']>[0]> & {
   confirmation?: {
     yesAudioPath: string;
@@ -29,6 +47,7 @@ export type VertoReminderCallInput = WithoutConfirmation<Parameters<VoiceReminde
   callId?: string;
   onStarted?: () => Promise<void>;
   signal?: AbortSignal;
+  onDiagnostic?: (event: VertoCallDiagnostic) => void;
 };
 export type VertoCallDependencies = {
   createSocket?: (url: string) => WebSocket;
@@ -125,6 +144,17 @@ export async function performVertoReminderCall(
   let savedResponse: VoiceReminderResponse | undefined;
   let callDeadline = input.deadline.getTime();
   let acceptingResponse = false;
+  const diagnosticStartedAt = Date.now();
+  let phase: VertoCallPhase = 'preflight';
+  const diagnose = (event: VertoCallDiagnostic['event'], details: Partial<Pick<VertoCallDiagnostic,
+    'cause' | 'method' | 'code' | 'outcome' | 'terminationConfirmed'>> = {}) => {
+    try {
+      input.onDiagnostic?.({ event, phase, elapsedMs: Date.now() - diagnosticStartedAt,
+        callStarted, answered, peerState: peer.connectionState, iceState: peer.iceConnectionState,
+        dtlsState: sender.transport?.state ?? null, ...details });
+    } catch { /* Diagnostics must never change call delivery or termination. */ }
+  };
+  const enter = (next: VertoCallPhase) => { phase = next; diagnose('phase'); };
   const collectDigit = (digit: string) => {
     if (!acceptingResponse || !answered || stopped || ending || pendingResponse) return;
     if (digit === '1' || digit === '2') pendingResponse = digit === '1' ? 'yes' : 'no';
@@ -155,7 +185,9 @@ export async function performVertoReminderCall(
       return await Promise.race([
         task,
         interrupted.then((outcome) => { throw new CallStopped(outcome); }),
-        new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new VertoTransportError()), timeoutMs); }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => { diagnose('timeout'); reject(new VertoTransportError()); }, timeoutMs);
+        }),
       ]);
     } finally { if (timeout) clearTimeout(timeout); }
   };
@@ -171,14 +203,17 @@ export async function performVertoReminderCall(
   const mediaConnected = () => peer.connectionState === 'connected'
     && sender.transport?.state === 'connected' && !sender.stopped && sender.codec?.payloadType === 0;
   const unsubscribePeer = peer.connectionStateChange.subscribe((state) => {
+    diagnose('peer_state');
     if (state === 'failed' || state === 'disconnected' || state === 'closed') stop('failed');
   });
 
   try {
+    diagnose('phase');
     if (!/^\+?[1-9]\d{7,14}$/.test(input.phone) || !Number.isFinite(input.deadline.getTime())) {
       throw new VertoTransportError();
     }
     await check();
+    enter('audio_decode');
     const audio = await bounded((dependencies.decodeAudio ?? decodeReminderAudio)(input.audioPath, lifecycle.signal), 20_000);
     if (!audio.length || audio.length > MAX_AUDIO_BYTES) throw new VertoTransportError();
     const replyAudio = input.confirmation ? await bounded(Promise.all([
@@ -192,10 +227,10 @@ export async function performVertoReminderCall(
       || audio.length + Math.max(...replyAudio.map(reply => reply.length))
         + VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * SAMPLE_RATE > MAX_AUDIO_BYTES)) throw new VertoTransportError();
     await check();
-    rpc = new VertoRpcClient(credentials.websocketUrl, dependencies.createSocket);
+    rpc = new VertoRpcClient(credentials.websocketUrl, dependencies.createSocket, ({ event, ...details }) => diagnose(event, details));
     unsubscribe.push(rpc.onFailure(() => stop('failed')));
     unsubscribe.push(rpc.onEvent((event) => {
-      if (event.method === 'verto.punt') { stop('failed'); return; }
+      if (event.method === 'verto.punt') { diagnose('session_replaced'); stop('failed'); return; }
       // A shared extension may also receive the managers' inbound fork. ACK is
       // handled by the RPC client; answering or rejecting that fork is forbidden.
       if (eventCallId(event) !== callId || stopped || ending) return;
@@ -206,12 +241,14 @@ export async function performVertoReminderCall(
       if (event.method === 'verto.bye') {
         receivedBye = true;
         const cause = String(event.params.cause ?? '').toUpperCase();
+        diagnose('remote_end', { cause: /^[A-Z0-9_]{1,64}$/.test(cause) ? cause : 'UNSPECIFIED' });
         const unanswered = ['NO_ANSWER', 'NO_USER_RESPONSE', 'USER_BUSY', 'CALL_REJECTED'].includes(cause);
         stop(!answered && unanswered ? 'unanswered' : 'failed');
         return;
       }
       if (event.method !== 'verto.media' && event.method !== 'verto.answer') return;
       const final = event.method === 'verto.answer';
+      diagnose(final ? 'answer' : 'early_media');
       descriptions = descriptions.then(async () => {
         if (stopped || ending || answered) return;
         if (!remoteAudioApplied) {
@@ -230,13 +267,16 @@ export async function performVertoReminderCall(
           remoteAudioApplied = true;
         }
         if (final) answered = true;
-      }).catch(() => { stop('failed'); });
+      }).catch(() => { diagnose('remote_description_failed'); stop('failed'); });
     }));
+    enter('login');
     await bounded(rpc.login(credentials), 16_000);
+    enter('offer');
     await bounded(peer.setLocalDescription(await peer.createOffer()), 8_000);
     const sdp = peer.localDescription?.sdp;
     if (!sdp || peer.iceGatheringState !== 'complete') throw new VertoTransportError();
     await check();
+    enter('authorize');
     if (input.onStarted) await bounded(input.onStarted(), 2_000);
     await check();
     // From this point a network failure is ambiguous. It counts as an attempted
@@ -250,6 +290,7 @@ export async function performVertoReminderCall(
         try { await check(); } catch { break; }
       }
     })();
+    enter('invite');
     await bounded(rpc.request('verto.invite', {
       sdp,
       dialogParams: {
@@ -258,11 +299,13 @@ export async function performVertoReminderCall(
         useVideo: false, useStereo: false,
       },
     }), 8_000);
+    enter('ringing');
     const ringDeadline = startedAt + (dependencies.ringTimeoutMs ?? 45_000);
     while (!answered) {
       if (Date.now() >= ringDeadline) throw new CallStopped('unanswered');
       await bounded(delay(20), 1_000);
     }
+    enter('media_connect');
     const mediaDeadline = Date.now() + (dependencies.mediaTimeoutMs ?? 8_000);
     while (!mediaConnected()) {
       if (Date.now() >= mediaDeadline) throw new VertoTransportError();
@@ -301,8 +344,10 @@ export async function performVertoReminderCall(
         await bounded(delay(Math.max(0, nextFrameAt - Date.now())), 1_000);
       }
     };
+    enter('playback');
     await play(audio, true);
     if (input.confirmation && replyAudio) {
+      enter('confirmation');
       const waitUntil = Date.now() + (dependencies.confirmationWaitMs ?? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * 1_000);
       while (!pendingResponse && Date.now() < waitUntil) {
         const frameStartedAt = Date.now();
@@ -332,12 +377,14 @@ export async function performVertoReminderCall(
         if (!stored) throw new VertoTransportError();
         savedResponse = pendingResponse;
         await check();
+        enter('acknowledgement');
         await play(replyAudio[savedResponse === 'yes' ? 0 : 1]);
       }
     }
     await check();
     result = { outcome: 'played', callStarted, callId, ...(savedResponse ? { response: savedResponse } : {}) };
   } catch (error) {
+    diagnose('failed', { outcome: error instanceof CallStopped ? error.outcome : stopped ?? 'failed' });
     result = {
       outcome: error instanceof CallStopped ? error.outcome : stopped ?? 'failed',
       callStarted, callId: callStarted ? callId : null,
@@ -352,6 +399,7 @@ export async function performVertoReminderCall(
     unsubscribe.forEach((remove) => remove());
     unsubscribePeer.unSubscribe();
     if (rpc && callStarted && !receivedBye) {
+      enter('hangup');
       try {
         await rpc.request('verto.bye', {
           dialogParams: { callID: callId }, cause: result.outcome === 'played' ? 'NORMAL_CLEARING' : 'ORIGINATOR_CANCEL',
@@ -367,5 +415,6 @@ export async function performVertoReminderCall(
     await monitor;
   }
   if (callStarted) result.terminationConfirmed = receivedBye || acknowledgedBye;
+  diagnose('finished', { outcome: result.outcome, terminationConfirmed: result.terminationConfirmed });
   return result;
 }

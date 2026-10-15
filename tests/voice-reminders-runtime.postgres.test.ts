@@ -11,6 +11,7 @@ import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminde
 import { LocalVoiceReminderAudioStore, inspectReminderAudio } from '../server/modules/voice-reminders/infrastructure/audio-store';
 import type { performVertoReminderCall } from '../server/infrastructure/voice-telephony/verto-call';
 import type { OnlinePbxWebRtcCredentials } from '../server/services/onlinepbx';
+import { logger } from '../server/lib/logger';
 
 vi.mock('../server/db', () => ({ pool: null }));
 const url = process.env.PORTAL_TEST_DATABASE_URL;
@@ -172,6 +173,18 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       expect((await database.query('SELECT * FROM voice_reminder_participant_response(1)')).rows[0].response).toBe('no');
       expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
     } finally { await runtime.close(); }
+  });
+
+  it('delivers and releases the line even when diagnostic logging throws', async () => {
+    const logging = vi.spyOn(logger, 'log').mockImplementation(() => { throw new Error('Log transport unavailable'); });
+    const call = mockCall();
+    const runtime = makeRuntime(provider(), call);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT status FROM voice_reminder_jobs')).rows[0].status).toBe('played');
+      expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    } finally { await runtime.close(); logging.mockRestore(); }
   });
 
   it('uses the explicit Uzbek manual-test language and saves its response without changing demo data', async () => {

@@ -11,10 +11,16 @@ import { PostgresVoiceReminderRepository } from '../modules/voice-reminders/infr
 import { PostgresVoiceReminderTestCallRepository } from '../modules/voice-reminders/infrastructure/postgres-test-call-repository';
 import { createVoiceReminderRouter } from '../modules/voice-reminders/http/voice-reminders.router';
 import { pool } from '../db';
-import type { OnlinePbxWebRtcCredentials } from '../services/onlinepbx';
+import { OnlinePbxError, type OnlinePbxWebRtcCredentials } from '../services/onlinepbx';
+import { logger } from '../lib/logger';
 import { TelephonyChannelReservations, type ProviderChannelSnapshot } from './voice-telephony/channel-reservations';
 import { RobotCallReceipts } from './voice-telephony/robot-call-receipts';
 import { performVertoReminderCall } from './voice-telephony/verto-call';
+
+const logCallDiagnostic = (message: string, details: Record<string, unknown>, warning = false) => {
+  try { logger.log(warning ? 'warn' : 'info', message, details); }
+  catch { /* A log transport failure must not cancel or repeat a telephone call. */ }
+};
 
 export interface VoiceReminderCapacityProvider {
   snapshot(): Promise<ProviderChannelSnapshot>;
@@ -78,6 +84,9 @@ export const createVoiceRemindersRuntime = (
             return { outcome: 'cancelled', callStarted: false, callId: null };
           }
           let markerWritten = false;
+          let setupPhase = 'bind';
+          const diagnosticIdentity = { callId: lease.clientCallId, extension: lease.extension,
+            ...(isTest ? { testCallId: input.testCallId } : { jobId: input.jobId }) };
           try {
             const binding = isTest ? { testCallId: input.testCallId! } : { jobId: input.jobId! };
             const bound = await channels.bind(lease.id, { phone: input.phone, ...binding, clientCallId: lease.clientCallId });
@@ -89,7 +98,10 @@ export const createVoiceRemindersRuntime = (
               }).catch(() => { alive = false; controller.abort(); });
             }, 30_000);
             heartbeat.unref();
+            setupPhase = 'credentials';
+            logCallDiagnostic('Voice reminder call setup', { ...diagnosticIdentity, phase: setupPhase });
             const credentials = await provider.getCredentials(lease.extension);
+            setupPhase = 'audio_sources';
             const { confirmation: confirmationSources, ...callInput } = input;
             const confirmation = confirmationSources ? {
               yesAudioPath: await audioStore.resolve(confirmationSources.yesAudio.storageKey),
@@ -97,8 +109,10 @@ export const createVoiceRemindersRuntime = (
               promptDurationSeconds: confirmationSources.promptDurationSeconds,
               onResponse: confirmationSources.onResponse,
             } : undefined;
+            setupPhase = 'transport';
             const result = await (options.performCall ?? performVertoReminderCall)(credentials, {
               ...callInput, confirmation, callId: lease.clientCallId, signal: controller.signal,
+              onDiagnostic: event => logCallDiagnostic('Voice reminder call diagnostic', { ...diagnosticIdentity, ...event }),
               shouldContinue: (verifyAudio = true) => alive && !stopping ? input.shouldContinue(verifyAudio) : Promise.resolve(false),
               onStarted: async () => {
                 const identity = { callId: lease.clientCallId, extension: lease.extension,
@@ -112,7 +126,9 @@ export const createVoiceRemindersRuntime = (
             });
             await receipts.complete(lease.clientCallId, result.callStarted, result.terminationConfirmed === true);
             return result;
-          } catch {
+          } catch (error) {
+            logCallDiagnostic('Voice reminder call setup failed', { ...diagnosticIdentity, phase: setupPhase, markerWritten,
+              errorCode: error instanceof OnlinePbxError ? error.clientCode : 'voiceReminderTransportUnavailable' }, true);
             if (markerWritten) await receipts.complete(lease.clientCallId, true, false);
             return { outcome: 'failed', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };
           }

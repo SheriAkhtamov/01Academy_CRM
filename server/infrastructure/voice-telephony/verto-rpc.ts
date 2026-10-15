@@ -3,7 +3,14 @@ import WebSocket from 'ws';
 import type { OnlinePbxWebRtcCredentials } from '../../services/onlinepbx';
 
 export type VertoEvent = { method: string; params: Record<string, unknown> };
+type VertoMethod = 'login' | 'verto.invite' | 'verto.bye';
+export type VertoRpcDiagnostic = {
+  event: 'rpc_error' | 'rpc_timeout' | 'socket_error' | 'socket_closed';
+  method?: VertoMethod;
+  code?: number;
+};
 type PendingRequest = {
+  method: VertoMethod;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -26,11 +33,17 @@ export class VertoRpcClient {
 
   constructor(url: string, createSocket: (url: string) => WebSocket = (address) => new WebSocket(address, {
     handshakeTimeout: 8_000, maxPayload: 256 * 1024,
-  })) {
+  }), private readonly onDiagnostic?: (event: VertoRpcDiagnostic) => void) {
     this.socket = createSocket(url);
     this.socket.on('message', (data) => this.receive(data.toString()));
-    this.socket.on('error', () => this.fail());
-    this.socket.on('close', () => this.fail());
+    this.socket.on('error', () => { this.diagnose({ event: 'socket_error' }); this.fail(); });
+    this.socket.on('close', (code) => { this.diagnose({ event: 'socket_closed', code }); this.fail(); });
+  }
+
+  private diagnose(event: VertoRpcDiagnostic): void {
+    // Diagnostic failures cannot affect the call. Never include request
+    // parameters, provider error messages, socket reasons or credentials.
+    try { this.onDiagnostic?.(event); } catch { /* Observability only. */ }
   }
 
   onEvent(listener: (event: VertoEvent) => void): () => void {
@@ -72,7 +85,7 @@ export class VertoRpcClient {
     // lifecycle remain bounded; a failed/closed socket still fails the call.
   }
 
-  request(method: 'login' | 'verto.invite' | 'verto.bye', params: Record<string, unknown>, timeoutMs = 8_000): Promise<unknown> {
+  request(method: VertoMethod, params: Record<string, unknown>, timeoutMs = 8_000): Promise<unknown> {
     if (this.closing || this.failed || this.socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(new VertoTransportError());
     }
@@ -80,9 +93,10 @@ export class VertoRpcClient {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
+        this.diagnose({ event: 'rpc_timeout', method });
         reject(new VertoTransportError());
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timeout });
+      this.pending.set(id, { method, resolve, reject, timeout });
       this.socket.send(JSON.stringify({ jsonrpc: '2.0', method, params: { ...params, sessid: this.sessionId }, id }), (error) => {
         if (error) this.fail();
       });
@@ -112,7 +126,13 @@ export class VertoRpcClient {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timeout);
-    if (message.error || !('result' in message)) pending.reject(new VertoTransportError());
+    if (message.error || !('result' in message)) {
+      const error = message.error;
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      this.diagnose({ event: 'rpc_error', method: pending.method,
+        ...(typeof code === 'number' && Number.isSafeInteger(code) ? { code } : {}) });
+      pending.reject(new VertoTransportError());
+    }
     else pending.resolve(message.result);
   }
 

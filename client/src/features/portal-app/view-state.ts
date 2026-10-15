@@ -15,12 +15,14 @@ export function usePortalViewState<T extends Record<string, string>>(
       if (
         stored &&
         typeof stored === "object" &&
-        Object.keys(initial).every((field) => typeof stored[field] === "string")
+        !Array.isArray(stored)
       )
         return {
           ...initial,
           ...Object.fromEntries(
-            Object.keys(initial).map((field) => [field, stored[field]]),
+            Object.keys(initial)
+              .filter((field) => typeof stored[field] === "string")
+              .map((field) => [field, stored[field]]),
           ),
         } as T;
     } catch {
@@ -32,23 +34,4 @@ export function usePortalViewState<T extends Record<string, string>>(
     sessionStorage.setItem(key, JSON.stringify(value));
   }, [key, value]);
   return [value, setValue] as const;
-}
-
-export function usePortalListScroll(area: string, ready: boolean) {
-  const { account, subject } = usePortal();
-  const key = `portal-scroll:${account?.id}:${subject?.linkId}:${area}`;
-  useEffect(() => {
-    if (!ready) return;
-    const saved = Number(sessionStorage.getItem(key) ?? 0);
-    const frame = requestAnimationFrame(() =>
-      window.scrollTo({ top: Number.isFinite(saved) ? saved : 0 }),
-    );
-    const remember = () => sessionStorage.setItem(key, String(window.scrollY));
-    window.addEventListener("scroll", remember, { passive: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      remember();
-      window.removeEventListener("scroll", remember);
-    };
-  }, [key, ready]);
 }

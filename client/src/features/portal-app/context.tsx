@@ -79,19 +79,55 @@ type PortalContextValue = {
   acceptSession: (session: PortalSessionDto) => void;
   allowed: (permission: PortalPermission, studentOnly?: boolean) => boolean;
   guarded: (action: () => void) => void;
-  setUnsaved: (unsaved: boolean) => void;
-  registerUnsaved: (id: string, unsaved: boolean) => void;
+  guardScope: (scope: string, action: () => void) => void;
+  registerUnsaved: (
+    id: string,
+    unsaved: boolean,
+    scopes: readonly string[],
+  ) => void;
 };
 const PortalContext = createContext<PortalContextValue | null>(null);
+const PortalFormScopeContext = createContext<readonly string[]>([]);
+
+/** React portals keep this ancestry, so nested dialogs remain in their parent form scope. */
+export function PortalFormScope({
+  id,
+  children,
+}: {
+  id: string;
+  children: ReactNode;
+}) {
+  const parents = useContext(PortalFormScopeContext);
+  const scopes = useMemo(() => [...parents, id], [parents, id]);
+  return (
+    <PortalFormScopeContext.Provider value={scopes}>
+      {children}
+    </PortalFormScopeContext.Provider>
+  );
+}
+
+export function usePortalFormScope() {
+  const value = useContext(PortalContext);
+  const id = useId();
+  const guardScope = value?.guardScope;
+  const guarded = useCallback(
+    (action: () => void) => guardScope?.(id, action),
+    [guardScope, id],
+  );
+  if (!value) throw new Error("Portal context required");
+  return { id, guarded };
+}
+
 export function usePortal() {
   const value = useContext(PortalContext);
   const id = useId();
+  const scopes = useContext(PortalFormScopeContext);
   const register = value?.registerUnsaved;
   const setUnsaved = useCallback(
-    (unsaved: boolean) => register?.(id, unsaved),
-    [register, id],
+    (unsaved: boolean) => register?.(id, unsaved, scopes),
+    [register, id, scopes],
   );
-  useEffect(() => () => register?.(id, false), [register, id]);
+  useEffect(() => () => register?.(id, false, scopes), [register, id, scopes]);
   if (!value) throw new Error("Portal context required");
   return { ...value, setUnsaved };
 }
@@ -119,27 +155,24 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     accountId: number;
     linkId: number | null;
   } | null>(null);
-  const [unsavedForms, setUnsavedForms] = useState<Record<string, boolean>>({});
-  const unsaved = Object.values(unsavedForms).some(Boolean);
+  const [unsavedForms, setUnsavedForms] = useState<
+    Record<string, { scopes: readonly string[] }>
+  >({});
+  const unsaved = Object.keys(unsavedForms).length > 0;
   const registerUnsaved = useCallback(
-    (id: string, value: boolean) =>
+    (id: string, value: boolean, scopes: readonly string[]) =>
       setUnsavedForms((previous) => {
-        if (Boolean(previous[id]) === value) return previous;
+        if (value ? previous[id]?.scopes === scopes : !previous[id])
+          return previous;
         const next = { ...previous };
-        if (value) next[id] = true;
+        if (value) next[id] = { scopes };
         else delete next[id];
         return next;
       }),
     [],
   );
-  const setUnsaved = useCallback(
-    (value: boolean) => {
-      if (!value) setUnsavedForms({});
-      else registerUnsaved("legacy", true);
-    },
-    [registerUnsaved],
-  );
   const [pending, setPending] = useState<(() => void) | null>(null);
+  const approvedActionDepth = useRef(0);
   const account = query.data?.account ?? null;
   const languageAccount = useRef<number | null>(null);
   useEffect(() => {
@@ -229,10 +262,22 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
   }, [unsaved]);
   const guarded = useCallback(
     (action: () => void) => {
-      if (unsaved) setPending(() => action);
+      if (unsaved && approvedActionDepth.current === 0)
+        setPending(() => action);
       else action();
     },
     [unsaved],
+  );
+  const guardScope = useCallback(
+    (scope: string, action: () => void) => {
+      if (
+        approvedActionDepth.current === 0 &&
+        Object.values(unsavedForms).some((form) => form.scopes.includes(scope))
+      )
+        setPending(() => action);
+      else action();
+    },
+    [unsavedForms],
   );
   const selectSubject = useCallback(
     (linkId: number | null) =>
@@ -262,8 +307,8 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     (permission: PortalPermission, studentOnly = false) =>
       Boolean(
         subject &&
-        (!studentOnly || subject.kind === "self") &&
-        subject.permissions.includes(permission),
+          (!studentOnly || subject.kind === "self") &&
+          subject.permissions.includes(permission),
       ),
     [subject],
   );
@@ -288,7 +333,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
         acceptSession,
         allowed,
         guarded,
-        setUnsaved,
+        guardScope,
         registerUnsaved,
       }}
     >
@@ -304,8 +349,15 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
         onConfirm={() => {
           const action = pending;
           setPending(null);
-          setUnsaved(false);
-          if (action) allowNavigation(action);
+          if (!action) return;
+          // A confirmed action may synchronously select a subject and then
+          // navigate. Its nested guards share this approval; later work does not.
+          approvedActionDepth.current += 1;
+          try {
+            allowNavigation(action);
+          } finally {
+            approvedActionDepth.current -= 1;
+          }
         }}
       />
     </PortalContext.Provider>

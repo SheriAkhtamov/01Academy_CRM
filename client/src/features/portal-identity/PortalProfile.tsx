@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type { PortalPermission } from "@shared/contracts/portal-identity";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  PortalPermission,
+  PortalSessionDto,
+} from "@shared/contracts/portal-identity";
 import type { TranslationKey } from "@/lib/i18n";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
@@ -19,13 +22,19 @@ import {
 import { portalIdentityApi } from "../portal-app/api";
 import {
   AlertDialog,
+  AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogCancel,
   AlertDialogFooter,
 } from "@/components/ui/alert-dialog";
-import { PortalAlertDialogContent } from "../learning-content/modal-content";
-import { usePortal } from "../portal-app/context";
+import { PortalAlertDialogContent } from "../portal-app/modal-content";
+import {
+  usePortal,
+  portalSessionKey,
+  usePortalFormScope,
+  PortalFormScope,
+} from "../portal-app/context";
 import { PortalSelect } from "../portal-app/controls";
 import {
   PortalDialogContent as DialogContent,
@@ -52,26 +61,36 @@ const permissionKeys: Record<PortalPermission, TranslationKey> = {
 export function PortalProfile() {
   const { t, language, setLanguage } = useTranslation();
   const message = usePortalError();
-  const {
-    account,
-    subject,
-    allowed,
-    acceptSession,
-    refresh,
-    guarded,
-    setUnsaved,
-  } = usePortal();
+  const { account, subject, allowed, acceptSession, setUnsaved } = usePortal();
+  const passwordScope = usePortalFormScope();
+  const childScope = usePortalFormScope();
+  const client = useQueryClient();
   const [name, setName] = useState(account?.fullName ?? "");
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [child, setChild] = useState(false);
+  const dirty = name !== account?.fullName || language !== account?.locale;
   useEffect(() => {
-    setUnsaved(name !== account?.fullName || language !== account?.locale);
+    setUnsaved(dirty);
     return () => setUnsaved(false);
-  }, [name, language, account?.fullName, account?.locale, setUnsaved]);
+  }, [dirty, setUnsaved]);
   const save = useMutation({
-    mutationFn: () =>
-      portalIdentityApi.profile({ fullName: name, locale: language }),
-    onSuccess: refresh,
+    mutationFn: (values: { fullName: string; locale: "ru" | "en" }) =>
+      portalIdentityApi.profile(values),
+    onSuccess: (saved, submitted) => {
+      client.setQueryData<PortalSessionDto>(portalSessionKey, (current) =>
+        current?.account?.id === saved.id
+          ? { ...current, account: saved }
+          : current,
+      );
+      if (
+        client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id !==
+        saved.id
+      )
+        return;
+      setName((current) =>
+        current === submitted.fullName ? saved.fullName : current,
+      );
+    },
   });
   return (
     <>
@@ -86,7 +105,7 @@ export function PortalProfile() {
               className="space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
-                save.mutate();
+                save.mutate({ fullName: name, locale: language });
               }}
             >
               <div className="space-y-2">
@@ -115,7 +134,7 @@ export function PortalProfile() {
                   {message(save.error, "portalSaveError")}
                 </p>
               )}
-              {save.isSuccess && (
+              {save.isSuccess && !dirty && (
                 <p role="status" className="text-muted-foreground">
                   {t("portalSaved")}
                 </p>
@@ -179,7 +198,7 @@ export function PortalProfile() {
       <Dialog
         open={passwordOpen}
         onOpenChange={(open) => {
-          if (!open) guarded(() => setPasswordOpen(false));
+          if (!open) passwordScope.guarded(() => setPasswordOpen(false));
         }}
       >
         <DialogContent className="portal-ui">
@@ -187,18 +206,20 @@ export function PortalProfile() {
             <DialogTitle>{t("portalChangePassword")}</DialogTitle>
             <DialogDescription>{account?.fullName}</DialogDescription>
           </DialogHeader>
-          {passwordOpen && (
-            <PasswordForm
-              onClose={() => setPasswordOpen(false)}
-              onSuccess={acceptSession}
-            />
-          )}
+          <PortalFormScope id={passwordScope.id}>
+            {passwordOpen && (
+              <PasswordForm
+                onClose={() => setPasswordOpen(false)}
+                onSuccess={acceptSession}
+              />
+            )}
+          </PortalFormScope>
         </DialogContent>
       </Dialog>
       <Dialog
         open={child}
         onOpenChange={(open) => {
-          if (!open) guarded(() => setChild(false));
+          if (!open) childScope.guarded(() => setChild(false));
         }}
       >
         <DialogContent className="portal-ui">
@@ -206,7 +227,9 @@ export function PortalProfile() {
             <DialogTitle>{t("portalChildCredentials")}</DialogTitle>
             <DialogDescription>{subject?.studentName}</DialogDescription>
           </DialogHeader>
-          {child && <ChildCredentials onClose={() => setChild(false)} />}
+          <PortalFormScope id={childScope.id}>
+            {child && <ChildCredentials onClose={() => setChild(false)} />}
+          </PortalFormScope>
         </DialogContent>
       </Dialog>
     </>
@@ -255,47 +278,49 @@ function PasswordForm({
         action.mutate();
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="current-password">{t("portalCurrentPassword")}</Label>
-        <Input
-          id="current-password"
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="new-password">{t("portalNewPassword")}</Label>
-        <Input
-          id="new-password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="repeat-password">{t("portalConfirmPassword")}</Label>
-        <Input
-          id="repeat-password"
-          type="password"
-          autoComplete="new-password"
-          value={repeat}
-          onChange={(event) => setRepeat(event.target.value)}
-          required
-        />
-      </div>
-      {(validation || action.error) && (
-        <p role="alert" className="text-destructive">
-          {validation || message(action.error, "portalSaveError")}
-        </p>
-      )}
-      <DialogFooter className="border-t border-border/70 pt-4">
-        <Button disabled={action.isPending}>{t("portalSave")}</Button>
-      </DialogFooter>
+      <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="current-password">{t("portalCurrentPassword")}</Label>
+          <Input
+            id="current-password"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="new-password">{t("portalNewPassword")}</Label>
+          <Input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="repeat-password">{t("portalConfirmPassword")}</Label>
+          <Input
+            id="repeat-password"
+            type="password"
+            autoComplete="new-password"
+            value={repeat}
+            onChange={(event) => setRepeat(event.target.value)}
+            required
+          />
+        </div>
+        {(validation || action.error) && (
+          <p role="alert" className="text-destructive">
+            {validation || message(action.error, "portalSaveError")}
+          </p>
+        )}
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button disabled={action.isPending}>{t("portalSave")}</Button>
+        </DialogFooter>
+      </fieldset>
     </form>
   );
 }
@@ -343,59 +368,61 @@ function ChildCredentials({ onClose }: { onClose: () => void }) {
         setConfirm(true);
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="child-login">{t("portalChildLogin")}</Label>
-        <Input
-          id="child-login"
-          autoComplete="off"
-          value={login}
-          onChange={(event) => setLogin(event.target.value)}
-          required
+      <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="child-login">{t("portalChildLogin")}</Label>
+          <Input
+            id="child-login"
+            autoComplete="off"
+            value={login}
+            onChange={(event) => setLogin(event.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="child-password">{t("portalNewPassword")}</Label>
+          <Input
+            id="child-password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="parent-password">{t("portalVerifyPassword")}</Label>
+          <Input
+            id="parent-password"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            required
+          />
+        </div>
+        {(validation || action.error) && (
+          <p role="alert" className="text-destructive">
+            {validation || message(action.error, "portalSaveError")}
+          </p>
+        )}
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button disabled={action.isPending}>{t("portalSave")}</Button>
+        </DialogFooter>
+        <ConfirmAction
+          open={confirm}
+          onOpenChange={setConfirm}
+          titleKey="portalChildCredentialsConfirmTitle"
+          description="portalChildCredentialsConfirmDescription"
+          objectName={subject?.studentName}
+          action="portalSave"
+          pending={action.isPending}
+          error={
+            action.error ? message(action.error, "portalSaveError") : undefined
+          }
+          onConfirm={() => action.mutate()}
         />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="child-password">{t("portalNewPassword")}</Label>
-        <Input
-          id="child-password"
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="parent-password">{t("portalVerifyPassword")}</Label>
-        <Input
-          id="parent-password"
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          required
-        />
-      </div>
-      {(validation || action.error) && (
-        <p role="alert" className="text-destructive">
-          {validation || message(action.error, "portalSaveError")}
-        </p>
-      )}
-      <DialogFooter className="border-t border-border/70 pt-4">
-        <Button disabled={action.isPending}>{t("portalSave")}</Button>
-      </DialogFooter>
-      <ConfirmAction
-        open={confirm}
-        onOpenChange={setConfirm}
-        titleKey="portalChildCredentialsConfirmTitle"
-        description="portalChildCredentialsConfirmDescription"
-        objectName={subject?.studentName}
-        action="portalSave"
-        pending={action.isPending}
-        error={
-          action.error ? message(action.error, "portalSaveError") : undefined
-        }
-        onConfirm={() => action.mutate()}
-      />
+      </fieldset>
     </form>
   );
 }
@@ -425,7 +452,7 @@ function PortalSessions() {
       </CardHeader>
       <CardContent className="space-y-3 p-0">
         {query.isPending ? (
-          <PortalLoading />
+          <PortalLoading variant="section" />
         ) : query.error ? (
           <PortalError
             error={query.error}
@@ -541,7 +568,7 @@ function PortalRepresentatives() {
       </CardHeader>
       <CardContent className="space-y-3 p-0">
         {query.isPending ? (
-          <PortalLoading />
+          <PortalLoading variant="section" />
         ) : query.error ? (
           <PortalError
             error={query.error}
@@ -610,14 +637,18 @@ function PortalRepresentatives() {
         }}
       >
         <PortalAlertDialogContent className="portal-ui">
-          <AlertDialogTitle>
-            {t(
-              selected?.status === "active"
-                ? "portalRevokeAccessTitle"
-                : "portalCurrentAccess",
-            )}
-          </AlertDialogTitle>
-          <AlertDialogDescription>{selected?.fullName}</AlertDialogDescription>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(
+                selected?.status === "active"
+                  ? "portalRevokeAccessTitle"
+                  : "portalCurrentAccess",
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selected?.fullName}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           {selected?.status === "active" && (
             <p>{t("portalRevokeAccessDescription")}</p>
           )}
@@ -633,39 +664,41 @@ function PortalRepresentatives() {
               action.mutate();
             }}
           >
-            <Label htmlFor="consent-password">
-              {t("portalVerifyPassword")}
-            </Label>
-            <Input
-              id="consent-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            {action.error && (
-              <p role="alert" className="text-destructive">
-                {message(action.error, "portalSaveError")}
-              </p>
-            )}
-            <AlertDialogFooter className="border-t border-border/70 pt-4">
-              <AlertDialogCancel type="button" disabled={action.isPending}>
-                {t("portalCancel")}
-              </AlertDialogCancel>
-              <Button
-                variant={
-                  selected?.status === "active" ? "destructive" : "default"
-                }
-                disabled={action.isPending}
-              >
-                {t(
-                  selected?.status === "active"
-                    ? "lmsStaffRevoke"
-                    : "portalApprove",
-                )}
-              </Button>
-            </AlertDialogFooter>
+            <fieldset disabled={action.isPending} className="min-w-0 space-y-3">
+              <Label htmlFor="consent-password">
+                {t("portalVerifyPassword")}
+              </Label>
+              <Input
+                id="consent-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              {action.error && (
+                <p role="alert" className="text-destructive">
+                  {message(action.error, "portalSaveError")}
+                </p>
+              )}
+              <AlertDialogFooter className="border-t border-border/70 pt-4">
+                <AlertDialogCancel type="button" disabled={action.isPending}>
+                  {t("portalCancel")}
+                </AlertDialogCancel>
+                <Button
+                  variant={
+                    selected?.status === "active" ? "destructive" : "default"
+                  }
+                  disabled={action.isPending}
+                >
+                  {t(
+                    selected?.status === "active"
+                      ? "lmsStaffRevoke"
+                      : "portalApprove",
+                  )}
+                </Button>
+              </AlertDialogFooter>
+            </fieldset>
           </form>
         </PortalAlertDialogContent>
       </AlertDialog>

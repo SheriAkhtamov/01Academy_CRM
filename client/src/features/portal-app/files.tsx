@@ -227,6 +227,10 @@ export function PortalUploads({
   const controllers = useRef<AbortController[]>([]);
   const idsRef = useRef(ids);
   idsRef.current = ids;
+  const updateIds = (next: number[]) => {
+    idsRef.current = next;
+    onChange(next);
+  };
   const files = usePortalFiles(ids);
   const busy =
     uploads.some((item) => !item.error && item.progress < 100) ||
@@ -271,7 +275,7 @@ export function PortalUploads({
         controller.signal,
       );
       if (mounted.current) {
-        onChange([...idsRef.current, result.id]);
+        updateIds([...new Set([...idsRef.current, result.id])]);
         setUploads((previous) =>
           previous.filter((existing) => existing.controller !== controller),
         );
@@ -294,6 +298,9 @@ export function PortalUploads({
     }
   }
   function add(files: File[]) {
+    // Native fieldsets disable file-picker controls, but custom drop handlers
+    // need the same guard while a containing form is being submitted.
+    if (input.current?.matches(":disabled")) return;
     setValidation("");
     if (
       ids.length + uploads.length + files.length > max ||
@@ -325,6 +332,7 @@ export function PortalUploads({
         ref={input}
         type="file"
         multiple
+        tabIndex={-1}
         className="sr-only"
         aria-label={t("portalUpload")}
         onChange={(event) => {
@@ -400,13 +408,13 @@ export function PortalUploads({
         onOpenChange={(open) => {
           if (!open) setRemove(null);
         }}
-        titleKey="portalRemoveFileTitle"
+        titleKey="portalLmsRemoveFileTitle"
         objectName={
           remove === null ? undefined : files[ids.indexOf(remove)]?.data?.name
         }
-        description="portalRemoveFileDescription"
+        description="portalLmsRemoveFileDescription"
         onConfirm={() => {
-          onChange(ids.filter((id) => id !== remove));
+          updateIds(idsRef.current.filter((id) => id !== remove));
           setRemove(null);
         }}
       />

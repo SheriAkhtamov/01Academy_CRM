@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { PortalApiError, portalLmsApi } from "../portal-app/api";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectQuery,
   useInvalidateSubject,
@@ -41,10 +43,7 @@ import { PortalFiles, PortalUploads } from "../portal-app/files";
 import { PortalSelect, PortalToolbar } from "../portal-app/controls";
 import { HelpDialog } from "./communication";
 import { useAssignmentDraft } from "./useAssignmentDraft";
-import {
-  usePortalViewState,
-  usePortalListScroll,
-} from "../portal-app/view-state";
+import { usePortalViewState } from "../portal-app/view-state";
 
 const statuses = [
   ["assigned", "portalAssigned"],
@@ -72,11 +71,10 @@ export function PortalAssignments({
   );
   const { status, search, course } = view;
   const [selected, setSelected] = useState<number | null>(initialId ?? null);
-  usePortalListScroll(
-    `assignments:${courseId ?? "all"}`,
-    Boolean(query.data) && !embedded,
-  );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending)
+    return (
+      <PortalLoading variant={embedded || courseId ? "section" : "page"} />
+    );
   if (query.error)
     return (
       <PortalError
@@ -159,12 +157,13 @@ export function PortalAssignments({
         </TabsList>
       </Tabs>
       <DataTable
+        focusOnRowClick
         data={items}
         keyExtractor={(item) => String(item.id)}
         rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
         filterKey={`${status}:${course}:${search}`}
         onRowClick={(item) => setSelected(item.id)}
-        emptyState={<PortalEmpty labelKey="portalNoAssignments" />}
+        emptyState={<PortalEmpty embedded labelKey="portalNoAssignments" />}
         columns={[
           {
             key: "title",
@@ -231,29 +230,32 @@ export function AssignmentDialog({
   id: number | null;
   onClose: () => void;
 }) {
+  const assignmentScope = usePortalFormScope();
   const { t } = useTranslation();
-  const { guarded, subject } = usePortal();
+  const { subject } = usePortal();
   return (
-    <Dialog
-      open={id !== null}
-      onOpenChange={(open) => {
-        if (!open) guarded(onClose);
-      }}
-    >
-      <DialogContent className="portal-ui max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{t("portalAssignments")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
-        </DialogHeader>
-        {id !== null && (
-          <AssignmentDetail
-            key={`${subject?.linkId}:${id}`}
-            id={id}
-            onClose={onClose}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <PortalFormScope id={assignmentScope.id}>
+      <Dialog
+        open={id !== null}
+        onOpenChange={(open) => {
+          if (!open) assignmentScope.guarded(onClose);
+        }}
+      >
+        <DialogContent className="portal-ui max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t("portalAssignments")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
+          {id !== null && (
+            <AssignmentDetail
+              key={`${subject?.linkId}:${id}`}
+              id={id}
+              onClose={onClose}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </PortalFormScope>
   );
 }
 function AssignmentDetail({
@@ -268,7 +270,7 @@ function AssignmentDetail({
     (link, signal) => portalLmsApi.assignment(link, id, signal),
     [id],
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -558,32 +560,39 @@ export function AssignmentContent({
                 if (comment.trim()) commentAction.mutate();
               }}
             >
-              <Label htmlFor="assignment-comment">{t("portalComment")}</Label>
-              <Textarea
-                id="assignment-comment"
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                required
-              />
-              {subject?.kind === "representative" && (
-                <label className="flex min-h-11 cursor-pointer items-center gap-3">
-                  <Checkbox
-                    checked={shareComment}
-                    onCheckedChange={(value) => setShareComment(value === true)}
-                  />
-                  {t("portalShareCommentFamily")}
-                </label>
-              )}
-              {commentAction.error && (
-                <p role="alert" className="text-destructive">
-                  {message(commentAction.error, "portalSaveError")}
-                </p>
-              )}
-              <DialogFooter className="pt-2">
-                <Button disabled={commentAction.isPending || !comment.trim()}>
-                  {t("portalSendComment")}
-                </Button>
-              </DialogFooter>
+              <fieldset
+                disabled={commentAction.isPending}
+                className="min-w-0 space-y-4"
+              >
+                <Label htmlFor="assignment-comment">{t("portalComment")}</Label>
+                <Textarea
+                  id="assignment-comment"
+                  value={comment}
+                  onChange={(event) => setComment(event.target.value)}
+                  required
+                />
+                {subject?.kind === "representative" && (
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                    <Checkbox
+                      checked={shareComment}
+                      onCheckedChange={(value) =>
+                        setShareComment(value === true)
+                      }
+                    />
+                    {t("portalShareCommentFamily")}
+                  </label>
+                )}
+                {commentAction.error && (
+                  <p role="alert" className="text-destructive">
+                    {message(commentAction.error, "portalSaveError")}
+                  </p>
+                )}
+                <DialogFooter className="pt-2">
+                  <Button disabled={commentAction.isPending || !comment.trim()}>
+                    {t("portalSendComment")}
+                  </Button>
+                </DialogFooter>
+              </fieldset>
             </form>
           )}
         </section>
@@ -700,108 +709,110 @@ function AssignmentAnswer({
       className="space-y-4 rounded-xl border border-border/70 bg-card p-4"
       onSubmit={send}
     >
-      <h3 className="font-semibold">{t("portalAnswer")}</h3>
-      {detail.allowedAnswers.includes("text") && (
-        <div className="space-y-2">
-          <Label htmlFor="assignment-text">{t("portalAnswer")}</Label>
-          <Textarea
-            id="assignment-text"
-            value={draft.answer.text}
-            onChange={(event) =>
-              draft.setAnswer((previous) => ({
-                ...previous,
-                text: event.target.value,
-              }))
+      <fieldset disabled={submit.isPending} className="min-w-0 space-y-4">
+        <h3 className="font-semibold">{t("portalAnswer")}</h3>
+        {detail.allowedAnswers.includes("text") && (
+          <div className="space-y-2">
+            <Label htmlFor="assignment-text">{t("portalAnswer")}</Label>
+            <Textarea
+              id="assignment-text"
+              value={draft.answer.text}
+              onChange={(event) =>
+                draft.setAnswer((previous) => ({
+                  ...previous,
+                  text: event.target.value,
+                }))
+              }
+              rows={5}
+              disabled={submit.isPending}
+            />
+          </div>
+        )}
+        {detail.allowedAnswers.includes("links") && (
+          <div className="space-y-2">
+            <Label htmlFor="assignment-links">{t("portalLinks")}</Label>
+            <Textarea
+              id="assignment-links"
+              value={linkText}
+              onChange={(event) => {
+                setLinkText(event.target.value);
+                draft.setAnswer((previous) => ({
+                  ...previous,
+                  links: event.target.value
+                    .split("\n")
+                    .map((link) => link.trim())
+                    .filter(Boolean),
+                }));
+              }}
+              disabled={submit.isPending}
+            />
+          </div>
+        )}
+        {detail.allowedAnswers.includes("files") && (
+          <PortalUploads
+            ids={draft.answer.fileIds}
+            onChange={(ids) =>
+              draft.setAnswer((previous) => ({ ...previous, fileIds: ids }))
             }
-            rows={5}
-            disabled={submit.isPending}
+            onBusyChange={setUploading}
           />
-        </div>
-      )}
-      {detail.allowedAnswers.includes("links") && (
-        <div className="space-y-2">
-          <Label htmlFor="assignment-links">{t("portalLinks")}</Label>
-          <Textarea
-            id="assignment-links"
-            value={linkText}
-            onChange={(event) => {
-              setLinkText(event.target.value);
-              draft.setAnswer((previous) => ({
-                ...previous,
-                links: event.target.value
-                  .split("\n")
-                  .map((link) => link.trim())
-                  .filter(Boolean),
-              }));
-            }}
-            disabled={submit.isPending}
-          />
-        </div>
-      )}
-      {detail.allowedAnswers.includes("files") && (
-        <PortalUploads
-          ids={draft.answer.fileIds}
-          onChange={(ids) =>
-            draft.setAnswer((previous) => ({ ...previous, fileIds: ids }))
-          }
-          onBusyChange={setUploading}
-        />
-      )}
-      <p aria-live="polite" className="text-sm text-muted-foreground">
-        {draft.error
-          ? message(draft.error, "portalSaveError")
-          : draft.saving
-            ? t("portalSaving")
-            : !draft.dirty
-              ? t("portalSaved")
-              : ""}
-      </p>
-      {(validation || submit.error) && (
-        <p role="alert" className="text-sm text-destructive">
-          {validation || message(submit.error, "portalSaveError")}
+        )}
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          {draft.error
+            ? message(draft.error, "portalSaveError")
+            : draft.saving
+              ? t("portalSaving")
+              : !draft.dirty
+                ? t("portalSaved")
+                : ""}
         </p>
-      )}
-      <DialogFooter className="border-t border-border/70 pt-4">
-        <Button
-          type="submit"
-          disabled={submit.isPending || uploading || draft.saving}
-        >
-          {t("portalSubmit")}
-        </Button>
-        {Boolean(draft.error) && !conflict && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void draft.save().catch(() => {});
-            }}
-          >
-            {t("portalRetry")}
-          </Button>
+        {(validation || submit.error) && (
+          <p role="alert" className="text-sm text-destructive">
+            {validation || message(submit.error, "portalSaveError")}
+          </p>
         )}
-        {conflict && (
+        <DialogFooter className="border-t border-border/70 pt-4">
           <Button
-            type="button"
-            variant="outline"
-            onClick={() => setReloadOpen(true)}
+            type="submit"
+            disabled={submit.isPending || uploading || draft.saving}
           >
-            {t("lmsStaffReload")}
+            {t("portalSubmit")}
           </Button>
-        )}
-      </DialogFooter>
-      <ConfirmAction
-        open={reloadOpen}
-        onOpenChange={setReloadOpen}
-        titleKey="portalReloadDraftTitle"
-        objectName={detail.title}
-        description="portalReloadDraftDescription"
-        action="lmsStaffReload"
-        pending={reload.isPending}
-        error={
-          reload.error ? message(reload.error, "portalLoadError") : undefined
-        }
-        onConfirm={() => reload.mutate()}
-      />
+          {Boolean(draft.error) && !conflict && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void draft.save().catch(() => {});
+              }}
+            >
+              {t("portalRetry")}
+            </Button>
+          )}
+          {conflict && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReloadOpen(true)}
+            >
+              {t("lmsStaffReload")}
+            </Button>
+          )}
+        </DialogFooter>
+        <ConfirmAction
+          open={reloadOpen}
+          onOpenChange={setReloadOpen}
+          titleKey="portalReloadDraftTitle"
+          objectName={detail.title}
+          description="portalReloadDraftDescription"
+          action="lmsStaffReload"
+          pending={reload.isPending}
+          error={
+            reload.error ? message(reload.error, "portalLoadError") : undefined
+          }
+          onConfirm={() => reload.mutate()}
+        />
+      </fieldset>
     </form>
   );
 }

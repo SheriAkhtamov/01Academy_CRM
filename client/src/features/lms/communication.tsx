@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectQuery,
   useInvalidateSubject,
@@ -54,32 +56,35 @@ export function HelpDialog({
   quizAttemptId?: number;
   defaultTopic?: TranslationKey;
 }) {
+  const helpScope = usePortalFormScope();
   const { t } = useTranslation();
-  const { guarded, subject } = usePortal();
+  const { subject } = usePortal();
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        if (!value) guarded(onClose);
-      }}
-    >
-      <DialogContent className="portal-ui">
-        <DialogHeader>
-          <DialogTitle>{t("portalNeedHelp")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
-        </DialogHeader>
-        {open && (
-          <HelpForm
-            runId={runId}
-            unitId={unitId}
-            recipientId={recipientId}
-            quizAttemptId={quizAttemptId}
-            defaultTopic={defaultTopic}
-            onClose={onClose}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <PortalFormScope id={helpScope.id}>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!value) helpScope.guarded(onClose);
+        }}
+      >
+        <DialogContent className="portal-ui">
+          <DialogHeader>
+            <DialogTitle>{t("portalNeedHelp")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
+          {open && (
+            <HelpForm
+              runId={runId}
+              unitId={unitId}
+              recipientId={recipientId}
+              quizAttemptId={quizAttemptId}
+              defaultTopic={defaultTopic}
+              onClose={onClose}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </PortalFormScope>
   );
 }
 function HelpForm({
@@ -167,117 +172,124 @@ function HelpForm({
         if (body.trim() && course) action.mutate();
       }}
     >
-      {!runId && (
+      <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
+        {!runId && (
+          <div className="space-y-2">
+            <Label htmlFor="help-course">{t("portalCourses")}</Label>
+            <PortalSelect
+              id="help-course"
+              required
+              disabled={courses.isPending || Boolean(courses.error)}
+              value={course}
+              onValueChange={setCourse}
+              options={[
+                { value: "", label: t("portalSelectCourse") },
+                ...(courses.data ?? []).map((item) => ({
+                  value: String(item.runId),
+                  label: `${item.courseName} · ${item.groupName}`,
+                })),
+              ]}
+            />
+            {courses.error && (
+              <PortalError
+                error={courses.error}
+                retry={() => {
+                  void courses.refetch();
+                }}
+              />
+            )}
+          </div>
+        )}
         <div className="space-y-2">
-          <Label htmlFor="help-course">{t("portalCourses")}</Label>
+          <Label htmlFor="help-topic">{t("portalQuestionTitle")}</Label>
           <PortalSelect
-            id="help-course"
-            required
-            value={course}
-            onValueChange={setCourse}
-            options={[
-              { value: "", label: t("portalSelectCourse") },
-              ...(courses.data ?? []).map((item) => ({
-                value: String(item.runId),
-                label: `${item.courseName} · ${item.groupName}`,
-              })),
-            ]}
+            id="help-topic"
+            value={topic}
+            onValueChange={(value) => setTopic(value as TranslationKey)}
+            options={(
+              [
+                "portalHelpTopic",
+                "portalHelpAssignment",
+                "portalHelpFeedback",
+                "portalHelpOther",
+              ] as const
+            ).map((key) => ({ value: key, label: t(key) }))}
           />
-          {courses.error && (
-            <PortalError
-              error={courses.error}
-              retry={() => {
-                void courses.refetch();
-              }}
+          {topic === "portalHelpOther" && (
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              aria-label={t("portalQuestionTitle")}
+              required
             />
           )}
         </div>
-      )}
-      <div className="space-y-2">
-        <Label htmlFor="help-topic">{t("portalQuestionTitle")}</Label>
-        <PortalSelect
-          id="help-topic"
-          value={topic}
-          onValueChange={(value) => setTopic(value as TranslationKey)}
-          options={(
-            [
-              "portalHelpTopic",
-              "portalHelpAssignment",
-              "portalHelpFeedback",
-              "portalHelpOther",
-            ] as const
-          ).map((key) => ({ value: key, label: t(key) }))}
-        />
-        {topic === "portalHelpOther" && (
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            aria-label={t("portalQuestionTitle")}
-            required
-          />
-        )}
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="help-step">{t("portalStepLink")}</Label>
-        <Input
-          id="help-step"
-          type="url"
-          maxLength={2000}
-          value={stepUrl}
-          onChange={(event) => setStepUrl(event.target.value)}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="help-body">{t("portalQuestionText")}</Label>
-        <Textarea
-          id="help-body"
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          rows={5}
-          required
-        />
-      </div>
-      {subject?.kind === "representative" && (
         <div className="space-y-2">
-          <Label htmlFor="help-audience">{t("portalAudience")}</Label>
-          <PortalSelect
-            id="help-audience"
-            value={audience}
-            onValueChange={(value) => setAudience(value as typeof audience)}
-            options={[
-              {
-                value: "representative_teacher",
-                label: t("portalAudienceRepresentatives"),
-              },
-              { value: "student_teacher", label: t("portalAudienceLearning") },
-            ]}
+          <Label htmlFor="help-step">{t("portalStepLink")}</Label>
+          <Input
+            id="help-step"
+            type="url"
+            maxLength={2000}
+            value={stepUrl}
+            onChange={(event) => setStepUrl(event.target.value)}
           />
         </div>
-      )}
-      <PortalUploads
-        ids={fileIds}
-        onChange={setFileIds}
-        onBusyChange={setUploading}
-        max={3}
-      />
-      {(action.error || validation) && (
-        <p role="alert" className="text-destructive">
-          {validation || message(action.error, "portalSaveError")}
-        </p>
-      )}
-      <DialogFooter className="border-t border-border/70 pt-4">
-        <Button
-          disabled={action.isPending || uploading || !course || !body.trim()}
-        >
-          {t("portalSend")}
-        </Button>
-      </DialogFooter>
+        <div className="space-y-2">
+          <Label htmlFor="help-body">{t("portalQuestionText")}</Label>
+          <Textarea
+            id="help-body"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            rows={5}
+            required
+          />
+        </div>
+        {subject?.kind === "representative" && (
+          <div className="space-y-2">
+            <Label htmlFor="help-audience">{t("portalAudience")}</Label>
+            <PortalSelect
+              id="help-audience"
+              value={audience}
+              onValueChange={(value) => setAudience(value as typeof audience)}
+              options={[
+                {
+                  value: "representative_teacher",
+                  label: t("portalAudienceRepresentatives"),
+                },
+                {
+                  value: "student_teacher",
+                  label: t("portalAudienceLearning"),
+                },
+              ]}
+            />
+          </div>
+        )}
+        <PortalUploads
+          ids={fileIds}
+          onChange={setFileIds}
+          onBusyChange={setUploading}
+          max={3}
+        />
+        {(action.error || validation) && (
+          <p role="alert" className="text-destructive">
+            {validation || message(action.error, "portalSaveError")}
+          </p>
+        )}
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button
+            disabled={action.isPending || uploading || !course || !body.trim()}
+          >
+            {t("portalSend")}
+          </Button>
+        </DialogFooter>
+      </fieldset>
     </form>
   );
 }
 export function PortalHelp({ initialId }: { initialId?: number }) {
+  const threadScope = usePortalFormScope();
   const { t } = useTranslation();
-  const { guarded, subject } = usePortal();
+  const { subject } = usePortal();
   const query = useSubjectQuery(
     "threads",
     portalLmsApi.threads,
@@ -332,6 +344,7 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
         <Card>
           <CardContent className="p-0">
             <DataTable
+              focusOnRowClick
               data={query.data}
               keyExtractor={(item) => String(item.id)}
               onRowClick={setSelected}
@@ -375,26 +388,28 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
         </Card>
       )}
       <HelpDialog open={open} onClose={() => setOpen(false)} />
-      <Dialog
-        open={Boolean(selected)}
-        onOpenChange={(value) => {
-          if (!value) guarded(() => setSelected(null));
-        }}
-      >
-        <DialogContent className="portal-ui">
-          <DialogHeader>
-            <DialogTitle>{selected?.title}</DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
-          </DialogHeader>
-          {selected && (
-            <ThreadConversation
-              key={selected.id}
-              initial={selected}
-              onChange={setSelected}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={threadScope.id}>
+        <Dialog
+          open={Boolean(selected)}
+          onOpenChange={(value) => {
+            if (!value) threadScope.guarded(() => setSelected(null));
+          }}
+        >
+          <DialogContent className="portal-ui">
+            <DialogHeader>
+              <DialogTitle>{selected?.title}</DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {selected && (
+              <ThreadConversation
+                key={selected.id}
+                initial={selected}
+                onChange={setSelected}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
     </>
   );
 }
@@ -460,7 +475,7 @@ function ThreadConversation({
     setUnsaved(Boolean(body));
     return () => setUnsaved(false);
   }, [body, setUnsaved]);
-  if (detail.isPending) return <PortalLoading />;
+  if (detail.isPending) return <PortalLoading variant="section" />;
   if (detail.error)
     return (
       <PortalError
@@ -508,25 +523,27 @@ function ThreadConversation({
           if (body.trim()) action.mutate();
         }}
       >
-        <div className="space-y-2">
-          <Label htmlFor="thread-comment">{t("portalComment")}</Label>
-          <Textarea
-            id="thread-comment"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            required
-          />
-        </div>
-        {(action.error || status.error) && (
-          <p role="alert" className="text-destructive">
-            {message(action.error || status.error, "portalSaveError")}
-          </p>
-        )}
-        <DialogFooter className="border-t border-border/70 pt-4">
-          <Button disabled={action.isPending || !body.trim()}>
-            {t("portalSend")}
-          </Button>
-        </DialogFooter>
+        <fieldset disabled={action.isPending} className="min-w-0 space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="thread-comment">{t("portalComment")}</Label>
+            <Textarea
+              id="thread-comment"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              required
+            />
+          </div>
+          {(action.error || status.error) && (
+            <p role="alert" className="text-destructive">
+              {message(action.error || status.error, "portalSaveError")}
+            </p>
+          )}
+          <DialogFooter className="border-t border-border/70 pt-4">
+            <Button disabled={action.isPending || !body.trim()}>
+              {t("portalSend")}
+            </Button>
+          </DialogFooter>
+        </fieldset>
       </form>
     </div>
   );

@@ -85,6 +85,7 @@ export function PortalProgress() {
     to: "",
   });
   const { course, from, to } = view;
+  const selectedCourse = allowed("learning.read") ? course : "";
   const setCourse = (value: string) =>
     setView((previous) => ({ ...previous, course: value }));
   const setFrom = (value: string) =>
@@ -101,7 +102,7 @@ export function PortalProgress() {
           !Number.isFinite(Date.parse(`${to}T00:00:00+05:00`))),
     );
   const filter = {
-    ...(course ? { runId: Number(course) } : {}),
+    ...(selectedCourse ? { runId: Number(selectedCourse) } : {}),
     ...(from && to && !invalidPeriod
       ? {
           from: new Date(`${from}T00:00:00+05:00`).toISOString(),
@@ -111,7 +112,7 @@ export function PortalProgress() {
         }
       : {}),
   };
-  const parts = [course, from, to];
+  const parts = [selectedCourse, from, to];
   const courses = useSubjectQuery("courses", portalLmsApi.courses);
   const progress = useSubjectQuery(
     "progress",
@@ -150,43 +151,56 @@ export function PortalProgress() {
   );
   const [report, setReport] = useState<LmsReportDto | null>(null);
   const filters = (
-    <PortalToolbar>
-      <div className="min-w-0 flex-1 basis-60 space-y-2">
-        <Label htmlFor="progress-course">{t("portalCourses")}</Label>
-        <PortalSelect
-          id="progress-course"
-          value={course}
-          onValueChange={setCourse}
-          options={[
-            { value: "", label: t("portalAllCourses") },
-            ...(courses.data ?? []).map((item) => ({
-              value: String(item.runId),
-              label: `${item.courseName} · ${item.groupName}`,
-            })),
-          ]}
+    <>
+      <PortalToolbar>
+        {allowed("learning.read") && (
+          <div className="min-w-0 flex-1 basis-60 space-y-2">
+            <Label htmlFor="progress-course">{t("portalCourses")}</Label>
+            <PortalSelect
+              id="progress-course"
+              value={course}
+              disabled={courses.isPending || Boolean(courses.error)}
+              onValueChange={setCourse}
+              options={[
+                { value: "", label: t("portalAllCourses") },
+                ...(courses.data ?? []).map((item) => ({
+                  value: String(item.runId),
+                  label: `${item.courseName} · ${item.groupName}`,
+                })),
+              ]}
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 basis-44 space-y-2">
+          <Label htmlFor="progress-from">{t("portalPeriodFrom")}</Label>
+          <Input
+            id="progress-from"
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(event) => setFrom(event.target.value)}
+          />
+        </div>
+        <div className="min-w-0 flex-1 basis-44 space-y-2">
+          <Label htmlFor="progress-to">{t("portalPeriodTo")}</Label>
+          <Input
+            id="progress-to"
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(event) => setTo(event.target.value)}
+          />
+        </div>
+      </PortalToolbar>
+      {allowed("learning.read") && courses.error && (
+        <PortalError
+          error={courses.error}
+          retry={() => {
+            void courses.refetch();
+          }}
         />
-      </div>
-      <div className="min-w-0 flex-1 basis-44 space-y-2">
-        <Label htmlFor="progress-from">{t("portalPeriodFrom")}</Label>
-        <Input
-          id="progress-from"
-          type="date"
-          value={from}
-          max={to || undefined}
-          onChange={(event) => setFrom(event.target.value)}
-        />
-      </div>
-      <div className="min-w-0 flex-1 basis-44 space-y-2">
-        <Label htmlFor="progress-to">{t("portalPeriodTo")}</Label>
-        <Input
-          id="progress-to"
-          type="date"
-          value={to}
-          min={from || undefined}
-          onChange={(event) => setTo(event.target.value)}
-        />
-      </div>
-    </PortalToolbar>
+      )}
+    </>
   );
   if (invalidPeriod)
     return (
@@ -204,7 +218,7 @@ export function PortalProgress() {
       {filters}
       {allowed("learning.read") &&
         (progress.isPending ? (
-          <PortalLoading />
+          <PortalLoading variant="section" />
         ) : progress.error ? (
           <PortalError
             error={progress.error}
@@ -256,7 +270,7 @@ export function PortalProgress() {
         </TabsContent>
         <TabsContent value="history" className="space-y-3">
           {history.isPending ? (
-            <PortalLoading />
+            <PortalLoading variant="section" />
           ) : history.error ? (
             <PortalError
               error={history.error}
@@ -270,6 +284,7 @@ export function PortalProgress() {
             <Card>
               <CardContent className="p-0">
                 <DataTable
+                  focusOnRowClick
                   data={history.data.pages.flatMap((page) => page.items)}
                   keyExtractor={(item) => String(item.id)}
                   pageSize={0}
@@ -309,7 +324,7 @@ export function PortalProgress() {
         </TabsContent>
         <TabsContent value="achievements">
           {achievements.isPending ? (
-            <PortalLoading />
+            <PortalLoading variant="section" />
           ) : achievements.error ? (
             <PortalError
               error={achievements.error}
@@ -346,7 +361,7 @@ export function PortalProgress() {
         </TabsContent>
         <TabsContent value="reports" className="space-y-3">
           {reports.isPending ? (
-            <PortalLoading />
+            <PortalLoading variant="section" />
           ) : reports.error ? (
             <PortalError
               error={reports.error}
@@ -360,6 +375,7 @@ export function PortalProgress() {
             <Card>
               <CardContent className="p-0">
                 <DataTable
+                  focusOnRowClick
                   data={reports.data}
                   keyExtractor={(item) => String(item.id)}
                   onRowClick={setReport}
@@ -518,7 +534,7 @@ export function ProjectComparison() {
   const { guarded } = usePortal();
   const query = useSubjectQuery("projects", portalResourcesApi.projects);
   const [course, setCourse] = useState("");
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -536,7 +552,7 @@ export function ProjectComparison() {
     ).entries(),
   ];
   const courseId = course ? Number(course) : courses[0]?.[0];
-  if (!courseId) return <PortalEmpty labelKey="noProjects" />;
+  if (!courseId) return <PortalEmpty labelKey="portalComparisonUnavailable" />;
   return (
     <div className="space-y-4">
       <PortalToolbar>
@@ -634,7 +650,7 @@ function CourseComparison({
     setUnsaved(canEdit && dirty);
     return () => setUnsaved(false);
   }, [canEdit, dirty, setUnsaved]);
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -653,12 +669,12 @@ function CourseComparison({
       : [value, ...projects];
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
+        <CardHeader className="p-4 pb-0">
+          <CardTitle className="text-base">
             {t(kind === "first" ? "portalFirstWork" : "portalLatestWork")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 p-4">
           {canEdit && (
             <div className="space-y-2">
               <Label htmlFor={`comparison-${kind}`}>
@@ -765,7 +781,7 @@ function CourseComparison({
         </div>
       </Tabs>
       {canEdit && !valid && (
-        <p role="alert" className="text-sm text-muted-foreground">
+        <p role="alert" className="text-sm text-destructive">
           {t("portalComparisonDistinctProjects")}
         </p>
       )}
@@ -775,19 +791,21 @@ function CourseComparison({
         </p>
       )}
       {canEdit && (
-        <Button
-          disabled={
-            !valid || action.isPending || (Boolean(query.data) && !dirty)
-          }
-          onClick={() => action.mutate()}
-        >
-          {t("portalComparisonSave")}
-        </Button>
-      )}
-      {canEdit && conflict && (
-        <Button variant="outline" onClick={() => setReloadOpen(true)}>
-          {t("lmsStaffReload")}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
+          <Button
+            disabled={
+              !valid || action.isPending || (Boolean(query.data) && !dirty)
+            }
+            onClick={() => action.mutate()}
+          >
+            {t("portalComparisonSave")}
+          </Button>
+          {conflict && (
+            <Button variant="outline" onClick={() => setReloadOpen(true)}>
+              {t("lmsStaffReload")}
+            </Button>
+          )}
+        </div>
       )}
       <ConfirmAction
         open={reloadOpen}

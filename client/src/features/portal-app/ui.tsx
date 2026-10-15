@@ -11,18 +11,19 @@ import { EmptyState } from "@/components/ux/EmptyState";
 import { PageHeader } from "@/components/ux/PageHeader";
 import {
   AlertDialog,
+  AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { PortalApiError } from "./api";
-import { PortalAlertDialogContent } from "../learning-content/modal-content";
+import { PortalAlertDialogContent } from "./modal-content";
 export {
   PortalDialogContent,
   PortalSheetContent,
   PortalAlertDialogContent,
-} from "../learning-content/modal-content";
+} from "./modal-content";
 
 export function usePortalContent() {
   const { t } = useTranslation();
@@ -37,21 +38,36 @@ export function usePortalSuccess() {
 }
 export function usePortalError() {
   const { t } = useTranslation();
-  return (error: unknown, fallback: TranslationKey = "portalLoadError") => {
-    if (!(error instanceof PortalApiError)) return t(fallback);
-    if (error.status === 0) return t("portalOffline");
+  const localKeys: Partial<Record<TranslationKey, TranslationKey>> = {
+    portalLoadError: "portalLmsLoadError",
+    portalOffline: "portalLmsOffline",
+    portalConflict: "portalLmsConflict",
+  };
+  const localized = (key: TranslationKey) => t(localKeys[key] ?? key);
+  return (error: unknown, fallback: TranslationKey = "portalLmsLoadError") => {
+    if (!(error instanceof PortalApiError)) return localized(fallback);
+    if (error.status === 0) return t("portalLmsOffline");
     const key = error.code as TranslationKey;
-    if (key in translations) return t(key);
-    if (error.status === 409) return t("portalConflict");
+    if (key in translations) return localized(key);
+    if (error.status === 409) return t("portalLmsConflict");
     if (error.status === 429) return t("portalTooManyAttempts");
     if (error.status === 401) return t("portalWrongCredentials");
     if (error.status === 403 || error.status === 404)
       return t("portalUnavailable");
-    return t(fallback);
+    return localized(fallback);
   };
 }
-export function PortalLoading() {
+export function PortalLoading({ variant = "page" }: { variant?: "page" | "section" }) {
   const { t } = useTranslation();
+  if (variant === "section") {
+    return (
+      <div role="status" aria-label={t("portalLoading")} className="space-y-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
   return (
     <div role="status" aria-label={t("portalLoading")} className="space-y-4">
       <Skeleton className="h-9 w-48" />
@@ -86,8 +102,15 @@ export function PortalError({
     </Card>
   );
 }
-export function PortalEmpty({ labelKey }: { labelKey: TranslationKey }) {
+export function PortalEmpty({
+  labelKey,
+  embedded = false,
+}: {
+  labelKey: TranslationKey;
+  embedded?: boolean;
+}) {
   const { t } = useTranslation();
+  if (embedded) return <EmptyState icon={Inbox} title={t(labelKey)} />;
   return (
     <Card>
       <CardContent className="p-6">
@@ -148,13 +171,15 @@ export function ConfirmAction({
       }}
     >
       <PortalAlertDialogContent className="portal-ui">
-        <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
-        {objectName && <p className="break-words font-medium">{objectName}</p>}
-        <AlertDialogDescription>
-          {description in translations
-            ? t(description as TranslationKey)
-            : description}
-        </AlertDialogDescription>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
+          {objectName && <p className="break-words font-medium">{objectName}</p>}
+          <AlertDialogDescription>
+            {description in translations
+              ? t(description as TranslationKey)
+              : description}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -166,7 +191,9 @@ export function ConfirmAction({
           </AlertDialogCancel>
           <Button
             type="button"
-            variant={variant ?? (destructiveActions.has(action) ? "destructive" : "default")}
+            variant={
+              variant ?? (destructiveActions.has(action) ? "destructive" : "default")
+            }
             disabled={pending}
             onClick={onConfirm}
           >

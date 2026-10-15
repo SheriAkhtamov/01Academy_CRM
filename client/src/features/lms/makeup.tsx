@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectQuery,
   useInvalidateSubject,
@@ -69,7 +71,8 @@ export function PortalMakeup({
   );
   const [section, setSection] = useState("current");
   const [selected, setSelected] = useState<LmsMakeupDto | null>(null);
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending)
+    return <PortalLoading variant={embedded ? "section" : "page"} />;
   if (query.error)
     return (
       <PortalError
@@ -103,12 +106,13 @@ export function PortalMakeup({
         </Tabs>
       )}
       <DataTable
+        focusOnRowClick
         data={items}
         keyExtractor={(item) => String(item.id)}
         rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
         filterKey={`${courseId ?? "all"}:${section}`}
         onRowClick={setSelected}
-        emptyState={<PortalEmpty labelKey="portalNoLessons" />}
+        emptyState={<PortalEmpty embedded labelKey="portalNoMakeupPlans" />}
         columns={[
           {
             key: "topic",
@@ -159,25 +163,28 @@ export function MakeupDialog({
   plan: LmsMakeupDto | null;
   onClose: () => void;
 }) {
+  const makeupScope = usePortalFormScope();
   const { t } = useTranslation();
-  const { guarded, subject } = usePortal();
+  const { subject } = usePortal();
   return (
-    <Dialog
-      open={Boolean(plan)}
-      onOpenChange={(open) => {
-        if (!open) guarded(onClose);
-      }}
-    >
-      <DialogContent className="portal-ui max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{t("portalMakeup")}</DialogTitle>
-          <DialogDescription>{subject?.studentName}</DialogDescription>
-        </DialogHeader>
-        {plan && (
-          <MakeupDetail key={plan.id} initial={plan} onClose={onClose} />
-        )}
-      </DialogContent>
-    </Dialog>
+    <PortalFormScope id={makeupScope.id}>
+      <Dialog
+        open={Boolean(plan)}
+        onOpenChange={(open) => {
+          if (!open) makeupScope.guarded(onClose);
+        }}
+      >
+        <DialogContent className="portal-ui max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("portalMakeup")}</DialogTitle>
+            <DialogDescription>{subject?.studentName}</DialogDescription>
+          </DialogHeader>
+          {plan && (
+            <MakeupDetail key={plan.id} initial={plan} onClose={onClose} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </PortalFormScope>
   );
 }
 function MakeupDetail({
@@ -217,7 +224,7 @@ function MakeupDetail({
     (plan.materials.length > 0 ||
       plan.recipientId !== null ||
       plan.quizRecipientId !== null);
-  if (canonical.isPending) return <PortalLoading />;
+  if (canonical.isPending) return <PortalLoading variant="section" />;
   if (canonical.error)
     return (
       <PortalError

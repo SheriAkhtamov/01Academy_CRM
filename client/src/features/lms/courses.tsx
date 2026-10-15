@@ -32,10 +32,7 @@ import { PortalQuizzes } from "./quizzes";
 import { PortalMakeup } from "./makeup";
 import { HelpDialog } from "./communication";
 import { PortalVideo } from "./video";
-import {
-  usePortalViewState,
-  usePortalListScroll,
-} from "../portal-app/view-state";
+import { usePortalViewState } from "../portal-app/view-state";
 
 export function PortalCourses() {
   const { t } = useTranslation();
@@ -45,7 +42,6 @@ export function PortalCourses() {
   const [view, setView] = usePortalViewState("courses", { tab: "current" });
   const tab = view.tab;
   const format = usePortalFormat();
-  usePortalListScroll("courses", Boolean(query.data));
   if (query.isPending) return <PortalLoading />;
   if (query.error)
     return (
@@ -131,7 +127,6 @@ export function PortalCourse({ id }: { id: number }) {
     (link, signal) => portalLmsApi.course(link, id, signal),
     [id],
   );
-  usePortalListScroll(`course:${id}`, Boolean(query.data));
   if (query.isPending) return <PortalLoading />;
   if (query.error)
     return (
@@ -457,7 +452,7 @@ function CourseAnnouncements({ id }: { id: number }) {
       void query.refetch();
     },
   });
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError

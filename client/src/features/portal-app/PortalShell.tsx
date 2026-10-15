@@ -1,12 +1,17 @@
-import { useState, type ReactNode } from "react";
-import { useLocation } from "wouter";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   BookOpen,
   CalendarDays,
   CheckSquare,
   Home,
-  MoreHorizontal,
   Bell,
   User,
   TrendingUp,
@@ -19,6 +24,7 @@ import {
 import type { PortalPermission } from "@shared/contracts/portal-identity";
 import type { TranslationKey } from "@/lib/i18n";
 import { useTranslation } from "@/hooks/useTranslation";
+import { usePortalViewportNavigation } from "./usePortalViewportNavigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Logo from "@/components/Logo";
@@ -37,7 +43,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { portalIdentityApi } from "./api";
-import { usePortal, portalSessionKey, portalGrantFingerprint } from "./context";
+import {
+  usePortal,
+  portalSessionKey,
+  portalGrantFingerprint,
+  PortalFormScope,
+  usePortalFormScope,
+} from "./context";
+import { allowNavigation } from "@/lib/navigationGuard";
 import { useQueryClient } from "@tanstack/react-query";
 import { PortalSheetContent as SheetContent, usePortalError } from "./ui";
 import { PortalNotifications } from "./notifications";
@@ -123,11 +136,40 @@ const studentNav: NavItem[] = [
 export function PortalShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [path, navigate] = useLocation();
+  const search = useSearch();
   const { subject, subjects, selectSubject, guarded, account } = usePortal();
   const client = useQueryClient();
   const errorMessage = usePortalError();
   const [menu, setMenu] = useState(false);
+  const menuOpen = useRef(false);
+  const menuClosedForNavigation = useRef(false);
+  const changeMenu = (open: boolean) => {
+    menuOpen.current = open;
+    if (open) menuClosedForNavigation.current = false;
+    setMenu(open);
+  };
+  const closeNavigation = useCallback(() => {
+    if (!menuOpen.current) return;
+    menuClosedForNavigation.current = true;
+    menuOpen.current = false;
+    setMenu(false);
+  }, []);
+  const mainRef = usePortalViewportNavigation({
+    location: `${path}${search ? `?${search}` : ""}`,
+    scope: `portal:${account?.id}:${subject?.linkId ?? "family"}:${portalGrantFingerprint(subjects)}`,
+    onNavigate: closeNavigation,
+  });
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) closeNavigation();
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, [closeNavigation]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationScope = usePortalFormScope();
   const notifications = useQuery({
     queryKey: [
       "portal-account",
@@ -140,6 +182,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+  const personalSubjects = subjects.filter((item) => item.kind === "self");
+  const representatives = subjects.filter(
+    (item) => item.kind === "representative",
+  );
   const parent =
     subject?.kind === "representative" ||
     (!subject && subjects.some((item) => item.kind === "representative"));
@@ -157,11 +203,11 @@ export function PortalShell({ children }: { children: ReactNode }) {
         (!item.permission && !item.permissions) ||
         Boolean(
           item.permission &&
-          (subject
-            ? subject.permissions.includes(item.permission)
-            : subjects.some((link) =>
-                link.permissions.includes(item.permission!),
-              )),
+            (subject
+              ? subject.permissions.includes(item.permission)
+              : subjects.some((link) =>
+                  link.permissions.includes(item.permission!),
+                )),
         ) ||
         Boolean(
           item.permissions?.some((permission) =>
@@ -171,10 +217,6 @@ export function PortalShell({ children }: { children: ReactNode }) {
           ),
         ),
     );
-  const mobileRoutes = parent
-    ? ["/learn", "/learn/schedule", "/learn/progress", "/learn/help"]
-    : ["/learn", "/learn/courses", "/learn/assignments", "/learn/schedule"];
-  const mobile = visible.filter((item) => mobileRoutes.includes(item.route));
   const contextLabel = (
     <>
       {subject && (
@@ -210,15 +252,15 @@ export function PortalShell({ children }: { children: ReactNode }) {
         csrfToken: "",
       });
       void client.invalidateQueries({ queryKey: portalSessionKey });
-      navigate("/login");
+      allowNavigation(() => navigate("/login"));
     },
   });
   const go = (route: string) =>
     guarded(() => {
-      setMenu(false);
+      if (route === path) changeMenu(false);
       navigate(route);
     });
-  function navigation(items: NavItem[], bottom = false) {
+  function navigation(items: NavItem[]) {
     return items.map((item) => {
       const active =
         path === item.route ||
@@ -228,17 +270,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
           key={item.route}
           type="button"
           className={cn(
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            bottom
-              ? "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium transition-colors"
-              : "sidebar-nav-item w-full text-left",
-            active && (bottom ? "bg-primary/10 text-primary" : "active"),
-            bottom && !active && "hover:bg-accent hover:text-accent-foreground",
+            "sidebar-nav-item w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            active && "active",
           )}
           aria-current={active ? "page" : undefined}
           onClick={() => go(item.route)}
         >
-          {active && !bottom && (
+          {active && (
             <span
               className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100"
               aria-hidden="true"
@@ -246,10 +284,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
               <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary-600 shadow-[0_0_10px_0_var(--primary-glow)]" />
             </span>
           )}
-          <item.icon
-            className={bottom ? "h-5 w-5 shrink-0" : "sidebar-nav-item__icon"}
-            aria-hidden="true"
-          />
+          <item.icon className="sidebar-nav-item__icon" aria-hidden="true" />
           <span className="min-w-0 truncate">
             {t(
               item.route === "/learn" && parent
@@ -259,7 +294,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
                   : item.key,
             )}
           </span>
-          {active && !bottom && (
+          {active && (
             <span
               className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary-600"
               aria-hidden="true"
@@ -270,8 +305,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
     });
   }
   return (
-    <div className="portal-ui min-h-dvh text-sm text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm lg:flex print:hidden">
+    <div className="portal-ui portal-shell flex h-dvh overflow-hidden text-sm text-foreground">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-card/95 backdrop-blur-sm lg:flex print:hidden">
         <div className="flex shrink-0 items-center border-b border-border/70 px-3 py-4">
           <Logo size="sm" className="shrink-0" />
           <div className="ml-2 flex min-w-0 flex-col gap-0.5">
@@ -301,102 +336,119 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </Button>
         </div>
       </aside>
-      <div className="min-w-0 lg:pl-64 print:pl-0">
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:gap-3 sm:px-4 sm:py-3 lg:px-6 print:hidden">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden min-h-11 min-w-11 rounded-full md:flex lg:hidden"
-              aria-label={t("portalMore")}
-              onClick={() => setMenu(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-            {subjects.length > 1 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="h-auto min-w-0 max-w-full justify-start gap-2 px-2 py-1.5"
-                  >
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main
+          ref={mainRef}
+          tabIndex={-1}
+          className="portal-shell-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip overscroll-y-contain outline-none [scrollbar-gutter:stable]"
+          data-app-scroll="document"
+        >
+          <header className="sticky top-0 z-30 shrink-0 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:px-4 sm:py-3 lg:px-6 print:hidden">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 lg:flex-nowrap">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-ml-2 rounded-lg text-muted-foreground lg:hidden"
+                aria-label={t("openNavigation")}
+                onClick={() => changeMenu(true)}
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              <div className="order-2 flex w-full min-w-0 items-center gap-2 lg:order-none lg:w-auto lg:flex-1">
+                {subjects.length > 1 ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        className="h-auto min-w-0 max-w-full justify-start gap-2 px-2 py-1.5"
+                      >
+                        {contextLabel}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="portal-ui max-h-[60dvh] overflow-auto"
+                    >
+                      {personalSubjects.length > 0 && (
+                        <>
+                          <DropdownMenuLabel>
+                            {t("portalMyLearning")}
+                          </DropdownMenuLabel>
+                          {personalSubjects.map((item) => (
+                            <DropdownMenuItem
+                              key={item.linkId}
+                              onSelect={() => selectSubject(item.linkId)}
+                            >
+                              {item.studentName}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      )}
+                      {personalSubjects.length > 0 &&
+                        representatives.length > 0 && <DropdownMenuSeparator />}
+                      {representatives.length > 0 && (
+                        <>
+                          <DropdownMenuLabel>
+                            {t("portalChildren")}
+                          </DropdownMenuLabel>
+                          {representatives.length > 1 && (
+                            <DropdownMenuItem
+                              onSelect={() => selectSubject(null)}
+                            >
+                              {t("portalFamilyOverview")}
+                            </DropdownMenuItem>
+                          )}
+                          {representatives.map((item) => (
+                            <DropdownMenuItem
+                              key={item.linkId}
+                              onSelect={() => selectSubject(item.linkId)}
+                            >
+                              {item.studentName}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <div className="flex min-h-10 min-w-0 items-center gap-2">
                     {contextLabel}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="portal-ui max-h-[60dvh] overflow-auto"
-                >
-                  <DropdownMenuLabel>{t("portalMyLearning")}</DropdownMenuLabel>
-                  {subjects
-                    .filter((item) => item.kind === "self")
-                    .map((item) => (
-                      <DropdownMenuItem
-                        key={item.linkId}
-                        onSelect={() => selectSubject(item.linkId)}
-                      >
-                        {item.studentName}
-                      </DropdownMenuItem>
-                    ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>{t("portalChildren")}</DropdownMenuLabel>
-                  {subjects.filter((item) => item.kind === "representative")
-                    .length > 1 && (
-                    <DropdownMenuItem onSelect={() => selectSubject(null)}>
-                      {t("portalFamilyOverview")}
-                    </DropdownMenuItem>
-                  )}
-                  {subjects
-                    .filter((item) => item.kind === "representative")
-                    .map((item) => (
-                      <DropdownMenuItem
-                        key={item.linkId}
-                        onSelect={() => selectSubject(item.linkId)}
-                      >
-                        {item.studentName}
-                      </DropdownMenuItem>
-                    ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <div className="flex min-h-10 min-w-0 items-center gap-2">
-                {contextLabel}
-              </div>
-            )}
-          </div>
-          <div className="portal-header-actions flex shrink-0 items-center gap-1 sm:gap-1.5">
-            <LanguageSwitcher className="rounded-full" />
-            <ThemeToggle />
-            <Button
-              size="icon"
-              variant="ghost"
-              className="relative rounded-full"
-              aria-label={t("portalNotifications")}
-              onClick={() => setNotificationsOpen(true)}
-            >
-              <Bell className="h-5 w-5" />
-              <UnreadCountBadge
-                count={notifications.data?.unreadCount ?? 0}
-                className="pointer-events-none absolute -right-1.5 -top-2"
-                label={t("portalUnreadCount").replace(
-                  "{count}",
-                  String(notifications.data?.unreadCount ?? 0),
+                  </div>
                 )}
-              />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="rounded-full"
-              aria-label={t("portalProfile")}
-              onClick={() => go("/learn/profile")}
-            >
-              <User className="h-5 w-5" />
-            </Button>
-          </div>
-        </header>
-        <main>
-          <ModulePage className="space-y-6 pb-28 sm:pb-28 md:pb-6 lg:pb-8 print:p-0">
+              </div>
+              <div className="portal-header-actions ml-auto flex shrink-0 items-center gap-1.5">
+                <LanguageSwitcher className="rounded-full" />
+                <ThemeToggle />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="relative rounded-full"
+                  aria-label={t("portalNotifications")}
+                  onClick={() => setNotificationsOpen(true)}
+                >
+                  <Bell className="h-5 w-5" />
+                  <UnreadCountBadge
+                    count={notifications.data?.unreadCount ?? 0}
+                    className="pointer-events-none absolute -right-1.5 -top-2"
+                    label={t("portalUnreadCount").replace(
+                      "{count}",
+                      String(notifications.data?.unreadCount ?? 0),
+                    )}
+                  />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="rounded-full"
+                  aria-label={t("portalProfile")}
+                  onClick={() => go("/learn/profile")}
+                >
+                  <User className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </header>
+          <ModulePage className="space-y-6 print:p-0">
             {logout.error && (
               <p role="alert" className="text-destructive">
                 {errorMessage(logout.error)}
@@ -406,29 +458,28 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </ModulePage>
         </main>
       </div>
-      <nav
-        aria-label={t("portalTitle")}
-        className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border/70 bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden print:hidden"
-      >
-        {navigation(mobile, true)}
-        <Button
-          variant="ghost"
-          className="flex min-h-14 min-w-0 flex-1 flex-col gap-1 px-1 text-[11px]"
-          onClick={() => setMenu(true)}
-        >
-          <MoreHorizontal className="h-5 w-5" />
-          {t("portalMore")}
-        </Button>
-      </nav>
-      <Sheet open={menu} onOpenChange={setMenu}>
+      <Sheet open={menu} onOpenChange={changeMenu}>
         <SheetContent
           side="left"
-          className="portal-ui flex w-[min(320px,85vw)] flex-col gap-0 bg-card p-0"
+          className="portal-ui flex w-72 flex-col gap-0 bg-card p-0 sm:w-72 sm:max-w-72"
+          onCloseAutoFocus={(event) => {
+            if (!menuClosedForNavigation.current) return;
+            event.preventDefault();
+            menuClosedForNavigation.current = false;
+            mainRef.current?.focus({ preventScroll: true });
+          }}
         >
           <SheetHeader className="shrink-0 border-b border-border/70 px-3 py-4 pr-12">
             <SheetTitle className="flex items-center gap-2 text-left text-base">
               <Logo size="sm" className="shrink-0" />
-              <span>{t("portalTitle")}</span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-base font-semibold leading-tight tracking-tight">
+                  {t("platformName")}
+                </span>
+                <span className="text-[11px] font-normal leading-tight text-muted-foreground">
+                  {t("portalTitle")}
+                </span>
+              </span>
             </SheetTitle>
           </SheetHeader>
           <nav
@@ -457,7 +508,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         open={notificationsOpen}
         onOpenChange={(open) => {
           if (open) setNotificationsOpen(true);
-          else guarded(() => setNotificationsOpen(false));
+          else notificationScope.guarded(() => setNotificationsOpen(false));
         }}
       >
         <SheetContent
@@ -468,12 +519,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
             <SheetTitle>{t("portalNotifications")}</SheetTitle>
           </SheetHeader>
           {notificationsOpen && (
-            <div className="space-y-4">
-              <PortalNotifications
-                embedded
-                onNavigate={() => setNotificationsOpen(false)}
-              />
-            </div>
+            <PortalFormScope id={notificationScope.id}>
+              <div className="space-y-4">
+                <PortalNotifications
+                  embedded
+                  onNavigate={() => setNotificationsOpen(false)}
+                />
+              </div>
+            </PortalFormScope>
           )}
         </SheetContent>
       </Sheet>

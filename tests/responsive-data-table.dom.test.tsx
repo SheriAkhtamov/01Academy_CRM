@@ -7,7 +7,7 @@ import { DataTable, type DataTableColumn } from '../client/src/components/ux/Dat
 import { Tabs, TabsList, TabsTrigger } from '../client/src/components/ui/tabs';
 import { i18n } from '../client/src/lib/i18n';
 import { Dialog, DialogTitle } from '../client/src/components/ui/dialog';
-import { PortalDialogContent } from '../client/src/features/learning-content/modal-content';
+import { PortalDialogContent } from '../client/src/features/portal-app/modal-content';
 
 /**
  * jsdom ships no `matchMedia`, which is exactly why `useMediaQuery` treats its
@@ -197,12 +197,27 @@ describe('data table on a phone', () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
+  it.each([375, 1280])('keeps existing focus when LMS row focusing is not enabled at %ipx', (width) => {
+    setViewportWidth(width);
+    const onRowClick = vi.fn();
+    render(<>
+      <button type="button">Existing CRM action</button>
+      <DataTable columns={columns} data={rows} keyExtractor={(row) => String(row.id)} onRowClick={onRowClick} />
+    </>);
+    const previous = screen.getByRole('button', { name: 'Existing CRM action' });
+    previous.focus();
+    const row = screen.getByRole('button', { name: /Zara Usmanova/ });
+    fireEvent.click(within(row).getByText('Zara Usmanova'));
+    expect(onRowClick).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(previous);
+  });
+
   it.each([375, 1280])('returns focus to the selected record after closing its dialog at %ipx', async (width) => {
     setViewportWidth(width);
     function RecordDialog() {
       const [open, setOpen] = useState(false);
       return <>
-        <DataTable columns={columns} data={rows} keyExtractor={(row) => String(row.id)} onRowClick={() => setOpen(true)} />
+        <DataTable columns={columns} data={rows} keyExtractor={(row) => String(row.id)} focusOnRowClick onRowClick={() => setOpen(true)} />
         <Dialog open={open} onOpenChange={setOpen}>
           <PortalDialogContent aria-describedby={undefined}>
             <DialogTitle>Record details</DialogTitle>

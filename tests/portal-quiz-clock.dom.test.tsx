@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -24,6 +25,11 @@ const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
 }));
 vi.mock("../client/src/features/portal-app/context", () => ({
+  PortalFormScope: ({ children }: { children: ReactNode }) => children,
+  usePortalFormScope: () => ({
+    id: "quiz-clock",
+    guarded: (action: () => void) => action(),
+  }),
   usePortal: () => ({
     subject: { linkId: 10, studentName: "Learner", kind: "self" },
     allowed: () => true,

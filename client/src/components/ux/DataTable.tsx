@@ -89,6 +89,7 @@ interface DataTableProps<T> {
   defaultSortKey?: string;
   defaultSortDirection?: SortDirection;
   onRowClick?: (row: T) => void;
+  focusOnRowClick?: boolean;
   rowClassName?: (row: T) => string;
   pageSize?: number;
   isLoading?: boolean;
@@ -112,6 +113,7 @@ export function DataTable<T extends Record<string, any>>({
   defaultSortKey,
   defaultSortDirection = 'asc',
   onRowClick,
+  focusOnRowClick = false,
   rowClassName,
   pageSize: initialPageSize = 25,
   isLoading = false,
@@ -343,7 +345,7 @@ export function DataTable<T extends Record<string, any>>({
               */
               onClick={onRowClick ? (event) => {
                 if (isNestedControl(event)) return;
-                event.currentTarget.focus({ preventScroll: true });
+                if (focusOnRowClick) event.currentTarget.focus({ preventScroll: true });
                 onRowClick(row);
               } : undefined}
               tabIndex={onRowClick ? 0 : undefined}
@@ -478,7 +480,7 @@ export function DataTable<T extends Record<string, any>>({
                   )}
                   onClick={onRowClick ? (event) => {
                     if (isNestedControl(event)) return;
-                    event.currentTarget.focus({ preventScroll: true });
+                    if (focusOnRowClick) event.currentTarget.focus({ preventScroll: true });
                     onRowClick(row);
                   } : undefined}
                   tabIndex={onRowClick ? 0 : undefined}

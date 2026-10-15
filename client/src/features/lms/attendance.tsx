@@ -36,7 +36,8 @@ export function PortalAttendance() {
   const { t } = useTranslation();
   const format = usePortalFormat();
   const [month, setMonth] = useState(currentMonth);
-  const [course, setCourse] = useState("");
+  const [courseChoice, setCourseChoice] = useState({ value: "", label: "" });
+  const course = courseChoice.value;
   const [status, setStatus] = useState("");
   const range = portalMonthRange(month);
   const query = useSubjectQuery(
@@ -57,11 +58,12 @@ export function PortalAttendance() {
   ).length;
   const unmarked = conducted.filter((item) => item.attendance === null).length;
   const total = present + absent;
-  const courses = [
-    ...new Map(
-      (query.data ?? []).map((item) => [item.runId, item.courseName]),
-    ).entries(),
-  ];
+  const courseNames = new Map(
+    (query.data ?? []).map((item) => [String(item.runId), item.courseName]),
+  );
+  if (course && courseChoice.label && !courseNames.has(course)) {
+    courseNames.set(course, courseChoice.label);
+  }
   const items = conducted.filter(
     (item) =>
       !status ||
@@ -90,11 +92,13 @@ export function PortalAttendance() {
           <PortalSelect
             id="attendance-course"
             value={course}
-            onValueChange={setCourse}
+            onValueChange={(value) =>
+              setCourseChoice({ value, label: courseNames.get(value) ?? "" })
+            }
             options={[
               { value: "", label: t("portalAllCourses") },
-              ...courses.map(([id, name]) => ({
-                value: String(id),
+              ...Array.from(courseNames, ([id, name]) => ({
+                value: id,
                 label: name,
               })),
             ]}
@@ -116,7 +120,7 @@ export function PortalAttendance() {
         </div>
       </PortalToolbar>
       {query.isPending ? (
-        <PortalLoading />
+        <PortalLoading variant="section" />
       ) : query.error ? (
         <PortalError
           error={query.error}
@@ -156,11 +160,12 @@ export function PortalAttendance() {
             ))}
           </div>
           <DataTable
+            focusOnRowClick
             data={items}
             keyExtractor={(item) => `${item.runId}:${item.lessonId}`}
             rootClassName="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
             filterKey={`${month}:${course}:${status}`}
-            emptyState={<PortalEmpty labelKey="portalNoLessons" />}
+            emptyState={<PortalEmpty embedded labelKey="portalNoLessons" />}
             columns={[
               {
                 key: "topic",

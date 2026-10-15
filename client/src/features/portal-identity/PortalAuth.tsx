@@ -86,11 +86,13 @@ export function PortalAuth({
     event.preventDefault();
     setValidation("");
     if (mode === "invite" && !account) {
-      if (
-        password.length < 12 ||
-        new TextEncoder().encode(password).length > 72
-      ) {
+      if (password.length < 12) {
         setValidation(t("portalPasswordLengthInvalid"));
+        document.getElementById("portal-password")?.focus();
+        return;
+      }
+      if (new TextEncoder().encode(password).length > 72) {
+        setValidation(t("portalPasswordTooLong"));
         document.getElementById("portal-password")?.focus();
         return;
       }
@@ -105,71 +107,77 @@ export function PortalAuth({
   return (
     <PortalAuthFrame titleKey="portalInvite">
       <form className="space-y-5" onSubmit={submit}>
-        {!account && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="portal-name">{t("portalFullName")}</Label>
-              <Input
-                id="portal-name"
-                autoComplete="name"
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="portal-password">{t("portalNewPassword")}</Label>
-              <Input
-                id="portal-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="portal-repeat">{t("portalConfirmPassword")}</Label>
-              <Input
-                id="portal-repeat"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={repeat}
-                onChange={(event) => setRepeat(event.target.value)}
-              />
-            </div>
-          </>
-        )}
-        {account && <p className="text-sm font-medium">{account.fullName}</p>}
-        {(validation || action.error) && (
-          <p role="alert" className="text-sm text-destructive">
-            {validation || message(action.error, "portalSaveError")}
-          </p>
-        )}
-        <div className="space-y-2">
-          <Button
-            type="submit"
-            disabled={action.isPending || !session?.csrfToken}
-            className="w-full"
-          >
-            {t("portalActivate")}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            onClick={() =>
-              navigate(
-                token
-                  ? `/login?next=${encodeURIComponent(`/learn/invite#token=${encodeURIComponent(token)}`)}`
-                  : "/login",
-              )
-            }
-          >
-            {t("portalLogin")}
-          </Button>
-        </div>
+        <fieldset disabled={action.isPending} className="min-w-0 space-y-5">
+          {!account && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="portal-name">{t("portalFullName")}</Label>
+                <Input
+                  id="portal-name"
+                  autoComplete="name"
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="portal-password">
+                  {t("portalNewPassword")}
+                </Label>
+                <Input
+                  id="portal-password"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="portal-repeat">
+                  {t("portalConfirmPassword")}
+                </Label>
+                <Input
+                  id="portal-repeat"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={repeat}
+                  onChange={(event) => setRepeat(event.target.value)}
+                />
+              </div>
+            </>
+          )}
+          {account && <p className="text-sm font-medium">{account.fullName}</p>}
+          {(validation || action.error) && (
+            <p role="alert" className="text-sm text-destructive">
+              {validation || message(action.error, "portalSaveError")}
+            </p>
+          )}
+          <div className="space-y-2">
+            <Button
+              type="submit"
+              disabled={action.isPending || !session?.csrfToken}
+              className="w-full"
+            >
+              {t("portalActivate")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() =>
+                navigate(
+                  token
+                    ? `/login?next=${encodeURIComponent(`/learn/invite#token=${encodeURIComponent(token)}`)}`
+                    : "/login",
+                )
+              }
+            >
+              {t("portalLogin")}
+            </Button>
+          </div>
+        </fieldset>
       </form>
     </PortalAuthFrame>
   );

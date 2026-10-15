@@ -22,7 +22,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
-import { usePortal, portalGrantFingerprint } from "./context";
+import {
+  PortalFormScope,
+  usePortalFormScope,
+  usePortal,
+  portalGrantFingerprint,
+} from "./context";
 import {
   PortalDialogContent as DialogContent,
   PortalTitle,
@@ -49,6 +54,7 @@ export function PortalNotifications({
   embedded?: boolean;
   onNavigate?: () => void;
 }) {
+  const settingsScope = usePortalFormScope();
   const { t } = useTranslation();
   const message = usePortalError();
   const notify = usePortalSuccess();
@@ -95,7 +101,7 @@ export function PortalNotifications({
       refreshNotices();
     },
   });
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant={embedded ? "section" : "page"} />;
   if (query.error)
     return (
       <PortalError
@@ -219,20 +225,22 @@ export function PortalNotifications({
           {t("portalLoadMore")}
         </Button>
       )}
-      <Dialog
-        open={settings}
-        onOpenChange={(value) => {
-          if (!value) guarded(() => setSettings(false));
-        }}
-      >
-        <DialogContent className="portal-ui max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
-            <DialogDescription>{account?.fullName}</DialogDescription>
-          </DialogHeader>
-          {settings && <NotificationPreferences />}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={settingsScope.id}>
+        <Dialog
+          open={settings}
+          onOpenChange={(value) => {
+            if (!value) settingsScope.guarded(() => setSettings(false));
+          }}
+        >
+          <DialogContent className="portal-ui max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
+              <DialogDescription>{account?.fullName}</DialogDescription>
+            </DialogHeader>
+            {settings && <NotificationPreferences />}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
     </>
   );
 }
@@ -243,7 +251,7 @@ function NotificationPreferences() {
     queryFn: ({ signal }) => portalResourcesApi.preferences(signal),
     enabled: Boolean(account),
   });
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -262,7 +270,8 @@ function PreferencesForm({
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { setUnsaved } = usePortal();
+  const { account, setUnsaved } = usePortal();
+  const client = useQueryClient();
   const [values, setValues] = useState(initial);
   const [baseline, setBaseline] = useState(JSON.stringify(initial));
   useEffect(() => {
@@ -270,10 +279,14 @@ function PreferencesForm({
     return () => setUnsaved(false);
   }, [values, baseline, setUnsaved]);
   const action = useMutation({
-    mutationFn: () => portalResourcesApi.savePreferences(values),
-    onSuccess: (data) => {
-      setValues(data);
+    mutationFn: (submitted: PortalNotificationPreferencesDto) =>
+      portalResourcesApi.savePreferences(submitted),
+    onSuccess: (data, submitted) => {
+      setValues((current) =>
+        JSON.stringify(current) === JSON.stringify(submitted) ? data : current,
+      );
       setBaseline(JSON.stringify(data));
+      client.setQueryData(["portal-account", account?.id, "preferences"], data);
     },
   });
   return (
@@ -281,7 +294,7 @@ function PreferencesForm({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        action.mutate();
+        action.mutate(values);
       }}
     >
       <div className="divide-y divide-border/60 rounded-lg border border-border/70">
@@ -333,7 +346,7 @@ function PreferencesForm({
           {message(action.error, "portalSaveError")}
         </p>
       )}
-      {action.isSuccess && (
+      {action.isSuccess && JSON.stringify(values) === baseline && (
         <p role="status" className="text-sm text-muted-foreground">
           {t("portalSaved")}
         </p>

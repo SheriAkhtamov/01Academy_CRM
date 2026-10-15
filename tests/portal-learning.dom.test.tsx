@@ -29,6 +29,7 @@ import type { PortalProjectDto } from "../shared/contracts/portal-resources";
 import { i18n } from "../client/src/lib/i18n";
 import { ThemeProvider } from "../client/src/components/ux/ThemeProvider";
 import { PortalSelect } from "../client/src/features/portal-app/controls";
+import { PortalError } from "../client/src/features/portal-app/ui";
 import {
   PortalSessionProvider,
   portalSubjectKey,
@@ -45,7 +46,7 @@ import { PortalPayments } from "../client/src/features/portal-app/payments";
 import { PortalApp } from "../client/src/features/portal-app/PortalApp";
 import { PortalShell } from "../client/src/features/portal-app/PortalShell";
 import { PortalAttendance } from "../client/src/features/lms/attendance";
-import { MakeupDialog } from "../client/src/features/lms/makeup";
+import { MakeupDialog, PortalMakeup } from "../client/src/features/lms/makeup";
 import {
   PortalVideo,
   portalVideoEmbed,
@@ -60,7 +61,8 @@ import {
   HelpDialog,
   PortalHelp,
 } from "../client/src/features/lms/communication";
-import { PortalDay } from "../client/src/features/lms/overview";
+import { FamilyOverview, PortalDay } from "../client/src/features/lms/overview";
+import { PortalNotifications } from "../client/src/features/portal-app/notifications";
 import {
   portalResourcePage,
   portalResourcesApi,
@@ -70,6 +72,7 @@ import { PortalProfile } from "../client/src/features/portal-identity/PortalProf
 import { useAssignmentDraft } from "../client/src/features/lms/useAssignmentDraft";
 import {
   PortalApiError,
+  portalIdentityApi,
   collectPortalPages,
 } from "../client/src/features/portal-app/api";
 const mocks = vi.hoisted(() => ({
@@ -524,6 +527,7 @@ afterEach(() => {
   client.clear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 function Ready({ children }: { children: ReactNode }) {
   const { account: current } = usePortal();
@@ -594,6 +598,81 @@ it("keeps required course selection invalid until chosen and submits the empty o
   await userEvent.click(await screen.findByRole("option", { name: "All courses" }));
   expect(new FormData(form).get("filter")).toBe("");
 });
+it("keeps a child's existing dashboard visible while the family overview refreshes", async () => {
+  const familyLink: PortalSubjectDto = { ...parent, permissions: ["learning.read"] };
+  mocks.session.mockResolvedValue({ account, subjects: [familyLink], csrfToken: "test-csrf" });
+  const dashboard = {
+    ...await mocks.dashboard(),
+    nextLesson: { courseName: "Existing family lesson", scheduledAt: "2026-10-16T12:00:00Z" },
+  };
+  mocks.dashboard.mockResolvedValue(dashboard);
+  mount(<FamilyOverview />);
+  await screen.findByText(/Existing family lesson/);
+  const initialRequests = mocks.dashboard.mock.calls.length;
+
+  let complete!: (value: typeof dashboard) => void;
+  mocks.dashboard.mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = client.invalidateQueries({ queryKey: portalSubjectKey(account, familyLink, "dashboard") });
+  });
+  await waitFor(() => expect(mocks.dashboard).toHaveBeenCalledTimes(initialRequests + 1));
+  expect(screen.getByText(/Existing family lesson/)).toBeTruthy();
+  expect(screen.queryByRole("status", { name: i18n.t("portalLoading") })).toBeNull();
+  await act(async () => {
+    complete({ ...dashboard, nextLesson: { ...dashboard.nextLesson, courseName: "Updated family lesson" } });
+    await refresh;
+  });
+  await screen.findByText(/Updated family lesson/);
+});
+it("does not show a dashboard loader for a family member with only finance access", async () => {
+  mocks.session.mockResolvedValue({ account, subjects: [{ ...parent, permissions: ["finance.read"] }], csrfToken: "test-csrf" });
+  mount(<FamilyOverview />);
+  await screen.findByText((text) => text.startsWith(`${i18n.t("portalDueAmount")}:`));
+  expect(mocks.dashboard).not.toHaveBeenCalled();
+  expect(screen.queryByRole("status", { name: i18n.t("portalLoading") })).toBeNull();
+});
+it("names an empty catch-up plan list without claiming that there are no lessons", async () => {
+  mount(<PortalMakeup />);
+  await screen.findByText(i18n.t("portalNoMakeupPlans"));
+  expect(screen.queryByText(i18n.t("portalNoLessons"))).toBeNull();
+});
+it("shows saved notification switches after closing and reopening settings", async () => {
+  const initial = {
+    categories: {
+      learning: { inApp: true }, schedule: { inApp: true }, feedback: { inApp: true },
+      finance: { inApp: true }, family: { inApp: true }, security: { inApp: true },
+    },
+    weeklySummary: false,
+  };
+  vi.spyOn(portalResourcesApi, "preferences").mockResolvedValue(initial);
+  const save = vi.spyOn(portalResourcesApi, "savePreferences").mockImplementation(async (values) => values);
+  mount(<PortalNotifications />);
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalNotificationSettings") }));
+  let dialog = await screen.findByRole("dialog", { name: i18n.t("portalNotificationSettings") });
+  await userEvent.click(await within(dialog).findByRole("switch", { name: i18n.t("portalWeeklySummary") }));
+  await userEvent.click(within(dialog).getByRole("button", { name: i18n.t("portalSave") }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ ...initial, weeklySummary: true }));
+  await within(dialog).findByText(i18n.t("portalSaved"));
+  await userEvent.click(within(dialog).getByRole("button", { name: i18n.t("close") }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalNotificationSettings") }));
+  dialog = await screen.findByRole("dialog", { name: i18n.t("portalNotificationSettings") });
+  expect((await within(dialog).findByRole("switch", { name: i18n.t("portalWeeklySummary") })).getAttribute("aria-checked")).toBe("true");
+});
+it("identifies an overlong invitation password without sending activation", async () => {
+  mocks.session.mockResolvedValue({ account: null, subjects: [], csrfToken: "test-csrf" });
+  history.replaceState(null, "", "/learn/invite#token=invitation");
+  const activate = vi.spyOn(portalIdentityApi, "activate");
+  render(<PortalApp />);
+  await userEvent.type(await screen.findByLabelText(i18n.t("portalFullName")), "New Learner");
+  await userEvent.type(screen.getByLabelText(i18n.t("portalNewPassword")), "a".repeat(73));
+  await userEvent.type(screen.getByLabelText(i18n.t("portalConfirmPassword")), "a".repeat(73));
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalActivate") }));
+  expect((await screen.findByRole("alert")).textContent).toBe(i18n.t("portalPasswordTooLong"));
+  expect(activate).not.toHaveBeenCalled();
+});
 it("scopes cached data to account, link, student and effective permissions", () => {
   const key = portalSubjectKey(account, own, "assignment", 1);
   expect(key).not.toEqual(
@@ -661,6 +740,16 @@ it("restores assignment filters after leaving and returning to the list without 
   expect(stored).not.toContain("Create a project.");
   expect(stored).not.toContain("Saved in another tab");
 });
+it.each([
+  [502, "portalLoadError", "portalLmsLoadError"],
+  [0, "portalOffline", "portalLmsOffline"],
+  [409, "portalConflict", "portalLmsConflict"],
+] as const)("keeps LMS error wording local for status %i and API code %s", (status, code, label) => {
+  render(<PortalError error={new PortalApiError(status, code)} retry={vi.fn()} />);
+  expect(screen.getByText(i18n.t(label))).toBeTruthy();
+  expect(screen.queryByText(i18n.t(code))).toBeNull();
+});
+
 it("collects all backend list pages with the same scope and period filters", async () => {
   const fetch = vi
     .fn()
@@ -934,6 +1023,53 @@ it("retries and previews an attached file without submitting its form and confir
   await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: i18n.t("portalRemove") }));
   expect(change).toHaveBeenCalledWith([]);
   expect(submit).not.toHaveBeenCalled();
+});
+it("reaches the visible upload action by keyboard and opens its programmatic file picker", async () => {
+  mount(<PortalUploads ids={[]} onChange={vi.fn()} />);
+  const picker = await screen.findByLabelText(i18n.t("portalUpload"));
+  const openPicker = vi.spyOn(picker, "click");
+  await userEvent.tab();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: i18n.t("portalUpload") }));
+  await userEvent.keyboard("{Enter}");
+  expect(openPicker).toHaveBeenCalledOnce();
+});
+it("ignores dropped attachments while the containing form is disabled for submission", async () => {
+  mount(<fieldset disabled><PortalUploads ids={[]} onChange={vi.fn()} /></fieldset>);
+  const picker = await screen.findByLabelText(i18n.t("portalUpload"));
+  fireEvent.drop(picker.parentElement!, {
+    dataTransfer: { files: [new File(["answer"], "answer.pdf", { type: "application/pdf" })] },
+  });
+  expect(mocks.upload).not.toHaveBeenCalled();
+});
+it("keeps both concurrent uploads and existing attachments when they finish in one batch", async () => {
+  let finishFirst!: (value: { id: number }) => void;
+  let finishSecond!: (value: { id: number }) => void;
+  mocks.upload
+    .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+    .mockImplementationOnce(() => new Promise((resolve) => { finishSecond = resolve; }));
+  mocks.file.mockImplementation(async (id: number) => ({
+    id, name: `Attachment ${id}.pdf`, mime: "application/pdf", size: 100,
+    state: "ready", downloadUrl: `/api/portal/files/${id}/download?linkId=10`,
+  }));
+  const changed = vi.fn();
+  function Attachments() {
+    const [ids, setIds] = useState([80]);
+    return <PortalUploads ids={ids} onChange={(next) => { changed(next); setIds(next); }} />;
+  }
+  mount(<Attachments />);
+  await userEvent.upload(await screen.findByLabelText(i18n.t("portalUpload")), [
+    new File(["first"], "first.pdf", { type: "application/pdf" }),
+    new File(["second"], "second.pdf", { type: "application/pdf" }),
+  ]);
+  await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    finishFirst({ id: 81 });
+    finishSecond({ id: 82 });
+  });
+  expect(changed).toHaveBeenLastCalledWith([80, 81, 82]);
+  await screen.findByText("Attachment 80.pdf");
+  await screen.findByText("Attachment 81.pdf");
+  await screen.findByText("Attachment 82.pdf");
 });
 it("saves the learner’s selected comparison with course scope and server version", async () => {
   const first = projectFixture(70, "First project");
@@ -2323,7 +2459,7 @@ it("keeps an unsaved quiz answer visible and prevents finishing until retry succ
   mocks.answer.mockRejectedValueOnce(new PortalApiError(0, "portalOffline"));
   mount(<QuizAttempt initial={attempt} />);
   await userEvent.click(await screen.findByRole("radio", { name: "Option A" }));
-  await screen.findByText(i18n.t("portalOffline"));
+  await screen.findByText(i18n.t("portalLmsOffline"));
   expect((screen.getByLabelText("Option A") as HTMLInputElement).checked).toBe(
     true,
   );

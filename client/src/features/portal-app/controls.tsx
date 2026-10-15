@@ -61,13 +61,13 @@ export function PortalSelect({
           {options
             .filter((option) => !required || option.value !== "")
             .map((option) => (
-            <SelectItem
-              key={option.value}
-              value={option.value === "" ? emptyValue : option.value}
-              disabled={option.disabled}
-            >
-              {option.label}
-            </SelectItem>
+              <SelectItem
+                key={option.value}
+                value={option.value === "" ? emptyValue : option.value}
+                disabled={option.disabled}
+              >
+                {option.label}
+              </SelectItem>
             ))}
         </SelectContent>
       </Select>

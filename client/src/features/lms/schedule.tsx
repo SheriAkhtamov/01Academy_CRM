@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LmsScheduleDto } from "@shared/contracts/lms";
@@ -13,7 +13,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
-import { usePortal, useSubjectQuery } from "../portal-app/context";
+import {
+  PortalFormScope,
+  usePortalFormScope,
+  usePortal,
+  useSubjectQuery,
+} from "../portal-app/context";
 import {
   PortalDialogContent as DialogContent,
   PortalTitle,
@@ -57,6 +62,7 @@ export function portalWeekRange(offset: number) {
   };
 }
 export function PortalSchedule() {
+  const lessonScope = usePortalFormScope();
   const { t } = useTranslation();
   const format = usePortalFormat();
   const { allowed, guarded } = usePortal();
@@ -64,13 +70,12 @@ export function PortalSchedule() {
   const [view, setView] = usePortalViewState("schedule", {
     offset: "0",
     course: "",
+    courseName: "",
   });
   const offset = /^-?\d{1,4}$/.test(view.offset) ? Number(view.offset) : 0;
   const course = view.course;
   const setOffset = (value: number) =>
     setView((previous) => ({ ...previous, offset: String(value) }));
-  const setCourse = (value: string) =>
-    setView((previous) => ({ ...previous, course: value }));
   const [selected, setSelected] = useState<LmsScheduleDto | null>(null);
   const [help, setHelp] = useState(false);
   const [assignmentId, setAssignmentId] = useState<number | null>(null);
@@ -81,11 +86,41 @@ export function PortalSchedule() {
     [range.from, range.to],
     allowed("learning.read") ? "learning.read" : "attendance.read",
   );
-  const courses = [
-    ...new Map(
-      (query.data ?? []).map((item) => [item.runId, item.courseName]),
-    ).entries(),
-  ];
+  const courseNames = new Map(
+    (query.data ?? []).map((item) => [String(item.runId), item.courseName]),
+  );
+  const selectedCourseName = courseNames.get(course) || view.courseName;
+  const unresolvedCourse = Boolean(course && !selectedCourseName);
+  if (course && selectedCourseName && !courseNames.has(course)) {
+    courseNames.set(course, selectedCourseName);
+  }
+  useEffect(() => {
+    if (course && !selectedCourseName && query.isSuccess) {
+      setView((previous) =>
+        previous.course === course
+          ? { ...previous, course: "", courseName: "" }
+          : previous,
+      );
+      return;
+    }
+    if (
+      !course ||
+      !selectedCourseName ||
+      view.courseName === selectedCourseName
+    )
+      return;
+    setView((previous) =>
+      previous.course === course
+        ? { ...previous, courseName: selectedCourseName }
+        : previous,
+    );
+  }, [course, selectedCourseName, view.courseName, query.isSuccess, setView]);
+  const setCourse = (value: string) =>
+    setView((previous) => ({
+      ...previous,
+      course: value,
+      courseName: courseNames.get(value) ?? "",
+    }));
   const items = (query.data ?? []).filter(
     (item) => !course || item.runId === Number(course),
   );
@@ -123,19 +158,20 @@ export function PortalSchedule() {
         <PortalSelect
           className="w-full sm:ml-auto sm:w-56"
           aria-label={t("portalCourses")}
-          value={course}
+          value={unresolvedCourse ? "" : course}
+          disabled={unresolvedCourse}
           onValueChange={setCourse}
           options={[
             { value: "", label: t("portalAllCourses") },
-            ...courses.map(([id, name]) => ({
-              value: String(id),
+            ...Array.from(courseNames, ([id, name]) => ({
+              value: id,
               label: name,
             })),
           ]}
         />
       </PortalToolbar>
       {query.isPending ? (
-        <PortalLoading />
+        <PortalLoading variant="section" />
       ) : query.error ? (
         <PortalError
           error={query.error}
@@ -183,141 +219,143 @@ export function PortalSchedule() {
           ))}
         </div>
       )}
-      <Dialog
-        open={Boolean(selected)}
-        onOpenChange={(open) => {
-          if (!open)
-            guarded(() => {
-              setSelected(null);
-              setHelp(false);
-              setAssignmentId(null);
-            });
-        }}
-      >
-        <DialogContent className="portal-ui">
-          <DialogHeader>
-            <DialogTitle>
-              {selected?.topic ||
-                selected?.courseName ||
-                t("portalLessonDetails")}
-            </DialogTitle>
-            <DialogDescription>{selected?.courseName}</DialogDescription>
-          </DialogHeader>
-          {selected && (
-            <div className="space-y-4 text-sm">
-              <p>
-                {format.date(selected.scheduledAt)} ·{" "}
-                {format.time(selected.scheduledAt)}–
-                {format.time(selected.endsAt)} · {t("portalTashkent")}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <PortalStatus status={selected.status} />
-                {allowed("attendance.read") && (
-                  <PortalStatus status={selected.attendance} />
-                )}
-              </div>
-              {selected.rescheduled && (
-                <p className="text-sm text-muted-foreground">
-                  {t("portalRescheduled")}
-                  {selected.previousScheduledAt &&
-                    ` · ${format.date(selected.previousScheduledAt)} · ${format.time(selected.previousScheduledAt)}`}
-                </p>
-              )}
-              {selected.teacherName && (
+      <PortalFormScope id={lessonScope.id}>
+        <Dialog
+          open={Boolean(selected)}
+          onOpenChange={(open) => {
+            if (!open)
+              lessonScope.guarded(() => {
+                setSelected(null);
+                setHelp(false);
+                setAssignmentId(null);
+              });
+          }}
+        >
+          <DialogContent className="portal-ui">
+            <DialogHeader>
+              <DialogTitle>
+                {selected?.topic ||
+                  selected?.courseName ||
+                  t("portalLessonDetails")}
+              </DialogTitle>
+              <DialogDescription>{selected?.courseName}</DialogDescription>
+            </DialogHeader>
+            {selected && (
+              <div className="space-y-4 text-sm">
                 <p>
-                  {t("portalTeacher")}: {selected.teacherName}
+                  {format.date(selected.scheduledAt)} ·{" "}
+                  {format.time(selected.scheduledAt)}–
+                  {format.time(selected.endsAt)} · {t("portalTashkent")}
                 </p>
-              )}
-              {selected.roomName && (
-                <p>
-                  {t("portalRoom")}: {selected.schoolName} · {selected.roomName}
-                </p>
-              )}
-              {allowed("learning.read") &&
-                Boolean(selected.materials?.length) && (
-                  <section className="space-y-2">
-                    <h2 className="font-semibold">{t("portalMaterial")}</h2>
-                    {selected.materials?.map((material) => (
-                      <PortalActionRow
-                        key={material.publicationId}
-                        onClick={() =>
-                          guarded(() => {
-                            setSelected(null);
-                            navigate(
-                              `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
-                            );
-                          })
-                        }
-                      >
-                        {material.title}
-                      </PortalActionRow>
-                    ))}
-                  </section>
+                <div className="flex flex-wrap items-center gap-2">
+                  <PortalStatus status={selected.status} />
+                  {allowed("attendance.read") && (
+                    <PortalStatus status={selected.attendance} />
+                  )}
+                </div>
+                {selected.rescheduled && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("portalRescheduled")}
+                    {selected.previousScheduledAt &&
+                      ` · ${format.date(selected.previousScheduledAt)} · ${format.time(selected.previousScheduledAt)}`}
+                  </p>
                 )}
-              {allowed("learning.read") &&
-                Boolean(selected.assignments?.length) && (
-                  <section className="space-y-2">
-                    <h2 className="font-semibold">{t("portalAssignments")}</h2>
-                    {selected.assignments?.map((assignment) => (
-                      <PortalActionRow
-                        key={assignment.recipientId}
-                        onClick={() => setAssignmentId(assignment.recipientId)}
-                      >
-                        {assignment.title}
-                        <PortalStatus status={assignment.status} />
-                      </PortalActionRow>
-                    ))}
-                  </section>
+                {selected.teacherName && (
+                  <p>
+                    {t("portalTeacher")}: {selected.teacherName}
+                  </p>
                 )}
-              <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
-                {selected.meetingUrl &&
-                  safeHttps(selected.meetingUrl) &&
-                  selected.status !== "cancelled" && (
-                    <Button asChild>
-                      <a
-                        href={selected.meetingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {t("portalJoin")}
-                      </a>
+                {selected.roomName && (
+                  <p>
+                    {t("portalRoom")}: {selected.schoolName} · {selected.roomName}
+                  </p>
+                )}
+                {allowed("learning.read") &&
+                  Boolean(selected.materials?.length) && (
+                    <section className="space-y-2">
+                      <h2 className="font-semibold">{t("portalMaterial")}</h2>
+                      {selected.materials?.map((material) => (
+                        <PortalActionRow
+                          key={material.publicationId}
+                          onClick={() =>
+                            guarded(() => {
+                              setSelected(null);
+                              navigate(
+                                `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
+                              );
+                            })
+                          }
+                        >
+                          {material.title}
+                        </PortalActionRow>
+                      ))}
+                    </section>
+                  )}
+                {allowed("learning.read") &&
+                  Boolean(selected.assignments?.length) && (
+                    <section className="space-y-2">
+                      <h2 className="font-semibold">{t("portalAssignments")}</h2>
+                      {selected.assignments?.map((assignment) => (
+                        <PortalActionRow
+                          key={assignment.recipientId}
+                          onClick={() => setAssignmentId(assignment.recipientId)}
+                        >
+                          {assignment.title}
+                          <PortalStatus status={assignment.status} />
+                        </PortalActionRow>
+                      ))}
+                    </section>
+                  )}
+                <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
+                  {selected.meetingUrl &&
+                    safeHttps(selected.meetingUrl) &&
+                    selected.status !== "cancelled" && (
+                      <Button asChild>
+                        <a
+                          href={selected.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {t("portalJoin")}
+                        </a>
+                      </Button>
+                    )}
+                  {allowed("learning.read") && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        guarded(() => {
+                          setSelected(null);
+                          navigate(`/learn/courses/${selected.runId}`);
+                        })
+                      }
+                    >
+                      {t("portalMaterial")}
                     </Button>
                   )}
-                {allowed("learning.read") && (
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      guarded(() => {
-                        setSelected(null);
-                        navigate(`/learn/courses/${selected.runId}`);
-                      })
-                    }
-                  >
-                    {t("portalMaterial")}
-                  </Button>
-                )}
-                {allowed("communication.create") && (
-                  <Button variant="outline" onClick={() => setHelp(true)}>
-                    {t("portalNeedHelp")}
-                  </Button>
-                )}
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-      {selected && (
-        <HelpDialog
-          open={help}
-          onClose={() => setHelp(false)}
-          runId={selected.runId}
-          unitId={selected.unitId ?? undefined}
+                  {allowed("communication.create") && (
+                    <Button variant="outline" onClick={() => setHelp(true)}>
+                      {t("portalNeedHelp")}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+        {selected && (
+          <HelpDialog
+            open={help}
+            onClose={() => setHelp(false)}
+            runId={selected.runId}
+            unitId={selected.unitId ?? undefined}
+          />
+        )}
+        <AssignmentDialog
+          id={assignmentId}
+          onClose={() => setAssignmentId(null)}
         />
-      )}
-      <AssignmentDialog
-        id={assignmentId}
-        onClose={() => setAssignmentId(null)}
-      />
+      </PortalFormScope>
     </>
   );
 }

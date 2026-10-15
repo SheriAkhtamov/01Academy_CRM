@@ -22,7 +22,13 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
   portalSubjectKey,
@@ -259,7 +265,9 @@ export function PortalDay() {
                 <h2 className="break-words text-lg font-semibold tracking-tight">
                   {next.topic || next.courseName}
                 </h2>
-                <p className="text-sm text-muted-foreground">{next.courseName}</p>
+                <p className="text-sm text-muted-foreground">
+                  {next.courseName}
+                </p>
                 <p className="text-sm">
                   {format.date(next.scheduledAt)} ·{" "}
                   {format.time(next.scheduledAt)} · {t("portalTashkent")}
@@ -348,7 +356,9 @@ export function PortalDay() {
       {data.assignments.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold">{t("portalAssignments")}</h2>
+            <h2 className="text-base font-semibold">
+              {t("portalAssignments")}
+            </h2>
             <Button
               variant="ghost"
               size="sm"
@@ -483,7 +493,9 @@ export function PortalDay() {
       )}
       {data.announcements.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-base font-semibold">{t("portalAnnouncements")}</h2>
+          <h2 className="text-base font-semibold">
+            {t("portalAnnouncements")}
+          </h2>
           {data.announcements.map((item) => (
             <PortalActionRow
               key={item.id}
@@ -509,10 +521,12 @@ export function PortalDay() {
         }}
       >
         <DialogContent className="portal-ui">
-          <DialogTitle>{notice?.title}</DialogTitle>
-          <DialogDescription>
-            {notice && format.date(notice.publishAt)}
-          </DialogDescription>
+          <DialogHeader>
+            <DialogTitle>{notice?.title}</DialogTitle>
+            <DialogDescription>
+              {notice && format.date(notice.publishAt)}
+            </DialogDescription>
+          </DialogHeader>
           {notice && (
             <div className="space-y-4">
               <LearningText text={notice.body} />
@@ -523,13 +537,15 @@ export function PortalDay() {
                 </p>
               )}
               {!notice.read && (
-                <Button
-                  variant="outline"
-                  disabled={readAnnouncement.isPending}
-                  onClick={() => readAnnouncement.mutate(notice.id)}
-                >
-                  {t("portalMarkRead")}
-                </Button>
+                <DialogFooter className="border-t border-border/70 pt-4">
+                  <Button
+                    variant="outline"
+                    disabled={readAnnouncement.isPending}
+                    onClick={() => readAnnouncement.mutate(notice.id)}
+                  >
+                    {t("portalMarkRead")}
+                  </Button>
+                </DialogFooter>
               )}
             </div>
           )}
@@ -554,9 +570,9 @@ export function FamilyOverview() {
         portalLmsApi.dashboard(subject.linkId, signal),
       enabled: Boolean(
         account &&
-        subject.permissions.some((permission) =>
-          ["learning.read", "attendance.read"].includes(permission),
-        ),
+          subject.permissions.some((permission) =>
+            ["learning.read", "attendance.read"].includes(permission),
+          ),
       ),
       staleTime: 20_000,
     })),
@@ -582,9 +598,9 @@ export function FamilyOverview() {
     queryFn: ({ signal }) => portalResourcesApi.allNotifications(signal),
     enabled: Boolean(
       account &&
-      representatives.some((link) =>
-        link.permissions.includes("feedback.read"),
-      ),
+        representatives.some((link) =>
+          link.permissions.includes("feedback.read"),
+        ),
     ),
     staleTime: 20_000,
   });
@@ -598,58 +614,61 @@ export function FamilyOverview() {
         {representatives.map((subject, index) => (
           <Card key={subject.linkId}>
             <CardHeader className="p-4 pb-3">
-              <CardTitle>{subject.studentName}</CardTitle>
+              <CardTitle className="text-base">{subject.studentName}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 p-4 pt-0">
-              {queries[index].isFetching ? (
-                <PortalLoading />
-              ) : queries[index].error ? (
-                <PortalError
-                  error={queries[index].error}
-                  retry={() => {
-                    void queries[index].refetch();
-                  }}
-                />
-              ) : (
-                queries[index].data && (
-                  <>
-                    {subject.permissions.includes("learning.read") && (
-                      <p>
-                        {t("portalAssignments")}:{" "}
-                        {
-                          queries[index].data?.assignments.filter(
-                            (item) =>
-                              item.status === "assigned" ||
-                              item.status === "revision_required",
-                          ).length
-                        }
-                      </p>
-                    )}
-                    {queries[index].data?.nextLesson && (
-                      <p>
-                        {queries[index].data?.nextLesson?.courseName} ·{" "}
-                        {format.date(
-                          queries[index].data!.nextLesson!.scheduledAt,
-                        )}{" "}
-                        ·{" "}
-                        {format.time(
-                          queries[index].data!.nextLesson!.scheduledAt,
-                        )}
-                      </p>
-                    )}
-                    {subject.permissions.includes("attendance.read") &&
-                    queries[index].data?.makeup.length ? (
-                      <p>
-                        {t("portalMakeupNeeded")}:{" "}
-                        {queries[index].data!.makeup.length}
-                      </p>
-                    ) : null}
-                  </>
-                )
-              )}
+              {subject.permissions.some((permission) =>
+                ["learning.read", "attendance.read"].includes(permission),
+              ) &&
+                (queries[index].isPending ? (
+                  <PortalLoading variant="section" />
+                ) : queries[index].error ? (
+                  <PortalError
+                    error={queries[index].error}
+                    retry={() => {
+                      void queries[index].refetch();
+                    }}
+                  />
+                ) : (
+                  queries[index].data && (
+                    <>
+                      {subject.permissions.includes("learning.read") && (
+                        <p>
+                          {t("portalAssignments")}:{" "}
+                          {
+                            queries[index].data?.assignments.filter(
+                              (item) =>
+                                item.status === "assigned" ||
+                                item.status === "revision_required",
+                            ).length
+                          }
+                        </p>
+                      )}
+                      {queries[index].data?.nextLesson && (
+                        <p>
+                          {queries[index].data?.nextLesson?.courseName} ·{" "}
+                          {format.date(
+                            queries[index].data!.nextLesson!.scheduledAt,
+                          )}{" "}
+                          ·{" "}
+                          {format.time(
+                            queries[index].data!.nextLesson!.scheduledAt,
+                          )}
+                        </p>
+                      )}
+                      {subject.permissions.includes("attendance.read") &&
+                      queries[index].data?.makeup.length ? (
+                        <p>
+                          {t("portalMakeupNeeded")}:{" "}
+                          {queries[index].data!.makeup.length}
+                        </p>
+                      ) : null}
+                    </>
+                  )
+                ))}
               {subject.permissions.includes("feedback.read") &&
                 (notices.isPending ? (
-                  <PortalLoading />
+                  <PortalLoading variant="section" />
                 ) : notices.error ? (
                   <PortalError
                     error={notices.error}
@@ -670,7 +689,7 @@ export function FamilyOverview() {
                 ))}
               {subject.permissions.includes("finance.read") &&
                 (finance[index].isPending ? (
-                  <PortalLoading />
+                  <PortalLoading variant="section" />
                 ) : finance[index].error ? (
                   <PortalError
                     error={finance[index].error}
@@ -694,9 +713,7 @@ export function FamilyOverview() {
                     )}
                   </div>
                 ) : null)}
-              <Button
-                onClick={() => selectSubject(subject.linkId)}
-              >
+              <Button onClick={() => selectSubject(subject.linkId)}>
                 {t("portalOpen")}
               </Button>
             </CardContent>
@@ -709,6 +726,10 @@ export function FamilyOverview() {
 
 export function PortalLimitedOverview() {
   const { allowed, subject } = usePortal();
+  const hasOverview =
+    allowed("finance.read") ||
+    allowed("attendance.read") ||
+    allowed("feedback.read");
   return (
     <>
       <PortalTitle
@@ -718,6 +739,7 @@ export function PortalLimitedOverview() {
             : "portalMyDay"
         }
       />
+      {!hasOverview && <PortalEmpty labelKey="portalUnavailable" />}
       {allowed("finance.read") && <PortalPaymentSummary />}
       {allowed("attendance.read") && <AttendanceOverview />}
       {allowed("feedback.read") && <FeedbackOverview />}
@@ -739,7 +761,7 @@ function AttendanceOverview() {
     [from, to],
     "attendance.read",
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -753,7 +775,7 @@ function AttendanceOverview() {
   return (
     <Card>
       <CardHeader className="p-4 pb-3">
-        <CardTitle className="text-lg">{t("portalUpcomingLesson")}</CardTitle>
+        <CardTitle className="text-base">{t("portalUpcomingLesson")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-0">
         {next ? (
@@ -788,7 +810,7 @@ function FeedbackOverview() {
     [],
     "feedback.read",
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -802,7 +824,7 @@ function FeedbackOverview() {
   return (
     <Card>
       <CardHeader className="p-4 pb-3">
-        <CardTitle className="text-lg">{t("portalReports")}</CardTitle>
+        <CardTitle className="text-base">{t("portalReports")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-0">
         {report ? (
@@ -814,7 +836,7 @@ function FeedbackOverview() {
             <p className="text-sm text-muted-foreground">{report.authorName}</p>
             <Button
               variant="outline"
-                  onClick={() => guarded(() => navigate("/learn/progress"))}
+              onClick={() => guarded(() => navigate("/learn/progress"))}
             >
               {t("portalOpen")}
             </Button>

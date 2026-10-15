@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { portalLmsApi, PortalApiError } from "../portal-app/api";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectQuery,
   useInvalidateSubject,
@@ -43,9 +45,10 @@ export function PortalQuizzes({
   quizId?: number;
   embedded?: boolean;
 }) {
+  const quizScope = usePortalFormScope();
   const { t } = useTranslation();
   const message = usePortalError();
-  const { subject, allowed, guarded } = usePortal();
+  const { subject, allowed } = usePortal();
   const invalidate = useInvalidateSubject();
   const [attempt, setAttempt] = useState<LmsQuizAttemptDto | null>(null);
   const [title, setTitle] = useState("");
@@ -64,7 +67,7 @@ export function PortalQuizzes({
     mutationFn: (id: number) => portalLmsApi.startQuiz(subject!.linkId, id),
     onSuccess: setAttempt,
   });
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant={embedded ? "section" : "page"} />;
   if (query.error)
     return (
       <PortalError
@@ -148,32 +151,34 @@ export function PortalQuizzes({
           </Card>
         ))}
       </div>
-      <Dialog
-        open={Boolean(attempt)}
-        onOpenChange={(open) => {
-          if (!open)
-            guarded(() => {
-              setAttempt(null);
-              void invalidate();
-            });
-        }}
-      >
-        <DialogContent className="portal-ui max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{title || t("portalTests")}</DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
-          </DialogHeader>
-          {attempt && (
-            <QuizAttempt
-              key={`${subject?.linkId}:${attempt.id}`}
-              initial={attempt}
-              onChange={setAttempt}
-              runId={runId}
-              title={title}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={quizScope.id}>
+        <Dialog
+          open={Boolean(attempt)}
+          onOpenChange={(open) => {
+            if (!open)
+              quizScope.guarded(() => {
+                setAttempt(null);
+                void invalidate();
+              });
+          }}
+        >
+          <DialogContent className="portal-ui max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{title || t("portalTests")}</DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {attempt && (
+              <QuizAttempt
+                key={`${subject?.linkId}:${attempt.id}`}
+                initial={attempt}
+                onChange={setAttempt}
+                runId={runId}
+                title={title}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
     </>
   );
 }

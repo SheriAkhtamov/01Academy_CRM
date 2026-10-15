@@ -1,5 +1,6 @@
 @media (pointer: coarse) {
-  .portal-ui button:not([role="checkbox"]):not([role="switch"]):not([role="radio"]),
+  .portal-ui
+    button:not([role="checkbox"]):not([role="switch"]):not([role="radio"]),
   .portal-ui [role="button"],
   .portal-ui [role="menuitem"],
   .portal-ui [role="option"] {
@@ -30,6 +31,19 @@
   }
 }
 @media print {
+  body[data-scroll-locked]:has(.portal-print-report) {
+    overflow: visible !important;
+  }
+  html.app-shell-active:has(.portal-print-report),
+  html.app-shell-active:has(.portal-print-report) body,
+  html.app-shell-active:has(.portal-print-report) #root,
+  body:has(.portal-print-report) .portal-shell,
+  body:has(.portal-print-report) .portal-shell > div,
+  body:has(.portal-print-report) .portal-shell-scroll {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
   body:has(.portal-print-report) * {
     visibility: hidden;
   }

@@ -14,7 +14,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ux/DataTable";
 import { portalResourcesApi } from "./resources-api";
-import { useSubjectQuery, useSubjectInfiniteQuery, usePortal } from "./context";
+import {
+  PortalFormScope,
+  usePortalFormScope,
+  useSubjectQuery,
+  useSubjectInfiniteQuery,
+  usePortal,
+} from "./context";
 import {
   PortalDialogContent as DialogContent,
   PortalTitle,
@@ -24,10 +30,11 @@ import {
   usePortalFormat,
 } from "./ui";
 export function PortalPayments() {
+  const paymentScope = usePortalFormScope();
   const { t } = useTranslation();
   const format = usePortalFormat();
   const [selected, setSelected] = useState<PortalPaymentDto | null>(null);
-  const { subject, guarded } = usePortal();
+  const { subject } = usePortal();
   const query = useSubjectInfiniteQuery(
     "payments-history",
     portalResourcesApi.paymentsPage,
@@ -110,6 +117,7 @@ export function PortalPayments() {
           </CardHeader>
           <CardContent className="p-0">
             <DataTable
+              focusOnRowClick
               data={items}
               keyExtractor={(item) => String(item.id)}
               onRowClick={setSelected}
@@ -178,20 +186,22 @@ export function PortalPayments() {
         </Button>
       )}
       <FinanceQuestions />
-      <Dialog
-        open={selected !== null}
-        onOpenChange={(open) => {
-          if (!open) guarded(() => setSelected(null));
-        }}
-      >
-        <DialogContent className="portal-ui">
-          <DialogHeader>
-            <DialogTitle>{t("portalPaymentDetails")}</DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
-          </DialogHeader>
-          {selected && <PaymentDetails key={selected.id} item={selected} />}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={paymentScope.id}>
+        <Dialog
+          open={selected !== null}
+          onOpenChange={(open) => {
+            if (!open) paymentScope.guarded(() => setSelected(null));
+          }}
+        >
+          <DialogContent className="portal-ui">
+            <DialogHeader>
+              <DialogTitle>{t("portalPaymentDetails")}</DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {selected && <PaymentDetails key={selected.id} item={selected} />}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
     </>
   );
 }
@@ -315,7 +325,7 @@ export function PortalPaymentSummary() {
     [],
     "finance.read",
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError

@@ -26,6 +26,8 @@ import { PageHeader } from "@/components/ux/PageHeader";
 import { ModulePage } from "@/components/ux/ModulePage";
 import { PortalSelect, PortalToolbar } from "./controls";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectQuery,
   useSubjectInfiniteQuery,
@@ -48,10 +50,12 @@ import {
 import { PortalFiles, PortalUploads } from "./files";
 
 export function PortalPortfolio() {
+  const editorScope = usePortalFormScope();
+  const shareScope = usePortalFormScope();
   const { t } = useTranslation();
   const message = usePortalError();
   const notify = usePortalSuccess();
-  const { allowed, subject, guarded } = usePortal();
+  const { allowed, subject } = usePortal();
   const invalidate = useInvalidateSubject();
   const query = useSubjectInfiniteQuery(
     "projects-list",
@@ -321,61 +325,65 @@ export function PortalPortfolio() {
           )}
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={Boolean(editing)}
-        onOpenChange={(open) => {
-          if (!open) guarded(() => setEditing(null));
-        }}
-      >
-        <DialogContent className="portal-ui max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {t(editing === "new" ? "portalAddProject" : "portalEditProject")}
-            </DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
-          </DialogHeader>
-          {editing && (
-            <ProjectEditor
-              key={editing === "new" ? "new" : editing.id}
-              project={editing === "new" ? null : editing}
-              sourceSubmissionId={
-                editing === "new" && source ? Number(source) : null
-              }
-              onClose={() => setEditing(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={Boolean(share)}
-        onOpenChange={(open) => {
-          if (!open) guarded(() => setShare(null));
-        }}
-      >
-        <DialogContent className="portal-ui max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t("portalShareTitle")}</DialogTitle>
-            <DialogDescription>{share?.title}</DialogDescription>
-          </DialogHeader>
-          {share && (
-            <ShareForm
-              key={share.id}
-              project={share}
-              projects={projects.filter((item) => !item.archivedAt)}
-              onProjectChange={setShare}
-              loadingMore={query.isFetchingNextPage}
-              loadMore={
-                query.hasNextPage
-                  ? () => {
-                      void query.fetchNextPage();
-                    }
-                  : undefined
-              }
-              onClose={() => setShare(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={editorScope.id}>
+        <Dialog
+          open={Boolean(editing)}
+          onOpenChange={(open) => {
+            if (!open) editorScope.guarded(() => setEditing(null));
+          }}
+        >
+          <DialogContent className="portal-ui max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {t(editing === "new" ? "portalAddProject" : "portalEditProject")}
+              </DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {editing && (
+              <ProjectEditor
+                key={editing === "new" ? "new" : editing.id}
+                project={editing === "new" ? null : editing}
+                sourceSubmissionId={
+                  editing === "new" && source ? Number(source) : null
+                }
+                onClose={() => setEditing(null)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
+      <PortalFormScope id={shareScope.id}>
+        <Dialog
+          open={Boolean(share)}
+          onOpenChange={(open) => {
+            if (!open) shareScope.guarded(() => setShare(null));
+          }}
+        >
+          <DialogContent className="portal-ui max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t("portalShareTitle")}</DialogTitle>
+              <DialogDescription>{share?.title}</DialogDescription>
+            </DialogHeader>
+            {share && (
+              <ShareForm
+                key={share.id}
+                project={share}
+                projects={projects.filter((item) => !item.archivedAt)}
+                onProjectChange={setShare}
+                loadingMore={query.isFetchingNextPage}
+                loadMore={
+                  query.hasNextPage
+                    ? () => {
+                        void query.fetchNextPage();
+                      }
+                    : undefined
+                }
+                onClose={() => setShare(null)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
       <ConfirmAction
         open={Boolean(archive)}
         onOpenChange={(open) => {
@@ -512,7 +520,7 @@ function SourceProjectForm({
       portalResourcesApi.projectSource(link, submissionId, signal),
     [submissionId],
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -583,6 +591,20 @@ function ProjectForm({
     setUnsaved(JSON.stringify(values) !== initial || busy);
     return () => setUnsaved(false);
   }, [values, initial, busy, setUnsaved]);
+  const courseOptions = (courses.data ?? []).map((item) => ({
+    value: String(item.runId),
+    label: `${item.courseName} · ${item.groupName}`,
+  }));
+  if (
+    project?.runId &&
+    project.courseName &&
+    !courseOptions.some((item) => item.value === String(project.runId))
+  ) {
+    courseOptions.push({
+      value: String(project.runId),
+      label: project.courseName,
+    });
+  }
   return (
     <form
       className="space-y-4"
@@ -596,108 +618,116 @@ function ProjectForm({
         action.mutate();
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="project-title">{t("portalProjectTitle")}</Label>
-        <Input
-          id="project-title"
-          required
-          value={values.title}
-          onChange={(event) =>
-            setValues({ ...values, title: event.target.value })
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="project-course">{t("portalCourses")}</Label>
-        <PortalSelect
-          id="project-course"
-          value={String(values.runId ?? "")}
-          onValueChange={(value) =>
-            setValues({
-              ...values,
-              runId: value ? Number(value) : null,
-            })
-          }
-          options={[
-            { value: "", label: t("portalSelectCourse") },
-            ...(courses.data ?? []).map((item) => ({
-              value: String(item.runId),
-              label: `${item.courseName} · ${item.groupName}`,
-            })),
-          ]}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="project-description">{t("portalDescription")}</Label>
-        <Textarea
-          id="project-description"
-          value={values.description}
-          onChange={(event) =>
-            setValues({ ...values, description: event.target.value })
-          }
-          rows={5}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="project-links">{t("portalLinks")}</Label>
-        <Textarea
-          id="project-links"
-          value={links}
-          onChange={(event) => {
-            setLinks(event.target.value);
-            setValues({
-              ...values,
-              links: event.target.value
-                .split("\n")
-                .map((link) => link.trim())
-                .filter(Boolean),
-            });
-          }}
-        />
-      </div>
-      <PortalUploads
-        ids={values.fileIds}
-        onChange={(fileIds) =>
-          setValues({
-            ...values,
-            fileIds,
-            coverFileId: fileIds.includes(values.coverFileId ?? -1)
-              ? values.coverFileId
-              : null,
-          })
-        }
-        onBusyChange={setBusy}
-      />
-      {values.fileIds.length > 0 && (
+      <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="project-cover">{t("portalCover")}</Label>
+          <Label htmlFor="project-title">{t("portalProjectTitle")}</Label>
+          <Input
+            id="project-title"
+            required
+            value={values.title}
+            onChange={(event) =>
+              setValues({ ...values, title: event.target.value })
+            }
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="project-course">{t("portalCourses")}</Label>
           <PortalSelect
-            id="project-cover"
-            value={String(values.coverFileId ?? "")}
+            id="project-course"
+            disabled={courses.isPending || Boolean(courses.error)}
+            value={String(values.runId ?? "")}
             onValueChange={(value) =>
               setValues({
                 ...values,
-                coverFileId: value ? Number(value) : null,
+                runId: value ? Number(value) : null,
               })
             }
             options={[
-              { value: "", label: t("portalCover") },
-              ...values.fileIds.map((id, index) => ({
-                value: String(id),
-                label: `${t("portalFiles")} ${index + 1}`,
-              })),
+              { value: "", label: t("portalSelectCourse") },
+              ...courseOptions,
             ]}
           />
+          {courses.error && (
+            <PortalError
+              error={courses.error}
+              retry={() => {
+                void courses.refetch();
+              }}
+            />
+          )}
         </div>
-      )}
-      {(validation || action.error) && (
-        <p role="alert" className="text-destructive">
-          {validation || message(action.error, "portalSaveError")}
-        </p>
-      )}
-      <DialogFooter className="border-t border-border/70 pt-4">
-        <Button disabled={action.isPending || busy}>{t("portalSave")}</Button>
-      </DialogFooter>
+        <div className="space-y-2">
+          <Label htmlFor="project-description">{t("portalDescription")}</Label>
+          <Textarea
+            id="project-description"
+            value={values.description}
+            onChange={(event) =>
+              setValues({ ...values, description: event.target.value })
+            }
+            rows={5}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="project-links">{t("portalLinks")}</Label>
+          <Textarea
+            id="project-links"
+            value={links}
+            onChange={(event) => {
+              setLinks(event.target.value);
+              setValues({
+                ...values,
+                links: event.target.value
+                  .split("\n")
+                  .map((link) => link.trim())
+                  .filter(Boolean),
+              });
+            }}
+          />
+        </div>
+        <PortalUploads
+          ids={values.fileIds}
+          onChange={(fileIds) =>
+            setValues({
+              ...values,
+              fileIds,
+              coverFileId: fileIds.includes(values.coverFileId ?? -1)
+                ? values.coverFileId
+                : null,
+            })
+          }
+          onBusyChange={setBusy}
+        />
+        {values.fileIds.length > 0 && (
+          <div className="space-y-2">
+            <Label htmlFor="project-cover">{t("portalCover")}</Label>
+            <PortalSelect
+              id="project-cover"
+              value={String(values.coverFileId ?? "")}
+              onValueChange={(value) =>
+                setValues({
+                  ...values,
+                  coverFileId: value ? Number(value) : null,
+                })
+              }
+              options={[
+                { value: "", label: t("portalCover") },
+                ...values.fileIds.map((id, index) => ({
+                  value: String(id),
+                  label: `${t("portalFiles")} ${index + 1}`,
+                })),
+              ]}
+            />
+          </div>
+        )}
+        {(validation || action.error) && (
+          <p role="alert" className="text-destructive">
+            {validation || message(action.error, "portalSaveError")}
+          </p>
+        )}
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button disabled={action.isPending || busy}>{t("portalSave")}</Button>
+        </DialogFooter>
+      </fieldset>
     </form>
   );
 }
@@ -733,6 +763,7 @@ function ShareForm({
     expiresAt: null,
     consent: true,
   });
+  const [baseline] = useState(() => JSON.stringify(values));
   const action = useMutation({
     mutationFn: () =>
       portalResourcesApi.share(subject!.linkId, project.id, {
@@ -747,11 +778,11 @@ function ShareForm({
     },
   });
   useEffect(() => {
-    setUnsaved(true);
+    setUnsaved(JSON.stringify(values) !== baseline || consent);
     return () => setUnsaved(false);
-  }, [setUnsaved]);
+  }, [values, baseline, consent, setUnsaved]);
   return (
-    <div className="space-y-4">
+    <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
       <div className="space-y-2">
         <Label htmlFor="share-project">{t("portalShareProject")}</Label>
         <PortalSelect
@@ -889,7 +920,7 @@ function ShareForm({
           </DialogFooter>
         </>
       )}
-    </div>
+    </fieldset>
   );
 }
 export function PublicPortfolio({ token }: { token: string }) {
@@ -938,12 +969,12 @@ export function PublicPortfolio({ token }: { token: string }) {
             )}
             {query.data.teacherReview && (
               <Card>
-                <CardHeader>
+                <CardHeader className="p-4 pb-0">
                   <CardTitle className="text-base">
                     {t("portalFeedback")}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="whitespace-pre-wrap">
+                <CardContent className="whitespace-pre-wrap p-4">
                   {query.data.teacherReview}
                 </CardContent>
               </Card>

@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ux/DataTable";
 import {
   Dialog,
   DialogHeader,
+  DialogFooter,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -36,7 +37,7 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
     "feedback.read",
   );
   const [selected, setSelected] = useState<number | null>(initialId ?? null);
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -50,11 +51,12 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
   return (
     <>
       {items.length === 0 ? (
-        <PortalEmpty labelKey="portalHistoryEmpty" />
+        <PortalEmpty labelKey="portalNoFeedback" />
       ) : (
         <Card>
           <CardContent className="p-0">
             <DataTable
+              focusOnRowClick
               data={items}
               keyExtractor={(item) => String(item.id)}
               onRowClick={(item) => setSelected(item.id)}
@@ -139,7 +141,7 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
     [id],
     "feedback.read",
   );
-  if (query.isPending) return <PortalLoading />;
+  if (query.isPending) return <PortalLoading variant="section" />;
   if (query.error)
     return (
       <PortalError
@@ -170,17 +172,19 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
         {data.reviewerName} · {format.date(data.createdAt)}
       </p>
       {allowed("learning.read") && (
-        <Button
-          variant="outline"
-          onClick={() =>
-            guarded(() => {
-              onClose();
-              navigate(`/learn/assignments/${data.recipientId}`);
-            })
-          }
-        >
-          {t("portalOpen")}
-        </Button>
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button
+            variant="outline"
+            onClick={() =>
+              guarded(() => {
+                onClose();
+                navigate(`/learn/assignments/${data.recipientId}`);
+              })
+            }
+          >
+            {t("portalOpen")}
+          </Button>
+        </DialogFooter>
       )}
     </div>
   );

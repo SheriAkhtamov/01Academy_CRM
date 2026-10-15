@@ -249,5 +249,17 @@ export const createVoiceReminderTables = (references: {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderLeadLanguageEpochs, voiceReminderLocalizedAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  const telephonyManagerLinePriorities = pgTable('telephony_manager_line_priorities', {
+    extension: varchar('extension', { length: 20 }).primaryKey(),
+    requesterUserId: integer('requester_user_id').references(() => references.userId, { onDelete: 'set null' }),
+    blockingClientCallId: varchar('blocking_client_call_id', { length: 160 }).notNull(),
+    blockingReservationId: uuid('blocking_reservation_id'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    priorityUntil: timestamp('priority_until', { withTimezone: true }),
+  }, table => ({
+    phaseCheck: check('telephony_manager_line_priorities_check', sql`(${table.endedAt} IS NULL AND ${table.priorityUntil} IS NULL)
+      OR (${table.endedAt} IS NOT NULL AND ${table.priorityUntil} IS NOT NULL AND ${table.priorityUntil}=${table.endedAt}+interval '3 minutes')`),
+  }));
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderLeadLanguageEpochs, voiceReminderLocalizedAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, telephonyManagerLinePriorities, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
 };

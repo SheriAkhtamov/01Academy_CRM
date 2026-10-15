@@ -65,7 +65,8 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
     admin = new Pool({ connectionString: url });
     await admin.query(`CREATE SCHEMA ${schema}`);
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=America/New_York`, max: 12 });
-    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,online_pbx_extension text);
+    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,online_pbx_extension text,is_online boolean DEFAULT false,
+      is_active boolean DEFAULT true,is_archived boolean DEFAULT false);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);
       CREATE TABLE telephony_calls(id serial PRIMARY KEY,client_call_id text UNIQUE,provider_call_id text UNIQUE,extension text,
@@ -77,11 +78,12 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
   });
   beforeEach(async () => {
     await database.query(`TRUNCATE voice_reminder_call_attempts,voice_reminder_provider_quarantine,telephony_line_reservations,
       telephony_calls,users RESTART IDENTITY CASCADE`);
-    await database.query(`INSERT INTO users VALUES(1,'100'),(2,'101')`);
+    await database.query(`INSERT INTO users(id,online_pbx_extension) VALUES(1,'100'),(2,'101')`);
     history = vi.fn<OnlinePbxClient['getCallHistory']>(async () => []);
     source = new CrmCapacitySource(database, { getCallHistory: history });
   });
@@ -225,6 +227,26 @@ describe.skipIf(!url)('CRM-only capacity and exact end reconciliation on Postgre
     history.mockResolvedValue([endedCall(robotId)]);
     expect(await source.snapshot()).toMatchObject({ known: true, occupiedChannels: 0 });
     expect((await database.query('SELECT termination_confirmed_at FROM voice_reminder_call_attempts')).rows[0].termination_confirmed_at).not.toBeNull();
+  });
+
+  it('hands a protected line to its manager after exact delayed history and preserves the fixed cooldown', async () => {
+    const callId = await insertRobot({ stale: true,completed: true });
+    const channels = gate();
+    const manager = () => channels.acquire({ owner: 'manager',userId: 1,extensions: ['100'],
+      clientCallId: randomUUID(),phone: '+998909998877' });
+    await expect(manager()).rejects.toMatchObject({ code: 'onlinePbxLineBusyWithReminder' });
+    expect((await database.query('SELECT ended_at FROM telephony_manager_line_priorities')).rows[0].ended_at).toBeNull();
+    history.mockResolvedValue([endedCall(callId)]);
+    source = new CrmCapacitySource(database,{ getCallHistory: history });
+    const granted = (await manager())!;
+    expect(granted.extension).toBe('100');
+    const fixed = (await database.query('SELECT requested_at,ended_at,priority_until FROM telephony_manager_line_priorities')).rows[0];
+    expect(fixed.ended_at).toEqual(fixed.requested_at);
+    expect(fixed.priority_until.getTime()-fixed.ended_at.getTime()).toBe(180_000);
+    await channels.release(granted.id,'manager',1);
+    const other = (await channels.acquire(robotInput()))!;
+    expect(other.extension).toBe('101');
+    expect((await database.query('SELECT requested_at,ended_at,priority_until FROM telephony_manager_line_priorities')).rows[0]).toEqual(fixed);
   });
 
   it('uses actual call start when an active replay created the journal after the real call ended', async () => {

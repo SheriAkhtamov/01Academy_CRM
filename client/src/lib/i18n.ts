@@ -1977,6 +1977,10 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   onlinePbxUnavailable: { en: 'OnlinePBX is temporarily unavailable', ru: 'OnlinePBX временно недоступен' },
   onlinePbxRequestFailed: { en: 'OnlinePBX rejected the request', ru: 'OnlinePBX отклонил запрос' },
   onlinePbxTooManyCalls: { en: 'Too many calls. Please wait a moment.', ru: 'Слишком много звонков. Подождите немного.' },
+  onlinePbxLineBusyWithReminder: {
+    en: 'The auto-informer is calling on your line. Wait for the call to finish, then try again.',
+    ru: 'На вашей линии сейчас звонит автоинформатор. Дождитесь завершения звонка и попробуйте снова.',
+  },
   onlinePbxInvalidPhone: { en: 'Enter a valid customer phone number', ru: 'Укажите корректный номер клиента' },
   onlinePbxCallerNumberMissing: {
     en: 'Add your phone or OnlinePBX extension in the employee profile.',

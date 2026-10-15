@@ -13,6 +13,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { devLog } from '@/lib/debug';
 import { telephonyApi } from '@/features/telephony/api';
+import { isReminderLineBusyError, REMINDER_LINE_BUSY_ERROR, ReminderLineBusyError } from '@/features/telephony/call-errors';
 import {
   hasOnlinePbxManagerAssignment,
   ONLINE_PBX_EXTENSION_MAX,
@@ -1056,6 +1057,7 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
       releaseLine(attempt);
       if (localMediaRef.current === attempt.microphone && attempt.microphone) stopLocalMedia();
       else attempt.microphone?.getTracks().forEach((track) => track.stop());
+      let busyCallId: string | null = null;
       if (ownsAttempt()) {
         clearCallSetupTimer();
         attempt.cancelled = true;
@@ -1068,14 +1070,16 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
             ...started,
             status: 'failed' as const,
             endedAt: new Date().toISOString(),
-            errorCode: 'CALL_SETUP_FAILED',
+            errorCode: isReminderLineBusyError(error) ? REMINDER_LINE_BUSY_ERROR : 'CALL_SETUP_FAILED',
           };
           setActiveCall(failed);
+          if (isReminderLineBusyError(error)) busyCallId = failed.clientCallId;
           // Admission failed before the SDK was invoked, so the journal and
           // manager KPIs must not receive a call attempt.
         }
         setPendingPhone(null);
       }
+      if (isReminderLineBusyError(error)) throw new ReminderLineBusyError(busyCallId);
       throw error;
     } finally {
       // A synchronous SDK error may already have ended this attempt. Never

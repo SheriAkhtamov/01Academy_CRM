@@ -24,6 +24,7 @@ import { registerApiRoutes } from '../server/routes';
 import { createVoiceReminderRouter } from '../server/modules/voice-reminders/http/voice-reminders.router';
 import type { createVoiceRemindersRuntime } from '../server/infrastructure/voice-reminders-runtime';
 import type { VoiceReminderSettingsService } from '../server/modules/voice-reminders/application/settings-service';
+import { TelephonyReminderLineBusyError } from '../server/infrastructure/voice-telephony/channel-reservations';
 
 describe('voice routes resolve the active CRM session before domain admission', () => {
   const leader = { id: 7, module: 'administration', modules: ['administration', 'sales'], isActive: true,
@@ -74,6 +75,21 @@ describe('voice routes resolve the active CRM session before domain admission', 
     const response = await request(app(7)).post('/api/telephony/lines/reserve').send({ clientCallId, phone: '+998901234567' });
     expect(response.status).toBe(200);
     expect(channels.acquire).toHaveBeenCalledWith({ owner: 'manager', userId: 7, extensions: ['100'], clientCallId, phone: '+998901234567' });
+  });
+  it('returns a specific committed reminder conflict for reserve and authorization without leaking internal details', async () => {
+    channels.enabled.mockResolvedValue(true);
+    channels.acquire.mockRejectedValueOnce(new TelephonyReminderLineBusyError());
+    const response = await request(app(7)).post('/api/telephony/lines/reserve')
+      .send({ clientCallId: randomUUID(),phone: '+998901234567' });
+    expect(response.status).toBe(409); expect(response.body).toEqual({ error: 'onlinePbxLineBusyWithReminder' });
+    expect(response.headers['cache-control']).toBe('no-store');
+    channels.authorizeManagerDial.mockRejectedValueOnce(new TelephonyReminderLineBusyError());
+    expect((await request(app(7)).post('/api/telephony/lines/authorize').send({ id: randomUUID() })).body)
+      .toEqual({ error: 'onlinePbxLineBusyWithReminder' });
+    channels.acquire.mockRejectedValueOnce(new Error('private SQL or storage path'));
+    const unavailable = await request(app(7)).post('/api/telephony/lines/reserve')
+      .send({ clientCallId: randomUUID(),phone: '+998901234567' });
+    expect(unavailable.status).toBe(503); expect(unavailable.body).toEqual({ error: 'onlinePbxUnavailable' });
   });
   it('rejects inactive sessions and unassigned staff', async () => {
     mocks.getUser.mockResolvedValue({ ...leader, isActive: false });

@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { ManagerLinePriorities } from './manager-line-priorities';
+import { TelephonyReminderLineBusyError } from '../../modules/voice-reminders/domain/telephony-line-policy';
+export { TelephonyReminderLineBusyError } from '../../modules/voice-reminders/domain/telephony-line-policy';
 
 export type ProviderChannelSnapshot = {
   known: boolean;
@@ -22,6 +25,7 @@ const LEASE_SECONDS = 90;
 
 /** The same transaction and mutex are used before manager and robot dial. */
 export class TelephonyChannelReservations {
+  private readonly priorities = new ManagerLinePriorities();
   constructor(
     private readonly database: Pick<Pool, 'connect' | 'query'>,
     private readonly snapshot: () => Promise<ProviderChannelSnapshot>,
@@ -36,6 +40,7 @@ export class TelephonyChannelReservations {
   }
 
   private async cleanup(client: PoolClient): Promise<void> {
+    await this.priorities.refresh(client);
     // A pending manager cannot INVITE after expiry: authorization checks the
     // lease again. An issued intent survives expiry until exact end proof.
     // Robot INVITEs have separate durable receipts which survive lease removal.
@@ -80,14 +85,19 @@ export class TelephonyChannelReservations {
     // An unknown provider view is not evidence that a line is free. Do not hold
     // a database transaction while a network status request is in flight.
     const provider: ProviderChannelSnapshot = await this.snapshot().catch(() => ({ known: false, occupiedChannels: 0, busyExtensions: [] }));
-    if (!this.valid(provider)) return null;
-    return this.locked(async client => {
+    if (input.owner === 'robot' && !this.valid(provider)) return null;
+    const result = await this.locked(async client => {
       await this.cleanup(client);
+      if (input.owner === 'manager' && input.userId !== undefined
+        && await this.priorities.requestForBlockedManager(client,input.userId,input.extensions)) {
+        return { busyWithReminder: true } as const;
+      }
       const current = this.readLockedCapacity ? await this.readLockedCapacity(client) : provider;
       if (!this.valid(current)) return null;
       const existing = await this.readReservations(client);
       const retry = existing.find(row => row.clientCallId === input.clientCallId);
       if (retry) {
+        if (input.owner === 'robot' && (await this.priorities.blockedExtensions(client)).has(retry.extension)) return null;
         const owned = await client.query(
           `SELECT 1 FROM telephony_line_reservations WHERE id = $1 AND owner_type = $2
              AND owner_user_id IS NOT DISTINCT FROM $3::integer`, [retry.id, input.owner, input.userId ?? null],
@@ -108,7 +118,9 @@ export class TelephonyChannelReservations {
       const occupied = this.readLockedCapacity ? current.occupiedChannels
         : Math.max(current.occupiedChannels, Number(active.rows[0]?.count ?? 0)) + pending;
       if (Math.max(existing.length, occupied) >= 2) return null;
-      const extension = input.extensions.find(value => !current.busyExtensions.includes(value)
+      const protectedExtensions = input.owner === 'robot' ? await this.priorities.blockedExtensions(client) : new Set<string>();
+      const candidates = input.owner === 'robot' ? await this.priorities.preferOffline(client,input.extensions) : input.extensions;
+      const extension = candidates.find(value => !protectedExtensions.has(value) && !current.busyExtensions.includes(value)
         && !existing.some(row => row.extension === value));
       if (!extension) return null;
       const reservation = { id: randomUUID(), extension, clientCallId: input.clientCallId };
@@ -120,22 +132,29 @@ export class TelephonyChannelReservations {
       );
       return reservation;
     });
+    // The demand is durable before the public failure is returned. Throwing
+    // inside locked() would roll back the very priority the manager requested.
+    if (result && 'busyWithReminder' in result) throw new TelephonyReminderLineBusyError();
+    return result;
   }
 
   async authorizeManagerDial(id: string, userId: number, extension: string): Promise<boolean> {
     const provider = await this.snapshot().catch(() => ({ known: false, occupiedChannels: 0, busyExtensions: [] }));
-    return this.locked(async client => {
+    const result = await this.locked(async client => {
       const owned = await client.query<StoredReservation>(`SELECT id, extension, client_call_id AS "clientCallId",
         dial_authorized_at AS "authorizedAt", lease_until > now() AS alive
         FROM telephony_line_reservations WHERE id = $1 AND owner_type = 'manager'
         AND owner_user_id = $2 AND extension = $3`, [id, userId, extension]);
       const lease = owned.rows[0];
       if (!lease) return false;
+      await this.cleanup(client);
+      if (!lease.authorizedAt && await this.priorities.requestForBlockedManager(client,userId,[extension])) {
+        return { busyWithReminder: true } as const;
+      }
       // Replaying an acknowledged intent cannot dispatch another call: its UUID
       // remains fixed. Expired pending grants may never be resurrected.
       if (lease.authorizedAt) return lease.alive;
       if (!lease.alive) return false;
-      await this.cleanup(client);
       const current = this.readLockedCapacity ? await this.readLockedCapacity(client, id) : provider;
       if (!this.valid(current) || current.occupiedChannels >= 2 || current.busyExtensions.includes(extension)) return false;
       if (!this.readLockedCapacity) {
@@ -150,6 +169,8 @@ export class TelephonyChannelReservations {
         AND lease_until > now() AND dial_authorized_at IS NULL`, [id, userId, extension, LEASE_SECONDS]);
       return Boolean(result.rowCount);
     });
+    if (typeof result !== 'boolean') throw new TelephonyReminderLineBusyError();
+    return result;
   }
 
   async renew(id: string, owner: 'manager' | 'robot', userId?: number): Promise<boolean> {
@@ -179,6 +200,7 @@ export class TelephonyChannelReservations {
 
   /** The caller holds the shared channel mutex through its durable dial marker. */
   async canAuthorizeRobotLocked(client: PoolClient, id: string, extension: string): Promise<boolean> {
+    if ((await this.priorities.blockedExtensions(client)).has(extension)) return false;
     const current = this.readLockedCapacity
       ? await this.readLockedCapacity(client, id)
       : await this.snapshot().catch(() => ({ known: false, occupiedChannels: 0, busyExtensions: [] }));
@@ -209,6 +231,7 @@ export class TelephonyChannelReservations {
         if (!ended && !(beforeInvite && ledger.rows.length === 0)) return false;
       }
       await client.query('DELETE FROM telephony_line_reservations WHERE id = $1', [id]);
+      if (owner === 'robot') await this.priorities.refresh(client);
       return true;
     });
   }

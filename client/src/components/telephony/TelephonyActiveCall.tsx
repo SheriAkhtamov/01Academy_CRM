@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatCallDuration, isEditableTarget, telephonyStatusTranslationKey } from '@/lib/telephony';
 import { telephonyApi, telephonyQueryKeys } from '@/features/telephony/api';
+import { REMINDER_LINE_BUSY_ERROR } from '@/features/telephony/call-errors';
 import type { ActiveTelephonyCall } from '@/contexts/TelephonyContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -345,6 +346,11 @@ export function TelephonyActiveCall({
 
       </div>
 
+      {call.status === 'failed' && call.errorCode === REMINDER_LINE_BUSY_ERROR ? (
+        <p role="alert" className="shrink-0 px-4 pb-3 text-sm text-destructive">
+          {t('onlinePbxLineBusyWithReminder')}
+        </p>
+      ) : null}
       <div className="flex w-full shrink-0 items-center justify-center gap-3 border-t bg-background/95 px-4 py-3" data-no-drag>
         {call.direction === 'incoming' && call.status === 'ringing' ? (
           // The halos around the avatar carry the urgency. The button itself

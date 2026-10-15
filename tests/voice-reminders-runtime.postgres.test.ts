@@ -30,7 +30,9 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
   let directory: string;
   const provider = () => ({
     snapshot: vi.fn(async () => ({ known: true, occupiedChannels: 0, busyExtensions: [] as string[] })),
-    getCredentials: vi.fn(async (_extension: string) => credentials), close: vi.fn(async () => undefined),
+    getCredentials: vi.fn(async (extension: string) => ({
+      ...credentials, extension, username: extension, aor: `${extension}@example.invalid`,
+    })), close: vi.fn(async () => undefined),
   });
   const makeRuntime = (capacity: VoiceReminderCapacityProvider, performCall: typeof performVertoReminderCall) => (
     createVoiceRemindersRuntime(capacity, database, { audioDirectory: directory, performCall, now: () => testClock })
@@ -106,7 +108,8 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     admin = new Pool({ connectionString: url });
     await admin.query(`CREATE SCHEMA ${schema}`);
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=UTC` });
-    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text NOT NULL DEFAULT 'administration',is_active boolean DEFAULT true,is_archived boolean DEFAULT false);
+    await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text NOT NULL DEFAULT 'administration',is_active boolean DEFAULT true,is_archived boolean DEFAULT false,
+        is_online boolean DEFAULT false,online_pbx_extension text);
       CREATE TABLE user_modules(user_id integer,module text);
       CREATE TABLE academy_leads(id integer PRIMARY KEY, phone text, is_archived boolean NOT NULL DEFAULT false,
         language text NOT NULL DEFAULT 'ru', languages text[]);
@@ -123,6 +126,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     await database.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     await database.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -185,6 +189,74 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       expect((await database.query('SELECT status FROM voice_reminder_jobs')).rows[0].status).toBe('played');
       expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
     } finally { await runtime.close(); logging.mockRestore(); }
+  });
+
+  it.each(['automatic', 'manual'] as const)('prefers the offline manager line for an %s reminder', async mode => {
+    await database.query(`UPDATE users SET online_pbx_extension=CASE id WHEN 1 THEN '100' ELSE '101' END,
+      is_online=(id=1)`);
+    if (mode === 'manual') {
+      await database.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+      await enqueueTest();
+    }
+    const capacity = provider();
+    const call = mockCall();
+    const runtime = makeRuntime(capacity, call);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect(capacity.getCredentials).toHaveBeenCalledExactlyOnceWith('101');
+      expect((await database.query('SELECT extension FROM voice_reminder_call_attempts')).rows).toEqual([{ extension: '101' }]);
+    } finally { await runtime.close(); }
+  });
+
+  it('finishes the current robot call, protects the waiting manager line, and continues on the other line', async () => {
+    await database.query(`UPDATE users SET online_pbx_extension=CASE id WHEN 1 THEN '100' ELSE '101' END,is_online=true`);
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let firstStarted!: () => void;
+    const firstIsStarted = new Promise<void>(resolve => { firstStarted = resolve; });
+    let calls = 0;
+    const call = vi.fn<typeof performVertoReminderCall>(async (credentials, input) => {
+      calls += 1;
+      await input.onStarted!();
+      if (calls === 1) {
+        expect(credentials.extension).toBe('100');
+        firstStarted();
+        await firstMayFinish;
+        // A manager's demand must never cut off an already issued call.
+        expect(await input.shouldContinue()).toBe(true);
+        expect(input.signal?.aborted).toBe(false);
+      } else expect(credentials.extension).toBe('101');
+      return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true };
+    });
+    const runtime = makeRuntime(provider(), call);
+    const running = runtime.tick();
+    try {
+      await firstIsStarted;
+      await expect(runtime.channels.acquire({ owner: 'manager', userId: 1, extensions: ['100'],
+        clientCallId: randomUUID(), phone: '+998909876543' })).rejects.toMatchObject({ code: 'onlinePbxLineBusyWithReminder' });
+      expect((await database.query('SELECT ended_at,priority_until FROM telephony_manager_line_priorities')).rows[0])
+        .toMatchObject({ ended_at: null, priority_until: null });
+      await database.query(`INSERT INTO academy_leads(id,phone) VALUES(2,'+998901234568');
+        INSERT INTO academy_students(id,lead_id,contact_name) VALUES(2,2,'Second parent');
+        INSERT INTO academy_demo_lesson_participants(id,demo_lesson_id,student_id,status) VALUES(2,1,2,'invited');`);
+      await repository.synchronize(new Date(testClock), await repository.settings());
+      releaseFirst();
+      await running;
+      expect(call).toHaveBeenCalledTimes(2);
+      expect((await database.query("SELECT count(*)::int AS count FROM voice_reminder_jobs WHERE status='played'")).rows[0].count).toBe(2);
+      const priority = (await database.query(`SELECT extension,EXTRACT(EPOCH FROM priority_until-ended_at)::int AS seconds,
+        priority_until>now() AS protected FROM telephony_manager_line_priorities`)).rows[0];
+      expect(priority).toEqual({ extension: '100', seconds: 180, protected: true });
+      const manager = await runtime.channels.acquire({ owner: 'manager', userId: 1, extensions: ['100'],
+        clientCallId: randomUUID(), phone: '+998909876543' });
+      expect(manager?.extension).toBe('100');
+      await runtime.channels.release(manager!.id, 'manager', 1);
+      const nextRobot = await runtime.channels.acquire({ owner: 'robot', extensions: ['100', '101'],
+        clientCallId: randomUUID(), phone: '+998901234569' });
+      expect(nextRobot?.extension).toBe('101');
+      await runtime.channels.release(nextRobot!.id, 'robot');
+    } finally { releaseFirst(); await running; await runtime.close(); }
   });
 
   it('uses the explicit Uzbek manual-test language and saves its response without changing demo data', async () => {

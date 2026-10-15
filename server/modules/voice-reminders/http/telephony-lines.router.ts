@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { releaseTelephonyLineSchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema } from '@shared/contracts/telephony-lines';
+import { releaseTelephonyLineSchema, reserveTelephonyLineSchema, telephonyLineLeaseSchema, TELEPHONY_REMINDER_LINE_BUSY } from '@shared/contracts/telephony-lines';
 import { canAccessAcademyModule } from '@shared/academy';
 import { onlinePbxRoutingDestination } from '@shared/telephony';
 import type { TelephonyChannelReservations } from '../../../infrastructure/voice-telephony/channel-reservations';
+import { TelephonyReminderLineBusyError } from '../domain/telephony-line-policy';
 
 export const createTelephonyLinesRouter = (channels: TelephonyChannelReservations) => {
   const router = Router();
@@ -25,7 +26,10 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
       });
       if (!lease) { response.status(409).json({ error: 'onlinePbxTooManyCalls' }); return; }
       response.json({ id: lease.id });
-    } catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
+    } catch (error) {
+      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503)
+        .json({ error: error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable' });
+    }
   });
   router.post('/lines/renew', async (request, response) => {
     const parsed = telephonyLineLeaseSchema.safeParse(request.body);
@@ -40,7 +44,10 @@ export const createTelephonyLinesRouter = (channels: TelephonyChannelReservation
       response.json({ authorized: await channels.authorizeManagerDial(
         parsed.data.id, request.user!.id, request.user!.onlinePbxExtension!,
       ) });
-    } catch { response.status(503).json({ error: 'onlinePbxUnavailable' }); }
+    } catch (error) {
+      response.status(error instanceof TelephonyReminderLineBusyError ? 409 : 503)
+        .json({ error: error instanceof TelephonyReminderLineBusyError ? TELEPHONY_REMINDER_LINE_BUSY : 'onlinePbxUnavailable' });
+    }
   });
   router.post('/lines/release', async (request, response) => {
     const parsed = releaseTelephonyLineSchema.safeParse(request.body);

@@ -97,6 +97,73 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('manager outgoing channel ownership', () => {
+  it.each(['reserve', 'authorize'] as const)('preserves a reminder-busy %s error without inviting, reporting a KPI or retaining microphone media', async (stage) => {
+    const media = microphone();
+    mocks.microphone.mockResolvedValueOnce(media.stream);
+    const busy = Object.assign(new Error('Localized API failure'), { status: 409, rawMessage: 'onlinePbxLineBusyWithReminder' });
+    if (stage === 'reserve') mocks.reserveLine.mockRejectedValueOnce(busy);
+    else mocks.authorizeLine.mockRejectedValueOnce(busy);
+    await renderPhone();
+    await act(async () => { await mocks.value.startCall('+998901234567').catch(() => undefined); });
+    expect(mocks.value.activeCall.status).toBe('failed');
+    expect(mocks.value.activeCall.errorCode).toBe('onlinePbxLineBusyWithReminder');
+    expect(mocks.value.pendingPhone).toBeNull();
+    expect(mocks.value.isPending).toBe(false);
+    expect(media.stop).toHaveBeenCalledOnce();
+    expect(mocks.newCall).not.toHaveBeenCalled();
+    expect(mocks.api.mock.calls.some(([, url]) => url === '/api/telephony/calls/events')).toBe(false);
+    expect(JSON.parse(window.localStorage.getItem('01academy.telephony.call-reports.v1:7') ?? '[]')).toEqual([]);
+    if (stage === 'reserve') expect(mocks.releaseLine).not.toHaveBeenCalled();
+    else expect(mocks.releaseLine).toHaveBeenCalledExactlyOnceWith('first-lease', true);
+  });
+
+  it('ignores a reminder-busy reply from a cancelled preflight while a successor call is connected', async () => {
+    const old = deferred<{ id: string }>();
+    mocks.reserveLine.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ id: 'successor-lease' });
+    await renderPhone();
+    let first!: Promise<unknown>;
+    await act(async () => { first = mocks.value.startCall('+998901234567').catch((error: unknown) => error); });
+    await waitFor(() => expect(mocks.reserveLine).toHaveBeenCalledOnce());
+    await act(async () => mocks.value.hangupCall());
+    await act(async () => mocks.value.startCall('+998901234568'));
+    const successor = mocks.newCall.mock.results[0].value;
+    await act(async () => mocks.onDialogState!(successor));
+    await act(async () => {
+      old.reject(Object.assign(new Error('Translated busy response'), { status: 409, rawMessage: 'onlinePbxLineBusyWithReminder' }));
+      await first;
+    });
+    expect(mocks.value.activeCall.clientCallId).toBe(successor.callID);
+    expect(mocks.value.activeCall.status).toBe('connected');
+    expect(mocks.value.activeCall.errorCode).toBeNull();
+    expect(mocks.releaseLine).not.toHaveBeenCalled();
+    await act(async () => mocks.value.toggleMute());
+    expect(successor.setMute).toHaveBeenCalledExactlyOnceWith('toggle');
+  });
+
+  it('does not attach an old user reminder-busy refusal to the new user call', async () => {
+    const old = deferred<{ id: string }>();
+    mocks.reserveLine.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ id: 'new-user-lease' });
+    const view = await renderPhone();
+    let first!: Promise<unknown>;
+    await act(async () => { first = mocks.value.startCall('+998901234567').catch((error: unknown) => error); });
+    await waitFor(() => expect(mocks.reserveLine).toHaveBeenCalledOnce());
+    const previousCallbacks = mocks.onDialogState;
+    mocks.user = { ...mocks.user, id: 8 };
+    await act(async () => view.refresh());
+    await waitFor(() => expect(mocks.onDialogState).not.toBe(previousCallbacks));
+    await act(async () => mocks.value.startCall('+998901234568'));
+    const successor = mocks.newCall.mock.results[0].value;
+    await act(async () => mocks.onDialogState!(successor));
+    await act(async () => {
+      old.reject(Object.assign(new Error('Translated busy response'), { status: 409, rawMessage: 'onlinePbxLineBusyWithReminder' }));
+      await first;
+    });
+    expect(mocks.value.activeCall.clientCallId).toBe(successor.callID);
+    expect(mocks.value.activeCall.status).toBe('connected');
+    expect(mocks.value.activeCall.errorCode).toBeNull();
+    expect(mocks.releaseLine).not.toHaveBeenCalled();
+  });
+
   it('authorizes the reserved UUID before inviting with that same provider call ID', async () => {
     const authorization = deferred<{ authorized: boolean }>();
     mocks.authorizeLine.mockReturnValueOnce(authorization.promise);

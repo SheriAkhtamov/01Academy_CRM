@@ -51,6 +51,8 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
             'status', participant.status,
             'reminderResponse', reminder_response.response,
             'reminderRespondedAt', reminder_response.response_at,
+            'reminderDeliveryStatus', reminder_delivery.delivery_status,
+            'reminderDeliveredAt', reminder_delivery.delivered_at,
             'result', participant.result,
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
@@ -72,6 +74,7 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
    JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
    LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
    LEFT JOIN LATERAL voice_reminder_participant_response(participant.id) reminder_response ON true
+   LEFT JOIN LATERAL voice_reminder_participant_delivery(participant.id) reminder_delivery ON true
    LEFT JOIN academy_students student ON student.id = participant.student_id
    LEFT JOIN academy_leads lead ON lead.id = student.lead_id
    WHERE ${where}
@@ -137,7 +140,7 @@ const presentDemoLesson = (req: any, demo: Row) => {
       const participantCanManage = canManageParticipant(req, participant);
       return participantCanManage
         ? { ...participant, canManage: true }
-        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, canManage: false };
+        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, canManage: false };
     }),
   };
 };

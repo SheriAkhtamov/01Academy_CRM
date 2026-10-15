@@ -34,8 +34,8 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       ...credentials, extension, username: extension, aor: `${extension}@example.invalid`,
     })), close: vi.fn(async () => undefined),
   });
-  const makeRuntime = (capacity: VoiceReminderCapacityProvider, performCall: typeof performVertoReminderCall) => (
-    createVoiceRemindersRuntime(capacity, database, { audioDirectory: directory, performCall, now: () => testClock })
+  const makeRuntime = (capacity: VoiceReminderCapacityProvider, performCall: typeof performVertoReminderCall, now = () => testClock) => (
+    createVoiceRemindersRuntime(capacity, database, { audioDirectory: directory, performCall, now })
   );
   const enqueueTest = async (actorId = 1, phone = '+998901234567', language: VoiceReminderLanguage = 'ru') => {
     const id = randomUUID();
@@ -127,6 +127,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     await database.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -156,6 +157,57 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(['ru', 'uz'] as const)('delivers exactly one standalone %s follow-up then ends without inventing attendance', async language => {
+    if (language === 'uz') {
+      await prepareUzbekAudio();
+      await database.query("UPDATE academy_leads SET languages=ARRAY['uz','ru'] WHERE id=1");
+    } else await prepareConfirmationAudio();
+    const store = new LocalVoiceReminderAudioStore(directory);
+    const library = await repository.audioLibrary(language);
+    const bytes = await fs.readFile(await store.resolve(library.intro!.storageKey));
+    for (let offset = 44; offset < bytes.length; offset += 2) bytes.writeInt16LE(9000, offset);
+    const retry = await store.save({ bytes, originalName: 'retry.wav', mimeType: 'audio/wav' });
+    await repository.saveLibraryAudio({ part: 'responseRetry', language }, retry, 1);
+    let now = testClock;
+    let attempts = 0;
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      attempts++;
+      expect(await input.shouldContinue()).toBe(true);
+      await input.onStarted!();
+      expect(input.confirmation).toBeDefined();
+      const audio = await inspectReminderAudio(input.audioPath);
+      expect(audio.durationSeconds).toBe(attempts === 1 ? 4 : 1);
+      if (attempts === 2) {
+        expect(input.confirmation!.promptDurationSeconds).toBe(1);
+        const normalized = await fs.readFile(input.audioPath);
+        for (let offset = 44; offset < normalized.length; offset += 2) expect(normalized.readInt16LE(offset)).toBe(9000);
+      }
+      return { outcome: 'delivered_no_response', callStarted: true, callId: input.callId!, terminationConfirmed: true };
+    });
+    const runtime = makeRuntime(provider(), call, () => now);
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT status,retry_phase,no_response_count FROM voice_reminder_jobs')).rows[0])
+        .toMatchObject({ status: 'waiting', retry_phase: 'response_retry', no_response_count: 1 });
+      expect((await database.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows).toEqual([]);
+      now += 9 * 60_000;
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      now += 60_000;
+      await runtime.tick();
+      expect(call).toHaveBeenCalledTimes(2);
+      expect((await database.query('SELECT status,attempts,no_response_count,response FROM voice_reminder_jobs')).rows[0])
+        .toMatchObject({ status: 'delivered_no_response', attempts: 2, no_response_count: 2, response: null });
+      expect((await database.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows[0])
+        .toMatchObject({ delivery_status: 'delivered_no_response' });
+      expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+      now += 10 * 60_000;
+      await runtime.tick();
+      expect(call).toHaveBeenCalledTimes(2);
+    } finally { await runtime.close(); }
   });
 
   it('composes an Uzbek lead call and its acknowledgements entirely from the Uzbek library', async () => {

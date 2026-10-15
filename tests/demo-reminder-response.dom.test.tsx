@@ -163,4 +163,55 @@ describe('demo reminder answers beside actual attendance', () => {
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(load).not.toHaveBeenCalled();
   });
+
+  it.each(['en', 'ru'] as const)('shows only the explicit delivered-without-response marker beside attendance in %s', language => {
+    i18n.setLanguage(language);
+    show({ ...demo, participants: [{ ...demo.participants[0], reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T11:00:00Z' }] });
+    const badge = screen.getByText(language === 'ru' ? 'Напоминание доставлено, ответ не получен' : 'Reminder delivered, no response received');
+    expect(within(badge.parentElement!).getByRole('combobox').textContent).toBe(translations.selectAttendanceResult[language]);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByText(/Auto-informer:|Автоинформатор:/)).toBeNull();
+    expect(mocks.saveAttendance).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.outcome).not.toHaveBeenCalled();
+  });
+
+  it.each(['yes', 'no'] as const)('keeps a recorded %s answer ahead of delivered-without-response without changing physical attendance', response => {
+    show({ ...demo, participants: [{ ...demo.participants[0], reminderResponse: response, reminderRespondedAt: '2026-08-31T11:00:00Z',
+      reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T10:00:00Z' }] });
+    expect(screen.getByText(response === 'yes' ? 'Auto-informer: Will attend' : 'Auto-informer: Will not attend')).toBeTruthy();
+    expect(screen.queryByText('Reminder delivered, no response received')).toBeNull();
+    expect(screen.getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.en);
+    expect(mocks.saveAttendance).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it('refreshes terminal delivery from the real parent cache without discarding dirty attendance and ignores delivery timestamp-only updates', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const delivered: DemoLesson = { ...demo, participants: [{ ...demo.participants[0],
+      reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T11:00:00Z' }] };
+    const later: DemoLesson = { ...delivered, participants: [{ ...delivered.participants[0], reminderDeliveredAt: '2026-08-31T11:05:00Z' }] };
+    const load = vi.fn().mockResolvedValueOnce([demo]).mockResolvedValueOnce([delivered]).mockResolvedValue([later]);
+    showCachedParent(load);
+    await act(async () => { await Promise.resolve(); });
+    await waitFor(() => expect(load).toHaveBeenCalledOnce());
+    expect(screen.queryByText('Reminder delivered, no response received')).toBeNull();
+    const selector = screen.getByRole('combobox');
+    selector.focus();
+    fireEvent.keyDown(selector, { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: translations.demoParticipantAttended.en }));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(await screen.findByText('Reminder delivered, no response received')).toBeTruthy();
+    expect(screen.getByRole('combobox').textContent).toBe(translations.demoParticipantAttended.en);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole('combobox').textContent).toBe(translations.demoParticipantAttended.en);
+    fireEvent.click(screen.getByRole('button', { name: translations.saveAttendance.en }));
+    await waitFor(() => expect(mocks.saveAttendance).toHaveBeenCalledWith(5, {
+      participants: [{ participantId: 11, status: 'attended', result: null, noShowReasonCode: null, noShowReasonNote: null }],
+    }));
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.outcome).not.toHaveBeenCalled();
+  });
+
 });

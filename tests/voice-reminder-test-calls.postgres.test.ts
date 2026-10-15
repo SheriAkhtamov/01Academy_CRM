@@ -26,12 +26,12 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     database = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=America/New_York`, max: 12 });
     await database.query(`CREATE TABLE users(id integer PRIMARY KEY,module text,is_active boolean,is_archived boolean);
       CREATE TABLE user_modules(id serial PRIMARY KEY,user_id integer,module text);
-      CREATE TABLE academy_leads(id integer PRIMARY KEY,language varchar(20),languages text[]);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY,is_archived boolean NOT NULL DEFAULT false,language varchar(20),languages text[]);
       CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
     for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
-      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations', '0150_voice_reminder_languages']) {
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations', '0150_voice_reminder_languages', '0152_voice_reminder_response_retry']) {
       await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
     }
     repository = new PostgresVoiceReminderTestCallRepository(database);
@@ -68,6 +68,19 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     await database.query('UPDATE voice_reminder_test_calls SET dial_started_at=$2,provider_call_id=$3 WHERE id=$1', [job.id,now,callId]);
     return { job, callId, request };
   };
+
+  it('reports a fully delivered confirmation without a digit as terminal without scheduling another manual call',async () => {
+    const request = input();
+    for (const part of ['confirmationYes','confirmationNo'] as const) await library.saveLibraryAudio({ part },audio(),1,null);
+    await database.query('UPDATE voice_reminder_settings SET confirmation_enabled=true WHERE id=1');
+    await repository.enqueue(1,request,now,expiresAt);
+    const job = (await repository.claim(now,300))!;
+    await repository.prepare(job,now);
+    await repository.finish(job,{ outcome:'delivered_no_response',callStarted:true,callId:randomUUID(),terminationConfirmed:true },now);
+    expect(await repository.current(1)).toMatchObject({ status:'delivered_no_response',response:null,respondedAt:null });
+    expect(await repository.claim(new Date(now.getTime()+600_000),300)).toBeNull();
+    expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_test_calls')).rows[0].count).toBe(1);
+  });
 
   it('binds UZ into the immutable intent and pins only its own sources while preserving legacy RU defaults', async () => {
     const uzSources = [];

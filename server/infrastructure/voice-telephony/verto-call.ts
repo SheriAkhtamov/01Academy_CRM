@@ -142,6 +142,7 @@ export async function performVertoReminderCall(
   let monitor: Promise<void> | undefined;
   let pendingResponse: VoiceReminderResponse | undefined;
   let savedResponse: VoiceReminderResponse | undefined;
+  let fullPromptDelivered = false;
   let callDeadline = input.deadline.getTime();
   let acceptingResponse = false;
   const diagnosticStartedAt = Date.now();
@@ -243,7 +244,8 @@ export async function performVertoReminderCall(
         const cause = String(event.params.cause ?? '').toUpperCase();
         diagnose('remote_end', { cause: /^[A-Z0-9_]{1,64}$/.test(cause) ? cause : 'UNSPECIFIED' });
         const unanswered = ['NO_ANSWER', 'NO_USER_RESPONSE', 'USER_BUSY', 'CALL_REJECTED'].includes(cause);
-        stop(!answered && unanswered ? 'unanswered' : 'failed');
+        stop(!answered && unanswered ? 'unanswered'
+          : input.confirmation && fullPromptDelivered && !pendingResponse ? 'delivered_no_response' : 'failed');
         return;
       }
       if (event.method !== 'verto.media' && event.method !== 'verto.answer') return;
@@ -346,6 +348,7 @@ export async function performVertoReminderCall(
     };
     enter('playback');
     await play(audio, true);
+    fullPromptDelivered = true;
     if (input.confirmation && replyAudio) {
       enter('confirmation');
       const waitUntil = Date.now() + (dependencies.confirmationWaitMs ?? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * 1_000);
@@ -364,6 +367,7 @@ export async function performVertoReminderCall(
         const saving = bounded(input.confirmation.onResponse(pendingResponse, callId),
           Math.max(1, Math.min(5_000, callDeadline - Date.now()))).then(value => {
           stored = value;
+          if (value) savedResponse = pendingResponse;
         }, error => { saveError = error; }).finally(() => { saveFinished = true; });
         // Maintain the RTP clock while the durable response is committed. A
         // database pause must not make the acknowledgement arrive as late RTP.
@@ -382,11 +386,13 @@ export async function performVertoReminderCall(
       }
     }
     await check();
-    result = { outcome: 'played', callStarted, callId, ...(savedResponse ? { response: savedResponse } : {}) };
+    result = { outcome: input.confirmation && !pendingResponse ? 'delivered_no_response' : 'played',
+      callStarted, callId, ...(savedResponse ? { response: savedResponse } : {}) };
   } catch (error) {
-    diagnose('failed', { outcome: error instanceof CallStopped ? error.outcome : stopped ?? 'failed' });
+    const outcome = savedResponse ? 'played' : error instanceof CallStopped ? error.outcome : stopped ?? 'failed';
+    if (outcome !== 'delivered_no_response' && outcome !== 'played') diagnose('failed', { outcome });
     result = {
-      outcome: error instanceof CallStopped ? error.outcome : stopped ?? 'failed',
+      outcome,
       callStarted, callId: callStarted ? callId : null,
       ...(savedResponse ? { response: savedResponse } : {}),
     };
@@ -402,11 +408,12 @@ export async function performVertoReminderCall(
       enter('hangup');
       try {
         await rpc.request('verto.bye', {
-          dialogParams: { callID: callId }, cause: result.outcome === 'played' ? 'NORMAL_CLEARING' : 'ORIGINATOR_CANCEL',
+          dialogParams: { callID: callId },
+          cause: result.outcome === 'played' || result.outcome === 'delivered_no_response' ? 'NORMAL_CLEARING' : 'ORIGINATOR_CANCEL',
         }, 1_500);
         acknowledgedBye = true;
       } catch {
-        if (result.outcome === 'played' || result.outcome === 'unanswered') result.outcome = 'failed';
+        if (!savedResponse && ['played', 'unanswered', 'delivered_no_response'].includes(result.outcome)) result.outcome = 'failed';
       }
     }
     await rpc?.close();

@@ -190,11 +190,11 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
   }
 
   async finish(job: ClaimedVoiceReminderTestCall, result: VoiceReminderCallResult, now: Date): Promise<void> {
-    await this.database.query(`UPDATE voice_reminder_test_calls SET status=$3,lease_token=NULL,lease_until=NULL,not_before_at=NULL,
+    await this.database.query(`UPDATE voice_reminder_test_calls SET status=CASE WHEN $3='delivered_no_response' THEN CASE WHEN response IS NOT NULL THEN 'played' WHEN confirmation_enabled AND $6 THEN 'delivered_no_response' ELSE 'failed' END ELSE $3 END,lease_token=NULL,lease_until=NULL,not_before_at=NULL,
       completed_at=$4,updated_at=$4,provider_call_id=COALESCE(provider_call_id,$5),
       dial_started_at=CASE WHEN $6 THEN COALESCE(dial_started_at,$4) ELSE dial_started_at END
       WHERE id=$1 AND lease_token=$2 AND status='calling'`, [job.id,job.leaseToken,
-      result.outcome==='busy' ? 'failed' : result.outcome,now,result.callId?.slice(0,160) ?? null,result.callStarted]);
+      result.outcome==='delivered_no_response' ? 'delivered_no_response' : result.outcome==='busy' ? 'failed' : result.outcome,now,result.callId?.slice(0,160) ?? null,result.callStarted]);
   }
 
   async defer(job: ClaimedVoiceReminderTestCall, now: Date): Promise<boolean> {

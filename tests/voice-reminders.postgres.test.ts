@@ -46,6 +46,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -221,6 +222,220 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     return repository.audioLibrary('uz');
   };
   const onlyFirstParticipant = async () => pool.query(`UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id IN (2,3)`);
+
+  const deliveryRows = async () => (await pool.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows;
+  const prepareDeliveredQuestion = async (options: { language?: 'ru' | 'uz'; maxAttempts?: number; termination?: boolean } = {}) => {
+    await onlyFirstParticipant();
+    await enableConfirmation();
+    if (options.language==='uz') {
+      await addUzLibrary(true);
+      await pool.query("UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1");
+    }
+    if (options.maxAttempts) await repository.saveSettings({ ...input, enabled: true, confirmationEnabled: true, maxAttempts: options.maxAttempts },1);
+    const { job,callId } = await armedResponse();
+    await pool.query(`UPDATE voice_reminder_call_attempts SET completed_at=$2::timestamptz,termination_confirmed_at=CASE WHEN $3::boolean THEN $2::timestamptz ELSE NULL END WHERE call_id=$1`, [callId,now,options.termination!==false]);
+    await repository.finish(job,{ outcome:'delivered_no_response',callStarted:true,callId,terminationConfirmed:options.termination!==false },now,new Date(now.getTime()+600_000));
+    return { job,callId };
+  };
+  const retryClip = async (language: 'ru' | 'uz'='ru',durationSeconds=1) => {
+    const clip = { ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav`,durationSeconds };
+    await repository.saveLibraryAudio({ part:'responseRetry',language },clip,1,null);
+    return clip;
+  };
+  const retryTime = new Date(now.getTime()+600_000);
+
+  it('schedules one standalone no-response follow-up independently of the ordinary attempt limit and makes duplicate finish idempotent',async () => {
+    const clip = await retryClip();
+    const { job,callId } = await prepareDeliveredQuestion({ maxAttempts:1 });
+    await Promise.all(Array.from({ length:8 },() => repository.finish(job,{ outcome:'delivered_no_response',callStarted:true,callId,terminationConfirmed:true },now,retryTime)));
+    expect((await pool.query('SELECT status,attempts,no_response_count,retry_phase FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'waiting',attempts:1,no_response_count:1,retry_phase:'response_retry' });
+    expect(await deliveryRows()).toEqual([]);
+    expect(await repository.claim(new Date(retryTime.getTime()-1),2,300)).toBeNull();
+    const retry = (await repository.claim(retryTime,2,300))!;
+    expect(retry).toMatchObject({ id:job.id,attempts:1,noResponseCount:1,retryPhase:'response_retry' });
+    expect(await repository.prepare(retry,retryTime)).toMatchObject({ audioParts:{ kind:'standalone',audio:clip },confirmation:{ promptDurationSeconds:1 } });
+    await repository.finish(retry,{ outcome:'delivered_no_response',callStarted:true,callId:randomUUID(),terminationConfirmed:true },retryTime,new Date(retryTime.getTime()+600_000));
+    expect((await pool.query('SELECT status,attempts,no_response_count,last_retry_outcome FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'delivered_no_response',attempts:2,no_response_count:2,last_retry_outcome:'delivered_no_response' });
+    expect(await deliveryRows()).toEqual([{ delivery_status:'delivered_no_response',delivered_at:now }]);
+    await repository.synchronize(retryTime,await repository.settings());
+    expect(await repository.claim(new Date(retryTime.getTime()+600_000),2,300)).toBeNull();
+  });
+
+  it.each(['unanswered','failed'] as const)('preserves delivered fact when the only follow-up is %s',async outcome => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion();
+    const retry = (await repository.claim(retryTime,2,300))!;
+    await repository.prepare(retry,retryTime);
+    await repository.finish(retry,{ outcome,callStarted:true,callId:randomUUID() },retryTime,new Date(retryTime.getTime()+600_000));
+    expect((await pool.query('SELECT status,no_response_count,last_retry_outcome FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'delivered_no_response',no_response_count:1,last_retry_outcome:outcome });
+    expect(await deliveryRows()).toHaveLength(1);
+    expect(await repository.claim(new Date(retryTime.getTime()+600_000),2,300)).toBeNull();
+  });
+
+  it('does not redial an unresolved delivered call or an ambiguous crashed follow-up',async () => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion({ termination:false });
+    expect((await pool.query('SELECT status,no_response_count FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'delivered_no_response',no_response_count:1 });
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    await pool.query(`UPDATE voice_reminder_jobs SET status='waiting',retry_phase='response_retry',due_at=$2 WHERE id=$1`,[job.id,retryTime]);
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    await pool.query('UPDATE voice_reminder_call_attempts SET termination_confirmed_at=$1',[retryTime]);
+    const retry = (await repository.claim(retryTime,2,300))!;
+    await repository.prepare(retry,retryTime);
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at) VALUES($1,$2,'100','+998901234567',$3)`,[randomUUID(),job.id,retryTime]);
+    const recoveredAt = new Date(retryTime.getTime()+301_000);
+    await repository.synchronize(recoveredAt,await repository.settings());
+    expect((await pool.query('SELECT status,last_retry_outcome FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'delivered_no_response',last_retry_outcome:'failed' });
+    expect(await repository.claim(recoveredAt,2,300)).toBeNull();
+  });
+
+  it('waits only for the matching language follow-up clip and freezes it after INVITE',async () => {
+    await retryClip('ru'); const { job } = await prepareDeliveredQuestion({ language:'uz' });
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    const clip = await retryClip('uz');
+    const retry = (await repository.claim(retryTime,2,300))!;
+    expect(await repository.prepare(retry,retryTime)).toMatchObject({ language:'uz',audioParts:{ kind:'standalone',audio:clip } });
+    const replacement = { ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav` };
+    await repository.saveLibraryAudio({ part:'responseRetry',language:'uz' },replacement,1,clip.id);
+    expect(await repository.canContinue(retry,'+998901234567',retryTime)).toBe(false);
+    expect(await repository.canContinue(retry,'+998901234567',retryTime,false)).toBe(true);
+    await repository.prepare(retry,retryTime);
+    expect(await repository.canContinue(retry,'+998901234567',retryTime)).toBe(true);
+    await pool.query("DELETE FROM voice_reminder_localized_audio WHERE part IN ('hour','minute','intro')");
+    expect(await repository.canContinue(retry,'+998901234567',retryTime)).toBe(true);
+    expect((await pool.query('SELECT id FROM voice_reminder_audio WHERE id=$1',[clip.id])).rowCount).toBe(1);
+    expect(job.id).toBe(retry.id);
+  });
+
+  it('cancels a queued follow-up after a destination change without retargeting its immutable delivered phone',async () => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion();
+    await pool.query("UPDATE academy_leads SET phone='+998909999999' WHERE id=1");
+    // Cover a contact edit between the worker synchronization and claim.
+    const retry = (await repository.claim(retryTime,2,300))!;
+    expect(retry).not.toBeNull();
+    expect(await repository.prepare(retry,retryTime)).toBeNull();
+    expect(await repository.canContinue(retry,'+998909999999',retryTime,false)).toBe(false);
+    await repository.finish(retry,{ outcome:'cancelled',callStarted:false,callId:null },retryTime,null);
+    expect((await pool.query('SELECT status,phone,attempts,no_response_count FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'cancelled',phone:'+998901234567',attempts:1,no_response_count:1 });
+    expect(await deliveryRows()).toEqual([]);
+    await repository.synchronize(retryTime,await repository.settings());
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(1);
+  });
+
+  it('keeps an already prepared follow-up bound to its original phone and cancels pending changed destinations during synchronization',async () => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion();
+    const retry = (await repository.claim(retryTime,2,300))!;
+    await repository.prepare(retry,retryTime);
+    await pool.query("UPDATE academy_leads SET phone='+998909999999' WHERE id=1");
+    expect(await repository.canContinue(retry,'+998901234567',retryTime,false)).toBe(false);
+    expect(await repository.prepare(retry,retryTime)).toBeNull();
+    await repository.defer(retry,retryTime);
+    await repository.synchronize(retryTime,await repository.settings());
+    expect((await pool.query('SELECT status,phone,attempts FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'cancelled',phone:'+998901234567',attempts:1 });
+    expect(await repository.claim(new Date(retryTime.getTime()+30_000),2,300)).toBeNull();
+  });
+
+  it('keeps first delivery across language oscillation and never starts a new locale epoch',async () => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion();
+    await pool.query("UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1");
+    await pool.query("UPDATE academy_leads SET languages=ARRAY['ru'] WHERE id=1");
+    await repository.synchronize(retryTime,await repository.settings());
+    expect((await pool.query('SELECT id,status,no_response_count FROM voice_reminder_jobs')).rows)
+      .toEqual([{ id:String(job.id),status:'delivered_no_response',no_response_count:1 }]);
+    expect(await deliveryRows()).toHaveLength(1);
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+  });
+
+  it('preserves delivery at a retry deadline, but hides it after schedule or contact identity changes',async () => {
+    const { job } = await prepareDeliveredQuestion();
+    await repository.synchronize(scheduledAt,await repository.settings());
+    expect((await pool.query('SELECT status FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0].status).toBe('delivered_no_response');
+    expect(await deliveryRows()).toHaveLength(1);
+    await pool.query("UPDATE academy_demo_lesson_participants SET status='attended' WHERE id=1; UPDATE academy_demo_lessons SET status='completed' WHERE id=1");
+    expect(await deliveryRows()).toHaveLength(1);
+    await pool.query("UPDATE academy_leads SET phone='+998909999999' WHERE id=1");
+    expect(await deliveryRows()).toEqual([]);
+    await pool.query("UPDATE academy_leads SET phone='+998901234567' WHERE id=1; UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 07:00:00' WHERE id=1");
+    expect(await deliveryRows()).toEqual([]);
+  });
+
+  it('finalizes missing-clip follow-up at the same-day 20:00 boundary before a later demo',async () => {
+    await onlyFirstParticipant(); await enableConfirmation();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 16:00:00' WHERE id=1");
+    await repository.saveLibraryAudio({ part:'time',time:'21:00' },{ ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav` },1);
+    const at = new Date('2030-01-15T14:40:00Z');
+    const { job,callId } = await armedResponse(at);
+    await pool.query('UPDATE voice_reminder_call_attempts SET completed_at=$2::timestamptz,termination_confirmed_at=$2::timestamptz WHERE call_id=$1',[callId,at]);
+    await repository.finish(job,{ outcome:'delivered_no_response',callStarted:true,callId,terminationConfirmed:true },at,new Date('2030-01-15T14:50:00Z'));
+    await repository.synchronize(new Date('2030-01-15T14:59:59Z'),await repository.settings());
+    expect(await deliveryRows()).toEqual([]);
+    await repository.synchronize(new Date('2030-01-15T15:00:00Z'),await repository.settings());
+    expect(await deliveryRows()).toEqual([{ delivery_status:'delivered_no_response',delivered_at:at }]);
+    expect(await repository.claim(new Date('2030-01-15T15:00:00Z'),2,300)).toBeNull();
+  });
+
+  it('lets a committed valid response beat a concurrent no-response finish and rejects the old attempt after follow-up claim',async () => {
+    await onlyFirstParticipant(); await enableConfirmation(); await retryClip();
+    const { job,callId } = await armedResponse();
+    expect(await repository.recordResponse(job,'+998901234567','yes',now,callId)).toBe(true);
+    await repository.finish(job,{ outcome:'delivered_no_response',callStarted:true,callId,terminationConfirmed:true },now,retryTime);
+    expect((await pool.query('SELECT status,no_response_count,response FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0])
+      .toEqual({ status:'played',no_response_count:0,response:'yes' });
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    expect(await deliveryRows()).toEqual([]);
+  });
+
+  it('reuses the same response provenance for a valid follow-up and suppresses an older native callback',async () => {
+    await retryClip(); const { job,callId:oldCall } = await prepareDeliveredQuestion();
+    const retry = (await repository.claim(retryTime,2,300))!; await repository.prepare(retry,retryTime);
+    const native = randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at) VALUES($1,$2,'100','+998901234567',$3)`,[native,job.id,retryTime]);
+    await pool.query('UPDATE voice_reminder_jobs SET provider_call_id=$2 WHERE id=$1',[job.id,native]);
+    expect(await repository.recordResponse(job,'+998901234567','no',retryTime,oldCall)).toBe(false);
+    expect(await repository.recordResponse(retry,'+998901234567','yes',retryTime,oldCall)).toBe(false);
+    expect(await repository.recordResponse(retry,'+998901234567','no',retryTime,native)).toBe(true);
+    await repository.finish(retry,{ outcome:'played',callStarted:true,callId:native,response:'no' },retryTime,null);
+    expect(await currentResponse()).toMatchObject([{ response:'no',response_at:retryTime }]);
+    expect(await deliveryRows()).toEqual([]);
+    expect((await pool.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
+  });
+
+  it('suppresses a queued follow-up after a fresh valid response while ignoring a pre-delivery answer',async () => {
+    await retryClip(); const { job } = await prepareDeliveredQuestion();
+    await pool.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,reminder_kind,phone,
+      response,response_at,response_call_id,response_lesson_revision,response_participant_revision)
+      SELECT demo_lesson_id,participant_id,scheduled_at,due_at,'played','day_before',phone,'yes',$2,$3,
+        delivery_lesson_revision,delivery_participant_revision FROM voice_reminder_jobs WHERE id=$1`,[job.id,new Date(now.getTime()-1),randomUUID()]);
+    const oldAnswer = (await pool.query("SELECT id FROM voice_reminder_jobs WHERE reminder_kind='day_before'")).rows[0].id;
+    expect((await pool.query('SELECT voice_reminder_job_fresh_response($1) AS fresh',[job.id])).rows[0].fresh).toBe(false);
+    await pool.query('UPDATE voice_reminder_jobs SET response_at=$2 WHERE id=$1',[oldAnswer,retryTime]);
+    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    await repository.synchronize(retryTime,await repository.settings());
+    expect((await pool.query('SELECT status FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0].status).toBe('played');
+    expect(await deliveryRows()).toEqual([]);
+  });
+
+  it.each(['ru','uz'] as const)('serializes %s follow-up CAS and bounds standalone plus wait and acknowledgement to 180 seconds',async language => {
+    if (language==='uz') await addUzLibrary(true); else await enableConfirmation();
+    const clip = await retryClip(language,164);
+    const replacements = await Promise.allSettled(Array.from({ length:2 },() => repository.saveLibraryAudio({ part:'responseRetry',language },
+      { ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav`,durationSeconds:163 },1,clip.id)));
+    expect(replacements.filter(result=>result.status==='fulfilled')).toHaveLength(1);
+    await expect(repository.saveLibraryAudio({ part:'responseRetry',language },{ ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav`,durationSeconds:165 },1,(await repository.audioLibrary(language)).responseRetry!.id))
+      .rejects.toMatchObject({ code:'voiceReminderAudioTooLong' });
+    const long = { ...audio,id:randomUUID(),storageKey:`${randomUUID()}.wav`,durationSeconds:170 };
+    await repository.saveAudio(long,1);
+    const direct = language==='ru'
+      ? pool.query('UPDATE voice_reminder_settings SET response_retry_audio_id=$1 WHERE id=1',[long.id])
+      : pool.query("UPDATE voice_reminder_localized_audio SET audio_id=$1 WHERE language='uz' AND part='responseRetry'",[long.id]);
+    await expect(direct).rejects.toMatchObject({ code:'23514' });
+  });
 
   it.each([
     [null, 'uz', 'uz'], [[], 'uz', 'ru'], [null, 'en', 'ru'], [null, null, 'ru'],
@@ -825,6 +1040,8 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         VALUES($1,'100','robot',$2,'+998901234567',$3,$4,$5)`,[reservationId,callId,activeId,scheduledAt,now]);
       await upgrade.query(`INSERT INTO voice_reminder_test_calls(id,actor_user_id,phone,clock_time,expires_at)
         VALUES($1,1,'+123456789','11:00',$2)`,[testId,scheduledAt]);
+      await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql','utf8'));
+      await upgrade.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql','utf8'));
       const before = {
         settings: (await upgrade.query('SELECT * FROM voice_reminder_settings')).rows,
         jobs: (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows,
@@ -832,10 +1049,10 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         attempts: (await upgrade.query('SELECT * FROM voice_reminder_call_attempts')).rows,
         reservations: (await upgrade.query('SELECT * FROM telephony_line_reservations')).rows,
       };
-      await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql','utf8'));
-      expect((await upgrade.query('SELECT * FROM voice_reminder_settings')).rows).toEqual(before.settings);
+      await upgrade.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql','utf8'));
+      expect((await upgrade.query('SELECT * FROM voice_reminder_settings')).rows).toEqual(before.settings.map(row=>({ ...row,response_retry_audio_id:null })));
       expect((await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows)
-        .toEqual(before.jobs.map(row => ({ ...row,language: 'ru',language_revision: 0 })));
+        .toEqual(before.jobs.map(row => ({ ...row,language: 'ru',language_revision: 0,retry_phase:'primary',no_response_count:0,response_retry_audio_id:null,delivered_at:null,delivery_lesson_revision:null,delivery_participant_revision:null,last_retry_outcome:null })));
       expect((await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows)
         .toEqual(before.tests.map(row => ({ ...row,language: 'ru' })));
       expect((await upgrade.query('SELECT * FROM voice_reminder_call_attempts')).rows).toEqual(before.attempts);
@@ -871,10 +1088,11 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
-      expect(upgraded.audioLibrary).toEqual({ intro: null, dayBeforeIntro: null, confirmationYes: null, confirmationNo: null, outro: null, times: [], hours: [], minutes: [] });
+      expect(upgraded.audioLibrary).toEqual({ intro: null, dayBeforeIntro: null, confirmationYes: null, confirmationNo: null, outro: null, responseRetry:null, times: [], hours: [], minutes: [] });
     } finally {
       await upgrade.end();
       await admin.query(`DROP SCHEMA ${upgradeSchema} CASCADE`);
@@ -916,9 +1134,10 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
       const migratedJobs = (await upgrade.query('SELECT * FROM voice_reminder_jobs ORDER BY id')).rows;
       const migratedTests = (await upgrade.query('SELECT * FROM voice_reminder_test_calls')).rows;
-      expect(migratedJobs.map(({ language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousJobs);
+      expect(migratedJobs.map(({ retry_phase,no_response_count,response_retry_audio_id,delivered_at,delivery_lesson_revision,delivery_participant_revision,last_retry_outcome,language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousJobs);
       expect(migratedJobs.every(row => row.reminder_kind === 'same_day')).toBe(true);
       expect(migratedTests.map(({ language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousTests);
       expect(migratedTests[0].reminder_kind).toBe('same_day');

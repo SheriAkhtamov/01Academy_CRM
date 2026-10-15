@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VOICE_REMINDER_SETTINGS, voiceReminderSettingsSchema } from '../shared/contracts/voice-reminders';
-import { normalizeReminderPhone, nextReminderAttempt, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline } from '../server/modules/voice-reminders/domain/policy';
+import { normalizeReminderPhone, nextReminderAttempt, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline, nextReminderResponseRetry } from '../server/modules/voice-reminders/domain/policy';
 import { VoiceReminderWorker } from '../server/modules/voice-reminders/application/worker-service';
 import type { ClaimedVoiceReminder, VoiceReminderCallResult, VoiceReminderGateway, VoiceReminderLine, VoiceReminderRepository } from '../server/modules/voice-reminders/application/ports';
 
@@ -73,6 +73,33 @@ describe('voice reminder scheduling and safe parallel calls', () => {
       .toBe('2030-01-15T14:59:00.000Z');
     expect(nextReminderAttempt({ now: new Date('2030-01-15T14:50:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
     expect(nextReminderAttempt({ now: new Date('2030-01-15T14:59:59Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
+  });
+
+  it('permits only the first no-response follow-up and respects the current kind deadline', () => {
+    const confirmed = { ...settings,confirmationEnabled:true,maxAttempts:1,dayBeforeEnabled:true };
+    expect(nextReminderResponseRetry({ now,scheduledAt,noResponseCount:1,settings:confirmed,reminderKind:'same_day' })).toEqual(new Date('2030-01-15T05:10:00Z'));
+    for (const count of [0,2]) expect(nextReminderResponseRetry({ now,scheduledAt,noResponseCount:count,settings:confirmed,reminderKind:'same_day' })).toBeNull();
+    expect(nextReminderResponseRetry({ now:new Date('2030-01-15T14:50:00Z'),scheduledAt:new Date('2030-01-16T06:00:00Z'),noResponseCount:1,settings:confirmed,reminderKind:'day_before' })).toBeNull();
+  });
+
+  it.each([true,false])('schedules a delivered question only after positive termination=%s',async terminationConfirmed => {
+    const context=setup(1);
+    context.repository.settings.mockResolvedValue({ ...settings,confirmationEnabled:true,maxAttempts:1, audioLibrary:{ ...settings.audioLibrary,confirmationYes:audio,confirmationNo:audio } } as never);
+    context.gateway.tryAcquireLine.mockResolvedValue({ call:vi.fn(async()=>({ outcome:'delivered_no_response' as const,callStarted:true,callId:'own',terminationConfirmed })),release:vi.fn(async()=>undefined) });
+    await context.worker.tick();
+    expect(context.repository.finish).toHaveBeenCalledWith(job(1),expect.objectContaining({ outcome:'delivered_no_response' }),now,terminationConfirmed ? new Date('2030-01-15T05:10:00Z') : null);
+  });
+
+  it('dispatches a standalone retry when unrelated original clock clips are unavailable and never schedules a third dial',async () => {
+    const context=setup(0);
+    const retry={ ...job(1),attempts:2,noResponseCount:1,retryPhase:'response_retry' as const };
+    context.repository.settings.mockResolvedValue({ ...settings,confirmationEnabled:true, audioLibrary:{ ...settings.audioLibrary,intro:null,hours:[],minutes:[],responseRetry:audio,confirmationYes:audio,confirmationNo:audio } } as never);
+    context.repository.claim.mockResolvedValueOnce(retry).mockResolvedValue(null);
+    context.repository.prepare.mockResolvedValue({ ...retry,phone:'+998901234567',audioParts:{ kind:'standalone',audio,clockTime:'11:00' },confirmation:{ yesAudio:audio,noAudio:audio,promptDurationSeconds:1 },deadline:scheduledAt } as never);
+    context.gateway.tryAcquireLine.mockResolvedValue({ call:vi.fn(async()=>({ outcome:'delivered_no_response' as const,callStarted:true,callId:'own',terminationConfirmed:true })),release:vi.fn(async()=>undefined) });
+    await context.worker.tick();
+    expect(context.composer.compose).toHaveBeenCalledWith({ kind:'standalone',audio,clockTime:'11:00' });
+    expect(context.repository.finish).toHaveBeenCalledWith(retry,expect.objectContaining({ outcome:'delivered_no_response' }),now,null);
   });
 
   it('passes immutable confirmation clips and a durable response callback to the shared line', async () => {

@@ -59,7 +59,7 @@ const emptyRecordingDrafts = (): Record<VoiceReminderLanguage, VoiceReminderReco
   ru: emptyRecordingDraft(), uz: emptyRecordingDraft(),
 });
 const recordingDraftDirty = (recording: VoiceReminderRecordingDraft) => Boolean(
-  recording.intro || recording.dayBeforeIntro || recording.outro || recording.confirmationYes || recording.confirmationNo
+  recording.intro || recording.dayBeforeIntro || recording.outro || recording.confirmationYes || recording.confirmationNo || recording.responseRetry
   || recording.hour.file || recording.minute.file || recording.time.file || recording.time.value,
 );
 

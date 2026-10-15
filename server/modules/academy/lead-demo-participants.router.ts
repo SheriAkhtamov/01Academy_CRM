@@ -18,13 +18,15 @@ export function registerLeadDemoParticipantRoutes(router: Router) {
         `SELECT participant.id AS participant_id, demo.id AS demo_lesson_id,
           student.id AS student_id, student.student_name, course.name AS course_name,
           demo.scheduled_at, participant.status,reminder_response.response AS reminder_response,
-          reminder_response.response_at AS reminder_responded_at, demo.status AS lesson_status,
+          reminder_response.response_at AS reminder_responded_at,reminder_delivery.delivery_status AS reminder_delivery_status,
+          reminder_delivery.delivered_at AS reminder_delivered_at, demo.status AS lesson_status,
           COALESCE(student.manager_id, lead.manager_id) AS manager_id,
           ${demoAttendanceManagerSql()} AS attendance_manager_id,
           ${demoFunnelRoleSql()} AS funnel_role
          FROM academy_demo_lesson_participants participant
          JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
          LEFT JOIN LATERAL voice_reminder_participant_response(participant.id) reminder_response ON true
+         LEFT JOIN LATERAL voice_reminder_participant_delivery(participant.id) reminder_delivery ON true
          JOIN academy_students student ON student.id = participant.student_id
          JOIN academy_leads lead ON lead.id = student.lead_id
          JOIN academy_courses course ON course.id = demo.course_id
@@ -35,6 +37,8 @@ export function registerLeadDemoParticipantRoutes(router: Router) {
       res.json(participants.map((participant) => ({ ...participant,
         reminderResponse: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderResponse : null,
         reminderRespondedAt: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderRespondedAt : null,
+        reminderDeliveryStatus: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderDeliveryStatus : null,
+        reminderDeliveredAt: !lead.isArchived && canManageDemoParticipant(req, participant) ? participant.reminderDeliveredAt : null,
         canManage: !lead.isArchived && canManageDemoParticipant(req, participant),
       })));
     } catch (error) {

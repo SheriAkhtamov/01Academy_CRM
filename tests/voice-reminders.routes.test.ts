@@ -35,7 +35,7 @@ describe('voice reminder HTTP boundary', () => {
   it('scopes every modular mutation and preview to the requested language with frozen CAS IDs', async () => {
     const expectedId = randomUUID();
     for (const [endpoint, target] of [['intro', { part: 'intro' }], ['day-before-intro', { part: 'dayBeforeIntro' }],
-      ['confirmation-yes', { part: 'confirmationYes' }], ['confirmation-no', { part: 'confirmationNo' }],
+      ['confirmation-yes', { part: 'confirmationYes' }], ['confirmation-no', { part: 'confirmationNo' }], ['response-retry', { part: 'responseRetry' }],
       ['outro', { part: 'outro' }], ['times/11:00', { part: 'time', time: '11:00' }],
       ['hours/11', { part: 'hour', hour: '11' }], ['minutes/00', { part: 'minute', minute: '00' }]] as const) {
       expect((await request(app()).post(`/api/academy/voice-reminders/audio/${endpoint}?language=uz&expectedId=${expectedId}`)
@@ -76,13 +76,13 @@ describe('voice reminder HTTP boundary', () => {
 
   it('requires leadership for settings, test calls and recording access before reading bytes', async () => {
     for (const module of [null, 'sales'] as const) {
-      for (const endpoint of ['', '/test-calls/current', '/audio', '/audio/intro', '/audio/day-before-intro', '/audio/confirmation-yes', '/audio/confirmation-no', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
+      for (const endpoint of ['', '/test-calls/current', '/audio', '/audio/intro', '/audio/day-before-intro', '/audio/confirmation-yes', '/audio/confirmation-no', '/audio/response-retry', '/audio/outro', '/audio/times/11:00', '/audio/hours/00', '/audio/minutes/00', '/preview/11:00']) {
         const response = await request(app(module)).get(`/api/academy/voice-reminders${endpoint}`);
         expect(response.status).toBe(module === null ? 401 : 403);
       }
       const upload = await request(app(module)).post('/api/academy/voice-reminders/audio').attach('file', Buffer.from('bytes'), 'demo.wav');
       expect(upload.status).toBe(module === null ? 401 : 403);
-      for (const endpoint of ['intro', 'day-before-intro', 'confirmation-yes', 'confirmation-no', 'outro', 'times/11:00', 'hours/00', 'minutes/00']) {
+      for (const endpoint of ['intro', 'day-before-intro', 'confirmation-yes', 'confirmation-no', 'response-retry', 'outro', 'times/11:00', 'hours/00', 'minutes/00']) {
         expect((await request(app(module)).post(`/api/academy/voice-reminders/audio/${endpoint}`).attach('file', Buffer.from('bytes'), 'demo.wav')).status).toBe(module === null ? 401 : 403);
       }
       expect((await request(app(module)).delete('/api/academy/voice-reminders/audio/times/11:00')).status).toBe(module === null ? 401 : 403);
@@ -147,7 +147,7 @@ describe('voice reminder HTTP boundary', () => {
   });
 
   it('uploads each modular part and deletes only an exact validated time relation', async () => {
-    for (const [endpoint, target] of [['intro', { part: 'intro' }], ['day-before-intro', { part: 'dayBeforeIntro' }], ['confirmation-yes', { part: 'confirmationYes' }], ['confirmation-no', { part: 'confirmationNo' }], ['outro', { part: 'outro' }], ['times/11%3A00', { part: 'time', time: '11:00' }]] as const) {
+    for (const [endpoint, target] of [['intro', { part: 'intro' }], ['day-before-intro', { part: 'dayBeforeIntro' }], ['confirmation-yes', { part: 'confirmationYes' }], ['confirmation-no', { part: 'confirmationNo' }], ['response-retry', { part: 'responseRetry' }], ['outro', { part: 'outro' }], ['times/11%3A00', { part: 'time', time: '11:00' }]] as const) {
       expect((await request(app()).post(`/api/academy/voice-reminders/audio/${endpoint}`).attach('file', Buffer.from('recording'), 'part.wav')).body).toEqual(snapshot);
       expect(service.uploadPart).toHaveBeenLastCalledWith(expect.anything(), target, expect.objectContaining({ originalName: 'part.wav' }), null);
     }

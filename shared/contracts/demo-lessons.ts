@@ -163,6 +163,8 @@ export type LeadDemoParticipant = {
   managerId: number | null; attendanceManagerId: number | null;
   reminderResponse: VoiceReminderResponse | null;
   reminderRespondedAt: string | null;
+  reminderDeliveryStatus?: import('./voice-reminders').VoiceReminderDeliveryStatus | null;
+  reminderDeliveredAt?: string | null;
   funnelRole: 'hunter' | 'closer' | null; canManage: boolean;
 };
 export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];

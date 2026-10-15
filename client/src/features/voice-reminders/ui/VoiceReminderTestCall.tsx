@@ -14,6 +14,7 @@ import { testCallIsActive, useVoiceReminderTestCall } from '../test-call';
 
 const statusKeys: Record<VoiceReminderStatus, TranslationKey> = {
   waiting: 'voiceRemindersWaiting', calling: 'voiceRemindersCalling', played: 'voiceRemindersPlayed',
+  delivered_no_response: 'voiceRemindersDeliveredNoResponse',
   unanswered: 'voiceRemindersUnanswered', failed: 'voiceRemindersFailed', cancelled: 'voiceRemindersCancelled',
 };
 
@@ -72,7 +73,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
         </Button>
       </div>
     </form>
-    {statusKey ? <Badge variant={call.job?.status === 'played' ? 'success' : 'secondary'} role="status">{t(statusKey)}</Badge> : null}
+    {statusKey ? <Badge className="max-w-full whitespace-normal" variant={call.job?.status === 'played' || call.job?.status === 'delivered_no_response' ? 'success' : 'secondary'} role="status">{t(statusKey)}</Badge> : null}
     {call.errorKey ? <p role="alert" className="text-sm text-destructive">{t(call.errorKey)}</p> : null}
     {call.current.isError && !call.errorKey ? <div className="space-y-3">
       <p role="alert" className="text-sm text-destructive">{t('voiceRemindersTestLoadFailed')}</p>

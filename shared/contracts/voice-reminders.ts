@@ -4,13 +4,14 @@ import { selectedLeadLanguages } from '../lead-languages';
 export const VOICE_REMINDER_MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 export const VOICE_REMINDER_MAX_AUDIO_SECONDS = 180;
 export const VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS = 15;
-export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled'] as const;
+export const VOICE_REMINDER_STATUSES = ['waiting', 'calling', 'played', 'delivered_no_response', 'unanswered', 'failed', 'cancelled'] as const;
 export type VoiceReminderStatus = typeof VOICE_REMINDER_STATUSES[number];
 export const VOICE_REMINDER_KINDS = ['same_day', 'day_before'] as const;
 export const voiceReminderKindSchema = z.enum(VOICE_REMINDER_KINDS);
 export type VoiceReminderKind = typeof VOICE_REMINDER_KINDS[number];
 export const voiceReminderResponseSchema = z.enum(['yes', 'no']);
 export type VoiceReminderResponse = z.infer<typeof voiceReminderResponseSchema>;
+export type VoiceReminderDeliveryStatus = 'delivered_no_response';
 export const voiceReminderLanguageSchema = z.enum(['ru', 'uz']);
 export type VoiceReminderLanguage = z.infer<typeof voiceReminderLanguageSchema>;
 export const resolveVoiceReminderLanguage = (languages: unknown, language?: unknown): VoiceReminderLanguage => (
@@ -64,13 +65,14 @@ export type VoiceReminderAudioLibraryOf<Audio extends VoiceReminderAudio> = {
   outro: Audio | null;
   confirmationYes: Audio | null;
   confirmationNo: Audio | null;
+  responseRetry?: Audio | null;
   times: Array<{ time: string; audio: Audio }>;
   hours: Array<{ hour: string; audio: Audio }>;
   minutes: Array<{ minute: string; audio: Audio }>;
 };
 export type VoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<VoiceReminderAudio>;
 export const emptyVoiceReminderAudioLibrary = <Audio extends VoiceReminderAudio>(): VoiceReminderAudioLibraryOf<Audio> => ({
-  intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null,
+  intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, responseRetry: null,
   times: [], hours: [], minutes: [],
 });
 export const voiceReminderLibraryForLanguage = <Audio extends VoiceReminderAudio>(settings: {
@@ -102,6 +104,14 @@ export const hasReadyVoiceReminderLibrary = (settings: Pick<VoiceReminderSetting
   })
 );
 
+/** Standalone follow-ups can remain dispatchable if unrelated clock clips are removed. */
+export const hasReadyVoiceReminderFollowup = (settings: Pick<VoiceReminderSettings, 'audioLibrary' | 'audioLibraries'>): boolean => (
+  (['ru', 'uz'] as const).some(language => {
+    const library = voiceReminderLibraryForLanguage(settings, language);
+    return Boolean(library.responseRetry && hasVoiceReminderConfirmationAudio(library));
+  })
+);
+
 export const selectVoiceReminderAudioParts = <Audio extends VoiceReminderAudio>(
   library: VoiceReminderAudioLibraryOf<Audio>, clockTime: string, reminderKind: VoiceReminderKind = 'same_day',
 ): VoiceReminderAudioPartsOf<Audio> | null => {
@@ -123,7 +133,11 @@ export const voiceReminderAudioDurationValid = (library: VoiceReminderAudioLibra
     + (library.confirmationYes || library.confirmationNo ? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS : 0);
   const longestHour = Math.max(0, ...library.hours.map(entry => entry.audio.durationSeconds));
   const longestMinute = Math.max(0, ...library.minutes.map(entry => entry.audio.durationSeconds));
-  return base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
+  const followup = (library.responseRetry?.durationSeconds ?? 0)
+    + VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS
+    + Math.max(library.confirmationYes?.durationSeconds ?? 0, library.confirmationNo?.durationSeconds ?? 0);
+  return (!library.responseRetry || followup <= VOICE_REMINDER_MAX_AUDIO_SECONDS)
+    && base <= VOICE_REMINDER_MAX_AUDIO_SECONDS
     && library.times.every(entry => base + entry.audio.durationSeconds <= VOICE_REMINDER_MAX_AUDIO_SECONDS)
     && (!library.hours.length || !library.minutes.length || base + longestHour + longestMinute <= VOICE_REMINDER_MAX_AUDIO_SECONDS);
 };
@@ -178,5 +192,5 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   maxConcurrentCalls: 2,
   timeZone: 'Asia/Tashkent',
   audio: null,
-  audioLibrary: { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, times: [], hours: [], minutes: [] },
+  audioLibrary: { intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, responseRetry: null, times: [], hours: [], minutes: [] },
 };

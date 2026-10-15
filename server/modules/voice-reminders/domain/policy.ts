@@ -70,3 +70,19 @@ export const nextReminderAttempt = (input: {
   return input.attempts < input.settings.maxAttempts && next < reminderDeadline(input.scheduledAt, input.settings, kind)
     && reminderOnEligibleDay(input.scheduledAt, next, kind) && reminderWithinAllowedHours(next, input.settings, kind) ? next : null;
 };
+
+/** A delivered question gets one follow-up, independently of no-answer attempts. */
+export const nextReminderResponseRetry = (input: {
+  now: Date;
+  scheduledAt: Date;
+  noResponseCount: number;
+  settings: VoiceReminderSettings;
+  reminderKind: VoiceReminderKind;
+}): Date | null => {
+  const next = new Date(input.now.getTime() + input.settings.retryMinutes * 60_000);
+  return input.noResponseCount === 1 && input.settings.confirmationEnabled
+    && reminderKindEnabled(input.settings, input.reminderKind)
+    && next < reminderDeadline(input.scheduledAt, input.settings, input.reminderKind)
+    && reminderOnEligibleDay(input.scheduledAt, next, input.reminderKind)
+    && reminderWithinAllowedHours(next, input.settings, input.reminderKind) ? next : null;
+};

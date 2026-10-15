@@ -40,6 +40,7 @@ export const createVoiceReminderTables = (references: {
     audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     introAudioId: uuid('intro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     outroAudioId: uuid('outro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    responseRetryAudioId: uuid('response_retry_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     confirmationEnabled: boolean('confirmation_enabled').notNull().default(false),
     confirmationYesAudioId: uuid('confirmation_yes_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     confirmationNoAudioId: uuid('confirmation_no_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
@@ -96,11 +97,11 @@ export const createVoiceReminderTables = (references: {
   }, table => ({
     key: primaryKey({ columns: [table.language, table.part, table.audioIndex] }),
     languageCheck: check('voice_reminder_localized_audio_language_check', sql`${table.language}='uz'`),
-    partCheck: check('voice_reminder_localized_audio_part_check', sql`${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo','time','hour','minute')`),
+    partCheck: check('voice_reminder_localized_audio_part_check', sql`${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo','responseRetry','time','hour','minute')`),
     indexCheck: check('voice_reminder_localized_audio_check', sql`(${table.part}='time' AND ${table.audioIndex} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')
       OR (${table.part}='hour' AND ${table.audioIndex} ~ '^([01][0-9]|2[0-3])$')
       OR (${table.part}='minute' AND ${table.audioIndex} ~ '^[0-5][0-9]$')
-      OR (${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo') AND ${table.audioIndex}='')`),
+      OR (${table.part} IN ('intro','dayBeforeIntro','outro','confirmationYes','confirmationNo','responseRetry') AND ${table.audioIndex}='')`),
   }));
 
   const voiceReminderJobs = pgTable('voice_reminder_jobs', {
@@ -115,8 +116,15 @@ export const createVoiceReminderTables = (references: {
     languageRevision: integer('language_revision').notNull().default(0),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
     notBeforeAt: timestamp('not_before_at', { withTimezone: true }),
-    status: varchar('status', { length: 20 }).notNull().default('waiting'),
+    status: varchar('status', { length: 30 }).notNull().default('waiting'),
     attempts: integer('attempts').notNull().default(0),
+    retryPhase: varchar('retry_phase', { length: 20 }).notNull().default('primary'),
+    noResponseCount: integer('no_response_count').notNull().default(0),
+    responseRetryAudioId: uuid('response_retry_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    deliveryLessonRevision: integer('delivery_lesson_revision'),
+    deliveryParticipantRevision: integer('delivery_participant_revision'),
+    lastRetryOutcome: varchar('last_retry_outcome', { length: 30 }),
     phone: varchar('phone', { length: 20 }),
     audioId: uuid('audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
     introAudioId: uuid('intro_audio_id').references(() => voiceReminderAudio.id, { onDelete: 'restrict' }),
@@ -152,15 +160,21 @@ export const createVoiceReminderTables = (references: {
     languageCheck: check('voice_reminder_jobs_language_check', sql`${table.language} IN ('ru','uz')`),
     languageRevisionCheck: check('voice_reminder_jobs_language_revision_check', sql`${table.languageRevision}>=0`),
     kindCheck: check('voice_reminder_jobs_reminder_kind_check', sql`${table.reminderKind} IN ('same_day','day_before')`),
-    statusCheck: check('voice_reminder_jobs_status_check', sql`${table.status} IN ('waiting', 'calling', 'played', 'unanswered', 'failed', 'cancelled')`),
+    statusCheck: check('voice_reminder_jobs_status_check', sql`${table.status} IN ('waiting', 'calling', 'played', 'delivered_no_response', 'unanswered', 'failed', 'cancelled')`),
+    retryPhaseCheck: check('voice_reminder_jobs_retry_phase_check', sql`${table.retryPhase}<>'response_retry' OR ${table.noResponseCount}>0`),
+    retryPhaseValueCheck: check('voice_reminder_jobs_retry_phase_value_check', sql`${table.retryPhase} IN ('primary','response_retry')`),
+    noResponseCountCheck: check('voice_reminder_jobs_no_response_count_check', sql`${table.noResponseCount} BETWEEN 0 AND 2`),
+    deliveryCheck: check('voice_reminder_jobs_delivery_check', sql`(${table.noResponseCount}=0 AND ${table.deliveredAt} IS NULL) OR (${table.noResponseCount}>0 AND ${table.deliveredAt} IS NOT NULL)`),
     attemptsCheck: check('voice_reminder_jobs_attempts_check', sql`${table.attempts} >= 0`),
     lessonRevisionCheck: check('voice_reminder_jobs_lesson_revision_check', sql`${table.lessonRevision} >= 0`),
     participantRevisionCheck: check('voice_reminder_jobs_participant_revision_check', sql`${table.participantRevision} >= 0`),
     clockTimeCheck: check('voice_reminder_jobs_audio_clock_time_check', sql`${table.audioClockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
-    audioModeCheck: check('voice_reminder_jobs_audio_mode_check', sql`${table.audioMode} IN ('time', 'clock')`),
+    audioModeCheck: check('voice_reminder_jobs_audio_mode_check', sql`${table.audioMode} IN ('time', 'clock', 'standalone')`),
     audioPartsCheck: check('voice_reminder_jobs_audio_parts_check', sql`${table.audioMode} IS NULL
-      OR (${table.audioMode} = 'time' AND ${table.timeAudioId} IS NOT NULL AND ${table.hourAudioId} IS NULL AND ${table.minuteAudioId} IS NULL)
-      OR (${table.audioMode} = 'clock' AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NOT NULL AND ${table.minuteAudioId} IS NOT NULL)`),
+      OR (${table.audioMode} = 'time' AND ${table.timeAudioId} IS NOT NULL AND ${table.hourAudioId} IS NULL AND ${table.minuteAudioId} IS NULL AND ${table.responseRetryAudioId} IS NULL)
+      OR (${table.audioMode} = 'clock' AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NOT NULL AND ${table.minuteAudioId} IS NOT NULL AND ${table.responseRetryAudioId} IS NULL)
+      OR (${table.audioMode}='standalone' AND ${table.retryPhase}='response_retry' AND ${table.responseRetryAudioId} IS NOT NULL
+        AND ${table.introAudioId} IS NULL AND ${table.outroAudioId} IS NULL AND ${table.timeAudioId} IS NULL AND ${table.hourAudioId} IS NULL AND ${table.minuteAudioId} IS NULL)`),
     leaseCheck: check('voice_reminder_jobs_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL) OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),
   }));
   const voiceReminderTestCalls = pgTable('voice_reminder_test_calls', {
@@ -170,7 +184,7 @@ export const createVoiceReminderTables = (references: {
     reminderKind: varchar('reminder_kind', { length: 20 }).notNull().default('same_day'),
     language: varchar('language', { length: 2 }).notNull().default('ru'),
     clockTime: varchar('clock_time', { length: 5 }).notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('waiting'),
+    status: varchar('status', { length: 30 }).notNull().default('waiting'),
     notBeforeAt: timestamp('not_before_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     leaseToken: uuid('lease_token'),
@@ -204,7 +218,7 @@ export const createVoiceReminderTables = (references: {
     kindCheck: check('voice_reminder_test_calls_reminder_kind_check', sql`${table.reminderKind} IN ('same_day','day_before')`),
     phoneCheck: check('voice_reminder_test_calls_phone_check', sql`${table.phone} ~ '^[+][1-9][0-9]{7,14}$'`),
     clockCheck: check('voice_reminder_test_calls_clock_time_check', sql`${table.clockTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
-    statusCheck: check('voice_reminder_test_calls_status_check', sql`${table.status} IN ('waiting','calling','played','unanswered','failed','cancelled')`),
+    statusCheck: check('voice_reminder_test_calls_status_check', sql`${table.status} IN ('waiting','calling','played','delivered_no_response','unanswered','failed','cancelled')`),
     modeCheck: check('voice_reminder_test_calls_audio_mode_check', sql`${table.audioMode} IN ('time','clock')`),
     leaseCheck: check('voice_reminder_test_calls_lease_check', sql`(${table.status} = 'calling' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseUntil} IS NOT NULL)
       OR (${table.status} <> 'calling' AND ${table.leaseToken} IS NULL AND ${table.leaseUntil} IS NULL)`),

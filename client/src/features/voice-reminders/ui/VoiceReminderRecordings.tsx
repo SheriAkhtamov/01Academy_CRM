@@ -19,13 +19,14 @@ export type VoiceReminderRecordingDraft = {
   outro: File | null;
   confirmationYes: File | null;
   confirmationNo: File | null;
+  responseRetry: File | null;
   hour: VoiceReminderUnitDraft;
   minute: VoiceReminderUnitDraft;
   time: VoiceReminderUnitDraft;
 };
 export type VoiceReminderRecordingField = VoiceReminderAudioPart | VoiceReminderClockUnit;
 export const emptyRecordingDraft = (): VoiceReminderRecordingDraft => ({
-  intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null,
+  intro: null, dayBeforeIntro: null, outro: null, confirmationYes: null, confirmationNo: null, responseRetry: null,
   hour: { value: '00', file: null }, minute: { value: '00', file: null },
   time: { value: '', file: null },
 });
@@ -64,11 +65,13 @@ function PartRecording({ part, recording, file, disabled, confirmationEnabled, l
     intro: 'voiceRemindersIntro', dayBeforeIntro: 'voiceRemindersDayBeforeIntro',
     outro: confirmationEnabled ? 'voiceRemindersConfirmationQuestion' : 'voiceRemindersOutro',
     confirmationYes: 'voiceRemindersConfirmationYesRecording', confirmationNo: 'voiceRemindersConfirmationNoRecording',
+    responseRetry: 'voiceRemindersResponseRetryRecording',
   };
   const playbackLabels: Record<VoiceReminderAudioPart, TranslationKey> = {
     intro: 'voiceRemindersPlayIntro', dayBeforeIntro: 'voiceRemindersPlayDayBeforeIntro',
     outro: confirmationEnabled ? 'voiceRemindersPlayConfirmationQuestion' : 'voiceRemindersPlayOutro',
     confirmationYes: 'voiceRemindersPlayConfirmationYes', confirmationNo: 'voiceRemindersPlayConfirmationNo',
+    responseRetry: 'voiceRemindersPlayResponseRetry',
   };
   const label = labels[part];
   const playLabel = playbackLabels[part];
@@ -205,8 +208,8 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
     <VoiceReminderLanguageSelect id="voice-reminders-recordings-language" value={language}
       disabled={disabled} onChange={onLanguage} />
     <div className="grid gap-4 sm:grid-cols-2">
-      {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const).map((part) => <PartRecording key={`${language}:${part}`}
-        part={part} recording={library[part]} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled} language={language}
+      {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo', 'responseRetry'] as const).map((part) => <PartRecording key={`${language}:${part}`}
+        part={part} recording={library[part] ?? null} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled} language={language}
         onFile={(file, input) => onFile(part, file, input)}
         onUpload={() => { const file = draft[part]; if (file) onUpload({ part }, file); }} />)}
     </div>

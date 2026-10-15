@@ -20,7 +20,7 @@ const localPeer = () => new RTCPeerConnection({
   iceAdditionalHostAddresses: ['127.0.0.1'], iceInterfaceAddresses: { udp4: '127.0.0.1' },
 });
 
-async function fakeVerto(onInvite?: InviteHandler, loginError?: { code: number; message: string }) {
+async function fakeVerto(onInvite?: InviteHandler, loginError?: { code: number; message: string }, acknowledgeBye = true) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const messages: Message[] = [];
@@ -31,6 +31,7 @@ async function fakeVerto(onInvite?: InviteHandler, loginError?: { code: number; 
       const message = JSON.parse(raw.toString()) as Message;
       messages.push(message);
       if (!message.method) return;
+      if (message.method === 'verto.bye' && !acknowledgeBye) return;
       if (message.method === 'login' && loginError) {
         socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: loginError }));
         return;
@@ -356,9 +357,65 @@ describe('reminder confirmation dialogue', () => {
       event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
     });
     const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
-    expect(result).toMatchObject({ outcome: 'played', terminationConfirmed: true });
+    expect(result).toMatchObject({ outcome: 'delivered_no_response', terminationConfirmed: true });
     expect(result.response).toBeUndefined();
     expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  });
+
+  it.each(['playback', 'confirmation'] as const)('requires the full prompt before a caller hangs up during %s', async phase => {
+    const input = confirmationInput();
+    let socket!: WebSocket;
+    let callID = '';
+    input.onDiagnostic = diagnostic => {
+      if (diagnostic.event === 'phase' && diagnostic.phase === phase) {
+        event(socket, 'verto.bye', { callID, cause: 'NORMAL_CLEARING' }, 'caller-hangup');
+      }
+    };
+    const harness = await fakeVerto(async (connected, invite) => {
+      socket = connected;
+      const received = await answeringPeer(socket, invite);
+      callID = received.callID;
+      event(socket, 'verto.answer', { callID, sdp: received.sdp }, 'answer');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: phase === 'confirmation' ? 'delivered_no_response' : 'failed', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
+  });
+
+  it('never reports a delivered no-response call if its termination is unconfirmed', async () => {
+    const harness = await fakeVerto(async (socket, invite) => {
+      const received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+    }, undefined, false);
+    const result = await performVertoReminderCall(harness.credentials, confirmationInput(), confirmationDependencies());
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: false });
+    expect(result.response).toBeUndefined();
+  });
+
+  it.each(['saving', 'acknowledgement'] as const)('keeps a valid digit distinct from no response when hanging up during %s', async phase => {
+    const input = confirmationInput();
+    let socket!: WebSocket;
+    let callID = '';
+    const hangup = () => event(socket, 'verto.bye', { callID, cause: 'NORMAL_CLEARING' }, 'caller-hangup');
+    input.confirmation!.onResponse = vi.fn(async () => {
+      if (phase === 'saving') { hangup(); await delay(80); }
+      return true;
+    });
+    input.onDiagnostic = diagnostic => {
+      if (phase === 'acknowledgement' && diagnostic.event === 'phase' && diagnostic.phase === phase) hangup();
+    };
+    const harness = await fakeVerto(async (connected, invite) => {
+      socket = connected;
+      const received = await answeringPeer(socket, invite);
+      callID = received.callID;
+      event(socket, 'verto.answer', { callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
+      event(socket, 'verto.info', { callID, dtmf: '1' }, 'digit');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    expect(result).toMatchObject({ outcome: phase === 'saving' ? 'failed' : 'played', terminationConfirmed: true });
+    if (phase === 'acknowledgement') expect(result.response).toBe('yes');
+    expect(input.confirmation!.onResponse).toHaveBeenCalledOnce();
   });
 
   it.each(['rejected', 'error'] as const)('does not thank the caller when the response save is %s', async mode => {

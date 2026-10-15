@@ -99,9 +99,9 @@ export const createVoiceReminderRouter = (service: VoiceReminderSettingsService)
     if (languageFrom(request) !== 'ru') { response.status(404).json({ error: 'resourceNotFound' }); return; }
     void streamFile(response, () => service.playback(actorContextFrom(request)));
   });
-  for (const part of ['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo'] as const) {
+  for (const part of ['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo', 'responseRetry'] as const) {
     const slug = part === 'dayBeforeIntro' ? 'day-before-intro'
-      : part === 'confirmationYes' ? 'confirmation-yes' : part === 'confirmationNo' ? 'confirmation-no' : part;
+      : part === 'responseRetry' ? 'response-retry' : part === 'confirmationYes' ? 'confirmation-yes' : part === 'confirmationNo' ? 'confirmation-no' : part;
     router.post(`/voice-reminders/audio/${slug}`, (request, response) => uploadPart(request, response, { part }));
     router.get(`/voice-reminders/audio/${slug}`, (request, response) => streamFile(response, () => service.playbackPart(actorContextFrom(request), localizedTarget(request, { part }))));
   }

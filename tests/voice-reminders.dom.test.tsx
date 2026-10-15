@@ -43,6 +43,7 @@ const makeSnapshot = (): VoiceReminderSnapshot => ({
     outro: { ...audio, id: 'outro-audio', fileName: 'outro.wav' },
     confirmationYes: { ...audio, id: 'yes-audio', fileName: 'yes.wav' },
     confirmationNo: { ...audio, id: 'no-audio', fileName: 'no.wav' },
+    responseRetry: { ...audio, id: 'retry-audio', fileName: 'retry.wav' },
     hours: [], minutes: [],
     times: [{ time: '14:00', audio: { ...audio, id: '14-00-audio', fileName: '14-00.mp3' } }],
   } },
@@ -58,7 +59,7 @@ const makeLanguageSnapshot = (): VoiceReminderSnapshot => {
     ...library,
     intro: localizedAudio(library.intro), dayBeforeIntro: localizedAudio(library.dayBeforeIntro),
     outro: localizedAudio(library.outro), confirmationYes: localizedAudio(library.confirmationYes),
-    confirmationNo: localizedAudio(library.confirmationNo),
+    confirmationNo: localizedAudio(library.confirmationNo), responseRetry: localizedAudio(library.responseRetry ?? null),
     hours: library.hours.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
     minutes: library.minutes.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
     times: library.times.map((entry) => ({ ...entry, audio: localizedAudio(entry.audio)! })),
@@ -1494,4 +1495,140 @@ describe('voice reminder settings and test calls', () => {
     expect(screen.getByText('keep-ru.mp3')).toBeTruthy();
     expect(mocks.uploadAudio).not.toHaveBeenCalled();
   });
+
+  it.each(['ru', 'uz'] as const)('uploads a standalone %s follow-up recording without changing the primary preview or settings draft', async language => {
+    const data = makeLanguageSnapshot();
+    voiceReminderLibraryForLanguage(data.settings, language).responseRetry = null;
+    const { user } = await renderDialog(data);
+    fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '95' } });
+    await openRecordings(user);
+    const panel = within(screen.getByRole('tabpanel', { name: 'Recordings' }));
+    await user.selectOptions(panel.getByLabelText('Language'), language);
+    const primaryPreview = screen.getByLabelText('Play the full reminder').getAttribute('src');
+    const section = within(screen.getByRole('region', { name: 'Follow-up reminder' }));
+    const file = new File(['followup'], `${language}-followup.wav`, { type: 'audio/wav' });
+    await user.upload(section.getByLabelText('Follow-up reminder', { selector: 'input' }), file);
+    await user.click(section.getByRole('button', { name: 'Upload recording' }));
+    await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledWith({ language, target: { part: 'responseRetry' }, file }, expect.anything()));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(section.getByLabelText('Play the follow-up reminder').getAttribute('src'))
+      .toBe(`/api/academy/voice-reminders/audio/response-retry?v=uploaded-${language}-followup.wav&language=${language}`);
+    expect(screen.getByLabelText('Play the full reminder').getAttribute('src')).toBe(primaryPreview);
+    await user.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('95');
+  });
+
+  it('freezes the follow-up replacement language and CAS ID while retaining the other language file', async () => {
+    const data = makeLanguageSnapshot();
+    const { user, client } = await renderDialog(data);
+    await openRecordings(user);
+    const panel = within(screen.getByRole('tabpanel', { name: 'Recordings' }));
+    const ruFile = new File(['ru draft'], 'keep-ru-followup.wav', { type: 'audio/wav' });
+    const uzFile = new File(['uz replacement'], 'new-uz-followup.wav', { type: 'audio/wav' });
+    await user.upload(screen.getByLabelText('Follow-up reminder', { selector: 'input' }), ruFile);
+    await user.selectOptions(panel.getByLabelText('Language'), 'uz');
+    const section = within(screen.getByRole('region', { name: 'Follow-up reminder' }));
+    await user.upload(section.getByLabelText('Follow-up reminder', { selector: 'input' }), uzFile);
+    await user.click(section.getByRole('button', { name: 'Upload recording' }));
+    expect(mocks.uploadAudio).not.toHaveBeenCalled();
+    const changed = structuredClone(data);
+    changed.settings.audioLibraries!.uz.responseRetry!.id = 'newer-server-retry';
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledWith({
+      language: 'uz', target: { part: 'responseRetry' }, file: uzFile, expectedId: 'uz-retry-audio',
+    }, expect.anything()));
+    await user.selectOptions(panel.getByLabelText('Language'), 'ru');
+    expect(screen.getByText('keep-ru-followup.wav')).toBeTruthy();
+    const ruSection = within(screen.getByRole('region', { name: 'Follow-up reminder' }));
+    expect((ruSection.getByRole('button', { name: 'Upload recording' }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(ruSection.getByRole('button', { name: 'Upload recording' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledTimes(2));
+    expect(mocks.uploadAudio.mock.calls[1][0]).toEqual({ language: 'ru', target: { part: 'responseRetry' }, file: ruFile, expectedId: 'retry-audio' });
+  });
+
+  it('retains a rejected follow-up replacement for fresh confirmation after a CAS conflict', async () => {
+    const data = makeSnapshot();
+    const { user, client } = await renderDialog(data);
+    await openRecordings(user);
+    const section = within(screen.getByRole('region', { name: 'Follow-up reminder' }));
+    const file = new File(['new'], 'followup-new.wav', { type: 'audio/wav' });
+    await user.upload(section.getByLabelText('Follow-up reminder', { selector: 'input' }), file);
+    mocks.uploadAudio.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409, rawMessage: 'voiceReminderAudioChanged' }));
+    await user.click(section.getByRole('button', { name: 'Upload recording' }));
+    const changed = structuredClone(data);
+    changed.settings.audioLibrary.responseRetry!.id = 'current-retry';
+    mocks.getSnapshot.mockResolvedValue(changed);
+    await act(async () => client.setQueryData(['/api/academy/voice-reminders'], changed));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.getByRole('alert').textContent).toBe('This recording has changed');
+    expect(screen.getByText('followup-new.wav')).toBeTruthy();
+    expect(mocks.uploadAudio.mock.calls[0][0].expectedId).toBe('retry-audio');
+    await user.click(section.getByRole('button', { name: 'Upload recording' }));
+    expect(mocks.uploadAudio).toHaveBeenCalledOnce();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await waitFor(() => expect(mocks.uploadAudio).toHaveBeenCalledTimes(2));
+    expect(mocks.uploadAudio.mock.calls[1][0].expectedId).toBe('current-retry');
+  });
+
+  it('guards a selected follow-up file on close and clears invalid replacements without retaining an older file', async () => {
+    const { user } = await renderDialog();
+    await openRecordings(user);
+    const section = within(screen.getByRole('region', { name: 'Follow-up reminder' }));
+    const file = new File(['draft'], 'retry-draft.wav', { type: 'audio/wav' });
+    await user.upload(section.getByLabelText('Follow-up reminder', { selector: 'input' }), file);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Keep editing' }));
+    const invalid = new File(['invalid'], 'retry-invalid.txt', { type: 'text/plain' });
+    fireEvent.change(section.getByLabelText('Follow-up reminder', { selector: 'input' }), { target: { files: [invalid] } });
+    expect(screen.getByRole('alert').textContent).toBe('Select an MP3 or WAV recording');
+    expect(screen.queryByText('retry-draft.wav')).toBeNull();
+    expect((section.getByRole('button', { name: 'Upload recording' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('routes follow-up upload and playback through the standalone language-scoped CAS endpoint', async () => {
+    const actual = await vi.importActual<typeof import('../client/src/features/voice-reminders/api')>('../client/src/features/voice-reminders/api');
+    mocks.transport.mockResolvedValue(makeSnapshot());
+    const file = new File(['retry'], 'retry.wav', { type: 'audio/wav' });
+    await actual.voiceReminderApi.uploadAudio({ target: { part: 'responseRetry' }, file, expectedId: 'current-retry', language: 'uz' });
+    expect(mocks.transport).toHaveBeenCalledWith('POST', '/api/academy/voice-reminders/audio/response-retry?expectedId=current-retry&language=uz', expect.any(FormData));
+    expect(actual.voiceReminderApi.audioUrl({ part: 'responseRetry' }, 'current-retry', 'uz'))
+      .toBe('/api/academy/voice-reminders/audio/response-retry?v=current-retry&language=uz');
+  });
+
+  it('keeps primary reminders ready when the optional follow-up recording is absent', async () => {
+    const data = makeSnapshot();
+    data.settings.audioLibrary.responseRetry = null;
+    const { user } = await renderDialog(data);
+    await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
+    await user.click(screen.getByRole('switch', { name: 'Attendance confirmation' }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, confirmationEnabled: true }), expect.anything()));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['en', 'ru'] as const)('shows delivered-without-response as a completed %s test status without automatic redial', async language => {
+    const { user, client } = await renderDialog();
+    await openTestCall(user);
+    fillTestPhone();
+    await user.click(screen.getByRole('button', { name: 'Call' }));
+    const input = mocks.startTestCall.mock.calls[0][0];
+    const job: VoiceReminderTestCall = { id: input.requestId, phone: input.phone, clockTime: input.clockTime,
+      reminderKind: input.reminderKind, language: input.language, status: 'delivered_no_response', response: null, respondedAt: null };
+    mocks.getCurrentTestCall.mockResolvedValue(job);
+    await act(async () => { client.setQueryData(['/api/academy/voice-reminders', 'test-calls', 42], job); i18n.setLanguage(language); });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(language === 'ru'
+      ? 'Напоминание доставлено, ответ не получен' : 'Reminder delivered, no response received'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(window.localStorage.getItem('01academy.voice-reminders.test-intent.v1:42')).toBeNull();
+    expect((screen.getByRole('button', { name: language === 'ru' ? 'Позвонить' : 'Call' }) as HTMLButtonElement).disabled).toBe(false);
+    vi.useFakeTimers();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.startTestCall).toHaveBeenCalledOnce();
+    expect(screen.getByRole('dialog', { name: language === 'ru' ? 'Голосовые напоминания' : 'Voice reminders' })).toBeTruthy();
+  });
+
 });

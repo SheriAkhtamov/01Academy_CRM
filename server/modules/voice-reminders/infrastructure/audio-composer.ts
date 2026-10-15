@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { VOICE_REMINDER_MAX_AUDIO_SECONDS } from '@shared/contracts/voice-reminders';
-import type { StoredVoiceReminderAudioParts, VoiceReminderAudioComposer, VoiceReminderAudioStore } from '../application/ports';
+import type { StoredVoiceReminderAudio, StoredVoiceReminderAudioParts, VoiceReminderAudioComposer, VoiceReminderAudioStore } from '../application/ports';
 import { VoiceReminderError } from '../domain/policy';
 
 const execute = promisify(execFile);
@@ -59,7 +59,7 @@ export class LocalVoiceReminderAudioComposer implements VoiceReminderAudioCompos
   ) {}
 
   compose(parts: StoredVoiceReminderAudioParts): Promise<{ path: string; mimeType: 'audio/wav' }> {
-    const sources = parts.kind === 'clock'
+    const sources = parts.kind === 'standalone' ? [parts.audio] : parts.kind === 'clock'
       ? [parts.intro, parts.hour, parts.minute, parts.outro]
       : [parts.intro, parts.time, parts.outro];
     if (parts.clockTime.length !== 5 || !/^([01]\d|2[0-3]):[0-5]\d$/.test(parts.clockTime)
@@ -114,7 +114,7 @@ export class LocalVoiceReminderAudioComposer implements VoiceReminderAudioCompos
     }
   }
 
-  private async build(key: string, sources: Array<StoredVoiceReminderAudioParts['intro']>): Promise<{ path: string; mimeType: 'audio/wav' }> {
+  private async build(key: string, sources: StoredVoiceReminderAudio[]): Promise<{ path: string; mimeType: 'audio/wav' }> {
     // Resolve every immutable source, including a cache hit. A generated path
     // never grants access to an arbitrary file or to a missing source upload.
     const locations = await Promise.all(sources.map(source => this.store.resolve(source.storageKey)));

@@ -15,7 +15,7 @@ export const libraryAudioFor = (library: StoredVoiceReminderAudioLibrary, target
     case 'time': return library.times.find(entry => entry.time === target.time)?.audio ?? null;
     case 'hour': return library.hours.find(entry => entry.hour === target.hour)?.audio ?? null;
     case 'minute': return library.minutes.find(entry => entry.minute === target.minute)?.audio ?? null;
-    default: return library[target.part];
+    default: return library[target.part] ?? null;
   }
 };
 

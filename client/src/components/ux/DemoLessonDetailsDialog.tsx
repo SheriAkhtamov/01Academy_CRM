@@ -143,7 +143,8 @@ export function DemoLessonDetailsDialog({
   const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
   const [copyingReport, setCopyingReport] = useState(false);
   const draftIdentity = demo ? JSON.stringify({ ...demo, participants: demo.participants.map(({
-    reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt, ...participant
+    reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt,
+    reminderDeliveryStatus: _reminderDeliveryStatus, reminderDeliveredAt: _reminderDeliveredAt, ...participant
   }) => participant) }) : null;
   const draftIdentityRef = useRef<string | null>(null);
 
@@ -607,6 +608,8 @@ export function DemoLessonDetailsDialog({
                         <Badge variant={participant.reminderResponse === 'yes' ? 'success' : 'secondary'}>
                           {t(participant.reminderResponse === 'yes' ? 'voiceRemindersResponseYes' : 'voiceRemindersResponseNo')}
                         </Badge>
+                      ) : participant.reminderDeliveryStatus === 'delivered_no_response' ? (
+                        <Badge variant="secondary" className="max-w-full whitespace-normal">{t('voiceRemindersDeliveredNoResponse')}</Badge>
                       ) : null}
                       {attendance[participant.id] === 'no_show' ? (
                         <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">

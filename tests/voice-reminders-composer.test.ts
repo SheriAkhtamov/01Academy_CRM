@@ -51,6 +51,17 @@ const dominantFrequency = (samples: Buffer): number => {
 };
 
 describe('immutable modular reminder recordings', () => {
+  it('normalizes a standalone follow-up without adding the date, time or original question', async () => {
+    const fixture = await setup();
+    const composer = new LocalVoiceReminderAudioComposer(fixture.store, fixture.cache);
+    const output = await composer.compose({ kind: 'standalone', audio: fixture.parts.intro, clockTime: '14:30' });
+    expect(await inspectReminderAudio(output.path)).toEqual({ mimeType: 'audio/wav', durationSeconds: 0.05 });
+    expect(dominantFrequency((await fs.readFile(output.path)).subarray(44))).toBe(440);
+    expect((await decodeReminderAudio(output.path, new AbortController().signal)).length).toBe(400);
+    await fs.unlink(await fixture.store.resolve(fixture.parts.intro.storageKey));
+    await expect(composer.compose({ kind: 'standalone', audio: fixture.parts.intro, clockTime: '14:30' }))
+      .rejects.toMatchObject({ code: 'resourceNotFound' });
+  });
   it('joins separate hours and minutes in speech order with playable normalized audio', async () => {
     const fixture = await setup();
     const minute = await fixture.store.save({ bytes: tone(1760, 44_100, 2), originalName: 'minute-30.wav', mimeType: 'audio/wav' });

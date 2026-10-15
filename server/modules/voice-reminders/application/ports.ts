@@ -19,10 +19,11 @@ export interface VoiceReminderAudioStore {
   resolve(storageKey: string): Promise<string>;
 }
 export type StoredVoiceReminderAudioLibrary = VoiceReminderAudioLibraryOf<StoredVoiceReminderAudio>;
-export type VoiceReminderAudioTarget = ({ part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' } | { part: 'time'; time: string }
+export type VoiceReminderAudioTarget = ({ part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' | 'responseRetry' } | { part: 'time'; time: string }
   | { part: 'hour'; hour: string } | { part: 'minute'; minute: string }) & { language?: VoiceReminderLanguage };
-export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' }>;
-export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>;
+export type VoiceReminderLibraryEntryTarget = Exclude<VoiceReminderAudioTarget, { part: 'intro' | 'dayBeforeIntro' | 'outro' | 'confirmationYes' | 'confirmationNo' | 'responseRetry' }>;
+export type StoredVoiceReminderAudioParts = VoiceReminderAudioPartsOf<StoredVoiceReminderAudio>
+  | { kind: 'standalone'; audio: StoredVoiceReminderAudio; clockTime: string };
 export type StoredVoiceReminderConfirmation = {
   yesAudio: StoredVoiceReminderAudio;
   noAudio: StoredVoiceReminderAudio;
@@ -37,6 +38,8 @@ export type ClaimedVoiceReminder = {
   leaseToken: string;
   scheduledAt: Date;
   attempts: number;
+  noResponseCount?: number;
+  retryPhase?: 'primary' | 'response_retry';
   reminderKind: VoiceReminderKind;
   language?: VoiceReminderLanguage;
 };
@@ -46,7 +49,7 @@ export type PreparedVoiceReminder = ClaimedVoiceReminder & {
   audioParts: StoredVoiceReminderAudioParts;
   confirmation: StoredVoiceReminderConfirmation | null;
 };
-export type VoiceReminderCallOutcome = 'played' | 'unanswered' | 'failed' | 'busy' | 'cancelled';
+export type VoiceReminderCallOutcome = 'played' | 'delivered_no_response' | 'unanswered' | 'failed' | 'busy' | 'cancelled';
 export type VoiceReminderCallResult = {
   outcome: VoiceReminderCallOutcome;
   callStarted: boolean;

@@ -1,5 +1,5 @@
-import { hasReadyVoiceReminderLibrary } from '@shared/contracts/voice-reminders';
-import { nextReminderAttempt, anyReminderWindowOpen } from '../domain/policy';
+import { hasReadyVoiceReminderLibrary, hasReadyVoiceReminderFollowup } from '@shared/contracts/voice-reminders';
+import { nextReminderAttempt, nextReminderResponseRetry, anyReminderWindowOpen } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   VoiceReminderAudioComposer,
@@ -40,7 +40,7 @@ export class VoiceReminderWorker {
     try {
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || !hasReadyVoiceReminderLibrary(settings, settings)
+      if (!settings.enabled || !(hasReadyVoiceReminderLibrary(settings, settings) || (settings.confirmationEnabled && hasReadyVoiceReminderFollowup(settings)))
         || !anyReminderWindowOpen(this.now(), settings)) return;
       if (!await this.gateway.readiness().then(value => value.ready).catch(() => false)) return;
       // Jobs may prepare audio concurrently. Shared external channels are only
@@ -63,7 +63,7 @@ export class VoiceReminderWorker {
       if (this.stopping) return;
       const settings = await this.repository.settings();
       await this.repository.synchronize(this.now(), settings);
-      if (!settings.enabled || !hasReadyVoiceReminderLibrary(settings, settings)
+      if (!settings.enabled || !(hasReadyVoiceReminderLibrary(settings, settings) || (settings.confirmationEnabled && hasReadyVoiceReminderFollowup(settings)))
         || !anyReminderWindowOpen(this.now(), settings)) return;
       const next = await this.repository.claim(this.now(), settings.maxConcurrentCalls, LEASE_SECONDS);
       if (!next) return;
@@ -130,7 +130,9 @@ export class VoiceReminderWorker {
         return true;
       }
       const settings = await this.repository.settings();
-      const retryAt = result.outcome === 'unanswered' && result.callStarted
+      const retryAt = result.outcome === 'delivered_no_response' && result.callStarted && result.terminationConfirmed === true
+        ? nextReminderResponseRetry({ now: this.now(), scheduledAt: job.scheduledAt, noResponseCount: (job.noResponseCount ?? 0) + 1, settings, reminderKind: job.reminderKind })
+        : result.outcome === 'unanswered' && result.callStarted && job.retryPhase !== 'response_retry'
         ? nextReminderAttempt({ now: this.now(), scheduledAt: job.scheduledAt, attempts: job.attempts + 1, settings, reminderKind: job.reminderKind })
         : null;
       await this.repository.finish(job, result, this.now(), retryAt);

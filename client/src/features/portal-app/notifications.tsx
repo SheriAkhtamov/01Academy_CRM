@@ -61,7 +61,6 @@ export function PortalNotifications({
   embedded?: boolean;
   onNavigate?: () => void;
 }) {
-  const settingsScope = usePortalFormScope();
   const mounted = usePortalFormMounted();
   const { t } = useTranslation();
   const message = usePortalError();
@@ -252,23 +251,34 @@ export function PortalNotifications({
           {t("portalLoadMore")}
         </Button>
       )}
-      <PortalFormScope id={settingsScope.id}>
-        <Dialog
-          open={settings}
-          onOpenChange={(value) => {
-            if (!value) settingsScope.guarded(() => setSettings(false));
-          }}
-        >
-          <DialogContent className="portal-ui max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
-              <DialogDescription>{account?.fullName}</DialogDescription>
-            </DialogHeader>
-            {settings && <NotificationPreferences />}
-          </DialogContent>
-        </Dialog>
-      </PortalFormScope>
+      <PortalNotificationPreferencesDialog open={settings} onClose={() => setSettings(false)} />
     </>
+  );
+}
+export function PortalNotificationPreferencesDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { account } = usePortal();
+  const scope = usePortalFormScope();
+  return (
+    <PortalFormScope id={scope.id}>
+      <Dialog open={open} onOpenChange={(next) => {
+        if (!next) scope.guarded(onClose);
+      }}>
+        <DialogContent className="portal-ui max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("portalNotificationSettings")}</DialogTitle>
+            <DialogDescription>{account?.fullName}</DialogDescription>
+          </DialogHeader>
+          {open && <NotificationPreferences key={account?.id} />}
+        </DialogContent>
+      </Dialog>
+    </PortalFormScope>
   );
 }
 function NotificationPreferences() {

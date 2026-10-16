@@ -62,6 +62,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRoute = path === "/learn/profile";
+  const accountRoute = profileRoute || path === "/learn/notifications";
+  const backgroundPath = accountRoute ? "/learn" : path;
   const profileVisible = profileRoute || profileOpen;
   const profileScope = usePortalFormScope();
   const profileOpener = useRef<HTMLElement | null>(null);
@@ -83,7 +85,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   // The shared layout owns the drawer; this hook retains per-subject page scroll.
   const onViewportNavigate = useCallback(() => {}, []);
   const mainRef = usePortalViewportNavigation({
-    location: `${profileRoute ? (learningModule ? learningModuleBase(learningModule) : "/learn") : actualPath}${search ? `?${search}` : ""}`,
+    location: `${accountRoute ? (learningModule ? learningModuleBase(learningModule) : "/learn") : actualPath}${search ? `?${search}` : ""}`,
     scope: `portal:${account?.id}:${subject?.linkId ?? "family"}:${portalGrantFingerprint(subjects)}:${learningModule ?? "legacy"}`,
     onNavigate: onViewportNavigate,
   });
@@ -105,10 +107,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
     },
   });
   const moduleLabel = (module: LearningModule) => t(module === "student" ? "studentModule" : "parentModule");
-  const openProfile = (opener: HTMLElement, sidebar?: { onClose: () => void; isOpen: boolean }) => {
+  const openProfile = (opener: HTMLElement) => {
     profileClosedForNavigation.current = false;
-    profileOpener.current = sidebar?.isOpen ? profileButton.current : opener;
-    sidebar?.onClose();
+    profileOpener.current = opener;
     setProfileOpen(true);
   };
   const closeProfile = () => profileScope.guarded(() => {
@@ -135,13 +136,11 @@ export function PortalShell({ children }: { children: ReactNode }) {
       : item.route === "/learn/progress" && module === "parent" ? "portalResults" : item.key),
     href: toLearningModuleHref(item.route, module),
     icon: item.icon,
-    active: module === activeModule && ((item.route === "/learn/profile" ? profileVisible : path === item.route)
-      || (item.route !== "/learn" && path.startsWith(`${item.route}/`))),
-    opensDialog: item.route === "/learn/profile",
+    active: module === activeModule && (backgroundPath === item.route
+      || (item.route !== "/learn" && backgroundPath.startsWith(`${item.route}/`))),
     onSelect: (event) => {
       event.preventDefault();
-      if (item.route === "/learn/profile") openProfile(event.currentTarget, sidebar);
-      else guarded(() => {
+      guarded(() => {
         sidebar.onClose();
         navigate(module === activeModule ? item.route : toLearningModuleHref(item.route, module));
       });
@@ -163,8 +162,6 @@ export function PortalShell({ children }: { children: ReactNode }) {
             label: moduleLabel(module),
             items: visibleFor(module).map((item) => navigationItem(item, module, sidebar)),
           }))}
-          trailingItems={studentNav.filter((item) => ["/learn/profile", "/learn/notifications"].includes(item.route))
-            .map((item) => navigationItem(item, activeModule, sidebar))}
           collapsedSections={collapsedModules}
           onSectionToggle={(id) => setCollapsedModules((previous) => ({ ...previous, [id]: !previous[id] }))}
         />
@@ -173,12 +170,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         <PlatformHeader
           onMenuToggle={onMenuToggle}
           menuButtonRef={menuButtonRef}
-          identity={(
-            <div className="flex min-w-0 items-center gap-3">
-              <ModuleIdentityView title={moduleLabel(activeModule)} icon={activeModule === "parent" ? Users : GraduationCap} />
-              <div className="ml-auto flex min-w-0 items-center gap-2"><PortalContextControl /></div>
-            </div>
-          )}
+          identity={<ModuleIdentityView title={moduleLabel(activeModule)} icon={activeModule === "parent" ? Users : GraduationCap} />}
           onSearch={() => setCommandOpen(true)}
           onMessages={() => setMessagesOpen(true)}
           unreadMessageCount={0}
@@ -223,9 +215,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
         </>
       )}
     >
-      <ModulePage className={cn("space-y-6 print:p-0", usesOperationalPortalLayout(path)
+      <ModulePage className={cn("space-y-6 print:p-0", usesOperationalPortalLayout(backgroundPath)
         && "space-y-4 sm:p-5 lg:p-6 [&_[data-page-header]]:mb-4")}>
         {logout.error && <p role="alert" className="text-destructive">{errorMessage(logout.error)}</p>}
+        <PortalContextControl />
         {children}
       </ModulePage>
     </PlatformLayout>

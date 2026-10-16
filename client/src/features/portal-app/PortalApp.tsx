@@ -38,7 +38,6 @@ import { PortalAttendance } from "../lms/attendance";
 import { PortalHelp } from "../lms/communication";
 import { PortalPortfolio, PublicPortfolio } from "./portfolio";
 import { PortalPayments } from "./payments";
-import { PortalNotifications } from "./notifications";
 import { PortalLoading, PortalError, PortalEmpty, PortalTitle } from "./ui";
 import {
   canAccessPortalSection,
@@ -190,15 +189,14 @@ function PortalRoutes() {
       </PortalShell>
     );
   let page: ReactNode;
-  // Legacy profile links open the same dialog over the learner home screen.
-  const pagePath = path === "/learn/profile" ? "/learn" : path;
+  // Legacy account links open their overlays over the learner home screen.
+  const pagePath = ["/learn/profile", "/learn/notifications"].includes(path) ? "/learn" : path;
   const assignment = pagePath.match(/^\/learn\/assignments\/(\d+)$/);
   const material = pagePath.match(
     /^\/learn\/courses\/(\d+)\/materials\/(\d+)$/,
   );
   const course = pagePath.match(/^\/learn\/courses\/(\d+)$/);
-  if (pagePath === "/learn/notifications") page = <PortalNotifications />;
-  else if (!subjects.length) page = <NoPortalAccess />;
+  if (!subjects.length) page = <NoPortalAccess />;
   else if (
     portalSectionForPath(pagePath) &&
     !canAccessPortalSection(

@@ -228,6 +228,16 @@ ${unreferencedLearningFile}
   async readNotification(accountId: number, id: number | null) {
     await this.pool.query(`UPDATE portal_notifications notification SET read_at=COALESCE(read_at,now()) WHERE notification.account_id=$1 AND ($2::bigint IS NULL OR notification.id=$2) AND ${visibleNotification}`, [accountId, id]);
   }
+  async deleteNotification(accountId: number, id: number | null) {
+    const result = await this.pool.query(
+      `DELETE FROM portal_notifications notification
+       WHERE notification.account_id=$1
+       AND ($2::bigint IS NULL OR notification.id=$2)
+       AND ${visibleNotification}`,
+      [accountId, id],
+    );
+    return result.rowCount ?? 0;
+  }
   async preferences(accountId: number): Promise<PortalNotificationPreferencesDto> {
     const row = await resourceOne<{ categories: PortalNotificationPreferencesDto['categories']; weeklySummary: boolean }>(this.pool,
       "SELECT categories,weekly_summary FROM portal_notification_preferences WHERE account_id=$1", [accountId]);

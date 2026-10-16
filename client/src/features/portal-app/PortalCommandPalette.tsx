@@ -68,6 +68,7 @@ export function PortalCommandPalette({
       ? [subject]
       : allSubjects.filter((item) => learningModuleForSubject(item) === module);
     const items = studentNav
+      .filter((item) => !["/learn/profile", "/learn/notifications"].includes(item.route))
       .filter((item) => canAccessPortalSection(item.route, module, links))
       .map((item) => ({
         ...item,

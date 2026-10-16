@@ -309,30 +309,35 @@ it("opens the header profile over the mounted workspace and preserves draft, scr
   expect(confirmation()).toBeTruthy();
 });
 
-it("opens the desktop sidebar profile as a dialog and returns focus to its link", async () => {
+it("keeps profile and notifications out of the desktop sidebar and opens profile from the account avatar", async () => {
   act(() => resizeDesktop());
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  const opener = within(document.querySelector("[data-platform-sidebar]")!).getByRole("link", {
-    name: i18n.t("portalProfile"),
-  });
-  await userEvent.click(opener);
+  const sidebar = within(document.querySelector("[data-platform-sidebar]")!);
+  expect(sidebar.queryByRole("link", { name: i18n.t("portalProfile") })).toBeNull();
+  expect(sidebar.queryByRole("link", { name: i18n.t("portalNotifications") })).toBeNull();
+  const opener = headerProfile();
+  await openHeaderProfile();
   expect(profile()).toBeTruthy();
   expect(window.location.pathname).toBe("/student-module/courses");
   closeProfile();
   await waitFor(() => expect(document.activeElement).toBe(opener));
 });
 
-it("hands focus from the mobile menu to the profile dialog and back to the header after closing", async () => {
+it("keeps profile out of the mobile menu and restores avatar focus after opening its modal", async () => {
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
   await userEvent.click(
     screen.getByRole("button", { name: i18n.t("openNavigation") }),
   );
   const menu = document.querySelector<HTMLElement>("[data-platform-sidebar]")!;
+  expect(within(menu).queryByRole("link", { name: i18n.t("portalProfile") })).toBeNull();
+  expect(within(menu).queryByRole("link", { name: i18n.t("portalNotifications") })).toBeNull();
   await userEvent.click(
-    within(menu).getByRole("link", { name: i18n.t("portalProfile") }),
+    within(menu).getByRole("button", { name: i18n.t("close") }),
   );
+  await waitFor(() => expect(document.querySelector('[data-platform-drawer="closed"]')).toBeTruthy());
+  await openHeaderProfile();
   await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
   await waitFor(() =>
     expect(profile().contains(document.activeElement)).toBe(true),
@@ -340,6 +345,22 @@ it("hands focus from the mobile menu to the profile dialog and back to the heade
   closeProfile();
   await waitFor(() => expect(document.activeElement).toBe(headerProfile()));
   expect(window.location.pathname).toBe("/student-module/courses");
+});
+
+it("opens a legacy notifications URL as a dropdown over home and replaces it on close", async () => {
+  history.replaceState(null, "", "/learn/notifications?tab=all");
+  const length = history.length;
+  mount();
+  const menu = await screen.findByRole("menu");
+  expect(within(menu).getByText(i18n.t("notifications"))).toBeTruthy();
+  const home = screen.getByRole("textbox", { name: "Home workspace", hidden: true });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.pathname).toBe("/student-module/notifications");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/student-module?tab=all"));
+  expect(history.length).toBe(length);
+  expect(screen.getByRole("textbox", { name: "Home workspace" })).toBe(home);
+  expect(mocks.backgroundMount).toHaveBeenCalledOnce();
 });
 
 it("opens a legacy profile URL over home and replaces that URL when its dialog closes", async () => {

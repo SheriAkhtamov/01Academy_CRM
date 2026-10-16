@@ -74,6 +74,14 @@ export function createPortalResourceRouter(service: PortalResourceService, resol
     response.json(pageDto(await service.notifications(await resolvers.account(request), query.cursor, query.limit)));
   }));
   router.post('/notifications/read-all', handler(async (request, response) => { await service.readNotification(await resolvers.account(request), null); response.json({ success: true }); }));
+  router.delete('/notifications', handler(async (request, response) => {
+    const deletedCount = await service.deleteNotification(await resolvers.account(request), null);
+    response.json({ success: true, deletedCount });
+  }));
+  router.delete('/notifications/:id', handler(async (request, response) => {
+    const deletedCount = await service.deleteNotification(await resolvers.account(request), id(request.params.id));
+    response.json({ success: true, deletedCount });
+  }));
   router.get('/notifications/preferences', handler(async (request, response) => response.json(await service.preferences(await resolvers.account(request)))));
   router.put('/notifications/preferences', handler(async (request, response) => response.json(await service.savePreferences(await resolvers.account(request), portalNotificationPreferencesSchema.parse(request.body)))));
   router.post('/notifications/:id/read', handler(async (request, response) => { await service.readNotification(await resolvers.account(request), id(request.params.id)); response.json({ success: true }); }));

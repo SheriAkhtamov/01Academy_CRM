@@ -60,6 +60,7 @@ export interface PortalResourceRepository {
   unallocatedPayments(actor:ResourceStaffActor,cursor:number|null,limit?:number):Promise<PortalUnallocatedPaymentsDto>;
   notifications(accountId: number, cursor: number | null, limit: number): Promise<PortalNotificationPageDto>;
   readNotification(accountId: number, id: number | null): Promise<void>;
+  deleteNotification(accountId: number, id: number | null): Promise<number>;
   preferences(accountId: number): Promise<PortalNotificationPreferencesDto>;
   savePreferences(accountId: number, preferences: PortalNotificationPreferencesDto): Promise<void>;
   pendingShares(actor: ResourceStaffActor): Promise<(ShareRecord & { studentName: string })[]>;

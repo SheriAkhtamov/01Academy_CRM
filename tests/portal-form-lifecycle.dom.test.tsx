@@ -462,9 +462,8 @@ it.each(["route", "learner"] as const)(
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     if (target === "route") {
       await screen.findByRole("heading", { name: copy("portalSchedule") });
-      await user.click(
-        screen.getByRole("link", { name: copy("portalProfile") }),
-      );
+      await user.click(screen.getByRole("button", { name: copy("currentAccount") }));
+      await user.click(screen.getByRole("menuitem", { name: copy("portalProfile") }));
     } else {
       await waitFor(() =>
         expect(screen.getByTestId("profile-subject").textContent).toBe(

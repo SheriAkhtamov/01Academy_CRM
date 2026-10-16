@@ -37,6 +37,7 @@ import {
   PortalFormScope,
 } from "../portal-app/context";
 import { PortalSelect } from "../portal-app/controls";
+import { PortalNotificationPreferencesDialog } from "../portal-app/notifications";
 import {
   PortalDialogContent as DialogContent,
   PortalTitle,
@@ -73,6 +74,7 @@ export function PortalProfile({
   const client = useQueryClient();
   const [name, setName] = useState(account?.fullName ?? "");
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [notificationPreferencesOpen, setNotificationPreferencesOpen] = useState(false);
   const subjectKey = `${account?.id}:${subject ? portalGrantFingerprint([subject]) : "family"}`;
   const dirty = name !== account?.fullName || language !== account?.locale;
   useEffect(() => {
@@ -199,6 +201,9 @@ export function PortalProfile({
               <Button variant="outline" onClick={() => setPasswordOpen(true)}>
                 {t("portalChangePassword")}
               </Button>
+              <Button variant="outline" onClick={() => setNotificationPreferencesOpen(true)}>
+                {t("portalNotificationSettings")}
+              </Button>
               {allowed("child_credentials.manage") &&
                 subject?.kind === "representative" &&
                 subject.studentClassification === "minor" && (
@@ -213,6 +218,10 @@ export function PortalProfile({
         </Card>
       </div>
       <PortalSessions />
+      <PortalNotificationPreferencesDialog
+        open={notificationPreferencesOpen}
+        onClose={() => setNotificationPreferencesOpen(false)}
+      />
       {subject?.kind === "self" &&
         subject.studentClassification === "adult" && (
           <PortalRepresentatives key={subjectKey} />

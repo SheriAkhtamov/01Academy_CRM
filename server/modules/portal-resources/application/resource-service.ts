@@ -203,6 +203,9 @@ export class PortalResourceService {
   async allocatePayment(actor: ResourceStaffActor, id: number, input: PortalPaymentAllocationInput) { return this.repository.allocatePayment(actor, id, input); }
   async notifications(accountId: number, cursor: number | null, limit: number) { return this.repository.notifications(accountId, cursor, limit); }
   async readNotification(accountId: number, id: number | null) { return this.repository.readNotification(accountId, id); }
+  async deleteNotification(accountId: number, id: number | null) {
+    return this.repository.deleteNotification(accountId, id);
+  }
   async preferences(accountId: number) { return this.repository.preferences(accountId); }
   async savePreferences(accountId: number, preferences: PortalNotificationPreferencesDto) { await this.repository.savePreferences(accountId, preferences); return this.repository.preferences(accountId); }
   async pendingShares(actor: ResourceStaffActor) {

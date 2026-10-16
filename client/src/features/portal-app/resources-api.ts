@@ -208,6 +208,14 @@ export const portalResourcesApi = {
     portalRequest<{ success: boolean }>("/notifications/read-all", {
       method: "POST",
     }),
+  removeNotification: (id: number) =>
+    portalRequest<{ success: boolean; deletedCount: number }>(`/notifications/${id}`, {
+      method: "DELETE",
+    }),
+  clearNotifications: () =>
+    portalRequest<{ success: boolean; deletedCount: number }>("/notifications", {
+      method: "DELETE",
+    }),
   preferences: (signal?: AbortSignal) =>
     portalRequest<PortalNotificationPreferencesDto>(
       "/notifications/preferences",

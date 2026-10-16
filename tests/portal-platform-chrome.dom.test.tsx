@@ -101,6 +101,9 @@ beforeEach(() => {
       activeSession = { ...activeSession, account: null, subjects: [] };
     }
     else if (path === "/api/portal/me/sessions") body = [];
+    else if (path === "/api/portal/notifications/preferences") body = init?.method === "PUT"
+      ? JSON.parse(String(init.body))
+      : { categories: Object.fromEntries(["learning", "schedule", "feedback", "finance", "family", "security"].map((category) => [category, { inApp: true }])), weeklySummary: false };
     else if (/\/subjects\/\d+\/courses$/.test(path)) {
       body = coursesDenied ? { code: "portalUnavailable" } : page([course]); status = coursesDenied || 200;
     } else if (/\/subjects\/\d+\/threads\/4\/comments$/.test(path)) body = { id: 8 };
@@ -129,10 +132,13 @@ it.each([
   expect(within(header).getAllByRole("button", { name: "Search" }).length).toBeGreaterThan(0);
   expect(within(header).getByRole("button", { name: "Messages" })).toBeTruthy();
   expect(within(header).getByRole("button", { name: "Current Account" })).toBeTruthy();
+  for (const subject of subjects) expect(header.textContent).not.toContain(subject.studentName);
   await user.click(screen.getByRole("button", { name: "Open navigation" }));
   expect(screen.getByRole("button", { name: "Switch language" })).toBeTruthy();
   expect(document.querySelector('a[href="/tasks"]')).toBeNull();
   expect(document.querySelector('a[href^="/admin"]')).toBeNull();
+  expect(document.querySelector('a[href$="/profile"]')).toBeNull();
+  expect(document.querySelector('a[href$="/notifications"]')).toBeNull();
   noStaffRequests();
 });
 
@@ -149,7 +155,8 @@ it("wires the shared header to learner search, theme, notifications, messages, p
   await user.click(screen.getByRole("menuitem", { name: /Dark/ }));
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   await user.click(screen.getByRole("button", { name: "Notifications" }));
-  expect(screen.getByRole("dialog", { name: "Notifications" })).toBeTruthy();
+  expect(screen.getByRole("menu", { name: "Notifications" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Messages" }));
   expect(screen.getByRole("dialog", { name: "Messages" })).toBeTruthy();
@@ -163,6 +170,33 @@ it("wires the shared header to learner search, theme, notifications, messages, p
   await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
   await waitFor(() => expect(screen.getByTestId("path").textContent).toBe("/login"));
   expect(requests.some((request) => request.path === "/api/portal/auth/logout" && request.method === "POST")).toBe(true);
+  noStaffRequests();
+});
+
+it("opens notification preferences inside the profile and protects their draft without discarding the profile", async () => {
+  const user = userEvent.setup();
+  mount(<ShellProbe />);
+  await user.click(screen.getByRole("button", { name: "Current Account" }));
+  await user.click(screen.getByRole("menuitem", { name: "Profile" }));
+  const profile = screen.getByRole("dialog", { name: "Profile" });
+  const name = within(profile).getByLabelText("Full name") as HTMLInputElement;
+  await user.clear(name);
+  await user.type(name, "Unsaved profile name");
+  await user.click(within(profile).getByRole("button", { name: "Notification preferences" }));
+  const preferences = screen.getByRole("dialog", { name: "Notification preferences" });
+  const weekly = await within(preferences).findByRole("switch", { name: "Weekly summary" });
+  await user.click(weekly);
+  await user.keyboard("{Escape}");
+  const confirmation = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
+  await user.click(within(confirmation).getByRole("button", { name: "Cancel" }));
+  expect(weekly.getAttribute("aria-checked")).toBe("true");
+  expect(name.value).toBe("Unsaved profile name");
+  await user.click(within(preferences).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(requests.some((entry) => entry.path === "/api/portal/notifications/preferences" && entry.method === "PUT")).toBe(true));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Notification preferences" })).toBeNull());
+  expect(name.value).toBe("Unsaved profile name");
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   noStaffRequests();
 });
 

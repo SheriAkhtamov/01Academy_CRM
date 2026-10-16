@@ -149,6 +149,42 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     await pool.query("UPDATE portal_student_links SET permissions='[]' WHERE id=3");
     expect(await service.notifications(3,null,30)).toMatchObject({ items: [], unreadCount: 0 });
   });
+  it('deletes only an owned visible notification and keeps staff and other account notifications', async () => {
+    const own = Number((await pool.query(`INSERT INTO portal_notifications(account_id,link_id,category,code,event_key,required_permission)
+      VALUES(3,3,'family','portfolio','owned','portfolio.approve') RETURNING id`)).rows[0].id);
+    const foreign = Number((await pool.query(`INSERT INTO portal_notifications(account_id,link_id,category,code,event_key,required_permission)
+      VALUES(2,2,'learning','course','foreign','learning.read') RETURNING id`)).rows[0].id);
+    await pool.query("INSERT INTO notifications(user_id,type,title) VALUES(1,'lms','Staff notice')");
+    expect(await service.deleteNotification(3, foreign)).toBe(0);
+    expect(await service.deleteNotification(3, 99999)).toBe(0);
+    expect(await service.deleteNotification(3, own)).toBe(1);
+    expect(await service.deleteNotification(3, own)).toBe(0);
+    expect(await service.notifications(3, null, 30)).toMatchObject({ items: [], unreadCount: 0 });
+    expect((await service.notifications(2, null, 30)).items.map((item) => item.id)).toEqual([foreign]);
+    expect((await pool.query("SELECT title FROM notifications")).rows).toEqual([{ title: 'Staff notice' }]);
+  });
+  it('clears only current visible account notifications, preserving hidden and foreign records', async () => {
+    await pool.query(`INSERT INTO portal_notifications(account_id,link_id,category,code,event_key,required_permission) VALUES
+      (3,3,'family','portfolio','visible','portfolio.approve'),
+      (3,NULL,'security','security','account',NULL),
+      (3,3,'learning','course','hidden','learning.read'),
+      (2,2,'learning','course','foreign','learning.read')`);
+    expect((await service.notifications(3, null, 30)).unreadCount).toBe(2);
+    expect(await service.deleteNotification(3, null)).toBe(2);
+    expect(await service.notifications(3, null, 30)).toMatchObject({ items: [], unreadCount: 0 });
+    expect((await pool.query("SELECT event_key FROM portal_notifications ORDER BY event_key")).rows)
+      .toEqual([{ event_key: 'foreign' }, { event_key: 'hidden' }]);
+    expect(await service.deleteNotification(3, null)).toBe(0);
+  });
+  it('rechecks current permissions when deleting a notification opened before access withdrawal', async () => {
+    const notice = Number((await pool.query(`INSERT INTO portal_notifications(account_id,link_id,category,code,event_key,required_permission)
+      VALUES(3,3,'family','portfolio','withdrawn','portfolio.approve') RETURNING id`)).rows[0].id);
+    expect((await service.notifications(3, null, 30)).items).toHaveLength(1);
+    await pool.query("UPDATE portal_student_links SET permissions='[]' WHERE id=3");
+    expect(await service.deleteNotification(3, notice)).toBe(0);
+    expect(await service.deleteNotification(3, null)).toBe(0);
+    expect((await pool.query("SELECT id FROM portal_notifications WHERE id=$1", [notice])).rows).toHaveLength(1);
+  });
   it('keeps parent question attachments private to that parent instead of other family accounts', async () => {
     const file = (await pool.query("INSERT INTO lms_files(owner_user_id,run_id,name,mime,size_bytes,storage_key,state) VALUES(1,1,'private.txt','text/plain',5,'abcdefghijklmnopqrstuv','ready') RETURNING id")).rows[0];
     const thread = (await pool.query("INSERT INTO lms_threads(student_id,run_id,title,audience,author_account_id) VALUES(1,1,'Private question','representative_teacher',3) RETURNING id")).rows[0];

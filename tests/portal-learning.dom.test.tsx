@@ -1806,7 +1806,7 @@ it("selects the child specified by a finance notification before requesting paym
       expect.any(AbortSignal),
     ),
   );
-  expect(within(document.querySelector("header")!).getByText("Learner")).toBeTruthy();
+  expect(within(document.querySelector("header")!).queryByText("Learner")).toBeNull();
   expect(window.location.pathname).toBe("/student-module/payments");
 });
 it("denies a removed child notification without loading the currently selected child data", async () => {
@@ -2137,7 +2137,7 @@ it("does not display dashboard feedback supplied to a representative without fee
     screen.queryByRole("region", { name: i18n.t("portalRecentFeedback") }),
   ).toBeNull();
 });
-it("shows a single context as a static header name and avatar without an unnecessary selector", async () => {
+it("omits a single learner name and context avatar from the platform shell", async () => {
   mocks.session.mockResolvedValue({
     account,
     subjects: [{ ...own, studentName: "Solo Learner" }],
@@ -2148,15 +2148,12 @@ it("shows a single context as a static header name and avatar without an unneces
       <p>Content</p>
     </PortalShell>,
   );
-  const header = await screen
-    .findByText("Solo Learner")
-    .then((label) => label.closest("header")!);
-  expect(
-    within(header).getByText("SL").closest('[aria-hidden="true"]'),
-  ).toBeTruthy();
-  expect(
-    within(header).queryByRole("button", { name: "Solo Learner" }),
-  ).toBeNull();
+  await screen.findByText("Content");
+  const header = document.querySelector("header")!;
+  expect(screen.queryByText("Solo Learner")).toBeNull();
+  expect(screen.queryByText("SL")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Solo Learner" })).toBeNull();
+  expect(within(header).getByRole("button", { name: i18n.t("currentAccount") })).toBeTruthy();
   expect(within(header).queryByRole("menu")).toBeNull();
 });
 it("keeps the course navigation current while viewing a nested learning route", async () => {
@@ -2195,7 +2192,7 @@ it("changes the portal theme and language using the shared platform controls", a
   const header = document.querySelector("header")!;
   expect(within(header).getByRole("button", { name: i18n.t("portalNotifications") })).toBeTruthy();
 });
-it("updates the header avatar fallback when switching from own learning to a child", async () => {
+it("switches the payment context without repeating either single learner in the header or page toolbar", async () => {
   mocks.session.mockResolvedValue({
     account,
     subjects: [
@@ -2206,20 +2203,19 @@ it("updates the header avatar fallback when switching from own learning to a chi
   });
   history.replaceState(null, "", "/learn/payments");
   render(<PortalApp />);
-  await screen.findByText("Alice Brown");
+  await waitFor(() => expect(mocks.paymentsPage).toHaveBeenCalledWith(10, expect.any(AbortSignal), undefined));
   const header = document.querySelector("header")!;
-  expect(
-    within(header).getByText("AB").closest('[aria-hidden="true"]'),
-  ).toBeTruthy();
+  expect(screen.queryByText("Alice Brown")).toBeNull();
+  expect(within(header).queryByText("AB")).toBeNull();
   const parentModule = document.querySelector('[data-platform-module="parent"]')!;
   await userEvent.click(within(parentModule as HTMLElement).getByRole("link", { name: i18n.t("portalPayments") }));
-  await waitFor(() => expect(within(header).getByText("CC")).toBeTruthy());
+  await waitFor(() => expect(mocks.paymentsPage).toHaveBeenCalledWith(11, expect.any(AbortSignal), undefined));
+  expect(location.pathname).toBe("/parent-module/payments");
   expect(within(header).queryByText("AB")).toBeNull();
-  expect(
-    within(header).getByText("Child Cedar"),
-  ).toBeTruthy();
+  expect(within(header).queryByText("CC")).toBeNull();
+  expect(screen.queryByText("Child Cedar")).toBeNull();
 });
-it("opens the unread notification center in a modal Sheet", async () => {
+it("opens unread notifications in the CRM dropdown and restores focus to the bell", async () => {
   mocks.notifications.mockResolvedValue({
     items: [
       {
@@ -2238,20 +2234,17 @@ it("opens the unread notification center in a modal Sheet", async () => {
   });
   history.replaceState(null, "", "/learn/payments");
   render(<PortalApp />);
-  const bell = (
-    await screen.findAllByRole("button", {
-      name: i18n.t("portalNotifications"),
-    })
-  ).find((button) => button.hasAttribute("aria-label"))!;
+  const bell = await screen.findByRole("button", {
+    name: i18n.t("unreadNotificationCount").replace("{count}", "1"),
+  });
   await waitFor(() => expect(bell.textContent).toContain("1"));
   await userEvent.click(bell);
-  const dialog = await screen.findByRole("dialog");
-  expect(dialog.textContent).toContain(i18n.t("portalNotifications"));
-  expect(dialog.textContent).toContain("Reviewed project");
-  expect(dialog.textContent).toContain(i18n.t("portalMarkAllRead"));
-  await userEvent.click(
-    within(dialog).getByRole("button", { name: i18n.t("close") }),
-  );
+  const menu = await screen.findByRole("menu");
+  expect(menu.textContent).toContain(i18n.t("notifications"));
+  expect(menu.textContent).toContain("Reviewed project");
+  expect(within(menu).getByRole("menuitem", { name: i18n.t("markAllRead") })).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => expect(document.activeElement).toBe(bell));
 });
 it("shows an attendance-only parent conducted lessons without counting cancelled or unmarked lessons as absences", async () => {

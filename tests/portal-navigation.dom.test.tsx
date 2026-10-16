@@ -260,6 +260,25 @@ describe("portal viewport navigation", () => {
     expect(screen.queryByRole("heading", { name: i18n.t("parentModule") })).toBeNull();
   });
 
+  it("keeps profile and notifications out of role navigation and search while preserving module actions", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    history.replaceState(null, "", "/student-module");
+    mount();
+    const sidebar = within(document.querySelector<HTMLElement>("[data-platform-sidebar]")!);
+    expect(sidebar.queryByRole("link", { name: i18n.t("portalProfile") })).toBeNull();
+    expect(sidebar.queryByRole("link", { name: i18n.t("portalNotifications") })).toBeNull();
+    const header = within(document.querySelector("header")!);
+    expect(header.getByRole("button", { name: i18n.t("currentAccount") })).toBeTruthy();
+    expect(header.getByRole("button", { name: i18n.t("portalNotifications") })).toBeTruthy();
+    await userEvent.click(header.getAllByRole("button", { name: i18n.t("search") })[0]);
+    await screen.findByRole("dialog", { name: i18n.t("search") });
+    expect(screen.queryByRole("option", { name: i18n.t("portalProfile") })).toBeNull();
+    expect(screen.queryByRole("option", { name: i18n.t("portalNotifications") })).toBeNull();
+    expect(screen.getByRole("option", { name: i18n.t("portalCourses") })).toBeTruthy();
+    expect(screen.getByRole("option", { name: i18n.t("portalSchedule") })).toBeTruthy();
+  });
+
   it("keeps representative navigation and selected children inside the parent module", async () => {
     history.replaceState(null, "", "/parent-module");
     withSession({ ...mixedSession, subjects: mixedSession.subjects.slice(1) });
@@ -272,7 +291,8 @@ describe("portal viewport navigation", () => {
     await currentRoute("/parent-module/progress");
     expect(screen.getByRole("heading", { name: i18n.t("parentModule") })).toBeTruthy();
     expect(screen.getByTestId("subject").textContent).toBe("");
-    await userEvent.click(within(document.querySelector("header")!).getByRole("button", { name: i18n.t("portalFamily") }));
+    expect(within(document.querySelector("header")!).queryByRole("button", { name: i18n.t("portalFamily") })).toBeNull();
+    await userEvent.click(within(document.querySelector<HTMLElement>("[data-module-page]")!).getByRole("button", { name: i18n.t("portalFamily") }));
     expect(screen.queryByRole("menuitem", { name: "Learner 10" })).toBeNull();
     await userEvent.click(screen.getByRole("menuitem", { name: "Child 20" }));
     await waitFor(() => expect(screen.getByTestId("subject").textContent).toBe("20"));

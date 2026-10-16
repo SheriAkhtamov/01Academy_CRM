@@ -75,6 +75,11 @@ describe('task people avatars', () => {
     expect(fetchPhoto).not.toHaveBeenCalled();
   });
 
+  it('never sends mini credentials to a portal account photo route', async () => {
+    await expect(fetchMiniBoardUserPhoto('/api/portal/me/photos/aaaaaaaaaaaaaaaaaaaaa', new AbortController().signal)).rejects.toThrow();
+    expect(fetchPhoto).not.toHaveBeenCalled();
+  });
+
   it('deduplicates mini photo requests and shows local images fetched with bearer headers and no CRM cookie', async () => {
     const { container, unmount } = render(<QueryClientProvider client={client}><BoardUserAvatar user={employee} miniMode /><BoardUserAvatar user={employee} miniMode /></QueryClientProvider>);
     await waitFor(() => expect(container.querySelectorAll('img')).toHaveLength(2));

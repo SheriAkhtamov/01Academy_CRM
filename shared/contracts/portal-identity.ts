@@ -45,6 +45,9 @@ export const portalRelationshipSchema = z.enum([
   "payer",
   "other",
 ]);
+export const portalAvatarUrlSchema = z
+  .string()
+  .regex(/^\/api\/portal\/me\/photos\/[A-Za-z0-9_-]{21}$/);
 export const portalAccountSchema = z.object({
   id: z.number().int().positive(),
   login: z.string(),
@@ -53,6 +56,7 @@ export const portalAccountSchema = z.object({
   phone: z.string().nullable(),
   locale: z.enum(["ru", "en"]),
   status: z.enum(["pending", "active", "suspended", "archived"]),
+  avatarUrl: portalAvatarUrlSchema.nullable().optional(),
 });
 export type PortalAccountDto = z.infer<typeof portalAccountSchema>;
 export const portalSubjectSchema = z.object({

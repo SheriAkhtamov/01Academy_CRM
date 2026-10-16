@@ -8,4 +8,5 @@ export const safeAccount = (account: PortalAccount): PortalAccountDto => ({
   phone: account.phone,
   locale: account.locale,
   status: account.status,
+  avatarUrl: account.avatarUrl ?? null,
 });

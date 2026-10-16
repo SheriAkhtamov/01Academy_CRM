@@ -13,6 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ux/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { DialogFooter } from "@/components/ui/dialog";
+import { UserPhotoPicker } from "@/features/employees/UserPhotoPicker";
+import { withUserPhoto } from "@/features/employees/user-photo-api";
+import { getActivePlatformRealm } from "@/lib/platformSession";
 import {
   Dialog,
   DialogHeader,
@@ -72,19 +75,31 @@ export function PortalProfile({
   const { account, subject, allowed, acceptSession, setUnsaved } = usePortal();
   const passwordScope = usePortalFormScope();
   const client = useQueryClient();
+  const mounted = useProfileFormMounted();
+  const currentAccount = useRef(account?.id);
+  currentAccount.current = account?.id;
   const [name, setName] = useState(account?.fullName ?? "");
+  const [photo, setPhoto] = useState<File | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [notificationPreferencesOpen, setNotificationPreferencesOpen] = useState(false);
   const subjectKey = `${account?.id}:${subject ? portalGrantFingerprint([subject]) : "family"}`;
-  const dirty = name !== account?.fullName || language !== account?.locale;
-  useEffect(() => {
-    setUnsaved(dirty);
-    return () => setUnsaved(false);
-  }, [dirty, setUnsaved]);
+  const dirty = name !== account?.fullName || language !== account?.locale || Boolean(photo);
+  const isCurrentAccount = (accountId: number | undefined) =>
+    mounted.current && accountId !== undefined && currentAccount.current === accountId &&
+    getActivePlatformRealm() !== "staff" && getActivePlatformRealm() !== "signed-out" &&
+    client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id === accountId;
   const save = useMutation({
-    mutationFn: (values: { fullName: string; locale: "ru" | "en" }) =>
-      portalIdentityApi.profile(values),
+    mutationFn: (submitted: {
+      accountId: number | undefined;
+      fullName: string;
+      locale: "ru" | "en";
+      photo: File | null;
+    }) => {
+      if (!isCurrentAccount(submitted.accountId)) throw new DOMException("", "AbortError");
+      return portalIdentityApi.profile(withUserPhoto({ fullName: submitted.fullName, locale: submitted.locale }, submitted.photo));
+    },
     onSuccess: (saved, submitted) => {
+      if (!isCurrentAccount(submitted.accountId) || saved.id !== submitted.accountId) return;
       client.setQueryData<PortalSessionDto>(portalSessionKey, (current) =>
         current?.account?.id === saved.id
           ? { ...current, account: saved }
@@ -98,8 +113,13 @@ export function PortalProfile({
       setName((current) =>
         current === submitted.fullName ? saved.fullName : current,
       );
+      setPhoto((current) => current === submitted.photo ? null : current);
     },
   });
+  useEffect(() => {
+    setUnsaved(dirty || save.isPending);
+    return () => setUnsaved(false);
+  }, [dirty, save.isPending, setUnsaved]);
   return (
     <>
       {!embedded && <PortalTitle labelKey="portalProfile" />}
@@ -115,9 +135,18 @@ export function PortalProfile({
               className="grid gap-4 md:grid-cols-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                save.mutate({ fullName: name, locale: language });
+                if (!save.isPending) save.mutate({ accountId: account?.id, fullName: name, locale: language, photo });
               }}
             >
+              <div className="md:col-span-2">
+                <UserPhotoPicker
+                  photo={photo}
+                  onChange={setPhoto}
+                  currentPhotoUrl={account?.avatarUrl}
+                  fullName={name}
+                  disabled={save.isPending}
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="profile-name">{t("portalFullName")}</Label>
                 <Input

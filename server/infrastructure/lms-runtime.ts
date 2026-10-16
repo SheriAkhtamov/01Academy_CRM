@@ -58,6 +58,7 @@ import {
 import { createLearningConfigurationRouter } from "../modules/portal-resources/http/configuration-router";
 import { PostgresAcademyPortalAccessRepository } from "../modules/portal-identity/infrastructure/academy-access-repository";
 import { AcademyPortalAccessService } from "../modules/portal-identity/application/academy-access-service";
+import { createPortalProfilePhotos } from "../modules/portal-identity/infrastructure/profile-photos";
 import { createAcademyPortalAccessRouter } from "../modules/portal-identity/http/academy-access-router";
 import { LearningFeatureController } from "./learning-flags";
 import {
@@ -517,7 +518,7 @@ export function createLearningRuntime(
         studentQuotaGiB: flags.settings().studentQuotaGiB,
       }),
     );
-    portalRouter.use(createPortalIdentityRouter({ service: identity }));
+    portalRouter.use(createPortalIdentityRouter({ service: identity, photos: createPortalProfilePhotos() }));
     portalRouter.use(
       "/subjects",
       createLmsPortalRouter(service, actor, learningGate),

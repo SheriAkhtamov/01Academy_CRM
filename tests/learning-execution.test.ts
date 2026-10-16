@@ -227,4 +227,24 @@ describe("learning HTTP scope gates before body/auth work", () => {
       .expect(200);
     expect(work).toHaveBeenCalledTimes(3);
   });
+  it("routes all profile PATCH formats through the physical writer without broadening nearby paths or reads", async () => {
+    const files = scoped("files");
+    const external = scoped("all", "external");
+    await request(files.app).patch("/api/portal/me").send({ fullName: "Learner" }).expect(200);
+    await request(files.app).patch("/api/portal/me/")
+      .field("profile", JSON.stringify({ fullName: "Learner" }))
+      .attach("photo", Buffer.from("image"), "photo.png").expect(200);
+    await request(external.app).patch("/api/portal/me").type("json").send("{").expect(503);
+    await request(external.app).patch("/API/PORTAL/ME/")
+      .field("profile", "{}").attach("photo", Buffer.from("image"), "photo.png").expect(503);
+    expect(external.work).not.toHaveBeenCalled();
+    for (const path of ["/api/portal/me/photos/test", "/api/portal/me-extra", "/api/portal/me/password"])
+      await request(files.app).patch(path).type("json").send("{").expect(404);
+    await request(files.app).post("/api/portal/me").type("json").send("{").expect(404);
+    await request(files.app).put("/api/portal/me").type("json").send("{").expect(404);
+    await request(files.app).get("/api/portal/me/photos/AAAAAAAAAAAAAAAAAAAAA").expect(404);
+    await request(external.app).get("/api/portal/me/photos/AAAAAAAAAAAAAAAAAAAAA").expect(200);
+    expect(files.work).toHaveBeenCalledTimes(2);
+    expect(external.work).toHaveBeenCalledTimes(1);
+  });
 });

@@ -242,6 +242,12 @@ describe("independent learning HTTP launchers", () => {
       .type("json")
       .send("{")
       .expect(503);
+    await request(api.server)
+      .patch("/api/portal/me")
+      .set("X-Requested-With", "XMLHttpRequest")
+      .type("json")
+      .send("{")
+      .expect(503);
     await request(api.server).get("/api/legacy/session").expect(404);
     await Promise.all([api.stop(), api.stop()]);
     expect(mocks.runtimeStop).toHaveBeenCalledTimes(1);

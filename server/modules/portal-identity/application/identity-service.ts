@@ -661,8 +661,9 @@ export class PortalIdentityService {
   updateProfile(
     sessionId: string,
     changes: { fullName?: string; phone?: string | null; locale?: "ru" | "en" },
+    avatarUrl?: string,
   ) {
-    return this.profile.updateProfile(sessionId, changes);
+    return this.profile.updateProfile(sessionId, changes, avatarUrl);
   }
   private async verifySensitivePassword(account: PortalAccount, password: string) {
     const key = this.limitKey("login-account", `account-${account.id}`);

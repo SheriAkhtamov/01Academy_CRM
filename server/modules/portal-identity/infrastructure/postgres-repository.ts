@@ -19,6 +19,7 @@ const fields: Record<string, string> = {
   accountId: "account_id",
   authVersion: "auth_version",
   fullName: "full_name",
+  avatarUrl: "avatar_url",
   passwordHash: "password_hash",
   studentId: "student_id",
   verifiedAt: "verified_at",

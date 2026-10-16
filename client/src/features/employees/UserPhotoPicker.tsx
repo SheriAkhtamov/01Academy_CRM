@@ -45,7 +45,6 @@ export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, di
           <Button ref={chooseButton} type="button" variant="outline" size="sm" disabled={disabled} onClick={() => input.current?.click()}><Camera className="size-4" />{photo || currentPhotoUrl ? t('replaceProfilePhoto') : t('chooseProfilePhoto')}</Button>
           {photo ? <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => { setError(undefined); onChange(null); }}><X className="size-4" />{t('cancelPhotoSelection')}</Button> : null}
         </div>
-        <p className="text-xs text-muted-foreground">{t('profilePhotoLimit')}</p>
         {photo ? <p className="truncate text-xs text-muted-foreground">{photo.name}</p> : null}
       </div>
     </div>

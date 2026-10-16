@@ -54,11 +54,20 @@ const sessionId = (req: Request) => {
 };
 const positiveId = (value: string) =>
   z.coerce.number().int().positive().parse(value);
+export type PortalProfilePhotos = {
+  readUpload: (req: Request, res: Response) => Promise<boolean>;
+  uploadedUrl: (req: Request) => string | undefined;
+  retain: (res: Response) => void;
+  cleanup: (req: Request, res: Response) => Promise<void>;
+  send: (res: Response, photoId: string) => Promise<void>;
+};
 export const createPortalIdentityRouter = ({
   service,
+  photos,
   enabled = true,
 }: {
   service: PortalIdentityService;
+  photos?: PortalProfilePhotos;
   enabled?: boolean;
 }) => {
   const router = Router();
@@ -136,14 +145,40 @@ export const createPortalIdentityRouter = ({
   );
   router.patch(
     "/me",
-    wrap(async (req, res) =>
-      res.json(
-        await service.updateProfile(
-          sessionId(req),
-          portalProfileUpdateSchema.parse(req.body),
-        ),
-      ),
-    ),
+    wrap(async (req, res) => {
+      // Authenticate before writing multipart bytes. The use case repeats this
+      // check inside its transaction after the upload has finished.
+      const id = sessionId(req);
+      const current = await service.resolveSession(id);
+      if (!current?.accountId)
+        throw new PortalError("portalAuthenticationRequired", 401);
+      try {
+        if (photos && !(await photos.readUpload(req, res))) return;
+        if (req.aborted || res.destroyed) return;
+        const account = await service.updateProfile(
+          id, portalProfileUpdateSchema.parse(req.body), photos?.uploadedUrl(req),
+        );
+        // The database reference is committed before retaining the blob. A
+        // disconnected response must never remove a committed profile photo.
+        photos?.retain(res);
+        res.json(account);
+      } finally {
+        await photos?.cleanup(req, res);
+      }
+    }),
+  );
+  router.get(
+    "/me/photos/:photoId",
+    wrap(async (req, res) => {
+      const current = await service.resolveSession(sessionId(req));
+      if (!current?.accountId)
+        throw new PortalError("portalAuthenticationRequired", 401);
+      const account = (await service.getSessionDto(current)).account;
+      if (!photos || !/^[A-Za-z0-9_-]{21}$/.test(req.params.photoId) ||
+        account?.avatarUrl !== `/api/portal/me/photos/${req.params.photoId}`)
+        throw new PortalError("portalNotFound", 404);
+      await photos.send(res, req.params.photoId);
+    }),
   );
   router.post(
     "/me/reauthenticate",

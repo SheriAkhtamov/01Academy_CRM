@@ -49,6 +49,7 @@ export function createPortalIdentityTables(refs: { studentId: AnyPgColumn; userI
     authVersion: integer("auth_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    avatarUrl: text("avatar_url"),
   }, (table) => [
     check("portal_accounts_auth_version_check", sql.raw("(auth_version > 0)")),
     check("portal_accounts_check1", sql.raw("(((status)::text <> 'active'::text) OR (password_hash IS NOT NULL))")),

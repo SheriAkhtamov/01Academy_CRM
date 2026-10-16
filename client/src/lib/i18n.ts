@@ -1417,7 +1417,6 @@ export const translations = {
   replaceProfilePhoto: { en: 'Change photo', ru: 'Изменить фото' },
   cancelPhotoSelection: { en: 'Cancel photo selection', ru: 'Отменить выбор фото' },
   profilePhotoTypeUnsupported: { en: 'Choose a JPEG, PNG, WebP, GIF or AVIF image', ru: 'Выберите изображение JPEG, PNG, WebP, GIF или AVIF' },
-  profilePhotoLimit: { en: 'JPEG, PNG, WebP, GIF, AVIF · up to 10 MB', ru: 'JPEG, PNG, WebP, GIF, AVIF · до 10 МБ' },
   cropProfilePhoto: { en: 'Crop profile photo', ru: 'Кадрирование фото' },
   applyPhotoCrop: { en: 'Apply', ru: 'Применить' },
   photoCropZoom: { en: 'Zoom', ru: 'Масштаб' },

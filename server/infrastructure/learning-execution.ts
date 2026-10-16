@@ -183,10 +183,11 @@ export function resolveLearningApiOptions({
 }
 
 export const isPhysicalLearningFileWrite = (method: string, path: string) =>
-  method === "POST" &&
-  /^\/api\/(?:portal\/files|lms-management\/(?:files|assignments))\/?$/i.test(
-    path,
-  );
+  (method === "PATCH" && /^\/api\/portal\/me\/?$/i.test(path)) ||
+  (method === "POST" &&
+    /^\/api\/(?:portal\/files|lms-management\/(?:files|assignments))\/?$/i.test(
+      path,
+    ));
 
 export const learningApiScopeGuard =
   (

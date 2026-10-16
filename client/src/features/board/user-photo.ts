@@ -4,7 +4,7 @@ import { safeUserPhotoUrl, USER_PHOTO_MIME_TYPES } from '@shared/user-photo';
 
 export async function fetchMiniBoardUserPhoto(url: string, signal: AbortSignal): Promise<Blob> {
   const safeUrl = safeUserPhotoUrl(url);
-  if (!safeUrl) throw new Error('Invalid user photo');
+  if (!safeUrl?.startsWith('/api/users/photos/')) throw new Error('Invalid user photo');
   try {
     const response = await fetch(safeUrl.replace('/api/users/photos/', '/api/miniapp/users/photos/'), {
       headers: { 'X-Requested-With': 'XMLHttpRequest', ...boardHeaders() },

@@ -3,6 +3,7 @@ import type {
   PortalPermission,
   PortalSubjectDto,
 } from "@shared/contracts/portal-identity";
+import { portalAvatarUrlSchema } from "@shared/contracts/portal-identity";
 import { PortalError } from "../domain/access-policy";
 import type {
   PortalAccount,
@@ -40,11 +41,19 @@ export class PortalProfileService {
   async updateProfile(
     sessionId: string,
     changes: { fullName?: string; phone?: string | null; locale?: "ru" | "en" },
+    avatarUrl?: string,
   ) {
     const authenticated = await this.context.requireSession(sessionId);
+    if (avatarUrl !== undefined && !portalAvatarUrlSchema.safeParse(avatarUrl).success)
+      throw new PortalError("portalInvalidData");
     return this.repository.transaction(async (repository) => {
       await requireCurrentPortalSession(repository, authenticated, this.now());
-      return safeAccount(await repository.updateAccount(authenticated.account.id, changes));
+      return safeAccount(await repository.updateAccount(authenticated.account.id, {
+        ...(changes.fullName === undefined ? {} : { fullName: changes.fullName }),
+        ...(changes.phone === undefined ? {} : { phone: changes.phone }),
+        ...(changes.locale === undefined ? {} : { locale: changes.locale }),
+        ...(avatarUrl === undefined ? {} : { avatarUrl }),
+      }));
     });
   }
   async getSessions(sessionId: string): Promise<PortalDeviceSessionDto[]> {

@@ -1,5 +1,4 @@
 import type {
-  PortalAccountDto,
   PortalDeviceSessionDto,
   PortalPermission,
   PortalSessionDto,
@@ -32,7 +31,7 @@ import type {
   LmsPage,
 } from "@shared/contracts/lms";
 
-import { portalActivationResultSchema, portalSessionSchema } from "@shared/contracts/portal-identity";
+import { portalAccountSchema, portalActivationResultSchema, portalSessionSchema } from "@shared/contracts/portal-identity";
 
 export class PortalApiError extends Error {
   constructor(
@@ -74,6 +73,7 @@ export async function portalRequest<T>(
   const forwardAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", forwardAbort, { once: true });
   if (options.signal?.aborted) forwardAbort();
+  const multipart = options.body instanceof FormData;
   try {
     const response = await fetch(`/api/portal${path}`, {
       method: options.method ?? "GET",
@@ -85,12 +85,12 @@ export async function portalRequest<T>(
         ...(options.method && options.method !== "GET"
           ? { "X-Portal-CSRF": csrfToken }
           : {}),
-        ...(options.body !== undefined
+        ...(options.body !== undefined && !multipart
           ? { "Content-Type": "application/json" }
           : {}),
       },
       ...(options.body !== undefined
-        ? { body: JSON.stringify(options.body) }
+        ? { body: multipart ? options.body as FormData : JSON.stringify(options.body) }
         : {}),
     });
     options.onResponse?.(response);
@@ -156,8 +156,12 @@ export const portalIdentityApi = {
     if (!parsed.success) throw new PortalApiError(502, "portalLoadError");
     return parsed.data;
   },
-  profile: (body: { fullName?: string; locale?: "ru" | "en" }) =>
-    portalRequest<PortalAccountDto>("/me", { method: "PATCH", body }),
+  profile: async (body: { fullName?: string; locale?: "ru" | "en" } | FormData) => {
+    const result = await portalRequest<unknown>("/me", { method: "PATCH", body });
+    const parsed = portalAccountSchema.safeParse(result);
+    if (!parsed.success) throw new PortalApiError(502, "portalLoadError");
+    return parsed.data;
+  },
   password: (password: string, newPassword: string) =>
     sessionRequest("/me/password", {
       method: "POST",

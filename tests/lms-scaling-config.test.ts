@@ -237,7 +237,9 @@ function pathAcl(name: string, path: string) {
 function backendFor(method: string, path: string) {
   const acl: Record<string, boolean> = {
     file_write: pathAcl("file_write", path),
+    profile_write: pathAcl("profile_write", path),
     post: method === "POST",
+    patch: method === "PATCH",
     reports_path: pathAcl("reports_path", path),
     reports_read: method === "GET" || method === "HEAD",
     reports_create: pathAcl("reports_create", path),
@@ -307,6 +309,28 @@ describe("proxy routing and runtime boundaries", () => {
     expect(
       (await request(app).get("/api/academy/students/4/portal-access")).status,
     ).toBe(404);
+  });
+
+  it("sends profile photo writes to the singleton and private photo reads to regular authenticated APIs", async () => {
+    const files = express().use(learningApiScopeGuard("files")).use((_req, res) => res.sendStatus(204));
+    const replicas = express().use(learningApiScopeGuard("all", { fileWrites: "external" })).use((_req, res) => res.sendStatus(204));
+    for (const path of ["/api/portal/me", "/api/portal/me/", "/API/PORTAL/ME/"]) {
+      expect(isPhysicalLearningFileWrite("PATCH", path)).toBe(true);
+      expect(backendFor("PATCH", path)).toBe("uploads");
+      await request(files).patch(path).expect(204);
+      await request(replicas).patch(path).expect(503);
+    }
+    const photo = "/api/portal/me/photos/AAAAAAAAAAAAAAAAAAAAA";
+    for (const method of ["GET", "HEAD"]) {
+      expect(isPhysicalLearningFileWrite(method, photo)).toBe(false);
+      expect(backendFor(method, photo)).toBe("learning");
+    }
+    expect(backendFor("GET", "/api/portal/me")).toBe("learning");
+    for (const path of ["/api/portal/me-extra", photo, "/api/portal/me/password"]) {
+      expect(isPhysicalLearningFileWrite("PATCH", path)).toBe(false);
+      expect(backendFor("PATCH", path)).toBe("learning");
+      await request(files).patch(path).expect(404);
+    }
   });
 
   it("keeps learner WebSockets, private links, exact access prefixes and staff routes in their intended processes", () => {

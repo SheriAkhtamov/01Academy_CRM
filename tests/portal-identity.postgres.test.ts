@@ -337,7 +337,8 @@ describe.skipIf(!databaseUrl)(
     });
     it("resolves each current session in exactly one query with a minimal private record and atomic invalid cleanup", async () => {
       const invite = await service.createInvitation(staff, 1, cmd());
-      const session = await service.acceptInvitation(token(invite.activationUrl), password, undefined, null);
+      const { activatedLink, ...session } = await service.acceptInvitation(token(invite.activationUrl), password, undefined, null);
+      expect(activatedLink).toEqual({ linkId: invite.linkId, kind: "self" });
       const statements: string[] = [];
       const observed = { query: (sql: string, values: unknown[]) => { statements.push(sql); return pool.query(sql, values); } } as unknown as Pool;
       const repository = createPostgresPortalRepository(observed);
@@ -348,6 +349,7 @@ describe.skipIf(!databaseUrl)(
       const valid = await clockService.resolveSession(session.id);
       expect(statements).toHaveLength(1);
       expect(valid).toEqual({ ...session, lastSeenAt: now });
+      expect(valid).not.toHaveProperty("activatedLink");
       expect(Object.keys(valid!).sort()).toEqual(["id", "accountId", "authVersion", "createdAt", "lastSeenAt", "absoluteExpiresAt", "csrfToken", "reauthenticatedAt"].sort());
       expect(statements[0]).not.toMatch(/password_hash|full_name|pending_email|SELECT\s+account\.\*/i);
       const deny = async () => { statements.length = 0; expect(await clockService.resolveSession(session.id)).toBeNull(); expect(statements).toHaveLength(1); };

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, CalendarDays, CircleCheck, Clock3, ListChecks } from 'lucide-react';
+import { CalendarClock, CalendarDays, CircleCheck, Clock3, ListChecks, Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
 import { CALENDAR_TONES } from '@/components/ux/calendar/calendarTones';
 import {
@@ -95,9 +97,19 @@ export function AttendanceCalendar({
   const todayKey = academyDateKey(new Date(now));
   const [anchorKey, setAnchorKey] = useState(todayKey);
   const [hiddenStates, setHiddenStates] = useState<Set<AttendanceState>>(() => new Set());
+  const [selectedGroup, setSelectedGroup] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const locale = resolveLocale(language);
+
+  const uniqueGroups = useMemo(() => {
+    const names = new Set<string>();
+    for (const lesson of lessons) {
+      if (lesson.groupName) names.add(lesson.groupName);
+    }
+    return Array.from(names).sort();
+  }, [lessons]);
 
   /* A grid 760px wide inside a 375px viewport is a horizontal scroller nested
      in a vertical one — the two fight on every touch drag. The stored
@@ -159,7 +171,29 @@ export function AttendanceCalendar({
       next.delete(focusedLessonState);
       return next;
     });
-  }, [focusedLessonDateKey, focusedLessonState]);
+    if (focusedLesson && selectedGroup !== 'all' && focusedLesson.groupName !== selectedGroup) {
+      setSelectedGroup('all');
+    }
+    if (searchQuery.trim()) {
+      setSearchQuery('');
+    }
+  }, [focusedLesson, focusedLessonDateKey, focusedLessonState, searchQuery, selectedGroup]);
+
+  const matchesTextAndGroup = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return (lesson: AttendanceCalendarLesson) => {
+      if (selectedGroup !== 'all' && lesson.groupName !== selectedGroup) {
+        return false;
+      }
+      if (q) {
+        return (
+          lesson.topic.toLowerCase().includes(q) ||
+          (lesson.groupName ?? '').toLowerCase().includes(q)
+        );
+      }
+      return true;
+    };
+  }, [searchQuery, selectedGroup]);
 
   const lessonsByDate = useMemo(() => {
     const result = new Map<string, AttendanceCalendarLesson[]>();
@@ -188,21 +222,35 @@ export function AttendanceCalendar({
     },
     { pending: 0, upcoming: 0, conducted: 0 },
   ), [rangeLessons, now]);
+
+  const pastDueTotal = counts.conducted + counts.pending;
+  const markedRatePercent = pastDueTotal > 0 ? Math.round((counts.conducted / pastDueTotal) * 100) : null;
+
   /* Filtering was re-run for each of the 42 month cells on every render, and
      `lessonState` builds a `Date` per lesson — so a clock tick or a filter tap
      re-derived the whole month. One map, rebuilt only when its inputs change. */
   const visibleLessonsByDate = useMemo(() => {
     const result = new Map<string, AttendanceCalendarLesson[]>();
     for (const [dateKey, dayLessons] of lessonsByDate) {
-      result.set(dateKey, dayLessons.filter((lesson) => !hiddenStates.has(lessonState(lesson, now))));
+      result.set(
+        dateKey,
+        dayLessons.filter(
+          (lesson) => !hiddenStates.has(lessonState(lesson, now)) && matchesTextAndGroup(lesson),
+        ),
+      );
     }
     return result;
-  }, [hiddenStates, lessonsByDate, now]);
+  }, [hiddenStates, lessonsByDate, matchesTextAndGroup, now]);
   const visibleLessonsFor = (dateKey: string) => visibleLessonsByDate.get(dateKey) ?? [];
   const visibleRangeCount = useMemo(
-    () => rangeLessons.filter((lesson) => !hiddenStates.has(lessonState(lesson, now))).length,
-    [hiddenStates, now, rangeLessons],
+    () =>
+      rangeLessons.filter(
+        (lesson) => !hiddenStates.has(lessonState(lesson, now)) && matchesTextAndGroup(lesson),
+      ).length,
+    [hiddenStates, matchesTextAndGroup, now, rangeLessons],
   );
+  const hasActiveFilters =
+    hiddenStates.size > 0 || selectedGroup !== 'all' || searchQuery.trim() !== '';
 
   // Oldest first: unmarked attendance is a backlog, and the lesson that has
   // been waiting longest is the one blocking the teacher's statistics.
@@ -271,6 +319,8 @@ export function AttendanceCalendar({
     const key = academyDateKey(nextPending.scheduledAt);
     setAnchorKey(key);
     setHiddenStates(new Set());
+    setSelectedGroup('all');
+    setSearchQuery('');
     selectLesson(nextPending.id);
   };
 
@@ -278,6 +328,8 @@ export function AttendanceCalendar({
     if (!nextUpcoming) return;
     setAnchorKey(academyDateKey(nextUpcoming.scheduledAt));
     setHiddenStates(new Set());
+    setSelectedGroup('all');
+    setSearchQuery('');
   };
 
   const lessonButton = (lesson: AttendanceCalendarLesson, roomy = false) => {
@@ -343,6 +395,19 @@ export function AttendanceCalendar({
             <CalendarDays className="size-5 text-primary" />
             {t('attendanceCalendarTitle')}
           </CardTitle>
+          {markedRatePercent !== null && (
+            <Badge
+              variant="outline"
+              className={cn(
+                'tabular-nums text-xs font-semibold',
+                markedRatePercent === 100
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+              )}
+            >
+              {t('attendanceMarkedRateBadge').replace('{percent}', String(markedRatePercent))}
+            </Badge>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {(['pending', 'upcoming', 'conducted'] as const).map((state) => {
               const active = !hiddenStates.has(state);
@@ -388,6 +453,35 @@ export function AttendanceCalendar({
           ) : null}
         </div>
 
+        {lessons.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t('searchPlaceholder')}
+                className="h-9 bg-background pl-8 text-xs"
+              />
+            </div>
+            {uniqueGroups.length > 1 && (
+              <select
+                aria-label={t('teacherScheduleFilterGroup')}
+                value={selectedGroup}
+                onChange={(event) => setSelectedGroup(event.target.value)}
+                className="h-9 rounded-md border bg-background px-3 text-xs font-medium"
+              >
+                <option value="all">{t('teacherScheduleFilterGroup')}</option>
+                {uniqueGroups.map((groupName) => (
+                  <option key={groupName} value={groupName}>
+                    {groupName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         <CalendarNavigator
           label={rangeLabel}
           previousLabel={effectiveView === 'month' ? t('previousMonth') : t('previousWeek')}
@@ -413,13 +507,17 @@ export function AttendanceCalendar({
             <EmptyState
               icon={CalendarDays}
               className="py-0"
-              title={hiddenStates.size > 0 ? t('lessonsHiddenByFilters') : t('noLessonsInRange')}
-              action={hiddenStates.size > 0 ? (
+              title={hasActiveFilters ? t('lessonsHiddenByFilters') : t('noLessonsInRange')}
+              action={hasActiveFilters ? (
                 <Button
                   type="button"
                   variant="outline"
                   className="min-h-11"
-                  onClick={() => setHiddenStates(new Set())}
+                  onClick={() => {
+                    setHiddenStates(new Set());
+                    setSelectedGroup('all');
+                    setSearchQuery('');
+                  }}
                 >
                   {t('resetFilters')}
                 </Button>

@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
-  Clock3,  Loader2,
+  Clock3,
+  Loader2,
+  Search,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -51,6 +53,7 @@ import {
 import { cn } from '@/lib/utils';
 
 export type AttendanceStatus = 'present' | 'absent';
+type RosterFilter = 'all' | 'unmarked' | 'present' | 'absent';
 
 export interface AttendanceLessonDialogProps {
   open: boolean;
@@ -140,6 +143,8 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   const rescheduleBodyId = useId();
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
+  const [rosterSearch, setRosterSearch] = useState('');
+  const [rosterFilter, setRosterFilter] = useState<RosterFilter>('all');
 
   const summary = useMemo(() => {
     let marked = 0;
@@ -155,24 +160,49 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     return { total: students.length, marked, present, absent };
   }, [draft, students]);
 
-  const firstUnmarkedIndex = students.findIndex((student) => draft[student.id] === undefined);
+  const filteredStudents = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    return students.filter((student) => {
+      const status = draft[student.id];
+      if (rosterFilter === 'unmarked' && status !== undefined) return false;
+      if (rosterFilter === 'present' && status !== 'present') return false;
+      if (rosterFilter === 'absent' && status !== 'absent') return false;
+      if (q) {
+        const name = (student.studentName || student.contactName || '').toLowerCase();
+        return name.includes(q);
+      }
+      return true;
+    });
+  }, [draft, rosterFilter, rosterSearch, students]);
+
+  const firstUnmarkedIndex = filteredStudents.findIndex(
+    (student) => draft[student.id] === undefined,
+  );
+  const hasAnyUnmarked = students.some((student) => draft[student.id] === undefined);
 
   useEffect(() => {
-    rowRefs.current.length = students.length;
+    rowRefs.current.length = filteredStudents.length;
     setActiveRowIndex(0);
-  }, [students.length]);
+  }, [filteredStudents.length]);
+
+  useEffect(() => {
+    if (!open) {
+      setRosterSearch('');
+      setRosterFilter('all');
+    }
+  }, [open, lesson?.id]);
 
   /* Roving tabindex. Fifteen students used to mean 15 rows plus 30 buttons —
      45 stops between the modal header and the Save button. Exactly one row is
      tabbable at a time and the buttons inside are taken out of the tab order;
      arrows move within the list, P/A act on the focused row. */
-  const activeIndex = Math.min(activeRowIndex, Math.max(students.length - 1, 0));
+  const activeIndex = Math.min(activeRowIndex, Math.max(filteredStudents.length - 1, 0));
 
   const focusRow = useCallback((index: number) => {
-    const clamped = Math.min(Math.max(index, 0), Math.max(students.length - 1, 0));
+    const clamped = Math.min(Math.max(index, 0), Math.max(filteredStudents.length - 1, 0));
     setActiveRowIndex(clamped);
     rowRefs.current[clamped]?.focus();
-  }, [students.length]);
+  }, [filteredStudents.length]);
 
   const handleRosterFocus = useCallback((event: React.FocusEvent<HTMLUListElement>) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-row-index]');
@@ -212,18 +242,18 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     }
     if (event.code === 'End') {
       event.preventDefault();
-      focusRow(students.length - 1);
+      focusRow(filteredStudents.length - 1);
       return;
     }
     // `code` rather than `key` so the shortcut survives a Cyrillic layout.
     if (event.code === 'KeyP' || event.code === 'KeyA') {
       event.preventDefault();
-      const student = students[index];
+      const student = filteredStudents[index];
       if (!student || mutationPending) return;
       onToggleStudent(student.id, event.code === 'KeyP' ? 'present' : 'absent');
       focusRow(index + 1);
     }
-  }, [focusRow, mutationPending, onToggleStudent, students]);
+  }, [filteredStudents, focusRow, mutationPending, onToggleStudent]);
 
   const unmarkedCount = Math.max(summary.total - summary.marked, 0);
   const blocking = (() => {
@@ -234,7 +264,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     if (hasPreviousIncompleteLesson) {
       return { message: t('previousLessonMustBeCompleted'), canJump: false };
     }
-    if (firstUnmarkedIndex >= 0) {
+    if (hasAnyUnmarked) {
       return {
         message: t('attendanceUnmarkedRemaining').replace('{count}', String(unmarkedCount)),
         canJump: true,
@@ -382,10 +412,50 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   </div>
                 </div>
 
-                <div className="space-y-2.5">
-                  <h3 className="px-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    {t('groupStudentsCount').replace('{count}', String(students.length))}
-                  </h3>
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="px-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      {t('groupStudentsCount').replace('{count}', String(students.length))}
+                    </h3>
+                    {students.length > 3 && (
+                      <div className="relative flex-1 sm:max-w-xs">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={rosterSearch}
+                          onChange={(event) => setRosterSearch(event.target.value)}
+                          placeholder={t('attendanceSearchStudents')}
+                          className="h-8 bg-background pl-8 text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {students.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(
+                        [
+                          ['all', t('attendanceFilterAll'), summary.total],
+                          ['unmarked', t('attendanceFilterUnmarked'), unmarkedCount],
+                          ['present', t('attendanceFilterPresent'), summary.present],
+                          ['absent', t('attendanceFilterAbsent'), summary.absent],
+                        ] as const
+                      ).map(([filterKey, label, count]) => (
+                        <div
+                          key={filterKey}
+                          onClick={() => setRosterFilter(filterKey)}
+                          className={cn(
+                            'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
+                            rosterFilter === filterKey
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border/60 bg-background text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          <span>{label}</span>
+                          <span className="tabular-nums opacity-75">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <ul
                     className="space-y-2.5"
@@ -393,7 +463,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                     onKeyDown={handleRosterKeyDown}
                     onFocus={handleRosterFocus}
                   >
-                    {students.map((student, index) => {
+                    {filteredStudents.map((student, index) => {
                       const status = draft[student.id];
                       const percent = student.attendancePercent || 0;
                       const name = student.studentName || student.contactName;
@@ -605,7 +675,14 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                       variant="outline"
                       size="sm"
                       className="min-h-11 shrink-0 rounded-lg bg-background text-xs"
-                      onClick={() => focusRow(firstUnmarkedIndex)}
+                      onClick={() => {
+                        if (firstUnmarkedIndex >= 0) {
+                          focusRow(firstUnmarkedIndex);
+                        } else {
+                          setRosterSearch('');
+                          setRosterFilter('all');
+                        }
+                      }}
                     >
                       {t('goToUnmarkedStudent')}
                     </Button>

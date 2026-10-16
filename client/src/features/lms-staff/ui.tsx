@@ -3,6 +3,15 @@ import {
   PortalAlertDialogContent as AlertDialogContent,
 } from "../learning-content/modal-content";
 import { useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Inbox,
+  RefreshCw,
+  Settings2,
+  Users,
+} from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { translations, type TranslationKey } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -23,6 +32,7 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 import type {
   LmsStaffEnrollmentDto,
   LmsStaffRunDto,
@@ -45,8 +55,8 @@ export function StaffLoading() {
   const { t } = useTranslation();
   return (
     <div aria-label={t("portalLoading")} role="status" className="space-y-3">
-      <Skeleton className="h-28 w-full" />
-      <Skeleton className="h-28 w-full" />
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-28 w-full rounded-xl" />
     </div>
   );
 }
@@ -60,10 +70,21 @@ export function StaffError({
   const { t } = useTranslation();
   const message = useStaffError();
   return (
-    <Card>
-      <CardContent className="space-y-3 p-5" role="alert">
-        <p>{message(error, "lmsStaffLoadFailed")}</p>
-        <Button variant="outline" onClick={retry}>
+    <Card className="border-rose-500/30 bg-rose-500/[0.03]">
+      <CardContent
+        className="flex flex-wrap items-center justify-between gap-4 p-5"
+        role="alert"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <p className="text-sm font-medium">
+            {message(error, "lmsStaffLoadFailed")}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={retry} className="gap-1.5">
+          <RefreshCw className="h-3.5 w-3.5" />
           {t("lmsStaffRetry")}
         </Button>
       </CardContent>
@@ -73,9 +94,12 @@ export function StaffError({
 export function StaffEmpty() {
   const { t } = useTranslation();
   return (
-    <Card>
-      <CardContent className="p-6 text-sm text-muted-foreground">
-        {t("lmsStaffNoItems")}
+    <Card className="border-dashed bg-muted/15 shadow-none">
+      <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Inbox className="h-5 w-5" />
+        </div>
+        <p className="font-medium text-foreground/80">{t("lmsStaffNoItems")}</p>
       </CardContent>
     </Card>
   );
@@ -111,26 +135,37 @@ export function StaffGroupSetup({
     run.permissions?.includes("content.manage") &&
     onProgram;
   return (
-    <Card>
-      <CardContent className="space-y-3 p-5">
-        <p className="text-sm text-muted-foreground">
-          {t(labels[status ?? ""] ?? "lmsStaffGroupNotReady")}
-        </p>
-        {canFormat && (
-          <Button variant="outline" onClick={onFormat}>
-            {t("lmsStaffSelectFormat")}
-          </Button>
-        )}
-        {canReviewProgram && (
-          <Button variant="outline" onClick={onProgram}>
-            {t("lmsStaffReviewProgram")}
-          </Button>
-        )}
-        {canRetry && retry && (
-          <Button variant="outline" onClick={retry}>
-            {t("lmsStaffRetry")}
-          </Button>
-        )}
+    <Card className="border-amber-500/30 bg-amber-500/[0.04]">
+      <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
+            {status === "preparing" ? (
+              <Clock className="h-4 w-4" />
+            ) : (
+              <Settings2 className="h-4 w-4" />
+            )}
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {t(labels[status ?? ""] ?? "lmsStaffGroupNotReady")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {canFormat && (
+            <Button variant="outline" size="sm" onClick={onFormat}>
+              {t("lmsStaffSelectFormat")}
+            </Button>
+          )}
+          {canReviewProgram && (
+            <Button variant="outline" size="sm" onClick={onProgram}>
+              {t("lmsStaffReviewProgram")}
+            </Button>
+          )}
+          {canRetry && retry && (
+            <Button variant="outline" size="sm" onClick={retry}>
+              {t("lmsStaffRetry")}
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -266,11 +301,20 @@ export function StaffRecipients({
   const { t } = useTranslation();
   const active = items.filter((item) => item.status === "active");
   return (
-    <fieldset className="space-y-3">
-      <legend className="mb-2 text-sm font-medium">
-        {t("lmsStaffRecipients")}
-      </legend>
-      <label className="flex min-h-11 items-center gap-3">
+    <fieldset className="space-y-3 rounded-xl border bg-muted/15 p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <legend className="flex items-center gap-1.5 text-sm font-semibold">
+          <Users className="h-4 w-4 text-primary" />
+          {t("lmsStaffRecipients")}
+        </legend>
+        <Badge variant="secondary" className="text-xs">
+          {t("lmsStaffRecipientsCount").replace(
+            "{count}",
+            String(selected.length),
+          )}
+        </Badge>
+      </div>
+      <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/40">
         <input
           type="checkbox"
           checked={
@@ -283,9 +327,15 @@ export function StaffRecipients({
         />
         {t("lmsStaffAllRecipients")}
       </label>
-      <div className="grid max-h-48 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
+      <div className="grid max-h-48 gap-2 overflow-y-auto rounded-lg border bg-background p-2.5 sm:grid-cols-2">
         {active.map((item) => (
-          <label key={item.id} className="flex min-h-11 items-center gap-3">
+          <label
+            key={item.id}
+            className={cn(
+              "flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted/40",
+              selected.includes(item.id) && "bg-primary/5 font-medium",
+            )}
+          >
             <input
               type="checkbox"
               checked={selected.includes(item.id)}
@@ -301,12 +351,6 @@ export function StaffRecipients({
           </label>
         ))}
       </div>
-      <p className="text-sm text-muted-foreground">
-        {t("lmsStaffRecipientsCount").replace(
-          "{count}",
-          String(selected.length),
-        )}
-      </p>
     </fieldset>
   );
 }
@@ -323,8 +367,42 @@ export function StaffStatus({ state }: { state: string }) {
     answered: "portalAnswered",
     resolved: "portalResolved",
   };
+  const tones: Record<string, string> = {
+    published:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    accepted:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    resolved:
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    submitted:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    open: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    needed:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    revision_required:
+      "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    cancelled:
+      "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    answered: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    in_progress:
+      "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    draft: "border-border bg-muted/60 text-muted-foreground",
+    archived: "border-border bg-muted/60 text-muted-foreground",
+  };
   return (
-    <Badge variant="secondary">{t(keys[state] ?? "lmsStaffActive")}</Badge>
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 font-medium",
+        tones[state] ??
+          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+      )}
+    >
+      {["published", "accepted", "resolved"].includes(state) && (
+        <CheckCircle2 className="h-3 w-3" />
+      )}
+      {t(keys[state] ?? "lmsStaffActive")}
+    </Badge>
   );
 }
 export function useStaffFormat() {

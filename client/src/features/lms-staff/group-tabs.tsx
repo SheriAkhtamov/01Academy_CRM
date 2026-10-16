@@ -1,4 +1,12 @@
 import { useState, type ReactNode } from "react";
+import {
+  Award,
+  CheckSquare,
+  ClipboardList,
+  FileText,
+  ListChecks,
+  Users,
+} from "lucide-react";
 import type { LmsStaffRunDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -71,27 +79,50 @@ export function LearningGroupTabs({
     />
   );
   return (
-    <>
+    <div className="space-y-4">
       {run.runId && run.setupStatus === "needs_program_review" && (
         <StaffGroupSetup run={run} onProgram={() => setProgramOpen(true)} />
       )}
-      <Tabs value={tab} onValueChange={(value) => setTab(value as GroupTab)}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 min-[420px]:grid-cols-4">
-          <TabsTrigger value="students" className="min-h-11 px-1">
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as GroupTab)}
+        className="space-y-4"
+      >
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1.5 rounded-xl border border-border/60 bg-muted/40 p-1.5 min-[420px]:grid-cols-4">
+          <TabsTrigger
+            value="students"
+            className="min-h-10 gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-medium"
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t("lmsStaffStudents")}
           </TabsTrigger>
           {allowed(run, "content.manage") && (
-            <TabsTrigger value="materials" className="min-h-11 px-1">
+            <TabsTrigger
+              value="materials"
+              className="min-h-10 gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-medium"
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {t("lmsStaffMaterials")}
             </TabsTrigger>
           )}
           {canAssignments && (
-            <TabsTrigger value="assignments" className="min-h-11 px-1">
+            <TabsTrigger
+              value="assignments"
+              className="min-h-10 gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-medium"
+            >
+              <ClipboardList
+                className="h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
               {t("lmsStaffAssignments")}
             </TabsTrigger>
           )}
           {allowed(run, "results.manage") && (
-            <TabsTrigger value="results" className="min-h-11 px-1">
+            <TabsTrigger
+              value="results"
+              className="min-h-10 gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-medium"
+            >
+              <Award className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {t("lmsStaffResults")}
             </TabsTrigger>
           )}
@@ -125,7 +156,7 @@ export function LearningGroupTabs({
             />
           </StaffDialog>
         )}
-    </>
+    </div>
   );
 }
 
@@ -158,18 +189,23 @@ function GroupLearningContent({
   if (tab === "materials")
     return <StaffMaterials runId={runId} enrollments={enrollments.data} />;
   const features = [
-    ["assignments", "lmsStaffAssignments", "assignments.manage"],
-    ["quizzes", "lmsStaffQuizzes", "quizzes.manage"],
-    ["reviews", "lmsStaffReviews", "reviews.manage"],
+    ["assignments", "lmsStaffAssignments", "assignments.manage", ClipboardList],
+    ["quizzes", "lmsStaffQuizzes", "quizzes.manage", ListChecks],
+    ["reviews", "lmsStaffReviews", "reviews.manage", CheckSquare],
   ] as const;
   const available = features.filter(([, , permission]) =>
     allowed(run, permission),
   );
   return (
-    <Tabs defaultValue={available[0]?.[0]}>
-      <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-        {available.map(([value, key]) => (
-          <TabsTrigger value={value} key={value} className="min-h-11">
+    <Tabs defaultValue={available[0]?.[0]} className="space-y-4">
+      <TabsList className="flex h-auto flex-wrap justify-start gap-1.5 rounded-xl border border-border/60 bg-muted/30 p-1">
+        {available.map(([value, key, , Icon]) => (
+          <TabsTrigger
+            value={value}
+            key={value}
+            className="min-h-9 gap-1.5 rounded-lg px-3 text-xs font-medium"
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t(key)}
           </TabsTrigger>
         ))}

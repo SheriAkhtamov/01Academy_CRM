@@ -1,12 +1,22 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
+  Award,
+  ListChecks,
+  Plus,
+  Repeat,
+  Search,
+  Target,
+  Users,
+} from "lucide-react";
+import {
   lmsQuizSchema,
   type LmsQuizInput,
   type LmsStaffEnrollmentDto,
   type LmsStaffQuizRecipientDto,
 } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +45,7 @@ export function StaffQuizzes({
   const { t } = useTranslation();
   const [create, setCreate] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const query = useStaffQuery("quizzes", runId, (signal) =>
     lmsStaffApi.quizzes(runId, signal),
   );
@@ -48,33 +59,85 @@ export function StaffQuizzes({
         }}
       />
     );
+
+  const filteredQuizzes = query.data.filter((item) => {
+    if (!search.trim()) return true;
+    return item.title.toLowerCase().includes(search.trim().toLowerCase());
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-between gap-3">
-        <h2 className="text-xl font-semibold">{t("lmsStaffQuizzes")}</h2>
-        <Button onClick={() => setCreate(true)}>{t("lmsStaffPublish")}</Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-xl font-semibold">{t("lmsStaffQuizzes")}</h2>
+          <Badge variant="secondary" className="tabular-nums">
+            {query.data.length}
+          </Badge>
+        </div>
+        <Button onClick={() => setCreate(true)} className="gap-1.5">
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {t("lmsStaffPublish")}
+        </Button>
       </div>
-      {!query.data.length && <StaffEmpty />}
+
+      {query.data.length > 0 && (
+        <div className="relative max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("lmsStaffSearchPlaceholder")}
+            className="h-9 bg-background pl-9 text-sm"
+          />
+        </div>
+      )}
+
+      {!filteredQuizzes.length && <StaffEmpty />}
       <div className="grid gap-4 md:grid-cols-2">
-        {query.data.map((item) => (
-          <Card key={item.id}>
-            <CardContent className="space-y-3 p-4">
-              <h3 className="break-words font-semibold">{item.title}</h3>
-              <p className="text-sm">
-                {t("lmsStaffPassPercent")}: {item.passPercent}%
-              </p>
-              <Button variant="outline" onClick={() => setSelected(item.id)}>
-                {t("lmsStaffQuizResults")}
-              </Button>
-              <p className="text-sm">
-                {t("lmsStaffAttemptLimit")}: {item.maxAttempts}
-              </p>
-              <p className="text-sm">
-                {t("lmsStaffRecipientsCount").replace(
-                  "{count}",
-                  String(item.recipientCount),
-                )}
-              </p>
+        {filteredQuizzes.map((item) => (
+          <Card
+            key={item.id}
+            className="flex flex-col justify-between border-border/70 transition-all hover:border-primary/30 hover:shadow-sm"
+          >
+            <CardContent className="flex h-full flex-col justify-between gap-4 p-4 sm:p-5">
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <ListChecks className="h-4 w-4" />
+                  </div>
+                  <h3 className="break-words font-semibold leading-snug">
+                    {item.title}
+                  </h3>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-700 dark:text-emerald-300">
+                    <Target className="h-3.5 w-3.5" />
+                    {t("lmsStaffPassPercent")}: {item.passPercent}%
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2.5 py-1 font-medium text-muted-foreground">
+                    <Repeat className="h-3.5 w-3.5" />
+                    {t("lmsStaffAttemptLimit")}: {item.maxAttempts}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2.5 py-1 font-medium text-muted-foreground">
+                    <Users className="h-3.5 w-3.5" />
+                    {t("lmsStaffRecipientsCount").replace(
+                      "{count}",
+                      String(item.recipientCount),
+                    )}
+                  </span>
+                </div>
+              </div>
+              <div className="border-t border-border/50 pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelected(item.id)}
+                  className="gap-1.5"
+                >
+                  <Award className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t("lmsStaffQuizResults")}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -134,25 +197,28 @@ function QuizResults({ id, onClose }: { id: number; onClose: () => void }) {
           }}
         />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {query.data?.recipients.map((item) => (
             <div
               key={item.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/15 p-4"
             >
-              <div className="min-w-0 space-y-1">
-                <p className="break-words font-medium">{item.studentName}</p>
-                <p className="text-sm">
-                  {t("lmsStaffAttemptLimit")}: {item.attemptsUsed}/
-                  {item.maxAttempts}
-                </p>
-                <p className="text-sm">
-                  {t("lmsStaffScore")}:{" "}
-                  {item.bestPercent === null ? "—" : `${item.bestPercent}%`}
-                </p>
+              <div className="min-w-0 space-y-1.5">
+                <p className="break-words font-semibold">{item.studentName}</p>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span className="rounded-md border bg-background px-2 py-0.5 font-medium">
+                    {t("lmsStaffAttemptLimit")}: {item.attemptsUsed}/
+                    {item.maxAttempts}
+                  </span>
+                  <span className="rounded-md border bg-background px-2 py-0.5 font-semibold text-foreground">
+                    {t("lmsStaffScore")}:{" "}
+                    {item.bestPercent === null ? "—" : `${item.bestPercent}%`}
+                  </span>
+                </div>
               </div>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => {
                   setRecipient(item);
                   setReason("");

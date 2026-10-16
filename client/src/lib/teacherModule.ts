@@ -1,5 +1,5 @@
 import type { TranslationKey } from '@/lib/i18n';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { ACADEMY_TIME_ZONE, formatAcademyDate } from '@/lib/localeFormat';
 
 /**
  * The teacher module used to describe the same status four different ways —
@@ -292,3 +292,23 @@ export const academyDayKey = (value: string | number | Date): string => {
 export const teacherPercent = (value: number, total: number) => (
   total > 0 ? Math.round((value / total) * 100) : 0
 );
+
+export const formatLessonEndTime = (
+  scheduledAt: string | number | Date,
+  durationMinutes: number,
+  language: string,
+): string => {
+  const start = new Date(scheduledAt);
+  if (Number.isNaN(start.getTime())) return '';
+  const end = new Date(start.getTime() + (Number(durationMinutes) || 0) * 60_000);
+  return formatAcademyDate(end, language, { hour: '2-digit', minute: '2-digit' });
+};
+
+export const isLessonStarted = (
+  scheduledAt: string | number | Date,
+  now: Date = new Date(),
+): boolean => {
+  const start = new Date(scheduledAt);
+  if (Number.isNaN(start.getTime())) return false;
+  return start.getTime() <= now.getTime();
+};

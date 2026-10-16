@@ -1,14 +1,29 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
+  Archive,
+  BookOpen,
+  Clock,
+  Eye,
+  FileText,
+  Link2,
+  Paperclip,
+  Pencil,
+  Plus,
+  Search,
+  Video,
+} from "lucide-react";
+import {
   lmsMaterialSchema,
   type LmsStaffMaterialDto,
   type LmsStaffEnrollmentDto,
 } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { LearningText } from "../learning-content/text";
 import { lmsStaffApi } from "./api";
 import { useStaffQuery, useStaffInvalidate } from "./queries";
@@ -42,6 +57,10 @@ export function StaffMaterials({
   const [edit, setEdit] = useState<LmsStaffMaterialDto | true | null>(null);
   const [preview, setPreview] = useState<LmsStaffMaterialDto | null>(null);
   const [archive, setArchive] = useState<LmsStaffMaterialDto | null>(null);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<
+    "all" | "lesson" | "practice" | "repeat"
+  >("all");
   const invalidate = useStaffInvalidate();
   const archiveAction = useMutation({
     mutationFn: () => lmsStaffApi.archiveMaterial(archive!.id),
@@ -60,37 +79,177 @@ export function StaffMaterials({
         }}
       />
     );
+
+  const categoryLabels = {
+    lesson: t("portalForLesson"),
+    practice: t("portalPractice"),
+    repeat: t("portalRevision"),
+  } as const;
+
+  const filteredMaterials = query.data.filter((material) => {
+    if (categoryFilter !== "all" && material.category !== categoryFilter) {
+      return false;
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      return (
+        material.title.toLowerCase().includes(q) ||
+        material.body.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-between gap-3">
-        <h2 className="text-xl font-semibold">{t("lmsStaffMaterials")}</h2>
-        <Button onClick={() => setEdit(true)}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-xl font-semibold">{t("lmsStaffMaterials")}</h2>
+          <Badge variant="secondary" className="tabular-nums">
+            {query.data.length}
+          </Badge>
+        </div>
+        <Button onClick={() => setEdit(true)} className="gap-1.5">
+          <Plus className="h-4 w-4" aria-hidden="true" />
           {t("lmsStaffAddMaterial")}
         </Button>
       </div>
-      {query.data.length === 0 && <StaffEmpty />}
-      <div className="grid gap-4 md:grid-cols-2">
-        {query.data.map((material) => (
-          <Card key={material.id}>
-            <CardContent className="space-y-3 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <h3 className="min-w-0 break-words font-semibold">
-                  {material.title}
-                </h3>
-                <StaffStatus state={material.state} />
+
+      {query.data.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("lmsStaffSearchPlaceholder")}
+              className="h-9 bg-background pl-9 text-sm"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ["all", t("lmsStaffAllCategories")],
+                ["lesson", t("portalForLesson")],
+                ["practice", t("portalPractice")],
+                ["repeat", t("portalRevision")],
+              ] as const
+            ).map(([cat, label]) => (
+              <div
+                key={cat}
+                onClick={() => setCategoryFilter(cat)}
+                className={cn(
+                  "cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                  categoryFilter === cat
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
               </div>
-              <p className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
-                {material.body}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setPreview(material)}>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {filteredMaterials.length === 0 && <StaffEmpty />}
+      <div className="grid gap-4 md:grid-cols-2">
+        {filteredMaterials.map((material) => (
+          <Card
+            key={material.id}
+            className="flex flex-col justify-between border-border/70 transition-all hover:border-primary/30 hover:shadow-sm"
+          >
+            <CardContent className="flex h-full flex-col justify-between gap-4 p-4 sm:p-5">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <h3 className="min-w-0 break-words font-semibold leading-snug">
+                        {material.title}
+                      </h3>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] font-normal"
+                        >
+                          <BookOpen className="mr-1 h-3 w-3 text-muted-foreground" />
+                          {categoryLabels[material.category]}
+                        </Badge>
+                        {material.durationMinutes && (
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] font-normal"
+                          >
+                            <Clock className="mr-1 h-3 w-3 text-muted-foreground" />
+                            {material.durationMinutes} {t("minutesShort")}
+                          </Badge>
+                        )}
+                        {material.videoUrl && (
+                          <Badge
+                            variant="outline"
+                            className="border-sky-500/30 bg-sky-500/10 text-[11px] font-normal text-sky-700 dark:text-sky-300"
+                          >
+                            <Video className="mr-1 h-3 w-3" />
+                            {t("lmsStaffVideoUrl")}
+                          </Badge>
+                        )}
+                        {material.fileIds.length > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] font-normal"
+                          >
+                            <Paperclip className="mr-1 h-3 w-3 text-muted-foreground" />
+                            {material.fileIds.length}
+                          </Badge>
+                        )}
+                        {material.links.length > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] font-normal"
+                          >
+                            <Link2 className="mr-1 h-3 w-3 text-muted-foreground" />
+                            {material.links.length}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <StaffStatus state={material.state} />
+                </div>
+                <p className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                  {material.body}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPreview(material)}
+                  className="gap-1.5"
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
                   {t("lmsStaffPreview")}
                 </Button>
-                <Button variant="outline" onClick={() => setEdit(material)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEdit(material)}
+                  className="gap-1.5"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                   {t("lmsStaffEdit")}
                 </Button>
                 {material.state === "published" && (
-                  <Button variant="ghost" onClick={() => setArchive(material)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setArchive(material)}
+                    className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive"
+                  >
+                    <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                     {t("lmsStaffArchiveMaterial")}
                   </Button>
                 )}

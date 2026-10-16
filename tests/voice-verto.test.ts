@@ -230,8 +230,12 @@ describe('reminder confirmation dialogue', () => {
     const harness = await fakeVerto(async (socket, invite) => {
       received = await answeringPeer(socket, invite);
       event(socket, 'verto.media', { callID: received.callID, sdp: received.sdp }, 'early');
-      await vi.waitFor(() => expect(robot.connectionState).toBe('connected'), { timeout: 5_000 });
-      expect(received.peer.connectionState).toBe('connected');
+      // Each peer completes its handshake independently, so wait for both
+      // before sending the pre-answer media used by this scenario.
+      await vi.waitFor(() => {
+        expect(robot.connectionState).toBe('connected');
+        expect(received.peer.connectionState).toBe('connected');
+      }, { timeout: 5_000 });
       event(socket, 'verto.info', { callID: received.callID, dtmf: '2' }, 'before-answer');
       const samples = digitOneSamples();
       const transport = received.peer.dtlsTransports[0];

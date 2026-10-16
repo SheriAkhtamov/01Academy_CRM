@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import {
   learningModuleBase,
   learningModuleForSubject,
+  learningSubjectHref,
 } from "@shared/platform-routes";
 import { setActivePlatformRealm } from "@/lib/platformSession";
 import { useMutation } from "@tanstack/react-query";
@@ -175,6 +176,13 @@ function PortalActivationForm({
       setUnsaved(false);
       acceptSession(activated);
       setActivePlatformRealm("portal");
+      const target = activated.activatedLink;
+      if (target) {
+        allowNavigation(() =>
+          navigate(learningSubjectHref("/learn", target)),
+        );
+        return;
+      }
       const own = activated.subjects.find((item) => item.kind === "self");
       const module = learningModuleForSubject(own ?? activated.subjects[0]);
       allowNavigation(() => navigate(learningModuleBase(module)));

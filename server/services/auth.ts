@@ -29,7 +29,7 @@ class AuthService {
     return bcrypt.compare(password, hashedPassword);
   }
 
-  async authenticateUser(loginOrEmailId: string, password: string): Promise<User | null> {
+  private async credentialOwner(loginOrEmailId: string, password: string): Promise<User | null> {
     const trimmedLogin = loginOrEmailId.trim();
     const normalizedLogin = trimmedLogin.includes('@')
       ? trimmedLogin.toLowerCase()
@@ -39,18 +39,28 @@ class AuthService {
       ? await storage.getUserByLoginOrEmail(normalizedLogin)
       : null;
 
-    const passwordForComparison = isPasswordWithinBcryptLimit(password)
+    const passwordWithinLimit = isPasswordWithinBcryptLimit(password);
+    const passwordForComparison = passwordWithinLimit
       ? password
       : 'invalid-password';
     const isValidPassword = await bcrypt.compare(
       passwordForComparison,
       user?.password ?? DUMMY_PASSWORD_HASH,
     );
-    if (!user || !user.isActive || user.isArchived || !isValidPassword) {
+    if (!user || !passwordWithinLimit || !isValidPassword) {
       return null;
     }
 
     return user;
+  }
+
+  async verifyLoginCredentials(identifier: string, password: string): Promise<boolean> {
+    return Boolean(await this.credentialOwner(identifier, password));
+  }
+
+  async authenticateUser(loginOrEmailId: string, password: string): Promise<User | null> {
+    const user = await this.credentialOwner(loginOrEmailId, password);
+    return user?.isActive && !user.isArchived ? user : null;
   }
 
   async createUser(userData: InsertUser): Promise<User> {

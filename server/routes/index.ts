@@ -16,13 +16,19 @@ import type { createVoiceRemindersRuntime } from '../infrastructure/voice-remind
 import { requireAuth } from '../middleware/auth.middleware';
 import userRoutes from './user.routes';
 import publicAttendanceRoutes from './public-attendance.routes';
+import { createPlatformAuthRouter, type PlatformCredentialVerifier } from './platform-auth.routes';
+import { authService } from '../services/auth';
 
 /**
  * API composition belongs here; transport concerns such as sessions,
  * WebSockets, static assets and process lifecycle stay in the app bootstrap.
  */
-export const registerApiRoutes = (app: Express, voiceReminders?: ReturnType<typeof createVoiceRemindersRuntime>): void => {
+export const registerApiRoutes = (app: Express, voiceReminders?: ReturnType<typeof createVoiceRemindersRuntime>, platformAuth: { verifyPortalLogin?: PlatformCredentialVerifier } = {}): void => {
   app.use('/api/public/attendance', publicAttendanceRoutes);
+  app.use('/api/auth', createPlatformAuthRouter({
+    verifyStaff: (identifier, password) => authService.verifyLoginCredentials(identifier, password),
+    verifyPortal: platformAuth.verifyPortalLogin,
+  }));
   app.use('/api/auth', authRoutes);
   app.use('/api/client-errors', clientErrorsRoutes);
   app.use('/api/users', userRoutes);

@@ -114,7 +114,10 @@ export const createPortalIdentityRouter = ({
         req.requestId,
       );
       req.portalSessionCookies?.set(session);
-      res.json(await service.getSessionDto(session));
+      res.json({
+        ...await service.getSessionDto(session),
+        activatedLink: session.activatedLink,
+      });
     }),
   );
   router.get(

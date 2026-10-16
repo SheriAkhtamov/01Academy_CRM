@@ -36,6 +36,9 @@ export const createHttpApp = ({ beforeBodyParser }: { beforeBodyParser?: express
       return next();
     }
 
+    // The common login preflight has its own failed-attempt IP/account limits.
+    if (req.method === 'POST' && req.path === '/api/auth/login-realm') return next();
+
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
       return globalMutationLimiter(req, res, next);
     }

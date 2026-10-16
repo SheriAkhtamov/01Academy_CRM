@@ -1,7 +1,13 @@
 import { expect, it, vi } from "vitest";
 import type { Pool } from "pg";
-import { isLearningNavigationHref, learningSubjectHref, toLearningModuleHref } from "../shared/platform-routes";
+import { isLearningNavigationHref, learningSubjectHref, platformLoginHref, toLearningModuleHref } from "../shared/platform-routes";
 import { PostgresPortalResourceRepository } from "../server/modules/portal-resources/infrastructure/postgres-repository";
+
+it.each(["student", "parent"] as const)("generates the common platform login with its issued %s module", (module) => {
+  const url = new URL(platformLoginHref(module), "https://academy.example");
+  expect(url.pathname).toBe("/login");
+  expect(url.searchParams.get("next")).toBe(`/${module}-module`);
+});
 
 it.each([
   ["/learn/assignments/7?linkId=9#draft", "parent", "/parent-module/assignments/7?linkId=9#draft"],

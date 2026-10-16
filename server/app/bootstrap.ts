@@ -93,7 +93,11 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
       onlinePbxClient, () => crmCapacity.snapshot(),
       (connection, excludeReservationId) => crmCapacity.readLocked(connection, excludeReservationId),
     ), pool, { startupRecoveryMs: 45_000 });
-    registerApiRoutes(app, voiceReminders);
+    registerApiRoutes(app, voiceReminders, {
+      verifyPortalLogin: appConfig.portal?.enabled
+        ? (identifier, password) => learningRuntime.identity.verifyLoginCredentials(identifier, password)
+        : undefined,
+    });
 
     server = createServer(app);
     // 10 MB task uploads need time on mobile connections. Header timeout,

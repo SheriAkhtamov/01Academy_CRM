@@ -1,6 +1,14 @@
 import type { AuthSession, SavedAccountEntry } from "@shared/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { setActivePlatformRealm } from '@/lib/platformSession';
+import { platformLoginResolutionSchema, type PlatformLoginRealm } from '@shared/contracts/platform-auth';
+import { i18n } from '@/lib/i18n';
+
+export async function resolveLoginRealm(identifier: string, password: string, preferredRealm: PlatformLoginRealm): Promise<PlatformLoginRealm> {
+  const result = platformLoginResolutionSchema.safeParse(await apiRequest('POST', '/api/auth/login-realm', { identifier, password, preferredRealm }));
+  if (!result.success) throw new Error(i18n.t('loginFailedMessage'));
+  return result.data.realm;
+}
 
 export async function fetchAuthSession(): Promise<AuthSession> {
   const response = await fetch("/api/auth/session", {

@@ -196,6 +196,10 @@ describe("portal identity security and explicit relationships", () => {
         (subject) => subject.studentId,
       ),
     ).toEqual([2, 3]);
+    expect(accepted.activatedLink).toEqual({
+      linkId: result.linkId,
+      kind: "representative",
+    });
     await expect(
       service.resolveActor(accepted.id, result.linkId, "learning.read"),
     ).rejects.toMatchObject({ status: 403 });
@@ -670,5 +674,28 @@ describe("portal HTTP isolation and CSRF", () => {
     expect(response.status).toBe(201);
     expect(response.body.activationUrl).toContain("#token=");
     expect(new URL(response.body.activationUrl).pathname).toBe('/activate');
+  });
+  it("returns the exact accepted relationship for a mixed account using an existing invitation URL", async () => {
+    const { session } = await invite("adult.mixed", 1);
+    const invitation = await service.createInvitation(staff, 2, {
+      ...command("unused", "representative", ["learning.read"]),
+      account: undefined,
+      accountId: session.accountId!,
+    });
+    const agent = request.agent(app());
+    const anonymous = await agent.get("/api/portal/auth/session");
+    const login = await agent.post("/api/portal/auth/login")
+      .set("X-Portal-CSRF", anonymous.body.csrfToken)
+      .send({ identifier: "adult.mixed", password });
+    expect(login.status).toBe(200);
+    const accepted = await agent.post("/api/portal/auth/invitations/accept")
+      .set("X-Portal-CSRF", login.body.csrfToken)
+      .send({ token: tokenFrom(invitation.activationUrl) });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.activatedLink).toEqual({
+      linkId: invitation.linkId,
+      kind: "representative",
+    });
+    expect(accepted.body.subjects.map((subject: { kind: string }) => subject.kind)).toEqual(["self", "representative"]);
   });
 });

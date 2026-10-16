@@ -72,6 +72,13 @@ export const portalSessionSchema = z.object({
   csrfToken: z.string().min(1),
 });
 export type PortalSessionDto = z.infer<typeof portalSessionSchema>;
+export const portalActivationResultSchema = portalSessionSchema.extend({
+  activatedLink: z.object({
+    linkId: z.number().int().positive(),
+    kind: z.enum(["self", "representative"]),
+  }).optional(),
+});
+export type PortalActivationResultDto = z.infer<typeof portalActivationResultSchema>;
 export const portalLoginCommandSchema = z
   .object({
     identifier: z.string().trim().min(1).max(254),

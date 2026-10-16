@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { platformLoginHref, type LearningModule } from '@shared/platform-routes';
 import { academyPortalCredentialChangeSchema, type AcademyPortalAccount, type AcademyPortalCredentialChange, type AcademyPortalCredentialResult } from '@shared/contracts/academy-portal-access';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
@@ -10,8 +11,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { academyPortalApi, academyPortalError } from '../academy-api';
 
-export function AcademyCredentialsDialog({ leadId, account, initial, onClose, onChanged }: {
-  leadId: number; account: AcademyPortalAccount; initial?: AcademyPortalCredentialResult;
+export function AcademyCredentialsDialog({ leadId, account, initial, module, onClose, onChanged }: {
+  leadId: number; account: AcademyPortalAccount; initial?: AcademyPortalCredentialResult; module: LearningModule;
   onClose: () => void; onChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -45,7 +46,7 @@ export function AcademyCredentialsDialog({ leadId, account, initial, onClose, on
   const copy = async () => {
     if (!result?.password) return;
     try {
-      await navigator.clipboard.writeText(`${new URL('/login', window.location.origin).href}\n${t('portalIdentifier')}: ${result.account.login}\n${t('portalPassword')}: ${result.password}`);
+      await navigator.clipboard.writeText(`${new URL(platformLoginHref(module), window.location.origin).href}\n${t('portalIdentifier')}: ${result.account.login}\n${t('portalPassword')}: ${result.password}`);
       setNotice(t('academyAccessCredentialsCopied'));
     } catch { setNotice(t('copyFailed')); }
   };
@@ -53,11 +54,11 @@ export function AcademyCredentialsDialog({ leadId, account, initial, onClose, on
     <Dialog open onOpenChange={guard.handleOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
       <DialogHeader><DialogTitle>{t('academyAccessAccountTitle').replace('{name}', current.fullName)}</DialogTitle><DialogDescription>{current.fullName}</DialogDescription></DialogHeader>
       <form className="space-y-5" onSubmit={event => { event.preventDefault(); submit(); }}>
-        <div className="space-y-2"><Label htmlFor="academy-credential-login">{t('portalIdentifier')}</Label><Input id="academy-credential-login" autoComplete="off" value={generateLogin ? '' : login} readOnly={!editing} disabled={pending || generateLogin} placeholder={generateLogin ? t('academyAccessGenerateLogin') : undefined} onChange={event => setLogin(event.target.value)} />
+        <div className="space-y-2"><Label htmlFor="academy-credential-login">{t('portalIdentifier')}</Label><Input id="academy-credential-login" autoComplete="off" value={generateLogin ? '' : login} readOnly={!editing} disabled={pending || generateLogin} onChange={event => setLogin(event.target.value)} />
           {editing && <Button type="button" variant={generateLogin ? 'secondary' : 'outline'} disabled={pending} onClick={() => setGenerateLogin(value => !value)}>{t('academyAccessGenerateLogin')}</Button>}
         </div>
         <div className="space-y-2"><Label htmlFor="academy-credential-password">{t(editing ? 'portalNewPassword' : 'portalPassword')}</Label>
-          {(editing || result?.password) && <Input id="academy-credential-password" autoComplete="new-password" type={editing ? 'password' : 'text'} readOnly={!editing} disabled={pending || generatePassword} value={editing ? password : result?.password ?? ''} placeholder={generatePassword ? t('academyAccessGeneratePassword') : undefined} onChange={event => setPassword(event.target.value)} />}
+          {(editing || result?.password) && <Input id="academy-credential-password" autoComplete="new-password" type={editing ? 'password' : 'text'} readOnly={!editing} disabled={pending || generatePassword} value={editing ? password : result?.password ?? ''} onChange={event => setPassword(event.target.value)} />}
           {editing ? <Button type="button" variant={generatePassword ? 'secondary' : 'outline'} disabled={pending} onClick={() => setGeneratePassword(value => !value)}>{t('academyAccessGeneratePassword')}</Button> : result && !result.password && <Button type="button" variant="outline" onClick={() => { setEditing(true); setGeneratePassword(true); }}>{t('academyAccessGeneratePassword')}</Button>}
         </div>
         {show.isPending && <p role="status">{t('loading')}</p>}

@@ -66,4 +66,10 @@ describe("LMS notification time and default-off policies", () => {
       }
     }
   });
+  it.each([
+    ["ru", "Есть обновление на платформе."],
+    ["en", "There is an update on the platform."],
+  ] as const)("keeps an unknown notification in the shared platform wording for %s", (locale, expected) => {
+    expect(learningNotificationCopy("internal_unknown_event", {}, locale)).toBe(expected);
+  });
 });

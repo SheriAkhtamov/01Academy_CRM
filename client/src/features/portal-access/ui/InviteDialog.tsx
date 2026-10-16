@@ -328,9 +328,6 @@ export function InviteDialog({
                     value={result.activationUrl}
                     autoComplete="off"
                   />
-                  <p className="text-sm text-muted-foreground">
-                    {t("lmsAccessLinkOnce")}
-                  </p>
                   <Button
                     type="button"
                     variant="outline"

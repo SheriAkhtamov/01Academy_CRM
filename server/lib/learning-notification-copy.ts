@@ -128,6 +128,6 @@ const copy = {
 } as const;
 export function learningNotificationCopy(code: string, params: Record<string, string | number>, locale: 'ru' | 'en' = 'ru') {
   const entry = copy[code as keyof typeof copy];
-  const text = entry?.[locale] ?? (locale === 'ru' ? 'Есть обновление в личном кабинете.' : 'There is an update in your learning account.');
+  const text = entry?.[locale] ?? (locale === 'ru' ? 'Есть обновление на платформе.' : 'There is an update on the platform.');
   return Object.entries(params).reduce((result, [key,value]) => result.split('{'+key+'}').join(String(value)), String(text));
 }

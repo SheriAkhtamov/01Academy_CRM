@@ -21,6 +21,7 @@ import { DURATION, EASE, SPRING, TRANSITION } from '@/lib/motion';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { setActivePlatformRealm } from '@/lib/platformSession';
 import { isLearningModulePath, isLegacyLearningPath, isPlatformAccountPath, learningModuleBase, learningModuleForSubject, learningModuleFromPath, toLearningModuleHref } from '@shared/platform-routes';
+import { resolveLoginRealm } from '@/lib/session';
 
 export default function Login() {
   const [error, setError] = useState('');
@@ -72,18 +73,22 @@ export default function Login() {
     try {
       setError('');
       devLog('[LOGIN] Attempting login for:', data.login);
-
-      try {
-        await login(data.login, data.password);
-        if (!mounted.current) return;
-      } catch (staffError) {
-        if (!mounted.current) return;
-        if ((staffError as { status?: number }).status !== 401) throw staffError;
+      const learningLogin = async () => {
         const portalSession = await portalIdentityApi.session();
         if (!mounted.current) return;
         setPortalCsrf(portalSession.csrfToken);
         const learningSession = await portalIdentityApi.login(data.login, data.password);
         if (!mounted.current) return;
+        return learningSession;
+      };
+      const learningDestination = isLearningModulePath(returnTo) || isLegacyLearningPath(returnTo) || isPlatformAccountPath(returnTo);
+      const realm = await resolveLoginRealm(data.login, data.password, learningDestination ? 'portal' : 'staff');
+      if (!mounted.current) return;
+      let learningSession;
+      if (realm === 'portal') learningSession = await learningLogin();
+      else await login(data.login, data.password);
+      if (!mounted.current) return;
+      if (learningSession) {
         const requestedLink = Number(new URL(returnTo, window.location.origin).searchParams.get('linkId'));
         const requestedSubject = learningSession.subjects.find((subject) => subject.linkId === requestedLink);
         const requestedModule = learningModuleFromPath(returnTo);

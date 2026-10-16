@@ -11,7 +11,7 @@ const translations = {
     portalDirectorySelfAccount: { en: 'Student account', ru: 'Аккаунт ученика' },
     portalDirectoryRepresentatives: { en: 'Representatives', ru: 'Представители' },
     portalDirectoryInvitations: { en: 'Invitations', ru: 'Приглашения' },
-    portalDirectoryLastSeen: { en: 'Last portal visit', ru: 'Последнее посещение кабинета' },
+    portalDirectoryLastSeen: { en: 'Last platform visit', ru: 'Последний вход на платформу' },
     portalDirectoryUnverified: { en: 'Needs verification', ru: 'Требует проверки' },
     portalDirectoryBlocked: { en: 'Blocked', ru: 'Заблокирован' },
     lmsAccessInvitationCreated: { en: 'Invitation created', ru: 'Приглашение создано' },

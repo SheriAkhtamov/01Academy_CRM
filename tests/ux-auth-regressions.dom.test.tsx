@@ -9,9 +9,11 @@ import { AppRouter } from '../client/src/app/AppRouter';
 import { apiRequest, queryClient } from '../client/src/lib/queryClient';
 import { i18n } from '../client/src/lib/i18n';
 import { getActivePlatformRealm, setActivePlatformRealm } from '../client/src/lib/platformSession';
+import { platformLoginHref } from '../shared/platform-routes';
 
 vi.mock('../client/src/components/Layout', () => ({ default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>, AppSpinner: () => <p>Loading</p> }));
 vi.mock('../client/src/pages/finance-center', () => ({ default: () => <p>Finance overview</p> }));
+vi.mock('../client/src/pages/sales-dashboard', () => ({ default: () => <p>Sales overview</p> }));
 vi.mock('../client/src/pages/tasks', () => ({ default: function TasksFixture() {
   const { logout } = useAuth();
   return <><p>Private workspace</p><button onClick={() => void logout()}>Logout</button></>;
@@ -27,6 +29,7 @@ beforeEach(() => {
   history.replaceState(null, '', '/tasks?task=42#comments');
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
     if (url === '/api/auth/session') return sessionFail ? response({}, 500) : response(current);
+    if (url === '/api/auth/login-realm') return loginFail ? response({ error: 'invalidCredentialsMessage' }, 401) : response({ realm: 'staff' });
     if (url === '/api/auth/login') {
       if (loginFail) return response({ error: 'Invalid credentials' }, 401);
       current = session; return response(current);
@@ -45,6 +48,7 @@ describe('mounted authentication flow', () => {
     vi.mocked(globalThis.fetch).mockImplementation(async (url, options) => {
       calls.push({ url: String(url), options });
       if (url === '/api/auth/session') return response({ kind: 'anonymous' });
+      if (url === '/api/auth/login-realm') return response({ realm: 'portal' });
       if (url === '/api/auth/login') return response({ error: 'Invalid credentials' }, 401);
       if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-portal-csrf' });
       if (url === '/api/portal/auth/login') return response({ account: { id: 9, login: 'student-9', fullName: 'Learner', email: null, phone: null, status: 'active', locale: 'en' }, subjects: [], csrfToken: 'authenticated-portal-csrf' });
@@ -72,6 +76,7 @@ describe('mounted authentication flow', () => {
     history.replaceState(null, '', initial);
     vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
       if (url === '/api/auth/session') return response({ kind: 'anonymous' });
+      if (url === '/api/auth/login-realm') return response({ realm: 'portal' });
       if (url === '/api/auth/login') return response({ error: 'Invalid credentials' }, 401);
       if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
       if (url === '/api/portal/auth/login') {
@@ -93,6 +98,7 @@ describe('mounted authentication flow', () => {
     let pending = false;
     vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
       if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return response({ realm: domain });
       if (url === '/api/auth/login') {
         if (domain === 'portal') return response({ error: 'Invalid credentials' }, 401);
         pending = true;
@@ -123,6 +129,115 @@ describe('mounted authentication flow', () => {
     await waitFor(() => expect(queryClient.isMutating()).toBe(0));
     expect(getActivePlatformRealm()).toBe(replacementRealm);
     expect(location.pathname).toBe(replacementPath);
+  });
+  it('does not start either realm login after a late credential proof from an abandoned form', async () => {
+    let complete!: (response: Response) => void;
+    const calls: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      calls.push(String(url));
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return new Promise<Response>((resolve) => { complete = resolve; });
+      return response({}, 404);
+    });
+    const view = setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'original-account' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'OriginalPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(complete).toBeDefined());
+    view.unmount();
+    history.replaceState(null, '', '/parent-module'); setActivePlatformRealm('portal');
+    await act(async () => complete(response({ realm: 'staff' })));
+    expect(calls).not.toContain('/api/auth/login');
+    expect(calls).not.toContain('/api/portal/auth/session');
+    expect(getActivePlatformRealm()).toBe('portal'); expect(location.pathname).toBe('/parent-module');
+  });
+  it.each(['student', 'parent'] as const)('honors the issued %s module when staff and learning credentials are identical', async (module) => {
+    history.replaceState(null, '', platformLoginHref(module));
+    const calls: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      calls.push(String(url));
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return response({ realm: 'portal' });
+      if (url === '/api/auth/login') { current = session; return response({ user: session.user }); }
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
+      if (url === '/api/portal/auth/login') return response({
+        account: { id: 9, login: 'shared-login', fullName: 'Mixed account', email: null, phone: null, status: 'active', locale: 'en' },
+        subjects: [
+          { linkId: 13, studentId: 9, studentName: 'Self', kind: 'self', relationship: null, permissions: ['learning.read'], status: 'active', studentClassification: 'adult' },
+          { linkId: 14, studentId: 8, studentName: 'Child', kind: 'representative', relationship: 'parent', permissions: ['learning.read'], status: 'active', studentClassification: 'minor' },
+        ],
+        csrfToken: 'authenticated-token',
+      });
+      return response({}, 404);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'shared-login' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'SharedPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(location.pathname).toBe(`/${module}-module`));
+    expect(getActivePlatformRealm()).toBe('portal');
+    expect(calls).toContain('/api/portal/auth/login');
+    expect(calls).not.toContain('/api/auth/login');
+  });
+  it('preserves employee-first authentication at the common login when both realms accept the credentials', async () => {
+    history.replaceState(null, '', '/login');
+    const calls: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      calls.push(String(url));
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return response({ realm: 'staff' });
+      if (url === '/api/auth/login') { current = session; return response({ user: session.user }); }
+      return response({}, 200);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'shared-login' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'SharedPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await screen.findByText('Sales overview');
+    expect(getActivePlatformRealm()).toBe('staff');
+    expect(calls).not.toContain('/api/portal/auth/session');
+  });
+  it('accepts verified employee credentials on a student deep link without spending learning login attempts', async () => {
+    history.replaceState(null, '', '/login?next=%2Fstudent-module%2Fcourses%2F8');
+    const calls: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      calls.push(String(url));
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return response({ realm: 'staff' });
+      if (url === '/api/auth/login') { current = session; return response({ user: session.user }); }
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
+      if (url === '/api/portal/auth/login') return response({ error: 'portalInvalidCredentials' }, 401);
+      return response({}, 404);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'employee' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'EmployeePassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(location.pathname).toBe('/learning'));
+    expect(getActivePlatformRealm()).toBe('staff');
+    expect(calls).toContain('/api/auth/login-realm');
+    expect(calls).not.toContain('/api/portal/auth/login');
+  });
+  it.each([401, 403, 500])('does not bypass a learning %s response by signing into a different realm', async (failure) => {
+    history.replaceState(null, '', platformLoginHref('parent'));
+    const calls: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      calls.push(String(url));
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login-realm') return response({ realm: 'portal' });
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
+      if (url === '/api/portal/auth/login') return response({ error: 'portalLoadError' }, failure);
+      if (url === '/api/auth/login') { current = session; return response({ user: session.user }); }
+      return response({}, 404);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'shared-login' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'SharedPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await screen.findByText(i18n.t(failure === 401 ? 'invalidCredentialsMessage' : 'portalLmsLoadError'));
+    expect(calls).not.toContain('/api/auth/login');
+    expect(getActivePlatformRealm()).toBeNull();
+    expect(location.pathname).toBe('/login');
   });
   it('opens the financial center at home for an employee whose primary module is finance', async () => {
     current = { ...session, user: { ...session.user, module: 'finance', modules: ['finance'] } } as AuthSession;

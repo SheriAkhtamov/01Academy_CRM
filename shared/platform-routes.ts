@@ -12,6 +12,10 @@ export function learningModuleBase(module: LearningModule): string {
   return moduleBases[module];
 }
 
+export function platformLoginHref(module: LearningModule): string {
+  return `/login?next=${encodeURIComponent(learningModuleBase(module))}`;
+}
+
 export function learningModuleFromPath(path: string): LearningModule | null {
   const pathname = path.split(/[?#]/, 1)[0];
   return (

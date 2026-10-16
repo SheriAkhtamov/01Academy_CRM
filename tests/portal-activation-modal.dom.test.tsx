@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { PortalSessionDto } from "../shared/contracts/portal-identity";
+import type { PortalSessionDto, PortalSubjectDto } from "../shared/contracts/portal-identity";
 import { ThemeProvider } from "../client/src/components/ux/ThemeProvider";
 import { PortalAuth } from "../client/src/features/portal-identity/PortalAuth";
 import {
@@ -172,6 +172,49 @@ it("activates an invitation for the signed-in account inside the same Dialog wit
   await user.click(within(dialog()).getByRole("button", { name: copy("portalActivate") }));
   await waitFor(() => expect(mocks.activate).toHaveBeenCalledWith("invitation", undefined, undefined));
   expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+const own: PortalSubjectDto = {
+  linkId: 1, studentId: 10, studentName: "Own study", kind: "self", relationship: null,
+  permissions: ["learning.read"], status: "active", studentClassification: "adult",
+};
+const firstChild: PortalSubjectDto = {
+  ...own, linkId: 2, studentId: 20, studentName: "First child", kind: "representative",
+  relationship: "parent", studentClassification: "minor",
+};
+const newChild: PortalSubjectDto = { ...firstChild, linkId: 3, studentId: 30, studentName: "New child" };
+
+it.each([
+  [[own], newChild, "/parent-module?linkId=3"],
+  [[firstChild], newChild, "/parent-module?linkId=3"],
+  [[firstChild, newChild], own, "/student-module?linkId=1"],
+] as const)("opens the module and exact relationship accepted by the server", async (existing, target, expected) => {
+  const user = userEvent.setup();
+  const before: PortalSessionDto = { ...activated, subjects: [...existing] };
+  mocks.activate.mockResolvedValueOnce({
+    ...before,
+    subjects: [...existing, target],
+    activatedLink: { linkId: target.linkId, kind: target.kind },
+  });
+  // Old issued links have no role hint; URL hints must never override the accepted relationship.
+  history.replaceState(null, "", "/activate?linkId=999&module=student#token=invitation");
+  mount(before);
+  await user.click(within(dialog()).getByRole("button", { name: copy("portalActivate") }));
+  await waitFor(() => expect(location.pathname + location.search).toBe(expected));
+  expect(client.getQueryData<PortalSessionDto>(portalSessionKey)?.subjects).toEqual([...existing, target]);
+});
+
+it("keeps a consent-restricted activation in its assigned module instead of switching to another available role", async () => {
+  const user = userEvent.setup();
+  const before: PortalSessionDto = { ...activated, subjects: [own] };
+  mocks.activate.mockResolvedValueOnce({
+    ...before,
+    activatedLink: { linkId: newChild.linkId, kind: newChild.kind },
+  });
+  mount(before);
+  await user.click(within(dialog()).getByRole("button", { name: copy("portalActivate") }));
+  await waitFor(() => expect(location.pathname + location.search).toBe("/parent-module?linkId=3"));
+  expect(client.getQueryData<PortalSessionDto>(portalSessionKey)?.subjects).toEqual([own]);
 });
 
 it("does not replace a newer account or invitation with a late response from an abandoned activation", async () => {

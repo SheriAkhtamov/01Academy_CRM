@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import type { LearningModule } from '@shared/platform-routes';
 import type { AcademyPortalCredentialResult, AcademyPortalLead, AcademyPortalLeadRole } from '@shared/contracts/academy-portal-access';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/Un
 import { academyPortalApi, academyPortalError } from '../academy-api';
 
 export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
-  lead: AcademyPortalLead; onClose: () => void; onGranted: (result: AcademyPortalCredentialResult) => void;
+  lead: AcademyPortalLead; onClose: () => void; onGranted: (result: AcademyPortalCredentialResult, module: LearningModule) => void;
 }) {
   const { t } = useTranslation();
   const [role, setRole] = useState<'self' | 'representative' | ''>(lead.role ?? '');
@@ -21,7 +22,7 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
   const [confirmed, setConfirmed] = useState(false);
   const [relationship, setRelationship] = useState<'parent' | 'guardian' | 'payer' | 'other'>('parent');
   const [validation, setValidation] = useState('');
-  const mutation = useMutation({ gcTime: 0, mutationFn: (command: AcademyPortalLeadRole) => academyPortalApi.role(lead.id, command), onSuccess: onGranted });
+  const mutation = useMutation({ gcTime: 0, mutationFn: (command: AcademyPortalLeadRole) => academyPortalApi.role(lead.id, command), onSuccess: (result, command) => onGranted(result, command.role === 'representative' ? 'parent' : 'student') });
   const dirty = role !== (lead.role ?? '') || studentId !== (lead.students.length === 1 ? String(lead.students[0].id) : '') || confirmed || relationship !== 'parent' || selected.length !== lead.students.length || Object.values(consents).some(Boolean) || lead.students.some(student => classification[student.id] !== (student.classification === 'unverified' ? '' : student.classification));
   const guard = useUnsavedChangesGuard({ open: true, isDirty: dirty, isPending: mutation.isPending, onOpenChange: open => { if (!open) onClose(); } });
   const submit = () => {

@@ -32,7 +32,7 @@ import type {
   LmsPage,
 } from "@shared/contracts/lms";
 
-import { portalSessionSchema } from "@shared/contracts/portal-identity";
+import { portalActivationResultSchema, portalSessionSchema } from "@shared/contracts/portal-identity";
 
 export class PortalApiError extends Error {
   constructor(
@@ -143,15 +143,19 @@ export const portalIdentityApi = {
     }),
   logout: () =>
     portalRequest<{ success: boolean }>("/auth/logout", { method: "POST" }),
-  activate: (token: string, password?: string, fullName?: string) =>
-    sessionRequest("/auth/invitations/accept", {
+  activate: async (token: string, password?: string, fullName?: string) => {
+    const result = await portalRequest<unknown>("/auth/invitations/accept", {
       method: "POST",
       body: {
         token,
         ...(password ? { password } : {}),
         ...(fullName ? { fullName } : {}),
       },
-    }),
+    });
+    const parsed = portalActivationResultSchema.safeParse(result);
+    if (!parsed.success) throw new PortalApiError(502, "portalLoadError");
+    return parsed.data;
+  },
   profile: (body: { fullName?: string; locale?: "ru" | "en" }) =>
     portalRequest<PortalAccountDto>("/me", { method: "PATCH", body }),
   password: (password: string, newPassword: string) =>

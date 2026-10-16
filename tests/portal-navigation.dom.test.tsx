@@ -256,7 +256,7 @@ describe("portal viewport navigation", () => {
     expect(roleSection("parent")).toBeNull();
     expect(screen.getByRole("heading", { name: i18n.t("studentModule") })).toBeTruthy();
     expect(within(document.querySelector("aside")!).getByText(i18n.t("schoolCrm"))).toBeTruthy();
-    expect(screen.queryByText(i18n.t("portalTitle"))).toBeNull();
+    expect(screen.queryByRole("heading", { name: i18n.t("parentModule") })).toBeNull();
   });
 
   it("keeps representative navigation and selected children inside the parent module", async () => {

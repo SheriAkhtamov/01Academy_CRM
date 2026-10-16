@@ -138,6 +138,13 @@ export class PortalIdentityService {
   private limitKey(prefix: string, value: string) {
     return `${prefix}:${this.crypto.hashToken(value.toLowerCase())}`;
   }
+  /** Called only by the rate-limited common login preflight; never creates a session. */
+  async verifyLoginCredentials(identifier: string, password: string): Promise<boolean> {
+    const account = await this.repository.findAccount(identifier.trim().toLowerCase());
+    const withinLimit = Buffer.byteLength(password, 'utf8') <= 72;
+    const valid = await this.crypto.verifyPassword(withinLimit ? password : '', account?.passwordHash ?? null);
+    return Boolean(valid && withinLimit && account);
+  }
   async login(
     identifier: string,
     password: string,
@@ -629,7 +636,11 @@ export class PortalIdentityService {
         requestId,
         details: { linkId: link.id },
       });
-      return this.rotate(repository, current, currentSession?.id);
+      const session = await this.rotate(repository, current, currentSession?.id);
+      return {
+        ...session,
+        activatedLink: { linkId: link.id, kind: link.kind },
+      };
     });
   }
   private async resetAccount(

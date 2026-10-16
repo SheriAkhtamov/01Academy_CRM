@@ -246,7 +246,7 @@ function MakeupDetail({
   if (!canonical.data.some((item) => item.id === initial.id))
     return <PortalEmpty labelKey="portalMakeupNotRequired" />;
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4">
       {canonical.error && (
         <PortalError
           error={canonical.error}

@@ -101,14 +101,16 @@ export function PortalProfile({
   return (
     <>
       {!embedded && <PortalTitle labelKey="portalProfile" />}
-      <div className="grid items-start gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="p-4 pb-0">
-            <CardTitle className="text-base">{t("portalProfile")}</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
+      <div className="space-y-6">
+        <Card className={embedded ? "border-0 bg-transparent shadow-none" : undefined}>
+          {!embedded && (
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-base">{t("portalProfile")}</CardTitle>
+            </CardHeader>
+          )}
+          <CardContent className={embedded ? "p-0" : "p-4"}>
             <form
-              className="space-y-4"
+              className="grid gap-4 md:grid-cols-2"
               onSubmit={(event) => {
                 event.preventDefault();
                 save.mutate({ fullName: name, locale: language });
@@ -136,16 +138,16 @@ export function PortalProfile({
                 />
               </div>
               {save.error && (
-                <p role="alert" className="text-destructive">
+                <p role="alert" className="text-destructive md:col-span-2">
                   {message(save.error, "portalSaveError")}
                 </p>
               )}
               {save.isSuccess && !dirty && (
-                <p role="status" className="text-muted-foreground">
+                <p role="status" className="text-muted-foreground md:col-span-2">
                   {t("portalSaved")}
                 </p>
               )}
-              <DialogFooter className="border-t border-border/70 pt-4">
+              <DialogFooter className="border-t border-border/70 pt-4 md:col-span-2">
                 {onClose && (
                   <Button
                     type="button"
@@ -161,13 +163,13 @@ export function PortalProfile({
             </form>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="p-4 pb-0">
-            <CardTitle className="text-base">
+        <Card className={embedded ? "border-0 bg-transparent shadow-none" : undefined}>
+          <CardHeader className={embedded ? "p-0 pb-4" : "p-4 pb-0"}>
+            <CardTitle className={embedded ? "text-sm" : "text-base"}>
               {t("portalAccessSettings")}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 p-4">
+          <CardContent className={embedded ? "space-y-4 p-0" : "space-y-4 p-4"}>
             {subject?.kind === "representative" && (
               <div className="space-y-3">
                 <p className="font-medium">{subject.studentName}</p>

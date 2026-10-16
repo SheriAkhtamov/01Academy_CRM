@@ -186,10 +186,10 @@ export function PortalPortfolio() {
                 loading="lazy"
               />
             )}
-            <CardHeader className="p-4 pb-0">
+            <CardHeader className="p-4 pb-3">
               <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col gap-3 p-4">
+            <CardContent className="flex flex-1 flex-col gap-3 p-4 pt-0">
               <p className="line-clamp-3 text-sm text-muted-foreground">
                 {item.description}
               </p>

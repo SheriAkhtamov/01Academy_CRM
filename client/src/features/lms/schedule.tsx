@@ -251,7 +251,7 @@ export function PortalSchedule() {
               <DialogDescription>{selected?.courseName}</DialogDescription>
             </DialogHeader>
             {selected && (
-              <div className="space-y-4 text-sm">
+              <div className="space-y-4">
                 <p>
                   {format.date(selected.scheduledAt)} ·{" "}
                   {format.time(selected.scheduledAt)}–

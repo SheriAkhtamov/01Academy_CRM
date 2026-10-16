@@ -152,7 +152,7 @@ export function PortalAttendance() {
                   <p className="text-xs font-medium text-muted-foreground">
                     {t(label)}
                   </p>
-                  <p className="text-[26px] font-bold tabular-nums tracking-tight">
+                  <p className="text-xl font-bold tabular-nums tracking-tight">
                     {count}
                   </p>
                 </CardContent>

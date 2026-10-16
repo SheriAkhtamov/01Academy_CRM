@@ -18,7 +18,7 @@ export const PortalDialogContent = forwardRef<
     <SharedDialogContent
       ref={ref}
       {...props}
-      className={cn("portal-ui text-sm", className)}
+      className={cn("portal-ui", className)}
     />
   );
 });
@@ -31,7 +31,7 @@ export const PortalSheetContent = forwardRef<
     <SharedSheetContent
       ref={ref}
       {...props}
-      className={cn("portal-ui text-sm", className)}
+      className={cn("portal-ui", className)}
     />
   );
 });
@@ -44,7 +44,7 @@ export const PortalAlertDialogContent = forwardRef<
     <SharedAlertDialogContent
       ref={ref}
       {...props}
-      className={cn("portal-ui text-sm", className)}
+      className={cn("portal-ui", className)}
     />
   );
 });

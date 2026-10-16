@@ -81,10 +81,10 @@ export function PortalCourses() {
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <Card key={item.enrollmentId}>
-            <CardHeader className="p-4 pb-0">
+            <CardHeader className="p-4 pb-3">
               <CardTitle className="text-base">{item.courseName}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 text-sm">
+            <CardContent className="space-y-3 p-4 pt-0 text-sm">
               <p className="font-medium">{item.groupName}</p>
               <p className="text-sm text-muted-foreground">
                 {format.date(item.enrolledAt)}
@@ -506,10 +506,10 @@ function CourseAnnouncements({ id }: { id: number }) {
       {items.length === 0 && <PortalEmpty labelKey="portalNoAnnouncements" />}
       {items.map((item) => (
         <Card key={item.id}>
-          <CardHeader className="p-4 pb-0">
+          <CardHeader className="p-4 pb-3">
             <CardTitle className="text-base">{item.title}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 p-4 text-sm">
+          <CardContent className="space-y-3 p-4 pt-0 text-sm">
             <LearningText text={item.body} />
             <PortalFiles ids={item.fileIds} />
             <p className="text-sm text-muted-foreground">

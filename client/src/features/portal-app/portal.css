@@ -1,22 +1,3 @@
-@media (pointer: coarse) {
-  .portal-ui
-    button:not([role="checkbox"]):not([role="switch"]):not([role="radio"]),
-  .portal-ui [role="button"],
-  .portal-ui [role="menuitem"],
-  .portal-ui [role="option"] {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .portal-ui [role="tablist"] {
-    height: auto;
-  }
-}
-@media (max-width: 767px) {
-  .portal-header-actions button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
 .portal-ui[role="dialog"] > h2,
 .portal-ui[role="dialog"] > div:first-child > h2 {
   padding-right: 2.75rem;

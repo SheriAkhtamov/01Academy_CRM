@@ -94,10 +94,10 @@ export function PortalQuizzes({
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <Card key={item.id}>
-            <CardHeader className="p-4 pb-0">
+            <CardHeader className="p-4 pb-3">
               <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 text-sm">
+            <CardContent className="space-y-3 p-4 pt-0 text-sm">
               <p className="whitespace-pre-wrap text-sm">{item.instructions}</p>
               <p>
                 {t("portalAttemptsRemaining")}:{" "}
@@ -213,7 +213,7 @@ function QuizSession({
       <QuizAttempt initial={current} runId={quiz.runId} title={quiz.title} />
     );
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4">
       <p className="whitespace-pre-wrap">{quiz.instructions}</p>
       <p>
         {t("portalAttemptsRemaining")}:{" "}
@@ -349,7 +349,7 @@ export function QuizAttempt({
   ).length;
   if (!active)
     return (
-      <div className="space-y-4 text-sm">
+      <div className="space-y-4">
         <h2 className="text-base font-semibold">{t("portalTestResult")}</h2>
         <p className="text-[26px] font-bold tabular-nums tracking-tight">
           {attempt.percent?.toFixed(1) ?? "—"}%
@@ -417,7 +417,7 @@ export function QuizAttempt({
     save.mutate(ids);
   };
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4">
       <div className="flex flex-wrap justify-between gap-3">
         <p>
           {t("portalQuestionNumber")

@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PortalSessionProvider, portalSessionKey, usePortal } from "./context";
 import { PortalApiError, portalIdentityApi } from "./api";
-import { PortalShell } from "./PortalShell";
+import { PortalShell, usesOperationalPortalLayout } from "./PortalShell";
 import { PortalRecoveryHelp, PortalAuth } from "../portal-identity/PortalAuth";
 import {
   PortalDay,
@@ -254,7 +254,7 @@ function PortalRoutes() {
     <PortalShell>
       <div
         key={`${account.id}:${subject?.linkId ?? "family"}:${subject?.permissions.join(",")}:${pagePath}:${search}`}
-        className="space-y-6"
+        className={usesOperationalPortalLayout(pagePath) ? "space-y-4" : "space-y-6"}
       >
         {page}
       </div>

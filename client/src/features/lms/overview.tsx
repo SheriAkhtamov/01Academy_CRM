@@ -80,7 +80,7 @@ export function ProgressMetric({
             <p className="text-xs font-medium text-muted-foreground">
               {t(labelKey)}
             </p>
-            <p className="mt-1 text-[26px] font-bold tabular-nums tracking-tight">
+            <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
               {metric.percent === null || metric.total === 0
                 ? "—"
                 : `${Math.round(metric.percent)}%`}
@@ -643,7 +643,7 @@ export function FamilyOverview() {
             <CardHeader className="p-4 pb-3">
               <CardTitle className="text-base">{subject.studentName}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 p-4 pt-0">
+            <CardContent className="space-y-3 p-4 pt-0 text-sm">
               {subject.permissions.some((permission) =>
                 ["learning.read", "attendance.read"].includes(permission),
               ) &&

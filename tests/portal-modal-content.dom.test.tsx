@@ -67,7 +67,7 @@ it.each(variants)(
 );
 
 it.each(variants)(
-  "applies LMS $name styling locally and forwards the original props and ref",
+  "keeps CRM text sizing for the role $name and forwards the original props and ref",
   ({ Root, Title, Portal, role }) => {
     const ref = createRef<HTMLDivElement>();
     render(
@@ -88,6 +88,6 @@ it.each(variants)(
     expect(modal).toBe(ref.current);
     expect(modal.classList.contains("existing-lms-modal")).toBe(true);
     expect(modal.classList.contains("portal-ui")).toBe(true);
-    expect(modal.classList.contains("text-sm")).toBe(true);
+    expect(modal.classList.contains("text-sm")).toBe(false);
   },
 );

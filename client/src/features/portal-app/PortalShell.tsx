@@ -69,6 +69,18 @@ import { PortalProfile } from "../portal-identity/PortalProfile";
 import { PortalNotifications } from "./notifications";
 import { portalResourcesApi } from "./resources-api";
 
+export function usesOperationalPortalLayout(path: string): boolean {
+  return [
+    "/learn/assignments",
+    "/learn/schedule",
+    "/learn/attendance",
+    "/learn/payments",
+    "/learn/makeup",
+    "/learn/help",
+    "/learn/notifications",
+  ].some((section) => path === section || path.startsWith(`${section}/`));
+}
+
 export function PortalShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [path, navigate] = usePortalLocation();
@@ -186,7 +198,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </AvatarFallback>
         </Avatar>
       )}
-      <span className="min-w-0 truncate">
+      <span className="min-w-0 truncate text-sm">
         {subject?.studentName ?? t("portalFamily")}
       </span>
     </>
@@ -347,7 +359,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   }
   return (
     <AppShellFrame
-      className="portal-ui portal-shell text-sm text-foreground"
+      className="portal-ui portal-shell text-foreground"
       mainRef={mainRef}
       mainClassName="portal-shell-scroll"
       navigation={(
@@ -358,15 +370,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
       header={(
         <header className="sticky top-0 z-30 shrink-0 border-b border-border/70 bg-background/85 px-3 py-2.5 backdrop-blur-xl sm:px-4 sm:py-3 lg:px-6 print:hidden">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3 lg:flex-nowrap">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="-ml-2 rounded-lg text-muted-foreground lg:hidden"
+            <button
+              type="button"
+              className="-ml-2 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
               aria-label={t("openNavigation")}
               onClick={() => changeMenu(true)}
             >
-              <Menu className="h-5 w-5" />
-            </Button>
+              <Menu className="size-5" />
+            </button>
             <div className="order-2 flex w-full min-w-0 items-center gap-3 lg:order-none lg:w-auto lg:flex-1">
               <div className="hidden size-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary shadow-sm sm:flex" aria-hidden="true">
                 {activeModule === "parent" ? <Users className="size-5" /> : <GraduationCap className="size-5" />}
@@ -381,7 +392,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
-                      className="h-auto min-w-0 max-w-full justify-start gap-2 px-2 py-1.5"
+                      className="h-auto min-w-0 max-w-full justify-start gap-2 px-2 py-1"
                     >
                       {contextLabel}
                     </Button>
@@ -530,7 +541,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           >
             <DialogContent
               aria-describedby={undefined}
-              className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0"
+              className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0"
               onCloseAutoFocus={(event) => {
                 event.preventDefault();
                 if (profileClosedForNavigation.current) {
@@ -564,7 +575,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
         </>
       )}
     >
-      <ModulePage className="space-y-6 print:p-0">
+      <ModulePage
+        className={cn(
+          "space-y-6 print:p-0",
+          usesOperationalPortalLayout(path) &&
+            "space-y-4 sm:p-5 lg:p-6 [&_[data-page-header]]:mb-4",
+        )}
+      >
         {logout.error && (
           <p role="alert" className="text-destructive">
             {errorMessage(logout.error)}

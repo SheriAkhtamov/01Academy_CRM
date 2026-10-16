@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   PortalPermission,
@@ -32,6 +32,7 @@ import { PortalAlertDialogContent } from "../portal-app/modal-content";
 import {
   usePortal,
   portalSessionKey,
+  portalGrantFingerprint,
   usePortalFormScope,
   PortalFormScope,
 } from "../portal-app/context";
@@ -58,16 +59,21 @@ const permissionKeys: Record<PortalPermission, TranslationKey> = {
   "quizzes.attempt": "portalStartTest",
   "portfolio.edit": "portalEditProject",
 };
-export function PortalProfile() {
+export function PortalProfile({
+  embedded = false,
+  onClose,
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const { t, language, setLanguage } = useTranslation();
   const message = usePortalError();
   const { account, subject, allowed, acceptSession, setUnsaved } = usePortal();
   const passwordScope = usePortalFormScope();
-  const childScope = usePortalFormScope();
   const client = useQueryClient();
   const [name, setName] = useState(account?.fullName ?? "");
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const [child, setChild] = useState(false);
+  const subjectKey = `${account?.id}:${subject ? portalGrantFingerprint([subject]) : "family"}`;
   const dirty = name !== account?.fullName || language !== account?.locale;
   useEffect(() => {
     setUnsaved(dirty);
@@ -94,7 +100,7 @@ export function PortalProfile() {
   });
   return (
     <>
-      <PortalTitle labelKey="portalProfile" />
+      {!embedded && <PortalTitle labelKey="portalProfile" />}
       <div className="grid items-start gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="p-4 pb-0">
@@ -140,6 +146,16 @@ export function PortalProfile() {
                 </p>
               )}
               <DialogFooter className="border-t border-border/70 pt-4">
+                {onClose && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onClose}
+                    disabled={save.isPending}
+                  >
+                    {t("portalCancel")}
+                  </Button>
+                )}
                 <Button disabled={save.isPending}>{t("portalSave")}</Button>
               </DialogFooter>
             </form>
@@ -184,9 +200,11 @@ export function PortalProfile() {
               {allowed("child_credentials.manage") &&
                 subject?.kind === "representative" &&
                 subject.studentClassification === "minor" && (
-                  <Button variant="outline" onClick={() => setChild(true)}>
-                    {t("portalChildCredentials")}
-                  </Button>
+                  <ChildCredentialsDialog
+                    key={subjectKey}
+                    linkId={subject.linkId}
+                    studentName={subject.studentName}
+                  />
                 )}
             </div>
           </CardContent>
@@ -194,7 +212,9 @@ export function PortalProfile() {
       </div>
       <PortalSessions />
       {subject?.kind === "self" &&
-        subject.studentClassification === "adult" && <PortalRepresentatives />}
+        subject.studentClassification === "adult" && (
+          <PortalRepresentatives key={subjectKey} />
+        )}
       <Dialog
         open={passwordOpen}
         onOpenChange={(open) => {
@@ -216,19 +236,55 @@ export function PortalProfile() {
           </PortalFormScope>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+function useProfileFormMounted() {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  return mounted;
+}
+
+function ChildCredentialsDialog({
+  linkId,
+  studentName,
+}: {
+  linkId: number;
+  studentName: string;
+}) {
+  const { t } = useTranslation();
+  const scope = usePortalFormScope();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        {t("portalChildCredentials")}
+      </Button>
       <Dialog
-        open={child}
-        onOpenChange={(open) => {
-          if (!open) childScope.guarded(() => setChild(false));
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) scope.guarded(() => setOpen(false));
         }}
       >
         <DialogContent className="portal-ui">
           <DialogHeader>
             <DialogTitle>{t("portalChildCredentials")}</DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
+            <DialogDescription>{studentName}</DialogDescription>
           </DialogHeader>
-          <PortalFormScope id={childScope.id}>
-            {child && <ChildCredentials onClose={() => setChild(false)} />}
+          <PortalFormScope id={scope.id}>
+            {open && (
+              <ChildCredentials
+                linkId={linkId}
+                studentName={studentName}
+                onClose={() => setOpen(false)}
+              />
+            )}
           </PortalFormScope>
         </DialogContent>
       </Dialog>
@@ -244,7 +300,10 @@ function PasswordForm({
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { setUnsaved } = usePortal();
+  const { account, setUnsaved } = usePortal();
+  const client = useQueryClient();
+  const mounted = useProfileFormMounted();
+  const [accountId] = useState(account?.id);
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -252,9 +311,16 @@ function PasswordForm({
   const action = useMutation({
     mutationFn: () => portalIdentityApi.password(current, password),
     onSuccess: (session) => {
+      if (
+        accountId === undefined ||
+        session.account?.id !== accountId ||
+        client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id !==
+          accountId
+      )
+        return;
       setUnsaved(false);
       onSuccess(session);
-      onClose();
+      if (mounted.current) onClose();
     },
   });
   useEffect(() => {
@@ -324,10 +390,19 @@ function PasswordForm({
     </form>
   );
 }
-function ChildCredentials({ onClose }: { onClose: () => void }) {
+function ChildCredentials({
+  linkId,
+  studentName,
+  onClose,
+}: {
+  linkId: number;
+  studentName: string;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   const message = usePortalError();
-  const { subject, setUnsaved } = usePortal();
+  const { setUnsaved } = usePortal();
+  const mounted = useProfileFormMounted();
   const [current, setCurrent] = useState("");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -336,13 +411,11 @@ function ChildCredentials({ onClose }: { onClose: () => void }) {
   const action = useMutation({
     mutationFn: async () => {
       await portalIdentityApi.reauthenticate(current);
-      await portalIdentityApi.childCredentials(
-        subject!.linkId,
-        login,
-        password,
-      );
+      if (!mounted.current) return;
+      await portalIdentityApi.childCredentials(linkId, login, password);
     },
     onSuccess: () => {
+      if (!mounted.current) return;
       setUnsaved(false);
       onClose();
     },
@@ -414,7 +487,7 @@ function ChildCredentials({ onClose }: { onClose: () => void }) {
           onOpenChange={setConfirm}
           titleKey="portalChildCredentialsConfirmTitle"
           description="portalChildCredentialsConfirmDescription"
-          objectName={subject?.studentName}
+          objectName={studentName}
           action="portalSave"
           pending={action.isPending}
           error={
@@ -533,6 +606,7 @@ function PortalRepresentatives() {
   const { t } = useTranslation();
   const message = usePortalError();
   const { account } = usePortal();
+  const mounted = useProfileFormMounted();
   const query = useQuery({
     queryKey: ["portal-account", account?.id, "representatives"],
     queryFn: ({ signal }) => portalIdentityApi.representatives(signal),
@@ -547,6 +621,7 @@ function PortalRepresentatives() {
   const action = useMutation({
     mutationFn: async () => {
       await portalIdentityApi.reauthenticate(password);
+      if (!mounted.current) return;
       await portalIdentityApi.consent(
         selected!.linkId,
         selected!.permissions,
@@ -554,6 +629,7 @@ function PortalRepresentatives() {
       );
     },
     onSuccess: () => {
+      if (!mounted.current) return;
       setSelected(null);
       setPassword("");
       void query.refetch();

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   PortalProjectDto,
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { DataTable } from "@/components/ux/DataTable";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,8 @@ import {
   useSubjectInfiniteQuery,
   usePortal,
   portalSubjectKey,
+  PortalFormScope,
+  usePortalFormScope,
 } from "../portal-app/context";
 import {
   PortalDialogContent as DialogContent,
@@ -535,7 +538,7 @@ export function ProjectComparison() {
   const query = useSubjectQuery("projects", portalResourcesApi.projects);
   const [course, setCourse] = useState("");
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.error && query.data === undefined)
     return (
       <PortalError
         error={query.error}
@@ -546,7 +549,7 @@ export function ProjectComparison() {
     );
   const courses = [
     ...new Map(
-      query.data
+      (query.data ?? [])
         .filter((item) => item.runId !== null)
         .map((item) => [item.runId!, item.courseName ?? ""]),
     ).entries(),
@@ -555,6 +558,14 @@ export function ProjectComparison() {
   if (!courseId) return <PortalEmpty labelKey="portalComparisonUnavailable" />;
   return (
     <div className="space-y-4">
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       <PortalToolbar>
         <div className="min-w-0 flex-1 basis-60 space-y-2">
           <Label htmlFor="comparison-course">{t("portalCourses")}</Label>
@@ -572,7 +583,7 @@ export function ProjectComparison() {
       <CourseComparison
         key={courseId}
         runId={courseId}
-        projects={query.data
+        projects={(query.data ?? [])
           .filter((item) => item.runId === courseId && !item.archivedAt)
           .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))}
       />
@@ -587,10 +598,106 @@ function CourseComparison({
   projects: PortalProjectDto[];
 }) {
   const { t } = useTranslation();
+  const { allowed, subject } = usePortal();
+  const format = usePortalFormat();
+  const editorScope = usePortalFormScope();
+  const [editing, setEditing] = useState(false);
+  const query = useSubjectQuery(
+    "project-comparison",
+    (link, signal) => portalResourcesApi.projectComparison(link, runId, signal),
+    [runId],
+  );
+  const canEdit = allowed("portfolio.edit", true);
+  if (query.isPending) return <PortalLoading variant="section" />;
+  if (query.error && query.data === undefined)
+    return (
+      <PortalError
+        error={query.error}
+        retry={() => {
+          void query.refetch();
+        }}
+      />
+    );
+  const firstWork =
+    query.data?.firstProject ?? (canEdit ? projects[0] : undefined);
+  const latestWork =
+    query.data?.latestProject ??
+    (canEdit ? projects[projects.length - 1] : undefined);
+  if (!firstWork || !latestWork)
+    return <PortalEmpty labelKey="portalComparisonNone" />;
+  return (
+    <div className="space-y-4">
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {query.data && (
+        <p className="text-sm text-muted-foreground">
+          {t("portalComparisonSelectedBy").replace(
+            "{name}",
+            query.data.selectedByName,
+          )}{" "}
+          ·{" "}
+          {t(
+            query.data.selectedByRole === "student"
+              ? "portalComparisonStudent"
+              : query.data.selectedByRole === "teacher"
+                ? "portalTeacher"
+                : "portalComparisonStaff",
+          )}{" "}
+          · {format.date(query.data.updatedAt)}
+        </p>
+      )}
+      <ComparisonWorks firstWork={firstWork} latestWork={latestWork} />
+      {canEdit && (
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            {t("portalEditComparison")}
+          </Button>
+        </div>
+      )}
+      <PortalFormScope id={editorScope.id}>
+        <Dialog
+          open={editing}
+          onOpenChange={(open) => {
+            if (!open) editorScope.guarded(() => setEditing(false));
+          }}
+        >
+          <DialogContent className="portal-ui max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{t("portalEditComparison")}</DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {editing && (
+              <ComparisonEditor
+                runId={runId}
+                projects={projects}
+                onSaved={() => setEditing(false)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
+    </div>
+  );
+}
+function ComparisonEditor({
+  runId,
+  projects,
+  onSaved,
+}: {
+  runId: number;
+  projects: PortalProjectDto[];
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
   const { account, subject, allowed, setUnsaved } = usePortal();
   const client = useQueryClient();
   const message = usePortalError();
-  const format = usePortalFormat();
   const query = useSubjectQuery(
     "project-comparison",
     (link, signal) => portalResourcesApi.projectComparison(link, runId, signal),
@@ -602,6 +709,13 @@ function CourseComparison({
     version: number;
   } | null>(null);
   const [reloadOpen, setReloadOpen] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const canEdit = allowed("portfolio.edit", true);
   const firstWork: PortalComparisonProjectDto | undefined =
     draft?.firstProject ??
@@ -629,6 +743,7 @@ function CourseComparison({
       setDraft(null);
       setUnsaved(false);
       void query.refetch();
+      if (mounted.current) onSaved();
     },
   });
   const reload = useMutation({
@@ -647,11 +762,11 @@ function CourseComparison({
   const conflict =
     action.error instanceof PortalApiError && action.error.status === 409;
   useEffect(() => {
-    setUnsaved(canEdit && dirty);
+    setUnsaved(canEdit && (dirty || action.isPending || reload.isPending));
     return () => setUnsaved(false);
-  }, [canEdit, dirty, setUnsaved]);
+  }, [canEdit, dirty, action.isPending, reload.isPending, setUnsaved]);
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.error && query.data === undefined)
     return (
       <PortalError
         error={query.error}
@@ -662,124 +777,39 @@ function CourseComparison({
     );
   if (!firstWork || !latestWork)
     return <PortalEmpty labelKey="portalComparisonNone" />;
-  const work = (kind: "first" | "last") => {
-    const value = kind === "first" ? firstWork : latestWork;
-    const choices = projects.some((item) => item.id === value.id)
-      ? projects
-      : [value, ...projects];
-    return (
-      <Card>
-        <CardHeader className="p-4 pb-0">
-          <CardTitle className="text-base">
-            {t(kind === "first" ? "portalFirstWork" : "portalLatestWork")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 p-4">
-          {canEdit && (
-            <div className="space-y-2">
-              <Label htmlFor={`comparison-${kind}`}>
-                {t(kind === "first" ? "portalFirstWork" : "portalLatestWork")}
-              </Label>
-              <PortalSelect
-                id={`comparison-${kind}`}
-                value={String(value.id)}
-                disabled={action.isPending}
-                onValueChange={(next) => {
-                  const selected = choices.find(
-                    (item) => item.id === Number(next),
-                  );
-                  if (!selected) return;
-                  setDraft((previous) => ({
-                    firstProject:
-                      kind === "first"
-                        ? selected
-                        : (previous?.firstProject ?? firstWork),
-                    latestProject:
-                      kind === "last"
-                        ? selected
-                        : (previous?.latestProject ?? latestWork),
-                    version: previous?.version ?? query.data?.version ?? 0,
-                  }));
-                }}
-                options={choices.map((item) => ({
-                  value: String(item.id),
-                  label: item.title,
-                }))}
-              />
-            </div>
-          )}
-          <h3 className="font-semibold">{value.title}</h3>
-          <p className="whitespace-pre-wrap">{value.description}</p>
-          {value.coverFileId && (
-            <img
-              src={`/api/portal/files/${value.coverFileId}/download?linkId=${subject?.linkId}&preview=1`}
-              alt={value.title}
-              className="w-full rounded-md"
-              loading="lazy"
-            />
-          )}
-          <PortalFiles ids={value.files.map((file) => file.id)} />
-          {value.links.filter(safeHttps).map((link) => (
-            <a
-              key={link}
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block break-all text-primary underline"
-            >
-              {link}
-            </a>
-          ))}
-          {allowed("feedback.read") && value.teacherReview && (
-            <p className="whitespace-pre-wrap rounded-md bg-muted p-3">
-              {value.teacherReview}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
   return (
     <div className="space-y-4">
-      {query.data && !dirty && (
-        <p className="text-sm text-muted-foreground">
-          {t("portalComparisonSelectedBy").replace(
-            "{name}",
-            query.data.selectedByName,
-          )}{" "}
-          ·{" "}
-          {t(
-            query.data.selectedByRole === "student"
-              ? "portalComparisonStudent"
-              : query.data.selectedByRole === "teacher"
-                ? "portalTeacher"
-                : "portalComparisonStaff",
-          )}{" "}
-          · {format.date(query.data.updatedAt)}
-        </p>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
       )}
-      <Tabs defaultValue="first">
-        <TabsList className="md:hidden">
-          <TabsTrigger value="first">{t("portalFirstWork")}</TabsTrigger>
-          <TabsTrigger value="last">{t("portalLatestWork")}</TabsTrigger>
-        </TabsList>
-        <div className="grid gap-4 md:grid-cols-2">
-          <TabsContent
-            forceMount
-            value="first"
-            className="hidden data-[state=active]:block md:block"
-          >
-            {work("first")}
-          </TabsContent>
-          <TabsContent
-            forceMount
-            value="last"
-            className="hidden data-[state=active]:block md:block"
-          >
-            {work("last")}
-          </TabsContent>
-        </div>
-      </Tabs>
+      <ComparisonWorks
+        firstWork={firstWork}
+        latestWork={latestWork}
+        projects={projects}
+        disabled={action.isPending || reload.isPending}
+        onSelect={
+          canEdit
+            ? (kind, selected) => {
+                setDraft((previous) => ({
+                  firstProject:
+                    kind === "first"
+                      ? selected
+                      : (previous?.firstProject ?? firstWork),
+                  latestProject:
+                    kind === "last"
+                      ? selected
+                      : (previous?.latestProject ?? latestWork),
+                  version: previous?.version ?? query.data?.version ?? 0,
+                }));
+              }
+            : undefined
+        }
+      />
       {canEdit && !valid && (
         <p role="alert" className="text-sm text-destructive">
           {t("portalComparisonDistinctProjects")}
@@ -791,7 +821,7 @@ function CourseComparison({
         </p>
       )}
       {canEdit && (
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
+        <DialogFooter className="border-t border-border/70 pt-4">
           <Button
             disabled={
               !valid || action.isPending || (Boolean(query.data) && !dirty)
@@ -805,7 +835,7 @@ function CourseComparison({
               {t("lmsStaffReload")}
             </Button>
           )}
-        </div>
+        </DialogFooter>
       )}
       <ConfirmAction
         open={reloadOpen}
@@ -820,5 +850,114 @@ function CourseComparison({
         onConfirm={() => reload.mutate()}
       />
     </div>
+  );
+}
+
+function ComparisonWorks({
+  firstWork,
+  latestWork,
+  projects = [],
+  disabled,
+  onSelect,
+}: {
+  firstWork: PortalComparisonProjectDto;
+  latestWork: PortalComparisonProjectDto;
+  projects?: PortalProjectDto[];
+  disabled?: boolean;
+  onSelect?: (
+    kind: "first" | "last",
+    project: PortalComparisonProjectDto,
+  ) => void;
+}) {
+  const { t } = useTranslation();
+  const { subject, allowed } = usePortal();
+  return (
+    <Tabs defaultValue="first">
+      <TabsList className="md:hidden">
+        <TabsTrigger value="first">{t("portalFirstWork")}</TabsTrigger>
+        <TabsTrigger value="last">{t("portalLatestWork")}</TabsTrigger>
+      </TabsList>
+      <div className="grid gap-4 md:grid-cols-2">
+        {(["first", "last"] as const).map((kind) => {
+          const value = kind === "first" ? firstWork : latestWork;
+          const choices = projects.some((item) => item.id === value.id)
+            ? projects
+            : [value, ...projects];
+          return (
+            <TabsContent
+              key={kind}
+              forceMount
+              value={kind}
+              className="hidden data-[state=active]:block md:block"
+            >
+              <Card>
+                <CardHeader className="p-4 pb-0">
+                  <CardTitle className="text-base">
+                    {t(
+                      kind === "first" ? "portalFirstWork" : "portalLatestWork",
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4">
+                  {onSelect && (
+                    <div className="space-y-2">
+                      <Label htmlFor={`comparison-${kind}`}>
+                        {t(
+                          kind === "first"
+                            ? "portalFirstWork"
+                            : "portalLatestWork",
+                        )}
+                      </Label>
+                      <PortalSelect
+                        id={`comparison-${kind}`}
+                        value={String(value.id)}
+                        disabled={disabled}
+                        onValueChange={(next) => {
+                          const selected = choices.find(
+                            (item) => item.id === Number(next),
+                          );
+                          if (selected) onSelect(kind, selected);
+                        }}
+                        options={choices.map((item) => ({
+                          value: String(item.id),
+                          label: item.title,
+                        }))}
+                      />
+                    </div>
+                  )}
+                  <h3 className="font-semibold">{value.title}</h3>
+                  <p className="whitespace-pre-wrap">{value.description}</p>
+                  {value.coverFileId && (
+                    <img
+                      src={`/api/portal/files/${value.coverFileId}/download?linkId=${subject?.linkId}&preview=1`}
+                      alt={value.title}
+                      className="w-full rounded-md"
+                      loading="lazy"
+                    />
+                  )}
+                  <PortalFiles ids={value.files.map((file) => file.id)} />
+                  {value.links.filter(safeHttps).map((link) => (
+                    <a
+                      key={link}
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block break-all text-primary underline"
+                    >
+                      {link}
+                    </a>
+                  ))}
+                  {allowed("feedback.read") && value.teacherReview && (
+                    <p className="whitespace-pre-wrap rounded-md bg-muted p-3">
+                      {value.teacherReview}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          );
+        })}
+      </div>
+    </Tabs>
   );
 }

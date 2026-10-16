@@ -15,7 +15,6 @@ import { PortalSessionProvider, portalSessionKey, usePortal } from "./context";
 import { PortalApiError, portalIdentityApi } from "./api";
 import { PortalShell } from "./PortalShell";
 import { PortalRecoveryHelp, PortalAuth } from "../portal-identity/PortalAuth";
-import { PortalProfile } from "../portal-identity/PortalProfile";
 import {
   PortalDay,
   FamilyOverview,
@@ -137,12 +136,15 @@ function PortalRoutes() {
     );
   if (path === "/learn/invite" || path === "/learn/activate")
     return <PortalAuth mode="invite" token={token} />;
-  if (path === "/learn/recover" || path === "/learn/reset") return <PortalRecoveryHelp />;
+  if (path === "/learn/recover" || path === "/learn/reset")
+    return <PortalRecoveryHelp />;
   if (!account) {
-    const destination = token ? `/learn/invite#token=${encodeURIComponent(token)}` : `${path === '/learn/login' ? '/learn' : path}${search ? `?${search}` : ''}`;
+    const destination = token
+      ? `/learn/invite#token=${encodeURIComponent(token)}`
+      : `${path === "/learn/login" ? "/learn" : path}${search ? `?${search}` : ""}`;
     return <Redirect to={`/login?next=${encodeURIComponent(destination)}`} />;
   }
-  if (path === '/learn/login') return <Redirect to='/learn' />;
+  if (path === "/learn/login") return <Redirect to="/learn" />;
   if (requestedRaw !== null && !requestedSubject)
     return (
       <PortalShell>
@@ -160,20 +162,23 @@ function PortalRoutes() {
       </PortalShell>
     );
   let page: ReactNode;
-  const assignment = path.match(/^\/learn\/assignments\/(\d+)$/);
-  const material = path.match(/^\/learn\/courses\/(\d+)\/materials\/(\d+)$/);
-  const course = path.match(/^\/learn\/courses\/(\d+)$/);
-  if (path === "/learn/profile") page = <PortalProfile />;
-  else if (path === "/learn/notifications") page = <PortalNotifications />;
+  // Legacy profile links open the same dialog over the learner home screen.
+  const pagePath = path === "/learn/profile" ? "/learn" : path;
+  const assignment = pagePath.match(/^\/learn\/assignments\/(\d+)$/);
+  const material = pagePath.match(
+    /^\/learn\/courses\/(\d+)\/materials\/(\d+)$/,
+  );
+  const course = pagePath.match(/^\/learn\/courses\/(\d+)$/);
+  if (pagePath === "/learn/notifications") page = <PortalNotifications />;
   else if (!subjects.length) page = <NoPortalAccess />;
   else if (!subject) page = <FamilyOverview />;
-  else if (path === "/learn" || path === "/learn/login")
+  else if (pagePath === "/learn" || pagePath === "/learn/login")
     page = subject.permissions.includes("learning.read") ? (
       <PortalDay />
     ) : (
       <PortalLimitedOverview />
     );
-  else if (path === "/learn/courses")
+  else if (pagePath === "/learn/courses")
     page = (
       <Gate permissions={["learning.read"]}>
         <PortalCourses />
@@ -200,19 +205,19 @@ function PortalRoutes() {
         <PortalAssignments initialId={Number(assignment[1])} />
       </Gate>
     );
-  else if (path === "/learn/assignments")
+  else if (pagePath === "/learn/assignments")
     page = (
       <Gate permissions={["learning.read"]}>
         <PortalAssignments />
       </Gate>
     );
-  else if (path === "/learn/schedule")
+  else if (pagePath === "/learn/schedule")
     page = (
       <Gate permissions={["learning.read", "attendance.read"]}>
         <PortalSchedule />
       </Gate>
     );
-  else if (path === "/learn/feedback")
+  else if (pagePath === "/learn/feedback")
     page = (
       <Gate permissions={["feedback.read"]}>
         <PortalTitle labelKey="portalFeedback" />
@@ -223,43 +228,43 @@ function PortalRoutes() {
         />
       </Gate>
     );
-  else if (path === "/learn/attendance")
+  else if (pagePath === "/learn/attendance")
     page = (
       <Gate permissions={["attendance.read"]}>
         <PortalAttendance />
       </Gate>
     );
-  else if (path === "/learn/progress")
+  else if (pagePath === "/learn/progress")
     page = (
       <Gate permissions={["learning.read", "feedback.read"]}>
         <PortalProgress />
       </Gate>
     );
-  else if (path === "/learn/quizzes")
+  else if (pagePath === "/learn/quizzes")
     page = (
       <Gate permissions={["learning.read", "feedback.read"]}>
         <PortalQuizzes />
       </Gate>
     );
-  else if (path === "/learn/portfolio")
+  else if (pagePath === "/learn/portfolio")
     page = (
       <Gate permissions={["learning.read", "portfolio.approve"]}>
         <PortalPortfolio />
       </Gate>
     );
-  else if (path === "/learn/payments")
+  else if (pagePath === "/learn/payments")
     page = (
       <Gate permissions={["finance.read"]}>
         <PortalPayments />
       </Gate>
     );
-  else if (path === "/learn/makeup")
+  else if (pagePath === "/learn/makeup")
     page = (
       <Gate permissions={["learning.read", "attendance.read"]}>
         <PortalMakeup />
       </Gate>
     );
-  else if (path === "/learn/help")
+  else if (pagePath === "/learn/help")
     page = (
       <Gate permissions={["communication.create"]}>
         <PortalHelp
@@ -273,7 +278,7 @@ function PortalRoutes() {
   return (
     <PortalShell>
       <div
-        key={`${account.id}:${subject?.linkId ?? "family"}:${subject?.permissions.join(",")}:${path}:${search}`}
+        key={`${account.id}:${subject?.linkId ?? "family"}:${subject?.permissions.join(",")}:${pagePath}:${search}`}
         className="space-y-6"
       >
         {page}

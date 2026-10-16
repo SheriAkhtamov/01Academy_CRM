@@ -1090,6 +1090,9 @@ it("saves the learner’s selected comparison with course scope and server versi
   mocks.saveComparison.mockResolvedValue(saved);
   mount(<ProjectComparison />);
   await userEvent.click(
+    await screen.findByRole("button", { name: i18n.t("portalEditComparison") }),
+  );
+  await userEvent.click(
     await screen.findByRole("button", { name: i18n.t("portalComparisonSave") }),
   );
   expect(mocks.saveComparison).toHaveBeenCalledWith(10, {

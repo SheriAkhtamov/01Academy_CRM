@@ -42,6 +42,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { portalIdentityApi } from "./api";
 import {
   usePortal,
@@ -52,7 +53,12 @@ import {
 } from "./context";
 import { allowNavigation } from "@/lib/navigationGuard";
 import { useQueryClient } from "@tanstack/react-query";
-import { PortalSheetContent as SheetContent, usePortalError } from "./ui";
+import {
+  PortalDialogContent as DialogContent,
+  PortalSheetContent as SheetContent,
+  usePortalError,
+} from "./ui";
+import { PortalProfile } from "../portal-identity/PortalProfile";
 import { PortalNotifications } from "./notifications";
 import { portalResourcesApi } from "./resources-api";
 
@@ -140,6 +146,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const { subject, subjects, selectSubject, guarded, account } = usePortal();
   const client = useQueryClient();
   const errorMessage = usePortalError();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRoute = path === "/learn/profile";
+  const profileVisible = profileRoute || profileOpen;
+  const profileScope = usePortalFormScope();
+  const profileOpener = useRef<HTMLElement | null>(null);
+  const profileButton = useRef<HTMLButtonElement | null>(null);
+  const profileClosedForNavigation = useRef(false);
   const [menu, setMenu] = useState(false);
   const menuOpen = useRef(false);
   const menuClosedForNavigation = useRef(false);
@@ -154,8 +167,19 @@ export function PortalShell({ children }: { children: ReactNode }) {
     menuOpen.current = false;
     setMenu(false);
   }, []);
+  const profileLocation = useRef({ path, search });
+  useEffect(() => {
+    if (
+      profileLocation.current.path !== path ||
+      profileLocation.current.search !== search
+    ) {
+      profileClosedForNavigation.current = true;
+      setProfileOpen(false);
+    }
+    profileLocation.current = { path, search };
+  }, [path, search]);
   const mainRef = usePortalViewportNavigation({
-    location: `${path}${search ? `?${search}` : ""}`,
+    location: `${profileRoute ? "/learn" : path}${search ? `?${search}` : ""}`,
     scope: `portal:${account?.id}:${subject?.linkId ?? "family"}:${portalGrantFingerprint(subjects)}`,
     onNavigate: closeNavigation,
   });
@@ -260,10 +284,26 @@ export function PortalShell({ children }: { children: ReactNode }) {
       if (route === path) changeMenu(false);
       navigate(route);
     });
+  const openProfile = (opener: HTMLElement) => {
+    profileClosedForNavigation.current = false;
+    profileOpener.current = menuOpen.current ? profileButton.current : opener;
+    changeMenu(false);
+    setProfileOpen(true);
+  };
+  const closeProfile = () =>
+    profileScope.guarded(() => {
+      setProfileOpen(false);
+      if (profileRoute)
+        allowNavigation(() =>
+          navigate(`/learn${search ? `?${search}` : ""}`, { replace: true }),
+        );
+    });
   function navigation(items: NavItem[]) {
     return items.map((item) => {
       const active =
-        path === item.route ||
+        (item.route === "/learn/profile"
+          ? profileVisible
+          : path === item.route) ||
         (item.route !== "/learn" && path.startsWith(`${item.route}/`));
       return (
         <button
@@ -273,8 +313,18 @@ export function PortalShell({ children }: { children: ReactNode }) {
             "sidebar-nav-item w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             active && "active",
           )}
-          aria-current={active ? "page" : undefined}
-          onClick={() => go(item.route)}
+          aria-current={
+            active && item.route !== "/learn/profile" ? "page" : undefined
+          }
+          aria-haspopup={item.route === "/learn/profile" ? "dialog" : undefined}
+          aria-expanded={
+            item.route === "/learn/profile" ? profileVisible : undefined
+          }
+          onClick={(event) =>
+            item.route === "/learn/profile"
+              ? openProfile(event.currentTarget)
+              : go(item.route)
+          }
         >
           {active && (
             <span
@@ -437,11 +487,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
                   />
                 </Button>
                 <Button
+                  ref={profileButton}
                   size="icon"
                   variant="ghost"
                   className="rounded-full"
                   aria-label={t("portalProfile")}
-                  onClick={() => go("/learn/profile")}
+                  aria-haspopup="dialog"
+                  aria-expanded={profileVisible}
+                  onClick={(event) => openProfile(event.currentTarget)}
                 >
                   <User className="h-5 w-5" />
                 </Button>
@@ -463,6 +516,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
           side="left"
           className="portal-ui flex w-72 flex-col gap-0 bg-card p-0 sm:w-72 sm:max-w-72"
           onCloseAutoFocus={(event) => {
+            if (profileVisible) {
+              event.preventDefault();
+              return;
+            }
             if (!menuClosedForNavigation.current) return;
             event.preventDefault();
             menuClosedForNavigation.current = false;
@@ -530,6 +587,45 @@ export function PortalShell({ children }: { children: ReactNode }) {
           )}
         </SheetContent>
       </Sheet>
+      <Dialog
+        open={profileVisible}
+        onOpenChange={(open) => {
+          if (!open) closeProfile();
+        }}
+      >
+        <DialogContent
+          aria-describedby={undefined}
+          className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (profileClosedForNavigation.current) {
+              mainRef.current?.focus({ preventScroll: true });
+              return;
+            }
+            const opener = profileOpener.current;
+            if (opener?.isConnected && !opener.closest('[data-state="closed"]'))
+              opener.focus({ preventScroll: true });
+            else if (profileButton.current)
+              profileButton.current.focus({ preventScroll: true });
+            else mainRef.current?.focus({ preventScroll: true });
+          }}
+        >
+          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-4 text-left">
+            <DialogTitle>{t("portalProfile")}</DialogTitle>
+          </DialogHeader>
+          {profileVisible && (
+            <PortalFormScope id={profileScope.id}>
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
+                <PortalProfile
+                  key={account?.id}
+                  embedded
+                  onClose={closeProfile}
+                />
+              </div>
+            </PortalFormScope>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

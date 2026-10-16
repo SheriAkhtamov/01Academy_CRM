@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
-import type { LmsQuizAttemptDto } from "@shared/contracts/lms";
+import type { LmsQuizAttemptDto, LmsQuizDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,28 +47,21 @@ export function PortalQuizzes({
 }) {
   const quizScope = usePortalFormScope();
   const { t } = useTranslation();
-  const message = usePortalError();
   const { subject, allowed } = usePortal();
   const invalidate = useInvalidateSubject();
-  const [attempt, setAttempt] = useState<LmsQuizAttemptDto | null>(null);
-  const [title, setTitle] = useState("");
-  const [runId, setRunId] = useState<number | undefined>(courseId);
+  const [selected, setSelected] = useState<{
+    quiz: LmsQuizDto;
+    result: boolean;
+  } | null>(null);
   const query = useSubjectQuery(
     "quizzes",
     portalLmsApi.quizzes,
     [],
     allowed("learning.read") ? "learning.read" : "feedback.read",
   );
-  const result = useMutation({
-    mutationFn: (id: number) => portalLmsApi.quizResults(subject!.linkId, id),
-    onSuccess: setAttempt,
-  });
-  const start = useMutation({
-    mutationFn: (id: number) => portalLmsApi.startQuiz(subject!.linkId, id),
-    onSuccess: setAttempt,
-  });
-  if (query.isPending) return <PortalLoading variant={embedded ? "section" : "page"} />;
-  if (query.error)
+  if (query.isPending)
+    return <PortalLoading variant={embedded ? "section" : "page"} />;
+  if (query.error && query.data === undefined)
     return (
       <PortalError
         error={query.error}
@@ -77,7 +70,7 @@ export function PortalQuizzes({
         }}
       />
     );
-  const items = query.data.filter(
+  const items = (query.data ?? []).filter(
     (item) =>
       (!courseId || item.runId === courseId) && (!quizId || item.id === quizId),
   );
@@ -88,12 +81,15 @@ export function PortalQuizzes({
       ) : (
         <PortalTitle labelKey="portalTests" />
       )}
-      {items.length === 0 && <PortalEmpty labelKey="portalNoTests" />}
-      {(start.error || result.error) && (
-        <p role="alert" className="text-destructive">
-          {message(start.error || result.error)}
-        </p>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
       )}
+      {items.length === 0 && <PortalEmpty labelKey="portalNoTests" />}
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <Card key={item.id}>
@@ -116,12 +112,7 @@ export function PortalQuizzes({
                 {item.latestFinishedAttemptId && allowed("feedback.read") && (
                   <Button
                     variant="outline"
-                    disabled={result.isPending}
-                    onClick={() => {
-                      setTitle(item.title);
-                      setRunId(item.runId);
-                      result.mutate(item.id);
-                    }}
+                    onClick={() => setSelected({ quiz: item, result: true })}
                   >
                     {t("portalTestResult")}
                   </Button>
@@ -129,21 +120,12 @@ export function PortalQuizzes({
                 {allowed("quizzes.attempt", true) && (
                   <Button
                     disabled={
-                      start.isPending ||
-                      (item.attemptsUsed >= item.maxAttempts &&
-                        !item.activeAttemptId)
+                      item.attemptsUsed >= item.maxAttempts &&
+                      !item.activeAttemptId
                     }
-                    onClick={() => {
-                      setTitle(item.title);
-                      setRunId(item.runId);
-                      start.mutate(item.id);
-                    }}
+                    onClick={() => setSelected({ quiz: item, result: false })}
                   >
-                    {t(
-                      item.activeAttemptId
-                        ? "portalResumeTest"
-                        : "portalStartTest",
-                    )}
+                    {t("portalOpen")}
                   </Button>
                 )}
               </div>
@@ -153,33 +135,109 @@ export function PortalQuizzes({
       </div>
       <PortalFormScope id={quizScope.id}>
         <Dialog
-          open={Boolean(attempt)}
+          open={Boolean(selected)}
           onOpenChange={(open) => {
             if (!open)
               quizScope.guarded(() => {
-                setAttempt(null);
+                setSelected(null);
                 void invalidate();
               });
           }}
         >
           <DialogContent className="portal-ui max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{title || t("portalTests")}</DialogTitle>
+              <DialogTitle>
+                {selected?.quiz.title || t("portalTests")}
+              </DialogTitle>
               <DialogDescription>{subject?.studentName}</DialogDescription>
             </DialogHeader>
-            {attempt && (
-              <QuizAttempt
-                key={`${subject?.linkId}:${attempt.id}`}
-                initial={attempt}
-                onChange={setAttempt}
-                runId={runId}
-                title={title}
+            {selected && (
+              <QuizSession
+                key={`${subject?.linkId}:${selected.quiz.id}:${selected.result}`}
+                quiz={selected.quiz}
+                readOnly={selected.result}
               />
             )}
           </DialogContent>
         </Dialog>
       </PortalFormScope>
     </>
+  );
+}
+function QuizSession({
+  quiz,
+  readOnly,
+}: {
+  quiz: LmsQuizDto;
+  readOnly: boolean;
+}) {
+  const { t } = useTranslation();
+  const message = usePortalError();
+  const { subject, allowed, setUnsaved } = usePortal();
+  const invalidate = useInvalidateSubject();
+  const [attempt, setAttempt] = useState<LmsQuizAttemptDto | null>(null);
+  const result = useSubjectQuery(
+    "quiz-result",
+    (link) => portalLmsApi.quizResults(link, quiz.id),
+    [quiz.id],
+    "feedback.read",
+    readOnly,
+  );
+  const start = useMutation({
+    mutationFn: () => portalLmsApi.startQuiz(subject!.linkId, quiz.id),
+    onSuccess: (data) => {
+      setAttempt(data);
+      void invalidate();
+    },
+  });
+  useEffect(() => {
+    setUnsaved(start.isPending);
+    return () => setUnsaved(false);
+  }, [start.isPending, setUnsaved]);
+  if (readOnly) {
+    if (result.isPending) return <PortalLoading variant="section" />;
+    if (result.error)
+      return (
+        <PortalError
+          error={result.error}
+          retry={() => {
+            void result.refetch();
+          }}
+        />
+      );
+  }
+  const current = readOnly ? result.data : attempt;
+  if (current)
+    return (
+      <QuizAttempt initial={current} runId={quiz.runId} title={quiz.title} />
+    );
+  return (
+    <div className="space-y-4 text-sm">
+      <p className="whitespace-pre-wrap">{quiz.instructions}</p>
+      <p>
+        {t("portalAttemptsRemaining")}:{" "}
+        {Math.max(0, quiz.maxAttempts - quiz.attemptsUsed)}
+      </p>
+      {start.isPending && <PortalLoading variant="section" />}
+      {start.error && (
+        <p role="alert" className="text-destructive">
+          {message(start.error, "portalSaveError")}
+        </p>
+      )}
+      {allowed("quizzes.attempt", true) && (
+        <DialogFooter className="border-t border-border/70 pt-4">
+          <Button
+            disabled={
+              start.isPending ||
+              (quiz.attemptsUsed >= quiz.maxAttempts && !quiz.activeAttemptId)
+            }
+            onClick={() => start.mutate()}
+          >
+            {t(quiz.activeAttemptId ? "portalResumeTest" : "portalStartTest")}
+          </Button>
+        </DialogFooter>
+      )}
+    </div>
   );
 }
 export function QuizAttempt({

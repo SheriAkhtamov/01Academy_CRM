@@ -301,6 +301,9 @@ function mount(children: ReactNode) {
   );
 }
 
+// This component-level harness keeps the profile body as a background form to
+// check guard ownership. Production profile dialogs/routes are covered in
+// portal-profile-modal.dom.test.tsx.
 function ProfileNavigation() {
   const [path] = useLocation();
   const { account: current, subject } = usePortal();
@@ -328,7 +331,7 @@ function mountParentProfile() {
     ],
   } satisfies PortalSessionDto);
   sessionStorage.setItem(`portal-context-${account.id}`, String(first.linkId));
-  history.replaceState(null, "", "/learn/profile");
+  history.replaceState(null, "", "/learn");
   return mount(<ProfileNavigation />);
 }
 const childForms = [
@@ -367,7 +370,7 @@ it.each(childForms)(
     await user.click(
       screen.getByRole("button", { name: copy("portalCancel") }),
     );
-    expect(window.location.pathname).toBe("/learn/profile");
+    expect(window.location.pathname).toBe("/learn");
     expect(profile.value).toBe("Unsaved profile name");
   },
 );
@@ -411,7 +414,7 @@ it.each(childForms)(
     await user.click(
       screen.getByRole("button", { name: copy("portalCancel") }),
     );
-    expect(window.location.pathname).toBe("/learn/profile");
+    expect(window.location.pathname).toBe("/learn");
     await user.click(screen.getByRole("button", { name: "Learner" }));
     await user.click(screen.getByRole("menuitem", { name: "Second learner" }));
     await screen.findByRole("alertdialog", {
@@ -483,8 +486,13 @@ it.each(["route", "learner"] as const)(
     await user.click(
       within(dialog).getByRole("button", { name: copy("close") }),
     );
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: copy("portalChangePassword") })).toBeNull(),
+    );
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    const profileDialog = screen.queryByRole("dialog", { name: copy("portalProfile") });
+    if (profileDialog)
+      await user.click(within(profileDialog).getByRole("button", { name: copy("close") }));
     await user.click(
       screen.getByRole("button", { name: copy("portalSchedule") }),
     );

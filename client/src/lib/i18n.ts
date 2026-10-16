@@ -248,6 +248,7 @@ export const translations = {
   portalReloadComparisonDescription: { en: 'Your current selection will be replaced by the saved works.', ru: 'Текущий выбор будет заменён сохранёнными работами.' },
   portalComparisonSelectedBy: { en: 'Selected by {name}', ru: 'Выбрал(а): {name}' },
   portalComparisonSave: { en: 'Save comparison', ru: 'Сохранить сравнение' },
+  portalEditComparison: { en: 'Edit comparison', ru: 'Изменить сравнение' },
   portalComparisonDistinctProjects: { en: 'Select two different projects from this course.', ru: 'Выберите две разные работы этого курса.' },
   portalComparisonNone: { en: 'No works selected for comparison yet.', ru: 'Работы для сравнения пока не выбраны.' },
   portalComparisonUnavailable: { en: 'No works available for comparison', ru: 'Нет работ для сравнения' },

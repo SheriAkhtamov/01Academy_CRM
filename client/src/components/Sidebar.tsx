@@ -11,7 +11,7 @@ import {
   type AcademyModule,
 } from '@shared/academy';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import Logo from '@/components/Logo';
+import { AppSidebarFrame } from '@/components/ux/AppSidebarFrame';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import {
   Tooltip,
@@ -292,29 +292,48 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         highlighted nav item — the one clear giveaway that this is an overlay
         rendered on the cheap.
       */}
-      <div className="flex h-full w-72 flex-col border-r border-border/70 bg-card lg:w-64 lg:bg-card/95 lg:backdrop-blur-sm">
-        {/* Logo */}
-        <div className="flex items-center border-b border-border/70 px-3 py-4">
-          <div className="flex items-center w-full">
-            <Logo size="sm" className="shrink-0" />
-            <div className="ml-2 flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="whitespace-nowrap text-base font-semibold text-foreground tracking-tight leading-tight">
-                {t('platformName')}
-              </span>
-              <span className="whitespace-nowrap text-[11px] leading-tight text-muted-foreground">{t('schoolCrm')}</span>
+      <AppSidebarFrame
+        headerAction={onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden ml-2 shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label={t('close')}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+        footer={(
+          <>
+            {/* Language Switcher */}
+            <div className="shrink-0 border-t border-border/70 px-4 py-2">
+              <LanguageSwitcher />
             </div>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="lg:hidden ml-2 shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                aria-label={t('close')}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-        </div>
 
+            <nav
+              aria-label={t('sidebarResources')}
+              className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-t border-border/70 px-3 py-1"
+            >
+              {RESOURCE_NAVIGATION_ITEMS.map((item) => {
+                const isActive = isItemActive(item.href);
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    onClick={() => onClose?.()}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      'flex min-h-11 items-center rounded-sm px-1 text-xs font-medium underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                      isActive ? 'text-primary underline' : 'text-muted-foreground',
+                    )}
+                  >
+                    {t(item.labelKey)}
+                  </Link>
+                );
+              })}
+            </nav>
+          </>
+        )}
+      >
         {/* Navigation */}
         <StaggerGroup
           ref={navRef}
@@ -373,34 +392,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
           </StaggerItem>
         </StaggerGroup>
 
-        {/* Language Switcher */}
-        <div className="shrink-0 border-t border-border/70 px-4 py-2">
-          <LanguageSwitcher />
-        </div>
-
-        <nav
-          aria-label={t('sidebarResources')}
-          className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-t border-border/70 px-3 py-1"
-        >
-          {RESOURCE_NAVIGATION_ITEMS.map((item) => {
-            const isActive = isItemActive(item.href);
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                onClick={() => onClose?.()}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn(
-                  'flex min-h-11 items-center rounded-sm px-1 text-xs font-medium underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  isActive ? 'text-primary underline' : 'text-muted-foreground',
-                )}
-              >
-                {t(item.labelKey)}
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
+      </AppSidebarFrame>
     </TooltipProvider>
   );
 }

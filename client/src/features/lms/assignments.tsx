@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { useMutation } from "@tanstack/react-query";
 import type { LmsAssignmentDetailDto } from "@shared/contracts/lms";
 import { LearningText } from "@/features/learning-content/text";

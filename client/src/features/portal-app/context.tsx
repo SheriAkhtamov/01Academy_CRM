@@ -34,6 +34,11 @@ import {
 import { i18n } from "@/lib/i18n";
 import { setUploadCsrf } from "./resources-api";
 import { usePortalRealtime } from "./realtime";
+import { useLocation } from "wouter";
+import {
+  learningModuleFromPath,
+  type LearningModule,
+} from "@shared/platform-routes";
 
 export function portalGrantFingerprint(subjects: PortalSubjectDto[]) {
   return [...subjects]
@@ -73,6 +78,8 @@ type PortalContextValue = {
   error: unknown;
   refresh: () => void;
   account: PortalAccountDto | null;
+  learningModule: LearningModule | null;
+  allSubjects: PortalSubjectDto[];
   subjects: PortalSubjectDto[];
   subject: PortalSubjectDto | null;
   selectSubject: (id: number | null) => void;
@@ -132,6 +139,8 @@ export function usePortal() {
   return { ...value, setUnsaved };
 }
 export function PortalSessionProvider({ children }: { children: ReactNode }) {
+  const [path] = useLocation();
+  const learningModule = learningModuleFromPath(path);
   const client = useQueryClient();
   const query = useQuery({
     queryKey: portalSessionKey,
@@ -181,7 +190,18 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
       i18n.setLanguage(account.locale);
     }
   }, [account]);
-  const subjects = useMemo(() => query.data?.subjects ?? [], [query.data]);
+  const allSubjects = useMemo(() => query.data?.subjects ?? [], [query.data]);
+  const subjects = useMemo(
+    () =>
+      learningModule
+        ? allSubjects.filter((item) =>
+            learningModule === "student"
+              ? item.kind === "self"
+              : item.kind === "representative",
+          )
+        : allSubjects,
+    [allSubjects, learningModule],
+  );
   const subject = useMemo(() => {
     if (!account) return null;
     if (selection?.accountId === account.id) {
@@ -195,7 +215,10 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
       );
       if (selected) return selected;
     }
-    const stored = sessionStorage.getItem(`portal-context-${account.id}`);
+    const stored =
+      sessionStorage.getItem(
+        `portal-context-${account.id}${learningModule ? `:${learningModule}` : ""}`,
+      ) ?? sessionStorage.getItem(`portal-context-${account.id}`);
     if (stored !== null) {
       const previous = subjects.find((item) => item.linkId === Number(stored));
       if (previous) return previous;
@@ -203,7 +226,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     const own = subjects.find((item) => item.kind === "self");
     if (own) return own;
     return subjects.length > 1 ? null : (subjects[0] ?? null);
-  }, [account, subjects, selection]);
+  }, [account, subjects, selection, learningModule]);
   usePortalRealtime({
     accountId: account?.id ?? null,
     csrfToken: query.data?.csrfToken,
@@ -229,7 +252,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
             "day-notifications",
             "notifications-badge",
           ].includes(String(item.queryKey[2])) &&
-          item.queryKey[3] !== portalGrantFingerprint(subjects)
+          item.queryKey[3] !== portalGrantFingerprint(allSubjects)
         );
       }
       if (item.queryKey[0] !== "portal-subject") return false;
@@ -246,7 +269,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     };
     void client.cancelQueries({ predicate: obsolete });
     client.removeQueries({ predicate: obsolete });
-  }, [account?.id, subjects, client]);
+  }, [account?.id, subjects, allSubjects, client]);
   useEffect(() => {
     if (!unsaved) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -283,15 +306,19 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     (linkId: number | null) =>
       guarded(() => {
         if (!account) return;
+        if (linkId !== null && !subjects.some((item) => item.linkId === linkId))
+          return;
+        if (linkId === null && learningModule === "student")
+          return;
         void client.cancelQueries({ queryKey: ["portal-subject"] });
         client.removeQueries({ queryKey: ["portal-subject"] });
         setSelection({ accountId: account.id, linkId });
         sessionStorage.setItem(
-          `portal-context-${account.id}`,
+          `portal-context-${account.id}${learningModule ? `:${learningModule}` : ""}`,
           String(linkId ?? "family"),
         );
       }),
-    [account, client, guarded],
+    [account, client, guarded, subjects, learningModule],
   );
   const acceptSession = useCallback(
     (session: PortalSessionDto) => {
@@ -327,6 +354,8 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
           void query.refetch();
         },
         account,
+        learningModule,
+        allSubjects,
         subjects,
         subject,
         selectSubject,

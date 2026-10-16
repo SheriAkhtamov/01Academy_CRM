@@ -3,11 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { AuthProvider } from '@/hooks/useAuth';
 import { TelephonyProvider, useTelephony } from '@/contexts/TelephonyContext';
-import { ThemeProvider } from '@/components/ux/ThemeProvider';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
-import { MotionProvider } from '@/components/ux/motion';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { Toaster } from '@/components/ui/toaster';
 
 const TelephonyWidget = lazy(() => (
   import('@/components/telephony/TelephonyWidget')
@@ -23,26 +19,17 @@ const TelephonyOverlay = () => {
   ) : null;
 };
 
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({ children, telephony = true }: { children: ReactNode; telephony?: boolean }) {
   return (
-    <ThemeProvider defaultTheme="system" storageKey="academy-crm-theme">
-      <MotionProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <TelephonyProvider>
-              <TooltipProvider>
-                <Toaster />
-                <AppErrorBoundary>
-                  {children}
-                  <AppErrorBoundary variant="widget">
-                    <TelephonyOverlay />
-                  </AppErrorBoundary>
-                </AppErrorBoundary>
-              </TooltipProvider>
-            </TelephonyProvider>
-          </AuthProvider>
-        </QueryClientProvider>
-      </MotionProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        {telephony ? <TelephonyProvider>
+          {children}
+          <AppErrorBoundary variant="widget">
+            <TelephonyOverlay />
+          </AppErrorBoundary>
+        </TelephonyProvider> : children}
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }

@@ -1,5 +1,6 @@
 import type { AuthSession, SavedAccountEntry } from "@shared/auth";
 import { apiRequest } from "@/lib/queryClient";
+import { setActivePlatformRealm } from '@/lib/platformSession';
 
 export async function fetchAuthSession(): Promise<AuthSession> {
   const response = await fetch("/api/auth/session", {
@@ -21,7 +22,9 @@ export async function loginUserSession(
 }
 
 export async function logoutSession() {
-  return apiRequest("POST", "/api/auth/logout");
+  const result = await apiRequest("POST", "/api/auth/logout");
+  setActivePlatformRealm('signed-out');
+  return result;
 }
 
 // ── Multi-account switching ──────────────────────────────────────────

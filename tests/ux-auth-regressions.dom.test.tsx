@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '../client/src/hooks/useAuth';
 import { AppRouter } from '../client/src/app/AppRouter';
 import { apiRequest, queryClient } from '../client/src/lib/queryClient';
 import { i18n } from '../client/src/lib/i18n';
+import { getActivePlatformRealm, setActivePlatformRealm } from '../client/src/lib/platformSession';
 
 vi.mock('../client/src/components/Layout', () => ({ default: ({ children }: { children: React.ReactNode }) => <main>{children}</main>, AppSpinner: () => <p>Loading</p> }));
 vi.mock('../client/src/pages/finance-center', () => ({ default: () => <p>Finance overview</p> }));
@@ -22,7 +23,7 @@ let sessionFail: boolean;
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
-  queryClient.clear(); i18n.setLanguage('en'); current = { kind: 'anonymous' }; loginFail = false; sessionFail = false;
+  queryClient.clear(); sessionStorage.clear(); i18n.setLanguage('en'); current = { kind: 'anonymous' }; loginFail = false; sessionFail = false;
   history.replaceState(null, '', '/tasks?task=42#comments');
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
     if (url === '/api/auth/session') return sessionFail ? response({}, 500) : response(current);
@@ -53,9 +54,75 @@ describe('mounted authentication flow', () => {
     fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'student-9' } });
     fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'LearnerPassword123!' } });
     fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
-    await waitFor(() => expect(location.pathname).toBe('/learn/courses/8'));
+    await waitFor(() => expect(location.pathname).toBe('/student-module/courses/8'));
     expect(calls.find(call => call.url === '/api/portal/auth/login')?.options?.headers).toEqual(expect.objectContaining({ 'X-Portal-CSRF': 'anonymous-portal-csrf' }));
     expect(queryClient.getQueryData(AUTH_SESSION_QUERY_KEY)).toEqual({ kind: 'anonymous' });
+    expect(getActivePlatformRealm()).toBe('portal');
+  });
+  it.each([
+    ['/login', '/parent-module', false],
+    ['/login?next=%2Flearn%2Fpayments%3FlinkId%3D14%23invoice', '/parent-module/payments?linkId=14#invoice', true],
+    ['/login?next=%2Fparent-module%2Fprogress%3FlinkId%3D14', '/parent-module/progress?linkId=14', true],
+    ['/login?next=%2F%2Fexternal.invalid', '/parent-module', false],
+    ['/login?next=%2F%5Cexternal.invalid', '/parent-module', false],
+    ['/login?next=%2Flearn%2Flogin', '/parent-module', false],
+    ['/login?next=%2Flearn%2Flogin%3Fnext%3D%252Flearn%252Fprogress%23account', '/parent-module', false],
+    ['/login?next=%2Fstudent-module%2Fprogress%3FlinkId%3D14%23results', '/parent-module/progress?linkId=14#results', false],
+  ] as const)('opens the parent module from %s while preserving a safe destination', async (initial, destination, mixed) => {
+    history.replaceState(null, '', initial);
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      if (url === '/api/auth/session') return response({ kind: 'anonymous' });
+      if (url === '/api/auth/login') return response({ error: 'Invalid credentials' }, 401);
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
+      if (url === '/api/portal/auth/login') {
+        const representative = { linkId: 14, studentId: 8, studentName: 'Child', kind: 'representative', relationship: 'parent', permissions: ['learning.read'], status: 'active', studentClassification: 'minor' };
+        const self = { ...representative, linkId: 13, studentId: 9, studentName: 'Parent', kind: 'self', relationship: null, studentClassification: 'adult' };
+        return response({ account: { id: 9, login: 'parent-9', fullName: 'Parent', email: null, phone: null, status: 'active', locale: 'en' }, subjects: mixed ? [self, representative] : [representative], csrfToken: 'authenticated-token' });
+      }
+      return response({}, 404);
+    });
+    setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'parent-9' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'ParentPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(location.pathname + location.search + location.hash).toBe(destination));
+    expect(getActivePlatformRealm()).toBe('portal');
+  });
+  it.each(['staff', 'portal'] as const)('ignores a late %s login response after its form is replaced by another module context', async (domain) => {
+    let complete!: (response: Response) => void;
+    let pending = false;
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      if (url === '/api/auth/session') return response(current);
+      if (url === '/api/auth/login') {
+        if (domain === 'portal') return response({ error: 'Invalid credentials' }, 401);
+        pending = true;
+        return new Promise<Response>((resolve) => { complete = resolve; });
+      }
+      if (url === '/api/portal/auth/session') return response({ account: null, subjects: [], csrfToken: 'anonymous-token' });
+      if (url === '/api/portal/auth/login') {
+        pending = true;
+        return new Promise<Response>((resolve) => { complete = resolve; });
+      }
+      return response({}, 404);
+    });
+    const view = setup();
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'original-account' } });
+    fireEvent.change(document.querySelector('input[name=password]')!, { target: { value: 'OriginalPassword123!' } });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('signIn') }));
+    await waitFor(() => expect(pending).toBe(true));
+    view.unmount();
+    const replacementRealm = domain === 'staff' ? 'portal' : 'staff';
+    const replacementPath = domain === 'staff' ? '/parent-module' : '/sales';
+    history.replaceState(null, '', replacementPath);
+    setActivePlatformRealm(replacementRealm);
+    current = session;
+    await act(async () => complete(response(domain === 'staff' ? { user: session.user } : {
+      account: { id: 9, login: 'original-account', fullName: 'Original account', email: null, phone: null, status: 'active', locale: 'en' },
+      subjects: [], csrfToken: 'authenticated-token',
+    })));
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
+    expect(getActivePlatformRealm()).toBe(replacementRealm);
+    expect(location.pathname).toBe(replacementPath);
   });
   it('opens the financial center at home for an employee whose primary module is finance', async () => {
     current = { ...session, user: { ...session.user, module: 'finance', modules: ['finance'] } } as AuthSession;

@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { FinanceQuestions } from "./finance-questions";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "./navigation";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

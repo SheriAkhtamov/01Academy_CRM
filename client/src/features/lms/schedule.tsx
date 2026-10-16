@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { LmsScheduleDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";

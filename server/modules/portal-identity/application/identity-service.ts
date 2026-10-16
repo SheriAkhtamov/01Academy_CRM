@@ -534,7 +534,7 @@ export class PortalIdentityService {
         acceptedAt: null,
         acceptedAccountId: null,
       });
-      const activationUrl = `${this.options.appUrl.replace(/\/$/, "")}/learn/activate#token=${encodeURIComponent(token)}`;
+      const activationUrl = `${this.options.appUrl.replace(/\/$/, "")}/activate#token=${encodeURIComponent(token)}`;
       await repository.audit({
         actorKind: "staff",
         staffId: actor.staffId,

@@ -1,6 +1,9 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  studentModule: { en: 'Student module', ru: 'Модуль студента' },
+  parentModule: { en: 'Parent module', ru: 'Модуль родителя' },
+  platformModules: { en: 'Modules', ru: 'Модули' },
   selectTimezone: { en: 'Select a time zone', ru: 'Выбрать часовой пояс' },
   noTimezonesFound: { en: 'No time zones found', ru: 'Часовые пояса не найдены' },
   timezoneCityTashkent: { en: 'Tashkent', ru: 'Ташкент' },

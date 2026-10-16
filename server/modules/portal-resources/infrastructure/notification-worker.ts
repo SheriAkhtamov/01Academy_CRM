@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import type { PortalNotificationPreferencesDto } from "@shared/contracts/portal-resources";
+import { learningSubjectHref } from "@shared/platform-routes";
 import type { PortalActorContext } from "../../portal-identity/domain/actor-context";
 import {
   DAY,
@@ -246,7 +247,12 @@ export class PortalNotificationWorker {
             candidate.category,
             candidate.code,
             JSON.stringify(candidate.params),
-            href,
+            learningSubjectHref(
+              href,
+              link.id !== null && link.kind
+                ? { kind: link.kind, linkId: number(link.id) }
+                : null,
+            ),
             eventKey,
             permission,
             channel,

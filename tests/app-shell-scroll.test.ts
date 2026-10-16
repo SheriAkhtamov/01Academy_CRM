@@ -12,6 +12,8 @@ const tsxFiles = (dir: string): string[] =>
     return full.endsWith('.tsx') ? [full] : [];
   });
 const layout = read('../client/src/components/Layout.tsx');
+const frame = read('../client/src/components/ux/AppShellFrame.tsx');
+const learnerLayout = read('../client/src/features/portal-app/PortalShell.tsx');
 const modulePage = read('../client/src/components/ux/ModulePage.tsx');
 const tasks = read('../client/src/pages/tasks.tsx');
 const styles = read('../client/src/index.css');
@@ -22,7 +24,9 @@ const cssRuleBody = (selector: string) => {
 
 describe('app shell scrolling', () => {
   it('uses the same dynamic viewport unit for the document root and shell', () => {
-    expect(layout).toContain('className="flex h-dvh overflow-hidden"');
+    expect(frame).toContain("'flex h-dvh overflow-hidden'");
+    expect(layout).toContain('<AppShellFrame');
+    expect(learnerLayout).toContain('<AppShellFrame');
     expect(cssRuleBody('body')).toContain('min-height: 100dvh;');
     expect(cssRuleBody('#root')).toContain('min-height: 100dvh;');
     expect(cssRuleBody('body')).not.toContain('min-height: 100vh;');
@@ -46,10 +50,10 @@ describe('app shell scrolling', () => {
   });
 
   it('scrolls the header and page from the same shell surface', () => {
-    expect(layout).toContain('overflow-y-auto overflow-x-clip overscroll-y-contain');
-    expect(layout).toContain("data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}");
-    expect(layout.indexOf('<main')).toBeLessThan(layout.indexOf('<Header onMenuToggle'));
-    expect(layout.indexOf('<Header onMenuToggle')).toBeLessThan(layout.indexOf('<PageTransition'));
+    expect(frame).toContain('overflow-y-auto overflow-x-clip overscroll-y-contain');
+    expect(layout).toContain("scrollMode={containsOwnScrollArea ? 'contained' : 'document'}");
+    expect(frame.indexOf('<main')).toBeLessThan(frame.indexOf('{header}'));
+    expect(frame.indexOf('{header}')).toBeLessThan(frame.indexOf('{children}'));
     expect(layout).toContain('className="min-h-0 min-w-0 max-w-full flex-1"');
   });
 

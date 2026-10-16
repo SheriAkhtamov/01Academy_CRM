@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { learningSubjectHref } from '@shared/platform-routes';
 import { getComputedPaymentStatus } from '@shared/academy';
 import {
   PORTAL_FILE_QUOTA_BYTES, PORTAL_NOTIFICATION_CATEGORIES,
@@ -210,10 +211,19 @@ ${unreferencedLearningFile}
     return {nextCursor:items.length>limit?items[limit-1].id:null,state: student?.unresolved ? 'needs_review' : 'ready', items:items.slice(0,limit), summary: student?.unresolved ? null : summary };
   }
   async notifications(accountId: number, cursor: number | null, limit: number): Promise<PortalNotificationPageDto> {
-    const rows = await resourceRows<PortalNotificationDto>(this.pool, `SELECT notification.id,notification.link_id,notification.category,notification.code,notification.params,notification.href,notification.created_at,notification.read_at
-      FROM portal_notifications notification WHERE notification.account_id=$1 AND ($2::bigint IS NULL OR notification.id<$2) AND ${visibleNotification} ORDER BY notification.id DESC LIMIT $3`, [accountId, cursor, limit + 1]);
+    const rows = await resourceRows<PortalNotificationDto & { linkKind: "self" | "representative" | null }>(this.pool, `SELECT notification.id,notification.link_id,notification.category,notification.code,notification.params,notification.href,notification.created_at,notification.read_at,notification_link.kind AS link_kind
+      FROM portal_notifications notification LEFT JOIN portal_student_links notification_link ON notification_link.id=notification.link_id AND notification_link.account_id=notification.account_id
+      WHERE notification.account_id=$1 AND ($2::bigint IS NULL OR notification.id<$2) AND ${visibleNotification} ORDER BY notification.id DESC LIMIT $3`, [accountId, cursor, limit + 1]);
     const unread = await resourceOne<{ count: number }>(this.pool, `SELECT count(*) FROM portal_notifications notification WHERE notification.account_id=$1 AND notification.read_at IS NULL AND ${visibleNotification}`, [accountId]);
-    return { items: rows.slice(0, limit), nextCursor: rows.length > limit ? rows[limit - 1].id : null, unreadCount: Number(unread?.count ?? 0) };
+    const items = rows.slice(0, limit).map(({ linkKind, ...notification }) => ({
+      ...notification,
+      href: notification.href
+        ? learningSubjectHref(notification.href, linkKind && notification.linkId
+          ? { kind: linkKind, linkId: notification.linkId }
+          : null)
+        : null,
+    }));
+    return { items, nextCursor: rows.length > limit ? rows[limit - 1].id : null, unreadCount: Number(unread?.count ?? 0) };
   }
   async readNotification(accountId: number, id: number | null) {
     await this.pool.query(`UPDATE portal_notifications notification SET read_at=COALESCE(read_at,now()) WHERE notification.account_id=$1 AND ($2::bigint IS NULL OR notification.id=$2) AND ${visibleNotification}`, [accountId, id]);

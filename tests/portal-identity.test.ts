@@ -669,5 +669,6 @@ describe("portal HTTP isolation and CSRF", () => {
       .send(command("parent.login", "representative", ["learning.read"]));
     expect(response.status).toBe(201);
     expect(response.body.activationUrl).toContain("#token=");
+    expect(new URL(response.body.activationUrl).pathname).toBe('/activate');
   });
 });

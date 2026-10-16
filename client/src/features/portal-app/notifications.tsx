@@ -5,7 +5,12 @@ import {
   useInfiniteQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "./navigation";
+import {
+  isLearningNavigationHref,
+  learningModuleForSubject,
+  toLearningModuleHref,
+} from "@shared/platform-routes";
 import type { PortalNotificationPreferencesDto } from "@shared/contracts/portal-resources";
 import { PORTAL_NOTIFICATION_CATEGORIES } from "@shared/contracts/portal-resources";
 import { translations, type TranslationKey } from "@/lib/i18n";
@@ -58,7 +63,14 @@ export function PortalNotifications({
   const { t } = useTranslation();
   const message = usePortalError();
   const notify = usePortalSuccess();
-  const { account, subjects, guarded, selectSubject } = usePortal();
+  const {
+    account,
+    subjects,
+    allSubjects = subjects,
+    learningModule,
+    guarded,
+    selectSubject,
+  } = usePortal();
   const [, navigate] = useLocation();
   const format = usePortalFormat();
   const [settings, setSettings] = useState(false);
@@ -77,7 +89,7 @@ export function PortalNotifications({
       "portal-account",
       account?.id,
       "notifications",
-      portalGrantFingerprint(subjects),
+      portalGrantFingerprint(allSubjects),
     ],
     queryFn: ({ signal, pageParam }) =>
       portalResourcesApi.notifications(signal, pageParam),
@@ -156,7 +168,7 @@ export function PortalNotifications({
                 Object.entries(item.params).forEach(([name, value]) => {
                   copy = copy.split(`{${name}}`).join(String(value));
                 });
-                const child = subjects.find(
+                const child = allSubjects.find(
                   (subject) => subject.linkId === item.linkId,
                 );
                 return (
@@ -181,16 +193,34 @@ export function PortalNotifications({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {item.href?.startsWith("/learn") && (
+                      {item.href && isLearningNavigationHref(item.href) && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() =>
                             guarded(() => {
-                              if (child) selectSubject(child.linkId);
+                              if (child && subjects.includes(child))
+                                selectSubject(child.linkId);
                               read.mutate(item.id);
                               onNavigate?.();
-                              navigate(item.href!);
+                              if (learningModule) {
+                                const href = toLearningModuleHref(
+                                  item.href!,
+                                  child
+                                    ? learningModuleForSubject(child)
+                                    : learningModule,
+                                );
+                                const destination = new URL(
+                                  href,
+                                  window.location.origin,
+                                );
+                                if (child)
+                                  destination.searchParams.set(
+                                    "linkId",
+                                    String(child.linkId),
+                                  );
+                                navigate(`${destination.pathname}${destination.search}${destination.hash}`);
+                              } else navigate(item.href!);
                             })
                           }
                         >

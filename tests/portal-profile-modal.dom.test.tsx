@@ -274,7 +274,7 @@ it("opens the header profile over the mounted workspace and preserves draft, scr
   const opener = headerProfile();
   await userEvent.click(opener);
   expect(window.location.pathname + window.location.search).toBe(
-    "/learn/courses?tab=active",
+    "/student-module/courses?tab=active",
   );
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(
@@ -305,7 +305,7 @@ it("opens the sidebar profile as a dialog and returns focus to its button", asyn
   });
   await userEvent.click(opener);
   expect(profile()).toBeTruthy();
-  expect(window.location.pathname).toBe("/learn/courses");
+  expect(window.location.pathname).toBe("/student-module/courses");
   closeProfile();
   await waitFor(() => expect(document.activeElement).toBe(opener));
 });
@@ -326,7 +326,7 @@ it("hands focus from the mobile menu to the profile dialog and back to the heade
   );
   closeProfile();
   await waitFor(() => expect(document.activeElement).toBe(headerProfile()));
-  expect(window.location.pathname).toBe("/learn/courses");
+  expect(window.location.pathname).toBe("/student-module/courses");
 });
 
 it("opens a legacy profile URL over home and replaces that URL when its dialog closes", async () => {
@@ -339,9 +339,9 @@ it("opens a legacy profile URL over home and replaces that URL when its dialog c
     hidden: true,
   });
   expect(within(main()).queryByLabelText(i18n.t("portalFullName"))).toBeNull();
-  expect(window.location.pathname).toBe("/learn/profile");
+  expect(window.location.pathname).toBe("/student-module/profile");
   closeProfile();
-  await waitFor(() => expect(window.location.pathname).toBe("/learn"));
+  await waitFor(() => expect(window.location.pathname).toBe("/student-module"));
   expect(history.length).toBe(length);
   expect(screen.getByRole("textbox", { name: "Home workspace" })).toBe(home);
   expect(mocks.backgroundMount).toHaveBeenCalledOnce();
@@ -430,13 +430,13 @@ it("uses the global dirty guard for browser Back and closes the local dialog onl
   act(() => history.back());
   await screen.findByRole("alertdialog");
   clickConfirmation("portalCancel");
-  expect(window.location.pathname).toBe("/learn/courses");
+  expect(window.location.pathname).toBe("/student-module/courses");
   expect(profile()).toBeTruthy();
   act(() => history.back());
   await screen.findByRole("alertdialog");
   clickConfirmation("portalLeave");
   await screen.findByRole("textbox", { name: "Home workspace" });
-  expect(window.location.pathname).toBe("/learn");
+  expect(window.location.pathname).toBe("/student-module");
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(main()));
   // Radix can deliver this after its exit animation, later than route RAF focus.
@@ -495,6 +495,41 @@ it("preserves the dirty account profile through desktop resize and background gr
   ).toBe("Learner edited");
   closeProfile();
   expect(confirmation()).toBeTruthy();
+});
+
+it("closes a dirty profile after an approved Back between two module home routes", async () => {
+  history.replaceState(null, "", "/parent-module");
+  history.pushState(null, "", "/student-module");
+  mocks.session.mockResolvedValue({
+    ...session,
+    subjects: [
+      session.subjects[0],
+      {
+        ...session.subjects[0],
+        linkId: 11,
+        studentId: 21,
+        studentName: "Child",
+        kind: "representative",
+        relationship: "parent",
+      },
+    ],
+  });
+  mount();
+  await screen.findByRole("textbox", { name: "Home workspace" });
+  await userEvent.click(headerProfile());
+  await userEvent.type(within(profile()).getByLabelText(i18n.t("portalFullName")), " edited");
+  act(() => history.back());
+  await screen.findByRole("alertdialog");
+  clickConfirmation("portalCancel");
+  expect(window.location.pathname).toBe("/student-module");
+  expect(profile()).toBeTruthy();
+  act(() => history.back());
+  await screen.findByRole("alertdialog");
+  clickConfirmation("portalLeave");
+  await waitFor(() => expect(window.location.pathname).toBe("/parent-module"));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(main()));
+  expect(screen.getByRole("heading", { name: i18n.t("parentModule") })).toBeTruthy();
 });
 
 it("remounts profile and nested security forms when the authenticated account changes", async () => {
@@ -563,9 +598,14 @@ async function refreshSession(next: PortalSessionDto) {
   fireEvent.click(
     screen.getByRole("button", { name: "Refresh session", hidden: true }),
   );
-  await waitFor(() =>
-    expect(screen.getByTestId("csrf").textContent).toBe(next.csrfToken),
-  );
+  if (window.location.pathname.startsWith("/parent-module") && next.subjects.every((item) => item.kind === "self")) {
+    await screen.findByText(i18n.t("portalNoAccess"), { exact: true });
+    expect(screen.queryByRole("textbox", { name: "Courses workspace", hidden: true })).toBeNull();
+  } else {
+    await waitFor(() =>
+      expect(screen.getByTestId("csrf").textContent).toBe(next.csrfToken),
+    );
+  }
 }
 async function openChildProfile() {
   mocks.session.mockResolvedValue(childSession());

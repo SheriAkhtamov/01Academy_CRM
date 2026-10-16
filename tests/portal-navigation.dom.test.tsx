@@ -225,6 +225,95 @@ afterEach(() => {
 });
 
 describe("portal viewport navigation", () => {
+  const roleSection = (module: "student" | "parent") =>
+    document.querySelector<HTMLElement>(`aside [data-platform-module="${module}"]`)!;
+  const mixedSession: PortalSessionDto = {
+    ...session,
+    subjects: [
+      session.subjects[0],
+      ...[20, 21].map((linkId): PortalSessionDto["subjects"][number] => ({
+        ...session.subjects[0],
+        linkId,
+        studentId: linkId + 20,
+        studentName: `Child ${linkId}`,
+        kind: "representative",
+        relationship: "parent",
+        permissions: ["learning.read", "attendance.read", "finance.read"],
+      })),
+    ],
+  };
+  const withSession = (value: PortalSessionDto) => {
+    mocks.session.mockResolvedValue(value);
+    client.setQueryData(portalSessionKey, value);
+  };
+
+  it("uses the shared platform frame and shows only assigned role modules", () => {
+    history.replaceState(null, "", "/student-module");
+    mount();
+    expect(document.querySelectorAll("[data-platform-shell]")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-platform-sidebar]")).toHaveLength(1);
+    expect(roleSection("student")).toBeTruthy();
+    expect(roleSection("parent")).toBeNull();
+    expect(screen.getByRole("heading", { name: i18n.t("studentModule") })).toBeTruthy();
+    expect(within(document.querySelector("aside")!).getByText(i18n.t("schoolCrm"))).toBeTruthy();
+    expect(screen.queryByText(i18n.t("portalTitle"))).toBeNull();
+  });
+
+  it("keeps representative navigation and selected children inside the parent module", async () => {
+    history.replaceState(null, "", "/parent-module");
+    withSession({ ...mixedSession, subjects: mixedSession.subjects.slice(1) });
+    mount();
+    expect(roleSection("student")).toBeNull();
+    const parent = within(roleSection("parent"));
+    expect(parent.queryByRole("button", { name: i18n.t("portalCourses") })).toBeNull();
+    expect(parent.queryByRole("button", { name: i18n.t("portalAssignments") })).toBeNull();
+    await userEvent.click(parent.getByRole("button", { name: i18n.t("portalResults") }));
+    await currentRoute("/parent-module/progress");
+    expect(screen.getByRole("heading", { name: i18n.t("parentModule") })).toBeTruthy();
+    expect(screen.getByTestId("subject").textContent).toBe("");
+    await userEvent.click(within(document.querySelector("header")!).getByRole("button", { name: i18n.t("portalFamily") }));
+    expect(screen.queryByRole("menuitem", { name: "Learner 10" })).toBeNull();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Child 20" }));
+    await waitFor(() => expect(screen.getByTestId("subject").textContent).toBe("20"));
+    expect(window.location.pathname).toBe("/parent-module/progress");
+  });
+
+  it("guards cross-module navigation once and selects only subjects from the target role", async () => {
+    history.replaceState(null, "", "/student-module");
+    withSession(mixedSession);
+    mount();
+    expect(roleSection("student")).toBeTruthy();
+    expect(roleSection("parent")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
+    const parentHome = within(roleSection("parent")).getByRole("button", { name: i18n.t("portalFamilyOverview") });
+    fireEvent.click(parentHome);
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: i18n.t("portalCancel") }));
+    expect(window.location.pathname).toBe("/student-module");
+    expect(screen.getByTestId("subject").textContent).toBe("10");
+    fireEvent.click(parentHome);
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: i18n.t("portalLeave") }));
+    await currentRoute("/parent-module");
+    expect(screen.getByTestId("subject").textContent).toBe("");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.click(within(roleSection("student")).getByRole("button", { name: i18n.t("portalCourses") }));
+    await currentRoute("/student-module/courses");
+    expect(screen.getByTestId("subject").textContent).toBe("10");
+  });
+
+  it("restores canonical module scroll positions on Back and Forward", async () => {
+    history.replaceState(null, "", "/student-module");
+    mount();
+    scroll(325);
+    await userEvent.click(within(roleSection("student")).getByRole("button", { name: i18n.t("portalCourses") }));
+    await currentRoute("/student-module/courses");
+    scroll(90);
+    await back("/student-module");
+    await waitFor(() => expect(main().scrollTop).toBe(325));
+    act(() => history.forward());
+    await currentRoute("/student-module/courses");
+    await waitFor(() => expect(main().scrollTop).toBe(90));
+  });
+
   it("approves a combined subject change and route navigation with one confirmation", async () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));

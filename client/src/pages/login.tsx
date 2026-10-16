@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -19,6 +19,8 @@ import { devLog } from '@/lib/debug';
 import { useLocation } from 'wouter';
 import { DURATION, EASE, SPRING, TRANSITION } from '@/lib/motion';
 import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
+import { setActivePlatformRealm } from '@/lib/platformSession';
+import { isLearningModulePath, isLegacyLearningPath, isPlatformAccountPath, learningModuleBase, learningModuleForSubject, learningModuleFromPath, toLearningModuleHref } from '@shared/platform-routes';
 
 export default function Login() {
   const [error, setError] = useState('');
@@ -28,6 +30,11 @@ export default function Login() {
   const portalErrorMessage = usePortalError();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   // The URL the user originally asked for (deep link or the page open when the
   // session expired): returning there instead of a blind redirect to `/`
   // keeps shared links and mid-session expiry painless.
@@ -35,7 +42,14 @@ export default function Login() {
     const href = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const next = new URLSearchParams(window.location.search).get('next');
     const target = window.location.pathname === '/login' ? (next ?? '/') : href;
-    return target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/login') ? target : '/';
+    if (!target.startsWith('/') || target.startsWith('//')) return '/';
+    try {
+      const destination = new URL(target, window.location.origin);
+      return destination.origin === window.location.origin && !destination.pathname.startsWith('/login')
+        ? `${destination.pathname}${destination.search}${destination.hash}` : '/';
+    } catch {
+      return '/';
+    }
   });
   const loginSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
@@ -61,19 +75,36 @@ export default function Login() {
 
       try {
         await login(data.login, data.password);
+        if (!mounted.current) return;
       } catch (staffError) {
+        if (!mounted.current) return;
         if ((staffError as { status?: number }).status !== 401) throw staffError;
         const portalSession = await portalIdentityApi.session();
+        if (!mounted.current) return;
         setPortalCsrf(portalSession.csrfToken);
-        await portalIdentityApi.login(data.login, data.password);
-        setLocation(returnTo === '/learn' || returnTo.startsWith('/learn/') ? returnTo : '/learn');
+        const learningSession = await portalIdentityApi.login(data.login, data.password);
+        if (!mounted.current) return;
+        const requestedLink = Number(new URL(returnTo, window.location.origin).searchParams.get('linkId'));
+        const requestedSubject = learningSession.subjects.find((subject) => subject.linkId === requestedLink);
+        const requestedModule = learningModuleFromPath(returnTo);
+        const fallbackModule = learningModuleForSubject(requestedSubject ??
+          learningSession.subjects.find((subject) => subject.kind === 'self') ?? learningSession.subjects[0]);
+        const module = requestedModule && learningSession.subjects.some((subject) => learningModuleForSubject(subject) === requestedModule)
+          ? requestedModule : fallbackModule;
+        const requestedDestination = isPlatformAccountPath(returnTo) ? returnTo :
+          isLearningModulePath(returnTo) || isLegacyLearningPath(returnTo) ? toLearningModuleHref(returnTo, module) : learningModuleBase(module);
+        const destination = requestedDestination.split(/[?#]/, 1)[0] === '/login' ? learningModuleBase(module) : requestedDestination;
+        setActivePlatformRealm('portal');
+        setLocation(destination);
         return;
       }
       devLog('[LOGIN] Login successful!');
       queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       setIsSubmitting(false);
-      setLocation(returnTo === '/learn' || returnTo.startsWith('/learn/') ? '/learning' : returnTo);
+      setActivePlatformRealm('staff');
+      setLocation(isLearningModulePath(returnTo) || isLegacyLearningPath(returnTo) ? '/learning' : isPlatformAccountPath(returnTo) ? '/' : returnTo);
     } catch (err: any) {
+      if (!mounted.current) return;
       if ([401, 404].includes(err?.status)) {
         setError(t('invalidCredentialsMessage'));
         setIsSubmitting(false);
@@ -89,7 +120,7 @@ export default function Login() {
       setError(errorMessage);
       setIsSubmitting(false);
     } finally {
-      setIsSubmitting(false);
+      if (mounted.current) setIsSubmitting(false);
     }
   };
 

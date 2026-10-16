@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "../portal-app/navigation";
+import { isLearningNavigationHref } from "@shared/platform-routes";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -163,7 +164,7 @@ export function PortalDay() {
   const content = usePortalContent();
   const message = usePortalError();
   const notify = usePortalSuccess();
-  const { subject, guarded, account, subjects, allowed } = usePortal();
+  const { subject, guarded, account, subjects, allSubjects = subjects, allowed } = usePortal();
   const [, navigate] = useLocation();
   const query = useSubjectQuery("dashboard", portalLmsApi.dashboard);
   const notifications = useQuery({
@@ -171,7 +172,7 @@ export function PortalDay() {
       "portal-account",
       account?.id,
       "day-notifications",
-      portalGrantFingerprint(subjects),
+      portalGrantFingerprint(allSubjects),
     ],
     queryFn: ({ signal }) => portalResourcesApi.allNotifications(signal),
     enabled: Boolean(account),
@@ -332,7 +333,7 @@ export function PortalDay() {
                 action
                   ? setAssignmentId(action.id)
                   : guarded(() => {
-                      if (reply?.href?.startsWith("/learn")) {
+                      if (reply?.href && isLearningNavigationHref(reply.href)) {
                         markNotification.mutate(reply.id);
                         navigate(reply.href);
                       } else if (nextMaterial)
@@ -430,7 +431,7 @@ export function PortalDay() {
                 key={`reply-${item.id}`}
                 onClick={() =>
                   guarded(() => {
-                    if (item.href?.startsWith("/learn")) {
+                    if (item.href && isLearningNavigationHref(item.href)) {
                       markNotification.mutate(item.id);
                       navigate(item.href);
                     }
@@ -557,7 +558,7 @@ export function PortalDay() {
 export function FamilyOverview() {
   const { t } = useTranslation();
   const format = usePortalFormat();
-  const { account, subjects, selectSubject } = usePortal();
+  const { account, subjects, allSubjects = subjects, selectSubject } = usePortal();
   const representatives = subjects.filter(
     (item) => item.kind === "representative",
   );
@@ -593,7 +594,7 @@ export function FamilyOverview() {
       "portal-account",
       account?.id,
       "day-notifications",
-      portalGrantFingerprint(subjects),
+      portalGrantFingerprint(allSubjects),
     ],
     queryFn: ({ signal }) => portalResourcesApi.allNotifications(signal),
     enabled: Boolean(

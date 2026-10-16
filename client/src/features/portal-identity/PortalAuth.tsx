@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation } from "wouter";
+import {
+  learningModuleBase,
+  learningModuleForSubject,
+} from "@shared/platform-routes";
+import { setActivePlatformRealm } from "@/lib/platformSession";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/lib/i18n";
@@ -87,7 +92,7 @@ export function PortalAuth({
   const login = () =>
     navigate(
       token
-        ? `/login?next=${encodeURIComponent(`/learn/invite#token=${encodeURIComponent(token)}`)}`
+        ? `/login?next=${encodeURIComponent(`/activate#token=${encodeURIComponent(token)}`)}`
         : "/login",
     );
   return (
@@ -169,7 +174,10 @@ function PortalActivationForm({
       if (!mounted.current) return;
       setUnsaved(false);
       acceptSession(activated);
-      allowNavigation(() => navigate("/learn"));
+      setActivePlatformRealm("portal");
+      const own = activated.subjects.find((item) => item.kind === "self");
+      const module = learningModuleForSubject(own ?? activated.subjects[0]);
+      allowNavigation(() => navigate(learningModuleBase(module)));
     },
   });
   useEffect(() => {
@@ -259,7 +267,7 @@ function PortalActivationForm({
               guarded(() =>
                 navigate(
                   token
-                    ? `/login?next=${encodeURIComponent(`/learn/invite#token=${encodeURIComponent(token)}`)}`
+                    ? `/login?next=${encodeURIComponent(`/activate#token=${encodeURIComponent(token)}`)}`
                     : "/login",
                 ),
               )

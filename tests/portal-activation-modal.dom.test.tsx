@@ -73,7 +73,7 @@ beforeEach(() => {
   i18n.setLanguage("en");
   sessionStorage.clear();
   localStorage.clear();
-  history.replaceState(null, "", "/learn/invite#token=invitation");
+  history.replaceState(null, "", "/activate#token=invitation");
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
@@ -158,7 +158,7 @@ it("freezes activation while saving and completes navigation once without anothe
   expect(dialog()).toBeTruthy();
   expect(screen.queryByRole("alertdialog")).toBeNull();
   await act(async () => finish(activated));
-  await waitFor(() => expect(window.location.pathname).toBe("/learn"));
+  await waitFor(() => expect(window.location.pathname).toBe("/student-module"));
   expect(client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id).toBe(50);
   expect(screen.queryByRole("alertdialog")).toBeNull();
 });
@@ -187,7 +187,7 @@ it("does not replace a newer account or invitation with a late response from an 
     ...activated,
     account: { ...activated.account!, id: 99, fullName: "Another learner" },
   };
-  history.replaceState(null, "", "/learn/invite#token=new-invitation");
+  history.replaceState(null, "", "/activate#token=new-invitation");
   mount(newer, "new-invitation");
   await act(async () => finish(activated));
   expect(client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id).toBe(99);
@@ -213,7 +213,7 @@ it("resets the activation form when the account changes on the same invitation a
   await act(async () => finish(activated));
   expect(client.getQueryData<PortalSessionDto>(portalSessionKey)?.account?.id).toBe(99);
   expect(within(dialog()).getByText("Another learner")).toBeTruthy();
-  expect(window.location.pathname).toBe("/learn/invite");
+  expect(window.location.pathname).toBe("/activate");
   await user.click(within(dialog()).getByRole("button", { name: copy("portalCancel") }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.queryByRole("alertdialog")).toBeNull();

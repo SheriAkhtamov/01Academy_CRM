@@ -26,6 +26,7 @@ import { createVoiceRemindersRuntime } from '../infrastructure/voice-reminders-r
 import { createPbxCapacityProvider } from '../infrastructure/voice-telephony/provider-capacity';
 import { CrmCapacitySource } from '../infrastructure/voice-telephony/crm-capacity';
 import { onlinePbxClient } from '../services/onlinepbx';
+import { isLearningModulePath, isPlatformAccountPath } from '@shared/platform-routes';
 
 export type ApplicationRuntime = {
   server: Server;
@@ -75,6 +76,8 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     registerTelegramTaskRoutes(app);
     const sessionMiddleware = createSessionMiddleware();
     app.use((request, response, next) =>
+      isLearningModulePath(request.path) ||
+      isPlatformAccountPath(request.path) ||
       ["/api/portal", "/api/public/portfolio", "/learn", "/portfolio/p"].some(
         (prefix) =>
           request.path === prefix || request.path.startsWith(`${prefix}/`),

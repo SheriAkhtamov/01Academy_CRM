@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { learningSubjectHref } from '@shared/platform-routes';
 import type { PortalActorContext } from '../../portal-identity';
 import type { PortalFinanceQuestionDto, PortalFinanceQuestionDetailDto, PortalFinanceQuestionInput, PortalFinanceMessageDto } from '@shared/contracts/portal-resources';
 import { ProjectRepository } from './project-repository';
@@ -61,13 +62,14 @@ export class FinanceQuestionRepository extends ProjectRepository {
   }
   async staffFinanceReply(actor: ResourceStaffActor,id:number,body:string,requestKey = crypto.randomUUID()) {
     staff(actor); await resourceTransaction(this.pool,async sql => {
-      const question = await resourceOne<{accountId:number;linkId:number;studentId:number;subject:string}>(sql,'SELECT account_id,link_id,student_id,subject FROM portal_finance_questions WHERE id=$1 FOR UPDATE',[id]);
+      const question = await resourceOne<{accountId:number;linkId:number;studentId:number;subject:string;linkKind:"self"|"representative"}>(sql,'SELECT question.account_id,question.link_id,question.student_id,question.subject,link.kind AS link_kind FROM portal_finance_questions question JOIN portal_student_links link ON link.id=question.link_id AND link.account_id=question.account_id WHERE question.id=$1 FOR UPDATE OF question',[id]);
       if (!question) throw new PortalResourceError('portalNotFound',404);
       const replay = await resourceOne<{body:string}>(sql,'SELECT body FROM portal_finance_question_messages WHERE question_id=$1 AND user_id=$2 AND request_key=$3',[id,actor.userId,requestKey]);
       if (replay) { if (replay.body !== body) throw new PortalResourceError('portalVersionConflict',409); return; }
       const message = await resourceOne<{id:number}>(sql,'INSERT INTO portal_finance_question_messages(question_id,user_id,body,request_key) VALUES($1,$2,$3,$4) RETURNING id',[id,actor.userId,body,requestKey]);
       await sql.query("UPDATE portal_finance_questions SET status='answered',updated_at=now() WHERE id=$1",[id]);
-      await sql.query(`INSERT INTO lms_resource_outbox(account_id,link_id,category,code,params,href,event_key,required_permission,channel) VALUES($1,$2,'finance','portalNoticeThreadAnswered',$3::jsonb,$4,$5,'finance.read','in_app'),($1,$2,'finance','portalNoticeThreadAnswered',$3::jsonb,$4,$5,'finance.read','email') ON CONFLICT(account_id,event_key,channel) DO NOTHING`,[question.accountId,question.linkId,JSON.stringify({title:question.subject,sourceType:'finance_question_answered',questionId:id,messageId:message!.id}),`/learn/payments?question=${id}&linkId=${question.linkId}`,`finance-reply:${message!.id}`]);
+      const href = learningSubjectHref(`/learn/payments?question=${id}`, { kind: question.linkKind, linkId: question.linkId });
+      await sql.query(`INSERT INTO lms_resource_outbox(account_id,link_id,category,code,params,href,event_key,required_permission,channel) VALUES($1,$2,'finance','portalNoticeThreadAnswered',$3::jsonb,$4,$5,'finance.read','in_app'),($1,$2,'finance','portalNoticeThreadAnswered',$3::jsonb,$4,$5,'finance.read','email') ON CONFLICT(account_id,event_key,channel) DO NOTHING`,[question.accountId,question.linkId,JSON.stringify({title:question.subject,sourceType:'finance_question_answered',questionId:id,messageId:message!.id}),href,`finance-reply:${message!.id}`]);
       await resourceAudit(sql,actor,'finance.question_answered','finance_question',id);
     }); return this.staffFinanceQuestion(actor,id);
   }

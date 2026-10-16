@@ -8,6 +8,14 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { Redirect, useLocation, useSearch } from "wouter";
+import {
+  isLegacyLearningPath,
+  isLearningModulePath,
+  learningModuleForSubject,
+  learningSectionPath,
+  toLearningModuleHref,
+} from "@shared/platform-routes";
+import { setActivePlatformRealm } from "@/lib/platformSession";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { PortalPermission } from "@shared/contracts/portal-identity";
@@ -95,10 +103,24 @@ function Gate({
   );
 }
 function PortalRoutes() {
-  const [path] = useLocation();
+  const [rawPath] = useLocation();
+  const actualPath = rawPath.replace(/\/+$/, "") || "/";
+  const path = learningSectionPath(actualPath);
   const search = useSearch();
-  const { loading, error, refresh, account, subject, subjects, selectSubject } =
-    usePortal();
+  const {
+    loading,
+    error,
+    refresh,
+    account,
+    subject,
+    subjects,
+    allSubjects,
+    selectSubject,
+  } = usePortal();
+  useEffect(() => {
+    if (account && isLearningModulePath(actualPath))
+      setActivePlatformRealm("portal");
+  }, [account, actualPath]);
   const requestedRaw = new URLSearchParams(search).get("linkId");
   const requested = requestedRaw ? Number(requestedRaw) : null;
   const requestedSubject = subjects.find((item) => item.linkId === requested);
@@ -134,17 +156,32 @@ function PortalRoutes() {
         <PortalError error={error} retry={refresh} />
       </div>
     );
-  if (path === "/learn/invite" || path === "/learn/activate")
+  if (isLegacyLearningPath(actualPath) || actualPath === "/") {
+    const requestedLink = allSubjects.find((item) => item.linkId === requested);
+    const module = learningModuleForSubject(
+      requestedLink ?? subject ?? allSubjects[0],
+    );
+    const destination = actualPath === "/" ? "/learn" : actualPath;
+    return (
+      <Redirect
+        replace
+        to={toLearningModuleHref(
+          `${destination}${search ? `?${search}` : ""}${window.location.hash}`,
+          module,
+        )}
+      />
+    );
+  }
+  if (actualPath === "/activate")
     return <PortalAuth mode="invite" token={token} />;
-  if (path === "/learn/recover" || path === "/learn/reset")
+  if (actualPath === "/recover")
     return <PortalRecoveryHelp />;
   if (!account) {
     const destination = token
-      ? `/learn/invite#token=${encodeURIComponent(token)}`
-      : `${path === "/learn/login" ? "/learn" : path}${search ? `?${search}` : ""}`;
+      ? `/activate#token=${encodeURIComponent(token)}`
+      : `${actualPath}${search ? `?${search}` : ""}${window.location.hash}`;
     return <Redirect to={`/login?next=${encodeURIComponent(destination)}`} />;
   }
-  if (path === "/learn/login") return <Redirect to="/learn" />;
   if (requestedRaw !== null && !requestedSubject)
     return (
       <PortalShell>
@@ -295,7 +332,6 @@ function NoPortalAccess() {
   });
   return (
     <div className="space-y-4">
-      <PortalTitle labelKey="portalTitle" />
       <PortalEmpty labelKey="portalNoAccess" />
       {query.data && (
         <Card>

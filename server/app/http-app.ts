@@ -11,6 +11,7 @@ import { isProductionEnvironment } from '../config';
 import { logger } from '../lib/logger';
 import { privateRequestPath } from '../lib/private-request-path';
 import { isPortalRateLimitRealm } from '../infrastructure/portal-rate-limiters';
+import { isLearningModulePath, isLegacyLearningPath, isPlatformAccountPath } from '@shared/platform-routes';
 
 export const createHttpApp = ({ beforeBodyParser }: { beforeBodyParser?: express.RequestHandler } = {}) => {
   const app = express();
@@ -19,7 +20,7 @@ export const createHttpApp = ({ beforeBodyParser }: { beforeBodyParser?: express
   app.use(requestContextMiddleware);
   app.use(securityHeadersMiddleware);
   app.use((request,response,next) => {
-    if (request.path === '/learn' || request.path.startsWith('/learn/') || request.path.startsWith('/portfolio/p/')) {
+    if (isLearningModulePath(request.path) || isLegacyLearningPath(request.path) || isPlatformAccountPath(request.path) || request.path.startsWith('/portfolio/p/')) {
       response.setHeader('Referrer-Policy','no-referrer');
       response.setHeader('Cache-Control','private, no-store');
       response.setHeader('X-Robots-Tag','noindex, nofollow');

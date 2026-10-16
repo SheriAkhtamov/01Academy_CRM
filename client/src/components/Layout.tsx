@@ -11,6 +11,7 @@ import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { PageTransition } from '@/components/ux/motion';
 import { SPRING } from '@/lib/motion';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
+import { AppShellFrame } from '@/components/ux/AppShellFrame';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -174,71 +175,60 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden">
-      {/* Remove the backdrop with the drawer state, without waiting for an exit
-          animation that can outlive navigation or a viewport change. */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
+    <AppShellFrame
+      mainRef={mainRef}
+      contentRef={pageContentRef}
+      scrollMode={containsOwnScrollArea ? 'contained' : 'document'}
+      navigation={(
+        <>
+          {/* Remove the backdrop with the drawer state, without waiting for an exit
+              animation that can outlive navigation or a viewport change. */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {/*
+            The drawer transform stays on Tailwind rather than framer: `lg:translate-x-0`
+            is what keeps the sidebar docked on desktop, and an inline transform from
+            framer would win over that class and strand it off-screen. While closed
+            the drawer is `invisible`, so its off-screen links leave the tab order
+            and screen-reader tree; the visibility switch is delayed on close until
+            the slide-out finishes.
+          */}
+          <div
+            ref={drawerRef}
+            onKeyDown={handleDrawerKeyDown}
+            className={`
+              fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] lg:relative lg:translate-x-0 lg:visible lg:z-auto
+              ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
+            `}
+            style={{
+              transitionProperty: 'transform, visibility',
+              transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1), linear',
+              transitionDelay: sidebarOpen ? '0ms, 0ms' : '0ms, 300ms',
+            }}
+          >
+            <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+          </div>
+        </>
       )}
-
-      {/*
-        The drawer transform stays on Tailwind rather than framer: `lg:translate-x-0`
-        is what keeps the sidebar docked on desktop, and an inline transform from
-        framer would win over that class and strand it off-screen. While closed
-        the drawer is `invisible`, so its off-screen links leave the tab order
-        and screen-reader tree; the visibility switch is delayed on close until
-        the slide-out finishes.
-      */}
-      <div
-        ref={drawerRef}
-        onKeyDown={handleDrawerKeyDown}
-        className={`
-          fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] lg:relative lg:translate-x-0 lg:visible lg:z-auto
-          ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
-        `}
-        style={{
-          transitionProperty: 'transform, visibility',
-          transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1), linear',
-          transitionDelay: sidebarOpen ? '0ms, 0ms' : '0ms, 300ms',
-        }}
-      >
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      </div>
-
-      <div ref={pageContentRef} className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/*
-          The header belongs to the same scroll surface as the page. Its sticky
-          position keeps the controls visible while wheel and touch gestures
-          over the header can still move the page. Ordinary module content
-          flows into this scroller; boards and conversations keep their own
-          bounded scroll areas where their layout needs one.
-
-          The page boundary sits inside the layout so a crash in one page no
-          longer wipes the header, sidebar and telephony widget with it.
-        */}
-        <main
-          ref={mainRef}
-          tabIndex={-1}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip overscroll-y-contain outline-none [scrollbar-gutter:stable]"
-          data-app-scroll={containsOwnScrollArea ? 'contained' : 'document'}
+      header={<Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />}
+    >
+      <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
+      {/* Keep page failures inside the shell so navigation remains available. */}
+      <AppErrorBoundary variant="page">
+        <PageTransition
+          routeKey={location}
+          className="min-h-0 min-w-0 max-w-full flex-1"
         >
-          <Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />
-          <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
-          <AppErrorBoundary variant="page">
-            <PageTransition
-              routeKey={location}
-              className="min-h-0 min-w-0 max-w-full flex-1"
-            >
-              {children}
-            </PageTransition>
-          </AppErrorBoundary>
-        </main>
-      </div>
-    </div>
+          {children}
+        </PageTransition>
+      </AppErrorBoundary>
+    </AppShellFrame>
   );
 }
 

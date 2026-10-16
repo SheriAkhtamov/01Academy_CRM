@@ -276,7 +276,7 @@ describe.skipIf(!databaseUrl)(
       expect(result).toMatchObject({ delivered: 1, cancelled: 0 });
       const replies = await notifications("portalNoticeThreadAnswered");
       expect(replies).toHaveLength(1);
-      expect(replies[0]).toMatchObject({ account_id: "2", link_id: "2", href: `/learn/help?thread=${thread.id}&linkId=2` });
+      expect(replies[0]).toMatchObject({ account_id: "2", link_id: "2", href: `/parent-module/help?thread=${thread.id}&linkId=2` });
       expect((await pool.query("SELECT count(*)::int AS count FROM lms_notification_sources WHERE source_key=$1", [`learning:${currentId}`])).rows[0].count).toBe(1);
       await Promise.all([worker({ }).runOnce(), worker({ }).runOnce()]);
       expect(await notifications("portalNoticeThreadAnswered")).toHaveLength(1);
@@ -341,7 +341,7 @@ describe.skipIf(!databaseUrl)(
         ),
       ).toEqual([2]);
       expect((await notifications("portalNoticeThreadAnswered"))[0].href)
-        .toBe(`/learn/help?thread=${thread.id}&linkId=2`);
+        .toBe(`/parent-module/help?thread=${thread.id}&linkId=2`);
     });
     it("sends in-app immediately, defers ordinary email through quiet hours and rechecks revoked links", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
@@ -590,7 +590,7 @@ describe.skipIf(!databaseUrl)(
             "SELECT href FROM portal_notifications WHERE account_id=2 AND code='portalNoticeAssignmentAccepted'",
           )
         ).rows[0].href,
-      ).toBe(`/learn/feedback?review=${review.id}`);
+      ).toBe(`/parent-module/feedback?review=${review.id}&linkId=2`);
     });
     it("sends overdue notices once, cancels cancelled lesson notices correctly and bypasses quiet hours for account security", async () => {
       const recipient = await assignment(now - 25 * HOUR, now - 26 * HOUR);

@@ -1798,17 +1798,16 @@ it("selects the child specified by a finance notification before requesting paym
   expect(mocks.financeQuestions.mock.calls.every(([link]) => link === 11)).toBe(
     true,
   );
-  await userEvent.click(screen.getByRole("button", { name: "Child B" }));
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Learner" }),
-  );
+  const studentModule = document.querySelector('[data-platform-module="student"]')!;
+  await userEvent.click(within(studentModule as HTMLElement).getByRole("button", { name: i18n.t("portalPayments") }));
   await waitFor(() =>
     expect(mocks.payments).toHaveBeenLastCalledWith(
       10,
       expect.any(AbortSignal),
     ),
   );
-  expect(screen.getByRole("button", { name: "Learner" })).toBeTruthy();
+  expect(within(document.querySelector("header")!).getByText("Learner")).toBeTruthy();
+  expect(window.location.pathname).toBe("/student-module/payments");
 });
 it("denies a removed child notification without loading the currently selected child data", async () => {
   history.replaceState(null, "", "/learn/payments?linkId=900");
@@ -2207,19 +2206,17 @@ it("updates the header avatar fallback when switching from own learning to a chi
   });
   history.replaceState(null, "", "/learn/payments");
   render(<PortalApp />);
-  const switcher = await screen.findByRole("button", { name: "Alice Brown" });
+  await screen.findByText("Alice Brown");
   const header = document.querySelector("header")!;
   expect(
     within(header).getByText("AB").closest('[aria-hidden="true"]'),
   ).toBeTruthy();
-  await userEvent.click(switcher);
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Child Cedar" }),
-  );
+  const parentModule = document.querySelector('[data-platform-module="parent"]')!;
+  await userEvent.click(within(parentModule as HTMLElement).getByRole("button", { name: i18n.t("portalPayments") }));
   await waitFor(() => expect(within(header).getByText("CC")).toBeTruthy());
   expect(within(header).queryByText("AB")).toBeNull();
   expect(
-    within(header).getByRole("button", { name: "Child Cedar" }),
+    within(header).getByText("Child Cedar"),
   ).toBeTruthy();
 });
 it("opens the unread notification center in a modal Sheet", async () => {

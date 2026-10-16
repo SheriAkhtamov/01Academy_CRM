@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import type { LmsMakeupDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";

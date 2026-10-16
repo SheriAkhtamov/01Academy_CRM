@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { DemoLesson } from '@/features/demo-lessons/api';
 import {
   BookOpen,
@@ -111,7 +111,7 @@ export function TeacherScheduleSection({
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const matchesLessonFilter = (lesson: TeacherLesson) => {
+  const matchesLessonFilter = useCallback((lesson: TeacherLesson) => {
     if (statusFilter === 'demos') return false;
     if (statusFilter === 'scheduled' && lesson.status !== 'scheduled') return false;
     if (statusFilter === 'conducted' && lesson.status !== 'conducted') return false;
@@ -121,9 +121,9 @@ export function TeacherScheduleSection({
       if (!haystack.includes(normalizedQuery)) return false;
     }
     return true;
-  };
+  }, [statusFilter, groupFilter, normalizedQuery]);
 
-  const matchesDemoFilter = (demo: DemoLesson) => {
+  const matchesDemoFilter = useCallback((demo: DemoLesson) => {
     if (statusFilter === 'scheduled' || statusFilter === 'conducted') return false;
     if (groupFilter !== 'all') return false;
     if (normalizedQuery) {
@@ -131,7 +131,7 @@ export function TeacherScheduleSection({
       if (!haystack.includes(normalizedQuery)) return false;
     }
     return true;
-  };
+  }, [statusFilter, groupFilter, normalizedQuery]);
 
   const demosByDateKey = useMemo(() => {
     const map = new Map<string, DemoLesson[]>();
@@ -146,7 +146,7 @@ export function TeacherScheduleSection({
       }
     }
     return map;
-  }, [demos, statusFilter, groupFilter, normalizedQuery]);
+  }, [demos, matchesDemoFilter]);
 
   const filteredDays = useMemo(
     () =>
@@ -155,7 +155,7 @@ export function TeacherScheduleSection({
         lessons: day.lessons.filter(matchesLessonFilter),
         demos: demosByDateKey.get(day.dateKey) ?? [],
       })),
-    [days, demosByDateKey, statusFilter, groupFilter, normalizedQuery],
+    [days, demosByDateKey, matchesLessonFilter],
   );
 
   const rawWeekLessons = useMemo(
@@ -263,7 +263,7 @@ export function TeacherScheduleSection({
         demos: demosByDateKey.get(dateKey) ?? [],
       };
     });
-  }, [days, todayKey, allLessons, demosByDateKey, statusFilter, groupFilter, normalizedQuery]);
+  }, [days, todayKey, allLessons, demosByDateKey, matchesLessonFilter]);
 
   const hasActiveFilters =
     groupFilter !== 'all' || statusFilter !== 'all' || normalizedQuery.length > 0;

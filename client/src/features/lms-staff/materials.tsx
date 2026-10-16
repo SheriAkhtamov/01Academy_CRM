@@ -120,6 +120,7 @@ export function StaffMaterials({
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              aria-label={t("search")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t("lmsStaffSearchPlaceholder")}
@@ -135,18 +136,20 @@ export function StaffMaterials({
                 ["repeat", t("portalRevision")],
               ] as const
             ).map(([cat, label]) => (
-              <div
+              <button
                 key={cat}
+                type="button"
+                aria-pressed={categoryFilter === cat}
                 onClick={() => setCategoryFilter(cat)}
                 className={cn(
-                  "cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                  "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   categoryFilter === cat
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border/60 bg-background text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}
-              </div>
+              </button>
             ))}
           </div>
         </div>

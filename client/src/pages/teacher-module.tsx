@@ -1135,6 +1135,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             students={selectedLessonStudents}
             draft={attendanceDraft}
             note={attendanceNote}
+            noteDirty={attendanceNoteDirty.current}
             hasDivergingNotes={attendanceHydration.hasDivergingNotes}
             onNoteChange={(value) => {
               attendanceDraftDirty.current = true;
@@ -1149,9 +1150,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             isSaving={saveAttendance.isPending}
             isRosterPending={Boolean(selectedLessonId) && attendanceRosterQuery.isPending}
             isRosterError={Boolean(selectedLessonId) && attendanceRosterQuery.isError}
-            rosterErrorMessage={attendanceRosterQuery.error instanceof Error
-              ? attendanceRosterQuery.error.message
-              : t('failedToLoadData')}
             onRetryRoster={() => attendanceRosterQuery.refetch()}
             mutationPending={lessonMutationPending}
             lessonHasStarted={selectedLessonHasStarted}

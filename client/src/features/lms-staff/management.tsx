@@ -256,14 +256,16 @@ export function LearningManagement({
                   {runs.data.map((run) => {
                     const isActive = String(run.groupId) === groupId;
                     return (
-                      <div
+                      <button
                         key={run.groupId}
+                        type="button"
+                        aria-pressed={isActive}
                         onClick={() => {
                           didAutoSelectRef.current = true;
                           setGroupId(String(run.groupId));
                         }}
                         className={cn(
-                          "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+                          "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                           isActive
                             ? "border-primary bg-primary text-primary-foreground shadow-xs"
                             : "border-border/60 bg-background/80 text-muted-foreground hover:border-primary/40 hover:bg-muted/50 hover:text-foreground",
@@ -284,7 +286,7 @@ export function LearningManagement({
                             {run.studentCount}
                           </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -297,44 +299,48 @@ export function LearningManagement({
               {runs.data.map((run) => (
                 <Card
                   key={run.groupId}
-                  onClick={() => {
-                    didAutoSelectRef.current = true;
-                    setGroupId(String(run.groupId));
-                  }}
-                  className="group cursor-pointer border-border/70 transition-all hover:border-primary/40 hover:shadow-md"
+                  className="border-border/70 transition-all hover:border-primary/40 hover:shadow-md"
                 >
-                  <CardContent className="flex flex-col justify-between gap-4 p-4">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                          {run.groupName}
-                        </h3>
-                        {run.format && (
-                          <Badge
-                            variant="outline"
-                            className="shrink-0 text-[11px]"
-                          >
-                            {t(
-                              run.format === "online"
-                                ? "lmsStaffOnline"
-                                : "lmsStaffOffline",
-                            )}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {run.courseName || t("lmsStaffCourseNotSelected")}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-border/50 pt-3 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Users className="h-3.5 w-3.5" />
-                        {run.studentCount ?? 0} {t("students").toLowerCase()}
+                  <CardContent className="p-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        didAutoSelectRef.current = true;
+                        setGroupId(String(run.groupId));
+                      }}
+                      className="group flex h-full w-full flex-col justify-between gap-4 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <span className="block w-full space-y-2">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                            {run.groupName}
+                          </span>
+                          {run.format && (
+                            <span
+                              className="inline-flex shrink-0 items-center rounded-full border border-border bg-background px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground"
+                            >
+                              {t(
+                                run.format === "online"
+                                  ? "lmsStaffOnline"
+                                  : "lmsStaffOffline",
+                              )}
+                            </span>
+                          )}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {run.courseName || t("lmsStaffCourseNotSelected")}
+                        </span>
                       </span>
-                      <span className="font-medium text-primary group-hover:underline">
-                        {t("lmsStaffOpenGroupWorkspace")} →
+                      <span className="flex w-full items-center justify-between border-t border-border/50 pt-3 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5" />
+                          {run.studentCount ?? 0} {t("students").toLowerCase()}
+                        </span>
+                        <span className="font-medium text-primary group-hover:underline">
+                          {t("lmsStaffOpenGroupWorkspace")} →
+                        </span>
                       </span>
-                    </div>
+                    </button>
                   </CardContent>
                 </Card>
               ))}

@@ -62,6 +62,7 @@ export interface AttendanceLessonDialogProps {
   students: TeacherStudent[];
   draft: TeacherAttendanceDraft;
   note: string;
+  noteDirty: boolean;
   hasDivergingNotes: boolean;
   onNoteChange: (value: string) => void;
   onToggleStudent: (studentId: number, status: AttendanceStatus) => void;
@@ -71,7 +72,6 @@ export interface AttendanceLessonDialogProps {
   isSaving: boolean;
   isRosterPending: boolean;
   isRosterError: boolean;
-  rosterErrorMessage: string;
   onRetryRoster: () => void;
   mutationPending: boolean;
   lessonHasStarted: boolean;
@@ -108,6 +108,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     students,
     draft,
     note,
+    noteDirty,
     hasDivergingNotes,
     onNoteChange,
     onToggleStudent,
@@ -116,7 +117,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     isSaving,
     isRosterPending,
     isRosterError,
-    rosterErrorMessage,
     onRetryRoster,
     mutationPending,
     lessonHasStarted,
@@ -145,6 +145,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   const [activeRowIndex, setActiveRowIndex] = useState(0);
   const [rosterSearch, setRosterSearch] = useState('');
   const [rosterFilter, setRosterFilter] = useState<RosterFilter>('all');
+  const [noteOverwriteConfirmOpen, setNoteOverwriteConfirmOpen] = useState(false);
 
   const summary = useMemo(() => {
     let marked = 0;
@@ -186,6 +187,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   }, [filteredStudents.length]);
 
   useEffect(() => {
+    setNoteOverwriteConfirmOpen(false);
     if (!open) {
       setRosterSearch('');
       setRosterFilter('all');
@@ -347,7 +349,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   <AlertTriangle className="size-6" />
                 </span>
                 <p className="text-base font-semibold text-destructive">{t('attendanceRosterLoadFailed')}</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{rosterErrorMessage}</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -422,6 +423,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                         <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           value={rosterSearch}
+                          aria-label={t('search')}
                           onChange={(event) => setRosterSearch(event.target.value)}
                           placeholder={t('attendanceSearchStudents')}
                           className="h-8 bg-background pl-8 text-xs"
@@ -440,19 +442,21 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                           ['absent', t('attendanceFilterAbsent'), summary.absent],
                         ] as const
                       ).map(([filterKey, label, count]) => (
-                        <div
+                        <button
                           key={filterKey}
+                          type="button"
+                          aria-pressed={rosterFilter === filterKey}
                           onClick={() => setRosterFilter(filterKey)}
                           className={cn(
-                            'inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
+                            'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             rosterFilter === filterKey
                               ? 'border-primary bg-primary text-primary-foreground'
                               : 'border-border/60 bg-background text-muted-foreground hover:text-foreground',
                           )}
                         >
-                          <span>{label}</span>
+                          <span>{label}</span>{' '}
                           <span className="tabular-nums opacity-75">{count}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -563,19 +567,9 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                     value={note}
                     disabled={mutationPending}
                     onChange={(event) => onNoteChange(event.target.value)}
-                    placeholder={t('attendanceNotePlaceholder')}
                     rows={2}
                     className="rounded-xl text-sm"
                   />
-                  {/* The API writes one note onto every attendance row, so
-                      individual notes that already differ are about to be
-                      flattened. Say so before it happens. */}
-                  {hasDivergingNotes ? (
-                    <p className={cn('flex items-start gap-2 rounded-lg border p-2 text-xs', TEACHER_TONE_CLASS.warning)}>
-                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                      <span>{t('lessonNoteOverwriteWarning')}</span>
-                    </p>
-                  ) : null}
                 </div>
               </>
             ) : null}
@@ -637,7 +631,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                           maxLength={500}
                           disabled={mutationPending}
                           onChange={(event) => onRescheduleReasonChange(event.target.value)}
-                          placeholder={t('rescheduleReasonPlaceholder')}
                           className="h-11 rounded-lg text-sm"
                         />
                       </div>
@@ -664,10 +657,9 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
             <div className="shrink-0 space-y-3 border-t border-border/60 bg-background/95 p-4 backdrop-blur-md sm:p-6">
               {blocking ? (
                 <div
-                  className={cn('flex items-center gap-2 rounded-xl border p-3 text-xs', TEACHER_TONE_CLASS.warning)}
+                  className="flex items-center gap-2 text-xs"
                   aria-live="polite"
                 >
-                  <AlertTriangle className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1">{blocking.message}</span>
                   {blocking.canJump ? (
                     <Button
@@ -692,7 +684,10 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
               <Button
                 className="h-12 w-full rounded-xl bg-gradient-to-r from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] text-sm font-bold shadow-md shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.99]"
-                onClick={onSave}
+                onClick={() => {
+                  if (hasDivergingNotes && noteDirty) setNoteOverwriteConfirmOpen(true);
+                  else onSave();
+                }}
                 disabled={mutationPending || !canSave}
               >
                 {isSaving
@@ -705,6 +700,26 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={open && noteOverwriteConfirmOpen} onOpenChange={setNoteOverwriteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('lessonNoteOverwriteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('lessonNoteOverwriteConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mutationPending || !canSave}
+              onClick={() => {
+                if (!mutationPending && canSave) onSave();
+              }}
+            >
+              {t('confirmAction')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={bulkConfirmStatus !== null} onOpenChange={(next) => { if (!next) onBulkConfirmChange(null); }}>
         <AlertDialogContent>
@@ -760,13 +775,9 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   : '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <p className={cn('rounded-xl border p-3 text-xs', TEACHER_TONE_CLASS.warning)}>
-            {t('rescheduleChainWarning')}
-          </p>
           {lesson?.status === 'conducted' ? (
-            <p className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-xs font-medium text-destructive">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span>{t('rescheduleConductedWarning')}</span>
+            <p className="text-sm text-destructive">
+              {t('rescheduleConductedWarning')}
             </p>
           ) : null}
           <AlertDialogFooter>

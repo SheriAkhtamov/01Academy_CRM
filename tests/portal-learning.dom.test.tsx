@@ -1799,7 +1799,7 @@ it("selects the child specified by a finance notification before requesting paym
     true,
   );
   const studentModule = document.querySelector('[data-platform-module="student"]')!;
-  await userEvent.click(within(studentModule as HTMLElement).getByRole("button", { name: i18n.t("portalPayments") }));
+  await userEvent.click(within(studentModule as HTMLElement).getByRole("link", { name: i18n.t("portalPayments") }));
   await waitFor(() =>
     expect(mocks.payments).toHaveBeenLastCalledWith(
       10,
@@ -2167,13 +2167,13 @@ it("keeps the course navigation current while viewing a nested learning route", 
     </PortalShell>,
   );
   await screen.findByText("Material content");
-  const sidebar = within(mounted.container.querySelector("aside")!);
+  const sidebar = within(mounted.container.querySelector<HTMLElement>("[data-platform-sidebar]")!);
   expect(
-    sidebar.getByRole("button", { name: i18n.t("portalCourses") })
+    sidebar.getByRole("link", { name: i18n.t("portalCourses") })
       .getAttribute("aria-current"),
   ).toBe("page");
   expect(
-    sidebar.getByRole("button", { name: i18n.t("portalToday") })
+    sidebar.getByRole("link", { name: i18n.t("portalToday") })
       .getAttribute("aria-current"),
   ).toBeNull();
 });
@@ -2212,7 +2212,7 @@ it("updates the header avatar fallback when switching from own learning to a chi
     within(header).getByText("AB").closest('[aria-hidden="true"]'),
   ).toBeTruthy();
   const parentModule = document.querySelector('[data-platform-module="parent"]')!;
-  await userEvent.click(within(parentModule as HTMLElement).getByRole("button", { name: i18n.t("portalPayments") }));
+  await userEvent.click(within(parentModule as HTMLElement).getByRole("link", { name: i18n.t("portalPayments") }));
   await waitFor(() => expect(within(header).getByText("CC")).toBeTruthy());
   expect(within(header).queryByText("AB")).toBeNull();
   expect(

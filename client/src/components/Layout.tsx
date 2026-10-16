@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -11,7 +11,7 @@ import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { PageTransition } from '@/components/ux/motion';
 import { SPRING } from '@/lib/motion';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
-import { AppShellFrame } from '@/components/ux/AppShellFrame';
+import { PlatformLayout } from '@/components/ux/PlatformLayout';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -23,27 +23,11 @@ export default function Layout({ children }: LayoutProps) {
   const { isAuthenticated, isLoading, user } = useAuth();
   const { t } = useTranslation();
   const [location] = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   // Scroll restoration: push navigations start at the top, Back/Forward
   // restores where the user was. `<main>` is the permanent document scroller.
   const mainRef = useRef<HTMLElement | null>(null);
   const lastLocation = useRef(location);
   const popNavigation = useRef(false);
-  const pageContentRef = useRef<HTMLDivElement | null>(null);
-  const drawerRef = useRef<HTMLDivElement | null>(null);
-  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
-
-  // The authenticated CRM is a viewport-sized application with <main> as its
-  // document scroller. Lock the browser document only while this shell is
-  // mounted, otherwise wheel/touch scroll can chain past every inner scroller
-  // and move the entire interface off-screen into an empty canvas. Login and
-  // the Telegram mini-app do not mount Layout and keep normal document scroll.
-  useLayoutEffect(() => {
-    const documentRoot = document.documentElement;
-    documentRoot.classList.add('app-shell-active');
-    return () => documentRoot.classList.remove('app-shell-active');
-  }, []);
-
   useEffect(() => {
     const markPop = () => {
       popNavigation.current = true;
@@ -54,7 +38,6 @@ export default function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     if (lastLocation.current === location) return undefined;
-    setSidebarOpen(false);
     const isPop = popNavigation.current;
     popNavigation.current = false;
     lastLocation.current = location;
@@ -97,72 +80,6 @@ export default function Layout({ children }: LayoutProps) {
     return () => el.removeEventListener('scroll', saveScroll);
   }, [location]);
 
-  // The drawer dims the page and traps the eye like a dialog, so it answers to
-  // Escape like one. Bound only while it is open, so it can never swallow an
-  // Escape meant for a dialog above it.
-  useEffect(() => {
-    if (!sidebarOpen) return undefined;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSidebarOpen(false);
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [sidebarOpen]);
-
-  useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 1024px)');
-    const closeOnDesktop = () => {
-      if (desktop.matches) setSidebarOpen(false);
-    };
-    desktop.addEventListener('change', closeOnDesktop);
-    return () => desktop.removeEventListener('change', closeOnDesktop);
-  }, []);
-
-  // While the mobile drawer is open the page behind it becomes inert, focus
-  // starts on the drawer's first link, closing hands focus back to the burger,
-  // and Tab cycles inside the drawer. Docked desktop navigation never opens
-  // through this path, so a resize race leaves the page untouched.
-  useEffect(() => {
-    if (!sidebarOpen) return undefined;
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
-      return undefined;
-    }
-    const page = pageContentRef.current;
-    const toggle = menuToggleRef.current;
-    const frame = requestAnimationFrame(() => {
-      const drawer = drawerRef.current;
-      drawer?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
-    });
-    if (page) page.inert = true;
-    return () => {
-      cancelAnimationFrame(frame);
-      if (page) page.inert = false;
-      toggle?.focus({ preventScroll: true });
-    };
-  }, [sidebarOpen]);
-
-  const handleDrawerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab' || !sidebarOpen) return;
-    const drawer = drawerRef.current;
-    if (!drawer) return;
-    const focusables = Array.from(
-      drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    );
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    const inside = active instanceof Node && drawer.contains(active);
-    if (event.shiftKey) {
-      if (!inside || active === first) {
-        event.preventDefault();
-        last.focus();
-      }
-    } else if (!inside || active === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
   const containsOwnScrollArea = isContainedModuleRoute(location, user?.module);
   const realtime = useWebSocket();
 
@@ -175,48 +92,12 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <AppShellFrame
+    <PlatformLayout
       mainRef={mainRef}
-      contentRef={pageContentRef}
+      navigationKey={location}
       scrollMode={containsOwnScrollArea ? 'contained' : 'document'}
-      navigation={(
-        <>
-          {/* Remove the backdrop with the drawer state, without waiting for an exit
-              animation that can outlive navigation or a viewport change. */}
-          {sidebarOpen && (
-            <div
-              className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-              aria-hidden="true"
-            />
-          )}
-
-          {/*
-            The drawer transform stays on Tailwind rather than framer: `lg:translate-x-0`
-            is what keeps the sidebar docked on desktop, and an inline transform from
-            framer would win over that class and strand it off-screen. While closed
-            the drawer is `invisible`, so its off-screen links leave the tab order
-            and screen-reader tree; the visibility switch is delayed on close until
-            the slide-out finishes.
-          */}
-          <div
-            ref={drawerRef}
-            onKeyDown={handleDrawerKeyDown}
-            className={`
-              fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 [transition-timing-function:cubic-bezier(0.16,1,0.3,1)] lg:relative lg:translate-x-0 lg:visible lg:z-auto
-              ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
-            `}
-            style={{
-              transitionProperty: 'transform, visibility',
-              transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1), linear',
-              transitionDelay: sidebarOpen ? '0ms, 0ms' : '0ms, 300ms',
-            }}
-          >
-            <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          </div>
-        </>
-      )}
-      header={<Header onMenuToggle={() => setSidebarOpen(true)} menuButtonRef={menuToggleRef} />}
+      renderSidebar={(props) => <Sidebar {...props} />}
+      renderHeader={(props) => <Header {...props} />}
     >
       <RealtimeStatusBanner status={realtime.status} onReconnect={realtime.reconnect} />
       {/* Keep page failures inside the shell so navigation remains available. */}
@@ -228,7 +109,7 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </PageTransition>
       </AppErrorBoundary>
-    </AppShellFrame>
+    </PlatformLayout>
   );
 }
 

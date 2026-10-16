@@ -34,13 +34,10 @@ export function usePortalViewportNavigation({
   useLayoutEffect(() => {
     if (viewportOwners === 0) previousRestoration = history.scrollRestoration;
     viewportOwners += 1;
-    const documentRoot = document.documentElement;
-    documentRoot.classList.add("app-shell-active");
     history.scrollRestoration = "manual";
     return () => {
       viewportOwners -= 1;
       if (viewportOwners === 0) {
-        documentRoot.classList.remove("app-shell-active");
         history.scrollRestoration = previousRestoration;
       }
     };

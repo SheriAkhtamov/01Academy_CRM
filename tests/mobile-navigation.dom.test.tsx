@@ -120,6 +120,7 @@ describe.each([false, true])('mobile navigation backdrop (motion enabled: %s)', 
     act(() => changeDesktop(true));
     expect(backdrop()).toBeNull();
     expect(page().inert).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('main'));
     act(() => changeDesktop(false));
     expect(backdrop()).toBeNull();
   });

@@ -1,5 +1,4 @@
 import { Link, useLocation } from 'wouter';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -10,25 +9,9 @@ import {
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
-import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { AppSidebarFrame } from '@/components/ux/AppSidebarFrame';
-import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  X,
-  ChevronDown,
-  GraduationCap,
-  type LucideIcon,
-} from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { GraduationCap, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { DURATION, EASE, SPRING } from '@/lib/motion';
-import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
+import { PlatformSidebar, type PlatformSidebarItem } from '@/components/ux/PlatformSidebar';
 import { unviewedLeadCountQueryOptions } from '@/features/leads/api';
 import { missedCallUnreadQueryOptions } from '@/features/telephony/api';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
@@ -54,7 +37,6 @@ interface NavSection {
 
 export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isOpen?: boolean }) {
   const [location] = useLocation();
-  const navRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuth();
   const { t } = useTranslation();
   const { data: learningCapabilities } = useQuery({ ...learningCapabilitiesQuery, enabled: Boolean(user) });
@@ -96,54 +78,6 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
       ? { sales: true, teacher: true, marketing: true, administration: true }
       : {},
   );
-
-  /*
-    Five modules expanded at once make this list about 1500px tall, and the
-    drawer opens at the top of it every time. On `/tasks` — the last item in
-    the list — that meant opening the navigation and being shown a screen with
-    no indication of where you were, and a scroll to find out.
-
-    Only the nav's own `scrollTop` moves: `scrollIntoView` would drag every
-    scrollable ancestor with it and jump the page underneath the drawer.
-  */
-  useEffect(() => {
-    // The drawer is always mounted and merely translated off-screen, so this
-    // has to wait for it to actually be on screen; `isOpen` is undefined on
-    // the docked desktop sidebar, where the route change alone is the cue.
-    if (isOpen === false) return undefined;
-
-    const reveal = () => {
-      const nav = navRef.current;
-      const active = nav?.querySelector<HTMLElement>('.sidebar-nav-item.active');
-      if (!nav || !active) return;
-
-      // Measured through rects, not `offsetTop`: each item sits inside a
-      // positioned stagger wrapper, so `offsetTop` reports 12px from that
-      // wrapper rather than its distance down the scrolling list.
-      const navBox = nav.getBoundingClientRect();
-      const itemBox = active.getBoundingClientRect();
-      if (itemBox.top >= navBox.top && itemBox.bottom <= navBox.bottom) return;
-
-      // Centred rather than barely in frame — the items above it are the
-      // context for the one you are on.
-      const contentTop = itemBox.top - navBox.top + nav.scrollTop;
-      nav.scrollTo({
-        top: Math.max(0, contentTop - nav.clientHeight / 2 + itemBox.height / 2),
-        behavior: 'auto',
-      });
-    };
-
-    reveal();
-    /*
-      And again once the entrance has finished. Opening the drawer within the
-      first half-second of a page load catches the staggered sections still
-      settling, and a position measured then is off by however far the items
-      still had to travel — which landed the scroll in blank space past the end
-      of the list. The second pass is a no-op whenever the first one was right.
-    */
-    const settled = window.setTimeout(reveal, 450);
-    return () => window.clearTimeout(settled);
-  }, [isOpen, location]);
 
   if (!user) return null;
 
@@ -227,172 +161,49 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
     setCollapsedSections({ ...collapsedSections, [sectionId]: !collapsedSections[sectionId] });
   };
 
-  const renderNavItem = (item: NavItem) => {
-    const Icon = item.icon;
-    const isActive = isItemActive(item.href);
-
-    return (
-      <Tooltip key={item.name + item.href}>
-        <TooltipTrigger asChild>
-          <Link href={item.href} onClick={() => onClose?.()}>
-            <div
-              className={cn(
-                'sidebar-nav-item group',
-                isActive && 'active'
-              )}
-            >
-              {/*
-                One highlight element shared by every nav item: because they all
-                carry the same `layoutId`, framer animates the single instance
-                from the old item to the new one, so the selection appears to
-                travel down the sidebar instead of blinking out and back in.
-                The edge bar is nested inside it and therefore travels too.
-              */}
-              {isActive && (
-                <motion.span
-                  layoutId="sidebar-active-highlight"
-                  className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100"
-                  transition={SPRING.snappy}
-                >
-                  <span
-                    className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary-600"
-                    style={{ boxShadow: '0 0 10px 0 var(--primary-glow)' }}
-                  />
-                </motion.span>
-              )}
-              <Icon className="sidebar-nav-item__icon" />
-              <span className="truncate">{item.name}</span>
-              <UnreadCountBadge
-                count={item.badgeCount ?? 0}
-                label={item.badgeLabel ?? item.name}
-                className="ml-auto ring-card"
-              />
-              {isActive && !item.badgeCount && (
-                <motion.span
-                  layoutId="sidebar-active-dot"
-                  className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-600"
-                  transition={SPRING.snappy}
-                />
-              )}
-            </div>
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="hidden lg:block">
-          {item.name}
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
+  const presentItem = (item: NavItem): PlatformSidebarItem => ({
+    id: item.name + item.href,
+    label: item.name,
+    href: item.href,
+    icon: item.icon,
+    active: isItemActive(item.href),
+    badgeCount: item.badgeCount,
+    badgeLabel: item.badgeLabel,
+  });
 
   return (
-    <TooltipProvider delayDuration={300}>
-      {/*
-        Frosted only where it is docked. As a drawer the panel sits above the
-        page, and 5% of a blue "add" button showing through reads as a
-        highlighted nav item — the one clear giveaway that this is an overlay
-        rendered on the cheap.
-      */}
-      <AppSidebarFrame
-        headerAction={onClose && (
-          <button
-            onClick={onClose}
-            className="lg:hidden ml-2 shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            aria-label={t('close')}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
-        footer={(
-          <>
-            {/* Language Switcher */}
-            <div className="shrink-0 border-t border-border/70 px-4 py-2">
-              <LanguageSwitcher />
-            </div>
-
-            <nav
-              aria-label={t('sidebarResources')}
-              className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-t border-border/70 px-3 py-1"
-            >
-              {RESOURCE_NAVIGATION_ITEMS.map((item) => {
-                const isActive = isItemActive(item.href);
-                return (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    onClick={() => onClose?.()}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={cn(
-                      'flex min-h-11 items-center rounded-sm px-1 text-xs font-medium underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                      isActive ? 'text-primary underline' : 'text-muted-foreground',
-                    )}
-                  >
-                    {t(item.labelKey)}
-                  </Link>
-                );
-              })}
-            </nav>
-          </>
-        )}
-      >
-        {/* Navigation */}
-        <StaggerGroup
-          ref={navRef}
-          count={sections.length + 1}
-          className="min-h-0 flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden"
-          // A <nav> landmark is what screen readers navigate by; StaggerGroup
-          // renders a plain div, so the role has to be restated here.
-          role="navigation"
+    <PlatformSidebar
+      sections={sections.map((section) => ({ ...section, items: section.items.map(presentItem) }))}
+      trailingItems={[presentItem(taskBoardItem)]}
+      collapsedSections={collapsedSections}
+      onSectionToggle={toggleSection}
+      onClose={onClose}
+      isOpen={isOpen}
+      navigationKey={location}
+      footer={(
+        <nav
+          aria-label={t('sidebarResources')}
+          className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 border-t border-border/70 px-3 py-1"
         >
-          {sections.map((section) => {
-            const visibleItems = section.items;
-            if (visibleItems.length === 0) return null;
-            const isCollapsed = collapsedSections[section.id];
-
+          {RESOURCE_NAVIGATION_ITEMS.map((item) => {
+            const isActive = isItemActive(item.href);
             return (
-              <StaggerItem key={section.id} className="mb-2">
-                <button
-                  onClick={() => toggleSection(section.id)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-500 transition-colors"
-                  aria-expanded={!isCollapsed}
-                >
-                  <span>{section.label}</span>
-                  <ChevronDown
-                    className={cn(
-                      'h-3.5 w-3.5 transition-transform duration-200 ease-out-expo',
-                      isCollapsed && '-rotate-90'
-                    )}
-                  />
-                </button>
-                {/*
-                  A collapsed section is unmounted rather than hidden. Height
-                  alone would leave the links in the tab order — the previous
-                  fix for that was an `invisible` class, but AnimatePresence
-                  gives the same guarantee and animates the real height, so a
-                  section with three items and one with eight no longer share
-                  a made-up max-height.
-                */}
-                <AnimatePresence initial={false}>
-                  {!isCollapsed && (
-                    <motion.div
-                      className="space-y-0.5 overflow-hidden"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: DURATION.base, ease: EASE.out }}
-                    >
-                      {visibleItems.map((item) => renderNavItem(item))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </StaggerItem>
+              <Link
+                key={item.id}
+                href={item.href}
+                onClick={() => onClose?.()}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  'flex min-h-11 items-center rounded-sm px-1 text-xs font-medium underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  isActive ? 'text-primary underline' : 'text-muted-foreground',
+                )}
+              >
+                {t(item.labelKey)}
+              </Link>
             );
           })}
-          <StaggerItem className="mt-3 border-t border-border/70 pt-3">
-            {renderNavItem(taskBoardItem)}
-          </StaggerItem>
-        </StaggerGroup>
-
-      </AppSidebarFrame>
-    </TooltipProvider>
+        </nav>
+      )}
+    />
   );
 }

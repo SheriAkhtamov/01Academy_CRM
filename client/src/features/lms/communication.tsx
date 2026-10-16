@@ -290,7 +290,13 @@ function HelpForm({
     </form>
   );
 }
-export function PortalHelp({ initialId }: { initialId?: number }) {
+export function PortalHelp({
+  initialId,
+  embedded = false,
+}: {
+  initialId?: number;
+  embedded?: boolean;
+}) {
   const threadScope = usePortalFormScope();
   const { t } = useTranslation();
   const { subject } = usePortal();
@@ -339,9 +345,15 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
     );
   return (
     <>
-      <PortalTitle labelKey="portalHelp">
-        <Button onClick={() => setOpen(true)}>{t("portalAskQuestion")}</Button>
-      </PortalTitle>
+      {embedded ? (
+        <div className="flex justify-end">
+          <Button onClick={() => setOpen(true)}>{t("portalAskQuestion")}</Button>
+        </div>
+      ) : (
+        <PortalTitle labelKey="portalHelp">
+          <Button onClick={() => setOpen(true)}>{t("portalAskQuestion")}</Button>
+        </PortalTitle>
+      )}
       {query.error && (
         <PortalError
           error={query.error}

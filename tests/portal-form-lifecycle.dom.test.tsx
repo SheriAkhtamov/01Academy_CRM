@@ -360,7 +360,7 @@ it.each(childForms)(
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(profile.value).toBe("Unsaved profile name");
     await user.click(
-      screen.getByRole("button", { name: copy("portalSchedule") }),
+      screen.getByRole("link", { name: copy("portalSchedule") }),
     );
     expect(
       await screen.findByRole("alertdialog", {
@@ -406,7 +406,7 @@ it.each(childForms)(
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(profile.value).toBe("Unsaved profile name");
     await user.click(
-      screen.getByRole("button", { name: copy("portalSchedule") }),
+      screen.getByRole("link", { name: copy("portalSchedule") }),
     );
     await screen.findByRole("alertdialog", {
       name: copy("portalUnsavedTitle"),
@@ -424,9 +424,8 @@ it.each(childForms)(
       screen.getByRole("button", { name: copy("portalCancel") }),
     );
     expect(screen.getByTestId("profile-subject").textContent).toBe("Learner");
-    await user.click(
-      screen.getByRole("button", { name: copy("portalSignOut") }),
-    );
+    await user.click(screen.getByRole("button", { name: copy("currentAccount") }));
+    await user.click(screen.getByRole("menuitem", { name: copy("portalSignOut") }));
     await screen.findByRole("alertdialog", {
       name: copy("portalUnsavedTitle"),
     });
@@ -446,7 +445,7 @@ it.each(["route", "learner"] as const)(
     await editProfile(user);
     if (target === "route") {
       await user.click(
-        screen.getByRole("button", { name: copy("portalSchedule") }),
+        screen.getByRole("link", { name: copy("portalSchedule") }),
       );
     } else {
       await user.click(screen.getByRole("button", { name: "Learner" }));
@@ -464,7 +463,7 @@ it.each(["route", "learner"] as const)(
     if (target === "route") {
       await screen.findByRole("heading", { name: copy("portalSchedule") });
       await user.click(
-        screen.getAllByRole("button", { name: copy("portalProfile") })[0],
+        screen.getByRole("link", { name: copy("portalProfile") }),
       );
     } else {
       await waitFor(() =>
@@ -494,7 +493,7 @@ it.each(["route", "learner"] as const)(
     if (profileDialog)
       await user.click(within(profileDialog).getByRole("button", { name: copy("close") }));
     await user.click(
-      screen.getByRole("button", { name: copy("portalSchedule") }),
+      screen.getByRole("link", { name: copy("portalSchedule") }),
     );
     await screen.findByRole("heading", { name: copy("portalSchedule") });
     expect(screen.queryByRole("alertdialog")).toBeNull();

@@ -13,6 +13,7 @@ const tsxFiles = (dir: string): string[] =>
   });
 const layout = read('../client/src/components/Layout.tsx');
 const frame = read('../client/src/components/ux/AppShellFrame.tsx');
+const platformLayout = read('../client/src/components/ux/PlatformLayout.tsx');
 const learnerLayout = read('../client/src/features/portal-app/PortalShell.tsx');
 const modulePage = read('../client/src/components/ux/ModulePage.tsx');
 const tasks = read('../client/src/pages/tasks.tsx');
@@ -25,8 +26,9 @@ const cssRuleBody = (selector: string) => {
 describe('app shell scrolling', () => {
   it('uses the same dynamic viewport unit for the document root and shell', () => {
     expect(frame).toContain("'flex h-dvh overflow-hidden'");
-    expect(layout).toContain('<AppShellFrame');
-    expect(learnerLayout).toContain('<AppShellFrame');
+    expect(platformLayout).toContain('<AppShellFrame');
+    expect(layout).toContain('<PlatformLayout');
+    expect(learnerLayout).toContain('<PlatformLayout');
     expect(cssRuleBody('body')).toContain('min-height: 100dvh;');
     expect(cssRuleBody('#root')).toContain('min-height: 100dvh;');
     expect(cssRuleBody('body')).not.toContain('min-height: 100vh;');
@@ -34,8 +36,8 @@ describe('app shell scrolling', () => {
   });
 
   it('locks the browser document only while the authenticated app shell is mounted', () => {
-    expect(layout).toContain("documentRoot.classList.add('app-shell-active')");
-    expect(layout).toContain("documentRoot.classList.remove('app-shell-active')");
+    expect(platformLayout).toContain("document.documentElement.classList.add('app-shell-active')");
+    expect(platformLayout).toContain("document.documentElement.classList.remove('app-shell-active')");
     expect(styles).toMatch(/html\.app-shell-active\s*\{[^}]*height:\s*100dvh;/s);
     expect(styles).toMatch(/html\.app-shell-active\s*\{[^}]*overflow:\s*hidden;/s);
     expect(styles).toMatch(/html\.app-shell-active body,\s*html\.app-shell-active #root\s*\{[^}]*overflow:\s*hidden;/s);

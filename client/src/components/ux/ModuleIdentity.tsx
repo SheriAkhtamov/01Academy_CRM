@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { KanbanSquare } from 'lucide-react';
+import { ModuleIdentityView } from './ModuleIdentityView';
+export { ModuleIdentityView } from './ModuleIdentityView';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -83,7 +85,6 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
   const module = resource
     ? { title: t(resource.labelKey), icon: resource.icon }
     : moduleDefinitions[resolveModuleType(location, user?.module)];
-  const Icon = module.icon;
 
   function resolveDefinition(moduleType: Exclude<ModuleType, 'tasks'>): ModuleDefinition {
     const definition = MODULE_NAVIGATION[moduleType];
@@ -93,24 +94,5 @@ export function ModuleIdentity({ title, subtitle }: ModuleIdentityProps) {
     };
   }
 
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div
-        className="hidden size-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary shadow-sm sm:flex"
-        aria-hidden="true"
-      >
-        <Icon className="size-5" />
-      </div>
-
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          {t(resource ? 'sidebarResources' : 'currentModule')}
-        </p>
-        <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
-          {title ?? module.title}
-        </h1>
-        {subtitle ? <p className="hidden truncate text-xs text-muted-foreground xl:block">{subtitle}</p> : null}
-      </div>
-    </div>
-  );
+  return <ModuleIdentityView title={title ?? module.title} icon={module.icon} subtitle={subtitle} resource={Boolean(resource)} />;
 }

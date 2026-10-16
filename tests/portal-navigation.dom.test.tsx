@@ -24,6 +24,7 @@ import {
 } from "../client/src/features/portal-app/context";
 import { ThemeProvider } from "../client/src/components/ux/ThemeProvider";
 import { i18n } from "../client/src/lib/i18n";
+import { getActivePlatformRealm, setActivePlatformRealm } from "../client/src/lib/platformSession";
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
@@ -226,7 +227,7 @@ afterEach(() => {
 
 describe("portal viewport navigation", () => {
   const roleSection = (module: "student" | "parent") =>
-    document.querySelector<HTMLElement>(`aside [data-platform-module="${module}"]`)!;
+    document.querySelector<HTMLElement>(`[data-platform-sidebar] [data-platform-module="${module}"]`)!;
   const mixedSession: PortalSessionDto = {
     ...session,
     subjects: [
@@ -255,7 +256,7 @@ describe("portal viewport navigation", () => {
     expect(roleSection("student")).toBeTruthy();
     expect(roleSection("parent")).toBeNull();
     expect(screen.getByRole("heading", { name: i18n.t("studentModule") })).toBeTruthy();
-    expect(within(document.querySelector("aside")!).getByText(i18n.t("schoolCrm"))).toBeTruthy();
+    expect(within(document.querySelector("[data-platform-sidebar]")!).getByText(i18n.t("schoolCrm"))).toBeTruthy();
     expect(screen.queryByRole("heading", { name: i18n.t("parentModule") })).toBeNull();
   });
 
@@ -265,9 +266,9 @@ describe("portal viewport navigation", () => {
     mount();
     expect(roleSection("student")).toBeNull();
     const parent = within(roleSection("parent"));
-    expect(parent.queryByRole("button", { name: i18n.t("portalCourses") })).toBeNull();
-    expect(parent.queryByRole("button", { name: i18n.t("portalAssignments") })).toBeNull();
-    await userEvent.click(parent.getByRole("button", { name: i18n.t("portalResults") }));
+    expect(parent.queryByRole("link", { name: i18n.t("portalCourses") })).toBeNull();
+    expect(parent.queryByRole("link", { name: i18n.t("portalAssignments") })).toBeNull();
+    await userEvent.click(parent.getByRole("link", { name: i18n.t("portalResults") }));
     await currentRoute("/parent-module/progress");
     expect(screen.getByRole("heading", { name: i18n.t("parentModule") })).toBeTruthy();
     expect(screen.getByTestId("subject").textContent).toBe("");
@@ -285,7 +286,7 @@ describe("portal viewport navigation", () => {
     expect(roleSection("student")).toBeTruthy();
     expect(roleSection("parent")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    const parentHome = within(roleSection("parent")).getByRole("button", { name: i18n.t("portalFamilyOverview") });
+    const parentHome = within(roleSection("parent")).getByRole("link", { name: i18n.t("portalFamilyOverview") });
     fireEvent.click(parentHome);
     fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: i18n.t("portalCancel") }));
     expect(window.location.pathname).toBe("/student-module");
@@ -295,7 +296,7 @@ describe("portal viewport navigation", () => {
     await currentRoute("/parent-module");
     expect(screen.getByTestId("subject").textContent).toBe("");
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    await userEvent.click(within(roleSection("student")).getByRole("button", { name: i18n.t("portalCourses") }));
+    await userEvent.click(within(roleSection("student")).getByRole("link", { name: i18n.t("portalCourses") }));
     await currentRoute("/student-module/courses");
     expect(screen.getByTestId("subject").textContent).toBe("10");
   });
@@ -304,7 +305,7 @@ describe("portal viewport navigation", () => {
     history.replaceState(null, "", "/student-module");
     mount();
     scroll(325);
-    await userEvent.click(within(roleSection("student")).getByRole("button", { name: i18n.t("portalCourses") }));
+    await userEvent.click(within(roleSection("student")).getByRole("link", { name: i18n.t("portalCourses") }));
     await currentRoute("/student-module/courses");
     scroll(90);
     await back("/student-module");
@@ -341,9 +342,8 @@ describe("portal viewport navigation", () => {
     );
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: i18n.t("portalSignOut") }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: i18n.t("currentAccount") }));
+    await userEvent.click(screen.getByRole("menuitem", { name: i18n.t("portalSignOut") }));
     fireEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", {
         name: i18n.t("portalLeave"),
@@ -371,9 +371,8 @@ describe("portal viewport navigation", () => {
     );
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Edit answer" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: i18n.t("portalSignOut") }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: i18n.t("currentAccount") }));
+    await userEvent.click(screen.getByRole("menuitem", { name: i18n.t("portalSignOut") }));
     fireEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", {
         name: i18n.t("portalLeave"),
@@ -390,6 +389,22 @@ describe("portal viewport navigation", () => {
     });
     await currentRoute("/login");
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("does not replace a new staff realm when an unmounted portal logout finishes late", async () => {
+    let complete!: (value: { success: boolean }) => void;
+    mocks.logout.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    setActivePlatformRealm("portal");
+    const view = mount();
+    await userEvent.click(screen.getByRole("button", { name: i18n.t("currentAccount") }));
+    await userEvent.click(screen.getByRole("menuitem", { name: i18n.t("portalSignOut") }));
+    await waitFor(() => expect(mocks.logout).toHaveBeenCalledOnce());
+    view.unmount();
+    setActivePlatformRealm("staff");
+    history.replaceState(null, "", "/sales");
+    await act(async () => { complete({ success: true }); });
+    expect(getActivePlatformRealm()).toBe("staff");
+    expect(location.pathname).toBe("/sales");
   });
 
   it("shows only personal learning entries for a self-only subject menu", async () => {
@@ -492,10 +507,10 @@ describe("portal viewport navigation", () => {
     fireEvent.click(
       screen.getByRole("button", { name: i18n.t("openNavigation") }),
     );
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(document.querySelector('[data-platform-drawer="open"]')).toBeTruthy();
     act(() => history.pushState(null, "", "/learn/courses"));
     await currentRoute("/learn/courses");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-platform-drawer="closed"]')).toBeTruthy());
     await focusMain();
   });
 
@@ -506,8 +521,8 @@ describe("portal viewport navigation", () => {
     fireEvent.click(
       screen.getByRole("button", { name: i18n.t("openNavigation") }),
     );
-    const menu = screen.getByRole("dialog");
-    const courses = within(menu).getByRole("button", {
+    const menu = document.querySelector<HTMLElement>("[data-platform-drawer]")!;
+    const courses = within(menu).getByRole("link", {
       name: i18n.t("portalCourses"),
     });
     act(() => courses.focus());
@@ -520,7 +535,7 @@ describe("portal viewport navigation", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(screen.getByTestId("route").textContent).toBe("/learn");
     expect(main().scrollTop).toBe(300);
-    expect(screen.getByRole("dialog")).toBe(menu);
+    expect(document.querySelector('[data-platform-drawer="open"]')).toBe(menu);
     await waitFor(() => expect(document.activeElement).toBe(courses));
     fireEvent.click(courses);
     fireEvent.click(
@@ -529,7 +544,7 @@ describe("portal viewport navigation", () => {
       }),
     );
     await currentRoute("/learn/courses");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-platform-drawer="closed"]')).toBeTruthy());
     await focusMain();
     expect(main().scrollTop).toBe(0);
   });
@@ -539,9 +554,9 @@ describe("portal viewport navigation", () => {
     fireEvent.click(
       screen.getByRole("button", { name: i18n.t("openNavigation") }),
     );
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(document.querySelector('[data-platform-drawer="open"]')).toBeTruthy();
     act(() => resizeDesktop(true));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-platform-drawer="closed"]')).toBeTruthy());
     await focusMain();
     expect(document.body.style.pointerEvents).not.toBe("none");
   });

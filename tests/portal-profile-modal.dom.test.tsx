@@ -182,9 +182,13 @@ const mount = () =>
 const main = () => screen.getByRole("main", { hidden: true });
 const headerProfile = () =>
   within(document.querySelector("header")!).getByRole("button", {
-    name: i18n.t("portalProfile"),
+    name: i18n.t("currentAccount"),
     hidden: true,
   });
+async function openHeaderProfile() {
+  await userEvent.click(headerProfile());
+  await userEvent.click(screen.getByRole("menuitem", { name: i18n.t("portalProfile") }));
+}
 const profile = () =>
   screen.getByRole("dialog", { name: i18n.t("portalProfile") });
 const confirmation = () => screen.getByRole("alertdialog");
@@ -280,7 +284,7 @@ it("opens the header profile over the mounted workspace and preserves draft, scr
   main().scrollTop = 380;
   fireEvent.scroll(main());
   const opener = headerProfile();
-  await userEvent.click(opener);
+  await openHeaderProfile();
   expect(window.location.pathname + window.location.search).toBe(
     "/student-module/courses?tab=active",
   );
@@ -301,14 +305,15 @@ it("opens the header profile over the mounted workspace and preserves draft, scr
   expect(mocks.backgroundMount).toHaveBeenCalledOnce();
   expect(main().scrollTop).toBe(380);
   await waitFor(() => expect(document.activeElement).toBe(opener));
-  fireEvent.click(screen.getByRole("button", { name: i18n.t("portalToday") }));
+  fireEvent.click(screen.getByRole("link", { name: i18n.t("portalToday") }));
   expect(confirmation()).toBeTruthy();
 });
 
-it("opens the sidebar profile as a dialog and returns focus to its button", async () => {
+it("opens the desktop sidebar profile as a dialog and returns focus to its link", async () => {
+  act(() => resizeDesktop());
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  const opener = within(document.querySelector("aside")!).getByRole("button", {
+  const opener = within(document.querySelector("[data-platform-sidebar]")!).getByRole("link", {
     name: i18n.t("portalProfile"),
   });
   await userEvent.click(opener);
@@ -324,9 +329,9 @@ it("hands focus from the mobile menu to the profile dialog and back to the heade
   await userEvent.click(
     screen.getByRole("button", { name: i18n.t("openNavigation") }),
   );
-  const menu = screen.getByRole("dialog");
+  const menu = document.querySelector<HTMLElement>("[data-platform-sidebar]")!;
   await userEvent.click(
-    within(menu).getByRole("button", { name: i18n.t("portalProfile") }),
+    within(menu).getByRole("link", { name: i18n.t("portalProfile") }),
   );
   await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
   await waitFor(() =>
@@ -361,7 +366,7 @@ it("keeps dirty profile edits after cancelling close and only discards them afte
     await screen.findByRole("textbox", { name: "Courses workspace" }),
     "Unsent work",
   );
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   const name = within(profile()).getByLabelText(i18n.t("portalFullName"));
   await userEvent.type(name, " edited");
   closeProfile();
@@ -382,7 +387,7 @@ it("keeps dirty profile edits after cancelling close and only discards them afte
   closeProfile();
   clickConfirmation("portalLeave");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   expect(
     (
       within(profile()).getByLabelText(
@@ -392,7 +397,7 @@ it("keeps dirty profile edits after cancelling close and only discards them afte
   ).toBe("Learner");
   closeProfile();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: i18n.t("portalToday") }));
+  fireEvent.click(screen.getByRole("link", { name: i18n.t("portalToday") }));
   expect(confirmation()).toBeTruthy();
 });
 
@@ -401,7 +406,7 @@ it("saves profile edits inside the dialog without replacing its workspace", asyn
   const workspace = await screen.findByRole("textbox", {
     name: "Courses workspace",
   });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   const name = within(profile()).getByLabelText(i18n.t("portalFullName"));
   await userEvent.clear(name);
   await userEvent.type(name, "Saved learner");
@@ -427,10 +432,10 @@ it("uses the global dirty guard for browser Back and closes the local dialog onl
   mount();
   await screen.findByRole("textbox", { name: "Home workspace" });
   fireEvent.click(
-    screen.getByRole("button", { name: i18n.t("portalCourses") }),
+    screen.getByRole("link", { name: i18n.t("portalCourses") }),
   );
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.type(
     within(profile()).getByLabelText(i18n.t("portalFullName")),
     " edited",
@@ -466,7 +471,7 @@ it("uses the global dirty guard for browser Back and closes the local dialog onl
 it("preserves the dirty account profile through desktop resize and background grant refresh", async () => {
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   const name = within(profile()).getByLabelText(i18n.t("portalFullName"));
   await userEvent.type(name, " edited");
   act(() => resizeDesktop());
@@ -487,7 +492,7 @@ it("preserves the dirty account profile through desktop resize and background gr
   await waitFor(() => expect(mocks.session).toHaveBeenCalledTimes(2));
   await waitFor(() =>
     expect(
-      within(document.querySelector("aside")!).getByRole("button", {
+      within(document.querySelector("[data-platform-sidebar]")!).getByRole("link", {
         name: i18n.t("portalFeedback"),
         hidden: true,
       }),
@@ -524,7 +529,7 @@ it("closes a dirty profile after an approved Back between two module home routes
   });
   mount();
   await screen.findByRole("textbox", { name: "Home workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.type(within(profile()).getByLabelText(i18n.t("portalFullName")), " edited");
   act(() => history.back());
   await screen.findByRole("alertdialog");
@@ -543,7 +548,7 @@ it("closes a dirty profile after an approved Back between two module home routes
 it("remounts profile and nested security forms when the authenticated account changes", async () => {
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.type(
     within(profile()).getByLabelText(i18n.t("portalFullName")),
     " old draft",
@@ -625,7 +630,7 @@ async function openChildProfile() {
   history.replaceState(null, "", "/parent-module/progress?tab=active");
   mount();
   await screen.findByRole("textbox", { name: "Progress workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.type(
     within(profile()).getByLabelText(i18n.t("portalFullName")),
     " account draft",
@@ -801,7 +806,7 @@ it("ignores a pending password response from a previous account", async () => {
   mocks.password.mockReturnValue(pending.promise);
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.click(
     within(profile()).getByRole("button", {
       name: i18n.t("portalChangePassword"),
@@ -835,7 +840,7 @@ it("accepts same-account password session rotation without closing a reopened pa
   mocks.password.mockReturnValue(pending.promise);
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.click(
     within(profile()).getByRole("button", {
       name: i18n.t("portalChangePassword"),
@@ -896,7 +901,7 @@ it("removes an old consent editor and cancels its pending reauthentication after
   ]);
   mount();
   await screen.findByRole("textbox", { name: "Courses workspace" });
-  await userEvent.click(headerProfile());
+  await openHeaderProfile();
   await userEvent.type(
     within(profile()).getByLabelText(i18n.t("portalFullName")),
     " account draft",
@@ -963,7 +968,7 @@ it.each(["family", "no-access"])(
     });
     mount();
     await waitFor(() => expect(headerProfile()).toBeTruthy());
-    await userEvent.click(headerProfile());
+    await openHeaderProfile();
     expect(
       within(profile()).getByLabelText(i18n.t("portalFullName")),
     ).toBeTruthy();

@@ -272,7 +272,8 @@ it("reapplies a saved deep-link child after Back through both modules instead of
 it.each([404, 500])("handles a background session %s without retaining an unauthorized profile or losing a recoverable draft", async (status) => {
   render(<PlatformProviders><PortalApp /></PlatformProviders>);
   await screen.findByLabelText("loaded learning");
-  await userEvent.click(within(document.querySelector("header")!).getByRole("button", { name: i18n.t("portalProfile") }));
+  await userEvent.click(within(document.querySelector("header")!).getByRole("button", { name: i18n.t("currentAccount") }));
+  await userEvent.click(screen.getByRole("menuitem", { name: i18n.t("portalProfile") }));
   const name = screen.getByLabelText(i18n.t("portalFullName")) as HTMLInputElement;
   await userEvent.type(name, " edited");
   mocks.session.mockRejectedValue(new PortalApiError(status, "portalUnavailable"));

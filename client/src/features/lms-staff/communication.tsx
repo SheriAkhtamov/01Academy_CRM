@@ -42,23 +42,18 @@ export function StaffAnnouncements({ runId }: { runId: number }) {
     );
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <h2 className="text-xl font-semibold">{t("lmsStaffAnnouncements")}</h2>
-          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums">
-            {query.data.length}
-          </span>
-        </div>
+      <div className="flex flex-wrap justify-between gap-3">
+        <h2 className="text-xl font-semibold">{t("lmsStaffAnnouncements")}</h2>
         <Button onClick={() => setCreate(true)}>{t("lmsStaffPublish")}</Button>
       </div>
       {!query.data.length && <StaffEmpty />}
       <div className="space-y-3">
         {query.data.map((item) => (
-          <Card key={item.id} className="border-border/70">
-            <CardContent className="space-y-3 p-4 sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-2.5">
+          <Card key={item.id}>
+            <CardContent className="space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="break-words font-semibold">{item.title}</h3>
-                <span className="rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {date(item.publishAt)}
                 </span>
               </div>
@@ -232,32 +227,20 @@ export function StaffThreads({
     : query.data;
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2.5">
-        <h2 className="text-xl font-semibold">{t("lmsStaffThreads")}</h2>
-        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums">
-          {threads.length}
-        </span>
-      </div>
+      <h2 className="text-xl font-semibold">{t("lmsStaffThreads")}</h2>
       {!threads.length && <StaffEmpty />}
       <div className="space-y-3">
         {threads.map((thread) => (
-          <Card
-            key={thread.id}
-            className="border-border/70 transition-colors hover:border-primary/30"
-          >
-            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
+          <Card key={thread.id}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
               <div className="min-w-0 space-y-2">
                 <h3 className="break-words font-semibold">{thread.title}</h3>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm">
                   {thread.studentName} · {date(thread.createdAt)}
                 </p>
                 <StaffStatus state={thread.status} />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelected(thread.id)}
-              >
+              <Button variant="outline" onClick={() => setSelected(thread.id)}>
                 {t("lmsStaffAnswer")}
               </Button>
             </CardContent>

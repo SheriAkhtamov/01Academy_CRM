@@ -73,7 +73,7 @@ export function StaffProgram({
     );
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap justify-between gap-3">
         <h2 className="text-xl font-semibold">{t("lmsStaffProgram")}</h2>
         {administration && (
           <Button onClick={() => setCreate(true)}>
@@ -81,67 +81,45 @@ export function StaffProgram({
           </Button>
         )}
       </div>
-      {manageContent && units.data && units.data.length > 0 && (
+      {manageContent && (
         <section className="space-y-3">
-          <h2 className="text-base font-semibold text-muted-foreground">
-            {t("lmsStaffPreviewUnit")}
-          </h2>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {units.data.map((unit) => (
-              <div
-                key={unit.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card p-3.5 shadow-2xs transition-colors hover:border-primary/30"
-              >
-                <p className="min-w-0 break-words text-sm font-medium">
-                  {unit.title}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPreview(unit)}
-                >
-                  {t("lmsStaffEdit")}
-                </Button>
-              </div>
-            ))}
-          </div>
+          <h2 className="text-xl font-semibold">{t("lmsStaffPreviewUnit")}</h2>
+          {units.data?.map((unit) => (
+            <div
+              key={unit.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+            >
+              <p className="min-w-0 break-words font-medium">{unit.title}</p>
+              <Button variant="outline" onClick={() => setPreview(unit)}>
+                {t("lmsStaffEdit")}
+              </Button>
+            </div>
+          ))}
         </section>
       )}
       {manageContent && !versions.data?.length && <StaffEmpty />}
       {manageContent && (
         <div className="grid gap-4 lg:grid-cols-2">
           {versions.data?.map((program) => (
-            <Card key={program.id} className="border-border/70">
-              <CardContent className="space-y-4 p-4 sm:p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
-                  <span className="text-xs font-medium text-muted-foreground">
+            <Card key={program.id}>
+              <CardContent className="space-y-4 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">
                     {date(program.createdAt)}
                   </span>
                   <StaffStatus state={program.state} />
                 </div>
                 <ol className="space-y-2">
-                  {program.units.map((unit, index) => (
-                    <li
-                      key={unit.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 p-3"
-                    >
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary tabular-nums">
-                          {index + 1}
-                        </span>
-                        <div className="min-w-0 space-y-0.5">
-                          {unit.sectionTitle && (
-                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                              {unit.sectionTitle}
-                            </p>
-                          )}
-                          <p className="text-sm font-medium break-words">
-                            {unit.title}
-                          </p>
-                        </div>
-                      </div>
+                  {program.units.map((unit) => (
+                    <li key={unit.id} className="rounded-md bg-muted/30 p-3">
+                      {unit.sectionTitle && (
+                        <p className="text-xs text-muted-foreground">
+                          {unit.sectionTitle}
+                        </p>
+                      )}
+                      <p className="font-medium">{unit.title}</p>
                       {unit.required && (
-                        <span className="shrink-0 rounded-md border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {t("lmsStaffRequired")}
                         </span>
                       )}
@@ -156,37 +134,28 @@ export function StaffProgram({
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">{t("portalSchedule")}</h2>
         {!lessons.data.length && <StaffEmpty />}
-        <div className="grid gap-3 md:grid-cols-2">
-          {lessons.data.map((lesson) => (
-            <Card
-              key={lesson.id}
-              className="border-border/70 transition-colors hover:border-primary/30"
-            >
-              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-                <div className="min-w-0 space-y-1">
-                  <h3 className="break-words font-semibold">{lesson.topic}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {date(lesson.scheduledAt)} ·{" "}
-                    {t(
-                      lesson.format === "online"
-                        ? "lmsStaffOnline"
-                        : "lmsStaffOffline",
-                    )}
-                  </p>
-                </div>
-                {manageSchedule && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelected(lesson)}
-                  >
-                    {t("lmsStaffBindLesson")}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {lessons.data.map((lesson) => (
+          <Card key={lesson.id}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="min-w-0 space-y-1">
+                <h3 className="break-words font-semibold">{lesson.topic}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {date(lesson.scheduledAt)} ·{" "}
+                  {t(
+                    lesson.format === "online"
+                      ? "lmsStaffOnline"
+                      : "lmsStaffOffline",
+                  )}
+                </p>
+              </div>
+              {manageSchedule && (
+                <Button variant="outline" onClick={() => setSelected(lesson)}>
+                  {t("lmsStaffBindLesson")}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ))}
       </section>
       {create && (
         <ProgramEditor courseId={courseId} onClose={() => setCreate(false)} />

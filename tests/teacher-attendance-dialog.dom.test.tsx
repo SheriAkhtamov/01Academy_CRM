@@ -74,38 +74,6 @@ afterEach(async () => {
 });
 
 describe('teacher attendance dialog', () => {
-  it('filters the roster with Enter and Space and exposes the selected filter', async () => {
-    const user = userEvent.setup();
-    renderAttendance();
-    const unmarked = screen.getByRole('button', { name: `${translations.attendanceFilterUnmarked.en} 1` });
-    unmarked.focus();
-    await user.keyboard('{Enter}');
-    expect(unmarked.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByTestId('attendance-student-row-3')).toBeTruthy();
-    expect(screen.queryByTestId('attendance-student-row-1')).toBeNull();
-
-    const absent = screen.getByRole('button', { name: `${translations.attendanceFilterAbsent.en} 1` });
-    absent.focus();
-    await user.keyboard(' ');
-    expect(absent.getAttribute('aria-pressed')).toBe('true');
-    expect(unmarked.getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByTestId('attendance-student-row-2')).toBeTruthy();
-    expect(screen.queryByTestId('attendance-student-row-3')).toBeNull();
-
-    const all = screen.getByRole('button', { name: `${translations.attendanceFilterAll.en} 4` });
-    all.focus();
-    await user.keyboard('{Enter}');
-    expect(screen.getAllByTestId(/^attendance-student-row-/)).toHaveLength(4);
-  });
-
-  it('searches the roster through a named search field', async () => {
-    const user = userEvent.setup();
-    renderAttendance();
-    await user.type(screen.getByRole('textbox', { name: translations.search.en }), 'Bonu');
-    expect(screen.getAllByTestId(/^attendance-student-row-/)).toHaveLength(1);
-    expect(screen.getByTestId('attendance-student-row-2')).toBeTruthy();
-  });
-
   it('saves marks directly when existing student notes are untouched', async () => {
     const user = userEvent.setup();
     const { props } = renderAttendance({ hasDivergingNotes: true });

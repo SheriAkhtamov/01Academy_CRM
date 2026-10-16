@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, CheckCircle2, ClipboardCheck, MessageSquareWarning } from "lucide-react";
 import type { LmsTeacherSummaryDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/lib/i18n";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { lmsStaffApi } from "./api";
 import { lmsStaffKey, useStaffQuery } from "./queries";
 import { StaffReviews } from "./reviews";
@@ -33,12 +30,6 @@ const titleKeys: Record<Mode, TranslationKey> = {
 };
 const count = (run: Run, mode: Mode) =>
   mode === "unpreparedLessons" ? run.unpreparedLessons.length : run[mode];
-
-const modeIcons: Record<Mode, typeof ClipboardCheck> = {
-  pendingReviews: ClipboardCheck,
-  openHelp: MessageSquareWarning,
-  unpreparedLessons: BookOpen,
-};
 
 export function LearningTeacherSummary({
   enabled = false,
@@ -73,70 +64,26 @@ export function LearningTeacherSummary({
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-3">
-        {(Object.keys(titleKeys) as Mode[]).map((key) => {
-          const total = query.data[key];
-          const Icon = modeIcons[key];
-          const groupsWithItems = query.data.runs.filter((run) => count(run, key) > 0);
-          return (
-            <Card
-              key={key}
-              className={cn(
-                "overflow-hidden border transition-all",
-                total > 0
-                  ? "border-amber-500/35 bg-gradient-to-br from-amber-500/[0.06] via-background to-background hover:border-amber-500/55"
-                  : "border-border/70 bg-card",
-              )}
-            >
-              <CardContent className="p-3 sm:p-4">
-                <Button
-                  variant="ghost"
-                  aria-label={`${total} ${t(titleKeys[key])}`}
-                  className="h-auto min-h-20 w-full flex-col items-stretch justify-between gap-2.5 whitespace-normal p-1 text-left hover:bg-transparent"
-                  disabled={total === 0}
-                  onClick={() => {
-                    setMode(key);
-                    setRunId(null);
-                  }}
-                >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-xl",
-                        total > 0
-                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                      )}
-                    >
-                      {total > 0 ? <Icon className="size-4" /> : <CheckCircle2 className="size-4" />}
-                    </span>
-                    <span className="text-3xl font-bold leading-none tabular-nums text-foreground">
-                      {total}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="block text-xs font-semibold text-foreground">
-                      {t(titleKeys[key])}
-                    </span>
-                    {groupsWithItems.length > 0 ? (
-                      <div aria-hidden="true" className="flex flex-wrap gap-1 pt-0.5">
-                        {groupsWithItems.slice(0, 2).map((run) => (
-                          <Badge
-                            key={run.runId}
-                            variant="secondary"
-                            className="max-w-36 truncate px-1.5 py-0 text-[10px] font-normal"
-                          >
-                            {run.groupName}: {count(run, key)}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {(Object.keys(titleKeys) as Mode[]).map((key) => (
+          <Card key={key}>
+            <CardContent className="p-3">
+              <Button
+                variant="ghost"
+                className="h-auto min-h-20 w-full flex-col gap-2 whitespace-normal py-3"
+                disabled={query.data[key] === 0}
+                onClick={() => {
+                  setMode(key);
+                  setRunId(null);
+                }}
+              >
+                <span className="text-3xl font-semibold">
+                  {query.data[key]}
+                </span>
+                <span>{t(titleKeys[key])}</span>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
       {mode && (
         <StaffDialog
@@ -151,7 +98,7 @@ export function LearningTeacherSummary({
                   id="teacher-summary-group"
                   value={selected?.runId ?? ""}
                   onChange={(event) => setRunId(Number(event.target.value))}
-                  className="min-h-11 w-full rounded-lg border bg-background px-3 text-sm font-medium"
+                  className="min-h-11 w-full rounded-md border bg-background px-3"
                 >
                   {available.map((run) => (
                     <option key={run.runId} value={run.runId}>
@@ -189,10 +136,10 @@ function UnpreparedLessons({ run }: { run: Run }) {
   return (
     <div className="space-y-3">
       {run.unpreparedLessons.map((item) => (
-        <Card key={item.lessonId} className="border-border/70">
+        <Card key={item.lessonId}>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="min-w-0 space-y-1">
-              <h3 className="break-words font-semibold text-foreground">{item.topic}</h3>
+              <h3 className="break-words font-medium">{item.topic}</h3>
               <p className="text-sm text-muted-foreground">
                 {date(item.scheduledAt)}
               </p>

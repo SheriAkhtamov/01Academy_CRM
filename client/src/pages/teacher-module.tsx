@@ -294,7 +294,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const teacherDemosQuery = useQuery({
     queryKey: demoLessonQueryKeys.teacher,
     queryFn: teacherDemoLessonsApi.list,
-    enabled: section === 'attendance' || section === 'schedule',
+    enabled: section === 'attendance',
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
@@ -953,12 +953,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
               return focus != null && localDateKey(focus.scheduledAt) === todayKey;
             })()}
             todayCount={todayLessons.length}
-            todayLessons={todayLessons}
             pendingLessons={pendingAttendanceLessons}
             onOpenAttendance={openAttendanceForLesson}
             onOpenLessonInSchedule={openLessonInSchedule}
             onOpenSchedule={() => setLocation('/teacher-module/schedule')}
-            onOpenGroup={(groupId) => setLocation(`/teacher-module/groups?group=${groupId}`)}
           />
           <ReportingDateRangeFilter value={reportingRange} onChange={handleReportingRangeChange} />
           <TeacherOverviewKpis
@@ -996,11 +994,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           onToday={() => replaceParams({ week: null })}
           onOpenNextLesson={openLessonInSchedule}
           onOpenAttendance={openAttendanceForLesson}
-          allLessons={lessons}
-          groups={activeGroups}
-          demos={teacherDemosQuery.data ?? []}
-          onSelectDemo={(demo) => setLocation(`/teacher-module/attendance?lesson=demo:${demo.id}`)}
-          onOpenGroup={(groupId) => setLocation(`/teacher-module/groups?group=${groupId}`)}
         />
       );
     }
@@ -1011,8 +1004,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           key={searchParams.get('q') ?? ''}
           initialQuery={searchParams.get('q') ?? ''}
           groups={groups}
-          lessons={lessons}
-          attendanceRecords={attendanceRecords}
           view={groupView}
           selectedGroup={selectedGroup}
           groupStudents={groupStudents}
@@ -1023,7 +1014,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           archivePendingGroupId={pendingGroupId}
           onSelectGroup={(groupId) => pushParams({ group: groupId === null ? null : String(groupId) })}
           onOpenStudent={(student) => pushParams({ student: String(student.id) })}
-          onOpenLearningGroup={(groupId) => setLocation(`/teacher-module/learning?group=${groupId}`)}
           studentProfileOpen={Boolean(selectedStudent)}
           learningEnabled={learningCapabilities?.learningEnabled === true && learningCapabilities.canManageLearning === true}
           onChangeView={(nextView) => replaceParams({

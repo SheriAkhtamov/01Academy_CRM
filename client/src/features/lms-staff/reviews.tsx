@@ -99,7 +99,7 @@ export function StaffReviews({ runId }: { runId?: number }) {
       header: t("lmsStaffStudents"),
       accessor: (item) => item.studentName,
       render: (item) => (
-        <span className="break-words font-semibold">{item.studentName}</span>
+        <span className="break-words font-medium">{item.studentName}</span>
       ),
       mobilePrimary: true,
     },
@@ -107,8 +107,8 @@ export function StaffReviews({ runId }: { runId?: number }) {
       key: "group",
       header: t("lmsStaffGroup"),
       render: (item) => (
-        <div className="space-y-0.5">
-          <p className="break-words font-medium">{item.groupName}</p>
+        <div className="space-y-1">
+          <p className="break-words">{item.groupName}</p>
           <p className="break-words text-xs text-muted-foreground">
             {item.courseName}
           </p>
@@ -118,29 +118,18 @@ export function StaffReviews({ runId }: { runId?: number }) {
     {
       key: "assignment",
       header: t("lmsStaffAssignments"),
-      render: (item) => (
-        <span className="break-words font-medium">{item.title}</span>
-      ),
+      render: (item) => <span className="break-words">{item.title}</span>,
     },
     {
       key: "attempt",
       header: t("portalAttempt"),
       accessor: (item) => item.attemptNumber,
-      render: (item) => (
-        <span className="inline-flex rounded-md border bg-muted/40 px-2 py-0.5 text-xs font-medium tabular-nums">
-          #{item.attemptNumber}
-        </span>
-      ),
     },
     {
       key: "submittedAt",
       header: t("portalDate"),
       accessor: (item) => +new Date(item.submittedAt),
-      render: (item) => (
-        <span className="text-xs text-muted-foreground">
-          {date(item.submittedAt)}
-        </span>
-      ),
+      render: (item) => date(item.submittedAt),
       sortable: true,
     },
     {
@@ -148,29 +137,21 @@ export function StaffReviews({ runId }: { runId?: number }) {
       header: t("status"),
       render: (item) => (
         <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={
-                item.reviewStartedBy
-                  ? "inline-flex items-center rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-300"
-                  : "inline-flex items-center rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
-              }
-            >
-              {t(
-                item.reviewStartedBy
-                  ? "lmsStaffBeingReviewed"
-                  : "portalSubmitted",
-              )}
-            </span>
-            {item.late && (
-              <span className="inline-flex items-center rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-700 dark:text-rose-300">
-                {t("portalOverdue")}
-              </span>
+          <p>
+            {t(
+              item.reviewStartedBy
+                ? "lmsStaffBeingReviewed"
+                : "portalSubmitted",
             )}
-          </div>
+          </p>
           {item.reviewStartedName && (
             <p className="break-words text-xs text-muted-foreground">
               {item.reviewStartedName}
+            </p>
+          )}
+          {item.late && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {t("portalOverdue")}
             </p>
           )}
         </div>
@@ -180,7 +161,7 @@ export function StaffReviews({ runId }: { runId?: number }) {
       key: "actions",
       header: t("actions"),
       render: (item) => (
-        <Button size="sm" onClick={() => setSelected(item.submissionId)}>
+        <Button onClick={() => setSelected(item.submissionId)}>
           {t("portalOpen")}
         </Button>
       ),
@@ -188,17 +169,12 @@ export function StaffReviews({ runId }: { runId?: number }) {
   ];
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2.5">
-        <h2 className="text-xl font-semibold">{t("lmsStaffReviews")}</h2>
-        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums">
-          {filtered.length}
-        </span>
-      </div>
-      <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/20 p-3.5 sm:grid-cols-3">
+      <h2 className="text-xl font-semibold">{t("lmsStaffReviews")}</h2>
+      <div className="grid gap-3 sm:grid-cols-3">
         <StaffField id="review-course" labelKey="course">
           <select
             id="review-course"
-            className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm"
+            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={course}
             onChange={(event) => {
               setCourse(event.target.value);
@@ -217,7 +193,7 @@ export function StaffReviews({ runId }: { runId?: number }) {
         <StaffField id="review-group" labelKey="lmsStaffGroup">
           <select
             id="review-group"
-            className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm"
+            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={group}
             onChange={(event) => {
               setGroup(event.target.value);
@@ -235,7 +211,7 @@ export function StaffReviews({ runId }: { runId?: number }) {
         <StaffField id="review-assignment" labelKey="lmsStaffAssignments">
           <select
             id="review-assignment"
-            className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm"
+            className="min-h-11 w-full rounded-md border bg-background px-3"
             value={assignment}
             onChange={(event) => setAssignment(event.target.value)}
           >

@@ -39,42 +39,26 @@ export function StaffMakeup({ runId }: { runId: number }) {
     );
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2.5">
-        <h2 className="text-xl font-semibold">{t("portalMakeup")}</h2>
-        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold tabular-nums">
-          {query.data.length}
-        </span>
-      </div>
+      <h2 className="text-xl font-semibold">{t("portalMakeup")}</h2>
       {!query.data.length && <StaffEmpty />}
-      <div className="grid gap-3 md:grid-cols-2">
-        {query.data.map((plan) => (
-          <Card
-            key={plan.id}
-            className="border-border/70 transition-colors hover:border-primary/30"
-          >
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
-              <div className="min-w-0 space-y-2">
-                <h3 className="break-words font-semibold">
-                  {plan.studentName}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  {plan.topic} · {date(plan.scheduledAt)}
-                </p>
-                <StaffStatus state={plan.status} />
-              </div>
-              {["needed", "in_progress"].includes(plan.status) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelected(plan)}
-                >
-                  {t("lmsStaffMakeupPractice")}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {query.data.map((plan) => (
+        <Card key={plan.id}>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="min-w-0 space-y-2">
+              <h3 className="break-words font-semibold">{plan.studentName}</h3>
+              <p>
+                {plan.topic} · {date(plan.scheduledAt)}
+              </p>
+              <StaffStatus state={plan.status} />
+            </div>
+            {["needed", "in_progress"].includes(plan.status) && (
+              <Button variant="outline" onClick={() => setSelected(plan)}>
+                {t("lmsStaffMakeupPractice")}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ))}
       {selected && (
         <MakeupEditor
           key={selected.id}

@@ -13,7 +13,6 @@ export function LearningManagementPage({
     <LearningManagement
       administration={administration}
       initialTab={initialTab}
-      autoSelectFirstGroup
     />
   );
 }

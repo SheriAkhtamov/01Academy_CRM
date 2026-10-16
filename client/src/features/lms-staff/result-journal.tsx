@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Search } from "lucide-react";
 import type {
   LmsStaffSummaryDto,
   LmsStaffAssignmentResultDto,
@@ -10,8 +9,6 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { TranslationKey } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { StaffField, StaffEmpty } from "./ui";
 
 type Filter = "all" | "notSubmitted" | "revision" | "help" | "absences";
@@ -33,19 +30,6 @@ const statusKeys: Record<
   excused: "portalExcused",
   cancelled: "portalCancelled",
 };
-const statusTones: Record<LmsStaffAssignmentResultDto["status"], string> = {
-  accepted:
-    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  submitted:
-    "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  revision_required:
-    "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-  assigned: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  excused: "border-border bg-muted/60 text-muted-foreground",
-  cancelled:
-    "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-};
-
 export function StaffResultJournal({
   students,
   onSelect,
@@ -56,10 +40,9 @@ export function StaffResultJournal({
   const { t, language } = useTranslation();
   const desktop = useMediaQuery("(min-width: 1024px)");
   const [filter, setFilter] = useState<Filter>("all");
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
-  const visible = students.filter((student) => {
-    const matchesFilter =
+  const visible = students.filter(
+    (student) =>
       filter === "all" ||
       (filter === "notSubmitted" &&
         (student.assignmentResults?.some(
@@ -72,15 +55,8 @@ export function StaffResultJournal({
         ) ??
           false)) ||
       (filter === "help" && (student.openHelp ?? 0) > 0) ||
-      (filter === "absences" && (student.absences ?? 0) > 0);
-    if (!matchesFilter) return false;
-    if (search.trim()) {
-      return student.studentName
-        .toLowerCase()
-        .includes(search.trim().toLowerCase());
-    }
-    return true;
-  });
+      (filter === "absences" && (student.absences ?? 0) > 0),
+  );
   const assignments = [
     ...new Map(
       students
@@ -101,23 +77,12 @@ export function StaffResultJournal({
   const number = new Intl.NumberFormat(language, { maximumFractionDigits: 1 });
   const assignment = (item: LmsStaffAssignmentResultDto | undefined) =>
     !item ? (
-      <span className="text-xs text-muted-foreground">
-        {t("lmsStaffJournalNotAssigned")}
-      </span>
+      t("lmsStaffJournalNotAssigned")
     ) : (
-      <div className="space-y-1.5">
-        <div>
-          <span
-            className={cn(
-              "inline-flex rounded-md border px-2 py-0.5 text-xs font-medium",
-              statusTones[item.status],
-            )}
-          >
-            {t(statusKeys[item.status])}
-          </span>
-        </div>
+      <div className="space-y-1">
+        <div>{t(statusKeys[item.status])}</div>
         {item.gradingMode === "points" && (
-          <div className="text-xs font-semibold tabular-nums">
+          <div className="font-medium tabular-nums">
             {item.score === null
               ? t("lmsStaffJournalNoResult")
               : `${number.format(item.score)} / ${number.format(item.maxScore ?? 0)}`}
@@ -127,37 +92,20 @@ export function StaffResultJournal({
     );
   const quiz = (item: LmsStaffQuizResultDto | undefined) =>
     !item ? (
-      <span className="text-xs text-muted-foreground">
-        {t("lmsStaffJournalNotAssigned")}
-      </span>
+      t("lmsStaffJournalNotAssigned")
     ) : item.status === "excused" ? (
-      <span className="text-xs text-muted-foreground">
-        {t("portalExcused")}
-      </span>
+      t("portalExcused")
     ) : item.status === "cancelled" ? (
-      <span className="text-xs text-rose-600 dark:text-rose-400">
-        {t("portalCancelled")}
-      </span>
+      t("portalCancelled")
     ) : (
       <div className="space-y-1">
-        <div className="text-xs font-semibold tabular-nums">
+        <div className="font-medium tabular-nums">
           {item.bestPercent === null
             ? t("lmsStaffJournalNoResult")
             : `${number.format(item.bestPercent)}%`}
         </div>
         {item.bestPercent !== null && (
-          <div>
-            <span
-              className={cn(
-                "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                item.passed
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
-              )}
-            >
-              {t(item.passed ? "portalPassed" : "portalNotPassed")}
-            </span>
-          </div>
+          <div>{t(item.passed ? "portalPassed" : "portalNotPassed")}</div>
         )}
       </div>
     );
@@ -165,52 +113,36 @@ export function StaffResultJournal({
     visible.find((student) => student.studentId === selected) ?? visible[0];
   return (
     <section className="min-w-0 space-y-4" aria-label={t("lmsStaffJournal")}>
-      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3.5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="w-full sm:max-w-xs">
-          <StaffField
-            id="results-journal-filter"
-            labelKey="lmsStaffJournalFilter"
-          >
-            <select
-              id="results-journal-filter"
-              className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm"
-              value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value as Filter);
-                setSelected(null);
-              }}
-            >
-              {filters.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {t(label)}
-                </option>
-              ))}
-            </select>
-          </StaffField>
-        </div>
-        <div className="relative w-full lg:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={t("lmsStaffSearchPlaceholder")}
-            className="h-10 bg-background pl-9 text-sm"
-          />
-        </div>
-      </div>
+      <StaffField id="results-journal-filter" labelKey="lmsStaffJournalFilter">
+        <select
+          id="results-journal-filter"
+          className="min-h-11 w-full rounded-md border bg-background px-3 sm:max-w-sm"
+          value={filter}
+          onChange={(event) => {
+            setFilter(event.target.value as Filter);
+            setSelected(null);
+          }}
+        >
+          {filters.map(([value, label]) => (
+            <option key={value} value={value}>
+              {t(label)}
+            </option>
+          ))}
+        </select>
+      </StaffField>
       {!visible.length ? (
         <StaffEmpty />
       ) : desktop ? (
-        <div className="max-w-full overflow-x-auto rounded-xl border border-border/70 bg-card shadow-xs">
+        <div className="max-w-full overflow-x-auto rounded-xl border">
           <table
             className="w-full border-collapse text-sm"
             aria-label={t("lmsStaffJournal")}
           >
             <thead>
-              <tr className="border-b bg-muted/40">
+              <tr className="border-b bg-muted/50">
                 <th
                   scope="col"
-                  className="sticky left-0 z-10 min-w-52 bg-muted/90 p-3.5 text-left font-semibold"
+                  className="sticky left-0 z-10 min-w-52 bg-muted p-3 text-left"
                 >
                   {t("student")}
                 </th>
@@ -218,9 +150,9 @@ export function StaffResultJournal({
                   <th
                     scope="col"
                     key={`assignment:${item.id}`}
-                    className="min-w-44 p-3.5 text-left font-semibold"
+                    className="min-w-44 p-3 text-left"
                   >
-                    <span className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <span className="block text-xs font-normal text-muted-foreground">
                       {t("portalAssignments")}
                     </span>
                     {item.title}
@@ -230,9 +162,9 @@ export function StaffResultJournal({
                   <th
                     scope="col"
                     key={`quiz:${item.id}`}
-                    className="min-w-44 p-3.5 text-left font-semibold"
+                    className="min-w-44 p-3 text-left"
                   >
-                    <span className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <span className="block text-xs font-normal text-muted-foreground">
                       {t("portalTests")}
                     </span>
                     {item.title}
@@ -244,15 +176,15 @@ export function StaffResultJournal({
               {visible.map((student) => (
                 <tr
                   key={student.studentId}
-                  className="border-b transition-colors hover:bg-muted/20 last:border-b-0"
+                  className="border-b last:border-b-0"
                 >
                   <th
                     scope="row"
-                    className="sticky left-0 z-10 bg-background p-3.5 text-left"
+                    className="sticky left-0 z-10 bg-background p-3 text-left"
                   >
                     <Button
                       variant="link"
-                      className="h-auto min-h-10 max-w-60 whitespace-normal p-0 text-left font-semibold text-foreground hover:text-primary"
+                      className="h-auto min-h-11 max-w-60 whitespace-normal p-0 text-left"
                       onClick={() => onSelect(student)}
                     >
                       {student.studentName}
@@ -261,7 +193,7 @@ export function StaffResultJournal({
                   {assignments.map((column) => (
                     <td
                       key={`assignment:${column.id}`}
-                      className="p-3.5 align-top"
+                      className="p-3 align-top"
                     >
                       {assignment(
                         student.assignmentResults?.find(
@@ -271,7 +203,7 @@ export function StaffResultJournal({
                     </td>
                   ))}
                   {quizzes.map((column) => (
-                    <td key={`quiz:${column.id}`} className="p-3.5 align-top">
+                    <td key={`quiz:${column.id}`} className="p-3 align-top">
                       {quiz(
                         student.quizResults?.find(
                           (item) => item.quizId === column.id,
@@ -304,7 +236,7 @@ export function StaffResultJournal({
             <>
               <Button
                 variant="outline"
-                className="min-h-11 w-full whitespace-normal font-semibold"
+                className="min-h-11 w-full whitespace-normal"
                 onClick={() => onSelect(chosen)}
               >
                 {chosen.studentName}

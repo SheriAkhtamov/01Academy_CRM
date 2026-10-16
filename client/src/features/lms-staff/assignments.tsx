@@ -1,17 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
-  CalendarClock,
-  CheckCircle2,
-  ClipboardList,
-  Clock,
-  Plus,
-  RotateCcw,
-  Search,
-  UserPlus,
-  Users,
-} from "lucide-react";
-import {
   lmsAssignmentSchema,
   type LmsStaffEnrollmentDto,
   type LmsStaffRecipientDto,
@@ -19,11 +8,9 @@ import {
   type LmsStaffAssignmentDetailDto,
 } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { LearningText } from "../learning-content/text";
 import { LmsStaffApiError, lmsStaffApi } from "./api";
@@ -63,7 +50,6 @@ export function StaffAssignments({
   const [selected, setSelected] = useState<number | null>(null);
   const [newStudents, setNewStudents] = useState(false);
   const [copy, setCopy] = useState<LmsStaffAssignmentDetailDto | null>(null);
-  const [search, setSearch] = useState("");
   if (query.isPending) return <StaffLoading />;
   if (query.error)
     return (
@@ -74,126 +60,59 @@ export function StaffAssignments({
         }}
       />
     );
-
-  const filteredAssignments = query.data.filter((item) => {
-    if (!search.trim()) return true;
-    return item.title.toLowerCase().includes(search.trim().toLowerCase());
-  });
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <h2 className="text-xl font-semibold">{t("lmsStaffAssignments")}</h2>
-          <Badge variant="secondary" className="tabular-nums">
-            {query.data.length}
-          </Badge>
-        </div>
+        <h2 className="text-xl font-semibold">{t("lmsStaffAssignments")}</h2>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             disabled={!query.data.length}
             onClick={() => setNewStudents(true)}
-            className="gap-1.5"
           >
-            <UserPlus className="h-4 w-4" aria-hidden="true" />
             {t("lmsStaffNewStudents")}
           </Button>
-          <Button onClick={() => setCreate(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" aria-hidden="true" />
+          <Button onClick={() => setCreate(true)}>
             {t("lmsStaffAddAssignment")}
           </Button>
         </div>
       </div>
-
-      {query.data.length > 0 && (
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={t("lmsStaffSearchPlaceholder")}
-            className="h-9 bg-background pl-9 text-sm"
-          />
-        </div>
-      )}
-
-      {!filteredAssignments.length && <StaffEmpty />}
+      {!query.data.length && <StaffEmpty />}
       <div className="space-y-3">
-        {filteredAssignments.map((item) => {
-          const acceptedPct =
-            item.recipientCount > 0
-              ? Math.round((item.acceptedCount / item.recipientCount) * 100)
-              : 0;
-          return (
-            <Card
-              key={item.id}
-              className="border-border/70 transition-all hover:border-primary/30 hover:shadow-sm"
-            >
-              <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <ClipboardList className="h-4 w-4" />
-                      </div>
-                      <h3 className="break-words font-semibold leading-snug">
-                        {item.title}
-                      </h3>
-                    </div>
-                    {item.dueAt && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 text-xs font-normal text-muted-foreground"
-                      >
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        {t("lmsStaffDueAt")}: {date(item.dueAt)}
-                      </Badge>
+        {query.data.map((item) => (
+          <Card key={item.id}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+              <div className="min-w-0 space-y-2">
+                <h3 className="break-words font-semibold">{item.title}</h3>
+                {item.dueAt && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("lmsStaffDueAt")}: {date(item.dueAt)}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span>
+                    {t("lmsStaffRecipientsCount").replace(
+                      "{count}",
+                      String(item.recipientCount),
                     )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2.5 py-1 font-medium text-muted-foreground">
-                      <Users className="h-3.5 w-3.5" />
-                      {t("lmsStaffRecipientsCount").replace(
-                        "{count}",
-                        String(item.recipientCount),
-                      )}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      {t("portalAccepted")}: {item.acceptedCount}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-700 dark:text-amber-300">
-                      <Clock className="h-3.5 w-3.5" />
-                      {t("portalSubmitted")}: {item.submittedCount}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 font-medium text-rose-700 dark:text-rose-300">
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      {t("portalRevisionRequired")}: {item.revisionCount}
-                    </span>
-                  </div>
-
-                  {item.recipientCount > 0 && (
-                    <div className="flex items-center gap-3 max-w-md">
-                      <Progress value={acceptedPct} className="h-1.5 flex-1" />
-                      <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                        {acceptedPct}%
-                      </span>
-                    </div>
-                  )}
+                  </span>
+                  <span>
+                    {t("portalAccepted")}: {item.acceptedCount}
+                  </span>
+                  <span>
+                    {t("portalSubmitted")}: {item.submittedCount}
+                  </span>
+                  <span>
+                    {t("portalRevisionRequired")}: {item.revisionCount}
+                  </span>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setSelected(item.id)}
-                  className="shrink-0"
-                >
-                  {t("portalOpen")}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+              </div>
+              <Button variant="outline" onClick={() => setSelected(item.id)}>
+                {t("portalOpen")}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
       {create && (
         <AssignmentEditor

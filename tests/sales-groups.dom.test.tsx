@@ -584,3 +584,26 @@ it('updates the protected name when course, delivery and training type change', 
   fireEvent.change(name, { target: { value: 'ONL-VC-IND-26-9999 — spoofed' } });
   expect(name.value).toBe('ONL-AI-IND-26-0043 — Another class');
 });
+
+it('applies quick presets, warns when group capacity exceeds room capacity and saves on Ctrl+Enter', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+
+  // Room 101 has capacity 12; picking 15 seats via the quick preset triggers the capacity warning.
+  await userEvent.click(within(dialog).getByRole('button', { name: '15' }));
+  expect((within(dialog).getByRole('spinbutton', { name: i18n.t('groupCapacity') }) as HTMLInputElement).value).toBe('15');
+  expect(within(dialog).getByText(i18n.t('groupRoomCapacityWarning').replace('{room}', '12').replace('{group}', '15'))).toBeTruthy();
+
+  // Picking 8 seats clears the warning, and picking 90 min updates the lesson duration.
+  await userEvent.click(within(dialog).getAllByRole('button', { name: '8' })[0]);
+  expect(within(dialog).queryByText(/Вместимость кабинета/)).toBeNull();
+  await userEvent.click(within(dialog).getByRole('button', { name: `90 ${i18n.t('minuteShort')}` }));
+  expect((within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') }) as HTMLInputElement).value).toBe('90');
+
+  // Ctrl+Enter submits the form directly.
+  fireEvent.keyDown(dialog.querySelector('form')!, { key: 'Enter', ctrlKey: true });
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({
+    maxStudents: 8, lessonDurationMinutes: 90,
+  })));
+});

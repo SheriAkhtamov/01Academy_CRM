@@ -316,4 +316,19 @@ describe('week schedule editor', () => {
     expect(screen.getByLabelText('Wed: Start').getAttribute('value')).toBe('10:00');
     expect(screen.getByLabelText('Wed: End').getAttribute('value')).toBe('12:00');
   });
+
+  it('applies a quick start-time chip while preserving slot duration', async () => {
+    const user = userEvent.setup();
+    render(<EditorHarness initial={[
+      { dayOfWeek: 1, startTime: '10:00', endTime: '12:00' },
+      { dayOfWeek: 3, startTime: '10:00', endTime: '11:30' },
+    ]} />);
+
+    await user.click(screen.getByRole('button', { name: '18:00' }));
+
+    expect(screen.getByLabelText('Mon: Start').getAttribute('value')).toBe('18:00');
+    expect(screen.getByLabelText('Mon: End').getAttribute('value')).toBe('20:00');
+    expect(screen.getByLabelText('Wed: Start').getAttribute('value')).toBe('18:00');
+    expect(screen.getByLabelText('Wed: End').getAttribute('value')).toBe('19:30');
+  });
 });

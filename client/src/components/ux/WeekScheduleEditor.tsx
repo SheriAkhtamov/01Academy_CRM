@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleAlert, CopyCheck } from 'lucide-react';
+import { CircleAlert, Clock, CopyCheck, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -33,12 +33,14 @@ interface WeekScheduleEditorProps {
   allSchoolsLabel?: string;
   startLabel?: string;
   endLabel?: string;
+  defaultDurationMinutes?: number;
   disabled?: boolean;
   className?: string;
 }
 
 const DEFAULT_START = '09:00';
 const DEFAULT_END = '18:00';
+const QUICK_START_TIMES = ['09:00', '10:00', '14:00', '16:00', '18:00', '19:00'] as const;
 
 const PRESETS = [
   { key: 'weekdays', labelKey: 'schedulePresetWeekdays', days: [1, 2, 3, 4, 5] },
@@ -53,13 +55,20 @@ const toMinutes = (value: string) => {
   return Number(match[1]) * 60 + Number(match[2]);
 };
 
+const fromMinutes = (totalMinutes: number) => {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, totalMinutes));
+  const hours = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const minutes = String(clamped % 60).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
 const durationLabel = (item: WeekScheduleItem) => {
   const start = toMinutes(item.startTime);
   const end = toMinutes(item.endTime);
   if (start === null || end === null || end <= start) return null;
   const minutes = end - start;
   const hours = Math.floor(minutes / 60);
-  return { hours, minutes: minutes % 60 };
+  return { hours, minutes: minutes % 60, totalMinutes: minutes };
 };
 
 export function WeekScheduleEditor({
@@ -71,6 +80,7 @@ export function WeekScheduleEditor({
   allSchoolsLabel,
   startLabel,
   endLabel,
+  defaultDurationMinutes,
   disabled = false,
   className,
 }: WeekScheduleEditorProps) {
@@ -81,14 +91,23 @@ export function WeekScheduleEditor({
   const resolvedEndLabel = endLabel ?? t('end');
   const firstItem = [...value].sort((left, right) => left.dayOfWeek - right.dayOfWeek)[0];
 
+  const resolveDefaultEnd = (startTime: string) => {
+    const startMins = toMinutes(startTime);
+    if (startMins !== null && defaultDurationMinutes && defaultDurationMinutes >= 15) {
+      return fromMinutes(startMins + defaultDurationMinutes);
+    }
+    return DEFAULT_END;
+  };
+
   const updateDay = (dayOfWeek: number, patch: Partial<WeekScheduleItem>) => {
     const existing = value.find((item) => item.dayOfWeek === dayOfWeek);
+    const fallbackStart = firstItem?.startTime ?? DEFAULT_START;
     const next = existing
       ? value.map((item) => item.dayOfWeek === dayOfWeek ? { ...item, ...patch } : item)
       : [...value, {
           dayOfWeek,
-          startTime: firstItem?.startTime ?? DEFAULT_START,
-          endTime: firstItem?.endTime ?? DEFAULT_END,
+          startTime: fallbackStart,
+          endTime: firstItem?.endTime ?? resolveDefaultEnd(fallbackStart),
           schoolId: firstItem?.schoolId ?? schools[0]?.id ?? null,
           ...patch,
         }];
@@ -104,9 +123,10 @@ export function WeekScheduleEditor({
   };
 
   const applyPreset = (days: number[]) => {
+    const fallbackStart = firstItem?.startTime ?? DEFAULT_START;
     const template = firstItem ?? {
-      startTime: DEFAULT_START,
-      endTime: DEFAULT_END,
+      startTime: fallbackStart,
+      endTime: resolveDefaultEnd(fallbackStart),
       schoolId: schools[0]?.id ?? null,
     };
     onChange(days.map((dayOfWeek) => {
@@ -116,6 +136,20 @@ export function WeekScheduleEditor({
         startTime: template.startTime,
         endTime: template.endTime,
         schoolId: template.schoolId ?? null,
+      };
+    }));
+  };
+
+  const applyQuickStartTime = (startTime: string) => {
+    const startMins = toMinutes(startTime);
+    if (startMins === null || value.length === 0) return;
+    onChange(value.map((item) => {
+      const currentDuration = durationLabel(item)?.totalMinutes
+        ?? (defaultDurationMinutes && defaultDurationMinutes >= 15 ? defaultDurationMinutes : 120);
+      return {
+        ...item,
+        startTime,
+        endTime: fromMinutes(startMins + currentDuration),
       };
     }));
   };
@@ -130,22 +164,36 @@ export function WeekScheduleEditor({
     })));
   };
 
+  const isPresetActive = (days: number[]) => (
+    value.length === days.length && days.every((day) => value.some((item) => item.dayOfWeek === day))
+  );
+
+  const uniformStartTime = value.length > 0 && value.every((item) => item.startTime === value[0]?.startTime)
+    ? value[0]?.startTime
+    : null;
+
   return (
-    <div className={cn('flex flex-col gap-2', className)}>
+    <div className={cn('flex flex-col gap-2.5', className)}>
       <div className="flex flex-wrap items-center gap-1.5">
-        {PRESETS.map((preset) => (
-          <Button
-            key={preset.key}
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            disabled={disabled}
-            onClick={() => applyPreset(preset.days)}
-          >
-            {t(preset.labelKey)}
-          </Button>
-        ))}
+        {PRESETS.map((preset) => {
+          const active = isPresetActive(preset.days);
+          return (
+            <Button
+              key={preset.key}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-xs transition-colors',
+                active && 'border-primary/40 bg-primary/10 font-medium text-primary hover:bg-primary/15',
+              )}
+              disabled={disabled}
+              onClick={() => applyPreset(preset.days)}
+            >
+              {t(preset.labelKey)}
+            </Button>
+          );
+        })}
         <Button
           type="button"
           variant="ghost"
@@ -154,20 +202,45 @@ export function WeekScheduleEditor({
           disabled={disabled || value.length < 2}
           onClick={copyFirstRow}
         >
-          <CopyCheck />
+          <CopyCheck className="size-3.5" aria-hidden="true" />
           {t('scheduleCopyFirstRow')}
         </Button>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="ml-auto h-7 px-2 text-xs"
+          className="ml-auto h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
           disabled={disabled || value.length === 0}
           onClick={() => setResetConfirmOpen(true)}
         >
+          <RotateCcw className="size-3" aria-hidden="true" />
           {t('reset')}
         </Button>
       </div>
+
+      {value.length > 0 && !disabled ? (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5">
+          <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {QUICK_START_TIMES.map((slot) => {
+            const active = uniformStartTime === slot;
+            return (
+              <button
+                key={slot}
+                type="button"
+                onClick={() => applyQuickStartTime(slot)}
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-xs tabular-nums transition-colors',
+                  active
+                    ? 'bg-primary text-primary-foreground font-medium shadow-2xs'
+                    : 'bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground border border-border/60',
+                )}
+              >
+                {slot}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={resetConfirmOpen}
@@ -182,7 +255,7 @@ export function WeekScheduleEditor({
         }}
       />
 
-      <div className="overflow-hidden rounded-xl border border-border">
+      <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs">
         {dayNames.map((dayName, index) => {
           const dayOfWeek = index + 1;
           const item = value.find((entry) => entry.dayOfWeek === dayOfWeek);
@@ -194,21 +267,18 @@ export function WeekScheduleEditor({
             <div
               key={dayOfWeek}
               className={cn(
-                // Day name plus two time fields needs 320px of track before the
-                // gaps and the row padding — about 360px in total, which is
-                // wider than the dialog this editor lives in on a phone, so the
-                // last field was cut off at the edge. Below `sm` the day name
-                // takes its own line and the two times share the row underneath.
-                'grid grid-cols-2 items-center gap-2 border-b border-border px-3 py-2 last:border-b-0',
+                'grid grid-cols-2 items-center gap-2 border-b border-border/70 px-3 py-2 transition-colors last:border-b-0',
                 'sm:grid-cols-[minmax(7rem,1fr)_6.5rem_6.5rem]',
                 showSchool
                   ? 'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem_minmax(9rem,1fr)]'
                   : 'md:grid-cols-[minmax(8rem,1fr)_7rem_7rem_5rem]',
-                enabled ? 'bg-card' : 'bg-muted/25',
-                invalid && 'bg-destructive/5',
+                enabled
+                  ? 'border-l-2 border-l-primary bg-primary/[0.03] dark:bg-primary/[0.07]'
+                  : 'bg-muted/20 hover:bg-muted/35',
+                invalid && 'border-l-2 border-l-destructive bg-destructive/5',
               )}
             >
-              <div className="col-span-2 flex items-center gap-2 sm:col-span-1">
+              <div className="col-span-2 flex items-center gap-2.5 sm:col-span-1">
                 <Checkbox
                   id={`schedule-day-${dayOfWeek}`}
                   checked={enabled}
@@ -218,8 +288,8 @@ export function WeekScheduleEditor({
                 <Label
                   htmlFor={`schedule-day-${dayOfWeek}`}
                   className={cn(
-                    'cursor-pointer text-sm font-medium',
-                    !enabled && 'text-muted-foreground',
+                    'cursor-pointer select-none text-sm transition-colors',
+                    enabled ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground',
                   )}
                 >
                   {dayName}
@@ -227,7 +297,7 @@ export function WeekScheduleEditor({
               </div>
               <Input
                 type="time"
-                className="h-9"
+                className={cn('h-8.5 text-xs tabular-nums sm:text-sm', !enabled && 'opacity-50')}
                 aria-label={`${dayName}: ${resolvedStartLabel}`}
                 aria-invalid={invalid}
                 value={item?.startTime ?? ''}
@@ -236,7 +306,7 @@ export function WeekScheduleEditor({
               />
               <Input
                 type="time"
-                className="h-9"
+                className={cn('h-8.5 text-xs tabular-nums sm:text-sm', !enabled && 'opacity-50')}
                 aria-label={`${dayName}: ${resolvedEndLabel}`}
                 aria-invalid={invalid}
                 value={item?.endTime ?? ''}
@@ -245,8 +315,8 @@ export function WeekScheduleEditor({
               />
               <span
                 className={cn(
-                  'col-span-2 flex items-center gap-1 text-xs tabular-nums sm:col-span-3 md:col-span-1',
-                  invalid ? 'text-destructive' : 'text-muted-foreground',
+                  'col-span-2 flex items-center justify-end gap-1 text-xs tabular-nums sm:col-span-3 md:col-span-1 md:justify-start',
+                  invalid ? 'font-medium text-destructive' : 'text-muted-foreground',
                 )}
               >
                 {invalid ? (
@@ -255,7 +325,9 @@ export function WeekScheduleEditor({
                     {t('scheduleEndBeforeStart')}
                   </>
                 ) : duration ? (
-                  `${duration.hours}${t('teachingHoursUnit')} ${duration.minutes > 0 ? `${duration.minutes}${t('minuteShort')}` : ''}`.trim()
+                  <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+                    {`${duration.hours}${t('teachingHoursUnit')} ${duration.minutes > 0 ? `${duration.minutes}${t('minuteShort')}` : ''}`.trim()}
+                  </span>
                 ) : null}
               </span>
               {showSchool ? (
@@ -266,7 +338,7 @@ export function WeekScheduleEditor({
                     schoolId: nextValue === 'all' ? null : Number(nextValue),
                   })}
                 >
-                  <SelectTrigger aria-label={`${t('school')}: ${dayNames[dayOfWeek - 1] ?? dayOfWeek}`} className="col-span-2 h-9 sm:col-span-3 md:col-span-1">
+                  <SelectTrigger aria-label={`${t('school')}: ${dayNames[dayOfWeek - 1] ?? dayOfWeek}`} className="col-span-2 h-8.5 sm:col-span-3 md:col-span-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

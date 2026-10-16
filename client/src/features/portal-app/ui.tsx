@@ -36,6 +36,9 @@ export function usePortalSuccess() {
     toast({ title: t(key) });
   };
 }
+export function isPortalAccessError(error: unknown): boolean {
+  return error instanceof PortalApiError && [401, 403, 404].includes(error.status);
+}
 export function usePortalError() {
   const { t } = useTranslation();
   const localKeys: Partial<Record<TranslationKey, TranslationKey>> = {

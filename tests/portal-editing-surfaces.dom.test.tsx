@@ -262,8 +262,10 @@ beforeEach(() => {
     answers: { q1: ["a"] },
   });
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Radix restores focus on the next task; keep this DOM alive until it finishes.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   client.clear();
   vi.unstubAllGlobals();
 });

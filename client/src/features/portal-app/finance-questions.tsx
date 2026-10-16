@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
+import { usePortalFormMounted } from "./usePortalFormMounted";
 import {
   PortalFormScope,
   usePortalFormScope,
@@ -26,6 +27,7 @@ import {
 import {
   PortalDialogContent as DialogContent,
   PortalLoading,
+  isPortalAccessError,
   PortalError,
   PortalStatus,
   PortalEmpty,
@@ -60,6 +62,8 @@ export function FinanceQuestions({
       .flatMap((page) => page.items)
       .filter((item) => paymentId === null || item.paymentId === paymentId) ??
     [];
+  if (isPortalAccessError(query.error))
+    return <PortalError error={query.error} retry={() => void query.refetch()} />;
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -156,7 +160,6 @@ export function FinanceQuestions({
                 onCreated={(id) => {
                   setAsk(false);
                   setSelected(id);
-                  void query.refetch();
                 }}
               />
             )}
@@ -192,8 +195,10 @@ function FinanceQuestionForm({
   onCreated: (id: number) => void;
 }) {
   const { t } = useTranslation();
+  const mounted = usePortalFormMounted();
   const message = usePortalError();
   const { subject, setUnsaved } = usePortal();
+  const invalidate = useInvalidateSubject();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const key = useRef<{ fingerprint: string; id: string } | null>(null);
@@ -210,6 +215,8 @@ function FinanceQuestionForm({
       });
     },
     onSuccess: (data) => {
+      void invalidate();
+      if (!mounted.current) return;
       setUnsaved(false);
       onCreated(data.id);
     },
@@ -264,6 +271,7 @@ function FinanceQuestionForm({
 }
 function FinanceConversation({ id }: { id: number }) {
   const { t } = useTranslation();
+  const mounted = usePortalFormMounted();
   const message = usePortalError();
   const format = usePortalFormat();
   const { subject, account, setUnsaved } = usePortal();
@@ -286,9 +294,10 @@ function FinanceConversation({ id }: { id: number }) {
       });
     },
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       setBody("");
       void query.refetch();
-      void invalidate();
     },
   });
   useEffect(() => {
@@ -296,7 +305,7 @@ function FinanceConversation({ id }: { id: number }) {
     return () => setUnsaved(false);
   }, [body, setUnsaved]);
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -307,6 +316,7 @@ function FinanceConversation({ id }: { id: number }) {
     );
   return (
     <div className="space-y-4">
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
       <h2 className="text-lg font-semibold">{query.data.subject}</h2>
       <PortalStatus status={query.data.status} />
       {query.data.messages.map((item) => (

@@ -501,6 +501,7 @@ function ChildCredentials({
 }
 function PortalSessions() {
   const { t } = useTranslation();
+  const mounted = useProfileFormMounted();
   const message = usePortalError();
   const format = usePortalFormat();
   const { account, refresh } = usePortal();
@@ -513,6 +514,7 @@ function PortalSessions() {
   const action = useMutation({
     mutationFn: () => portalIdentityApi.revokeSession(revoke!),
     onSuccess: () => {
+      if (!mounted.current) return;
       setRevoke(null);
       void query.refetch();
       refresh();

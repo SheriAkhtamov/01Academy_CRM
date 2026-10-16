@@ -27,7 +27,11 @@ import { AppShellFrame } from "@/components/ux/AppShellFrame";
 import { AppSidebarFrame } from "@/components/ux/AppSidebarFrame";
 import { setActivePlatformRealm } from "@/lib/platformSession";
 import { usePortalLocation } from "./navigation";
-import { studentNav, type NavItem } from "./module-navigation";
+import {
+  canAccessPortalSection,
+  studentNav,
+  type NavItem,
+} from "./module-navigation";
 import { usePortalViewportNavigation } from "./usePortalViewportNavigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -157,18 +161,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
       ? [subject]
       : allSubjects.filter((item) => (item.kind === "self") === (module === "student"));
     return studentNav.filter((item) => {
-      if (
-        module === "parent" &&
-        ["/learn/courses", "/learn/assignments"].includes(item.route)
-      ) return false;
       if (["/learn/profile", "/learn/notifications"].includes(item.route))
         return false;
-      if (module === "parent" && item.route === "/learn") return true;
-      if (!item.permission && !item.permissions) return true;
-      return links.some((link) =>
-        Boolean(item.permission && link.permissions.includes(item.permission)) ||
-        item.permissions?.some((permission) => link.permissions.includes(permission)),
-      );
+      return canAccessPortalSection(item.route, module, links);
     });
   };
   const accountNavigation = studentNav.filter((item) =>

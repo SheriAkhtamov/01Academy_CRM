@@ -27,6 +27,7 @@ import {
   PortalTitle,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   portalStatusVariant,
   usePortalError,
@@ -73,7 +74,7 @@ export function PortalMakeup({
   const [selected, setSelected] = useState<LmsMakeupDto | null>(null);
   if (query.isPending)
     return <PortalLoading variant={embedded ? "section" : "page"} />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -92,6 +93,14 @@ export function PortalMakeup({
   if (embedded && !items.length) return null;
   return (
     <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       {embedded ? (
         <h2 className="text-base font-semibold">{t("portalMakeup")}</h2>
       ) : (
@@ -225,7 +234,7 @@ function MakeupDetail({
       plan.recipientId !== null ||
       plan.quizRecipientId !== null);
   if (canonical.isPending) return <PortalLoading variant="section" />;
-  if (canonical.error)
+  if (canonical.data === undefined || isPortalAccessError(canonical.error))
     return (
       <PortalError
         error={canonical.error}
@@ -238,6 +247,14 @@ function MakeupDetail({
     return <PortalEmpty labelKey="portalMakeupNotRequired" />;
   return (
     <div className="space-y-4 text-sm">
+      {canonical.error && (
+        <PortalError
+          error={canonical.error}
+          retry={() => {
+            void canonical.refetch();
+          }}
+        />
+      )}
       <h2 className="text-base font-semibold">{plan.topic}</h2>
       <p className="text-sm text-muted-foreground">
         {format.date(plan.scheduledAt)}
@@ -250,19 +267,28 @@ function MakeupDetail({
             <p className="text-muted-foreground">{t("portalMaterialsEmpty")}</p>
           ) : (
             plan.materials.map((material) => (
-              <PortalActionRow
-                key={material.publicationId}
-                onClick={() =>
-                  guarded(() => {
-                    onClose();
-                    navigate(
-                      `/learn/courses/${plan.runId}/materials/${material.publicationId}`,
-                    );
-                  })
-                }
-              >
-                {material.title}
-              </PortalActionRow>
+              subject?.kind === "self" ? (
+                <PortalActionRow
+                  key={material.publicationId}
+                  onClick={() =>
+                    guarded(() => {
+                      onClose();
+                      navigate(
+                        `/learn/courses/${plan.runId}/materials/${material.publicationId}`,
+                      );
+                    })
+                  }
+                >
+                  {material.title}
+                </PortalActionRow>
+              ) : (
+                <p
+                  key={material.publicationId}
+                  className="rounded-lg border border-border/70 px-4 py-3 text-sm"
+                >
+                  {material.title}
+                </p>
+              )
             ))
           )}
         </section>

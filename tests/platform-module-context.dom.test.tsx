@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PortalSessionDto, PortalSubjectDto } from "../shared/contracts/portal-identity";
@@ -13,12 +13,13 @@ import { PortalSessionProvider, portalGrantFingerprint, portalSessionKey, usePor
 import { usePortalLocation } from "../client/src/features/portal-app/navigation";
 import { initializeNavigationGuard } from "../client/src/lib/navigationGuard";
 import { i18n } from "../client/src/lib/i18n";
+import { PortalApiError } from "../client/src/features/portal-app/api";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), notifications: vi.fn(), load: vi.fn() }));
 vi.mock("../client/src/features/portal-app/realtime", () => ({ usePortalRealtime: vi.fn() }));
 vi.mock("../client/src/features/portal-app/api", async (importActual) => {
   const actual = await importActual<typeof import("../client/src/features/portal-app/api")>();
-  return { ...actual, portalIdentityApi: { ...actual.portalIdentityApi, session: mocks.session, support: async () => null } };
+  return { ...actual, portalIdentityApi: { ...actual.portalIdentityApi, session: mocks.session, support: async () => null, sessions: async () => [], representatives: async () => [] } };
 });
 vi.mock("../client/src/features/portal-app/resources-api", async (importActual) => {
   const actual = await importActual<typeof import("../client/src/features/portal-app/resources-api")>();
@@ -35,6 +36,10 @@ vi.mock("../client/src/features/lms/courses", () => ({
   PortalMaterial: () => <Probe />,
 }));
 vi.mock("../client/src/features/lms/assignments", () => ({ PortalAssignments: () => <Probe /> }));
+vi.mock("../client/src/features/lms/progress", () => ({ PortalProgress: () => <Probe /> }));
+vi.mock("../client/src/features/lms/quizzes", () => ({ PortalQuizzes: () => <Probe /> }));
+vi.mock("../client/src/features/portal-app/payments", () => ({ PortalPayments: () => <Probe /> }));
+vi.mock("../client/src/features/portal-app/portfolio", () => ({ PortalPortfolio: () => <Probe />, PublicPortfolio: () => null }));
 
 initializeNavigationGuard();
 const own: PortalSubjectDto = {
@@ -54,7 +59,7 @@ const session: PortalSessionDto = {
 let client: QueryClient;
 
 function Probe() {
-  const { learningModule, subject, subjects, allSubjects, selectSubject, guarded, setUnsaved } = usePortal();
+  const { learningModule, subject, subjects, allSubjects, selectSubject, guarded, setUnsaved, refresh } = usePortal();
   const [, navigate] = usePortalLocation();
   const [draft, setDraft] = useState("");
   useEffect(() => { setUnsaved(Boolean(draft)); return () => setUnsaved(false); }, [draft, setUnsaved]);
@@ -68,7 +73,9 @@ function Probe() {
     <label>Draft<input value={draft} onChange={(event) => setDraft(event.target.value)} /></label>
     <button onClick={() => selectSubject(1)}>Select self</button>
     <button onClick={() => selectSubject(2)}>Select child</button>
+    <button onClick={() => selectSubject(3)}>Select sibling</button>
     <button onClick={() => selectSubject(null)}>Select family</button>
+    <button onClick={refresh}>Refresh session</button>
     <button onClick={() => guarded(() => navigate("/student-module"))}>Student route</button>
     <button onClick={() => guarded(() => navigate("/parent-module"))}>Parent route</button>
     <button onClick={() => guarded(() => navigate("/learn/courses/8?tab=active#lesson"))}>Open course</button>
@@ -154,7 +161,7 @@ it("keeps in-module content navigation canonical with its query and fragment", a
 });
 
 it.each([
-  ["/learn/courses/8?linkId=2&tab=active#lesson", "/parent-module/courses/8?linkId=2&tab=active#lesson", "First child"],
+  ["/learn/progress?linkId=2&tab=active#lesson", "/parent-module/progress?linkId=2&tab=active#lesson", "First child"],
   ["/learn/assignments/9?linkId=1#draft", "/student-module/assignments/9?linkId=1#draft", "Own learning"],
   ["/", "/student-module", "Own learning"],
   ["/learn/?linkId=2", "/parent-module?linkId=2", "First child"],
@@ -182,4 +189,100 @@ it("opens the platform root in the parent module for a parent-only account", asy
   await waitFor(() => expect(location.pathname).toBe("/parent-module"));
   expect(value("subject")).toBe("family");
   expect(value("visible links")).toBe("2,3");
+});
+
+it.each(["/courses", "/courses/8", "/courses/8/materials/9", "/assignments", "/assignments/9"])("rejects the standalone parent %s route without rendering or loading its learning screen", async (section) => {
+  history.replaceState(null, "", `/parent-module${section}?linkId=2`);
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await screen.findByText(i18n.t("portalUnavailable"));
+  expect(screen.queryByLabelText("loaded learning")).toBeNull();
+  expect(mocks.load).not.toHaveBeenCalled();
+});
+
+it.each(["/courses", "/courses/8", "/courses/8/materials/9", "/assignments", "/assignments/9"])("preserves the authorized student %s route", async (section) => {
+  history.replaceState(null, "", `/student-module${section}?linkId=1`);
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await waitFor(() => expect(value("loaded learning")).toBe("Learning for 1"));
+  expect(value("module")).toBe("student");
+  expect(mocks.load.mock.calls.every(([id]) => id === 1)).toBe(true);
+});
+
+it("denies a student linkId in the parent module even when both role permissions are available", async () => {
+  history.replaceState(null, "", "/parent-module/progress?linkId=1");
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await screen.findByText(i18n.t("portalUnavailable"));
+  expect(screen.queryByLabelText("loaded learning")).toBeNull();
+  expect(mocks.load).not.toHaveBeenCalled();
+});
+
+it("does not combine permissions from two children to open a section for the selected child", async () => {
+  mocks.session.mockResolvedValue({ ...session, subjects: [own, { ...child, permissions: ["learning.read"] }, sibling] });
+  history.replaceState(null, "", "/parent-module/payments?linkId=2");
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await screen.findByText(i18n.t("portalUnavailable"));
+  expect(screen.queryByLabelText("loaded learning")).toBeNull();
+  expect(mocks.load).not.toHaveBeenCalled();
+});
+
+it("retains a concrete child in the URL after a guarded selection and removes it for the family overview", async () => {
+  history.replaceState(null, "", "/parent-module/progress?linkId=3&tab=history#results");
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await waitFor(() => expect(value("subject")).toBe("Second child"));
+  await userEvent.type(screen.getByLabelText("Draft"), "Unsaved result filter");
+  await userEvent.click(screen.getByRole("button", { name: "Select child" }));
+  await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: i18n.t("portalCancel") }));
+  expect(location.search).toBe("?linkId=3&tab=history");
+  expect(value("subject")).toBe("Second child");
+  await userEvent.click(screen.getByRole("button", { name: "Select child" }));
+  await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: i18n.t("portalLeave") }));
+  await waitFor(() => expect(value("subject")).toBe("First child"));
+  expect(location.search + location.hash).toBe("?linkId=2&tab=history#results");
+  const length = history.length;
+  await userEvent.click(screen.getByRole("button", { name: "Select family" }));
+  await waitFor(() => expect(value("subject")).toBe("family"));
+  expect(location.search + location.hash).toBe("?tab=history#results");
+  expect(history.length).toBe(length);
+});
+
+it.each(["review", "thread", "question", "submission"])("preserves a received %s detail while resolving its child, then removes it on an explicit child switch", async (entity) => {
+  history.replaceState(null, "", `/parent-module/progress?${entity}=42&linkId=3&tab=history#detail`);
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await waitFor(() => expect(value("subject")).toBe("Second child"));
+  expect(new URLSearchParams(location.search).get(entity)).toBe("42");
+  await userEvent.click(screen.getByRole("button", { name: "Select child" }));
+  await waitFor(() => expect(value("subject")).toBe("First child"));
+  expect(new URLSearchParams(location.search).has(entity)).toBe(false);
+  expect(location.search).toBe("?linkId=2&tab=history");
+  expect(location.hash).toBe("");
+});
+
+it("reapplies a saved deep-link child after Back through both modules instead of keeping a later child selection", async () => {
+  history.replaceState(null, "", "/parent-module/progress?linkId=2");
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await waitFor(() => expect(value("subject")).toBe("First child"));
+  await userEvent.click(screen.getByRole("button", { name: "Student route" }));
+  await userEvent.click(screen.getByRole("button", { name: "Parent route" }));
+  await userEvent.click(screen.getByRole("button", { name: "Select sibling" }));
+  await waitFor(() => expect(value("subject")).toBe("Second child"));
+  act(() => history.go(-2));
+  await waitFor(() => expect(location.pathname + location.search).toBe("/parent-module/progress?linkId=2"));
+  await waitFor(() => expect(value("subject")).toBe("First child"));
+});
+
+it.each([404, 500])("handles a background session %s without retaining an unauthorized profile or losing a recoverable draft", async (status) => {
+  render(<PlatformProviders><PortalApp /></PlatformProviders>);
+  await screen.findByLabelText("loaded learning");
+  await userEvent.click(within(document.querySelector("header")!).getByRole("button", { name: i18n.t("portalProfile") }));
+  const name = screen.getByLabelText(i18n.t("portalFullName")) as HTMLInputElement;
+  await userEvent.type(name, " edited");
+  mocks.session.mockRejectedValue(new PortalApiError(status, "portalUnavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh session", hidden: true }));
+  if (status === 404) {
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByLabelText(i18n.t("portalFullName"))).toBeNull();
+  } else {
+    await waitFor(() => expect(mocks.session.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByLabelText(i18n.t("portalFullName"))).toBe(name);
+    expect(name.value).toBe("Family account edited");
+  }
 });

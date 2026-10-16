@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { portalLmsApi } from "../portal-app/api";
 import {
+  PortalFormScope,
+  usePortalFormScope,
   usePortal,
   useSubjectInfiniteQuery,
   useSubjectQuery,
@@ -21,12 +23,15 @@ import {
   PortalDialogContent as DialogContent,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   PortalStatus,
   usePortalFormat,
 } from "../portal-app/ui";
+import { AssignmentDialog } from "./assignments";
 
 export function PortalFeedback({ initialId }: { initialId?: number }) {
+  const detailScope = usePortalFormScope();
   const { t } = useTranslation();
   const format = usePortalFormat();
   const { subject } = usePortal();
@@ -38,7 +43,7 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
   );
   const [selected, setSelected] = useState<number | null>(initialId ?? null);
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -50,6 +55,9 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
   const items = query.data.pages.flatMap((page) => page.items);
   return (
     <>
+      {query.error && (
+        <PortalError error={query.error} retry={() => void query.refetch()} />
+      )}
       {items.length === 0 ? (
         <PortalEmpty labelKey="portalNoFeedback" />
       ) : (
@@ -111,29 +119,32 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
           {t("portalLoadMore")}
         </Button>
       )}
-      <Dialog
-        open={selected !== null}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-      >
-        <DialogContent className="portal-ui">
-          <DialogHeader>
-            <DialogTitle>{t("portalFeedback")}</DialogTitle>
-            <DialogDescription>{subject?.studentName}</DialogDescription>
-          </DialogHeader>
-          {selected !== null && (
-            <FeedbackDetail id={selected} onClose={() => setSelected(null)} />
-          )}
-        </DialogContent>
-      </Dialog>
+      <PortalFormScope id={detailScope.id}>
+        <Dialog
+          open={selected !== null}
+          onOpenChange={(open) => {
+            if (!open) detailScope.guarded(() => setSelected(null));
+          }}
+        >
+          <DialogContent className="portal-ui">
+            <DialogHeader>
+              <DialogTitle>{t("portalFeedback")}</DialogTitle>
+              <DialogDescription>{subject?.studentName}</DialogDescription>
+            </DialogHeader>
+            {selected !== null && (
+              <FeedbackDetail id={selected} onClose={() => setSelected(null)} />
+            )}
+          </DialogContent>
+        </Dialog>
+      </PortalFormScope>
     </>
   );
 }
 function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const { t } = useTranslation();
   const format = usePortalFormat();
-  const { allowed, guarded } = usePortal();
+  const { subject, allowed, guarded } = usePortal();
+  const [assignmentId, setAssignmentId] = useState<number | null>(null);
   const [, navigate] = useLocation();
   const query = useSubjectQuery(
     "feedback-detail",
@@ -142,7 +153,7 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
     "feedback.read",
   );
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -154,6 +165,9 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const data = query.data;
   return (
     <div className="space-y-4">
+      {query.error && (
+        <PortalError error={query.error} retry={() => void query.refetch()} />
+      )}
       <div>
         <h2 className="text-lg font-semibold">{data.assignmentTitle}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -177,8 +191,12 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
             variant="outline"
             onClick={() =>
               guarded(() => {
-                onClose();
-                navigate(`/learn/assignments/${data.recipientId}`);
+                if (subject?.kind === "representative")
+                  setAssignmentId(data.recipientId);
+                else {
+                  onClose();
+                  navigate(`/learn/assignments/${data.recipientId}`);
+                }
               })
             }
           >
@@ -186,6 +204,7 @@ function FeedbackDetail({ id, onClose }: { id: number; onClose: () => void }) {
           </Button>
         </DialogFooter>
       )}
+      <AssignmentDialog id={assignmentId} onClose={() => setAssignmentId(null)} />
     </div>
   );
 }

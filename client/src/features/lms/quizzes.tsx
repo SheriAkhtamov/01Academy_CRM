@@ -27,6 +27,7 @@ import {
   PortalDialogContent as DialogContent,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   PortalTitle,
   ConfirmAction,
@@ -61,7 +62,7 @@ export function PortalQuizzes({
   );
   if (query.isPending)
     return <PortalLoading variant={embedded ? "section" : "page"} />;
-  if (query.error && query.data === undefined)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -196,7 +197,7 @@ function QuizSession({
   }, [start.isPending, setUnsaved]);
   if (readOnly) {
     if (result.isPending) return <PortalLoading variant="section" />;
-    if (result.error)
+    if (result.error && (result.data === undefined || isPortalAccessError(result.error)))
       return (
         <PortalError
           error={result.error}
@@ -550,24 +551,33 @@ function QuizRelatedMaterials({
   items: NonNullable<LmsQuizAttemptDto["relatedMaterials"]>;
 }) {
   const { t } = useTranslation();
-  const { guarded } = usePortal();
+  const { subject, guarded } = usePortal();
   const [, navigate] = useLocation();
   return (
     <section className="space-y-2">
       <h3 className="font-semibold">{t("portalRepeatMaterials")}</h3>
       {items.map((item) => (
-        <PortalActionRow
-          key={item.publicationId}
-          onClick={() =>
-            guarded(() =>
-              navigate(
-                `/learn/courses/${item.runId}/materials/${item.publicationId}`,
-              ),
-            )
-          }
-        >
-          {item.title}
-        </PortalActionRow>
+        subject?.kind === "self" ? (
+          <PortalActionRow
+            key={item.publicationId}
+            onClick={() =>
+              guarded(() =>
+                navigate(
+                  `/learn/courses/${item.runId}/materials/${item.publicationId}`,
+                ),
+              )
+            }
+          >
+            {item.title}
+          </PortalActionRow>
+        ) : (
+          <p
+            key={item.publicationId}
+            className="rounded-lg border border-border/70 px-4 py-3 text-sm"
+          >
+            {item.title}
+          </p>
+        )
       ))}
     </section>
   );

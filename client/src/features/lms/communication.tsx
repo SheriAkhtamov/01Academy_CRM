@@ -29,6 +29,7 @@ import {
   PortalTitle,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   PortalStatus,
   usePortalFormat,
@@ -37,6 +38,7 @@ import {
   safeHttps,
 } from "../portal-app/ui";
 import { PortalFiles, PortalUploads } from "../portal-app/files";
+import { usePortalFormMounted } from "../portal-app/usePortalFormMounted";
 import { PortalSelect } from "../portal-app/controls";
 
 export function HelpDialog({
@@ -107,6 +109,7 @@ function HelpForm({
   const { subject, allowed, setUnsaved } = usePortal();
   const notify = usePortalSuccess();
   const invalidate = useInvalidateSubject();
+  const mounted = usePortalFormMounted();
   const courses = useSubjectQuery(
     "communication-courses",
     portalLmsApi.communicationCourses,
@@ -144,9 +147,10 @@ function HelpForm({
           subject?.kind === "representative" && audience === "student_teacher",
       }),
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       notify("portalQuestionSent");
       setUnsaved(false);
-      void invalidate();
       onClose();
     },
   });
@@ -313,7 +317,7 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
     }
   }, [initialId, requested.data, openedRequest]);
   const format = usePortalFormat();
-  if (initialId && requested.error)
+  if (initialId && requested.error && (requested.data === undefined || isPortalAccessError(requested.error)))
     return (
       <PortalError
         error={requested.error}
@@ -324,7 +328,7 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
     );
   if (initialId && requested.isPending) return <PortalLoading />;
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -338,6 +342,22 @@ export function PortalHelp({ initialId }: { initialId?: number }) {
       <PortalTitle labelKey="portalHelp">
         <Button onClick={() => setOpen(true)}>{t("portalAskQuestion")}</Button>
       </PortalTitle>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      {initialId && requested.error && (
+        <PortalError
+          error={requested.error}
+          retry={() => {
+            void requested.refetch();
+          }}
+        />
+      )}
       {query.data.length === 0 ? (
         <PortalEmpty labelKey="portalNoQuestions" />
       ) : (
@@ -426,6 +446,7 @@ function ThreadConversation({
   const { subject, setUnsaved } = usePortal();
   const notify = usePortalSuccess();
   const invalidate = useInvalidateSubject();
+  const mounted = usePortalFormMounted();
   const detail = useSubjectQuery(
     "thread",
     (link, signal) => portalLmsApi.thread(link, initial.id, signal),
@@ -447,13 +468,14 @@ function ThreadConversation({
             : "student_teacher",
       }),
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       notify("portalMessageSent");
       setBody("");
       setCommentKey(crypto.randomUUID());
       void detail.refetch().then((result) => {
-        if (result.data) onChange(result.data);
+        if (mounted.current && result.data) onChange(result.data);
       });
-      void invalidate();
     },
   });
   const status = useMutation({
@@ -464,11 +486,12 @@ function ThreadConversation({
         thread.status === "resolved" ? "open" : "resolved",
       ),
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       notify();
       void detail.refetch().then((result) => {
-        if (result.data) onChange(result.data);
+        if (mounted.current && result.data) onChange(result.data);
       });
-      void invalidate();
     },
   });
   useEffect(() => {
@@ -476,7 +499,7 @@ function ThreadConversation({
     return () => setUnsaved(false);
   }, [body, setUnsaved]);
   if (detail.isPending) return <PortalLoading variant="section" />;
-  if (detail.error)
+  if (detail.data === undefined || isPortalAccessError(detail.error))
     return (
       <PortalError
         error={detail.error}
@@ -487,6 +510,14 @@ function ThreadConversation({
     );
   return (
     <div className="space-y-4">
+      {detail.error && (
+        <PortalError
+          error={detail.error}
+          retry={() => {
+            void detail.refetch();
+          }}
+        />
+      )}
       <div className="flex justify-between gap-3">
         <PortalStatus status={thread.status} />
         <Button

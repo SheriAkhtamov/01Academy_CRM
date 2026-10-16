@@ -2115,7 +2115,7 @@ it("keeps recent feedback and scoped replies visible beside an urgent assignment
     within(section).getByRole("button", { name: /My practice question/ }),
   );
   expect(window.location.pathname + window.location.search).toBe(
-    "/learn/help?thread=66&linkId=10",
+    "/student-module/help?thread=66&linkId=10",
   );
   expect(mocks.readNotification).toHaveBeenCalledWith(33, expect.anything());
 });
@@ -2850,4 +2850,208 @@ describe("server assignment drafts", () => {
     });
     expect(mocks.draft).toHaveBeenCalledOnce();
   });
+});
+
+
+describe("learning dialogs during background refresh", () => {
+  it.each(["assignments", "assignment"] as const)(
+    "keeps the assignment comment and discard guard after a failed %s refresh",
+    async (area) => {
+      mocks.assignments.mockResolvedValue({ items: [detail], nextCursor: null, hasMore: false });
+      mount(<PortalAssignments initialId={detail.id} />);
+      const comment = await screen.findByLabelText(i18n.t("portalComment"));
+      await userEvent.type(comment, "Unsent assignment comment");
+      mocks[area].mockRejectedValueOnce(new PortalApiError(500, "portalLoadError"));
+      await act(async () => {
+        await client.refetchQueries({ queryKey: portalSubjectKey(account, own, area, ...(area === "assignment" ? [detail.id] : [])), exact: true });
+      });
+      expect(screen.getByLabelText(i18n.t("portalComment"))).toBe(comment);
+      expect((comment as HTMLTextAreaElement).value).toBe("Unsent assignment comment");
+      await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: i18n.t("close") }));
+      expect(await screen.findByRole("alertdialog")).toBeTruthy();
+      await userEvent.click(screen.getByRole("button", { name: i18n.t("portalCancel") }));
+      await userEvent.click(screen.getByRole("button", { name: i18n.t("portalSendComment") }));
+      await waitFor(() => expect(mocks.comment).toHaveBeenCalledWith(10, detail.id, expect.objectContaining({ body: "Unsent assignment comment" })));
+    },
+  );
+  it.each(["assignments", "assignment"] as const)(
+    "removes the cached assignment editor after access is denied for %s",
+    async (area) => {
+      mocks.assignments.mockResolvedValue({ items: [detail], nextCursor: null, hasMore: false });
+      mount(<PortalAssignments initialId={detail.id} />);
+      const comment = await screen.findByLabelText(i18n.t("portalComment"));
+      await userEvent.type(comment, "Private comment");
+      mocks[area].mockRejectedValueOnce(new PortalApiError(403, "portalUnavailable"));
+      await act(async () => {
+        await client.refetchQueries({ queryKey: portalSubjectKey(account, own, area, ...(area === "assignment" ? [detail.id] : [])), exact: true });
+      });
+      await waitFor(() => expect(screen.queryByLabelText(i18n.t("portalComment"))).toBeNull());
+      expect(mocks.comment).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["threads", "thread"] as const)(
+    "keeps the reply dialog mounted after a failed %s refresh",
+    async (area) => {
+      mount(<PortalHelp initialId={66} />);
+      const comment = await screen.findByLabelText(i18n.t("portalComment"));
+      await userEvent.type(comment, "Unsent reply");
+      mocks[area].mockRejectedValueOnce(new PortalApiError(0, "portalOffline"));
+      await act(async () => {
+        await client.refetchQueries({ queryKey: portalSubjectKey(account, own, area, ...(area === "thread" ? [66] : [])), exact: true });
+      });
+      expect(screen.getByLabelText(i18n.t("portalComment"))).toBe(comment);
+      expect((comment as HTMLTextAreaElement).value).toBe("Unsent reply");
+      await userEvent.click(screen.getByRole("button", { name: i18n.t("portalSend") }));
+      await waitFor(() => expect(mocks.threadComment).toHaveBeenCalledWith(10, 66, expect.objectContaining({ body: "Unsent reply" })));
+    },
+  );
+});
+
+
+it("keeps an assignment comment when a teacher changes its status during editing", async () => {
+  mocks.assignments.mockResolvedValue({ items: [detail], nextCursor: null, hasMore: false });
+  mocks.assignment.mockResolvedValue({ ...detail, status: "submitted" });
+  mount(<PortalAssignments initialId={detail.id} />);
+  const comment = await screen.findByLabelText(i18n.t("portalComment"));
+  await userEvent.type(comment, "Question about this work");
+  mocks.assignment.mockResolvedValue({ ...detail, status: "accepted" });
+  await act(async () => {
+    await client.refetchQueries({ queryKey: portalSubjectKey(account, own, "assignment", detail.id), exact: true });
+  });
+  expect(screen.getByLabelText(i18n.t("portalComment"))).toBe(comment);
+  expect((comment as HTMLTextAreaElement).value).toBe("Question about this work");
+});
+it("ignores a successful question request after its dialog was replaced", async () => {
+  let complete!: (value: { id: number }) => void;
+  mocks.createThread.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const close = vi.fn();
+  const previous = mount(<HelpDialog open runId={2} onClose={close} />);
+  await userEvent.type(await screen.findByLabelText(i18n.t("portalQuestionText")), "First question");
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalSend") }));
+  await waitFor(() => expect(mocks.createThread).toHaveBeenCalledOnce());
+  previous.unmount();
+  mount(<HelpDialog open runId={2} onClose={close} />);
+  const next = await screen.findByLabelText(i18n.t("portalQuestionText"));
+  await userEvent.type(next, "Next question");
+  await act(async () => { complete({ id: 66 }); });
+  expect(close).not.toHaveBeenCalled();
+  expect((next as HTMLTextAreaElement).value).toBe("Next question");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+it("opens progress instead of student courses from the parent home", async () => {
+  history.replaceState(null, "", "/parent-module");
+  mocks.session.mockResolvedValue({ account, subjects: [parent], csrfToken: "test-csrf" });
+  const dashboard = await mocks.dashboard();
+  mocks.dashboard.mockResolvedValue({ ...dashboard, assignments: [], nextMaterial: { title: "Next student material", runId: 2, publicationId: 3 } });
+  mount(<PortalDay />);
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
+  expect(window.location.pathname).toBe("/parent-module/progress");
+});
+it("shows related material names without student study links to a parent", async () => {
+  mocks.session.mockResolvedValue({ account, subjects: [parent], csrfToken: "test-csrf" });
+  mount(<QuizAttempt initial={{ ...attempt, state: "finished", relatedMaterials: [{ publicationId: 9, runId: 2, title: "Study reference" }] }} />);
+  await screen.findByText("Study reference");
+  expect(screen.queryByRole("button", { name: "Study reference" })).toBeNull();
+});
+
+
+it("does not replace a newer conversation with a late reply from a closed dialog", async () => {
+  const first = { id: 66, runId: 2, title: "First conversation", audience: "student_teacher", status: "open", authorAccountId: 50, createdAt: "2026-10-11T09:00:00Z", comments: [] };
+  const next = { ...first, id: 67, title: "Next conversation" };
+  mocks.threads.mockResolvedValue([first, next]);
+  mocks.thread.mockImplementation(async (_link, id) => id === 66 ? first : next);
+  let complete!: (value: { id: number }) => void;
+  mocks.threadComment.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  mount(<PortalHelp />);
+  await userEvent.click(await screen.findByRole("button", { name: /First conversation/ }));
+  await userEvent.type(await screen.findByLabelText(i18n.t("portalComment")), "Pending reply");
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalSend") }));
+  await waitFor(() => expect(mocks.threadComment).toHaveBeenCalledOnce());
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: i18n.t("close") }));
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalLeave") }));
+  await userEvent.click(await screen.findByRole("button", { name: /Next conversation/ }));
+  const reply = await screen.findByLabelText(i18n.t("portalComment"));
+  await userEvent.type(reply, "New conversation draft");
+  await act(async () => { complete({ id: 68 }); });
+  expect(screen.getByRole("dialog", { name: "Next conversation" })).toBeTruthy();
+  expect((reply as HTMLTextAreaElement).value).toBe("New conversation draft");
+});
+
+
+it.each(["dashboard", "course", "makeup"] as const)(
+  "keeps a nested assignment draft through a failed %s refresh",
+  async (area) => {
+    mocks.assignments.mockResolvedValue({ items: [detail], nextCursor: null, hasMore: false });
+    if (area === "dashboard") {
+      const dashboard = await mocks.dashboard();
+      mocks.dashboard.mockResolvedValue({ ...dashboard, assignments: [detail] });
+      mount(<PortalDay />);
+      await userEvent.click((await screen.findAllByRole("button", { name: i18n.t("portalOpen") }))[0]);
+    } else if (area === "course") {
+      mocks.course.mockResolvedValue({ id: 2, runId: 2, enrollmentId: 3, groupId: 4, groupName: "Group 1", courseName: "Design course", teacherName: "Teacher", status: "active", enrolledAt: "2026-10-01T00:00:00Z", endedAt: null, accessUntil: null, progress: { completed: 0, total: 0, percent: null }, currentUnit: null, nextLesson: null, units: [], materials: [] });
+      mount(<PortalCourse id={2} />);
+      await userEvent.click(await screen.findByRole("tab", { name: i18n.t("portalAssignments") }));
+      await userEvent.click((await screen.findAllByText(detail.title))[0]);
+    } else {
+      const plan: LmsMakeupDto = { id: 90, runId: 2, lessonId: 4, topic: "Missed lesson", scheduledAt: "2026-10-10T09:00:00Z", status: "needed", dueAt: null, materials: [], recipientId: detail.id, quizRecipientId: null };
+      mocks.makeup.mockResolvedValue([plan]);
+      mount(<PortalMakeup />);
+      await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
+      await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalPractice") }));
+    }
+    const comment = await screen.findByLabelText(i18n.t("portalComment"));
+    await userEvent.type(comment, "Nested draft");
+    mocks[area].mockRejectedValueOnce(new PortalApiError(500, "portalLoadError"));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: portalSubjectKey(account, own, area, ...(area === "course" ? [2] : [])), exact: true });
+    });
+    expect(screen.getByLabelText(i18n.t("portalComment"))).toBe(comment);
+    expect((comment as HTMLTextAreaElement).value).toBe("Nested draft");
+  },
+);
+it("does not close the next assignment after a discarded submission finishes", async () => {
+  let complete!: (value: { id: number; attemptNumber: number }) => void;
+  mocks.submit.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const close = vi.fn();
+  const previous = mount(<AssignmentContent detail={detail} refresh={vi.fn()} onClose={close} />);
+  await userEvent.type(await screen.findByLabelText(i18n.t("portalAnswer")), "First answer");
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalSubmit") }));
+  await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+  previous.unmount();
+  mount(<AssignmentContent detail={{ ...detail, id: 2 }} refresh={vi.fn()} onClose={close} />);
+  const next = await screen.findByLabelText(i18n.t("portalAnswer"));
+  await userEvent.type(next, "Next answer");
+  await act(async () => { complete({ id: 8, attemptNumber: 1 }); });
+  expect(close).not.toHaveBeenCalled();
+  expect((next as HTMLTextAreaElement).value).toBe("Next answer");
+});
+
+
+it.each([
+  ["/learn/help?thread=66", "/parent-module/help?thread=66&linkId=11"],
+  ["/student-module/help?thread=66", "/parent-module/progress"],
+] as const)("keeps a parent home notice bound to its trusted child for %s", async (href, destination) => {
+  const child = { ...parent, linkId: 11, studentId: 21, studentName: "Child" };
+  history.replaceState(null, "", "/parent-module");
+  mocks.session.mockResolvedValue({ account, subjects: [own, child], csrfToken: "test-csrf" });
+  mocks.allNotifications.mockResolvedValue({ items: [{ id: 801, linkId: 11, category: "feedback", code: "portalNoticeThreadAnswered", params: { title: "Mixed role notice" }, href, readAt: null, createdAt: "2026-10-11T09:00:00Z" }], nextCursor: null, unreadCount: 1 });
+  mount(<PortalDay />);
+  const notice = await screen.findByRole("button", { name: /Mixed role notice/ });
+  expect((notice as HTMLButtonElement).disabled).toBe(href.startsWith("/student-module"));
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
+  expect(window.location.pathname + window.location.search).toBe(destination);
+});
+
+
+it("does not refetch account notices when a read request finishes after home unmount", async () => {
+  let complete!: (value: { success: boolean }) => void;
+  mocks.readNotification.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  mocks.allNotifications.mockResolvedValue({ items: [{ id: 802, linkId: 10, category: "feedback", code: "portalNoticeThreadAnswered", params: { title: "Pending notice" }, href: "/learn/help?thread=66", readAt: null, createdAt: "2026-10-11T09:00:00Z" }], nextCursor: null, unreadCount: 1 });
+  const home = mount(<PortalDay />);
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
+  await waitFor(() => expect(mocks.readNotification).toHaveBeenCalledOnce());
+  home.unmount();
+  const requests = mocks.allNotifications.mock.calls.length;
+  await act(async () => { complete({ success: true }); });
+  expect(mocks.allNotifications).toHaveBeenCalledTimes(requests);
 });

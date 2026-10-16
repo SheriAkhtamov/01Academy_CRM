@@ -115,6 +115,14 @@ vi.mock("../client/src/features/lms/overview", async (importActual) => {
     FamilyOverview: () => <Background name="Family workspace" />,
   };
 });
+vi.mock("../client/src/features/lms/progress", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../client/src/features/lms/progress")>();
+  return {
+    ...actual,
+    PortalProgress: () => <Background name="Progress workspace" />,
+  };
+});
 
 function Background({ name }: { name: string }) {
   const [value, setValue] = useState("");
@@ -598,9 +606,14 @@ async function refreshSession(next: PortalSessionDto) {
   fireEvent.click(
     screen.getByRole("button", { name: "Refresh session", hidden: true }),
   );
-  if (window.location.pathname.startsWith("/parent-module") && next.subjects.every((item) => item.kind === "self")) {
+  if (
+    window.location.pathname.startsWith("/parent-module") &&
+    next.subjects.every((item) => item.kind === "self")
+  ) {
     await screen.findByText(i18n.t("portalNoAccess"), { exact: true });
-    expect(screen.queryByRole("textbox", { name: "Courses workspace", hidden: true })).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: "Progress workspace", hidden: true }),
+    ).toBeNull();
   } else {
     await waitFor(() =>
       expect(screen.getByTestId("csrf").textContent).toBe(next.csrfToken),
@@ -609,8 +622,9 @@ async function refreshSession(next: PortalSessionDto) {
 }
 async function openChildProfile() {
   mocks.session.mockResolvedValue(childSession());
+  history.replaceState(null, "", "/parent-module/progress?tab=active");
   mount();
-  await screen.findByRole("textbox", { name: "Courses workspace" });
+  await screen.findByRole("textbox", { name: "Progress workspace" });
   await userEvent.click(headerProfile());
   await userEvent.type(
     within(profile()).getByLabelText(i18n.t("portalFullName")),

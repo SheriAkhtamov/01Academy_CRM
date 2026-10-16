@@ -25,6 +25,7 @@ import {
   PortalDialogContent as DialogContent,
   PortalTitle,
   PortalLoading,
+  isPortalAccessError,
   PortalError,
   PortalEmpty,
   usePortalFormat,
@@ -42,7 +43,7 @@ export function PortalPayments() {
     "finance.read",
   );
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -57,6 +58,7 @@ export function PortalPayments() {
     return (
       <>
         <PortalTitle labelKey="portalPayments" />
+        {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
         <PortalEmpty labelKey="portalPaymentNeedsReview" />
         <FinanceQuestions />
       </>
@@ -65,6 +67,7 @@ export function PortalPayments() {
   return (
     <>
       <PortalTitle labelKey="portalPayments" />
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
       {summary && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card>

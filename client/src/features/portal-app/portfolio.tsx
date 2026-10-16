@@ -39,6 +39,7 @@ import {
   PortalDialogContent as DialogContent,
   PortalTitle,
   PortalLoading,
+  isPortalAccessError,
   PortalError,
   PortalEmpty,
   ConfirmAction,
@@ -48,6 +49,7 @@ import {
   safeHttps,
 } from "./ui";
 import { PortalFiles, PortalUploads } from "./files";
+import { usePortalFormMounted } from "./usePortalFormMounted";
 
 export function PortalPortfolio() {
   const editorScope = usePortalFormScope();
@@ -123,7 +125,7 @@ export function PortalPortfolio() {
     },
   });
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -154,6 +156,7 @@ export function PortalPortfolio() {
           </Button>
         )}
       </PortalTitle>
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
       <PortalToolbar>
         <PortalSelect
           className="w-full sm:w-72"
@@ -521,7 +524,7 @@ function SourceProjectForm({
     [submissionId],
   );
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -531,12 +534,15 @@ function SourceProjectForm({
       />
     );
   return (
-    <ProjectForm
-      project={null}
-      sourceSubmissionId={submissionId}
-      seed={query.data}
-      onClose={onClose}
-    />
+    <>
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
+      <ProjectForm
+        project={null}
+        sourceSubmissionId={submissionId}
+        seed={query.data}
+        onClose={onClose}
+      />
+    </>
   );
 }
 function ProjectForm({
@@ -551,6 +557,7 @@ function ProjectForm({
   seed?: PortalProjectInput;
 }) {
   const { t } = useTranslation();
+  const mounted = usePortalFormMounted();
   const message = usePortalError();
   const { subject, setUnsaved } = usePortal();
   const notify = usePortalSuccess();
@@ -581,16 +588,17 @@ function ProjectForm({
         project?.id,
       ),
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       notify();
       setUnsaved(false);
-      void invalidate();
       onClose();
     },
   });
   useEffect(() => {
-    setUnsaved(JSON.stringify(values) !== initial || busy);
+    setUnsaved(JSON.stringify(values) !== initial || busy || action.isPending);
     return () => setUnsaved(false);
-  }, [values, initial, busy, setUnsaved]);
+  }, [values, initial, busy, action.isPending, setUnsaved]);
   const courseOptions = (courses.data ?? []).map((item) => ({
     value: String(item.runId),
     label: `${item.courseName} · ${item.groupName}`,
@@ -747,6 +755,7 @@ function ShareForm({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const mounted = usePortalFormMounted();
   const message = usePortalError();
   const { account, subject, setUnsaved, guarded } = usePortal();
   const notify = usePortalSuccess();
@@ -771,16 +780,17 @@ function ShareForm({
         idempotencyKey: createKey,
       }),
     onSuccess: () => {
+      void invalidate();
+      if (!mounted.current) return;
       notify();
       setUnsaved(false);
-      void invalidate();
       onClose();
     },
   });
   useEffect(() => {
-    setUnsaved(JSON.stringify(values) !== baseline || consent);
+    setUnsaved(JSON.stringify(values) !== baseline || consent || action.isPending);
     return () => setUnsaved(false);
-  }, [values, baseline, consent, setUnsaved]);
+  }, [values, baseline, consent, action.isPending, setUnsaved]);
   return (
     <fieldset disabled={action.isPending} className="min-w-0 space-y-4">
       <div className="space-y-2">

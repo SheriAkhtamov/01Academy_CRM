@@ -24,6 +24,7 @@ import {
   PortalTitle,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   PortalStatus,
   usePortalFormat,
@@ -65,7 +66,7 @@ export function PortalSchedule() {
   const lessonScope = usePortalFormScope();
   const { t } = useTranslation();
   const format = usePortalFormat();
-  const { allowed, guarded } = usePortal();
+  const { subject, allowed, guarded } = usePortal();
   const [, navigate] = useLocation();
   const [view, setView] = usePortalViewState("schedule", {
     offset: "0",
@@ -124,6 +125,15 @@ export function PortalSchedule() {
   const items = (query.data ?? []).filter(
     (item) => !course || item.runId === Number(course),
   );
+  if (isPortalAccessError(query.error))
+    return (
+      <PortalError
+        error={query.error}
+        retry={() => {
+          void query.refetch();
+        }}
+      />
+    );
   return (
     <>
       <PortalTitle labelKey="portalSchedule" />
@@ -274,21 +284,30 @@ export function PortalSchedule() {
                   Boolean(selected.materials?.length) && (
                     <section className="space-y-2">
                       <h2 className="font-semibold">{t("portalMaterial")}</h2>
-                      {selected.materials?.map((material) => (
-                        <PortalActionRow
-                          key={material.publicationId}
-                          onClick={() =>
-                            guarded(() => {
-                              setSelected(null);
-                              navigate(
-                                `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
-                              );
-                            })
-                          }
-                        >
-                          {material.title}
-                        </PortalActionRow>
-                      ))}
+                      {selected.materials?.map((material) =>
+                        subject?.kind === "self" ? (
+                          <PortalActionRow
+                            key={material.publicationId}
+                            onClick={() =>
+                              guarded(() => {
+                                setSelected(null);
+                                navigate(
+                                  `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
+                                );
+                              })
+                            }
+                          >
+                            {material.title}
+                          </PortalActionRow>
+                        ) : (
+                          <p
+                            key={material.publicationId}
+                            className="rounded-lg border border-border/70 px-4 py-3 text-sm"
+                          >
+                            {material.title}
+                          </p>
+                        ),
+                      )}
                     </section>
                   )}
                 {allowed("learning.read") &&
@@ -320,7 +339,7 @@ export function PortalSchedule() {
                         </a>
                       </Button>
                     )}
-                  {allowed("learning.read") && (
+                  {allowed("learning.read", true) && (
                     <Button
                       variant="outline"
                       onClick={() =>

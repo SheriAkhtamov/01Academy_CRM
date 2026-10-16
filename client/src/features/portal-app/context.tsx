@@ -82,7 +82,10 @@ type PortalContextValue = {
   allSubjects: PortalSubjectDto[];
   subjects: PortalSubjectDto[];
   subject: PortalSubjectDto | null;
-  selectSubject: (id: number | null) => void;
+  selectSubject: (
+    id: number | null,
+    options?: { preserveEntityQuery?: boolean },
+  ) => void;
   acceptSession: (session: PortalSessionDto) => void;
   allowed: (permission: PortalPermission, studentOnly?: boolean) => boolean;
   guarded: (action: () => void) => void;
@@ -139,7 +142,7 @@ export function usePortal() {
   return { ...value, setUnsaved };
 }
 export function PortalSessionProvider({ children }: { children: ReactNode }) {
-  const [path] = useLocation();
+  const [path, navigate] = useLocation();
   const learningModule = learningModuleFromPath(path);
   const client = useQueryClient();
   const query = useQuery({
@@ -303,7 +306,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
     [unsavedForms],
   );
   const selectSubject = useCallback(
-    (linkId: number | null) =>
+    (linkId: number | null, options?: { preserveEntityQuery?: boolean }) =>
       guarded(() => {
         if (!account) return;
         if (linkId !== null && !subjects.some((item) => item.linkId === linkId))
@@ -317,8 +320,36 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
           `portal-context-${account.id}${learningModule ? `:${learningModule}` : ""}`,
           String(linkId ?? "family"),
         );
+        const params = new URLSearchParams(window.location.search);
+        const entityKeys = ["review", "thread", "question", "submission"];
+        const clearEntity =
+          subject?.linkId !== linkId &&
+          !options?.preserveEntityQuery &&
+          entityKeys.some((key) => params.has(key));
+        if (clearEntity) entityKeys.forEach((key) => params.delete(key));
+        if (params.has("linkId") || clearEntity) {
+          if (params.has("linkId")) {
+            if (linkId === null) params.delete("linkId");
+            else params.set("linkId", String(linkId));
+          }
+          const search = params.toString();
+          const destination = `${window.location.pathname}${search ? `?${search}` : ""}${clearEntity ? "" : window.location.hash}`;
+          if (
+            destination !==
+            `${window.location.pathname}${window.location.search}${window.location.hash}`
+          )
+            allowNavigation(() => navigate(destination, { replace: true }));
+        }
       }),
-    [account, client, guarded, subjects, learningModule],
+    [
+      account,
+      client,
+      guarded,
+      subjects,
+      subject?.linkId,
+      learningModule,
+      navigate,
+    ],
   );
   const acceptSession = useCallback(
     (session: PortalSessionDto) => {
@@ -347,7 +378,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
         error:
           query.data?.account &&
           (!(query.error instanceof PortalApiError) ||
-            ![401, 403].includes(query.error.status))
+            ![401, 403, 404].includes(query.error.status))
             ? null
             : query.error,
         refresh: () => {

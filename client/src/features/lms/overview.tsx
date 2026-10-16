@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
-import { isLearningNavigationHref } from "@shared/platform-routes";
+import { learningModuleForSubject } from "@shared/platform-routes";
+import { resolvePortalNotificationHref } from "../portal-app/module-navigation";
+import { usePortalFormMounted } from "../portal-app/usePortalFormMounted";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -41,6 +43,7 @@ import {
   PortalDialogContent as DialogContent,
   PortalTitle,
   PortalError,
+  isPortalAccessError,
   PortalLoading,
   PortalEmpty,
   PortalStatus,
@@ -164,6 +167,7 @@ export function PortalDay() {
   const content = usePortalContent();
   const message = usePortalError();
   const notify = usePortalSuccess();
+  const mounted = usePortalFormMounted();
   const { subject, guarded, account, subjects, allSubjects = subjects, allowed } = usePortal();
   const [, navigate] = useLocation();
   const query = useSubjectQuery("dashboard", portalLmsApi.dashboard);
@@ -181,6 +185,7 @@ export function PortalDay() {
   const markNotification = useMutation({
     mutationFn: portalResourcesApi.readNotification,
     onSuccess: () => {
+      if (!mounted.current) return;
       void notifications.refetch();
     },
   });
@@ -191,12 +196,13 @@ export function PortalDay() {
     mutationFn: (id: number) =>
       portalLmsApi.readAnnouncement(subject!.linkId, id),
     onSuccess: () => {
+      if (!mounted.current) return;
       notify("portalReadConfirmed");
       void query.refetch();
     },
   });
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -225,6 +231,10 @@ export function PortalDay() {
       replyTitle = replyTitle.split(`{${key}}`).join(String(value));
     });
   const nextMaterial = data.nextMaterial;
+  const ownLearning = subject?.kind === "self";
+  const replyHref = reply
+    ? resolvePortalNotificationHref(reply, allSubjects, learningModuleForSubject(subject))
+    : null;
   const feedback = allowed("feedback.read")
     ? (data.feedback ?? []).slice(0, 3)
     : [];
@@ -240,6 +250,14 @@ export function PortalDay() {
   const notice = data.announcements.find((item) => item.id === announcement);
   return (
     <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       <PortalTitle
         labelKey={
           subject?.kind === "self" ? "portalMyDay" : "portalFamilyOverview"
@@ -308,7 +326,9 @@ export function PortalDay() {
                   ? "portalAssignments"
                   : reply
                     ? "portalFeedback"
-                    : "portalCourses",
+                    : ownLearning
+                      ? "portalCourses"
+                      : "portalProgress",
               )}
             </CardTitle>
           </CardHeader>
@@ -318,7 +338,9 @@ export function PortalDay() {
                 {action?.title ??
                   (reply
                     ? replyTitle
-                    : (nextMaterial?.title ?? t("portalContinue")))}
+                    : ownLearning
+                      ? (nextMaterial?.title ?? t("portalContinue"))
+                      : t("portalProgress"))}
               </h2>
               {action && (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -333,14 +355,14 @@ export function PortalDay() {
                 action
                   ? setAssignmentId(action.id)
                   : guarded(() => {
-                      if (reply?.href && isLearningNavigationHref(reply.href)) {
+                      if (replyHref && reply) {
                         markNotification.mutate(reply.id);
-                        navigate(reply.href);
-                      } else if (nextMaterial)
+                        navigate(replyHref);
+                      } else if (ownLearning && nextMaterial)
                         navigate(
                           `/learn/courses/${nextMaterial.runId}/materials/${nextMaterial.publicationId}`,
                         );
-                      else navigate("/learn/courses");
+                      else navigate(ownLearning ? "/learn/courses" : "/learn/progress");
                     })
               }
             >
@@ -360,13 +382,15 @@ export function PortalDay() {
             <h2 className="text-base font-semibold">
               {t("portalAssignments")}
             </h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => guarded(() => navigate("/learn/assignments"))}
-            >
-              {t("portalOpen")}
-            </Button>
+            {ownLearning && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => guarded(() => navigate("/learn/assignments"))}
+              >
+                {t("portalOpen")}
+              </Button>
+            )}
           </div>
           {data.assignments
             .filter(
@@ -422,6 +446,7 @@ export function PortalDay() {
             </PortalActionRow>
           ))}
           {replies.map((item) => {
+            const href = resolvePortalNotificationHref(item, allSubjects, learningModuleForSubject(subject));
             let title = content(item.code);
             Object.entries(item.params).forEach(([key, value]) => {
               title = title.split(`{${key}}`).join(String(value));
@@ -429,11 +454,12 @@ export function PortalDay() {
             return (
               <PortalActionRow
                 key={`reply-${item.id}`}
+                disabled={!href}
                 onClick={() =>
                   guarded(() => {
-                    if (item.href && isLearningNavigationHref(item.href)) {
+                    if (href) {
                       markNotification.mutate(item.id);
-                      navigate(item.href);
+                      navigate(href);
                     }
                   })
                 }

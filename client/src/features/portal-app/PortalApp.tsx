@@ -18,7 +18,6 @@ import {
 import { setActivePlatformRealm } from "@/lib/platformSession";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { PortalPermission } from "@shared/contracts/portal-identity";
 import { PortalSessionProvider, portalSessionKey, usePortal } from "./context";
 import { PortalApiError, portalIdentityApi } from "./api";
 import { PortalShell } from "./PortalShell";
@@ -41,6 +40,10 @@ import { PortalPortfolio, PublicPortfolio } from "./portfolio";
 import { PortalPayments } from "./payments";
 import { PortalNotifications } from "./notifications";
 import { PortalLoading, PortalError, PortalEmpty, PortalTitle } from "./ui";
+import {
+  canAccessPortalSection,
+  portalSectionForPath,
+} from "./module-navigation";
 import "./portal.css";
 
 export function createPortalQueryClient() {
@@ -85,23 +88,6 @@ export function PublicPortfolioApp({ token }: { token: string }) {
     </QueryClientProvider>
   );
 }
-function Gate({
-  permissions,
-  children,
-}: {
-  permissions: PortalPermission[];
-  children: ReactNode;
-}) {
-  const { subject } = usePortal();
-  return subject &&
-    permissions.some((permission) =>
-      subject.permissions.includes(permission),
-    ) ? (
-    <>{children}</>
-  ) : (
-    <PortalEmpty labelKey="portalUnavailable" />
-  );
-}
 function PortalRoutes() {
   const [rawPath] = useLocation();
   const actualPath = rawPath.replace(/\/+$/, "") || "/";
@@ -115,6 +101,7 @@ function PortalRoutes() {
     subject,
     subjects,
     allSubjects,
+    learningModule,
     selectSubject,
   } = usePortal();
   useEffect(() => {
@@ -124,13 +111,17 @@ function PortalRoutes() {
   const requestedRaw = new URLSearchParams(search).get("linkId");
   const requested = requestedRaw ? Number(requestedRaw) : null;
   const requestedSubject = subjects.find((item) => item.linkId === requested);
-  const requestKey = requestedRaw === null ? null : `${path}:${search}`;
+  const requestKey = requestedRaw === null ? null : `${actualPath}:${search}`;
   const [appliedRequest, setAppliedRequest] = useState<string | null>(null);
   useEffect(() => {
-    if (!account || !requestedSubject || appliedRequest === requestKey) return;
+    if (!account || !requestedSubject) {
+      setAppliedRequest(null);
+      return;
+    }
+    if (appliedRequest === requestKey) return;
     if (subject?.linkId === requestedSubject.linkId)
       setAppliedRequest(requestKey);
-    else selectSubject(requestedSubject.linkId);
+    else selectSubject(requestedSubject.linkId, { preserveEntityQuery: true });
   }, [
     account,
     requestedSubject,
@@ -208,6 +199,14 @@ function PortalRoutes() {
   const course = pagePath.match(/^\/learn\/courses\/(\d+)$/);
   if (pagePath === "/learn/notifications") page = <PortalNotifications />;
   else if (!subjects.length) page = <NoPortalAccess />;
+  else if (
+    portalSectionForPath(pagePath) &&
+    !canAccessPortalSection(
+      `${actualPath}${search ? `?${search}` : ""}`,
+      learningModule ?? learningModuleForSubject(subject),
+      subject ? [subject] : subjects,
+    )
+  ) page = <PortalEmpty labelKey="portalUnavailable" />;
   else if (!subject) page = <FamilyOverview />;
   else if (pagePath === "/learn" || pagePath === "/learn/login")
     page = subject.permissions.includes("learning.read") ? (
@@ -215,101 +214,40 @@ function PortalRoutes() {
     ) : (
       <PortalLimitedOverview />
     );
-  else if (pagePath === "/learn/courses")
-    page = (
-      <Gate permissions={["learning.read"]}>
-        <PortalCourses />
-      </Gate>
-    );
+  else if (pagePath === "/learn/courses") page = <PortalCourses />;
   else if (material)
     page = (
-      <Gate permissions={["learning.read"]}>
-        <PortalMaterial
-          courseId={Number(material[1])}
-          id={Number(material[2])}
-        />
-      </Gate>
+      <PortalMaterial courseId={Number(material[1])} id={Number(material[2])} />
     );
-  else if (course)
-    page = (
-      <Gate permissions={["learning.read"]}>
-        <PortalCourse id={Number(course[1])} />
-      </Gate>
-    );
+  else if (course) page = <PortalCourse id={Number(course[1])} />;
   else if (assignment)
-    page = (
-      <Gate permissions={["learning.read"]}>
-        <PortalAssignments initialId={Number(assignment[1])} />
-      </Gate>
-    );
-  else if (pagePath === "/learn/assignments")
-    page = (
-      <Gate permissions={["learning.read"]}>
-        <PortalAssignments />
-      </Gate>
-    );
-  else if (pagePath === "/learn/schedule")
-    page = (
-      <Gate permissions={["learning.read", "attendance.read"]}>
-        <PortalSchedule />
-      </Gate>
-    );
+    page = <PortalAssignments initialId={Number(assignment[1])} />;
+  else if (pagePath === "/learn/assignments") page = <PortalAssignments />;
+  else if (pagePath === "/learn/schedule") page = <PortalSchedule />;
   else if (pagePath === "/learn/feedback")
     page = (
-      <Gate permissions={["feedback.read"]}>
+      <>
         <PortalTitle labelKey="portalFeedback" />
         <PortalFeedback
           initialId={
             Number(new URLSearchParams(search).get("review")) || undefined
           }
         />
-      </Gate>
+      </>
     );
-  else if (pagePath === "/learn/attendance")
-    page = (
-      <Gate permissions={["attendance.read"]}>
-        <PortalAttendance />
-      </Gate>
-    );
-  else if (pagePath === "/learn/progress")
-    page = (
-      <Gate permissions={["learning.read", "feedback.read"]}>
-        <PortalProgress />
-      </Gate>
-    );
-  else if (pagePath === "/learn/quizzes")
-    page = (
-      <Gate permissions={["learning.read", "feedback.read"]}>
-        <PortalQuizzes />
-      </Gate>
-    );
-  else if (pagePath === "/learn/portfolio")
-    page = (
-      <Gate permissions={["learning.read", "portfolio.approve"]}>
-        <PortalPortfolio />
-      </Gate>
-    );
-  else if (pagePath === "/learn/payments")
-    page = (
-      <Gate permissions={["finance.read"]}>
-        <PortalPayments />
-      </Gate>
-    );
-  else if (pagePath === "/learn/makeup")
-    page = (
-      <Gate permissions={["learning.read", "attendance.read"]}>
-        <PortalMakeup />
-      </Gate>
-    );
+  else if (pagePath === "/learn/attendance") page = <PortalAttendance />;
+  else if (pagePath === "/learn/progress") page = <PortalProgress />;
+  else if (pagePath === "/learn/quizzes") page = <PortalQuizzes />;
+  else if (pagePath === "/learn/portfolio") page = <PortalPortfolio />;
+  else if (pagePath === "/learn/payments") page = <PortalPayments />;
+  else if (pagePath === "/learn/makeup") page = <PortalMakeup />;
   else if (pagePath === "/learn/help")
     page = (
-      <Gate permissions={["communication.create"]}>
-        <PortalHelp
-          initialId={
-            Number(new URLSearchParams(search).get("thread")) || undefined
-          }
-        />
-      </Gate>
+      <PortalHelp
+        initialId={
+          Number(new URLSearchParams(search).get("thread")) || undefined
+        }
+      />
     );
   else page = <PortalEmpty labelKey="portalNotFound" />;
   return (

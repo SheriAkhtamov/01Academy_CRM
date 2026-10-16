@@ -37,6 +37,7 @@ import {
   PortalTitle,
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   usePortalFormat,
   usePortalContent,
@@ -538,7 +539,7 @@ export function ProjectComparison() {
   const query = useSubjectQuery("projects", portalResourcesApi.projects);
   const [course, setCourse] = useState("");
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error && query.data === undefined)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -609,7 +610,7 @@ function CourseComparison({
   );
   const canEdit = allowed("portfolio.edit", true);
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error && query.data === undefined)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -766,7 +767,7 @@ function ComparisonEditor({
     return () => setUnsaved(false);
   }, [canEdit, dirty, action.isPending, reload.isPending, setUnsaved]);
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error && query.data === undefined)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}

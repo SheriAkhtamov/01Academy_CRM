@@ -17,6 +17,7 @@ import {
 import {
   PortalLoading,
   PortalError,
+  isPortalAccessError,
   PortalEmpty,
   PortalTitle,
   PortalStatus,
@@ -43,7 +44,7 @@ export function PortalCourses() {
   const tab = view.tab;
   const format = usePortalFormat();
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -62,6 +63,14 @@ export function PortalCourses() {
   return (
     <>
       <PortalTitle labelKey="portalCourses" />
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       <Tabs value={tab} onValueChange={(value) => setView({ tab: value })}>
         <TabsList>
           <TabsTrigger value="current">{t("portalCurrent")}</TabsTrigger>
@@ -128,7 +137,7 @@ export function PortalCourse({ id }: { id: number }) {
     [id],
   );
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -140,6 +149,14 @@ export function PortalCourse({ id }: { id: number }) {
   const course = query.data;
   return (
     <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       <PageHeader
         title={course.courseName}
         subtitle={[course.groupName, course.teacherName]
@@ -292,7 +309,7 @@ export function PortalMaterial({
     },
   });
   if (query.isPending) return <PortalLoading />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -310,6 +327,14 @@ export function PortalMaterial({
         : "portalForLesson";
   return (
     <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       <article className="space-y-6">
         <nav
           aria-label={t("portalBreadcrumbs")}
@@ -453,7 +478,7 @@ function CourseAnnouncements({ id }: { id: number }) {
     },
   });
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -465,6 +490,14 @@ function CourseAnnouncements({ id }: { id: number }) {
   const items = query.data.filter((item) => item.runId === id);
   return (
     <div className="space-y-4">
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       {read.error && (
         <p role="alert" className="text-destructive">
           {message(read.error, "portalSaveError")}

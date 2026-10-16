@@ -30,6 +30,7 @@ import {
 import {
   PortalDialogContent as DialogContent,
   PortalError,
+  isPortalAccessError,
   PortalLoading,
   PortalEmpty,
   PortalStatus,
@@ -40,6 +41,7 @@ import {
   usePortalFormat,
 } from "../portal-app/ui";
 import { PortalFiles, PortalUploads } from "../portal-app/files";
+import { usePortalFormMounted } from "../portal-app/usePortalFormMounted";
 import { PortalSelect, PortalToolbar } from "../portal-app/controls";
 import { HelpDialog } from "./communication";
 import { useAssignmentDraft } from "./useAssignmentDraft";
@@ -75,7 +77,7 @@ export function PortalAssignments({
     return (
       <PortalLoading variant={embedded || courseId ? "section" : "page"} />
     );
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -104,6 +106,14 @@ export function PortalAssignments({
     );
   return (
     <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
       {embedded || courseId ? (
         <h2 className="text-base font-semibold">
           {t(embedded ? "portalPractice" : "portalAssignments")}
@@ -271,7 +281,7 @@ function AssignmentDetail({
     [id],
   );
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.data === undefined || isPortalAccessError(query.error))
     return (
       <PortalError
         error={query.error}
@@ -281,14 +291,24 @@ function AssignmentDetail({
       />
     );
   return (
-    <AssignmentContent
-      key={`${query.data.id}:${query.data.status}`}
-      detail={query.data}
-      onClose={onClose}
-      refresh={() => {
-        void query.refetch();
-      }}
-    />
+    <>
+      {query.error && (
+        <PortalError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+      <AssignmentContent
+        key={query.data.id}
+        detail={query.data}
+        onClose={onClose}
+        refresh={() => {
+          void query.refetch();
+        }}
+      />
+    </>
   );
 }
 export function AssignmentContent({
@@ -304,6 +324,7 @@ export function AssignmentContent({
   const format = usePortalFormat();
   const message = usePortalError();
   const { subject, allowed, guarded, setUnsaved } = usePortal();
+  const mounted = usePortalFormMounted();
   const invalidate = useInvalidateSubject();
   const [, navigate] = useLocation();
   const [withdraw, setWithdraw] = useState(false);
@@ -330,6 +351,7 @@ export function AssignmentContent({
           subject?.kind === "representative" ? shareComment : false,
       }),
     onSuccess: () => {
+      if (!mounted.current) return;
       setComment("");
       setCommentKey(crypto.randomUUID());
       setShareComment(false);
@@ -340,8 +362,9 @@ export function AssignmentContent({
     mutationFn: () =>
       portalLmsApi.withdraw(subject!.linkId, detail.id, detail.version),
     onSuccess: () => {
-      setWithdraw(false);
       void invalidate();
+      if (!mounted.current) return;
+      setWithdraw(false);
       refresh();
     },
   });
@@ -640,6 +663,7 @@ function AssignmentAnswer({
   const message = usePortalError();
   const { setUnsaved } = usePortal();
   const invalidate = useInvalidateSubject();
+  const mounted = usePortalFormMounted();
   const [uploading, setUploading] = useState(false);
   const [validation, setValidation] = useState("");
   const [reloadOpen, setReloadOpen] = useState(false);
@@ -676,8 +700,9 @@ function AssignmentAnswer({
       });
     },
     onSuccess: () => {
-      setUnsaved(false);
       void invalidate();
+      if (!mounted.current) return;
+      setUnsaved(false);
       onClose();
     },
   });

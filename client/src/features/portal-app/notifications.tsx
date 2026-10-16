@@ -7,10 +7,9 @@ import {
 } from "@tanstack/react-query";
 import { usePortalLocation as useLocation } from "./navigation";
 import {
-  isLearningNavigationHref,
   learningModuleForSubject,
-  toLearningModuleHref,
 } from "@shared/platform-routes";
+import { resolvePortalNotificationHref } from "./module-navigation";
 import type { PortalNotificationPreferencesDto } from "@shared/contracts/portal-resources";
 import { PORTAL_NOTIFICATION_CATEGORIES } from "@shared/contracts/portal-resources";
 import { translations, type TranslationKey } from "@/lib/i18n";
@@ -27,6 +26,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { portalResourcesApi } from "./resources-api";
+import { usePortalFormMounted } from "./usePortalFormMounted";
 import {
   PortalFormScope,
   usePortalFormScope,
@@ -37,6 +37,7 @@ import {
   PortalDialogContent as DialogContent,
   PortalTitle,
   PortalLoading,
+  isPortalAccessError,
   PortalError,
   PortalEmpty,
   usePortalFormat,
@@ -52,6 +53,7 @@ const categoryKeys: Record<string, TranslationKey> = {
   family: "portalFamilyNotifications",
   security: "portalSecurityNotifications",
 };
+
 export function PortalNotifications({
   embedded = false,
   onNavigate,
@@ -60,11 +62,13 @@ export function PortalNotifications({
   onNavigate?: () => void;
 }) {
   const settingsScope = usePortalFormScope();
+  const mounted = usePortalFormMounted();
   const { t } = useTranslation();
   const message = usePortalError();
   const notify = usePortalSuccess();
   const {
     account,
+    subject,
     subjects,
     allSubjects = subjects,
     learningModule,
@@ -101,20 +105,24 @@ export function PortalNotifications({
   });
   const read = useMutation({
     mutationFn: portalResourcesApi.readNotification,
-    onSuccess: () => {
+    onMutate: () => account?.id,
+    onSuccess: (_data, _id, originAccount) => {
+      if (!mounted.current || originAccount !== account?.id) return;
       notify("portalReadConfirmed");
       refreshNotices();
     },
   });
   const all = useMutation({
     mutationFn: portalResourcesApi.readAll,
-    onSuccess: () => {
+    onMutate: () => account?.id,
+    onSuccess: (_data, _variables, originAccount) => {
+      if (!mounted.current || originAccount !== account?.id) return;
       notify("portalAllReadConfirmed");
       refreshNotices();
     },
   });
   if (query.isPending) return <PortalLoading variant={embedded ? "section" : "page"} />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -146,6 +154,7 @@ export function PortalNotifications({
       ) : (
         <PortalTitle labelKey="portalNotifications">{actions}</PortalTitle>
       )}
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
       {(read.error || all.error) && (
         <p role="alert" className="text-destructive">
           {message(read.error || all.error, "portalSaveError")}
@@ -171,6 +180,11 @@ export function PortalNotifications({
                 const child = allSubjects.find(
                   (subject) => subject.linkId === item.linkId,
                 );
+                const href = resolvePortalNotificationHref(
+                  item,
+                  allSubjects,
+                  learningModule ?? learningModuleForSubject(subject ?? allSubjects[0]),
+                );
                 return (
                   <div
                     key={item.id}
@@ -193,7 +207,7 @@ export function PortalNotifications({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {item.href && isLearningNavigationHref(item.href) && (
+                      {href && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -203,24 +217,7 @@ export function PortalNotifications({
                                 selectSubject(child.linkId);
                               read.mutate(item.id);
                               onNavigate?.();
-                              if (learningModule) {
-                                const href = toLearningModuleHref(
-                                  item.href!,
-                                  child
-                                    ? learningModuleForSubject(child)
-                                    : learningModule,
-                                );
-                                const destination = new URL(
-                                  href,
-                                  window.location.origin,
-                                );
-                                if (child)
-                                  destination.searchParams.set(
-                                    "linkId",
-                                    String(child.linkId),
-                                  );
-                                navigate(`${destination.pathname}${destination.search}${destination.hash}`);
-                              } else navigate(item.href!);
+                              navigate(href);
                             })
                           }
                         >
@@ -282,7 +279,7 @@ function NotificationPreferences() {
     enabled: Boolean(account),
   });
   if (query.isPending) return <PortalLoading variant="section" />;
-  if (query.error)
+  if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
       <PortalError
         error={query.error}
@@ -291,7 +288,12 @@ function NotificationPreferences() {
         }}
       />
     );
-  return <PreferencesForm initial={query.data} />;
+  return (
+    <>
+      {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
+      <PreferencesForm initial={query.data} />
+    </>
+  );
 }
 function PreferencesForm({
   initial,
@@ -299,19 +301,20 @@ function PreferencesForm({
   initial: PortalNotificationPreferencesDto;
 }) {
   const { t } = useTranslation();
+  const mounted = usePortalFormMounted();
   const message = usePortalError();
   const { account, setUnsaved } = usePortal();
   const client = useQueryClient();
   const [values, setValues] = useState(initial);
   const [baseline, setBaseline] = useState(JSON.stringify(initial));
-  useEffect(() => {
-    setUnsaved(JSON.stringify(values) !== baseline);
-    return () => setUnsaved(false);
-  }, [values, baseline, setUnsaved]);
   const action = useMutation({
     mutationFn: (submitted: PortalNotificationPreferencesDto) =>
       portalResourcesApi.savePreferences(submitted),
     onSuccess: (data, submitted) => {
+      if (!mounted.current) {
+        void client.invalidateQueries({ queryKey: ["portal-account", account?.id, "preferences"] });
+        return;
+      }
       setValues((current) =>
         JSON.stringify(current) === JSON.stringify(submitted) ? data : current,
       );
@@ -319,6 +322,10 @@ function PreferencesForm({
       client.setQueryData(["portal-account", account?.id, "preferences"], data);
     },
   });
+  useEffect(() => {
+    setUnsaved(JSON.stringify(values) !== baseline || action.isPending);
+    return () => setUnsaved(false);
+  }, [values, baseline, action.isPending, setUnsaved]);
   return (
     <form
       className="space-y-4"

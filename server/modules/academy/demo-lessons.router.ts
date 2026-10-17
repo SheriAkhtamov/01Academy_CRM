@@ -318,47 +318,11 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
         : parseDateRange(req.query.to, new Date(Date.now() + 31 * 24 * 60 * 60 * 1_000));
       if (to && to <= from) return res.status(400).json({ error: 'invalidData' });
       const schoolId = Number(req.query.schoolId) || null;
-      const demos = await query(
-        `SELECT demo.*,
-            course.name AS course_name,
-            school.name AS school_name,
-            room.name AS room_name,
-            teacher.full_name AS teacher_name,
-            COALESCE(
-              jsonb_agg(
-                jsonb_build_object(
-                  'id', participant.id,
-                  'studentId', participant.student_id,
-                  'leadId', student.lead_id,
-                  'status', participant.status,
-                  'result', participant.result,
-                  'noShowReasonCode', participant.no_show_reason_code,
-                  'noShowReasonNote', participant.no_show_reason_note,
-                  'contactName', COALESCE(student.contact_name, lead.contact_name),
-                  'leadName', lead.contact_name,
-                  'leadPhone', CASE WHEN lead.phone NOT LIKE 'instagram:%' THEN NULLIF(BTRIM(lead.phone), '') END,
-                  'studentName', student.student_name,
-                  'managerId', COALESCE(student.manager_id, lead.manager_id),
-                  'attendanceManagerId', ${demoAttendanceManagerSql()},
-                  'funnelRole', ${demoFunnelRoleSql()}
-                ) ORDER BY participant.id
-              ) FILTER (WHERE participant.id IS NOT NULL),
-              '[]'::jsonb
-            ) AS participants
-         FROM academy_demo_lessons demo
-         JOIN academy_courses course ON course.id = demo.course_id
-         JOIN academy_schools school ON school.id = demo.school_id
-         LEFT JOIN academy_rooms room ON room.id = demo.room_id
-         JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
-         LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
-         LEFT JOIN academy_students student ON student.id = participant.student_id
-         LEFT JOIN academy_leads lead ON lead.id = student.lead_id
-         WHERE demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1
+      const demos = await queryDemoLessons(
+        `demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1
            AND ($2::timestamptz IS NULL OR demo.scheduled_at < $2::timestamptz)
            AND ($3::int IS NULL OR demo.school_id = $3)
-           AND ($4::boolean = false OR (demo.status = 'scheduled' AND demo.scheduled_at > $1))
-         GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name
-         ORDER BY demo.scheduled_at, demo.id`,
+           AND ($4::boolean = false OR (demo.status = 'scheduled' AND demo.scheduled_at > $1))`,
         [from, to, schoolId, upcomingOnly],
       );
       res.json(demos.map((demo) => presentDemoLesson(req, demo)));

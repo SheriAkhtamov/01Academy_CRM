@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoLessonDetailsDialog } from '../client/src/components/ux/DemoLessonDetailsDialog';
+import { SalesScheduleCalendar } from '../client/src/components/ux/SalesScheduleCalendar';
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
 import { i18n, translations } from '../client/src/lib/i18n';
 
-const mocks = vi.hoisted(() => ({ saveAttendance: vi.fn(), cancel: vi.fn(), outcome: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), saveAttendance: vi.fn(), cancel: vi.fn(), outcome: vi.fn() }));
 vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonQueryKeys: {
     all: ['/api/academy/demo-lessons'], availability: ['demo-availability'], resourceAvailability: ['demo-resources'],
@@ -16,6 +17,7 @@ vi.mock('../client/src/features/demo-lessons/api', () => ({
   demoLessonsApi: { ...mocks, reschedule: vi.fn(), teacherOptions: vi.fn(), changeTeacher: vi.fn(), removeParticipant: vi.fn() },
   teacherDemoLessonsApi: { saveAttendance: mocks.saveAttendance, outcome: mocks.outcome },
 }));
+vi.mock('../client/src/components/ux/DemoLessonDialog', () => ({ DemoLessonDialog: () => null }));
 
 const demo: DemoLesson = {
   id: 5, courseId: 1, courseName: 'Frontend', schoolId: 1, schoolName: 'Cyberpark', roomId: 2, roomName: '204',
@@ -39,7 +41,9 @@ const show = (value = demo) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   i18n.setLanguage('en');
+  mocks.list.mockResolvedValue([]);
   mocks.saveAttendance.mockResolvedValue(demo);
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   for (const method of ['setPointerCapture', 'releasePointerCapture', 'scrollIntoView']) {
@@ -210,6 +214,53 @@ describe('demo reminder answers beside actual attendance', () => {
     await waitFor(() => expect(mocks.saveAttendance).toHaveBeenCalledWith(5, {
       participants: [{ participantId: 11, status: 'attended', result: null, noShowReasonCode: null, noShowReasonNote: null }],
     }));
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.outcome).not.toHaveBeenCalled();
+  });
+
+  it('shows a refreshed bot delivery report in the actual sales calendar participant row without inventing an answer or losing attendance', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date('2026-08-31T04:00:00.000Z'));
+    i18n.setLanguage('ru');
+    const initial: DemoLesson = {
+      ...demo,
+      courseName: 'AI Kids',
+      participants: [{ ...demo.participants[0], studentName: 'Алия', contactName: 'Индира' }],
+    };
+    const delivered: DemoLesson = {
+      ...initial,
+      participants: [{ ...initial.participants[0],
+        reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T10:00:00Z' }],
+    };
+    mocks.list.mockResolvedValueOnce([initial]).mockResolvedValueOnce([initial]).mockResolvedValue([delivered]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60_000 } } });
+    clients.push(client);
+    render(<QueryClientProvider client={client}>
+      <SalesScheduleCalendar groups={[]} lessons={[]} courses={[{ id: 1, name: 'AI Kids' }]}
+        schools={[{ id: 1, name: 'Cyberpark' }]} leads={[]} onOpenLead={vi.fn()} />
+    </QueryClientProvider>);
+
+    const calendarEvent = await screen.findByRole('button', { name: /15:00–16:00, .*AI Kids/ });
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    fireEvent.click(calendarEvent);
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { await Promise.resolve(); });
+    expect(within(dialog).getByText('Алия')).toBeTruthy();
+    expect(within(dialog).getByText('Индира')).toBeTruthy();
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+    expect(within(dialog).queryByText(translations.voiceRemindersDeliveredNoResponse.ru)).toBeNull();
+    const selector = within(dialog).getByRole('combobox');
+    selector.focus();
+    fireEvent.keyDown(selector, { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: translations.demoParticipantAttended.ru }));
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    const badge = await screen.findByText(translations.voiceRemindersDeliveredNoResponse.ru);
+    expect(within(badge.parentElement!).getByRole('combobox').textContent).toBe(translations.demoParticipantAttended.ru);
+    expect(within(dialog).queryByText(translations.voiceRemindersResponseYes.ru)).toBeNull();
+    expect(within(dialog).queryByText(translations.voiceRemindersResponseNo.ru)).toBeNull();
+    expect((within(dialog).getByRole('button', { name: translations.saveAttendance.ru }) as HTMLButtonElement).disabled).toBe(false);
+    expect(mocks.saveAttendance).not.toHaveBeenCalled();
     expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.outcome).not.toHaveBeenCalled();
   });

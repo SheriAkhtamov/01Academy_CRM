@@ -135,7 +135,7 @@ export type LmsAttachmentAuthorizer = (
   sql: LmsSql,
   actor: { portalAccountId?: number; userId?: number; studentId?: number },
   fileIds: number[],
-  context: { runId: number; recipientId?: number },
+  context: { runId: number; recipientId?: number; allowCourseMaterial?: boolean },
 ) => Promise<void>;
 export const denyUnintegratedFiles: LmsAttachmentAuthorizer = async (
   _sql,

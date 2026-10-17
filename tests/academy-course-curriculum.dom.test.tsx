@@ -9,8 +9,9 @@ import { i18n } from '../client/src/lib/i18n';
 import { allowNavigation } from '../client/src/lib/navigationGuard';
 import { flattenCourseCurriculum } from '../shared/contracts/course-curriculum';
 
-const mocks = vi.hoisted(() => ({ api: vi.fn() }));
+const mocks = vi.hoisted(() => ({ api: vi.fn(), upload: vi.fn(), status: vi.fn() }));
 vi.mock('@/lib/queryClient', () => ({ apiRequest: mocks.api }));
+vi.mock('../client/src/features/course-curriculum/files-api', () => ({ courseMaterialFilesApi: { upload: mocks.upload, status: mocks.status } }));
 vi.mock('@/hooks/use-toast', () => ({ toast: vi.fn(), useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 1, module: 'administration', modules: ['administration'] } }) }));
 
@@ -18,6 +19,9 @@ let client: QueryClient;
 let courses: Course[];
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); i18n.setLanguage('ru'); courses = [];
+  const uploaded = { id: 84, name: 'workbook.pdf', mime: 'application/pdf', size: 29, state: 'ready',
+    downloadUrl: '/api/academy/course-material-files/84/download', rejectionCode: null, createdAt: '2026-10-18T00:00:00.000Z' };
+  mocks.upload.mockResolvedValue(uploaded); mocks.status.mockResolvedValue(uploaded);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   for (const method of ['scrollIntoView', 'hasPointerCapture', 'setPointerCapture', 'releasePointerCapture']) {
     Object.defineProperty(Element.prototype, method, { configurable: true, value: vi.fn() });
@@ -88,6 +92,31 @@ it('opens a legacy course program with stable lesson IDs and retains its existin
   await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledOnce());
   expect(flattenCourseCurriculum(mocks.api.mock.calls[0][2].program)).toMatchObject([{ id: 'legacy-lesson-1', title: 'Existing lesson', materials: [{ content: 'Existing notes' }] }]);
+});
+
+it('saves an uploaded computer file in the course and restores its filename and download link on reopen', async () => {
+  courses = [{ id: 7, name: 'Course with files', slug: 'course-with-files', ageCategory: '12+', basePriceUzs: 0, isActive: true,
+    program: { version: 1, blocks: [{ id: 'block-files', title: 'Documents', lessons: [{ id: 'lesson-files', title: 'Workbook lesson', materials: [
+      { id: 'material-files', type: 'file', title: 'Workbook material', content: 'https://academy.example/previous.pdf' },
+    ] }] }] } }];
+  const user = mount();
+  await user.click(await screen.findByRole('button', { name: i18n.t('edit') }));
+  const file = new File(['%PDF-1.7 sample file contents'], 'workbook.pdf', { type: 'application/pdf' });
+  const material = screen.getByRole('region', { name: 'Workbook material' });
+  fireEvent.change(within(material).getByLabelText(i18n.t('courseUploadMaterialFile'), { selector: 'input' }), { target: { files: [file] } });
+  await screen.findByText('workbook.pdf');
+  expect(mocks.upload.mock.calls[0][0]).toBe(file);
+  await user.click(screen.getByRole('button', { name: i18n.t('save') }));
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/academy/courses/7/with-teachers', expect.objectContaining({
+    program: { version: 1, blocks: [expect.objectContaining({ lessons: [expect.objectContaining({ materials: [{
+      id: 'material-files', title: 'Workbook material', type: 'file', content: '', file: { id: 84, name: 'workbook.pdf', mime: 'application/pdf', size: 29 },
+    }] })] })] },
+  })));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+  const filename = screen.getByText('workbook.pdf');
+  expect(filename.closest('a')?.getAttribute('href')).toBe('/api/academy/course-material-files/84/download');
+  expect(flattenCourseCurriculum(courses[0].program)[0].materials[0]).toMatchObject({ id: 'material-files', file: { id: 84, name: 'workbook.pdf' } });
 });
 
 it.each([

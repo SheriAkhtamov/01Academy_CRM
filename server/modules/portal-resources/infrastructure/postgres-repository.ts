@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { runUnitSelectionSql } from '../../lms/infrastructure/postgres-base';
 import { learningSubjectHref } from '@shared/platform-routes';
 import { getComputedPaymentStatus } from '@shared/academy';
 import {
@@ -41,13 +42,32 @@ const unreferencedLearningFile = `      AND NOT EXISTS(SELECT 1 FROM lms_submiss
       AND NOT EXISTS(SELECT 1 FROM lms_announcements announcement WHERE announcement.file_ids @> jsonb_build_array(file.id))
       AND NOT EXISTS(SELECT 1 FROM lms_portfolio_shares share WHERE (share.snapshot->'fileIds') @> jsonb_build_array(file.id))
       AND NOT EXISTS(SELECT 1 FROM lms_reports report, jsonb_array_elements(report.best_projects) project WHERE (project->'fileIds') @> jsonb_build_array(file.id))
-      AND NOT EXISTS(SELECT 1 FROM lms_project_comparisons comparison WHERE (comparison.first_snapshot->'fileIds') @> jsonb_build_array(file.id) OR (comparison.latest_snapshot->'fileIds') @> jsonb_build_array(file.id))`;
+      AND NOT EXISTS(SELECT 1 FROM lms_project_comparisons comparison WHERE (comparison.first_snapshot->'fileIds') @> jsonb_build_array(file.id) OR (comparison.latest_snapshot->'fileIds') @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM academy_courses course WHERE jsonb_path_query_array(course.program,'$.blocks[*].lessons[*].materials[*].file.id') @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM lms_course_versions version WHERE jsonb_path_query_array(version.program,'$.blocks[*].lessons[*].materials[*].file.id') @> jsonb_build_array(file.id))
+      AND NOT EXISTS(SELECT 1 FROM academy_lessons lesson WHERE COALESCE(to_jsonb(lesson)->'material_file_ids','[]'::jsonb) @> jsonb_build_array(file.id))`;
 export class PostgresPortalResourceRepository extends PaymentAllocationRepository implements PortalResourceRepository {
   constructor(pool: Pool, enabledForGroup: (groupId: number) => Promise<boolean> = async () => false, private readonly quotas: () => { studentBytes: number; schoolBytes: number } = () => ({ studentBytes: PORTAL_FILE_QUOTA_BYTES, schoolBytes: 20 * 1024 ** 3 }), verifiedProject?: (sql: ResourceSql, studentId: number, runId: number, projectId: number) => Promise<void>) {
     super(pool,enabledForGroup,verifiedProject);
   }
   async filesByIds(ids: number[]) { return filesByIds(this.pool, ids); }
   async readFile(actor: PortalActorContext, fileId: number): Promise<ResourceFile | null> {
+    const source = (await this.filesByIds([fileId]))[0];
+    if (source?.purpose === 'course_material') {
+      if (!actor.permissions.includes('learning.read')) return null;
+      const publications = await resourceRows<{ runId: number }>(this.pool, `SELECT DISTINCT run.id AS run_id
+        FROM lms_material_versions version JOIN lms_material_publications publication ON publication.material_version_id=version.id
+        JOIN lms_materials material ON material.id=version.material_id JOIN lms_group_runs run ON run.id=material.run_id
+        JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id
+        WHERE version.file_ids @> jsonb_build_array($1::bigint) AND enrollment.student_id=$2 AND material.state='published'
+          AND publication.publish_at<=now() AND publication.revoked_at IS NULL
+          AND publication.publish_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR publication.publish_at<enrollment.ended_at)
+          AND NOT EXISTS(SELECT 1 FROM lms_material_publications newer WHERE newer.material_id=material.id AND newer.enrollment_id=enrollment.id
+            AND newer.id>publication.id AND newer.publish_at<=now() AND newer.revoked_at IS NULL)
+          AND (material.unit_id IS NULL OR ${runUnitSelectionSql('run', 'material.unit_id')})`, [fileId, actor.studentId]);
+      for (const publication of publications) if (await this.runEnabled(publication.runId)) return source;
+      return null;
+    }
     const value = await resourceOne<Parameters<typeof fileDto>[0]>(this.pool, `${fileSelect} WHERE file.id=$1 AND file.deleted_at IS NULL AND (
       (file.owner_account_id=$2 AND file.student_id=$3)
       OR ($4 AND EXISTS(SELECT 1 FROM lms_material_versions version JOIN lms_material_publications publication ON publication.material_version_id=version.id
@@ -55,7 +75,7 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
         JOIN lms_group_runs run ON run.id=material.run_id WHERE version.file_ids @> jsonb_build_array(file.id) AND enrollment.student_id=$3
         AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND material.state='published'
         AND publication.publish_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR publication.publish_at<enrollment.ended_at)
-        AND TRUE))
+        AND (material.unit_id IS NULL OR ${runUnitSelectionSql('run', 'material.unit_id')})))
       OR ($4 AND EXISTS(SELECT 1 FROM lms_assignment_versions version JOIN lms_assignment_recipients recipient ON recipient.assignment_version_id=version.id
         JOIN academy_student_group_enrollments enrollment ON enrollment.id=recipient.enrollment_id
         JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_group_runs run ON run.id=assignment.run_id
@@ -117,6 +137,22 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
   }
   async readStaffFile(actor: ResourceStaffActor, fileId: number) {
     const file = (await this.filesByIds([fileId]))[0];
+    if (file?.purpose === 'course_material') {
+      if (!file.courseId || file.state !== 'ready') return null;
+      const employee = await resourceOne(this.pool, 'SELECT id FROM users WHERE id=$1 AND is_active=true AND is_archived=false', [actor.userId]);
+      if (!employee) throw new PortalResourceError('portalAccessDenied', 403);
+      if (actor.isLeadership || actor.modules.includes('administration')) {
+        const administrator = await resourceOne(this.pool, `SELECT employee.id FROM users employee WHERE employee.id=$1
+          AND (employee.module='administration' OR EXISTS(SELECT 1 FROM user_modules granted WHERE granted.user_id=employee.id AND granted.module='administration'))`, [actor.userId]);
+        if (!administrator) throw new PortalResourceError('portalAccessDenied', 403);
+        return file;
+      }
+      const runs = await resourceRows<{ id: number }>(this.pool, `SELECT run.id FROM lms_group_runs run JOIN academy_groups g ON g.id=run.group_id
+        WHERE g.course_id=$1 AND (EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$2 AND teacher.status='active')
+        OR EXISTS(SELECT 1 FROM lms_staff_permissions granted WHERE granted.user_id=$2 AND granted.permission='content.manage'))`, [file.courseId, actor.userId]);
+      for (const run of runs) if (await this.runEnabled(run.id)) { await staffRun(this.pool, actor, run.id); return file; }
+      return null;
+    }
     if (!file || !file.runId) return null;
     await this.requireEnabledRun(file.runId);
     await staffRun(this.pool, actor, file.runId);
@@ -129,7 +165,10 @@ export class PostgresPortalResourceRepository extends PaymentAllocationRepositor
       await sql.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`file-copy:${actor.userId}:${requestKey}:${sourceId}:${targetRunId}`]);
       const existing = await resourceOne<Parameters<typeof fileDto>[0]>(sql,`SELECT file.* FROM lms_staff_file_copies receipt JOIN lms_files file ON file.id=receipt.file_id WHERE receipt.user_id=$1 AND receipt.request_key=$2 AND receipt.source_file_id=$3 AND receipt.target_run_id=$4 AND file.deleted_at IS NULL`,[actor.userId,requestKey,sourceId,targetRunId]);
       if (existing) { if(existing.state!=='ready')throw new PortalResourceError('portalFileNotReady',409);return {file:fileDto(existing),created:false}; }
-      const source = await resourceOne<Parameters<typeof fileDto>[0] & {sha256:string}>(sql,'SELECT * FROM lms_files WHERE id=$1 AND run_id=$2 AND owner_user_id IS NOT NULL AND state=\'ready\' AND deleted_at IS NULL FOR SHARE',[sourceId,sourceRunId]);
+      const source = await resourceOne<Parameters<typeof fileDto>[0] & {sha256:string}>(sql,`SELECT file.* FROM lms_files file
+        WHERE file.id=$1 AND (file.run_id=$2 OR (to_jsonb(file)->>'purpose'='course_material' AND (to_jsonb(file)->>'course_id')::int=
+          (SELECT g.course_id FROM academy_groups g JOIN lms_group_runs run ON run.group_id=g.id WHERE run.id=$2)))
+        AND file.owner_user_id IS NOT NULL AND file.state='ready' AND file.deleted_at IS NULL FOR SHARE OF file`,[sourceId,sourceRunId]);
       if(!source)throw new PortalResourceError('portalNotFound',404);
       await sql.query('SELECT pg_advisory_xact_lock(136036)');
       const used = await resourceOne<{totalBytes:number}>(sql,'SELECT COALESCE(sum(size_bytes),0) AS total_bytes FROM lms_files WHERE owner_user_id IS NOT NULL AND deleted_at IS NULL');
@@ -254,7 +293,7 @@ ${unreferencedLearningFile}
   }
 }
 
-export const authorizeLmsFiles = async (sql: ResourceSql, actor: { portalAccountId?: number; userId?: number; studentId?: number }, fileIds: number[], context: { runId: number; recipientId?: number }) => {
+export const authorizeLmsFiles = async (sql: ResourceSql, actor: { portalAccountId?: number; userId?: number; studentId?: number }, fileIds: number[], context: { runId: number; recipientId?: number; allowCourseMaterial?: boolean }) => {
   if (!fileIds.length) return;
   if (!actor.portalAccountId && !actor.userId) throw new PortalResourceError('portalAccessDenied',403);
   if (actor.userId && !await resourceOne(sql,`SELECT run.id FROM lms_group_runs run JOIN academy_groups g ON g.id=run.group_id JOIN users employee ON employee.id=$2
@@ -263,8 +302,15 @@ export const authorizeLmsFiles = async (sql: ResourceSql, actor: { portalAccount
     OR EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=employee.id AND teacher.status='active')
     OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=employee.id AND grant_row.permission=ANY($3::text[])))`,[context.runId,actor.userId,['content.manage','assignments.manage','reviews.manage','quizzes.manage','communication.manage','announcements.manage','results.manage']])) throw new PortalResourceError('portalAccessDenied',403);
   const uniqueIds = [...new Set(fileIds)], files = await filesByIds(sql, uniqueIds);
+  const courseSources = files.filter(file => file.purpose === 'course_material');
+  if (courseSources.length && !context.allowCourseMaterial) throw new PortalResourceError('portalFileNotReady', 409);
+  const course = courseSources.length ? await resourceOne<{ courseId: number }>(sql, 'SELECT g.course_id FROM academy_groups g JOIN lms_group_runs run ON run.group_id=g.id WHERE run.id=$1', [context.runId]) : null;
   if (files.length !== uniqueIds.length || files.some((file) => file.state !== 'ready'
     || (actor.portalAccountId ? file.ownerAccountId !== actor.portalAccountId || file.studentId !== actor.studentId : file.ownerUserId === null)
-    || (file.runId !== null && file.runId !== context.runId))) throw new PortalResourceError('portalFileNotReady', 409);
-  await sql.query('UPDATE lms_files SET attached_at=COALESCE(attached_at,now()),run_id=COALESCE(run_id,$2),recipient_id=COALESCE(recipient_id,$3) WHERE id=ANY($1::bigint[])', [uniqueIds, context.runId, context.recipientId ?? null]);
+    || (file.runId !== null && file.runId !== context.runId)
+    || (file.purpose === 'course_material' && (!actor.userId || !file.courseId || file.courseId !== course?.courseId)))) throw new PortalResourceError('portalFileNotReady', 409);
+  await sql.query(`UPDATE lms_files SET attached_at=COALESCE(attached_at,now()),
+    run_id=CASE WHEN COALESCE(to_jsonb(lms_files)->>'purpose','learning')='course_material' THEN run_id ELSE COALESCE(run_id,$2) END,
+    recipient_id=CASE WHEN COALESCE(to_jsonb(lms_files)->>'purpose','learning')='course_material' THEN recipient_id ELSE COALESCE(recipient_id,$3) END
+    WHERE id=ANY($1::bigint[])`, [uniqueIds, context.runId, context.recipientId ?? null]);
 };

@@ -13,7 +13,7 @@ const projectColumns = `project.id,project.student_id,project.title,project.desc
 const projectJoins = `FROM academy_portfolio_projects project LEFT JOIN lms_group_runs run ON run.id=project.lms_run_id
   LEFT JOIN academy_groups g ON g.id=COALESCE(run.group_id,project.group_id) LEFT JOIN academy_courses course ON course.id=COALESCE(g.course_id,project.course_id)`;
 const shareColumns = `share.*, project.student_id,project.lms_run_id AS run_id`;
-export const fileDto = (file: { id: number; name: string; mime: string; sizeBytes: number; state: ResourceFile['state']; storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null; createdAt: string; rejectionCode: string | null }): ResourceFile => ({
+export const fileDto = (file: { id: number; name: string; mime: string; sizeBytes: number; state: ResourceFile['state']; storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null; createdAt: string; rejectionCode: string | null; courseId?: number | null; purpose?: 'learning' | 'course_material' }): ResourceFile => ({
   ...file, size: file.sizeBytes, downloadUrl: file.state === 'ready' ? `/api/portal/files/${file.id}/download` : null,
 });
 export const filesByIds = async (sql: ResourceSql, ids: number[]): Promise<ResourceFile[]> => {

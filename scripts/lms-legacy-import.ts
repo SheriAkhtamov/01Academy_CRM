@@ -42,6 +42,7 @@ export class LegacyImportError extends Error {
   constructor(public readonly code: string) { super(code); }
 }
 type Source = { id: number; [key: string]: unknown };
+const lessonFileIds = (row: Source): number[] => Array.isArray(row.material_file_ids) ? row.material_file_ids : [];
 type ImportTarget = { id?: number; outcome: "created" | "adopted" | "skipped" | "conflict"; code?: string };
 const SOURCE_TABLE: Record<LegacyScope, string> = {
   courses: "academy_courses", groups: "academy_groups", lessons: "academy_lessons", portfolio: "academy_portfolio_projects",
@@ -66,7 +67,8 @@ function sourceSnapshot(scope: LegacyScope, row: Source, format: "offline" | "on
   if (scope === "courses") return { id: row.id, program: row.program };
   if (scope === "groups") return { id: row.id, course_id: row.course_id, format };
   if (scope === "lessons") return { id: row.id, group_id: row.group_id, course_id: row.course_id, lesson_number: row.lesson_number, topic: row.topic, materials: row.materials,
-    ...(row.course_lesson_id ? { course_lesson_id: row.course_lesson_id } : {}) };
+    ...(row.course_lesson_id ? { course_lesson_id: row.course_lesson_id } : {}),
+    ...(lessonFileIds(row).length ? { material_file_ids: lessonFileIds(row) } : {}) };
   return Object.fromEntries(["id", "student_id", "lesson_id", "group_id", "course_id", "title", "url", "file_url", "final_status", "marketing_consent"].map((key) => [key, row[key] ?? null]));
 }
 const programUnits = crmProgramUnits;
@@ -105,16 +107,17 @@ async function importLesson(sql: PoolClient, row: Source, actorUserId: number): 
   if (existing && existing.unit_id !== unit.id) return { outcome: "conflict", code: "existing_binding_review_required" };
   const body = typeof row.materials === "string" ? row.materials : "";
   const title = typeof row.topic === "string" ? row.topic : "";
-  let needsMaterial = Boolean(body.trim());
+  const fileIds = lessonFileIds(row);
+  let needsMaterial = Boolean(body.trim() || fileIds.length);
   if (needsMaterial) {
-    const equivalent = await one(sql, "SELECT material.id FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id WHERE material.run_id=$1 AND material.unit_id=$2 AND version.title=$3 AND version.body=$4 AND version.category='lesson' LIMIT 1", [run.id, unit.id, title, body]);
+    const equivalent = await one(sql, "SELECT material.id FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id WHERE material.run_id=$1 AND material.unit_id=$2 AND version.title=$3 AND version.body=$4 AND version.file_ids=$5::jsonb AND version.category='lesson' LIMIT 1", [run.id, unit.id, title, body, JSON.stringify(fileIds)]);
     needsMaterial = !equivalent;
     if (needsMaterial && existing && await one(sql, "SELECT id FROM lms_materials WHERE run_id=$1 AND unit_id=$2 LIMIT 1", [run.id, unit.id])) return { outcome: "conflict", code: "existing_material_review_required" };
   }
   const binding = existing ?? await one<{ id: string }>(sql, "INSERT INTO lms_lesson_bindings(run_id,unit_id,lesson_id) VALUES($1,$2,$3) RETURNING id", [run.id, unit.id, row.id]);
   if (needsMaterial) {
     const material = await one<{ id: string }>(sql, "INSERT INTO lms_materials(run_id,unit_id,state,created_by) VALUES($1,$2,'draft',$3) RETURNING id", [run.id, unit.id, actorUserId]);
-    await sql.query("INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by) VALUES($1,1,$2,$3,'lesson',$4)", [material!.id, title, body, actorUserId]);
+    await sql.query("INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by,file_ids) VALUES($1,1,$2,$3,'lesson',$4,$5::jsonb)", [material!.id, title, body, actorUserId, JSON.stringify(fileIds)]);
   }
   return { id: Number(binding!.id), outcome: existing && !needsMaterial ? "adopted" : "created" };
 }
@@ -162,8 +165,9 @@ async function planSource(sql: PoolClient, scope: LegacyScope, row: Source, opti
   const existing = await one<{ id: string; unit_id: string | null }>(sql, "SELECT id,unit_id FROM lms_lesson_bindings WHERE run_id=$1 AND lesson_id=$2", [run.id, row.id]);
   if (existing && existing.unit_id !== unit.id) return { outcome: "conflict", code: "existing_binding_review_required" };
   const body = typeof row.materials === "string" ? row.materials : "";
-  if (!body.trim()) return existing ? { id: Number(existing.id), outcome: "adopted" } : { outcome: "planned" };
-  const equivalent = await one(sql, "SELECT material.id FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id WHERE material.run_id=$1 AND material.unit_id=$2 AND version.title=$3 AND version.body=$4 AND version.category='lesson' LIMIT 1", [run.id, unit.id, row.topic, body]);
+  const fileIds = lessonFileIds(row);
+  if (!body.trim() && !fileIds.length) return existing ? { id: Number(existing.id), outcome: "adopted" } : { outcome: "planned" };
+  const equivalent = await one(sql, "SELECT material.id FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id WHERE material.run_id=$1 AND material.unit_id=$2 AND version.title=$3 AND version.body=$4 AND version.file_ids=$5::jsonb AND version.category='lesson' LIMIT 1", [run.id, unit.id, row.topic, body, JSON.stringify(fileIds)]);
   if (equivalent && existing) return { id: Number(existing.id), outcome: "adopted" };
   if (!equivalent && existing && await one(sql, "SELECT id FROM lms_materials WHERE run_id=$1 AND unit_id=$2 LIMIT 1", [run.id, unit.id])) return { outcome: "conflict", code: "existing_material_review_required" };
   return { outcome: "planned" };

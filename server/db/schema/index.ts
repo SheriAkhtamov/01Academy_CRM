@@ -552,6 +552,7 @@ export const academyLessons = pgTable("academy_lessons", {
   courseLessonId: varchar("course_lesson_id", { length: 100 }),
   topic: varchar("topic", { length: 255 }).notNull(),
   materials: text("materials"),
+  materialFileIds: jsonb("material_file_ids").$type<number[]>().notNull().default([]),
   scheduledAt: timestamp("scheduled_at").notNull(),
   durationMinutes: integer("duration_minutes").notNull().default(120),
   status: varchar("status", { length: 50 }).notNull().default("scheduled"),

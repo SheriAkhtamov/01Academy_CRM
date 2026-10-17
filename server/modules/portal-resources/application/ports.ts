@@ -8,7 +8,7 @@ import type {
   PortalPaymentAllocationDto,PortalUnallocatedPaymentsDto,
 } from '@shared/contracts/portal-resources';
 
-export type ResourceFile = PortalFileDto & { storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null };
+export type ResourceFile = PortalFileDto & { storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null; courseId?: number | null; purpose?: 'learning' | 'course_material' };
 export type ResourceScanClaim = { file: ResourceFile; sha256: string; leaseToken: string };
 export type ShareRecord = PortalShareDto & {
   studentId: number; tokenHash: string; tokenEnvelope: string;

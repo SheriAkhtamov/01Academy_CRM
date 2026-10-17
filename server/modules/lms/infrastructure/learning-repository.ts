@@ -1,4 +1,5 @@
 import { insertCrmCourseUnits } from './crm-course-units';
+import { courseSourceFilesAvailable } from './course-source-files';
 import { courseLessonPosition, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import type {
   LmsListOptions,
@@ -675,9 +676,10 @@ export class PgLearningRepository {
         topic: string;
         materials: string | null;
         courseLessonId?: string | null;
+        materialFileIds?: number[];
       }>(
         sql,
-        "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id FROM academy_lessons WHERE group_id=$1 AND status<>'cancelled' ORDER BY lesson_number",
+        "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id,COALESCE(to_jsonb(academy_lessons)->'material_file_ids','[]'::jsonb) AS material_file_ids FROM academy_lessons WHERE group_id=$1 AND status<>'cancelled' ORDER BY lesson_number",
         [input.groupId],
       );
       const units = await rows<{ id: number; position: number }>(
@@ -706,15 +708,17 @@ export class PgLearningRepository {
             "INSERT INTO lms_lesson_bindings(run_id,unit_id,lesson_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
             [run!.id, unit.id, lesson.id],
           );
-        if (lesson.materials?.trim()) {
+        const fileIds = lesson.materialFileIds ?? [];
+        if (!await courseSourceFilesAvailable(sql, fileIds, run!.id)) throw new LmsError('portalFileNotReady', 409);
+        if (lesson.materials?.trim() || fileIds.length) {
           const material = await one<{ id: number }>(
             sql,
             "INSERT INTO lms_materials(run_id,unit_id,created_by) VALUES($1,$2,$3) RETURNING id",
             [run!.id, unit?.id ?? null, actor.userId],
           );
           await sql.query(
-            "INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by) VALUES($1,1,$2,$3,'lesson',$4)",
-            [material!.id, lesson.topic, lesson.materials, actor.userId],
+            "INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by,file_ids) VALUES($1,1,$2,$3,'lesson',$4,$5::jsonb)",
+            [material!.id, lesson.topic, lesson.materials ?? '', actor.userId, JSON.stringify(fileIds)],
           );
         }
       }
@@ -749,6 +753,7 @@ export class PgLearningRepository {
           await this.assertUnit(sql, input.runId, input.unitId);
           await this.authorizeFiles(sql, actor, input.fileIds, {
             runId: input.runId,
+            allowCourseMaterial: true,
           });
           const material = await one<{ id: number }>(
             sql,
@@ -987,6 +992,7 @@ export class PgLearningRepository {
         async () => {
           await this.authorizeFiles(sql, actor, input.fileIds, {
             runId: material.runId,
+            allowCourseMaterial: true,
           });
           const version = await one<{ id: number }>(
             sql,

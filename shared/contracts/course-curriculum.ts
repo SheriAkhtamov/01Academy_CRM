@@ -2,13 +2,24 @@ import { z } from "zod";
 
 const identity = z.string().trim().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/);
 const title = z.string().trim().min(1).max(255);
+export const courseMaterialFileSchema = z.object({
+  id: z.number().int().positive(), name: z.string().min(1).max(255),
+  mime: z.string().min(1).max(255), size: z.number().int().nonnegative(),
+}).strict();
+export type CourseMaterialFile = z.infer<typeof courseMaterialFileSchema>;
 
 export const courseCurriculumMaterialSchema = z.object({
   id: identity,
   type: z.enum(["text", "link", "video", "file"]),
   title,
-  content: z.string().trim().min(1).max(100_000),
+  content: z.string().trim().max(100_000),
+  file: courseMaterialFileSchema.optional(),
 }).strict().superRefine((material, context) => {
+  if (material.file) {
+    if (material.type !== 'file' || material.content) context.addIssue({ code: z.ZodIssueCode.custom, path: ['file'], message: 'courseMaterialFileInvalid' });
+    return;
+  }
+  if (!material.content) context.addIssue({ code: z.ZodIssueCode.custom, path: ['content'], message: 'fieldRequired' });
   if (material.type === "text") return;
   try {
     const url = new URL(material.content);
@@ -21,7 +32,9 @@ export const courseCurriculumLessonSchema = z.object({
   id: identity,
   title,
   materials: z.array(courseCurriculumMaterialSchema).max(100),
-}).strict();
+}).strict().superRefine((lesson, context) => {
+  if (lesson.materials.filter(material => material.file).length > 5) context.addIssue({ code: z.ZodIssueCode.custom, path: ['materials'], message: 'courseLessonTooManyFiles' });
+});
 export const courseCurriculumBlockSchema = z.object({
   id: identity,
   title,
@@ -86,9 +99,11 @@ export function orderSelectedCourseLessons(program: unknown, ids: readonly strin
 
 /** Plain text snapshots are compatible with existing CRM and LMS material drafts. */
 export function courseLessonMaterialsText(lesson: CourseCurriculumLesson): string | null {
-  return lesson.materials.map(material => material.type === "text" ? `${material.title}\n${material.content}`
+  return lesson.materials.filter(material => !material.file).map(material => material.type === "text" ? `${material.title}\n${material.content}`
     : `[${material.title.replace(/\[/g, "［").replace(/\]/g, "］")}](${material.content.replace(/\(/g, "%28").replace(/\)/g, "%29")})`).join("\n\n") || null;
 }
+
+export const courseLessonFileIds = (lesson: CourseCurriculumLesson): number[] => [...new Set(lesson.materials.flatMap(material => material.file ? [material.file.id] : []))];
 
 /** Resolve against the pinned program, never a mutable course's current order. */
 export function courseLessonPosition(program: unknown, sourceId: string | null | undefined, lessonNumber: number): number | null {

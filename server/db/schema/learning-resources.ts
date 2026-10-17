@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, bigserial, integer, bigint, boolean, timestamp, jsonb, time, index, uniqueIndex, unique, primaryKey, foreignKey, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 /** SQL migrations own triggers; these declarations mirror columns, keys, indexes and checks. */
-export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: AnyPgColumn; paymentId: AnyPgColumn; projectId: AnyPgColumn; recipientId: AnyPgColumn; runId: AnyPgColumn; studentId: AnyPgColumn; userId: AnyPgColumn }) {
+export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: AnyPgColumn; courseId: AnyPgColumn; paymentId: AnyPgColumn; projectId: AnyPgColumn; recipientId: AnyPgColumn; runId: AnyPgColumn; studentId: AnyPgColumn; userId: AnyPgColumn }) {
   const lmsStaffFileCopies = pgTable("lms_staff_file_copies", {
     userId: integer("user_id").notNull(),
     requestKey: text("request_key").notNull(),
@@ -66,9 +66,15 @@ export function createLmsResourceTables(refs: { accountId: AnyPgColumn; linkId: 
     attachedAt: timestamp("attached_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    purpose: text("purpose").$type<'learning' | 'course_material'>().notNull().default('learning'),
+    courseId: integer("course_id"),
   }, (table) => [
     check("lms_files_check", sql.raw("((owner_account_id IS NULL) <> (owner_user_id IS NULL))")),
     check("lms_files_check1", sql.raw("((owner_account_id IS NULL) OR (student_id IS NOT NULL))")),
+    foreignKey({ name: 'lms_files_course_id_fkey', columns: [table.courseId], foreignColumns: [refs.courseId] }).onDelete('set null'),
+    check('lms_files_purpose_check', sql.raw("(purpose = ANY (ARRAY['learning'::text, 'course_material'::text]))")),
+    check('lms_files_course_material_scope', sql.raw("(((purpose = 'learning'::text) AND (course_id IS NULL)) OR ((purpose = 'course_material'::text) AND (owner_user_id IS NOT NULL) AND (owner_account_id IS NULL) AND (run_id IS NULL) AND (student_id IS NULL) AND (recipient_id IS NULL)))")),
+    index('lms_files_course_idx').on(table.courseId).where(sql.raw("((purpose = 'course_material'::text) AND (deleted_at IS NULL))")),
     check("lms_files_name_check", sql.raw("((length(name) >= 1) AND (length(name) <= 255))")),
     foreignKey({ name: "lms_files_owner_account_id_fkey", columns: [table.ownerAccountId], foreignColumns: [refs.accountId] }).onDelete("restrict"),
     foreignKey({ name: "lms_files_owner_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [refs.userId] }).onDelete("restrict"),

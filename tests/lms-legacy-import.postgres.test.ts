@@ -61,7 +61,7 @@ describe.skipIf(!databaseUrl)("LMS legacy import isolated PostgreSQL rehearsal",
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer REFERENCES users(id),full_name text,status text DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id integer REFERENCES academy_courses(id),teacher_id integer REFERENCES academy_teachers(id));
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer REFERENCES academy_students(id),group_id integer REFERENCES academy_groups(id),status text DEFAULT 'active',enrolled_at timestamptz,ended_at timestamptz);
-      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer REFERENCES academy_groups(id),course_id integer REFERENCES academy_courses(id),lesson_number integer,topic text,materials text,scheduled_at timestamptz,status text,duration_minutes integer DEFAULT 120,course_lesson_id text);
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer REFERENCES academy_groups(id),course_id integer REFERENCES academy_courses(id),lesson_number integer,topic text,materials text,scheduled_at timestamptz,status text,duration_minutes integer DEFAULT 120,course_lesson_id text,material_file_ids jsonb NOT NULL DEFAULT '[]');
       CREATE TABLE academy_lesson_reschedules(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),previous_scheduled_at timestamptz,next_scheduled_at timestamptz,created_at timestamptz DEFAULT now());
       CREATE TABLE academy_lesson_status_history(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),from_status text,to_status text,created_at timestamptz DEFAULT now());
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),student_id integer REFERENCES academy_students(id),status text,updated_at timestamptz DEFAULT now());
@@ -177,6 +177,25 @@ describe.skipIf(!databaseUrl)("LMS legacy import isolated PostgreSQL rehearsal",
     expect((await pool.query("SELECT format FROM lms_group_runs WHERE group_id=1")).rows[0].format).toBe("online");
     expect((await pool.query("SELECT count(*) FROM lms_group_runs")).rows[0].count).toBe("1");
     expect(report.records.some((item) => item.scope === "lessons" && item.sourceId === 3)).toBe(false);
+  });
+  it("preserves file-only lesson snapshots and detects a changed attachment without duplicating drafts", async () => {
+    const file = await pool.query(`INSERT INTO lms_files(owner_user_id,name,mime,size_bytes,storage_key,state)
+      VALUES(1,'Workbook.pdf','application/pdf',24,'course_workbook_storage_key','ready') RETURNING id`);
+    const id = Number(file.rows[0].id);
+    await pool.query("UPDATE academy_lessons SET materials=NULL,material_file_ids=$1::jsonb WHERE id=1", [JSON.stringify([id])]);
+    expect((await run({ apply: false, audit: false })).records.find((record) => record.scope === 'lessons' && record.sourceId === 1)?.outcome).toBe('planned');
+    const first = await run({ audit: false });
+    expect(first.records.find((record) => record.scope === 'lessons' && record.sourceId === 1)?.outcome).toBe('created');
+    const material = await pool.query(`SELECT version.body,version.file_ids FROM lms_material_versions version
+      JOIN lms_materials material ON material.id=version.material_id JOIN lms_lesson_bindings binding
+      ON binding.run_id=material.run_id AND binding.unit_id=material.unit_id WHERE binding.lesson_id=1`);
+    expect(material.rows).toEqual([{ body: '', file_ids: [id] }]);
+    expect((await run({ audit: false })).records.find((record) => record.scope === 'lessons' && record.sourceId === 1)?.outcome).toBe('unchanged');
+    await pool.query("DELETE FROM lms_legacy_imports WHERE source_type='lessons' AND source_id=1");
+    expect((await run({ audit: false })).records.find((record) => record.scope === 'lessons' && record.sourceId === 1)?.outcome).toBe('adopted');
+    await pool.query("UPDATE academy_lessons SET material_file_ids='[]' WHERE id=1");
+    expect((await run({ audit: false })).records.find((record) => record.scope === 'lessons' && record.sourceId === 1)).toMatchObject({ outcome: 'conflict', code: 'source_changed' });
+    expect((await pool.query("SELECT COUNT(*)::int AS count FROM lms_material_versions")).rows[0].count).toBe(3);
   });
   it("reports invalid programs and pre-existing edited content instead of replacing them", async () => {
     await run();

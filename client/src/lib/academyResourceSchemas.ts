@@ -35,7 +35,7 @@ export const createCourseSchema = (t: Translate) => z.object({
     for (const issue of result.error.issues) {
       let message = t('invalidDataFormat');
       if (issue.code === 'custom') {
-        const key = issue.message as 'courseMaterialUrlInvalid' | 'courseCurriculumDuplicateId' | 'courseCurriculumTooManyLessons';
+        const key = issue.message as 'courseMaterialUrlInvalid' | 'courseCurriculumDuplicateId' | 'courseCurriculumTooManyLessons' | 'courseMaterialFileInvalid' | 'courseLessonTooManyFiles' | 'fieldRequired';
         message = t(key);
       } else if (issue.code === 'too_small') {
         message = t(issue.path[issue.path.length - 1] === 'lessons' ? 'courseBlockLessonsRequired' : 'fieldRequired');

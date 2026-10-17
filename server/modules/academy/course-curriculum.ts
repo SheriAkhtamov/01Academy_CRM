@@ -1,6 +1,7 @@
 import {
   courseCurriculumSchema,
   courseLessonMaterialsText,
+  courseLessonFileIds,
   flattenCourseCurriculum,
   orderSelectedCourseLessons,
   selectedCourseLessonIdsSchema,
@@ -121,7 +122,7 @@ export async function reconcileGroupCourseLessons(group: Row, previous: Row, pre
         reason: 'Изменение программы группы', changedBy: actorId,
       });
     } else {
-      Object.assign(values, { groupId: Number(group.id), courseId: Number(group.courseId), schoolId: Number(group.schoolId), roomId: Number(group.roomId), teacherId: Number(group.teacherId), topic: lesson.title, materials: courseLessonMaterialsText(lesson), status: 'scheduled' });
+      Object.assign(values, { groupId: Number(group.id), courseId: Number(group.courseId), schoolId: Number(group.schoolId), roomId: Number(group.roomId), teacherId: Number(group.teacherId), topic: lesson.title, materials: courseLessonMaterialsText(lesson), materialFileIds: courseLessonFileIds(lesson), status: 'scheduled' });
       await prepareLesson({ values, excludeLessonIds: excluded });
       await insertRow('academy_lessons', values);
     }

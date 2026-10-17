@@ -1093,6 +1093,13 @@
       "when": 1791889606160,
       "tag": "0155_course_curriculum",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1791889606161,
+      "tag": "0156_course_material_files",
+      "breakpoints": true
     }
   ]
 }

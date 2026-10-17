@@ -32,7 +32,7 @@ describe.skipIf(!databaseUrl)('curriculum reconciliation in isolated PostgreSQL'
     await fixture.pool.query(`
       CREATE TABLE academy_courses(id integer PRIMARY KEY,program jsonb);
       CREATE TABLE academy_groups(id integer PRIMARY KEY,course_id integer,selected_course_lesson_ids jsonb,end_date timestamp,updated_at timestamp);
-      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,course_id integer,school_id integer,room_id integer,teacher_id integer,lesson_number integer,course_lesson_id text,topic text,materials text,scheduled_at timestamp,duration_minutes integer,status text,updated_at timestamp,UNIQUE(group_id,lesson_number));
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,course_id integer,school_id integer,room_id integer,teacher_id integer,lesson_number integer,course_lesson_id text,topic text,materials text,material_file_ids jsonb DEFAULT '[]',scheduled_at timestamp,duration_minutes integer,status text,updated_at timestamp,UNIQUE(group_id,lesson_number));
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer);
       CREATE TABLE academy_lesson_status_history(lesson_id integer,from_status text,to_status text,changed_by integer,comment text);
       CREATE TABLE academy_lesson_reschedules(lesson_id integer,previous_scheduled_at timestamp,next_scheduled_at timestamp,reason text,changed_by integer);

@@ -161,8 +161,8 @@ export class PortalResourceService {
     try {
       for(const sourceId of [...new Set(fileIds)]) {
         const source = await this.repository.readStaffFile(actor,sourceId);
-        if(!source || source.ownerUserId===null || source.runId!==sourceRunId || source.state!=='ready')throw new PortalResourceError('portalFileNotReady',409);
-        if(sourceRunId===targetRunId){ids.push(sourceId);continue;}
+        if(!source || source.ownerUserId===null || source.runId!==sourceRunId && source.purpose!=='course_material' || source.state!=='ready')throw new PortalResourceError('portalFileNotReady',409);
+        if(sourceRunId===targetRunId && source.runId===sourceRunId){ids.push(sourceId);continue;}
         const cloned = await this.repository.registerStaffClone(actor,sourceId,sourceRunId,targetRunId,idempotencyKey,this.tokens.random());
         if(cloned.created){created.push(cloned.file);await this.store.clone(source.storageKey,cloned.file.storageKey);await this.repository.completeStaffClone(cloned.file.id);}
         ids.push(cloned.file.id);

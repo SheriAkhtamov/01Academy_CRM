@@ -26,7 +26,7 @@ import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
 import { prepareGroupCourseLessons } from './course-curriculum';
-import { courseLessonMaterialsText, orderSelectedCourseLessons } from '@shared/contracts/course-curriculum';
+import { courseLessonFileIds, courseLessonMaterialsText, orderSelectedCourseLessons } from '@shared/contracts/course-curriculum';
 import {
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
@@ -777,6 +777,7 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
       courseLessonId: selectedLesson?.id ?? null,
       topic: selectedLesson?.title ?? nullableText(programLesson?.topic) ?? `Занятие ${slot.lessonNumber}`,
       materials: selectedLesson ? courseLessonMaterialsText(selectedLesson) : nullableText(programLesson?.description) ?? null,
+      materialFileIds: selectedLesson ? courseLessonFileIds(selectedLesson) : [],
       scheduledAt: slot.scheduledAt,
       durationMinutes: slot.durationMinutes,
       status: 'scheduled',

@@ -12,13 +12,15 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { createCurriculumBlock, createCurriculumLesson, createCurriculumMaterial, moveCurriculumItem } from './editor-model';
+import { CourseMaterialFileUpload } from './CourseMaterialFileUpload';
 
 type ControlAttributes = { id: string; name: string; 'aria-invalid': boolean; 'aria-describedby'?: string };
 
-function CurriculumField({ path, label, children }: {
+function CurriculumField({ path, label, children, required = true }: {
   path: FieldPath<CourseValues>;
   label?: string;
   children?: (attributes: ControlAttributes) => ReactNode;
+  required?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -27,7 +29,7 @@ function CurriculumField({ path, label, children }: {
   const message = error?.message || error?.root?.message;
   return (
     <div className="space-y-2">
-      {label ? <Label htmlFor={id}>{label}<span aria-hidden="true" className="ml-1 text-destructive">*</span></Label> : null}
+      {label ? <Label htmlFor={id}>{label}{required ? <span aria-hidden="true" className="ml-1 text-destructive">*</span> : null}</Label> : null}
       {children?.({ id, name: path, 'aria-invalid': Boolean(message), 'aria-describedby': message ? `${id}-error` : undefined })}
       {message ? <p id={`${id}-error`} role="alert" className="text-sm font-medium text-destructive">
         {Object.prototype.hasOwnProperty.call(translations, message) ? t(message as TranslationKey) : message}
@@ -56,7 +58,11 @@ function ItemActions({ index, count, onMove, onDelete, label }: {
   );
 }
 
-export function CourseCurriculumEditor({ unavailable = false }: { unavailable?: boolean }) {
+export function CourseCurriculumEditor({ unavailable = false, onUploadBusyChange, disabled = false }: {
+  unavailable?: boolean;
+  onUploadBusyChange: (id: string, busy: boolean) => void;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
   const form = useFormContext<CourseValues>();
   const program = useWatch({ control: form.control, name: 'program' });
@@ -65,6 +71,9 @@ export function CourseCurriculumEditor({ unavailable = false }: { unavailable?: 
     lessonId?: string;
     materialId?: string;
     name: string;
+  } | null>(null);
+  const [typeChange, setTypeChange] = useState<{
+    blockId: string; lessonId: string; materialId: string; type: CourseCurriculumMaterial['type'];
   } | null>(null);
   const materialOptions = [
     { value: 'text', label: t('courseMaterialText') },
@@ -83,6 +92,14 @@ export function CourseCurriculumEditor({ unavailable = false }: { unavailable?: 
   const updateMaterial = (blockIndex: number, lessonIndex: number, materialIndex: number, updates: Partial<CourseCurriculumMaterial>) => {
     const lesson = program.blocks[blockIndex].lessons[lessonIndex];
     updateLesson(blockIndex, lessonIndex, { materials: lesson.materials.map((material, index) => index === materialIndex ? { ...material, ...updates } : material) });
+  };
+  const updateMaterialById = (blockId: string, lessonId: string, materialId: string, updates: Partial<CourseCurriculumMaterial>) => {
+    const current = form.getValues('program');
+    change({ ...current, blocks: current.blocks.map((block) => block.id !== blockId ? block : {
+      ...block, lessons: block.lessons.map((lesson) => lesson.id !== lessonId ? lesson : {
+        ...lesson, materials: lesson.materials.map((material) => material.id !== materialId ? material : { ...material, ...updates }),
+      }),
+    }) });
   };
   const confirmDelete = () => {
     if (!deleteTarget) return;
@@ -160,17 +177,31 @@ export function CourseCurriculumEditor({ unavailable = false }: { unavailable?: 
                               {(attributes) => <Input {...attributes} value={material.title} onChange={(event) => updateMaterial(blockIndex, lessonIndex, materialIndex, { title: event.target.value })} maxLength={255} />}
                             </CurriculumField>
                             <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.type`} label={t('courseMaterialType')}>
-                              {(attributes) => <Select value={material.type} onValueChange={(type: CourseCurriculumMaterial['type']) => updateMaterial(blockIndex, lessonIndex, materialIndex, { type })}>
+                              {(attributes) => <Select value={material.type} onValueChange={(type: CourseCurriculumMaterial['type']) => {
+                                if (material.file && type !== 'file') setTypeChange({ blockId: block.id, lessonId: lesson.id, materialId: material.id, type });
+                                else updateMaterial(blockIndex, lessonIndex, materialIndex, { type });
+                              }}>
                                 <SelectTrigger {...attributes}><SelectValue /></SelectTrigger>
                                 <SelectContent>{materialOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                               </Select>}
                             </CurriculumField>
                           </div>
-                          <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.content`} label={material.type === 'text' ? t('courseMaterialContent') : t('courseMaterialUrl')}>
+                          {material.type === 'file' ? <>
+                            <CourseMaterialFileUpload materialId={material.id} file={material.file} onBusyChange={onUploadBusyChange} disabled={disabled}
+                              onUploaded={(file) => {
+                                const current = form.getValues('program').blocks.find((item) => item.id === block.id)?.lessons
+                                  .find((item) => item.id === lesson.id)?.materials.find((item) => item.id === material.id);
+                                if (current?.type === 'file') updateMaterialById(block.id, lesson.id, material.id, {
+                                  file, content: '', title: current.title || file.name,
+                                });
+                              }} />
+                            <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.file`} />
+                          </> : null}
+                          {material.file && material.type === 'file' ? null : <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.content`} label={material.type === 'text' ? t('courseMaterialContent') : t('courseMaterialUrl')} required={material.type !== 'file'}>
                             {(attributes) => material.type === 'text'
                               ? <Textarea {...attributes} value={material.content} onChange={(event) => updateMaterial(blockIndex, lessonIndex, materialIndex, { content: event.target.value })} rows={4} />
                               : <Input {...attributes} value={material.content} onChange={(event) => updateMaterial(blockIndex, lessonIndex, materialIndex, { content: event.target.value })} type="url" />}
-                          </CurriculumField>
+                          </CurriculumField>}
                         </section>
                       );
                     })}
@@ -194,6 +225,12 @@ export function CourseCurriculumEditor({ unavailable = false }: { unavailable?: 
       <ConfirmDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
         title={t('courseDeleteCurriculumItem')} description={t('courseDeleteCurriculumItemConfirm', { name: deleteTarget?.name ?? '' })}
         confirmLabel={t('delete')} variant="destructive" onConfirm={confirmDelete} />
+      <ConfirmDialog open={typeChange !== null} onOpenChange={(open) => { if (!open) setTypeChange(null); }}
+        title={t('courseRemoveMaterialFile')} description={t('courseRemoveMaterialFileConfirm')}
+        confirmLabel={t('courseRemoveMaterialFile')} variant="destructive" onConfirm={() => {
+          if (typeChange) updateMaterialById(typeChange.blockId, typeChange.lessonId, typeChange.materialId, { type: typeChange.type, file: undefined, content: '' });
+          setTypeChange(null);
+        }} />
     </section>
   );
 }

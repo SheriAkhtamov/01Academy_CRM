@@ -31,6 +31,7 @@ import { registerLeadDemoParticipantRoutes } from './lead-demo-participants.rout
 import { registerAcademyLeadDistributionRoutes } from './lead-distribution.router';
 import { registerSchoolArchiveRoutes } from './school-archive.router';
 import { registerResourceArchiveRoutes } from './resource-archive.router';
+import { registerCourseMaterialFileRoutes } from './course-material-files.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -66,6 +67,7 @@ registerAcademyFunnelRoutes(router);
 registerAcademyLeadDistributionRoutes(router);
 registerSchoolArchiveRoutes(router);
 registerResourceArchiveRoutes(router);
+registerCourseMaterialFileRoutes(router);
 registerAcademyModuleRoutes(router);
 registerGroupManagementRoutes(router);
 registerAcademyLeadRoutes(router);

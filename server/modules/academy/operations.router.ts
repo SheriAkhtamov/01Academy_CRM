@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { assertCourseCurriculumUpdateAllowed, parseCourseCurriculum } from './course-curriculum';
+import { attachCourseMaterialFiles, validateCourseMaterialFiles } from './course-material-files';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertSalesFunnelStage } from './sales-funnel-policy';
@@ -829,6 +830,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
     }
     if (oldCourse?.isArchived) throw Object.assign(new Error('courseIsArchived'), { statusCode: 409 });
     if (courseId && 'program' in courseValues) await assertCourseCurriculumUpdateAllowed(courseId, courseValues.program);
+    const fileIds = courseValues.program ? await validateCourseMaterialFiles(courseValues.program, req.user!.id, courseId) : [];
     if (courseId && oldCourse?.isActive !== false && courseValues.isActive === false) {
       const activeGroup = await queryOne(
         `SELECT id
@@ -847,6 +849,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
       ? await updateRow('academy_courses', courseId, courseValues)
       : await insertRow('academy_courses', courseValues);
     if (!course) throw Object.assign(new Error('Failed to save courses'), { statusCode: 500 });
+    await attachCourseMaterialFiles(fileIds, Number(course.id));
     if (teacherIds) await syncCourseTeacherAssignments(Number(course.id), teacherIds);
     return { course, oldCourse };
   });

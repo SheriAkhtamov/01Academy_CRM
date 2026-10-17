@@ -1,4 +1,5 @@
 import { insertCrmCourseUnits } from './crm-course-units';
+import { courseSourceFilesAvailable } from './course-source-files';
 import type { Pool, PoolClient } from "pg";
 import { courseLessonPosition, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { one, rows, transaction } from "./postgres-base";
@@ -24,7 +25,7 @@ type GroupSource = {
   selectedCourseLessonIds?: string[] | null;
 };
 type SourceMapping = { sourceHash: string; targetId: number };
-type LessonSource = { id: number; lessonNumber: number; topic: string; materials: string | null; courseLessonId?: string | null };
+type LessonSource = { id: number; lessonNumber: number; topic: string; materials: string | null; courseLessonId?: string | null; materialFileIds?: number[] };
 const CURSOR = "crm-preparation:groups:v1";
 
 function ensureLease(signal?: AbortSignal) {
@@ -151,7 +152,7 @@ export class PgCrmLearningPreparationRepository {
     const scope = `crm-preparation:lessons:${groupId}`;
     const cursor = await one<{ lastId: number }>(sql, "SELECT last_id FROM lms_legacy_import_checkpoints WHERE scope=$1", [scope]);
     const lessons = await rows<LessonSource>(sql,
-      "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id FROM academy_lessons WHERE group_id=$1 AND id>$2 AND status<>'cancelled' ORDER BY id LIMIT 200", [groupId, cursor?.lastId ?? 0]);
+      "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id,COALESCE(to_jsonb(academy_lessons)->'material_file_ids','[]'::jsonb) AS material_file_ids FROM academy_lessons WHERE group_id=$1 AND id>$2 AND status<>'cancelled' ORDER BY id LIMIT 200", [groupId, cursor?.lastId ?? 0]);
     const version = await one<{ program: unknown }>(sql, 'SELECT program FROM lms_course_versions WHERE id=$1', [versionId]);
     for (const lesson of lessons) {
       ensureLease(signal);
@@ -180,9 +181,11 @@ export class PgCrmLearningPreparationRepository {
 
   private async materialDraft(sql: PoolClient, lesson: LessonSource, runId: number, unitId: number | null, actor: CrmPreparationActor) {
     const mapped = await this.mapping(sql, "crm_lesson_material", lesson.id);
-    if (!lesson.materials?.trim()) return Boolean(mapped);
+    const fileIds = lesson.materialFileIds ?? [];
+    if (!lesson.materials?.trim() && !fileIds.length) return Boolean(mapped);
     if (!lesson.topic.trim()) return true;
-    const snapshot = { title: lesson.topic, body: lesson.materials!, category: "lesson" };
+    if (!await courseSourceFilesAvailable(sql, fileIds, runId)) return true;
+    const snapshot = { title: lesson.topic, body: lesson.materials ?? '', category: "lesson", ...(fileIds.length ? { fileIds } : {}) };
     const hash = crmPreparationHash(snapshot);
     if (mapped?.sourceHash === hash) return false;
     let materialId: number | null = null;
@@ -194,13 +197,13 @@ export class PgCrmLearningPreparationRepository {
          FROM lms_material_versions old JOIN lms_materials material ON material.id=old.material_id
          JOIN LATERAL(SELECT * FROM lms_material_versions WHERE material_id=material.id ORDER BY version DESC LIMIT 1) latest ON true
          WHERE old.id=$1 AND material.run_id=$2 FOR UPDATE OF material`, [mapped.targetId, runId]);
-      if (!previous || previous.state !== "draft" || previous.published || previous.latestId !== mapped.targetId || previous.createdBy !== null || crmPreparationHash({ title: previous.title, body: previous.body, category: previous.category }) !== mapped.sourceHash || JSON.stringify(previous.links) !== "[]" || JSON.stringify(previous.fileIds) !== "[]") return true;
+      if (!previous || previous.state !== "draft" || previous.published || previous.latestId !== mapped.targetId || previous.createdBy !== null || crmPreparationHash({ title: previous.title, body: previous.body, category: previous.category, ...(Array.isArray(previous.fileIds) && previous.fileIds.length ? { fileIds: previous.fileIds } : {}) }) !== mapped.sourceHash || JSON.stringify(previous.links) !== "[]") return true;
       materialId = previous.materialId;
       version = previous.version + 1;
     } else {
       const equivalent = await one<{ id: number }>(sql,
         `SELECT version.id FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id
-         WHERE material.run_id=$1 AND material.unit_id IS NOT DISTINCT FROM $2::bigint AND version.title=$3 AND version.body=$4 AND version.category='lesson' ORDER BY version.version DESC LIMIT 1`, [runId, unitId, snapshot.title, snapshot.body]);
+         WHERE material.run_id=$1 AND material.unit_id IS NOT DISTINCT FROM $2::bigint AND version.title=$3 AND version.body=$4 AND version.category='lesson' AND version.file_ids=$5::jsonb ORDER BY version.version DESC LIMIT 1`, [runId, unitId, snapshot.title, snapshot.body, JSON.stringify(fileIds)]);
       if (equivalent) {
         await this.remember(sql, "crm_lesson_material", lesson.id, hash, "lms_material_versions", equivalent.id, actor);
         return false;
@@ -209,7 +212,7 @@ export class PgCrmLearningPreparationRepository {
       materialId = (await one<{ id: number }>(sql, "INSERT INTO lms_materials(run_id,unit_id,state,created_by) VALUES($1,$2,'draft',NULL) RETURNING id", [runId, unitId]))!.id;
     }
     const created = await one<{ id: number }>(sql,
-      "INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by) VALUES($1,$2,$3,$4,'lesson',NULL) RETURNING id", [materialId, version, snapshot.title, snapshot.body]);
+      "INSERT INTO lms_material_versions(material_id,version,title,body,category,created_by,file_ids) VALUES($1,$2,$3,$4,'lesson',NULL,$5::jsonb) RETURNING id", [materialId, version, snapshot.title, snapshot.body, JSON.stringify(fileIds)]);
     await this.remember(sql, "crm_lesson_material", lesson.id, hash, "lms_material_versions", created!.id, actor);
     return false;
   }

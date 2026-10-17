@@ -24,6 +24,7 @@ import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { journalOperatorsQueryOptions } from '@/features/telephony/api';
+import { callRecordingReference, reminderCallResultKey, type ReminderCallHistoryFields } from '@/features/telephony/call-history';
 import { useCallJournalFilters } from '@/features/telephony/useCallJournalFilters';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
@@ -39,8 +40,8 @@ import {
 import { cn } from '@/lib/utils';
 import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
 
-type JournalCall = {
-  id: number;
+type JournalCall = ReminderCallHistoryFields & {
+  id: number | string;
   userId: number | null;
   userName: string | null;
   extension: string | null;
@@ -167,7 +168,6 @@ export default function CallJournalPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 className="pl-9"
-                placeholder={t('callJournalSearch')}
                 aria-label={t('search')}
               />
             </div>
@@ -359,15 +359,14 @@ function JournalTableRow({
       </td>
       <td className="px-4 py-3">
         <LeadCell call={call} />
-        <CallNote note={call.note} className="max-w-64" />
+        <CallNote note={call.source === 'voice_reminder' ? null : call.note} className="max-w-64" />
       </td>
       <td className="px-4 py-3">
-        <p className="font-medium"><EmployeeIdentity userId={call.userId} name={call.userName || t('notAssigned')} /></p>
-        {call.extension ? <p className="text-xs text-muted-foreground">{t('extensionShort')} {call.extension}</p> : null}
+        <CallOperator call={call} />
       </td>
       <td className="px-4 py-3"><CallStatus call={call} requiresCallback={requiresCallback} /></td>
       <td className="px-4 py-3 font-mono tabular-nums">{formatCallDuration(duration)}</td>
-      <td className="px-4 py-3"><CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} /></td>
+      <td className="px-4 py-3"><JournalRecording call={call} /></td>
       <td className="px-4 py-3 text-right">
         <Button type="button" variant="ghost" size={callDisabledLabel ? 'sm' : 'icon'}
           className={callDisabledLabel ? 'h-auto min-h-9 max-w-56 whitespace-normal py-2' : undefined}
@@ -402,15 +401,15 @@ function JournalMobileCard({
         <LeadCell call={call} />
         <CallStatus call={call} requiresCallback={requiresCallback} />
       </div>
-      <CallNote note={call.note} />
+      <CallNote note={call.source === 'voice_reminder' ? null : call.note} />
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><DirectionIcon className="size-3.5" />{call.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}</span>
         <span className="text-right">{dateTime(call.startedAt)}</span>
-        <EmployeeIdentity userId={call.userId} name={call.userName || t('notAssigned')} avatarClassName="size-6" />
+        <CallOperator call={call} compact />
         <span className="text-right font-mono">{formatCallDuration(call.talkSeconds)}</span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <CallRecordingPlayer callId={call.id} hasRecording={call.hasRecording} />
+        <JournalRecording call={call} />
         <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full whitespace-normal py-2"
           disabled={callDisabled} onClick={onCall}>
           <Phone className="shrink-0" />{callDisabledLabel ?? t('telephonyCallBack')}
@@ -422,10 +421,11 @@ function JournalMobileCard({
 
 function CallStatus({ call, requiresCallback }: { call: JournalCall; requiresCallback: boolean }) {
   const { t } = useTranslation();
+  const resultKey = reminderCallResultKey(call);
 
   return (
-    <div className="inline-flex items-center gap-2">
-      {requiresCallback ? (
+    <div className="inline-flex flex-wrap items-center gap-2">
+      {requiresCallback && call.source !== 'voice_reminder' ? (
         <span
           className="inline-flex size-2 shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_hsl(var(--destructive)/0.12)]"
           title={t('newMissedCall')}
@@ -436,8 +436,23 @@ function CallStatus({ call, requiresCallback }: { call: JournalCall; requiresCal
       <Badge variant={statusVariant(call.status)}>
         {t(telephonyStatusTranslationKey(call.status))}
       </Badge>
+      {resultKey ? <Badge variant="secondary" className="max-w-full whitespace-normal">{t(resultKey)}</Badge> : null}
     </div>
   );
+}
+
+function CallOperator({ call, compact = false }: { call: JournalCall; compact?: boolean }) {
+  const { t } = useTranslation();
+  if (call.source === 'voice_reminder') return <Badge variant="secondary">{t('telephonySourceVoiceReminder')}</Badge>;
+  return <div>
+    <EmployeeIdentity userId={call.userId} name={call.userName || t('notAssigned')} avatarClassName={compact ? 'size-6' : undefined} />
+    {!compact && call.extension ? <p className="text-xs text-muted-foreground">{t('extensionShort')} {call.extension}</p> : null}
+  </div>;
+}
+
+function JournalRecording({ call }: { call: JournalCall }) {
+  const reference = callRecordingReference(call);
+  return reference ? <CallRecordingPlayer {...reference} hasRecording={call.hasRecording} /> : null;
 }
 
 /** The note a manager wrote in the phone widget while the call was fresh. */

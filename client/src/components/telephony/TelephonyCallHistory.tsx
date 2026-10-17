@@ -15,8 +15,10 @@ import {
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
-import { formatCallDuration } from '@/lib/telephony';
+import { formatCallDuration, telephonyStatusTranslationKey } from '@/lib/telephony';
 import { missedCallUnreadQueryOptions, telephonyApi, telephonyQueryKeys, type CallHistoryFilter, type CallHistoryItem } from '@/features/telephony/api';
+import { callRecordingReference, reminderCallResultKey } from '@/features/telephony/call-history';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CallNoteEditor } from '@/components/telephony/CallNoteEditor';
@@ -42,7 +44,7 @@ const matchesSearch = (call: CallHistoryItem, search: string) => {
   return (
     call.phone.toLowerCase().includes(needle)
     || (call.contactName ?? '').toLowerCase().includes(needle)
-    || (call.note ?? '').toLowerCase().includes(needle)
+    || (call.source !== 'voice_reminder' && (call.note ?? '').toLowerCase().includes(needle))
   );
 };
 
@@ -86,14 +88,13 @@ export function TelephonyCallHistory({
   const [search, setSearch] = useState('');
   const [expandedNoteCallId, setExpandedNoteCallId] = useState<number | null>(null);
 
-  // A websocket event invalidates this key the moment a call changes, so the
-  // list needs no polling of its own.
   const historyQuery = useInfiniteQuery({
     queryKey: [...telephonyQueryKeys.calls, filter],
     queryFn: ({ pageParam }) => telephonyApi.getCalls(50, filter, pageParam),
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastOffset) => lastPage.length === 50 ? lastOffset + 50 : undefined,
     staleTime: 15_000,
+    refetchInterval: 10_000,
   });
 
   const missedQuery = useQuery(missedCallUnreadQueryOptions);
@@ -112,7 +113,6 @@ export function TelephonyCallHistory({
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder={t('telephonyHistorySearch')}
             aria-label={t('search')}
             className="h-9 pl-9 pr-9 text-sm"
           />
@@ -160,15 +160,23 @@ export function TelephonyCallHistory({
         <div className="divide-y divide-border/60">
           {visibleCalls.map((call) => {
             const contactHref = call.leadId ? `/sales/pipeline?lead=${call.leadId}` : null;
-            const noteOpen = expandedNoteCallId === call.id;
+            const isReminderCall = call.source === 'voice_reminder';
+            const managerCallId = !isReminderCall && typeof call.id === 'number' ? call.id : null;
+            const noteOpen = managerCallId !== null && expandedNoteCallId === managerCallId;
+            const resultKey = reminderCallResultKey(call) ?? telephonyStatusTranslationKey(call.status);
+            const recordingReference = callRecordingReference(call);
             return (
-              <div key={call.id} className="px-3 py-2.5">
+              <article key={`${call.source ?? 'manager'}:${call.id}`} className="px-3 py-2.5">
                 <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                   <CallGlyph call={call} />
                   <div className="min-w-0 flex-1 text-left">
                     <p className="truncate text-sm font-medium text-foreground">
                       {call.contactName || call.phone}
                     </p>
+                    {isReminderCall ? <div className="mt-1 flex flex-wrap gap-1.5">
+                      <Badge variant="secondary">{t('telephonySourceVoiceReminder')}</Badge>
+                      <Badge variant="secondary" className="max-w-full whitespace-normal">{t(resultKey)}</Badge>
+                    </div> : null}
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="truncate">
                         {formatAcademyDate(call.startedAt, language, {
@@ -198,19 +206,19 @@ export function TelephonyCallHistory({
                         <ArrowUpRight className="size-4" />
                       </Link>
                     ) : null}
-                    <button
+                    {managerCallId !== null ? <button
                       type="button"
                       className={cn(
                         'flex size-8 items-center justify-center rounded-full hover:bg-accent',
                         call.note ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                       )}
                       aria-pressed={noteOpen}
-                      onClick={() => setExpandedNoteCallId(noteOpen ? null : call.id)}
+                      onClick={() => setExpandedNoteCallId(noteOpen ? null : managerCallId)}
                       aria-label={t('telephonyAddNote')}
                       title={t('telephonyAddNote')}
                     >
                       <NotebookPen className="size-4" />
-                    </button>
+                    </button> : null}
                     <button
                       type="button"
                       className={cn('flex min-h-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50 disabled:opacity-60',
@@ -225,30 +233,30 @@ export function TelephonyCallHistory({
                   </div>
                 </div>
 
-                {call.note && !noteOpen ? (
+                {!isReminderCall && call.note && !noteOpen ? (
                   <p className="mt-1.5 line-clamp-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-left text-xs text-muted-foreground">
                     {call.note}
                   </p>
                 ) : null}
 
-                {call.hasRecording ? (
+                {call.hasRecording && recordingReference ? (
                   <CallRecordingPlayer
-                    callId={call.id}
+                    {...recordingReference}
                     hasRecording={call.hasRecording}
                     className="mt-1"
                   />
                 ) : null}
 
-                {noteOpen ? (
+                {noteOpen && managerCallId !== null ? (
                   <CallNoteEditor
-                    callId={call.id}
+                    callId={managerCallId}
                     note={call.note}
                     autoFocus
                     className="mt-2"
                     onSaved={() => setExpandedNoteCallId(null)}
                   />
                 ) : null}
-              </div>
+              </article>
             );
           })}
 
@@ -280,7 +288,7 @@ export function TelephonyCallHistory({
               onClick={onCollapse}
               className="flex items-center justify-center gap-1 px-3 py-3 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-primary"
             >
-              {t('telephonyHistoryCapped')}
+              {t('telephonyOpenJournal')}
               <ArrowUpRight className="size-3.5 shrink-0" />
             </Link>
           ) : null}

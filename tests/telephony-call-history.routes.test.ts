@@ -75,7 +75,8 @@ describe('telephony widget call history', () => {
     await request(app).get('/api/telephony/calls?filter=missed&limit=50&offset=100');
     const [sql, params] = mocks.query.mock.calls[0];
     expect(sql.indexOf(buildUnresolvedMissedCallSql('call'))).toBeLessThan(sql.indexOf('LIMIT'));
-    expect(sql).toContain('ORDER BY call.started_at DESC, call.id DESC');
+    expect(sql).toContain('UNION ALL');
+    expect(sql).toContain('ORDER BY call.started_at DESC,call.source,call.sort_number DESC NULLS LAST,call.sort_key DESC');
     expect(sql).toContain('LIMIT $2 OFFSET $3');
     expect(params).toEqual([1, 50, 100]);
   });

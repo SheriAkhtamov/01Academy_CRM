@@ -15,8 +15,13 @@ describe('call journal filters', () => {
   });
   it.each(CALL_JOURNAL_STATUSES)('accepts the %s status and adds the right condition', (status) => {
     const { sql, params } = buildCallJournalQuery(admin, { status });
-    if (status === 'callback') expect(sql).toContain(`AND ${buildUnresolvedMissedCallSql('call')}`);
-    else if (status === 'missed') expect(sql).toContain(`AND ${buildMissedIncomingCallSql('call')}`);
+    if (status === 'callback') {
+      expect(sql).toContain(`${buildUnresolvedMissedCallSql('call')} AS requires_callback`);
+      expect(sql).toContain('WHERE TRUE AND call.requires_callback');
+    } else if (status === 'missed') {
+      expect(sql).toContain(`${buildMissedIncomingCallSql('call')} AS is_missed`);
+      expect(sql).toContain('WHERE TRUE AND call.is_missed');
+    }
     else if (status !== 'all') expect(params).toContain(status);
     expect(callJournalQuerySchema.safeParse({ status }).success).toBe(true);
   });
@@ -37,8 +42,9 @@ describe('call journal filters', () => {
   it('uses Tashkent calendar dates with an inclusive end day', () => {
     const { sql, params } = buildCallJournalQuery(admin, { from: '2026-10-05', to: '2026-10-06' });
     expect(params).toEqual(['2026-10-04T19:00:00.000Z', '2026-10-06T19:00:00.000Z', 50, 1]);
-    expect(sql).toContain("call.started_at >= ($1::timestamptz AT TIME ZONE 'UTC')");
-    expect(sql).toContain("call.started_at < ($2::timestamptz AT TIME ZONE 'UTC')");
+    expect(sql).toContain("call.started_at AT TIME ZONE 'UTC' AS started_at");
+    expect(sql).toContain('call.started_at >= $1::timestamptz');
+    expect(sql).toContain('call.started_at < $2::timestamptz');
   });
   it('supports either date boundary independently', () => {
     expect(buildCallJournalQuery(admin, { from: '2026-10-05' }).params[0]).toBe('2026-10-04T19:00:00.000Z');

@@ -7,7 +7,7 @@ import { logger } from '../lib/logger';
 import { appConfig } from '../config';
 import { pool } from '../db';
 import { canAccessAcademyModule, hasLeadershipAccess } from '@shared/academy';
-import { telephonyCallVisibilityCondition, type TelephonyNotificationViewer } from './telephony-notifications';
+import { telephonyReminderHistoryCondition, type TelephonyNotificationViewer } from './telephony-notifications';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 export type ReminderCallCompletion = Pick<VoiceReminderCallResult, 'outcome' | 'response'> & { answeredAt?: Date | null };
@@ -86,11 +86,10 @@ export class VoiceReminderCallHistory {
 
   async readAuthorized(callId: string,viewer: TelephonyNotificationViewer): Promise<ReminderHistoryRow | null> {
     if (!hasLeadershipAccess(viewer) && !canAccessAcademyModule(viewer,'sales')) return null;
-    const visibility=telephonyCallVisibilityCondition(viewer,'$2');
+    const visibility=telephonyReminderHistoryCondition(viewer,'$2');
     return (await this.database.query<ReminderHistoryRow>(`SELECT ${reminderCallHistoryColumns}
       FROM voice_reminder_call_details detail JOIN voice_reminder_call_attempts attempt ON attempt.call_id=detail.call_id
       JOIN academy_leads lead ON lead.id=detail.lead_id
-      CROSS JOIN LATERAL (SELECT NULL::integer AS user_id) call
       WHERE detail.call_id=$1::uuid AND ${visibility}`,hasLeadershipAccess(viewer) ? [callId] : [callId,viewer.id])).rows[0] ?? null;
   }
 

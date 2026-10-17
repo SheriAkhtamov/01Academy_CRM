@@ -6,6 +6,7 @@ const callJournal = readFileSync(
   'utf8',
 );
 const callJournalQuery = readFileSync(new URL('../server/services/call-journal.ts', import.meta.url), 'utf8');
+const callReadModel = readFileSync(new URL('../server/services/telephony-call-read-model.ts', import.meta.url), 'utf8');
 const journalFilters = readFileSync(new URL('../client/src/features/telephony/useCallJournalFilters.ts', import.meta.url), 'utf8');
 const telephonyWidget = readFileSync(
   new URL('../client/src/components/telephony/TelephonyWidget.tsx', import.meta.url),
@@ -75,7 +76,8 @@ describe('call journal navigation', () => {
 
   it('shows a localized red indicator beside every missed call needing a callback', () => {
     expect(callJournal).toContain('requiresCallback={call.requiresCallback}');
-    expect(callJournalQuery).toContain("${buildUnresolvedMissedCallSql('call')} AS \"requiresCallback\"");
+    expect(callReadModel).toContain("${buildUnresolvedMissedCallSql('call')} AS requires_callback");
+    expect(callReadModel).toContain('call.requires_callback AS "requiresCallback"');
     expect(callJournal).toContain("title={t('newMissedCall')}");
     expect(callJournal).toContain('rounded-full bg-destructive');
     expect(callJournal).toContain('<CallStatus call={call} requiresCallback={requiresCallback} />');
@@ -120,7 +122,8 @@ describe('call journal navigation', () => {
     expect(callJournal).toContain('useCallJournalFilters(ownEmployeeId ?? ALL_EMPLOYEES)');
     expect(journalFilters).toContain("readCallJournalFilters(new URLSearchParams(routeSearch), defaultEmployeeId)");
     expect(journalFilters).toContain('const next = { ...filters, page: 1, ...changes };');
-    expect(callJournalQuery).toContain('buildPersonalCallHistorySql(addParam(Number(filters.userId)))');
+    expect(callJournalQuery).toContain('addParam(Number(filters.userId))');
+    expect(callReadModel).toContain('buildPersonalCallHistorySql(scope.employeeParameter)');
   });
 
   it('lists only telephony-enabled sales employees, the reader included', () => {
@@ -134,9 +137,11 @@ describe('call journal navigation', () => {
   });
 
   it('narrows the journal without widening what a manager may read', () => {
-    expect(callJournalQuery).toContain('telephonyCallVisibilityCondition(viewer');
+    expect(callReadModel).toContain('telephonyCallVisibilityCondition(viewer');
+    expect(callReadModel).toContain('telephonyReminderHistoryCondition(viewer');
     expect(callJournalQuery).toContain("WHERE ${conditions.join(' AND ')}");
-    expect(callJournalQuery).toContain("conditions.push('call.user_id IS NULL')");
+    expect(callReadModel).toContain("managerConditions.push('call.user_id IS NULL')");
+    expect(callReadModel).toContain("reminderConditions.push('lead.manager_id IS NULL')");
   });
 
   it('refreshes the short-lived OnlinePBX recording URL instead of returning a stored URL', () => {

@@ -28,8 +28,8 @@ vi.mock('../server/services/onlinepbx', () => ({
 
 import { isAllowedOnlinePbxRecordingUrl } from '../server/routes/telephony.routes';
 
-const telephonyRoutes = readFileSync(
-  new URL('../server/routes/telephony.routes.ts', import.meta.url),
+const callReadModel = readFileSync(
+  new URL('../server/services/telephony-call-read-model.ts', import.meta.url),
   'utf8',
 );
 const telephonyRecordingRoutes = readFileSync(
@@ -58,8 +58,8 @@ describe('OnlinePBX recording proxy URL validation', () => {
   });
 
   it('keeps stored recordings playable even when legacy talk time is zero', () => {
-    expect(telephonyRoutes).toContain(
-      `(NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording"`,
+    expect(callReadModel).toContain(
+      `(NULLIF(BTRIM(call.recording_url),'') IS NOT NULL OR call.talk_seconds>0) AS has_recording`,
     );
     expect(leadCallHistory).toContain(
       `(NULLIF(BTRIM(call.recording_url),'') IS NOT NULL OR call.talk_seconds>0)`,

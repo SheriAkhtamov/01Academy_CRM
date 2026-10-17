@@ -45,14 +45,23 @@ export const buildUnresolvedMissedCallSql = (callAlias: string) => `(
   )
 )`;
 
-export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
-  call.user_id = ${actorParameter}
-  OR lead.manager_id = ${actorParameter}
+const buildLeadCallVisibilitySql = (actorParameter: string) => `(
+  lead.manager_id = ${actorParameter}
   OR (lead.id IS NOT NULL AND ${unassignedLeadVisibleToSalesSql('lead')} AND EXISTS (
     SELECT 1 FROM academy_sales_funnel_users assignment
     WHERE assignment.user_id = ${actorParameter} AND assignment.funnel_id = lead.funnel_id
   ))
 )`;
+
+export const buildTelephonyCallVisibilitySql = (actorParameter: string) => `(
+  call.user_id = ${actorParameter}
+  OR ${buildLeadCallVisibilitySql(actorParameter)}
+)`;
+
+// A reminder borrows an extension, never the employee's access to a lead.
+export const telephonyReminderHistoryCondition = (viewer: TelephonyNotificationViewer, actorParameter = '$1') => (
+  hasLeadershipAccess(viewer as ModuleAccessSource) ? 'TRUE' : buildLeadCallVisibilitySql(actorParameter)
+);
 
 export const telephonyCallVisibilityCondition = (viewer: TelephonyNotificationViewer, actorParameter = '$1') => (
   hasLeadershipAccess(viewer as ModuleAccessSource)

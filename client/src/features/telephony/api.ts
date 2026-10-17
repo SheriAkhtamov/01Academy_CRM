@@ -2,6 +2,7 @@ import { apiRequest } from '@/lib/queryClient';
 import type { TelephonyCallStatus } from '@/lib/telephony';
 import { withTelephonyRequestDeadline } from './request-deadline';
 import { ownTelephonyLineStatusSchema, type OwnTelephonyLineStatus, type TelephonyLineLease } from '@shared/contracts/telephony-lines';
+import type { ReminderCallHistoryFields } from './call-history';
 
 export type MissedCallUnreadSummary = {
   count: number;
@@ -9,8 +10,8 @@ export type MissedCallUnreadSummary = {
 
 export type CallHistoryFilter = 'all' | 'missed' | 'incoming' | 'outgoing';
 
-export type CallHistoryItem = {
-  id: number;
+export type CallHistoryItem = ReminderCallHistoryFields & {
+  id: number | string;
   clientCallId: string | null;
   providerCallId: string | null;
   direction: 'incoming' | 'outgoing';

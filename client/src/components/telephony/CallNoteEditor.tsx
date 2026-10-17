@@ -84,7 +84,6 @@ export function CallNoteEditor({
         }}
         rows={3}
         maxLength={2_000}
-        placeholder={t('telephonyNotePlaceholder')}
         aria-label={t('telephonyNote')}
         className="min-h-[68px] resize-none text-sm"
       />

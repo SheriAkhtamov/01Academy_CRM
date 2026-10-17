@@ -32,12 +32,11 @@ import {
   synchronizeOnlinePbxRoutingWithRetry,
 } from '../services/telephony-routing';
 import {
-  buildUnresolvedMissedCallSql,
   getMissedCallUnreadSummary,
-  telephonyPersonalHistoryCondition,
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { buildCallJournalQuery } from '../services/call-journal';
+import { buildPersonalCallHistoryQuery } from '../services/telephony-call-read-model';
 import voiceReminderRecordingRoutes from './voice-reminder-recording.routes';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
 
@@ -1238,32 +1237,11 @@ router.get('/calls', requireAuth, asyncRoute(async (req, res) => {
   const limit = Math.min(Math.max(safeInteger(req.query.limit) || 30, 1), 100);
   const offset = safeInteger(req.query.offset);
   const filter = String(req.query.filter ?? 'all');
-  if (!['all', 'missed', 'incoming', 'outgoing'].includes(filter)) {
+  if (filter !== 'all' && filter !== 'missed' && filter !== 'incoming' && filter !== 'outgoing') {
     return res.status(400).json({ error: 'invalidData' });
   }
-  const params: unknown[] = [req.user!.id];
-  const conditions = [telephonyPersonalHistoryCondition(req.user!)];
-  if (filter === 'missed') conditions.push(buildUnresolvedMissedCallSql('call'));
-  else if (filter !== 'all') conditions.push(`call.direction = $${params.push(filter)}`);
-  const limitParam = `$${params.push(limit)}`;
-  const offsetParam = `$${params.push(offset)}`;
-  const result = await pool.query(
-    `SELECT call.id, call.client_call_id AS "clientCallId", call.provider_call_id AS "providerCallId",
-            call.user_id AS "userId", call.extension, call.direction, call.status, call.phone,
-            call.contact_type AS "contactType", call.contact_id AS "contactId",
-            COALESCE(NULLIF(lead.contact_name, ''), call.contact_name) AS "contactName",
-            call.lead_id AS "leadId", call.started_at AS "startedAt",
-            call.answered_at AS "answeredAt", call.ended_at AS "endedAt",
-            call.duration_seconds AS "durationSeconds", call.talk_seconds AS "talkSeconds",
-            call.hangup_cause AS "hangupCause", call.note,
-            (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording"
-     FROM telephony_calls call
-     LEFT JOIN academy_leads lead ON lead.id = call.lead_id
-     WHERE ${conditions.join(' AND ')}
-     ORDER BY call.started_at DESC, call.id DESC
-     LIMIT ${limitParam} OFFSET ${offsetParam}`,
-    params,
-  );
+  const history = buildPersonalCallHistoryQuery(req.user!, filter, limit, offset);
+  const result = await pool.query(history.sql, history.params);
   res.json(result.rows);
 }));
 

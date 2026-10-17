@@ -213,8 +213,11 @@ describe('telephony widget history', () => {
     expect(widget).toContain('href="/sales/calls"');
   });
 
-  it('relies on the websocket invalidation rather than polling on a timer', () => {
-    expect(history).not.toContain('refetchInterval');
+  it('refreshes background reminder history while preserving websocket invalidation', () => {
+    expect(history).toContain('refetchInterval: 10_000');
+    const callUpdates = read('client/src/hooks/useWebSocket.tsx')
+      .split("case 'TELEPHONY_CALL_UPDATED':")[1].split('break;')[0];
+    expect(callUpdates).toContain("queryKey: ['/api/telephony/calls']");
   });
 });
 

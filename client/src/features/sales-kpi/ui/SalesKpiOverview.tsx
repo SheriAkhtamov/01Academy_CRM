@@ -16,7 +16,7 @@ function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOver
   const [reviewOpen, setReviewOpen] = useState(false);
   if (reviewOpen) return <KpiSaleReviewDialog sales={employee.calculation.reviewableSales} onClose={() => setReviewOpen(false)} />;
   return <>
-    <OverviewDialog title={<span className="inline-flex min-w-0 items-center gap-2"><EmployeeAvatar userId={employee.id} name={employee.name} className="size-9" /><span>{t('salesEmployeeResult').replace('{name}', employee.name)}</span></span>} description={periodLabel} onClose={onClose}>
+    <OverviewDialog title={<span className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true"><EmployeeAvatar userId={employee.id} name={employee.name} className="size-9" /></span><span>{t('salesEmployeeResult').replace('{name}', employee.name)}</span></span>} description={periodLabel} onClose={onClose}>
       <KpiMetricsGrid metrics={employee.calculation.metrics} onSelect={setMetric} />
       {employee.calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</button> : null}
     </OverviewDialog>

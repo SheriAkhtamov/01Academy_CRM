@@ -16,7 +16,7 @@ import { pool } from '../db';
 import { getPasswordPolicyError, isPasswordWithinBcryptLimit } from '../lib/password-policy';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
 import { sendHttpError } from '../lib/http-errors';
-import { disconnectRealtimeSession, disconnectRealtimeUser } from '../realtime/realtime-hub';
+import { disconnectRealtimeSession, disconnectRealtimeUser, publishRealtimeEvent } from '../realtime/realtime-hub';
 import { syncPrimaryUserPhone } from './user-phone-support';
 
 const router = Router();
@@ -266,6 +266,7 @@ router.put('/me/settings', requireAuth, parseUserPhotoUpload, async (req: Reques
 
         const updatedUser = await storage.getUser(currentUser.id);
         if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+        publishRealtimeEvent({ type: 'EMPLOYEE_IDENTITY_UPDATED', data: { userId: currentUser.id } });
         await storage.createAuditLog({
             userId: currentUser.id,
             action: 'UPDATE_OWN_SETTINGS',

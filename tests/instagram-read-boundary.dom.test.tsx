@@ -15,11 +15,12 @@ import InstagramMessagesPage from '../client/src/pages/sales/InstagramMessagesPa
 const conversation = {
   id: 9, accountId: 1, participantIgsid: 'participant-test', participantUsername: 'test_contact',
   participantName: 'Test Contact', unreadCount: 2, accountUsername: 'academy', accountStatus: 'connected',
+  accountProfilePictureUrl: 'https://scontent.cdninstagram.com/account-photo',
   canReply: false, lastMessage: 'unseen customer message', lastMessageAt: '2026-10-08T10:00:00Z',
 };
 const message = (id: number) => ({
   id, conversationId: 9, direction: 'inbound', senderIgsid: 'participant-test', recipientIgsid: 'academy',
-  content: `Customer message ${id}`, messageType: 'text', status: 'received', sentBy: null,
+  content: `Customer message ${id}`, messageType: 'text', status: 'received', sentBy: null as number | null,
   createdAt: '2026-10-08T10:00:00Z',
 });
 const clients: QueryClient[] = [];
@@ -46,13 +47,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(messages: () => Promise<ReturnType<typeof message>[]>) {
+function mount(messages: () => Promise<ReturnType<typeof message>[]>, employees: Array<{ id: number; fullName: string; avatarUrl: string }> = []) {
   mocks.api.mockImplementation(async (_method: string, url: string) => {
     if (url.endsWith('/messages')) return messages();
     if (url.endsWith('/read')) return { id: 9, unreadCount: 1 };
     if (url === '/api/instagram/conversations') return [conversation];
     if (url.endsWith('/sync/status')) return { status: 'idle', stats: {} };
-    if (url === '/api/users') return [];
+    if (url === '/api/users') return employees;
     return { leads: [], statuses: [], funnels: [] };
   });
   const client = new QueryClient({ defaultOptions: { queries: {
@@ -64,6 +65,31 @@ function mount(messages: () => Promise<ReturnType<typeof message>[]>) {
 }
 
 describe('Instagram acknowledgements after visible message loading', () => {
+  it('labels every outbound message with its actual employee or Instagram account, including repeated senders', async () => {
+    vi.stubGlobal('Image', class extends EventTarget {
+      complete = false;
+      naturalWidth = 0;
+      set src(_value: string) { queueMicrotask(() => { this.complete = true; this.naturalWidth = 24; this.dispatchEvent(new Event('load')); }); }
+    });
+    mount(async () => [
+      { ...message(41), direction: 'outbound', sentBy: 8 },
+      { ...message(44), direction: 'outbound', sentBy: 8 },
+      { ...message(42), direction: 'outbound', sentBy: 9 },
+      { ...message(43), direction: 'outbound', sentBy: null },
+    ], [
+      { id: 8, fullName: 'Employee Eight', avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa' },
+      { id: 9, fullName: 'Employee Nine', avatarUrl: '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb' },
+    ]);
+    expect(await screen.findAllByText('Employee Eight')).toHaveLength(2);
+    expect(await screen.findByText('Employee Nine')).toBeTruthy();
+    await waitFor(() => {
+      const sources = [...document.querySelectorAll('img')].map((image) => image.getAttribute('src'));
+      expect(sources).toContain('/api/users/photos/aaaaaaaaaaaaaaaaaaaaa');
+      expect(sources).toContain('/api/users/photos/bbbbbbbbbbbbbbbbbbbbb');
+      expect(sources).toContain('/api/instagram/media-proxy?url=https%3A%2F%2Fscontent.cdninstagram.com%2Faccount-photo');
+    });
+    expect(screen.getAllByText('@academy').length).toBeGreaterThan(0);
+  });
   it('does not mark an automatically selected conversation read while its messages are pending', async () => {
     const client = mount(() => new Promise(() => {}));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('GET', '/api/instagram/conversations/9/messages'));

@@ -36,7 +36,7 @@ import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useCalendarShortcuts } from '@/hooks/useCalendarShortcuts';
 import { useIsCompactViewport } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/hooks/useTranslation';
-import { getInitials } from '@/lib/auth';
+import { BoardUserAvatar } from './BoardUserAvatar';
 import {
     PRIORITY_META,
     TASK_COLOR_META,
@@ -211,8 +211,9 @@ function TaskChip({
                 {task.title}
             </span>
             {task.assignee ? (
-                <span className={cn('block truncate opacity-90', roomy ? 'mt-0.5 text-xs' : 'text-xs')}>
-                    {roomy ? task.assignee.fullName : getInitials(task.assignee.fullName)}
+                <span className={cn('flex min-w-0 items-center gap-1.5 opacity-90', roomy ? 'mt-0.5 text-xs' : 'text-xs')}>
+                    <BoardUserAvatar user={task.assignee} className={roomy ? 'size-5' : 'size-4 text-[8px]'} />
+                    <span className={roomy ? 'truncate' : 'sr-only'}>{task.assignee.fullName}</span>
                 </span>
             ) : null}
         </button>

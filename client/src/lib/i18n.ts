@@ -1757,10 +1757,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'End date cannot be earlier than start date',
     ru: 'Дата окончания не может быть раньше даты начала',
   },
-  attachmentSizeHint: {
-    en: 'Up to 10 MB per file · PDF, Word, Excel, photos and other documents',
-    ru: 'До 10 МБ на файл · PDF, Word, Excel, фото и другие документы',
-  },
   fileTooLarge: {
     en: 'File is too large (maximum 10 MB)',
     ru: 'Файл слишком большой (максимум 10 МБ)',
@@ -3537,7 +3533,6 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     en: 'The 24-hour Instagram reply window has expired.',
     ru: '24-часовое окно ответа Instagram истекло.',
   },
-  instagramMessagingWindowExpiredDesc: { en: "You can reply within 24 hours of the customer’s last message.", ru: "Ответить можно в течение 24 часов после последнего сообщения клиента." },
   instagramMessagingWindowExpiredTitle: {
     en: 'Reply window is closed',
     ru: 'Окно ответа закрыто',
@@ -3808,12 +3803,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   financeCenterPreviousSalary: { en: 'Previous salary', ru: 'Предыдущий оклад' },
   financeCenterSalaryHistory: { en: 'Salary history', ru: 'История окладов' },
   financeCenterNoSalaryHistory: {
-    en: 'History appears after a salary is set',
-    ru: 'История появится после назначения оклада',
-  },
-  financeCenterSelectEmployee: {
-    en: 'Select an employee to view salary history',
-    ru: 'Выберите сотрудника, чтобы увидеть историю окладов',
+    en: 'No salary history',
+    ru: 'Нет истории окладов',
   },
   financeCenterExpenseDialogTitle: { en: 'New operating expense', ru: 'Новый расход' },
   financeCenterTitle: { en: 'Expense title', ru: 'Название' },

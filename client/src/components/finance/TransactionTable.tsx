@@ -3,6 +3,7 @@ import type { DataTableColumn } from '@/components/ux/DataTable';
 import type { financeCopy } from '@/lib/financeCenter';
 import type { Row } from '@/lib/financeRows';
 import { StatusBadge } from '@/components/finance/StatusBadge';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
 export function TransactionTable({
   rows,
@@ -56,7 +57,7 @@ export function TransactionTable({
       accessor: (row: Row) => row.counterparty || '',
       render: (row: Row) => (
         <span className="block max-w-[240px] truncate text-muted-foreground" title={row.counterparty || undefined}>
-          {row.counterparty || '—'}
+          {row.counterpartyUserId ? <EmployeeIdentity userId={row.counterpartyUserId} name={row.counterparty} /> : row.counterparty || '—'}
         </span>
       ),
       sortable: true,

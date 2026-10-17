@@ -45,6 +45,7 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
       school.name AS school_name,
       room.name AS room_name,
       teacher.full_name AS teacher_name,
+      teacher.user_id AS teacher_user_id,
       COALESCE(
         jsonb_agg(
           jsonb_build_object(
@@ -83,7 +84,7 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
    LEFT JOIN academy_students student ON student.id = participant.student_id
    LEFT JOIN academy_leads lead ON lead.id = student.lead_id
    WHERE ${where}
-   GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name
+   GROUP BY demo.id, course.name, school.name, room.name, teacher.full_name, teacher.user_id
    ORDER BY demo.scheduled_at, demo.id`,
   values,
 );
@@ -110,6 +111,7 @@ const presentTeacherDemoLesson = (demo: Row) => ({
   roomName: demo.roomName,
   teacherId: demo.teacherId,
   teacherName: demo.teacherName,
+  teacherUserId: demo.teacherUserId,
   scheduledAt: demo.scheduledAt,
   durationMinutes: demo.durationMinutes,
   format: demo.format,

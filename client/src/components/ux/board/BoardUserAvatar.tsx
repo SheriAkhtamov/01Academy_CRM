@@ -6,10 +6,11 @@ import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { boardTransportSession, hasMiniBoardSession, subscribeBoardTransportSession } from '@/features/board/transport';
 import { fetchMiniBoardUserPhoto } from '@/features/board/user-photo';
-import { safeUserPhotoUrl } from '@shared/user-photo';
+import { safeEmployeePhotoUrl } from '@shared/user-photo';
+import { useEmployeeIdentity } from '@/features/employees/EmployeeIdentityProvider';
 
 interface BoardUserAvatarProps {
-  user?: { fullName?: string; avatarUrl?: string | null } | null;
+  user?: { id?: number; fullName?: string; avatarUrl?: string | null } | null;
   className?: string;
   miniMode?: boolean;
 }
@@ -39,8 +40,9 @@ function MiniPhotoImage({ photoUrl }: { photoUrl: string }) {
 }
 
 export function BoardUserAvatar({ user, className, miniMode = false }: BoardUserAvatarProps) {
-  const name = user?.fullName?.trim();
-  const photoUrl = safeUserPhotoUrl(user?.avatarUrl);
+  const identity = useEmployeeIdentity(miniMode ? undefined : user?.id) ?? user;
+  const name = identity?.fullName?.trim();
+  const photoUrl = safeEmployeePhotoUrl(identity?.avatarUrl);
   return (
     <Avatar aria-hidden="true" className={cn('size-6 border border-border', className)}>
       {miniMode && photoUrl ? <MiniPhotoImage key={photoUrl} photoUrl={photoUrl} />

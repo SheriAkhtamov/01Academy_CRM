@@ -97,7 +97,6 @@ export const financeCopy = (t: Translate) => ({
   previousSalary: t('financeCenterPreviousSalary'),
   salaryHistory: t('financeCenterSalaryHistory'),
   noSalaryHistory: t('financeCenterNoSalaryHistory'),
-  selectEmployee: t('financeCenterSelectEmployee'),
   expenseDialogTitle: t('financeCenterExpenseDialogTitle'),
   title: t('financeCenterTitle'),
   description: t('description'),

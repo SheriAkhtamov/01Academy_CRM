@@ -37,7 +37,6 @@ export function TaskFilePicker({ files, onChange, disabled, uploaded, activeFile
     <Button type="button" size="sm" variant="outline" disabled={disabled || files.length >= MAX_SELECTED_ATTACHMENTS} onClick={() => input.current?.click()}>
       <Paperclip className="mr-2 size-4" />{t('attachFile')}
     </Button>
-    <p className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</p>
     <ul className="space-y-2">
       {files.map((file) => <li key={`${file.name}:${file.size}:${file.lastModified}`} className="flex min-w-0 items-center gap-2 rounded-lg border p-2">
         {isPhotoAttachment(file.name) ? <TaskPhotoPreview file={file} name={file.name} /> : <Paperclip className="size-5 shrink-0" />}

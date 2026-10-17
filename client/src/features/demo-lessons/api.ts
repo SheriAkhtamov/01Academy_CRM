@@ -45,6 +45,7 @@ export interface DemoLesson {
   roomName?: string | null;
   teacherId: number;
   teacherName?: string | null;
+  teacherUserId?: number | null;
   scheduledAt: string;
   durationMinutes: number;
   format: 'offline' | 'online';

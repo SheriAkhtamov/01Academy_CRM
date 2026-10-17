@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { BoardUserAvatar } from './BoardUserAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Select,
@@ -55,7 +55,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { canCommentOnBoardTask, canEditBoardTask, canFinalizeBoardTask, canManageBoardTask, isSelfAssignedBoardTask } from '@shared/board-permissions';
-import { getInitials } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
     PRIORITY_META,
@@ -84,16 +83,12 @@ interface TaskDetailSheetProps {
 const WORKING_STATUSES: BoardStatus[] = ['backlog', 'todo', 'in_progress', 'done'];
 const UNASSIGNED = 'unassigned';
 
-function UserChip({ user }: { user: UserMini | null }) {
+function UserChip({ user, miniMode = false }: { user: UserMini | null; miniMode?: boolean }) {
     const { t } = useTranslation();
     if (!user) return <span className="text-sm text-muted-foreground">{t('unassigned')}</span>;
     return (
         <span className="flex items-center gap-2">
-            <Avatar className="size-6 border border-border">
-                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
-                    {getInitials(user.fullName)}
-                </AvatarFallback>
-            </Avatar>
+            <BoardUserAvatar user={user} miniMode={miniMode} />
             <span className="text-sm text-foreground">{user.fullName}</span>
         </span>
     );
@@ -523,8 +518,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             <p className="whitespace-pre-wrap text-sm text-foreground/90">{task.description}</p>
                                         ) : null}
                                         <div className={cn('grid grid-cols-2 gap-x-4 gap-y-3 text-sm', tasksOnly && 'grid-cols-1')}>
-                                            <MetaRow label={t('creatorLabel')}><UserChip user={task.creator} /></MetaRow>
-                                            <MetaRow label={t('assigneeLabel')}><UserChip user={task.assignee} /></MetaRow>
+                                            <MetaRow label={t('creatorLabel')}><UserChip user={task.creator} miniMode={tasksOnly} /></MetaRow>
+                                            <MetaRow label={t('assigneeLabel')}><UserChip user={task.assignee} miniMode={tasksOnly} /></MetaRow>
                                             <MetaRow label={t('dueDateLabel')}>
                                                 <span className="text-foreground">{task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('noDueDate')}</span>
                                             </MetaRow>
@@ -580,9 +575,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <li key={c.id} className="rounded-lg border border-border bg-card p-3">
                                                     <div className="flex items-center justify-between gap-2">
                                                         <div className="flex items-center gap-2">
-                                                            <Avatar className="size-6 border border-border">
-                                                                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">{getInitials(c.author?.fullName ?? '?')}</AvatarFallback>
-                                                            </Avatar>
+                                                            <BoardUserAvatar user={c.author} miniMode={tasksOnly} />
                                                             <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
                                                             {c.isUnread ? <UnreadTaskCommentDot /> : null}
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt, language)}</span>
@@ -646,7 +639,6 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <Button variant="outline" size="sm" className="gap-1.5" disabled={uploadMutation.isPending} onClick={() => fileInputRef.current?.click()}>
                                                     {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
                                                 </Button>
-                                                <span className="text-xs text-muted-foreground">{t('attachmentSizeHint')}</span>
                                             </div>
                                             {uploadPercent !== null ? (
                                                 <div className="flex items-center gap-2" role="progressbar" aria-label={t('attachmentUploading')} aria-valuenow={uploadPercent} aria-valuemin={0} aria-valuemax={100}>

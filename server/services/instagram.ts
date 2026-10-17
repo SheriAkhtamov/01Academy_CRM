@@ -2421,7 +2421,7 @@ export const listInstagramConversations = async (user: InstagramUser) => {
               ELSE COALESCE(reader_unread.unread_count, 0)
             END::int AS unread_count,
             c.last_message_at, c.last_inbound_at, c.last_outbound_at, c.last_read_message_at,
-            a.username AS account_username, a.status AS account_status,
+            a.username AS account_username, a.profile_picture_url AS account_profile_picture_url, a.status AS account_status,
             l.contact_name, l.status_code, l.manager_id, u.full_name AS manager_name,
             last_message.content AS last_message,
             last_message.direction AS last_message_direction
@@ -2560,6 +2560,7 @@ export const sendInstagramTextMessage = async (
        VALUES ($1,$2,'outbound',$3,$4,$5,'text','sent',$6,$7)
        ON CONFLICT (external_message_id) DO UPDATE SET
          status = 'sent',
+         sent_by = COALESCE(instagram_messages.sent_by, EXCLUDED.sent_by),
          updated_at = NOW()
        RETURNING *`,
       [

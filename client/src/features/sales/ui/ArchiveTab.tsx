@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataTable } from '@/components/ux/DataTable';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { EmptyState } from '@/components/ux/EmptyState';
 import { useStickyState } from '@/hooks/useStickyState';
 import { leadContactSummary } from '@/lib/leadContact';
@@ -45,9 +46,11 @@ export interface ArchivedLead {
   messenger?: string | null;
   statusCode: string;
   managerName?: string | null;
+  managerId?: number | null;
   archiveReason?: string | null;
   archivedAt?: string | null;
   archivedByName?: string | null;
+  archivedBy?: number | null;
 }
 
 export interface ArchiveFunnel {
@@ -186,9 +189,7 @@ export function ArchiveTab({
       accessor: (lead: ArchivedLead) => lead.managerName || t('noData'),
       cellClassName: 'max-w-[11rem]',
       render: (lead: ArchivedLead) => (
-        <span className="block truncate text-muted-foreground" title={lead.managerName || undefined}>
-          {lead.managerName || t('noData')}
-        </span>
+        <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('noData')} className="text-muted-foreground" />
       ),
     },
     {
@@ -220,7 +221,7 @@ export function ArchiveTab({
           <div className="whitespace-nowrap text-muted-foreground">{dateTime(lead.archivedAt)}</div>
           {lead.archivedByName ? (
             <div className="truncate text-xs text-muted-foreground" title={`${t('archivedBy')} ${lead.archivedByName}`}>
-              {t('archivedBy')} {lead.archivedByName}
+              {t('archivedBy')} <EmployeeIdentity userId={lead.archivedBy} name={lead.archivedByName} avatarClassName="size-5 text-[9px]" />
             </div>
           ) : null}
         </div>

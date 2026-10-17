@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronsUpDown, Search, UsersRound } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { EmployeeAvatar } from './EmployeeIdentity';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,13 +23,6 @@ interface SalesScheduleTeacherFilterProps {
   onToggle: (teacherId: number, checked: boolean) => void;
   onClear: () => void;
 }
-
-const teacherInitials = (name: string) => name
-  .trim()
-  .split(/\s+/)
-  .slice(0, 2)
-  .map((part) => part[0]?.toLocaleUpperCase() ?? '')
-  .join('');
 
 export function SalesScheduleTeacherFilter({
   teachers,
@@ -73,11 +66,7 @@ export function SalesScheduleTeacherFilter({
           {selectedTeachers.length > 0 ? (
             <span className="flex shrink-0 -space-x-1.5" aria-hidden="true">
               {selectedTeachers.slice(0, 3).map((teacher) => (
-                <Avatar key={teacher.id} className="size-7 border-2 border-card" aria-hidden="true">
-                  <AvatarFallback className="bg-primary/10 text-[9px] font-bold text-primary">
-                    {teacherInitials(teacher.name)}
-                  </AvatarFallback>
-                </Avatar>
+                <EmployeeAvatar key={teacher.id} userId={teacher.userId} name={teacher.name} className="size-7 border-2 border-card text-[9px]" />
               ))}
             </span>
           ) : (
@@ -131,11 +120,7 @@ export function SalesScheduleTeacherFilter({
               className="pr-2"
               aria-label={`${teacher.name}. ${t('lessonsThisWeekCount').replace('{count}', String(eventCount))}`}
             >
-              <Avatar className="size-7" aria-hidden="true">
-                <AvatarFallback className="bg-primary/10 text-[9px] font-bold text-primary">
-                  {teacherInitials(teacher.name)}
-                </AvatarFallback>
-              </Avatar>
+              <span aria-hidden="true"><EmployeeAvatar userId={teacher.userId} name={teacher.name} className="size-7 text-[9px]" /></span>
               <span className="min-w-0 flex-1 truncate">{teacher.name}</span>
               <span
                 className="min-w-6 rounded-md bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground"

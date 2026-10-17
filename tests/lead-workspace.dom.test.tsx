@@ -398,7 +398,7 @@ describe('lead workspace navigation and drafts', () => {
   it('keeps note and task creation in their tabs instead of duplicate header actions', async () => {
     renderSheet();
     const leadName = await screen.findByRole('heading', { name: 'Test parent' });
-    const managerMeta = screen.getByText(`${i18n.t('manager')}: Manager`);
+    const managerMeta = within(leadName.parentElement!.parentElement!).getByText('Manager');
     const tagsEditor = await screen.findByRole('combobox', { name: i18n.t('leadTags') });
     const tabList = screen.getByRole('tablist');
     const funnelAction = screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') });

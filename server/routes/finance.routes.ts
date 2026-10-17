@@ -313,7 +313,8 @@ const getTransactions = async (
       executor,
       `SELECT p.id, p.amount_uzs, p.status, p.method, p.paid_at AS occurred_at,
               COALESCE(st.student_name, l.student_name, st.contact_name, l.contact_name, 'Оплата ученика') AS title,
-              COALESCE(manager.full_name, confirmer.full_name) AS counterparty
+              COALESCE(manager.full_name, confirmer.full_name) AS counterparty,
+              COALESCE(manager.id, confirmer.id) AS counterparty_user_id
        FROM academy_payments p
        LEFT JOIN academy_students st ON st.id = p.student_id
        LEFT JOIN academy_leads l ON l.id = p.lead_id
@@ -327,7 +328,8 @@ const getTransactions = async (
       executor,
       `SELECT e.id, e.amount_uzs, e.status, e.method,
               COALESCE(e.paid_at, e.expense_date) AS occurred_at,
-              e.title, COALESCE(e.vendor, creator.full_name) AS counterparty, e.category
+              e.title, COALESCE(e.vendor, creator.full_name) AS counterparty, e.category,
+              CASE WHEN e.vendor IS NULL THEN creator.id END AS counterparty_user_id
        FROM academy_operating_expenses e
        LEFT JOIN users creator ON creator.id = e.created_by
        WHERE e.status = 'paid'
@@ -354,7 +356,7 @@ const getTransactions = async (
       executor,
       `SELECT p.id, p.amount_uzs, p.status, p.method, p.paid_at AS occurred_at,
               ('Зарплата · ' || p.employee_name) AS title,
-              p.employee_name AS counterparty
+              p.employee_name AS counterparty, p.employee_user_id AS counterparty_user_id
        FROM academy_payroll_payouts p
        WHERE p.status = 'paid' AND p.paid_at >= $1 AND p.paid_at < $2
        ORDER BY p.paid_at DESC, p.id DESC`,
@@ -554,7 +556,7 @@ router.get('/income', async (req, res) => {
     const rows = await query<Row>(
       pool,
       `SELECT p.*, COALESCE(st.student_name, l.student_name, st.contact_name, l.contact_name) AS customer_name,
-              course.name AS course_name, manager.full_name AS manager_name,
+              course.name AS course_name, manager.full_name AS manager_name, manager.id AS manager_id,
               confirmer.full_name AS confirmed_by_name
        FROM academy_payments p
        LEFT JOIN academy_students st ON st.id = p.student_id

@@ -59,7 +59,7 @@ export async function buildSalesDemoStudents(actor: DatasetActor, range: Reporti
   // academy-core.query converts the top-level SQL aliases to camelCase.
   const rows = await query<AttendanceRow>(`${salesDemoAttendanceCte}
     SELECT attendance.*, course.name AS course_name, school.name AS school_name,
-      room.name AS room_name, teacher.full_name AS teacher_name, manager.full_name AS manager_name
+      room.name AS room_name, teacher.full_name AS teacher_name, teacher.user_id AS teacher_user_id, manager.full_name AS manager_name
     FROM attended_demos attendance
     JOIN academy_courses course ON course.id = attendance.course_id
     JOIN academy_schools school ON school.id = attendance.school_id
@@ -78,7 +78,8 @@ export async function buildSalesDemoStudents(actor: DatasetActor, range: Reporti
     student.visits.push({ participantId: row.participantId, demoId: row.demoId,
       scheduledAt: new Date(row.scheduledAt).toISOString(), durationMinutes: row.durationMinutes,
       format: row.format, courseName: row.courseName, schoolName: row.schoolName,
-      roomName: row.roomName, teacherName: row.teacherName });
+      roomName: row.roomName, teacherName: row.teacherName,
+      ...(row.teacherUserId ? { teacherUserId: Number(row.teacherUserId) } : {}) });
   }
   return [...students.values()];
 }

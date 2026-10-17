@@ -10,12 +10,13 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { leadMessageTarget } from '@/lib/leadContact';
 import { getInitials } from '@/lib/auth';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
 interface LeadWorkspaceHeaderProps {
   actionsDisabled?: boolean;
   lead: {
     contactName: string; statusCode: string; isArchived?: boolean;
-    managerName?: string | null; sourceName?: string | null;
+    managerId?: number | null; managerName?: string | null; sourceName?: string | null;
   };
   visiblePhoneNumbers: string[];
   primaryPhone: string | null;
@@ -51,7 +52,7 @@ export function LeadWorkspaceHeader({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span>{t('manager')}: {lead.managerName || t('notAssigned')}</span>
+            <span className="inline-flex min-w-0 items-center gap-1">{t('manager')}: <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} avatarClassName="size-5 text-[9px]" /></span>
             <span aria-hidden="true">·</span>
             <span>{lead.sourceName || t('unknownSource')}</span>
           </div>

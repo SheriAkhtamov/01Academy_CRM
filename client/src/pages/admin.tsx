@@ -95,7 +95,7 @@ import {
 import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
 import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
 import { EmployeeFunnelSelect } from '@/features/employees/EmployeeFunnelSelect';
-import { UserAvatar } from '@/components/ux/UserAvatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { allowNavigation } from '@/lib/navigationGuard';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
 
@@ -634,7 +634,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       accessor: (row) => `${row.fullName} ${row.email}`,
       render: (row) => (
         <div className="flex items-center space-x-3">
-          <UserAvatar user={row} className="size-12 shrink-0 text-sm" />
+          <EmployeeAvatar userId={row.id} name={row.fullName} avatarUrl={row.avatarUrl} className="size-12 text-sm" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{row.fullName}</p>
             <p className="text-sm text-muted-foreground truncate">{row.email}</p>

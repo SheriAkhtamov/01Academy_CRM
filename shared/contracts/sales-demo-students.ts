@@ -8,6 +8,7 @@ export type SalesDemoVisit = {
   schoolName: string;
   roomName: string | null;
   teacherName: string;
+  teacherUserId?: number | null;
 };
 
 /** One student, with every recorded demo attendance in the selected period. */

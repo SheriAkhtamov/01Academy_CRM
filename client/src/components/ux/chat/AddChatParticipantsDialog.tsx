@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { UserAvatar } from '@/components/ux/UserAvatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { ChatGroupParticipantDto } from '@shared/contracts/chat-groups';
 
@@ -36,7 +36,7 @@ export function AddChatParticipantsDialog({ participants, pending, error, onClos
             onCheckedChange={(checked) => setSelected((current) => {
               const next = new Set(current); if (checked) next.add(employee.id); else next.delete(employee.id); return next;
             })} />
-          <UserAvatar user={employee} className="size-8 shrink-0 text-xs" />
+          <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-8 text-xs" />
           <span className="min-w-0 break-words text-sm">{employee.fullName}</span>
         </label>)}
         {!employees.isPending && !employees.isError && !visible.length ? <p>{t(search ? 'noSearchResults' : 'chatGroupNoAvailableEmployees')}</p> : null}

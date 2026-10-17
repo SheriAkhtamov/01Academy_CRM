@@ -57,7 +57,7 @@ import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/Un
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { StaggerGroup, useChartEntrance } from '@/components/ux/motion';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -133,14 +133,6 @@ const PAYMENT_METHODS = ['transfer', 'cash', 'card'] as const;
 const PIE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)'];
 
 const currentDateOnly = academyToday;
-
-const initials = (name: string) => name
-  .split(/\s+/)
-  .filter(Boolean)
-  .slice(0, 2)
-  .map((part) => part[0])
-  .join('')
-  .toUpperCase();
 
 export default function FinanceCenter({ section = 'overview' }: { section?: FinanceSection }) {
   // Draws once on mount; later refetches update the geometry silently.
@@ -631,8 +623,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                       accessor: (row: Row) => row.employeeName || '',
                       render: (row: Row) => (
                         <div className="flex items-center gap-3">
-                          <Avatar className="hidden size-9 sm:flex"><AvatarFallback>{initials(row.employeeName)}</AvatarFallback></Avatar>
-                          <span className="min-w-0 truncate font-medium">{row.employeeName}</span>
+                          <EmployeeIdentity userId={row.employeeUserId} name={row.employeeName} avatarClassName="size-9 text-xs" className="font-medium" />
                         </div>
                       ),
                       sortable: true,
@@ -712,7 +703,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Card>
                 <CardHeader><CardTitle>{copy.employee}</CardTitle></CardHeader>
                 <CardContent>
-                  {selectedPayrollEntry ? <div className="flex flex-col gap-5"><div className="flex items-center gap-3"><Avatar className="size-12"><AvatarFallback>{initials(selectedPayrollEntry.employeeName)}</AvatarFallback></Avatar><div><p className="font-semibold">{selectedPayrollEntry.employeeName}</p><p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p></div></div><div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4"><div><p className="text-xs text-muted-foreground">{copy.currentSalary}</p><p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p></div><div><p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p><p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p></div></div></div> : <p className="text-sm text-muted-foreground">{copy.selectEmployee}</p>}
+                  {selectedPayrollEntry ? <div className="flex flex-col gap-5"><div className="flex items-center gap-3"><EmployeeAvatar userId={selectedPayrollEntry.employeeUserId} name={selectedPayrollEntry.employeeName} className="size-12 text-sm" /><div><p className="font-semibold">{selectedPayrollEntry.employeeName}</p><p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p></div></div><div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4"><div><p className="text-xs text-muted-foreground">{copy.currentSalary}</p><p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p></div><div><p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p><p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p></div></div></div> : <p className="text-sm text-muted-foreground">{copy.noData}</p>}
                 </CardContent>
               </Card>
               <Card>
@@ -762,7 +753,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle></DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <FieldGroup className="gap-4">
-            <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}>{entry.employeeName}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+            <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}><EmployeeIdentity userId={entry.employeeUserId} name={entry.employeeName} /></SelectItem>)}</SelectGroup></SelectContent></Select></Field>
             <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
             <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
             <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>

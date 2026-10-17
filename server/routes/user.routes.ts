@@ -22,9 +22,10 @@ import { sendHttpError } from '../lib/http-errors';
 import { registerUserArchiveRoutes } from './user-archive.routes';
 import { parseUserPhotoUpload, retainUploadedUserPhoto, cleanupUploadedUserPhoto } from '../middleware/user-photo.middleware';
 import { registerUserPhotoRoutes } from './user-photo.routes';
+import { safeEmployeePhotoUrl } from '@shared/user-photo';
 import { normalizeUserPhoneNumbers, replaceUserPhones } from './user-phone-support';
 import { closeEmployeeSalaryAccrual } from '../services/finance-history';
-import { disconnectRealtimeUser } from '../realtime/realtime-hub';
+import { disconnectRealtimeUser, publishRealtimeEvent } from '../realtime/realtime-hub';
 import { parseEmployeeKpiRole, readEmployeeKpiAssignments, setEmployeeKpiAssignment } from '../infrastructure/sales-kpi/employee-assignments';
 import {
     getActiveSalesManagerForFunnelTransfer as getActiveSalesManagerForTransfer,
@@ -509,6 +510,22 @@ const replaceUserModules = async (
         [userId, modules],
     );
 };
+
+router.get('/identities', requireAuth, async (_req, res) => {
+    try {
+        // Archived staff still own historical calls, payments and audit events.
+        const employees = await storage.getUsers();
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json(employees.map((employee) => ({
+            id: employee.id,
+            fullName: employee.fullName,
+            avatarUrl: safeEmployeePhotoUrl(employee.avatarUrl) ?? null,
+        })));
+    } catch (error) {
+        logger.error('Failed to load employee identities', { error });
+        res.status(500).json({ error: 'failedToLoadData' });
+    }
+});
 
 router.get('/', requireAuth, async (req, res) => {
     try {
@@ -1184,6 +1201,7 @@ router.put('/:id', requireAuth, parseUserPhotoUpload, async (req, res) => {
             }],
         }).catch((error) => logger.error('Failed to audit user update', { error, userId: id }));
 
+        publishRealtimeEvent({ type: 'EMPLOYEE_IDENTITY_UPDATED', data: { userId: id } });
         res.json(authService.sanitizeUser(updatedUser));
     } catch (error) {
         logger.error('Error updating user', { error, userId: req.params.id });

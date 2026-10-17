@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, ArrowUpRight, Calendar, GraduationCap, MapPin, Phone, Search, User, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Calendar, GraduationCap, MapPin, Phone, Search, X } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getSalesDemoStudents } from '@/features/sales/api';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { reportingRangeQuery } from '@/lib/reportingDateRange';
 import { salesQueryKeys } from '@/features/sales/queries';
 import { OverviewDialog, overviewButton } from './OverviewDialog';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
 export function DemoStudentsDialog({ reportingRange, managerId, onClose, onOpenLead }: {
   reportingRange: { from: string; to: string };
@@ -67,9 +68,9 @@ export function DemoStudentsDialog({ reportingRange, managerId, onClose, onOpenL
               <span className="flex items-center gap-1.5 font-medium text-foreground"><GraduationCap className="size-3.5 shrink-0" aria-hidden="true" />{visit.courseName}</span>
               <span className="flex items-center gap-1.5"><Calendar className="size-3.5 shrink-0" aria-hidden="true" />{formatAcademyDate(visit.scheduledAt, language, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               <span className="flex items-center gap-1.5"><MapPin className="size-3.5 shrink-0" aria-hidden="true" />{visit.format === 'online' ? t('online') : [visit.schoolName, visit.roomName].filter(Boolean).join(' · ')}</span>
-              {visit.teacherName ? <span className="flex items-center gap-1.5"><User className="size-3.5 shrink-0" aria-hidden="true" />{visit.teacherName}</span> : null}
+              {visit.teacherName ? <EmployeeIdentity userId={visit.teacherUserId} name={visit.teacherName} avatarClassName="size-6" /> : null}
             </li>)}</ul>
-            {managerId === null && student.managerName ? <p className="border-t pt-2 text-xs text-muted-foreground">{student.managerName}</p> : null}
+            {managerId === null && student.managerName ? <p className="border-t pt-2 text-xs text-muted-foreground"><EmployeeIdentity userId={student.managerId} name={student.managerName} avatarClassName="size-6" /></p> : null}
           </article>;
         })}</div>}
     </>}

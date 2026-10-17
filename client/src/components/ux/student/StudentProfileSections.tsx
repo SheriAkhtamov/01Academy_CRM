@@ -1,24 +1,25 @@
 import type { ReactNode } from 'react';
-import { BookOpen, CalendarDays, CheckCircle2, CreditCard, UserRound, XCircle } from 'lucide-react';
+import { BookOpen, CalendarDays, CheckCircle2, CreditCard, XCircle } from 'lucide-react';
 import type { StudentProfile, StudentProfileStudent } from '@shared/contracts/student-profile';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyNumber } from '@/lib/localeFormat';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
 export function StudentLearningSection({ profile, student, management, dateTime, teaching = false }: { profile?: StudentProfile; student: StudentProfileStudent; management: ReactNode; dateTime: (value: string | null | undefined) => string; teaching?: boolean }) {
   const { t } = useTranslation();
   return <div className="space-y-4">
     <dl className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-xl bg-muted/40 p-4 text-sm">
       <Detail label={t('age')} value={student.studentAge?.toString() ?? t('noData')} />
-      {!teaching ? <><Detail label={t('managerLabel')} value={student.managerName || t('noData')} />
+      {!teaching ? <><Detail label={t('managerLabel')} value={<EmployeeIdentity userId={student.managerId} name={student.managerName || t('noData')} />} />
       <Detail label={t('nextPaymentLabel')} value={student.nextPaymentAt ? dateTime(student.nextPaymentAt) : t('noData')} /></> : null}
     </dl>
     {profile?.groups.length ? <div className="space-y-3">{profile.groups.map((group) => <section key={group.groupId} className="space-y-3 rounded-xl border p-4">
       <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary"><BookOpen className="size-4" /></span><div className="min-w-0 flex-1"><h3 className="break-words text-sm font-semibold">{group.courseName || group.groupName}</h3><p className="mt-0.5 break-words text-xs text-muted-foreground">{group.groupName}{group.schoolName ? ` · ${group.schoolName}` : ''}</p></div>{group.isPrimary ? <Badge variant="secondary">{t('primaryGroup')}</Badge> : null}</div>
       <div className="grid grid-cols-3 gap-3 text-center"><Count label={t('studentLessonsCompleted')} value={group.completedLessons} /><Count label={t('studentLessonsRemaining')} value={group.remainingLessons} /><Count label={t('studentLessonsTotal')} value={group.totalLessons} /></div>
       {group.totalLessons ? <Progress value={Math.min(100, Math.round(group.completedLessons / group.totalLessons * 100))} aria-label={t('progressLabel')} className="h-1.5" /> : null}
-      {group.teacherName ? <p className="flex items-center gap-2 text-xs text-muted-foreground"><UserRound className="size-3.5" />{group.teacherName}</p> : null}
+      {group.teacherName ? <p className="text-xs text-muted-foreground"><EmployeeIdentity userId={group.teacherUserId} name={group.teacherName} avatarClassName="size-6" /></p> : null}
     </section>)}</div> : profile ? <p className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">{t('noGroup')}</p> : null}
     {management}
   </div>;
@@ -48,4 +49,4 @@ export function StudentPaymentsSection({ profile, dateTime }: { profile: Student
   </div>;
 }
 function Count({ label, value }: { label: string; value: number | null }) { return <div className="min-w-0"><p className="text-xl font-semibold tabular-nums">{value ?? '—'}</p><p className="mt-1 text-xs text-muted-foreground">{label}</p></div>; }
-function Detail({ label, value }: { label: string; value: string }) { return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium">{value}</dd></div>; }
+function Detail({ label, value }: { label: string; value: ReactNode }) { return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium">{value}</dd></div>; }

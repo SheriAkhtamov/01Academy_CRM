@@ -69,6 +69,10 @@ function mount(children: ReactNode = <Harness />) {
 }
 
 beforeEach(() => {
+  Element.prototype.scrollIntoView ??= () => undefined;
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => undefined;
+  Element.prototype.releasePointerCapture ??= () => undefined;
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-09-08T10:00:00Z'));
   localStorage.clear();
@@ -151,7 +155,8 @@ describe('unified sales overview', () => {
     expect(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeTruthy();
     let finish!: (value: unknown) => void;
     request.mockImplementation((_method, path: string) => path.includes('/sales/metrics') ? Promise.resolve(metrics) : new Promise((resolve) => { finish = resolve; }));
-    await user.selectOptions(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }), '2');
+    await user.click(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }));
+    await user.click(screen.getByRole('option', { name: 'Bob' }));
     expect(screen.queryByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeNull();
     await act(async () => { finish({ month: '2026-08', asOf: '2026-09-08', employees: [employee(2)] }); });
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });

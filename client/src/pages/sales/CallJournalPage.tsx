@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { DateRangeField } from '@/components/ux/DateRangeField';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { journalOperatorsQueryOptions } from '@/features/telephony/api';
@@ -361,7 +362,7 @@ function JournalTableRow({
         <CallNote note={call.note} className="max-w-64" />
       </td>
       <td className="px-4 py-3">
-        <p className="font-medium">{call.userName || t('notAssigned')}</p>
+        <p className="font-medium"><EmployeeIdentity userId={call.userId} name={call.userName || t('notAssigned')} /></p>
         {call.extension ? <p className="text-xs text-muted-foreground">{t('extensionShort')} {call.extension}</p> : null}
       </td>
       <td className="px-4 py-3"><CallStatus call={call} requiresCallback={requiresCallback} /></td>
@@ -405,7 +406,7 @@ function JournalMobileCard({
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><DirectionIcon className="size-3.5" />{call.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}</span>
         <span className="text-right">{dateTime(call.startedAt)}</span>
-        <span>{call.userName || t('notAssigned')}</span>
+        <EmployeeIdentity userId={call.userId} name={call.userName || t('notAssigned')} avatarClassName="size-6" />
         <span className="text-right font-mono">{formatCallDuration(call.talkSeconds)}</span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">

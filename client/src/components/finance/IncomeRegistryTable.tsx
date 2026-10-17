@@ -4,6 +4,7 @@ import type { DataTableColumn } from '@/components/ux/DataTable';
 import type { financeCopy } from '@/lib/financeCenter';
 import type { Row } from '@/lib/financeRows';
 import { StatusBadge } from '@/components/finance/StatusBadge';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
 export function IncomeRegistryTable({
   rows,
@@ -42,7 +43,7 @@ export function IncomeRegistryTable({
       mobilePrimary: true,
     },
     { key: 'courseName', header: copy.course, accessor: (row: Row) => row.courseName || '', render: (row: Row) => row.courseName || '—', sortable: true },
-    { key: 'managerName', header: copy.manager, accessor: (row: Row) => row.managerName || '', render: (row: Row) => row.managerName || '—', sortable: true },
+    { key: 'managerName', header: copy.manager, accessor: (row: Row) => row.managerName || '', render: (row: Row) => <EmployeeIdentity userId={row.managerId} name={row.managerName} />, sortable: true },
     { key: 'method', header: copy.method, accessor: (row: Row) => methodLabel(row.method), sortable: true },
     {
       key: 'status',

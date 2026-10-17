@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { UserAvatar } from '@/components/ux/UserAvatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -382,7 +382,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       }`}
                       onClick={() => { setSelectedGroupId(null); setSelectedEmployeeId(employee.id); }}
                     >
-                      <UserAvatar user={employee} className="size-10 shrink-0 text-xs" />
+                      <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-10 text-xs" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
                           {employee.fullName}
@@ -435,7 +435,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {/* Chat Header */}
                 <div className="border-b border-border bg-muted/40 p-4">
                   <div className="flex items-center gap-3">
-                    <UserAvatar user={selectedEmployee} className="size-8 shrink-0 text-xs" />
+                    <EmployeeAvatar userId={selectedEmployee?.id} name={selectedEmployee?.fullName} avatarUrl={selectedEmployee?.avatarUrl} className="size-8 text-xs" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium text-foreground">{selectedEmployee.fullName}</p>
                       <p className="text-xs text-muted-foreground">{selectedEmployee.position}</p>

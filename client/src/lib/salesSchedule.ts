@@ -38,6 +38,7 @@ export interface SalesScheduleGroup {
   schoolId?: number | null;
   teacherId?: number | null;
   teacherName?: string | null;
+  teacherUserId?: number | null;
   schoolName?: string | null;
   maxStudents?: number | null;
   currentStudents?: number | null;
@@ -59,6 +60,7 @@ export interface SalesScheduleLesson {
   courseName?: string | null;
   teacherId?: number | null;
   teacherName?: string | null;
+  teacherUserId?: number | null;
   schoolName?: string | null;
   topic?: string | null;
   availableSeats?: number | null;
@@ -87,6 +89,7 @@ export interface SalesScheduleDemoLesson {
   roomName?: string | null;
   teacherId?: number | null;
   teacherName?: string | null;
+  teacherUserId?: number | null;
   scheduledAt: string;
   durationMinutes?: number | null;
   status?: SalesScheduleDemoStatus | null;
@@ -436,6 +439,7 @@ const entityId = (value: unknown) => {
 export interface SalesScheduleTeacherOption {
   id: number;
   name: string;
+  userId?: number | null;
 }
 
 export function buildSalesScheduleTeacherOptions(
@@ -443,20 +447,20 @@ export function buildSalesScheduleTeacherOptions(
   lessons: SalesScheduleLesson[],
   demos: SalesScheduleDemoLesson[] = [],
 ): SalesScheduleTeacherOption[] {
-  const teachersById = new Map<number, string>();
-  const addTeacher = (idValue: unknown, nameValue: unknown) => {
+  const teachersById = new Map<number, SalesScheduleTeacherOption>();
+  const addTeacher = (idValue: unknown, nameValue: unknown, userIdValue: unknown) => {
     const id = entityId(idValue);
     const name = String(nameValue ?? '').trim();
     if (!id || !name) return;
-    teachersById.set(id, name);
+    const userId = entityId(userIdValue) ?? teachersById.get(id)?.userId;
+    teachersById.set(id, { id, name, ...(userId ? { userId } : {}) });
   };
 
-  for (const group of groups) addTeacher(group.teacherId, group.teacherName);
-  for (const lesson of lessons) addTeacher(lesson.teacherId, lesson.teacherName);
-  for (const demo of demos) addTeacher(demo.teacherId, demo.teacherName);
+  for (const group of groups) addTeacher(group.teacherId, group.teacherName, group.teacherUserId);
+  for (const lesson of lessons) addTeacher(lesson.teacherId, lesson.teacherName, lesson.teacherUserId);
+  for (const demo of demos) addTeacher(demo.teacherId, demo.teacherName, demo.teacherUserId);
 
-  return [...teachersById]
-    .map(([id, name]) => ({ id, name }))
+  return [...teachersById.values()]
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 

@@ -1,4 +1,4 @@
-import { UserAvatar } from '@/components/ux/UserAvatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -83,7 +83,7 @@ export default function AccountSwitcher() {
           </div>
           <DropdownMenuItem className="cursor-default opacity-100">
             <div className="flex items-center gap-3 w-full">
-              <UserAvatar user={user} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
+              <EmployeeAvatar userId={user?.id} name={user?.fullName} avatarUrl={user?.avatarUrl} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{user.fullName}</p>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -106,7 +106,7 @@ export default function AccountSwitcher() {
                   className="cursor-pointer"
                 >
                   <div className="flex items-center gap-3 w-full">
-                    <UserAvatar user={account.accountUser} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
+                    <EmployeeAvatar userId={account.accountUser.id} name={account.accountUser.fullName} avatarUrl={account.accountUser.avatarUrl} className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{account.accountUser.fullName}</p>

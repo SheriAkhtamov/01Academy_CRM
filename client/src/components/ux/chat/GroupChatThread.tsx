@@ -12,7 +12,7 @@ import { chatGroupsApi, chatGroupKeys } from '@/features/messages/chat-groups-ap
 import { MAX_MESSAGE_FILE_BYTES, MAX_MESSAGE_FILES } from '@shared/contracts/messages';
 import type { ChatGroupDto, GroupMessageDto } from '@shared/contracts/chat-groups';
 import { ChatFileDrafts, ChatMessageAttachments } from './ChatAttachments';
-import { UserAvatar } from '@/components/ux/UserAvatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { ChatGroupAvatar } from './ChatGroupAvatar';
 import { ChatGroupDetailsDialog } from './ChatGroupDetailsDialog';
 
@@ -79,7 +79,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
       {query.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void query.refetch()}>{t('retry')}</Button></div> : null}
       {readError ? <div role="alert">{t('updateFailed')} <Button variant="outline" onClick={() => { if (latestId) markRead({ groupId: group.id, messageId: latestId }); }}>{t('retry')}</Button></div> : null}
       {(query.isError ? [] : query.data ?? []).map((message) => <div key={message.id} className={`flex items-end gap-2 ${message.senderId===user?.id ? 'justify-end' : 'justify-start'}`}>
-        {message.senderId !== user?.id ? <UserAvatar user={{ fullName: message.senderName || t('chatDeletedEmployee'), avatarUrl: message.senderAvatarUrl }} className="size-8 shrink-0 text-xs" /> : null}
+        {message.senderId !== user?.id ? <EmployeeAvatar userId={message.senderId} name={message.senderName || t('chatDeletedEmployee')} avatarUrl={message.senderAvatarUrl} className="size-8 text-xs" /> : null}
         <div className={`min-w-0 max-w-[85%] rounded-xl px-3 py-2 text-sm [overflow-wrap:anywhere] ${message.senderId===user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
           {message.senderId!==user?.id ? <p className="mb-1 font-medium">{message.senderName || t('chatDeletedEmployee')}</p> : null}
           {message.content ? <p className="whitespace-pre-wrap break-words">{message.content}</p> : null}

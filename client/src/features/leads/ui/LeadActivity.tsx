@@ -1,13 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/useTranslation';
-import { getInitials } from '@/lib/auth';
 import type { TranslationKey } from '@/lib/i18n';
 import { academyDateInputValue, academyDateTimeFormat, academyToday } from '@/lib/localeFormat';
 import { DURATION, EASE } from '@/lib/motion';
@@ -30,6 +29,7 @@ import {
 
 type LeadComment = {
   id: number;
+  authorId?: number | null;
   authorName?: string | null;
   body: string;
   createdAt?: string | null;
@@ -147,9 +147,7 @@ export function LeadCommentsCard({
               const authorName = comment.authorName || t('unknown');
               return (
                 <li key={comment.id} className="flex gap-3 py-4 first:pt-0 last:pb-0">
-                  <Avatar className="size-9 shrink-0 border border-border">
-                    <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
-                  </Avatar>
+                  <EmployeeAvatar userId={comment.authorId} name={authorName} className="size-9 border border-border" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                       <p className="text-sm font-medium">{authorName}</p>

@@ -7,6 +7,7 @@ import { devLog } from '@/lib/debug';
 import { messageQueryKeys } from '@/features/messages/api';
 import { telephonyQueryKeys } from '@/features/telephony/api';
 import { boardQueryKeys } from '@/features/board/api';
+import { employeeIdentitiesQueryKey } from '@/features/employees/employee-identities';
 
 /**
  * `connecting` covers both the first attempt and the backoff window, so the UI
@@ -130,6 +131,15 @@ export function useWebSocket() {
         case 'USER_STATUS_CHANGED':
           queryClient.invalidateQueries({ queryKey: ['/api/users/online-status'] });
           queryClient.invalidateQueries({ queryKey: ['/api/telephony/routing'] });
+          break;
+        case 'EMPLOYEE_IDENTITY_UPDATED':
+          // Refresh only display identities, leaving open employee/task drafts intact.
+          void queryClient.cancelQueries({ queryKey: employeeIdentitiesQueryKey }).then(() => (
+            queryClient.invalidateQueries({ queryKey: employeeIdentitiesQueryKey })
+          ));
+          if (Number(message.data?.userId) === userId) {
+            queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
+          }
           break;
         case 'BOARD_TASK_CREATED':
         case 'BOARD_TASK_UPDATED':

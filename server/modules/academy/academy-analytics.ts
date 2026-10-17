@@ -220,7 +220,7 @@ export const getAcademyDataset = async (
     )),
     slice('groups', () => (
       isTeacherScoped
-      ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+      ? query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id,
           sc.name AS school_name, r.name AS room_name,
           archived_by_user.full_name AS archived_by_name,
           (SELECT COUNT(*)::int
@@ -243,7 +243,7 @@ export const getAcademyDataset = async (
           LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
           WHERE g.teacher_id = $1
           ORDER BY g.created_at DESC`, [teacherId])
-      : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name,
+      : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id,
           sc.name AS school_name, r.name AS room_name,
           archived_by_user.full_name AS archived_by_name,
           (SELECT COUNT(*)::int
@@ -329,7 +329,7 @@ export const getAcademyDataset = async (
       ORDER BY st.created_at DESC`, isTeacherScoped ? [teacherId] : managerParams)
     )),
     slice('lessons', () => (
-      query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, c.name AS course_name,
+      query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id, c.name AS course_name,
         sc.name AS school_name,
         COALESCE(g.is_archived, false) AS group_is_archived, g.status AS group_status
       FROM academy_lessons l

@@ -185,7 +185,7 @@ export async function loadStudentProfileData(
   const [groupRows, attendance, paymentRows, projectRows] = await Promise.all([
     query(
       `SELECT membership.group_id, g.name AS group_name, course.name AS course_name,
-      school.name AS school_name, teacher.full_name AS teacher_name, membership.is_primary, membership.enrolled_at,
+      school.name AS school_name, teacher.full_name AS teacher_name, teacher.user_id AS teacher_user_id, membership.is_primary, membership.enrolled_at,
       COALESCE(NULLIF(g.lesson_count, 0), NULLIF(course.lesson_count, 0)) AS planned_lessons,
       (SELECT COUNT(*)::int FROM academy_lessons previous WHERE previous.group_id = g.id
         AND previous.status = 'conducted') AS group_conducted_lessons,
@@ -251,6 +251,7 @@ export async function loadStudentProfileData(
       courseName: group.courseName,
       schoolName: group.schoolName,
       teacherName: group.teacherName,
+      ...(group.teacherUserId ? { teacherUserId: Number(group.teacherUserId) } : {}),
       isPrimary: group.isPrimary,
       enrolledAt: group.enrolledAt,
       totalLessons,

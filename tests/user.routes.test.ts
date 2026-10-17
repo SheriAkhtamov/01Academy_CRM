@@ -54,6 +54,33 @@ describe('user route validation', () => {
     return app;
   };
 
+  it('requires staff authentication for the employee identity directory', async () => {
+    const response = await request(await createApp()).get('/api/users/identities');
+    expect(response.status).toBe(401);
+    expect(mockStorage.getUsers).not.toHaveBeenCalled();
+  });
+
+  it('returns only display identities, including archived employees referenced in history', async () => {
+    mockStorage.getUser.mockResolvedValue({ ...administrationUser, module: 'sales', modules: ['sales'] });
+    mockStorage.getUsers.mockResolvedValue([
+      { id: 20, fullName: 'Current employee', avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa', email: 'private@example.test', password: 'private', onlinePbxPassword: 'private', isActive: true },
+      { id: 21, fullName: 'Archived employee', avatarUrl: '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb', isArchived: true, isActive: false },
+      { id: 22, fullName: 'Legacy employee', avatarUrl: 'https://untrusted.example/photo.jpg' },
+      { id: 23, fullName: 'Other account', avatarUrl: '/api/portal/me/photos/aaaaaaaaaaaaaaaaaaaaa' },
+    ]);
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session');
+    const response = await agent.get('/api/users/identities');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      { id: 20, fullName: 'Current employee', avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa' },
+      { id: 21, fullName: 'Archived employee', avatarUrl: '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb' },
+      { id: 22, fullName: 'Legacy employee', avatarUrl: null },
+      { id: 23, fullName: 'Other account', avatarUrl: null },
+    ]);
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed IDs instead of partially parsing them', async () => {
     const app = await createApp();
     const agent = request.agent(app);

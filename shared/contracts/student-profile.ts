@@ -26,6 +26,7 @@ export type StudentLearningGroup = {
   courseName: string | null;
   schoolName: string | null;
   teacherName: string | null;
+  teacherUserId?: number | null;
   isPrimary: boolean;
   enrolledAt: string | null;
   totalLessons: number | null;
@@ -80,6 +81,7 @@ export type StudentProfileStudent = {
   status: string;
   exitReason?: string | null;
   managerName?: string | null;
+  managerId?: number | null;
   nextPaymentAt?: string | null;
   referralCode?: string | null;
   createdAt?: string;

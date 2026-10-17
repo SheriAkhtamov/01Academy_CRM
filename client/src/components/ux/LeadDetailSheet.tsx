@@ -35,6 +35,7 @@ import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccount
 import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { useHandoffKpiLead } from '@/features/sales-kpi/hooks';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
   LocalizedFormMessage,
   TabCount,
@@ -1293,14 +1294,14 @@ export function LeadDetailSheet({
                                   <SelectGroup>
                                     {managers.map((manager) => (
                                       <SelectItem key={manager.id} value={String(manager.id)}>
-                                        {manager.fullName}
+                                        <EmployeeIdentity userId={manager.id} name={manager.fullName} />
                                       </SelectItem>
                                     ))}
                                   </SelectGroup>
                                 </SelectContent>
                               </Select> : (
                                 <div className="flex min-h-9 items-center text-sm">
-                                  {lead.managerName || t('notAssigned')}
+                                  <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} />
                                 </div>
                               )}
                             </FormItem>

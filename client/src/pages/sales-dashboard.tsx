@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { allowNavigation, requestNavigation } from '@/lib/navigationGuard';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -1378,7 +1379,7 @@ export function StudentsTab({
       header: t('manager'),
       sortable: true,
       accessor: (student: Student) => student.managerName || t('noData'),
-      render: (student: Student) => <span className="text-muted-foreground">{student.managerName || t('noData')}</span>,
+      render: (student: Student) => <EmployeeIdentity userId={student.managerId} name={student.managerName || t('noData')} className="text-muted-foreground" />,
     }] : []),
     {
       key: 'attendancePercent',

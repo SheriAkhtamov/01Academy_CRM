@@ -27,6 +27,7 @@ import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import type { DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage } from '@/components/ux/ModulePage';
+import { InstagramMessageAuthor } from '@/features/sales/ui/InstagramMessageAuthor';
 import { ACADEMY_TIME_ZONE, academyDateInputValue, academyDateTimeFormat } from '@/lib/localeFormat';
 import {
   Tooltip,
@@ -76,6 +77,7 @@ interface InstagramConversation {
   lastOutboundAt?: string | null;
   lastReadMessageAt?: string | null;
   accountUsername: string;
+  accountProfilePictureUrl?: string | null;
   accountStatus: string;
   contactName?: string | null;
   statusCode?: string | null;
@@ -332,6 +334,7 @@ const buildThreadItems = (
   const items: ThreadItem[] = [];
   let lastDay = '';
   let lastDirection: string | null = null;
+  let lastAuthorId: number | null = null;
   let lastTime = 0;
 
   for (const message of visibleMessages) {
@@ -348,9 +351,11 @@ const buildThreadItems = (
       items.push({ kind: 'unread', id: 'unread-divider', label: t('unreadMessages') });
       unreadDividerPending = false;
     }
-    const withinGroup = lastDirection === message.direction && time - lastTime < 5 * 60 * 1000;
+    const sameAuthor = message.direction !== 'outbound' || lastAuthorId === (message.sentBy ?? null);
+    const withinGroup = lastDirection === message.direction && sameAuthor && time - lastTime < 5 * 60 * 1000;
     items.push({ kind: 'message', id: message.id, message, showTime: !withinGroup });
     lastDirection = message.direction;
+    lastAuthorId = message.sentBy ?? null;
     lastTime = time;
   }
 
@@ -1116,7 +1121,7 @@ export default function MessagesPage() {
         content,
         messageType: 'text',
         status: 'pending',
-        sentBy: null,
+        sentBy: user?.id ?? null,
         createdAt: new Date().toISOString(),
         pending: true,
       };
@@ -1802,11 +1807,7 @@ export default function MessagesPage() {
                   ) : null}
 
                   {!selectedCanReply ? (
-                    <Alert className="m-4 mb-0">
-                      <Clock3 className="h-4 w-4" />
-                      <AlertTitle>{t('instagramMessagingWindowExpiredTitle')}</AlertTitle>
-                      <AlertDescription>{t('instagramMessagingWindowExpiredDesc')}</AlertDescription>
-                    </Alert>
+                    <p role="status" className="mx-4 mt-4 text-sm text-muted-foreground">{t('instagramMessagingWindowExpiredTitle')}</p>
                   ) : null}
 
                   <div className="relative min-h-0 flex-1 bg-muted/40">
@@ -1934,8 +1935,12 @@ export default function MessagesPage() {
                                 initial={{ opacity: 0, y: 8, x: outbound ? 16 : -16, scale: 0.96 }}
                                 animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
                                 transition={SPRING.snappy}
-                                className={cn('flex', outbound ? 'justify-end' : 'justify-start', item.showTime ? 'mt-3' : 'mt-0.5')}
+                                className={cn('flex flex-col', outbound ? 'items-end' : 'items-start', item.showTime ? 'mt-3' : 'mt-0.5')}
                               >
+                                {outbound ? <InstagramMessageAuthor sentBy={message.sentBy}
+                                  employee={message.sentBy === user?.id ? user : usersQuery.data?.find((employee) => employee.id === message.sentBy)}
+                                  accountUsername={selectedConversation.accountUsername}
+                                  accountPhotoUrl={selectedConversation.accountProfilePictureUrl} /> : null}
                                 <div
                                   className={cn(
                                     'group/bubble relative flex max-w-[82%] flex-col',

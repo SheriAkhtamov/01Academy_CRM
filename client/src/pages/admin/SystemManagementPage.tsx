@@ -48,10 +48,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { PageHeader } from '@/components/ux/PageHeader';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
-import { formatUserModule, getInitials } from '@/lib/auth';
+import { formatUserModule } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { SYSTEM_MANAGEMENT_NAVIGATION_ITEMS } from '@/lib/moduleNavigation';
 import { messageQueryKeys } from '@/features/messages/api';
@@ -67,6 +68,7 @@ interface SystemManagementPageProps {
 interface BroadcastEmployee {
   id: number;
   fullName: string;
+  avatarUrl?: string | null;
   email?: string | null;
   position?: string | null;
   module: string;
@@ -344,9 +346,7 @@ function EmployeeNotificationsPage() {
                           aria-label={t('selectEmployeeForBroadcast').replace('{name}', employee.fullName)}
                         />
                         <Label htmlFor={checkboxId} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                            {getInitials(employee.fullName)}
-                          </span>
+                          <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-9 text-xs" />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium text-foreground">
                               {employee.fullName}
@@ -451,7 +451,7 @@ function EmployeeNotificationsPage() {
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2" aria-label={t('selectedRecipients')}>
               {selectedEmployees.slice(0, 4).map((employee) => (
-                <Badge key={employee.id} variant="secondary">{employee.fullName}</Badge>
+                <Badge key={employee.id} variant="secondary"><EmployeeIdentity userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} avatarClassName="size-5 text-[9px]" /></Badge>
               ))}
               {selectedEmployees.length > 4 ? (
                 <Badge variant="outline">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import { leadFilterAmount } from '@/lib/leadFilters';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
   closestCorners,
   DndContext,
@@ -271,7 +272,7 @@ function LeadCardContent({
           .filter((tag) => leadTagNameKey(tag.name) !== leadTagNameKey(lead.sourceName))
           .map((tag) => <Badge key={tag.id} variant="secondary">{tag.name}</Badge>)}
         {lead.studentAge ? <Badge variant="outline">{lead.studentAge} {t('years')}</Badge> : null}
-        {showManager && lead.managerName ? <Badge variant="outline">{t('managerLabel')} {lead.managerName}</Badge> : null}
+        {showManager && lead.managerName ? <Badge variant="outline" className="max-w-full gap-1">{t('managerLabel')} <EmployeeIdentity userId={lead.managerId} name={lead.managerName} avatarClassName="size-5 text-[9px]" /></Badge> : null}
       </div>
 
       <div

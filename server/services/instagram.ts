@@ -2410,6 +2410,56 @@ export const instagramConversationOwnershipFilter = (user: InstagramUser) => (
       )))`
 );
 
+type AccountPhotoRefresh = { nextAt: number; pending: boolean; readers: Set<number> };
+const accountPhotoRefreshes = new Map<number, AccountPhotoRefresh>();
+
+// Backfill existing connections as well as refreshing expiring CDN photo URLs.
+// The inbox response never waits for Meta, and concurrent readers share one request.
+const queueInstagramAccountPhotoRefresh = (accountId: number, readerId: number) => {
+  const existing = accountPhotoRefreshes.get(accountId);
+  if (existing && existing.nextAt > Date.now()) {
+    if (existing.pending) existing.readers.add(readerId);
+    return;
+  }
+  const refresh: AccountPhotoRefresh = { nextAt: Date.now() + 60 * 60_000, pending: true, readers: new Set([readerId]) };
+  accountPhotoRefreshes.set(accountId, refresh);
+  void (async () => {
+    try {
+      const { rows } = await pool.query<{ access_token_encrypted: string | null }>(
+        "SELECT access_token_encrypted FROM instagram_accounts WHERE id=$1 AND status='connected'", [accountId],
+      );
+      const encryptedToken = rows[0]?.access_token_encrypted;
+      if (!encryptedToken) {
+        refresh.nextAt = Date.now() + 5 * 60_000;
+        return;
+      }
+      const config = instagramConfig();
+      const profileUrl = new URL(`${config.graphApiUrl}/${config.apiVersion}/me`);
+      profileUrl.searchParams.set('fields', 'profile_picture_url');
+      const profile = await fetchInstagramJson<InstagramProfile>(profileUrl.toString(), {
+        headers: { Authorization: `Bearer ${decryptInstagramToken(encryptedToken)}` },
+      });
+      const picture = new URL(profile.profile_picture_url ?? '');
+      if (picture.protocol !== 'https:' || picture.username || picture.password) {
+        refresh.nextAt = Date.now() + 5 * 60_000;
+        return;
+      }
+      const saved = await pool.query(`UPDATE instagram_accounts SET profile_picture_url=$2,updated_at=NOW()
+        WHERE id=$1 AND status='connected' AND access_token_encrypted=$3
+          AND profile_picture_url IS DISTINCT FROM $2`, [accountId, picture.toString(), encryptedToken]);
+      if (saved.rowCount) publishRealtimeEvent({
+        type: 'INSTAGRAM_ACCOUNT_PHOTO_UPDATED', data: { accountId }, audienceUserIds: [...refresh.readers],
+      });
+    } catch {
+      refresh.nextAt = Date.now() + 5 * 60_000;
+      logger.warn('Instagram account photo refresh failed', { accountId });
+    } finally {
+      refresh.pending = false;
+      refresh.readers.clear();
+    }
+  })();
+};
+
 export const listInstagramConversations = async (user: InstagramUser) => {
   const params: unknown[] = [user.id];
   const ownershipFilter = instagramConversationOwnershipFilter(user);
@@ -2450,6 +2500,8 @@ export const listInstagramConversations = async (user: InstagramUser) => {
      ORDER BY c.last_message_at DESC NULLS LAST, c.id DESC`,
     params,
   );
+  const accountIds = new Set(rows.map((row) => Number(row.account_id)).filter((id) => Number.isSafeInteger(id) && id > 0));
+  for (const accountId of accountIds) queueInstagramAccountPhotoRefresh(accountId, user.id);
   return rows.map((row) => ({
     ...camelize(row),
     canReply: isWithinMessagingWindow(row.last_inbound_at),

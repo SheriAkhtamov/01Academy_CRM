@@ -57,3 +57,16 @@ it('ignores an older initial directory response that finishes after a live profi
   expect(screen.getByText('Updated employee')).toBeTruthy();
   expect(mocks.api).toHaveBeenCalledTimes(2);
 });
+
+it('refreshes Instagram account photos without invalidating message threads', async () => {
+  const client = new QueryClient(); clients.push(client);
+  const listKey = ['/api/instagram/conversations'];
+  const threadKey = ['/api/instagram/conversations', 9, 'messages'];
+  client.setQueryData(listKey, [{ id: 9, accountId: 1 }]);
+  client.setQueryData(threadKey, [{ id: 1, content: 'Kept message' }]);
+  render(<QueryClientProvider client={client}><Listener /></QueryClientProvider>);
+  await act(async () => { FakeSocket.instances[0].onmessage?.({ data: JSON.stringify({ type: 'INSTAGRAM_ACCOUNT_PHOTO_UPDATED', data: { accountId: 1 } }) }); });
+  expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(threadKey)?.isInvalidated).toBe(false);
+  expect(client.getQueryData(threadKey)).toEqual([{ id: 1, content: 'Kept message' }]);
+});

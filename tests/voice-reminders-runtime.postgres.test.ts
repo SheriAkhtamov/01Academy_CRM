@@ -159,7 +159,8 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     if (directory) await fs.rm(directory, { recursive: true, force: true });
   });
 
-  it.each(['ru', 'uz'] as const)('delivers exactly one standalone %s follow-up then ends without inventing attendance', async language => {
+  it.each([['ru', null], ['uz', null], ['ru', 'yes'], ['uz', 'no']] as const)(
+    'delivers exactly one standalone %s follow-up with response %s without changing attendance', async (language, response) => {
     if (language === 'uz') {
       await prepareUzbekAudio();
       await database.query("UPDATE academy_leads SET languages=ARRAY['uz','ru'] WHERE id=1");
@@ -183,6 +184,12 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
         expect(input.confirmation!.promptDurationSeconds).toBe(1);
         const normalized = await fs.readFile(input.audioPath);
         for (let offset = 44; offset < normalized.length; offset += 2) expect(normalized.readInt16LE(offset)).toBe(9000);
+        if (response) {
+          expect(await input.confirmation!.onResponse(response, input.callId!)).toBe(true);
+          // Actual transport checks eligibility again before its reply audio.
+          expect(await input.shouldContinue(false)).toBe(true);
+          return { outcome: 'played', callStarted: true, callId: input.callId!, terminationConfirmed: true, response };
+        }
       }
       return { outcome: 'delivered_no_response', callStarted: true, callId: input.callId!, terminationConfirmed: true };
     });
@@ -200,9 +207,15 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
       await runtime.tick();
       expect(call).toHaveBeenCalledTimes(2);
       expect((await database.query('SELECT status,attempts,no_response_count,response FROM voice_reminder_jobs')).rows[0])
-        .toMatchObject({ status: 'delivered_no_response', attempts: 2, no_response_count: 2, response: null });
-      expect((await database.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows[0])
-        .toMatchObject({ delivery_status: 'delivered_no_response' });
+        .toMatchObject({ status: response ? 'played' : 'delivered_no_response', attempts: 2,
+          no_response_count: response ? 1 : 2, response });
+      if (response) {
+        expect((await database.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows).toEqual([]);
+        expect((await database.query('SELECT * FROM voice_reminder_participant_response(1)')).rows[0].response).toBe(response);
+      } else {
+        expect((await database.query('SELECT * FROM voice_reminder_participant_delivery(1)')).rows[0])
+          .toMatchObject({ delivery_status: 'delivered_no_response' });
+      }
       expect((await database.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
       now += 10 * 60_000;
       await runtime.tick();

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { RTCPeerConnection, RtpHeader, usePCMU as createPcmuCodec } from 'werift';
+import { RTCPeerConnection, RTCRtpCodecParameters, RtpHeader, usePCMU as createPcmuCodec } from 'werift';
 import WebSocket, { WebSocketServer } from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OnlinePbxWebRtcCredentials } from '../server/services/onlinepbx';
@@ -14,8 +14,11 @@ type Message = { id?: number | string; method?: string; params?: Record<string, 
 type InviteHandler = (socket: WebSocket, message: Message) => Promise<void> | void;
 const cleanups: Array<() => Promise<void>> = [];
 
-const localPeer = () => new RTCPeerConnection({
-  codecs: { audio: [createPcmuCodec({ payloadType: 0, clockRate: 8_000, channels: 1 })], video: [] },
+const localPeer = (receiveTelephoneEvents = false) => new RTCPeerConnection({
+  codecs: { audio: [createPcmuCodec({ payloadType: 0, clockRate: 8_000, channels: 1 }),
+    ...(receiveTelephoneEvents ? [new RTCRtpCodecParameters({
+      mimeType: 'audio/telephone-event', payloadType: 101, clockRate: 8_000, parameters: '0-16',
+    })] : [])], video: [] },
   iceServers: [], iceUseIpv4: false, iceUseIpv6: false, iceUseTcp: false,
   iceAdditionalHostAddresses: ['127.0.0.1'], iceInterfaceAddresses: { udp4: '127.0.0.1' },
 });
@@ -79,6 +82,13 @@ const confirmationDependencies = (): VertoCallDependencies => ({
     file.endsWith('yes.wav') ? 0xce : file.endsWith('no.wav') ? 0xcd : 0xff),
 });
 
+const interruptibleConfirmationDependencies = (): VertoCallDependencies => ({
+  ...confirmationDependencies(),
+  decodeAudio: async file => Buffer.alloc(file.endsWith('yes.wav') ? 640 : file.endsWith('no.wav') ? 640 : 8_000,
+    file.endsWith('yes.wav') ? 0xce : file.endsWith('no.wav') ? 0xcd : 0xab),
+});
+const countMainPackets = (packets: Buffer[]) => packets.filter(payload => payload.every(byte => byte === 0xab)).length;
+
 const digitOneSamples = () => Buffer.from(Array.from({ length: 640 }, (_, index) => {
   const sample = Math.round(3000 * Math.sin(2 * Math.PI * 697 * index / 8000)
     + 3000 * Math.sin(2 * Math.PI * 1209 * index / 8000));
@@ -89,8 +99,8 @@ const digitOneSamples = () => Buffer.from(Array.from({ length: 640 }, (_, index)
   return ~(sign | exponent << 4 | (magnitude >> (exponent + 3) & 15)) & 255;
 }));
 
-async function answeringPeer(socket: WebSocket, invite: Message) {
-  const peer = localPeer();
+async function answeringPeer(socket: WebSocket, invite: Message, receiveTelephoneEvents = false) {
+  const peer = localPeer(receiveTelephoneEvents);
   cleanups.push(() => peer.close());
   const packets: Buffer[] = [];
   const headers: Array<{ payloadType: number; timestamp: number; sequenceNumber: number }> = [];
@@ -198,29 +208,266 @@ describe('reminder confirmation dialogue', () => {
     expect(harness.errors).toEqual([]);
     expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
     expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
-    expect(packetsAtCommit).toBeGreaterThanOrEqual(9);
+    expect(packetsAtCommit).toBeGreaterThanOrEqual(6);
     expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(true);
     expect(received.packets.some(payload => payload.every(byte => byte === 0xcd))).toBe(false);
   });
 
-  it('ignores early, unrelated and invalid presses and takes the first valid own-call response', async () => {
+  it('accepts a digit immediately after the final answer queued behind SDP, before playing the prompt', async () => {
     const input = confirmationInput();
+    const onDiagnostic = vi.fn();
+    input.onDiagnostic = onDiagnostic;
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+      await delay(100);
+      return setRemote(description);
+    });
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '2' }, 'before-answer');
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      event(socket, 'verto.info', { callID: 'manager-other-call', dtmf: '2' }, 'unrelated');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '9*' }, 'invalid');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '12' }, 'first-response');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...interruptibleConfirmationDependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(countMainPackets(received.packets)).toBe(0);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(true);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xcd))).toBe(false);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'dtmf', source: 'verto_info', digit: '2', disposition: 'before_answer',
+    }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'dtmf', source: 'verto_info', digit: '1', disposition: 'accepted',
+    }));
+    expect(onDiagnostic.mock.calls.filter(([diagnostic]) => diagnostic.event === 'dtmf' && diagnostic.disposition === 'accepted')).toHaveLength(1);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'response_save', saveStatus: 'started' }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'response_save', saveStatus: 'saved' }));
+    const logged = JSON.stringify(onDiagnostic.mock.calls);
+    for (const sensitive of ['test-password', 'test-user', '+998901234567', 'a=ice-pwd:', '9*']) {
+      expect(logged).not.toContain(sensitive);
+    }
+  }, 15_000);
+
+  it.each([
+    ['beginning', 1, '1', 'yes', 0xce],
+    ['middle', 20, '2', 'no', 0xcd],
+    ['after playback', 50, '1', 'yes', 0xce],
+  ] as const)('interrupts the main prompt at its %s and preserves the first valid response', async (_phase, targetPackets, digit, response, acknowledgement) => {
+    const input = confirmationInput();
+    let socket!: WebSocket;
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    let mainPacketsAtCommit = -1;
+    input.confirmation!.onResponse = vi.fn(async () => {
+      mainPacketsAtCommit = countMainPackets(received.packets);
+      expect(received.packets.some(payload => payload.every(byte => byte === 0xce || byte === 0xcd))).toBe(false);
+      event(socket, 'verto.info', { callID: received.callID, dtmf: digit === '1' ? '2' : '1' }, 'opposite-during-save');
+      await delay(80);
+      expect(countMainPackets(received.packets)).toBe(mainPacketsAtCommit);
+      return true;
+    });
+    input.onDiagnostic = diagnostic => {
+      if (diagnostic.event === 'phase' && diagnostic.phase === 'acknowledgement') {
+        event(socket, 'verto.info', { callID: received.callID, dtmf: digit === '1' ? '2' : '1' }, 'opposite-during-ack');
+      }
+    };
+    const harness = await fakeVerto(async (connected, invite) => {
+      socket = connected;
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(countMainPackets(received.packets)).toBeGreaterThanOrEqual(targetPackets), { interval: 5, timeout: 5_000 });
+      event(socket, 'verto.info', { callID: 'other-call', dtmf: digit === '1' ? '2' : '1' }, 'foreign');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: `9*${digit}${digit === '1' ? '2' : '1'}` }, 'response');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, interruptibleConfirmationDependencies());
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response, terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith(response, result.callId);
+    expect(mainPacketsAtCommit).toBeGreaterThanOrEqual(targetPackets);
+    expect(mainPacketsAtCommit).toBeLessThanOrEqual(targetPackets + 2);
+    expect(countMainPackets(received.packets)).toBe(mainPacketsAtCommit);
+    expect(received.packets.filter(payload => payload.every(byte => byte === acknowledgement))).toHaveLength(4);
+    expect(received.packets.some(payload => payload.every(byte => byte === (acknowledgement === 0xce ? 0xcd : 0xce)))).toBe(false);
+  }, 15_000);
+
+  it('receives an early PCMU press before the question and stops the remaining main audio', async () => {
+    const input = confirmationInput();
+    const onDiagnostic = vi.fn(diagnostic => { if (diagnostic.event === 'dtmf') throw new Error('Observer unavailable'); });
+    input.onDiagnostic = onDiagnostic;
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    let mainPacketsAtCommit = -1;
+    input.confirmation!.onResponse = vi.fn(async () => {
+      mainPacketsAtCommit = countMainPackets(received.packets);
+      return true;
+    });
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(countMainPackets(received.packets)).toBeGreaterThanOrEqual(1), { interval: 5 });
+      const samples = digitOneSamples();
+      const transport = received.peer.dtlsTransports[0];
+      const ssrc = received.peer.getTransceivers()[0].sender.ssrc;
+      for (let offset = 0; offset < samples.length; offset += 160) {
+        await transport.sendRtp(samples.subarray(offset, offset + 160), new RtpHeader({
+          payloadType: 0, ssrc, sequenceNumber: offset / 160, timestamp: offset,
+        }));
+        await delay(20);
+      }
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, interruptibleConfirmationDependencies());
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(mainPacketsAtCommit).toBeGreaterThanOrEqual(1);
+    expect(mainPacketsAtCommit).toBeLessThan(10);
+    expect(countMainPackets(received.packets)).toBe(mainPacketsAtCommit);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(true);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'dtmf', source: 'pcmu', disposition: 'accepted' }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'response_save', saveStatus: 'saved' }));
+  }, 15_000);
+
+  it('receives an early negotiated RFC2833 event and ignores repeated end packets or later opposite digits', async () => {
+    const input = confirmationInput();
+    const onDiagnostic = vi.fn();
+    input.onDiagnostic = onDiagnostic;
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    let mainPacketsAtCommit = -1;
+    input.confirmation!.onResponse = vi.fn(async () => {
+      mainPacketsAtCommit = countMainPackets(received.packets);
+      await delay(80);
+      return true;
+    });
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite, true);
+      expect(received.sdp).toContain('telephone-event/8000');
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      await vi.waitFor(() => expect(countMainPackets(received.packets)).toBeGreaterThanOrEqual(1), { interval: 5 });
+      const transport = received.peer.dtlsTransports[0];
+      const ssrc = received.peer.getTransceivers()[0].sender.ssrc;
+      for (let sequenceNumber = 1; sequenceNumber <= 3; sequenceNumber++) {
+        await transport.sendRtp(Buffer.from([2, 138, 3, 32]), new RtpHeader({
+          payloadType: 101, ssrc, sequenceNumber, timestamp: 2_000,
+        }));
+        await delay(10);
+      }
+      await transport.sendRtp(Buffer.from([1, 138, 3, 32]), new RtpHeader({
+        payloadType: 101, ssrc, sequenceNumber: 4, timestamp: 3_000,
+      }));
+      await vi.waitFor(() => expect(input.confirmation!.onResponse).toHaveBeenCalledOnce(), { interval: 5 });
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'opposite-signalling-source');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...interruptibleConfirmationDependencies(), createPeer: () => localPeer(true),
+    });
+    expect(harness.errors).toEqual([]);
+    expect(result).toMatchObject({ outcome: 'played', response: 'no', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('no', result.callId);
+    expect(mainPacketsAtCommit).toBeGreaterThanOrEqual(1);
+    expect(mainPacketsAtCommit).toBeLessThan(6);
+    expect(countMainPackets(received.packets)).toBe(mainPacketsAtCommit);
+    expect(received.packets.filter(payload => payload.every(byte => byte === 0xcd))).toHaveLength(4);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(false);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'dtmf', source: 'telephone_event', digit: '2', disposition: 'accepted' }));
+  }, 15_000);
+
+  it.each(['queued answer SDP', 'main playback'] as const)('waits for an accepted response save after an immediate caller hangup during %s', async when => {
+    const input = confirmationInput();
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    if (when === 'queued answer SDP') {
+      vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+        await delay(150);
+        return setRemote(description);
+      });
+    }
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    let saveFinished = false;
+    input.confirmation!.onResponse = vi.fn(async () => {
+      if (when === 'queued answer SDP') expect(robot.remoteDescription).toBeNull();
+      await delay(100);
+      saveFinished = true;
+      return true;
+    });
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      if (when === 'main playback') {
+        await vi.waitFor(() => expect(countMainPackets(received.packets)).toBeGreaterThanOrEqual(1), { interval: 5 });
+      }
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'accepted-before-hangup');
+      event(socket, 'verto.bye', { callID: received.callID, cause: 'NORMAL_CLEARING' }, 'caller-hangup');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...interruptibleConfirmationDependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(saveFinished).toBe(true);
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(countMainPackets(received.packets)).toBeLessThan(5);
+    expect(received.packets.some(payload => payload.every(byte => byte === 0xce || byte === 0xcd))).toBe(false);
+  }, 15_000);
+
+  it.each(['NO_USER_RESPONSE', 'NO_ANSWER'] as const)('never reports an answered call as unanswered when SDP is pending and a rejected response is followed by %s', async cause => {
+    const input = confirmationInput();
+    input.confirmation!.onResponse = vi.fn(async () => false);
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+      await delay(150);
+      return setRemote(description);
+    });
     let received!: Awaited<ReturnType<typeof answeringPeer>>;
     const harness = await fakeVerto(async (socket, invite) => {
       received = await answeringPeer(socket, invite);
       event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
-      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(1), { interval: 10 });
-      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'early');
-      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
-      event(socket, 'verto.info', { callID: 'manager-other-call', dtmf: '1' }, 'unrelated');
-      event(socket, 'verto.info', { callID: received.callID, dtmf: '9*21' }, 'valid');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'rejected-response');
+      event(socket, 'verto.bye', { callID: received.callID, cause }, 'caller-hangup');
     });
-    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
-    expect(result).toMatchObject({ outcome: 'played', response: 'no', terminationConfirmed: true });
-    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('no', result.callId);
-    expect(received.packets.some(payload => payload.every(byte => byte === 0xcd))).toBe(true);
-    expect(received.packets.some(payload => payload.every(byte => byte === 0xce))).toBe(false);
-  });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...interruptibleConfirmationDependencies(), createPeer: () => robot,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(received.packets).toHaveLength(0);
+  }, 15_000);
+
+  it('fails without an unanswered retry when the final answer arrives before a stalled SDP exceeds the ring deadline', async () => {
+    const input = confirmationInput();
+    input.confirmation!.onResponse = vi.fn(async () => false);
+    const onDiagnostic = vi.fn();
+    input.onDiagnostic = onDiagnostic;
+    const robot = localPeer();
+    const setRemote = robot.setRemoteDescription.bind(robot);
+    vi.spyOn(robot, 'setRemoteDescription').mockImplementation(async description => {
+      await delay(350);
+      return setRemote(description);
+    });
+    let received!: Awaited<ReturnType<typeof answeringPeer>>;
+    const harness = await fakeVerto(async (socket, invite) => {
+      received = await answeringPeer(socket, invite);
+      event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
+      event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'rejected-response');
+    });
+    const result = await performVertoReminderCall(harness.credentials, input, {
+      ...interruptibleConfirmationDependencies(), createPeer: () => robot, ringTimeoutMs: 150,
+    });
+    expect(harness.errors).toEqual([]);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ event: 'answer' }));
+    expect(input.confirmation!.onResponse).toHaveBeenCalledExactlyOnceWith('yes', result.callId);
+    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(result.response).toBeUndefined();
+    expect(received.packets).toHaveLength(0);
+  }, 15_000);
 
   it('connects early media without sending audio or accepting digits before the own final answer', async () => {
     const input = confirmationInput();
@@ -417,24 +664,24 @@ describe('reminder confirmation dialogue', () => {
       event(socket, 'verto.info', { callID, dtmf: '1' }, 'digit');
     });
     const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
-    expect(result).toMatchObject({ outcome: phase === 'saving' ? 'failed' : 'played', terminationConfirmed: true });
-    if (phase === 'acknowledgement') expect(result.response).toBe('yes');
+    expect(result).toMatchObject({ outcome: 'played', response: 'yes', terminationConfirmed: true });
     expect(input.confirmation!.onResponse).toHaveBeenCalledOnce();
   });
 
-  it.each(['rejected', 'error'] as const)('does not thank the caller when the response save is %s', async mode => {
+  it.each(['rejected', 'error'] as const)('does not thank the caller or report missing response when an early response save is %s', async mode => {
     const input = confirmationInput();
     input.confirmation!.onResponse = vi.fn(async () => { if (mode === 'error') throw new Error('Save failed'); return false; });
     let received!: Awaited<ReturnType<typeof answeringPeer>>;
     const harness = await fakeVerto(async (socket, invite) => {
       received = await answeringPeer(socket, invite);
       event(socket, 'verto.answer', { callID: received.callID, sdp: received.sdp }, 'answer');
-      await vi.waitFor(() => expect(received.packets.length).toBeGreaterThanOrEqual(8), { interval: 10 });
+      await vi.waitFor(() => expect(countMainPackets(received.packets)).toBeGreaterThanOrEqual(1), { interval: 5 });
       event(socket, 'verto.info', { callID: received.callID, dtmf: '1' }, 'digit');
     });
-    const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
+    const result = await performVertoReminderCall(harness.credentials, input, interruptibleConfirmationDependencies());
     expect(result).toMatchObject({ outcome: 'failed', terminationConfirmed: true });
     expect(result.response).toBeUndefined();
+    expect(countMainPackets(received.packets)).toBeLessThan(5);
     expect(received.packets.some(payload => payload.every(byte => byte === 0xce || byte === 0xcd))).toBe(false);
   });
 });

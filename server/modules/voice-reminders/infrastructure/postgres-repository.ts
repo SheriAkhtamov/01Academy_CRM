@@ -463,7 +463,9 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const parts = row ? selectedJobParts(row,library) : null;
       const eligible = row?.valid && row.language === (job.language ?? 'ru') && row.reminderKind === job.reminderKind && reminderOnEligibleDay(row.scheduledAt,now,row.reminderKind)
         && currentPhone(row)===phone && reminderKindEnabled(settings,row.reminderKind)
-        && (row.retryPhase==='response_retry' ? row.noResponseCount===1 && !row.response && !row.hasFreshResponse && settings.confirmationEnabled : row.attempts<settings.maxAttempts) && reminderWithinAllowedHours(now,settings,row.reminderKind);
+        && (row.retryPhase==='response_retry'
+          ? row.noResponseCount===1 && settings.confirmationEnabled && (row.response!==null || !row.hasFreshResponse)
+          : row.attempts<settings.maxAttempts) && reminderWithinAllowedHours(now,settings,row.reminderKind);
       if (!eligible || row.confirmationEnabled !== settings.confirmationEnabled) return false;
       if (!verifyAudio) return true;
       if (row.confirmationEnabled && (row.confirmationYesAudioId !== library.confirmationYes?.id || row.confirmationNoAudioId !== library.confirmationNo?.id)) return false;

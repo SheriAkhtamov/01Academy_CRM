@@ -6,6 +6,7 @@ const STEP_SAMPLES = 160;
 const ROWS = [697, 770, 852, 941];
 const COLUMNS = [1209, 1336, 1477, 1633];
 const KEYPAD = ['123A', '456B', '789C', '*0#D'];
+export type DtmfSignalSource = 'pcmu' | 'telephone_event';
 
 export const decodeMulawSample = (byte: number): number => {
   const value = ~byte & 255;
@@ -56,7 +57,7 @@ export class DtmfReceiver {
   private readonly telephonePayloads = new Set<number>();
   private readonly events = new Set<string>();
 
-  constructor(private readonly report: (digit: string) => void) {}
+  constructor(private readonly report: (digit: string, source: DtmfSignalSource) => void) {}
 
   negotiate(remoteSdp: string) {
     this.telephonePayloads.clear();
@@ -90,7 +91,7 @@ export class DtmfReceiver {
       if (this.events.has(key)) return;
       if (this.events.size >= 64) this.events.delete(this.events.values().next().value!);
       this.events.add(key);
-      this.report('0123456789*#ABCD'[bytes[0]]);
+      this.report('0123456789*#ABCD'[bytes[0]], 'telephone_event');
       return;
     }
     if (packet.header.payloadType !== 0 || !packet.payload.length || packet.payload.length > 1_600) return;
@@ -117,7 +118,7 @@ export class DtmfReceiver {
       // Two overlapping 40 ms windows establish at least 60 ms of a tone.
       if (digit && this.consecutiveWindows >= 2 && !this.reportedTone) {
         this.reportedTone = true;
-        this.report(digit);
+        this.report(digit, 'pcmu');
       }
     }
   }

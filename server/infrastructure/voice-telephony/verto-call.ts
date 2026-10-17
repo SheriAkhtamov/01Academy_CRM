@@ -10,7 +10,7 @@ import { VOICE_REMINDER_MAX_AUDIO_SECONDS, VOICE_REMINDER_CONFIRMATION_WAIT_SECO
 import type { VoiceReminderCallOutcome, VoiceReminderCallResult, VoiceReminderLine } from '../../modules/voice-reminders/application/ports';
 import type { OnlinePbxWebRtcCredentials } from '../../services/onlinepbx';
 import { VertoRpcClient, VertoTransportError, type VertoEvent, type VertoRpcDiagnostic } from './verto-rpc';
-import { DtmfReceiver } from './dtmf-receiver';
+import { DtmfReceiver, type DtmfSignalSource } from './dtmf-receiver';
 
 const execute = promisify(execFile);
 const SAMPLE_RATE = 8_000;
@@ -23,11 +23,12 @@ export type VertoCallPhase = 'preflight' | 'audio_decode' | 'login' | 'offer' | 
   | 'ringing' | 'media_connect' | 'playback' | 'confirmation' | 'acknowledgement' | 'hangup';
 export type VertoCallDiagnostic = {
   event: 'phase' | 'peer_state' | 'early_media' | 'answer' | 'remote_description_failed' | 'remote_end'
-    | 'session_replaced' | 'timeout' | 'failed' | 'finished' | VertoRpcDiagnostic['event'];
+    | 'session_replaced' | 'timeout' | 'failed' | 'finished' | 'response_listening' | 'dtmf' | 'response_save' | VertoRpcDiagnostic['event'];
   phase: VertoCallPhase;
   elapsedMs: number;
   callStarted: boolean;
   answered: boolean;
+  finalAnswerReceived: boolean;
   peerState: string;
   iceState: string;
   dtlsState: string | null;
@@ -36,6 +37,10 @@ export type VertoCallDiagnostic = {
   code?: number;
   outcome?: VoiceReminderCallOutcome;
   terminationConfirmed?: boolean;
+  source?: DtmfSignalSource | 'verto_info';
+  digit?: '1' | '2' | 'other';
+  disposition?: 'accepted' | 'before_answer' | 'already_selected' | 'closed' | 'unsupported';
+  saveStatus?: 'started' | 'saved' | 'rejected' | 'failed' | 'timeout';
 };
 export type VertoReminderCallInput = WithoutConfirmation<Parameters<VoiceReminderLine['call']>[0]> & {
   confirmation?: {
@@ -132,6 +137,7 @@ export async function performVertoReminderCall(
   let rpc: VertoRpcClient | undefined;
   let callStarted = false;
   let answered = false;
+  let finalAnswerReceived = false;
   let remoteAudioApplied = false;
   let receivedBye = false;
   let acknowledgedBye = false;
@@ -142,29 +148,70 @@ export async function performVertoReminderCall(
   let monitor: Promise<void> | undefined;
   let pendingResponse: VoiceReminderResponse | undefined;
   let savedResponse: VoiceReminderResponse | undefined;
+  let responseSave: Promise<void> | undefined;
+  let saveFinished = false;
+  let saveError: unknown;
   let fullPromptDelivered = false;
   let callDeadline = input.deadline.getTime();
   let acceptingResponse = false;
   const diagnosticStartedAt = Date.now();
   let phase: VertoCallPhase = 'preflight';
   const diagnose = (event: VertoCallDiagnostic['event'], details: Partial<Pick<VertoCallDiagnostic,
-    'cause' | 'method' | 'code' | 'outcome' | 'terminationConfirmed'>> = {}) => {
+    'cause' | 'method' | 'code' | 'outcome' | 'terminationConfirmed' | 'source' | 'digit' | 'disposition' | 'saveStatus'>> = {}) => {
     try {
       input.onDiagnostic?.({ event, phase, elapsedMs: Date.now() - diagnosticStartedAt,
-        callStarted, answered, peerState: peer.connectionState, iceState: peer.iceConnectionState,
+        callStarted, answered, finalAnswerReceived, peerState: peer.connectionState, iceState: peer.iceConnectionState,
         dtlsState: sender.transport?.state ?? null, ...details });
     } catch { /* Diagnostics must never change call delivery or termination. */ }
   };
   const enter = (next: VertoCallPhase) => { phase = next; diagnose('phase'); };
-  const collectDigit = (digit: string) => {
-    if (!acceptingResponse || !answered || stopped || ending || pendingResponse) return;
-    if (digit === '1' || digit === '2') pendingResponse = digit === '1' ? 'yes' : 'no';
+  const persistResponse = (response: VoiceReminderResponse) => {
+    if (!input.confirmation) return;
+    diagnose('response_save', { saveStatus: 'started' });
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    // An accepted digit belongs to this exact call. Finish its bounded durable
+    // write even if BYE arrives before playback/media setup can advance.
+    responseSave = Promise.race([
+      Promise.resolve().then(() => input.confirmation!.onResponse(response, callId)),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          reject(new VertoTransportError());
+        }, Math.max(1, Math.min(5_000, callDeadline - Date.now())));
+      }),
+    ]).then(stored => {
+      if (stored) {
+        savedResponse = response;
+        diagnose('response_save', { saveStatus: 'saved' });
+      } else {
+        saveError = new VertoTransportError();
+        diagnose('response_save', { saveStatus: 'rejected' });
+      }
+    }, error => {
+      saveError = error;
+      diagnose('response_save', { saveStatus: timedOut ? 'timeout' : 'failed' });
+    }).finally(() => {
+      saveFinished = true;
+      if (timeout) clearTimeout(timeout);
+    });
+  };
+  const collectDigit = (digit: string, source: DtmfSignalSource | 'verto_info') => {
+    const disposition: VertoCallDiagnostic['disposition'] = !finalAnswerReceived ? 'before_answer'
+      : pendingResponse ? 'already_selected' : !acceptingResponse || stopped || ending ? 'closed'
+        : digit !== '1' && digit !== '2' ? 'unsupported' : 'accepted';
+    diagnose('dtmf', { source, digit: digit === '1' || digit === '2' ? digit : 'other', disposition });
+    if (disposition !== 'accepted') return;
+    pendingResponse = digit === '1' ? 'yes' : 'no';
+    acceptingResponse = false;
+    digits.disarm();
+    persistResponse(pendingResponse);
   };
   const digits = new DtmfReceiver(collectDigit);
   const unsubscribe: Array<() => void> = [];
   if (input.confirmation) {
     for (const transport of peer.dtlsTransports) {
-      const subscription = transport.onRtp.subscribe(packet => { if (answered && !stopped && !ending) digits.receive(packet); });
+      const subscription = transport.onRtp.subscribe(packet => { if (finalAnswerReceived && !stopped && !ending) digits.receive(packet); });
       unsubscribe.push(() => subscription.unSubscribe());
     }
   }
@@ -236,7 +283,7 @@ export async function performVertoReminderCall(
       // handled by the RPC client; answering or rejecting that fork is forbidden.
       if (eventCallId(event) !== callId || stopped || ending) return;
       if (input.confirmation && event.method === 'verto.info' && typeof event.params.dtmf === 'string') {
-        for (const digit of event.params.dtmf.slice(0, 16)) collectDigit(digit);
+        for (const digit of event.params.dtmf.slice(0, 16)) collectDigit(digit, 'verto_info');
         return;
       }
       if (event.method === 'verto.bye') {
@@ -244,13 +291,23 @@ export async function performVertoReminderCall(
         const cause = String(event.params.cause ?? '').toUpperCase();
         diagnose('remote_end', { cause: /^[A-Z0-9_]{1,64}$/.test(cause) ? cause : 'UNSPECIFIED' });
         const unanswered = ['NO_ANSWER', 'NO_USER_RESPONSE', 'USER_BUSY', 'CALL_REJECTED'].includes(cause);
-        stop(!answered && unanswered ? 'unanswered'
+        stop(!finalAnswerReceived && unanswered ? 'unanswered'
           : input.confirmation && fullPromptDelivered && !pendingResponse ? 'delivered_no_response' : 'failed');
         return;
       }
       if (event.method !== 'verto.media' && event.method !== 'verto.answer') return;
       const final = event.method === 'verto.answer';
       diagnose(final ? 'answer' : 'early_media');
+      if (final && !finalAnswerReceived) {
+        // Telephone answer opens keypad input. Media readiness still gates all
+        // outgoing audio; a fast caller's answer need not wait for SDP or speech.
+        finalAnswerReceived = true;
+        if (input.confirmation) {
+          acceptingResponse = true;
+          digits.arm();
+          diagnose('response_listening');
+        }
+      }
       descriptions = descriptions.then(async () => {
         if (stopped || ending || answered) return;
         if (!remoteAudioApplied) {
@@ -304,7 +361,7 @@ export async function performVertoReminderCall(
     enter('ringing');
     const ringDeadline = startedAt + (dependencies.ringTimeoutMs ?? 45_000);
     while (!answered) {
-      if (Date.now() >= ringDeadline) throw new CallStopped('unanswered');
+      if (Date.now() >= ringDeadline) throw new CallStopped(finalAnswerReceived ? 'failed' : 'unanswered');
       await bounded(delay(20), 1_000);
     }
     enter('media_connect');
@@ -331,24 +388,20 @@ export async function performVertoReminderCall(
       timestamp = (timestamp + FRAME_BYTES) >>> 0;
       firstFrame = false;
     };
-    const play = async (samples: Buffer, main = false) => {
+    const play = async (samples: Buffer, main = false): Promise<boolean> => {
       const startedAt = Date.now();
-      const promptOffset = input.confirmation ? Math.max(0, audio.length - Math.ceil(input.confirmation.promptDurationSeconds * SAMPLE_RATE)) : Infinity;
       for (let offset = 0; offset < samples.length; offset += FRAME_BYTES) {
-        if (main && input.confirmation && !acceptingResponse && offset + FRAME_BYTES > promptOffset) {
-          acceptingResponse = true;
-          digits.arm();
-        }
+        if (main && pendingResponse) return false;
         const payload = Buffer.alloc(FRAME_BYTES, 0xff);
         samples.copy(payload, 0, offset, Math.min(samples.length, offset + FRAME_BYTES));
         await sendFrame(payload);
         const nextFrameAt = startedAt + (Math.floor(offset / FRAME_BYTES) + 1) * FRAME_MILLISECONDS;
         await bounded(delay(Math.max(0, nextFrameAt - Date.now())), 1_000);
       }
+      return true;
     };
     enter('playback');
-    await play(audio, true);
-    fullPromptDelivered = true;
+    fullPromptDelivered = await play(audio, true);
     if (input.confirmation && replyAudio) {
       enter('confirmation');
       const waitUntil = Date.now() + (dependencies.confirmationWaitMs ?? VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS * 1_000);
@@ -360,15 +413,6 @@ export async function performVertoReminderCall(
       acceptingResponse = false;
       digits.disarm();
       if (pendingResponse) {
-        await check();
-        let stored = false;
-        let saveFinished = false;
-        let saveError: unknown;
-        const saving = bounded(input.confirmation.onResponse(pendingResponse, callId),
-          Math.max(1, Math.min(5_000, callDeadline - Date.now()))).then(value => {
-          stored = value;
-          if (value) savedResponse = pendingResponse;
-        }, error => { saveError = error; }).finally(() => { saveFinished = true; });
         // Maintain the RTP clock while the durable response is committed. A
         // database pause must not make the acknowledgement arrive as late RTP.
         while (!saveFinished) {
@@ -376,10 +420,9 @@ export async function performVertoReminderCall(
           await sendFrame(Buffer.alloc(FRAME_BYTES, 0xff));
           await bounded(delay(Math.max(0, FRAME_MILLISECONDS - (Date.now() - frameStartedAt))), 1_000);
         }
-        await saving;
+        await responseSave;
         if (saveError) throw saveError;
-        if (!stored) throw new VertoTransportError();
-        savedResponse = pendingResponse;
+        if (!savedResponse) throw new VertoTransportError();
         await check();
         enter('acknowledgement');
         await play(replyAudio[savedResponse === 'yes' ? 0 : 1]);
@@ -389,7 +432,9 @@ export async function performVertoReminderCall(
     result = { outcome: input.confirmation && !pendingResponse ? 'delivered_no_response' : 'played',
       callStarted, callId, ...(savedResponse ? { response: savedResponse } : {}) };
   } catch (error) {
-    const outcome = savedResponse ? 'played' : error instanceof CallStopped ? error.outcome : stopped ?? 'failed';
+    await responseSave;
+    const stoppedOutcome = error instanceof CallStopped ? error.outcome : stopped ?? 'failed';
+    const outcome = savedResponse ? 'played' : pendingResponse && stoppedOutcome === 'unanswered' ? 'failed' : stoppedOutcome;
     if (outcome !== 'delivered_no_response' && outcome !== 'played') diagnose('failed', { outcome });
     result = {
       outcome,

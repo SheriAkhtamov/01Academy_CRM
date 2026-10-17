@@ -397,16 +397,20 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     const native = randomUUID();
     await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at) VALUES($1,$2,'100','+998901234567',$3)`,[native,job.id,retryTime]);
     await pool.query('UPDATE voice_reminder_jobs SET provider_call_id=$2 WHERE id=$1',[job.id,native]);
+    expect(await repository.canContinue(retry,'+998901234567',retryTime,false)).toBe(true);
     expect(await repository.recordResponse(job,'+998901234567','no',retryTime,oldCall)).toBe(false);
     expect(await repository.recordResponse(retry,'+998901234567','yes',retryTime,oldCall)).toBe(false);
     expect(await repository.recordResponse(retry,'+998901234567','no',retryTime,native)).toBe(true);
+    // Its own saved response must allow the acknowledgement to play. A fresh
+    // response from a different reminder still stops an unanswered follow-up.
+    expect(await repository.canContinue(retry,'+998901234567',retryTime,false)).toBe(true);
     await repository.finish(retry,{ outcome:'played',callStarted:true,callId:native,response:'no' },retryTime,null);
     expect(await currentResponse()).toMatchObject([{ response:'no',response_at:retryTime }]);
     expect(await deliveryRows()).toEqual([]);
     expect((await pool.query('SELECT status FROM academy_demo_lesson_participants WHERE id=1')).rows[0].status).toBe('invited');
   });
 
-  it('suppresses a queued follow-up after a fresh valid response while ignoring a pre-delivery answer',async () => {
+  it.each(['queued','calling'] as const)('suppresses a %s follow-up after a fresh valid response while ignoring a pre-delivery answer',async stage => {
     await retryClip(); const { job } = await prepareDeliveredQuestion();
     await pool.query(`INSERT INTO voice_reminder_jobs(demo_lesson_id,participant_id,scheduled_at,due_at,status,reminder_kind,phone,
       response,response_at,response_call_id,response_lesson_revision,response_participant_revision)
@@ -414,8 +418,17 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
         delivery_lesson_revision,delivery_participant_revision FROM voice_reminder_jobs WHERE id=$1`,[job.id,new Date(now.getTime()-1),randomUUID()]);
     const oldAnswer = (await pool.query("SELECT id FROM voice_reminder_jobs WHERE reminder_kind='day_before'")).rows[0].id;
     expect((await pool.query('SELECT voice_reminder_job_fresh_response($1) AS fresh',[job.id])).rows[0].fresh).toBe(false);
+    const active = stage==='calling' ? await repository.claim(retryTime,2,300) : null;
+    if (stage==='calling') {
+      expect(active).not.toBeNull();
+      await repository.prepare(active!,retryTime);
+      expect(await repository.canContinue(active!,'+998901234567',retryTime,false)).toBe(true);
+    }
     await pool.query('UPDATE voice_reminder_jobs SET response_at=$2 WHERE id=$1',[oldAnswer,retryTime]);
-    expect(await repository.claim(retryTime,2,300)).toBeNull();
+    if (active) {
+      expect(await repository.canContinue(active,'+998901234567',retryTime,false)).toBe(false);
+      await repository.finish(active,{ outcome:'cancelled',callStarted:false,callId:null },retryTime,null);
+    } else expect(await repository.claim(retryTime,2,300)).toBeNull();
     await repository.synchronize(retryTime,await repository.settings());
     expect((await pool.query('SELECT status FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0].status).toBe('played');
     expect(await deliveryRows()).toEqual([]);

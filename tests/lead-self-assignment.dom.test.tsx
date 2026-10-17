@@ -93,7 +93,9 @@ describe('self-assignment inside the lead modal', () => {
     await screen.findByRole('heading', { name: 'Parent' });
     expect(screen.queryByRole('button', { name: i18n.t('assignLeadToMe') })).toBeNull();
     expect(screen.queryByRole('combobox', { name: i18n.t('responsibleManager') })).toBeNull();
-    expect(screen.getByText('Assigned employee')).toBeTruthy();
+    const managerField = screen.getByText(i18n.t('responsibleManager')).parentElement!;
+    expect(within(managerField).getByText('Assigned employee')).toBeTruthy();
+    expect(requests).toEqual([]);
   });
 
   it('retains the manager selector and editable queue lead for leadership', async () => {

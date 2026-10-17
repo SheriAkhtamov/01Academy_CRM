@@ -134,11 +134,25 @@ describe('canonical employee display identities', () => {
     const user = userEvent.setup();
     await waitFor(() => expect(photos(container)).toEqual([firstPhoto]));
     await user.click(screen.getByRole('combobox', { name: i18n.t('salesOverviewManager') }));
+    expect(screen.getByRole('option', { name: i18n.t('allManagers') })).toBeTruthy();
     const options = screen.getAllByRole('option');
     const second = options.find((option) => option.getAttribute('data-state') === 'unchecked' && option.textContent?.includes('Shared employee'))!;
     await waitFor(() => expect(second.querySelector('img')?.getAttribute('src')).toBe(secondPhoto));
     await user.click(second);
     expect(onChange).toHaveBeenCalledWith('8');
+  });
+
+  it('keeps the own employee selector disabled when choosing other managers is not permitted', async () => {
+    const onChange = vi.fn();
+    render(<EmployeeIdentityContext.Provider value={directory()}>
+      <SalesOverviewEmployeeFilter value="7" managers={[{ id: 7, fullName: 'Shared employee' }]} canViewAllManagers={false} onChange={onChange} />
+    </EmployeeIdentityContext.Provider>);
+    const trigger = screen.getByRole('combobox', { name: i18n.t('salesOverviewManager') }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    await userEvent.setup().click(trigger);
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.getByText('Shared employee')).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
 

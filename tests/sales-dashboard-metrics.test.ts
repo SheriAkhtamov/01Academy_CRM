@@ -7,7 +7,6 @@ const demoStudents = read('../server/modules/academy/sales-demo-students.ts');
 const moduleRoutes = read('../server/modules/academy/module.router.ts');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
 const salesOverviewMetrics = read('../client/src/components/ux/SalesOverviewMetrics.tsx');
-const salesOverviewEmployeeFilter = read('../client/src/components/ux/SalesOverviewEmployeeFilter.tsx');
 const salesCharts = read('../client/src/components/ux/DashboardCharts.tsx');
 const overviewHero = read('../client/src/components/ux/sales-overview/SalesOverviewHero.tsx');
 const overviewFunnel = read('../client/src/components/ux/sales-overview/SalesOverviewFunnel.tsx');
@@ -31,8 +30,6 @@ describe('sales dashboard operational metrics', () => {
     expect(salesDashboard).toContain("const defaultOverviewManagerId = currentSalesManagerId || 'all';");
     expect(salesDashboard).toContain("requestedOverviewManagerId === 'all'");
     expect(salesDashboard).toContain('<SalesOverviewEmployeeFilter');
-    expect(salesOverviewEmployeeFilter).toContain("<option value=\"all\">{t('allManagers')}</option>");
-    expect(salesOverviewEmployeeFilter).toContain("t('salesOverviewManager')");
     expect(salesDashboard).toContain('const overviewLeads = useMemo');
     expect(salesDashboard).toContain('const overviewStudents = useMemo');
     expect(salesDashboard).toContain('const overviewPayments = useMemo');

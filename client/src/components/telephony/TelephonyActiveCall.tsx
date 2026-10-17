@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'wouter';
@@ -320,7 +321,7 @@ export function TelephonyActiveCall({
                   className="flex w-full cursor-pointer items-center justify-between rounded-xl bg-card px-3 py-2 text-sm shadow-2xs transition hover:bg-accent disabled:opacity-60"
                   onClick={() => void runTransfer(employee.extension)}
                 >
-                  <span className="truncate font-medium text-foreground">{employee.name}</span>
+                  <EmployeeIdentity userId={employee.id} name={employee.name} className="font-medium text-foreground" />
                   <Badge variant="secondary" className="ml-3 font-mono">{employee.extension}</Badge>
                 </button>
               ))}

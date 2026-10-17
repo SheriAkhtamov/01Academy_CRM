@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import type { ReactNode } from 'react';
 import { format, isSameDay } from 'date-fns';
 import type { Locale } from 'date-fns';
@@ -132,12 +133,9 @@ export function ScheduleAgendaList({
                             </span>
                           ) : null}
                         </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {[
-                            event.topic || event.courseName,
-                            event.teacherName || t('notAssigned'),
-                            event.schoolName,
-                          ].filter(Boolean).join(' · ')}
+                        <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                          <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-5 text-[9px]" />
+                          <span className="truncate">{[event.topic || event.courseName, event.schoolName].filter(Boolean).join(' · ')}</span>
                         </span>
                       </span>
                       <span className="hidden shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground sm:flex">

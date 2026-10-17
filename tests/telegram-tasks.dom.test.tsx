@@ -102,16 +102,18 @@ describe('Mobile tasks interface', () => {
     mocks.board.mockResolvedValue({ tasks: [{ ...task, creator: { ...task.creator, avatarUrl: creatorUrl }, assignee: { ...task.assignee, avatarUrl: assigneeUrl } }] });
     setup(); await screen.findByText('My assigned task');
     const card = assertPeople('My assigned task', 'Creator', 'Employee');
-    await waitFor(() => expect(images).toHaveLength(2));
-    act(() => {
-      for (const image of images) { image.complete = true; image.naturalWidth = 80; image.dispatchEvent(new Event('load')); }
+    await waitFor(() => {
+      act(() => {
+        for (const image of images) { image.complete = true; image.naturalWidth = 80; image.dispatchEvent(new Event('load')); }
+      });
+      expect(card.querySelectorAll('img')).toHaveLength(2);
     });
-    expect(card.querySelectorAll('img')).toHaveLength(2);
     for (const image of card.querySelectorAll('img')) {
       expect(image.src).toMatch(/^blob:mini-photo-/);
       expect(image.src).not.toContain('test-mini-session');
       expect(image.draggable).toBe(false);
     }
+    expect(mocks.photo).toHaveBeenCalledTimes(2);
     expect(mocks.photo).toHaveBeenCalledWith(creatorUrl, expect.any(AbortSignal));
     expect(mocks.photo).toHaveBeenCalledWith(assigneeUrl, expect.any(AbortSignal));
   });

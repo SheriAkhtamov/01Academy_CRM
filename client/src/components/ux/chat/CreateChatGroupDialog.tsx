@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -56,11 +57,11 @@ export function CreateChatGroupDialog({ open, onOpenChange, onCreated, mode = 'g
           {employees.isLoading ? <p className="text-sm text-muted-foreground">{t('loading')}</p> : null}
           {employees.isError ? <div role="alert">{t('failedToLoadData')} <Button type="button" variant="outline" onClick={() => void employees.refetch()}>{t('retry')}</Button></div> : null}
           {visible.map((employee) => mode === 'direct'
-            ? <Button key={employee.id} type="button" variant="ghost" className="w-full justify-start" onClick={() => { onSelectEmployee?.(employee.id); onOpenChange(false); }}>{employee.fullName}</Button>
+            ? <Button key={employee.id} type="button" variant="ghost" className="w-full justify-start" onClick={() => { onSelectEmployee?.(employee.id); onOpenChange(false); }}><EmployeeIdentity userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} avatarClassName="size-8" /></Button>
             : <label key={employee.id} className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted">
             <Checkbox aria-label={employee.fullName} checked={selected.has(employee.id)} disabled={create.isPending || (!selected.has(employee.id) && selected.size >= 99)}
               onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(employee.id); else next.delete(employee.id); return next; })} />
-            <span className="min-w-0 truncate text-sm">{employee.fullName}</span>
+            <EmployeeIdentity userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="text-sm" avatarClassName="size-8" />
           </label>)}
           {!employees.isLoading && !employees.isError && visible.length === 0 ? <p className="text-sm text-muted-foreground">{t('noSearchResults')}</p> : null}
         </div>

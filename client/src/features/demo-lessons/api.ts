@@ -67,6 +67,7 @@ export interface AvailabilitySlot {
   endsAt: string;
   teacherId: number;
   teacherName: string;
+  teacherUserId?: number | null;
   roomId?: number | null;
   roomName?: string | null;
   roomCapacity?: number | null;
@@ -84,6 +85,7 @@ export interface AvailabilityResponse {
 export interface DemoResourceAvailability {
   teachers: Array<{
     id: number;
+    userId?: number | null;
     fullName: string;
     status: string;
     available: boolean;

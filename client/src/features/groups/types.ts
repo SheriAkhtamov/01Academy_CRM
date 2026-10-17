@@ -3,6 +3,7 @@ import type { WeekScheduleItem } from '@/components/ux/WeekScheduleEditor';
 
 export interface GroupTeacher {
   id: number;
+  userId?: number | null;
   fullName: string;
   courseIds: number[];
   schoolIds: number[];
@@ -21,6 +22,7 @@ export interface Group {
   roomName?: string;
   teacherId?: number | null;
   teacherName?: string | null;
+  teacherUserId?: number | null;
   schedule: WeekScheduleItem[];
   lessonCount: number;
   lessonDurationMinutes: number;

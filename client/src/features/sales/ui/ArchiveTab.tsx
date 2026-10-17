@@ -75,7 +75,12 @@ export const matchesArchivedLeadFilters = (
   filters: { search: string; reason: string; manager: string; funnel: string },
 ) => {
   if (filters.reason !== 'all' && (lead.archiveReason ?? '') !== filters.reason) return false;
-  if (filters.manager !== 'all' && (lead.managerName ?? '') !== filters.manager) return false;
+  if (filters.manager !== 'all') {
+    const matchesManager = filters.manager.startsWith('employee:')
+      ? filters.manager === `employee:${lead.managerId}`
+      : (lead.managerName ?? '') === filters.manager; // Keep saved filters from earlier versions usable.
+    if (!matchesManager) return false;
+  }
   if (filters.funnel !== 'all' && String(lead.funnelId) !== filters.funnel) return false;
 
   const query = filters.search.trim().toLowerCase();
@@ -125,10 +130,15 @@ export function ArchiveTab({
   // archive action it asks for confirmation instead of firing from a menu item.
   const [restoreTarget, setRestoreTarget] = useState<{ lead: ArchivedLead; statusCode: string } | null>(null);
 
-  const managerOptions = useMemo(() => (
-    [...new Set(leads.map((lead) => lead.managerName).filter((name): name is string => Boolean(name)))]
-      .sort((a, b) => a.localeCompare(b))
-  ), [leads]);
+  const managerOptions = useMemo(() => {
+    const options = new Map<string, { value: string; name: string; userId?: number | null }>();
+    for (const lead of leads) {
+      if (!lead.managerName) continue;
+      const value = lead.managerId ? `employee:${lead.managerId}` : lead.managerName;
+      options.set(value, { value, name: lead.managerName, userId: lead.managerId });
+    }
+    return [...options.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads]);
 
   const funnelOptions = useMemo(() => {
     const archivedFunnelIds = new Set(leads.map((lead) => lead.funnelId));
@@ -304,12 +314,12 @@ export function ArchiveTab({
 
         <Select value={managerFilter} onValueChange={setManagerFilter}>
           <SelectTrigger className="h-8 w-[13rem] text-xs" aria-label={t('manager')}>
-            <SelectValue />
+            <SelectValue>{managerFilter !== 'all' && !managerOptions.some((option) => option.value === managerFilter) ? managerFilter : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('archiveAllManagers')}</SelectItem>
-            {managerOptions.map((name) => (
-              <SelectItem key={name} value={name}>{name}</SelectItem>
+            {managerOptions.map((manager) => (
+              <SelectItem key={manager.value} value={manager.value} textValue={manager.name}><EmployeeIdentity userId={manager.userId} name={manager.name} avatarClassName="size-6" /></SelectItem>
             ))}
           </SelectContent>
         </Select>

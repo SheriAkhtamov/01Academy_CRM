@@ -765,7 +765,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
 
       <Dialog open={Boolean(payoutTarget)} onOpenChange={payoutGuard.handleOpenChange}>
         <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? `${payoutTarget.employeeName} · ${payoutTarget.position || ''}` : ''}</DialogDescription></DialogHeader>
+          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? <span className="inline-flex min-w-0 flex-wrap items-center gap-2"><EmployeeIdentity userId={payoutTarget.employeeUserId} name={payoutTarget.employeeName} />{payoutTarget.position ? <span>· {payoutTarget.position}</span> : null}</span> : null}</DialogDescription></DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <FieldGroup className="gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

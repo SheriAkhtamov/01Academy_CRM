@@ -53,3 +53,11 @@ export function BoardUserAvatar({ user, className, miniMode = false }: BoardUser
     </Avatar>
   );
 }
+
+export function BoardUserIdentity({ user, miniMode = false, className, avatarClassName }: BoardUserAvatarProps & { avatarClassName?: string }) {
+  const identity = useEmployeeIdentity(miniMode ? undefined : user?.id) ?? user;
+  return <span className={cn('inline-flex min-w-0 max-w-full items-center gap-2 align-middle', className)}>
+    {identity ? <BoardUserAvatar user={identity} miniMode={miniMode} className={avatarClassName} /> : null}
+    <span className="min-w-0 truncate">{identity?.fullName || '—'}</span>
+  </span>;
+}

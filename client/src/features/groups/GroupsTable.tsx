@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { Button } from '@/components/ui/button';
 import { GroupStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
@@ -53,7 +54,7 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
             <p className="break-words font-medium text-foreground">{title}</p>
             {code ? <p className="truncate font-mono text-[11px] text-muted-foreground">{code}</p> : null}
             {row.teacherName ? (
-              <p className="truncate text-xs text-muted-foreground">{row.teacherName}</p>
+              <EmployeeIdentity userId={row.teacherUserId} name={row.teacherName} className="text-xs text-muted-foreground" avatarClassName="size-6" />
             ) : (
               <p className="flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                 <UserX className="size-3.5 shrink-0" aria-hidden="true" />

@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { BoardUserAvatar } from './BoardUserAvatar';
+import { BoardUserAvatar, BoardUserIdentity } from './BoardUserAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Select,
@@ -499,11 +499,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                         <SelectTrigger id="task-detail-assignee"><SelectValue /></SelectTrigger>
                                                         <SelectContent>
                                                             {draftAssignee === UNASSIGNED ? <SelectItem value={UNASSIGNED} disabled>{t('taskAssigneeRequired')}</SelectItem> : null}
-                                                            {users.map((u) => (<SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>))}
+                                                            {users.map((u) => (<SelectItem key={u.id} value={String(u.id)} textValue={u.fullName}><BoardUserIdentity user={u} miniMode={tasksOnly} /></SelectItem>))}
                                                         </SelectContent>
                                                     </Select>
                                                 ) : (
-                                                    <Input id="task-detail-assignee" value={task.assignee?.fullName ?? t('unassigned')} disabled />
+                                                    <div className="relative"><BoardUserAvatar user={task.assignee} miniMode={tasksOnly} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2" /><Input id="task-detail-assignee" className="pl-11" value={task.assignee?.fullName ?? t('unassigned')} disabled /></div>
                                                 )}
                                             </div>
                                         </div>
@@ -659,7 +659,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                     {isPhotoAttachment(a.originalName) ? <TaskPhotoPreview name={a.originalName} attachmentId={a.id} /> : <Paperclip className="size-4 shrink-0 text-muted-foreground" />}
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm text-foreground">{a.originalName}</p>
-                                                        <p className="text-[11px] text-muted-foreground">{formatFileSize(a.size)} · {a.uploadedBy?.fullName ?? '—'}</p>
+                                                        <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-muted-foreground"><span>{formatFileSize(a.size)} ·</span><BoardUserIdentity user={a.uploadedBy} miniMode={tasksOnly} avatarClassName="size-5 text-[9px]" /></div>
                                                     </div>
                                                     <TaskAttachmentDownload id={a.id} name={a.originalName} compact />
                                                     {canManage ? (
@@ -681,7 +681,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <li key={item.id} className="flex items-start gap-2 text-sm">
                                                     <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
                                                     <span className="text-foreground/90">
-                                                        <span className="font-medium">{item.actor?.fullName ?? '—'}</span>{' '}
+                                                        <BoardUserIdentity user={item.actor} miniMode={tasksOnly} className="font-medium" avatarClassName="size-5 text-[9px]" />{' '}
                                                         {activityLabel(item, t)}
                                                         <span className="ml-1.5 text-[11px] text-muted-foreground">{formatBoardDateTime(item.createdAt, language)}</span>
                                                     </span>

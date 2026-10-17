@@ -1,3 +1,4 @@
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, LogOut, Pencil, Trash2 } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { chatGroupKeys, chatGroupsApi } from '@/features/messages/chat-groups-api';
@@ -138,11 +139,10 @@ export function ChatGroupDetailsDialog({ group, onClose, onLeft }: { group: Chat
       }}>
       {confirmation?.kind === 'leave' && requiresOwner ? <div className="space-y-2">
         <Label htmlFor="chat-next-owner">{t('chatGroupNextOwner')}</Label>
-        <select id="chat-next-owner" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={nextOwner}
-          disabled={change.isPending} onChange={(event) => { setNextOwner(event.target.value); setError(''); }}>
-          <option value="">{t('chatGroupNextOwnerRequired')}</option>
-          {successors.map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
-        </select>
+        <Select value={nextOwner} disabled={change.isPending} onValueChange={(value) => { setNextOwner(value); setError(''); }}>
+          <SelectTrigger id="chat-next-owner"><SelectValue placeholder={t('chatGroupNextOwnerRequired')} /></SelectTrigger>
+          <SelectContent>{successors.map((member) => <SelectItem key={member.id} value={String(member.id)} textValue={member.fullName}><EmployeeIdentity userId={member.id} name={member.fullName} avatarUrl={member.avatarUrl} /></SelectItem>)}</SelectContent>
+        </Select>
       </div> : null}
     </ConfirmDialog>
     {editing && detail && !query.isError ? <ChatGroupManageDialog group={detail} onClose={() => setEditing(false)} /> : null}

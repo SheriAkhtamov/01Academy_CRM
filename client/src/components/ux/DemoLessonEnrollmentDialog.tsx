@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,7 +9,6 @@ import {
   Loader2,
   MapPin,
   Search,
-  UserRound,
   UsersRound,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -329,7 +329,7 @@ export function DemoLessonEnrollmentDialog({
                       <span className="min-w-0 px-3 py-3">
                         <span className="block truncate text-sm font-semibold">{demo.courseName}</span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                          <UserRound className="size-3.5 shrink-0" /> {demo.teacherName}
+                          <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} avatarClassName="size-6" />
                         </span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                           <MapPin className="size-3.5 shrink-0" />

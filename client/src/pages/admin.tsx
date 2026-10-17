@@ -95,7 +95,7 @@ import {
 import { EmployeePhoneFields } from '@/features/employees/EmployeePhoneFields';
 import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
 import { EmployeeFunnelSelect } from '@/features/employees/EmployeeFunnelSelect';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { allowNavigation } from '@/lib/navigationGuard';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
 
@@ -1141,7 +1141,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               <SelectContent>
                 <SelectGroup>
                   {salesTransferManagers.map((manager) => (
-                    <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                    <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}><EmployeeIdentity userId={manager.id} name={manager.fullName} /></SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
@@ -1209,7 +1209,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex min-h-0 flex-1 flex-col">
                 <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-6 py-4">
                 <div className="rounded-lg border border-border bg-muted/50 p-3">
-                  <p className="text-sm font-medium text-foreground">{userCredentials.fullName}</p>
+                  <EmployeeIdentity userId={userCredentials.id} name={userCredentials.fullName} className="text-sm font-medium text-foreground" avatarClassName="size-9" />
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Badge className={getModuleColor(userCredentials.module)}>
                       {getModuleLabel(userCredentials.module)}

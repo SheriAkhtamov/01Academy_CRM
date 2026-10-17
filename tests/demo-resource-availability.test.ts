@@ -25,10 +25,10 @@ describe('demo resource availability', () => {
     mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
       if (sql.includes('FROM academy_teachers')) {
         return [
-          { id: 1, fullName: 'Lesson teacher', status: 'active' },
+          { id: 1, userId: 501, fullName: 'Lesson teacher', status: 'active' },
           { id: 2, fullName: 'Demo teacher', status: 'active' },
           { id: 3, fullName: 'Group teacher', status: 'active' },
-          { id: 4, fullName: 'Free teacher', status: 'active' },
+          { id: 4, userId: null, fullName: 'Free teacher', status: 'active' },
           { id: 5, fullName: 'Inactive teacher', status: 'inactive' },
         ];
       }
@@ -75,6 +75,9 @@ describe('demo resource availability', () => {
       { id: 4, available: true, reason: null },
       { id: 5, available: false, reason: 'inactive' },
     ]);
+    expect(result.teachers.find((teacher) => teacher.id === 1)?.userId).toBe(501);
+    expect(result.teachers.find((teacher) => teacher.id === 4)?.userId).toBeNull();
+    expect(mocks.query.mock.calls.find(([sql]) => String(sql).includes('FROM academy_teachers'))?.[0]).toContain('user_id');
     expect(result.rooms.map(({ id, available, reason }) => ({ id, available, reason }))).toEqual([
       { id: 11, available: false, reason: 'busy' },
       { id: 12, available: false, reason: 'busy' },

@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -20,6 +21,7 @@ export interface LeadMergeDialogLead {
   phone?: string | null;
   phoneNumbers?: string[];
   managerName?: string | null;
+  managerId?: number | null;
   statusName?: string | null;
   canMerge?: boolean;
 }
@@ -54,7 +56,7 @@ function LeadSummaryCard({ lead, label }: { lead: LeadMergeDialogLead; label: st
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-2 p-4 pt-0 text-sm text-muted-foreground">
         {leadPhone(lead) ? <span>{leadPhone(lead)}</span> : null}
-        {lead.managerName ? <Badge variant="secondary">{lead.managerName}</Badge> : null}
+        {lead.managerName ? <Badge variant="secondary"><EmployeeIdentity userId={lead.managerId} name={lead.managerName} avatarClassName="size-6" /></Badge> : null}
         {lead.statusName ? <Badge variant="outline">{lead.statusName}</Badge> : null}
       </CardContent>
     </Card>

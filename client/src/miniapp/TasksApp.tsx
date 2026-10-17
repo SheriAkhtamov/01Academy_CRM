@@ -1,3 +1,4 @@
+import { BoardUserAvatar, BoardUserIdentity } from '@/components/ux/board/BoardUserAvatar';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
@@ -198,7 +199,7 @@ export function TasksApp() {
   return <div className="mini-shell" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
     <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">{pullDistance > 0 ? <RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin', !tasks.isFetching && !pullActive && 'opacity-50')} /> : null}</div>
     <header className="mini-header">
-      <div className="mini-header-top"><p className="truncate text-sm text-muted-foreground">{user.fullName}</p><Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin')} /></Button></div>
+      <div className="mini-header-top"><BoardUserIdentity user={user} miniMode className="text-sm text-muted-foreground" /><Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin')} /></Button></div>
       <div className="mini-title-row">
         <div className="min-w-0 flex-1">
           <h1>
@@ -208,10 +209,10 @@ export function TasksApp() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-w-[calc(100vw-2rem)]">
-                  <SelectItem value={OWNER_SELF} textValue={t('myTasks')} className="min-h-11">{t('myTasks')}</SelectItem>
+                  <SelectItem value={OWNER_SELF} textValue={t('myTasks')} className="min-h-11"><span className="inline-flex min-w-0 items-center gap-2"><BoardUserAvatar user={user} miniMode />{t('myTasks')}</span></SelectItem>
                   {ownerOptions.map((employee) => (
                     <SelectItem key={employee.id} value={String(employee.id)} textValue={employee.fullName} className="min-h-11">
-                      {employee.fullName}
+                      <BoardUserIdentity user={employee} miniMode />
                     </SelectItem>
                   ))}
                 </SelectContent>

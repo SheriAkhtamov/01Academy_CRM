@@ -23,6 +23,7 @@ export type TeacherLesson = {
   courseName?: string;
   teacherId?: number;
   teacherName?: string;
+  teacherUserId?: number | null;
   schoolId?: number;
   schoolName?: string;
   lessonNumber: number;
@@ -48,6 +49,7 @@ export type TeacherGroup = {
   courseName?: string;
   teacherId?: number;
   teacherName?: string;
+  teacherUserId?: number | null;
   schoolId?: number;
   schoolName?: string;
   lessonCount: number;

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import type { TelephonyCallSource } from '@shared/telephony';
 import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,16 +65,21 @@ export type LeadActivityData = {
     talkSeconds: number;
     hangupCause?: string | null;
     userName?: string | null;
+    userId?: number | null;
     note?: string | null;
     noteAuthorName?: string | null;
+    noteAuthorId?: number | null;
     noteUpdatedAt?: string | null;
     hasRecording: boolean;
   }>;
   assignmentHistory?: Array<{
     id: number;
     fromManagerName?: string | null;
+    fromManagerId?: number | null;
     toManagerName?: string | null;
+    toManagerId?: number | null;
     changedByName?: string | null;
+    changedBy?: number | null;
     comment?: string | null;
     createdAt?: string | null;
   }>;
@@ -178,9 +183,12 @@ type ActivityItem = {
   kind: ActivityKind;
   at?: string | null;
   title: string;
+  employee?: { id?: number | null; name: string; label?: string };
+  assignment?: { fromId?: number | null; fromName: string; toId?: number | null; toName: string };
   text?: string | null;
   note?: string | null;
   noteAuthorName?: string | null;
+  noteAuthorId?: number | null;
   noteUpdatedAt?: string | null;
   callId: number | null;
   callSource?: TelephonyCallSource;
@@ -269,7 +277,8 @@ export function ActivityTimeline({
       id: `lead-comment-${item.id}`,
       kind: 'comment',
       at: item.createdAt,
-      title: item.authorName ? `${t('comment')} · ${item.authorName}` : t('comment'),
+      title: t('comment'),
+      employee: item.authorId || item.authorName ? { id: item.authorId, name: item.authorName || t('unknown') } : undefined,
       text: item.body,
       callId: null,
       hasRecording: false,
@@ -297,12 +306,12 @@ export function ActivityTimeline({
       kind: 'call',
       at: item.startedAt,
       title: `${item.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}: ${t(telephonyStatusTranslationKey(item.status))}`,
-      text: [
-        item.source !== 'voice_reminder' && item.userName ? `${t('callEmployee')}: ${item.userName}` : null,
-        `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
-      ].filter(Boolean).join(' • '),
+      employee: item.source !== 'voice_reminder' && (item.userId || item.userName)
+        ? { id: item.userId, name: item.userName || t('unknown'), label: t('callEmployee') } : undefined,
+      text: `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
       note: item.note,
       noteAuthorName: item.noteAuthorName,
+      noteAuthorId: item.noteAuthorId,
       noteUpdatedAt: item.noteUpdatedAt,
       callId: item.source !== 'voice_reminder' && typeof item.id === 'number' ? item.id : null,
       callSource: item.source,
@@ -316,11 +325,11 @@ export function ActivityTimeline({
       kind: 'assignment',
       at: item.createdAt,
       title: t('leadTransferred'),
-      text: [
-        `${item.fromManagerName || t('notAssigned')} → ${item.toManagerName || t('notAssigned')}`,
-        item.changedByName ? `${t('changedBy')}: ${item.changedByName}` : null,
-        item.comment,
-      ].filter(Boolean).join(' • '),
+      assignment: { fromId: item.fromManagerId, fromName: item.fromManagerName || t('notAssigned'),
+        toId: item.toManagerId, toName: item.toManagerName || t('notAssigned') },
+      employee: item.changedBy || item.changedByName
+        ? { id: item.changedBy, name: item.changedByName || t('unknown'), label: t('changedBy') } : undefined,
+      text: item.comment,
       callId: null,
       hasRecording: false,
     })),
@@ -478,6 +487,10 @@ export function ActivityTimeline({
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                               <p className="text-sm font-medium leading-tight">{item.title}</p>
+                              {item.employee ? <span className="inline-flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                                <span>·{item.employee.label ? ` ${item.employee.label}:` : ''}</span>
+                                <EmployeeIdentity userId={item.employee.id} name={item.employee.name} avatarClassName="size-6" />
+                              </span> : null}
                               {isReminderCall ? <Badge variant="secondary">{t('telephonySourceVoiceReminder')}</Badge> : null}
                               {reminderResultKey ? <Badge variant="secondary" className="max-w-full whitespace-normal">{t(reminderResultKey)}</Badge> : null}
                             </div>
@@ -486,16 +499,21 @@ export function ActivityTimeline({
                               {dateTime(item.at)}
                             </span>
                           </div>
+                          {item.assignment ? <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                            <EmployeeIdentity userId={item.assignment.fromId} name={item.assignment.fromName} avatarClassName="size-6" />
+                            <span aria-hidden="true">→</span>
+                            <EmployeeIdentity userId={item.assignment.toId} name={item.assignment.toName} avatarClassName="size-6" />
+                          </div> : null}
                           {item.text ? (
                             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p>
                           ) : null}
                           {!isReminderCall && item.note ? (
                             <div className="mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
                               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                                <p className="text-xs font-medium text-foreground">
-                                  {t('telephonyNote')}
-                                  {item.noteAuthorName ? ` · ${item.noteAuthorName}` : null}
-                                </p>
+                                <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs font-medium text-foreground">
+                                  <span>{t('telephonyNote')}</span>
+                                  {item.noteAuthorId || item.noteAuthorName ? <><span>·</span><EmployeeIdentity userId={item.noteAuthorId} name={item.noteAuthorName} avatarClassName="size-6" /></> : null}
+                                </div>
                                 {item.noteUpdatedAt ? (
                                   <time className="text-xs text-muted-foreground" dateTime={item.noteUpdatedAt}>
                                     {dateTime(item.noteUpdatedAt)}

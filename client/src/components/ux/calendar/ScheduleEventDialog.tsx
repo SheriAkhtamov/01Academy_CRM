@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import type { Locale } from 'date-fns';
 import {
   BookOpen,
@@ -56,7 +57,7 @@ export function ScheduleEventDialog({
     {
       key: 'teacher',
       icon: UserRoundCheck,
-      value: event.teacherName || t('notAssigned'),
+      value: <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} />,
     },
     ...(event.schoolName ? [{ key: 'school', icon: MapPin, value: event.schoolName }] : []),
     ...(event.roomName ? [{ key: 'room', icon: MapPin, value: event.roomName }] : []),
@@ -89,7 +90,7 @@ export function ScheduleEventDialog({
         <dl className="flex flex-col gap-2.5 px-6 pb-5">
           {rows.map((row) => (
             <div key={row.key} className="flex items-center gap-2.5 text-sm">
-              <row.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              {row.key !== 'teacher' ? <row.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
               <dd className="min-w-0 truncate text-foreground">{row.value}</dd>
             </div>
           ))}

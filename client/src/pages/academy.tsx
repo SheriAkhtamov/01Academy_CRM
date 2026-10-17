@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -656,8 +657,8 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {availableManagers.map((manager) => (
-                          <SelectItem key={manager.id} value={String(manager.id)}>
-                            {manager.fullName}
+                          <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}>
+                            <EmployeeIdentity userId={manager.id} name={manager.fullName} />
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -715,7 +716,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="truncate font-medium">
-                                {manager?.fullName ?? status?.fullName ?? t('unknown')}
+                                <EmployeeIdentity userId={assignment.managerId} name={manager?.fullName ?? status?.fullName ?? t('unknown')} />
                               </p>
                               <Badge variant={status?.isOnline ? 'success' : 'secondary'}>
                                 {status?.isOnline ? t('online') : t('offline')}

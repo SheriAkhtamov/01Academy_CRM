@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useState } from 'react';
 import {
   GraduationCap,
@@ -392,6 +393,7 @@ export function LeadFiltersDialog({ filters, onApply, sources, managers, leads }
                       id="lead-filter-manager"
                       placeholder={t('leadFilterAny')}
                       options={managerOptions}
+                      renderOption={(option) => typeof option.id === 'number' ? <EmployeeIdentity userId={option.id} name={option.label} avatarClassName="size-6" /> : option.label}
                       selected={selectedManagerIds}
                       onChange={applyManagerSelection}
                       searchPlaceholder={t('searchEmployees')}

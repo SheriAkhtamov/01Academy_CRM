@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import type { RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Plus, RotateCcw, Search, X } from 'lucide-react';
@@ -25,7 +26,7 @@ export interface GroupFacet {
   value: string;
   allLabel: string;
   allCount: number;
-  options: Array<{ value: string; label: string; count: number }>;
+  options: Array<{ value: string; label: string; count: number; employeeUserId?: number | null }>;
 }
 
 interface GroupsToolbarProps {
@@ -75,7 +76,7 @@ function FacetSelect({ facet, onChange }: { facet: GroupFacet; onChange: (value:
       >
         <Icon className={cn('size-4 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} aria-hidden="true" />
         {/* Unfiltered, the chip names its filter; filtered, it shows the choice. */}
-        <SelectValue>{active && selected ? selected.label : facet.label}</SelectValue>
+        <SelectValue>{active && selected ? facet.key === 'teacher' ? <EmployeeIdentity userId={selected.employeeUserId} name={selected.label} avatarClassName="size-6" /> : selected.label : facet.label}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all" trailing={<span aria-hidden="true">{facet.allCount}</span>}>{facet.allLabel}</SelectItem>
@@ -83,9 +84,10 @@ function FacetSelect({ facet, onChange }: { facet: GroupFacet; onChange: (value:
           <SelectItem
             key={option.value}
             value={option.value}
+            textValue={option.label}
             trailing={<span aria-hidden="true" className={cn('tabular-nums', option.count === 0 && 'opacity-50')}>{option.count}</span>}
           >
-            {option.label}
+            {facet.key === 'teacher' ? <EmployeeIdentity userId={option.employeeUserId} name={option.label} avatarClassName="size-6" /> : option.label}
           </SelectItem>
         ))}
       </SelectContent>

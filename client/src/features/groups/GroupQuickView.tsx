@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Edit3, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -140,7 +141,7 @@ function QuickViewBody({ group, rooms, todayKey }: { group: Group; rooms: Room[]
           {room?.capacity ? <span className="text-muted-foreground"> · {t('groupRoomCapacity').replace('{count}', String(room.capacity))}</span> : null}
         </Detail>
         <Detail label={t('teacher')}>
-          {group.teacherName ?? <span className="font-medium text-amber-700 dark:text-amber-300">{t('notAssigned')}</span>}
+          {group.teacherName ? <EmployeeIdentity userId={group.teacherUserId} name={group.teacherName} /> : <span className="font-medium text-amber-700 dark:text-amber-300">{t('notAssigned')}</span>}
         </Detail>
       </dl>
     </div>

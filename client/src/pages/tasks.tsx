@@ -1,3 +1,4 @@
+import { BoardUserAvatar } from '@/components/ux/board/BoardUserAvatar';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,6 +36,7 @@ import {
 interface ApiUser {
     id: number;
     fullName: string;
+    avatarUrl?: string | null;
     position: string | null;
     module: AcademyModule;
     isActive?: boolean;
@@ -56,9 +58,10 @@ const TASK_VIEW_META = {
     calendar: { labelKey: 'taskViewCalendar', icon: CalendarDays },
 } satisfies Record<TaskViewMode, { labelKey: TranslationKey; icon: LucideIcon }>;
 
-function OwnerOption({ name, count }: { name: string; count: number }) {
+function OwnerOption({ name, count, user }: { name: string; count: number; user?: UserMini | null }) {
     return (
-        <span className="inline-flex items-center gap-2">
+        <span className="inline-flex min-w-0 items-center gap-2">
+            {user ? <BoardUserAvatar user={user} /> : null}
             <span className="truncate">{name}</span>
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
                 {count}
@@ -111,7 +114,7 @@ export default function TasksPage() {
 
     const currentUser: UserMini | null = useMemo(() => (
         user
-            ? { id: user.id, fullName: user.fullName, position: user.position, module: user.module }
+            ? { id: user.id, fullName: user.fullName, avatarUrl: user.avatarUrl, position: user.position, module: user.module }
             : null
     ), [user]);
 
@@ -121,6 +124,7 @@ export default function TasksPage() {
             .map((employee) => ({
                 id: employee.id,
                 fullName: employee.fullName,
+                avatarUrl: employee.avatarUrl,
                 position: employee.position,
                 module: employee.module,
             })),
@@ -333,7 +337,7 @@ export default function TasksPage() {
                                 <SelectTrigger className="w-full sm:w-60" aria-label={t('taskOwnerFilter')}>
                                     <SelectValue>
                                         <span className="inline-flex items-center gap-2">
-                                            <Users className="size-4 shrink-0 opacity-60" />
+                                            <span className="shrink-0">{ownerFilter === TASK_OWNER_ALL ? <Users className="size-4 opacity-60" /> : <BoardUserAvatar user={ownerFilter === OWNER_FILTER_SELF ? currentUser : ownerOptions.find((option) => String(option.id) === ownerFilter)} />}</span>
                                             <span className="truncate">{selectedOwnerName}</span>
                                         </span>
                                     </SelectValue>
@@ -342,6 +346,7 @@ export default function TasksPage() {
                                     <SelectItem value={OWNER_FILTER_SELF} textValue={t('myTasks')}>
                                         <OwnerOption
                                             name={t('myTasks')}
+                                            user={currentUser}
                                             count={user ? taskCounts.get(user.id) ?? 0 : 0}
                                         />
                                     </SelectItem>
@@ -356,6 +361,7 @@ export default function TasksPage() {
                                         >
                                             <OwnerOption
                                                 name={option.fullName}
+                                                user={option}
                                                 count={taskCounts.get(option.id) ?? 0}
                                             />
                                         </SelectItem>

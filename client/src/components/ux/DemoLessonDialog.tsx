@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -5,7 +6,6 @@ import {
   CircleAlert,
   Clock3,
   LoaderCircle,
-  UserRoundCheck,
 } from 'lucide-react';
 import type { DemoLessonMutation } from '@shared/contracts/demo-lessons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -411,8 +411,8 @@ export function DemoLessonDialog({
                 <SelectTrigger id="demo-teacher"><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger>
                 <SelectContent>
                   {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={String(teacher.id)} disabled={!teacher.available}>
-                      {teacher.fullName}{teacher.available ? '' : ` · ${unavailableLabel(teacher.reason)}`}
+                    <SelectItem key={teacher.id} value={String(teacher.id)} textValue={teacher.fullName} disabled={!teacher.available}>
+                      <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />{teacher.available ? '' : ` · ${unavailableLabel(teacher.reason)}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -461,11 +461,7 @@ export function DemoLessonDialog({
                 <CircleAlert />
                 <AlertDescription>{conflictMessage}</AlertDescription>
               </Alert>
-            ) : resourcesSelected ? null : (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <UserRoundCheck className="size-4" />{t('selectDemoResources')}
-              </p>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -475,7 +471,6 @@ export function DemoLessonDialog({
             id="demo-notes"
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            placeholder={t('demoNotesPlaceholder')}
             maxLength={2_000}
           />
         </div>

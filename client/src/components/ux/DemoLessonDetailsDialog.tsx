@@ -19,7 +19,7 @@ import {
   type DemoNoShowReasonCode,
 } from '@shared/contracts/demo-lessons';
 import type { VoiceReminderProgressStatus } from '@shared/contracts/voice-reminders';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1033,9 +1033,10 @@ export function DemoLessonDetailsDialog({
                     <SelectItem
                       key={teacher.id}
                       value={String(teacher.id)}
+                      textValue={teacher.fullName}
                       disabled={!teacher.available}
                     >
-                      {teacher.fullName}
+                      <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />
                       {teacher.available
                         ? ''
                         : ` · ${unavailableTeacherLabel(teacher.reason)}`}

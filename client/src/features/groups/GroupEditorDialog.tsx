@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { forwardRef, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import {
   CalendarClock,
@@ -388,12 +389,12 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                         <Select value={field.value} onValueChange={field.onChange}>
                           <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectTeacher')}>
                             {field.value === String(editingGroup?.teacherId) && !groupTeachers.some((teacher) => String(teacher.id) === field.value)
-                              ? editingGroup?.teacherName || t('notAssigned') : undefined}
+                              ? <EmployeeIdentity userId={editingGroup?.teacherUserId} name={editingGroup?.teacherName || t('notAssigned')} /> : undefined}
                           </SelectValue></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
                               {groupTeachers.map((teacher) => (
-                                <SelectItem key={teacher.id} value={String(teacher.id)}>{teacher.fullName}</SelectItem>
+                                <SelectItem key={teacher.id} value={String(teacher.id)} textValue={teacher.fullName}><EmployeeIdentity userId={teacher.userId} name={teacher.fullName} /></SelectItem>
                               ))}
                             </SelectGroup>
                           </SelectContent>

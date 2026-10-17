@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useMemo, useState } from 'react';
 import { Archive, ArchiveRestore, Loader2, Search, Users, UsersRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -476,8 +477,8 @@ export function TeacherGroupsSection({
                 </SheetTitle>
                 <SheetDescription className="flex flex-col gap-0.5">
                   <span>{detailGroup.courseName || t('noCourse')}</span>
-                  <span>
-                    {t('groupTeacherLine').replace('{name}', detailGroup.teacherName || t('notAssigned'))}
+                  <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+                    {t('teacher')}: <EmployeeIdentity userId={detailGroup.teacherUserId} name={detailGroup.teacherName || t('notAssigned')} avatarClassName="size-6" />
                     {detailGroup.isArchived && detailGroup.archivedAt
                       ? ` · ${t('groupArchivedOn').replace('{date}', formatArchivedAt(detailGroup.archivedAt))}`
                       : ''}

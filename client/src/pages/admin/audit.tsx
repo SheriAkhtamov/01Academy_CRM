@@ -352,7 +352,7 @@ export default function AuditPage() {
                   <SelectTrigger id="audit-filter-employee"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{ceoCopy.audit.allEmployees}</SelectItem>
-                    {(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)}>{employee.fullName}</SelectItem>)}
+                    {(data?.employees ?? []).map((employee) => <SelectItem key={employee.id} value={String(employee.id)} textValue={employee.fullName}><EmployeeIdentity userId={employee.id} name={employee.fullName} /></SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

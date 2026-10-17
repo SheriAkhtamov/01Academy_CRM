@@ -12,7 +12,17 @@ describe('group media catalog', () => {
       message(2, [file('d', 'image/png'), file('e', 'application/octet-stream'), file('f', 'image/gif')])]);
     expect(catalog.photos.map(item => item.file.id[0])).toEqual(['d', 'a']);
     expect(catalog.videos).toHaveLength(1); expect(catalog.audio).toHaveLength(1); expect(catalog.files).toHaveLength(1); expect(catalog.gifs).toHaveLength(1);
-    expect(catalog.audio[0]).toMatchObject({ messageId: 1, senderName: 'Alice' });
+    expect(catalog.audio[0]).toMatchObject({ messageId: 1, senderId: 7, senderName: 'Alice' });
+  });
+  it('keeps distinct senders with identical names on both attachments and links', () => {
+    const first = { ...message(1, [file('a', 'image/png')], 'https://example.test/a'), senderId: 7, senderAvatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa' };
+    const second = { ...message(2, [file('b', 'image/png')], 'https://example.test/b'), senderId: 8, senderAvatarUrl: '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb' };
+    const catalog = collectChatMedia([first, second]);
+    for (const items of [catalog.photos, catalog.links]) {
+      expect(items.map(({ senderId, senderAvatarUrl }) => ({ senderId, senderAvatarUrl }))).toEqual([
+        { senderId: 8, senderAvatarUrl: second.senderAvatarUrl }, { senderId: 7, senderAvatarUrl: first.senderAvatarUrl },
+      ]);
+    }
   });
   it('blocks foreign, forged and direct-message attachment URLs', () => {
     const a = file('a', 'image/png');

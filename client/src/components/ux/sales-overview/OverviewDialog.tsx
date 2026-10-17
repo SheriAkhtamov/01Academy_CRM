@@ -11,7 +11,7 @@ let originalBodyOverflow = '';
 
 /** Native modal: the browser provides focus trapping, inert background and Escape. */
 export function OverviewDialog({ title, description, children, onClose, role = 'dialog' }: {
-  title: string; description?: string; children: ReactNode; onClose: () => void; role?: 'dialog' | 'alertdialog';
+  title: ReactNode; description?: string; children: ReactNode; onClose: () => void; role?: 'dialog' | 'alertdialog';
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);

@@ -115,6 +115,7 @@ export interface SalesScheduleFilterSchool {
 export interface SalesScheduleEvent {
   id: string;
   source: 'lesson' | 'recurring' | 'demo';
+  teacherUserId?: number | null;
   groupId: number;
   groupName: string;
   courseName?: string | null;
@@ -157,6 +158,7 @@ export function buildSalesDemoScheduleEvents(
       courseName: demo.courseName,
       teacherId: entityId(demo.teacherId),
       teacherName: demo.teacherName,
+      teacherUserId: entityId(demo.teacherUserId),
       schoolName: demo.schoolName,
       roomName: demo.roomName,
       participantCount: demo.participants?.length ?? 0,
@@ -211,6 +213,10 @@ const toEvent = (
     courseName: lesson.courseName || group?.courseName,
     teacherId: entityId(lesson.teacherId) ?? entityId(group?.teacherId),
     teacherName: lesson.teacherName || group?.teacherName,
+    teacherUserId: entityId(lesson.teacherUserId) ?? (
+      (!entityId(lesson.teacherId) || entityId(lesson.teacherId) === entityId(group?.teacherId))
+        ? entityId(group?.teacherUserId) : null
+    ),
     schoolName: lesson.schoolName || group?.schoolName,
     availableSeats: group
       ? Math.max(0, Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0))
@@ -302,6 +308,7 @@ export function buildSalesScheduleEvents({
         courseName: group.courseName,
         teacherId: entityId(group.teacherId),
         teacherName: group.teacherName,
+        teacherUserId: entityId(group.teacherUserId),
         schoolName: group.schoolName,
         availableSeats: Math.max(0, Number(group.maxStudents ?? 12) - Number(group.currentStudents ?? 0) - Number(group.reservedStudents ?? 0)),
         maxStudents: group.maxStudents ?? 12,

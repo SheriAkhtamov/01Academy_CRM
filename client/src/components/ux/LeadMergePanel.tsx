@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useDeferredValue, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ArrowRightLeft, Search, UserRound } from 'lucide-react';
@@ -50,6 +51,7 @@ interface LeadMergeCandidate {
   studentName?: string | null;
   statusName?: string | null;
   managerName?: string | null;
+  managerId?: number | null;
   sourceName?: string | null;
   instagramConversationCount?: number;
   studentCount?: number;
@@ -79,7 +81,7 @@ function LeadCandidateCard({
       </div>
       <p className="text-sm text-muted-foreground">{primaryContact(lead)}</p>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {lead.managerName ? <span>{lead.managerName}</span> : null}
+        {lead.managerName ? <EmployeeIdentity userId={lead.managerId} name={lead.managerName} avatarClassName="size-6" /> : null}
         {lead.studentName ? <span>{lead.studentName}</span> : null}
         {lead.sourceName ? <span>{lead.sourceName}</span> : null}
       </div>
@@ -291,7 +293,7 @@ export function LeadMergePanel() {
           </div>
           <div className="flex max-h-[55dvh] flex-col gap-2 overflow-y-auto">
             {search.trim().length < 2 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">{t('leadSearchMinCharacters')}</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">{t('noMatchingLeads')}</p>
             ) : searchQuery.isLoading ? (
               <><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></>
             ) : searchQuery.isError ? (

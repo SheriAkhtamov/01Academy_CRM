@@ -186,8 +186,8 @@ export default function CallJournalPage() {
                 <SelectItem value={ALL_EMPLOYEES}>{t('allEmployees')}</SelectItem>
                 <SelectItem value="unassigned">{t('notAssigned')}</SelectItem>
                 {employeeOptions.map((operator) => (
-                  <SelectItem key={operator.id} value={String(operator.id)}>
-                    {operator.name}
+                  <SelectItem key={operator.id} value={String(operator.id)} textValue={operator.name}>
+                    <EmployeeIdentity userId={operator.id} name={operator.name} />
                   </SelectItem>
                 ))}
               </SelectContent>

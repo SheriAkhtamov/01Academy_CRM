@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, localizeApiErrorMessage } from '@/lib/queryClient';
@@ -317,7 +318,7 @@ export function LeadAssignmentContent() {
             <SelectGroup>
               {managers.map((manager) => (
                 <SelectItem key={manager.id} value={String(manager.id)}>
-                  {manager.fullName} · {managerLeadCounts.get(manager.id) ?? 0}
+                  <span className="inline-flex min-w-0 items-center gap-2"><EmployeeIdentity userId={manager.id} name={manager.fullName} /><span className="shrink-0 tabular-nums">· {managerLeadCounts.get(manager.id) ?? 0}</span></span>
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -418,7 +419,7 @@ export function LeadAssignmentContent() {
                   <SelectItem value="unassigned">{t('notAssigned')}</SelectItem>
                   {managers.map((manager) => (
                     <SelectItem key={manager.id} value={String(manager.id)}>
-                      {manager.fullName} · {managerLeadCounts.get(manager.id) ?? 0}
+                      <span className="inline-flex min-w-0 items-center gap-2"><EmployeeIdentity userId={manager.id} name={manager.fullName} /><span className="shrink-0 tabular-nums">· {managerLeadCounts.get(manager.id) ?? 0}</span></span>
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -468,7 +469,7 @@ export function LeadAssignmentContent() {
                 <SelectContent>
                   <SelectGroup>
                     {managers.map((manager) => (
-                      <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                      <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}><EmployeeIdentity userId={manager.id} name={manager.fullName} /></SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>

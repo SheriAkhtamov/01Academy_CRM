@@ -47,7 +47,8 @@ describe('call notes in lead activity', () => {
     );
 
     expect(screen.getByText('Клиент попросил перезвонить после 18:00')).toBeTruthy();
-    expect(screen.getByText(/Заметка по звонку · Хонзода|Call note · Хонзода/)).toBeTruthy();
+    const noteHeader = screen.getByText(translations.telephonyNote.ru).parentElement!;
+    expect(within(noteHeader).getByText('Хонзода')).toBeTruthy();
     expect(screen.getByText('2026-08-21T11:45:11.000Z')).toBeTruthy();
   });
 

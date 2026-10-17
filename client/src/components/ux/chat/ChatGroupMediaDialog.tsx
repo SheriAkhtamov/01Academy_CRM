@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Link, Music, Play, Video } from 'lucide-react';
 import { CHAT_MEDIA_CATEGORIES, type ChatMediaCatalog, type ChatMediaCategory, type ChatMediaItem } from '@shared/chat-media';
@@ -18,9 +19,9 @@ export function ChatGroupMediaDialog({ catalog, initialCategory, onClose }: { ca
   const viewer = useRef<HTMLDivElement>(null);
   const images = category === 'videos' ? catalog.videos : category === 'gifs' ? catalog.gifs : catalog.photos;
   const imageIndex = images.findIndex(item => item.file.id === preview?.file.id);
-  const caption = (item: { senderName: string; createdAt: string }) => <p className="break-words text-xs text-muted-foreground">
-    {item.senderName} · {formatAcademyDate(item.createdAt, language, { day: 'numeric', month: 'short', year: 'numeric' })}
-  </p>;
+  const caption = (item: Pick<ChatMediaItem, 'senderId' | 'senderName' | 'senderAvatarUrl' | 'createdAt'>) => <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+    <EmployeeIdentity userId={item.senderId} name={item.senderName} avatarUrl={item.senderAvatarUrl} avatarClassName="size-6" /><span>· {formatAcademyDate(item.createdAt, language, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+  </div>;
   const move = (step: number) => { const next = images[imageIndex + step]; if (next) { setPreview(next); viewer.current?.focus(); } };
   return <>
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>

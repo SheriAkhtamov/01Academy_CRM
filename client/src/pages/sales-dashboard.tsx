@@ -384,7 +384,7 @@ function AssignLeadBeforeMoveDialog({
             <SelectContent>
               <SelectGroup>
                 {managers.map((manager) => (
-                  <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                  <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}><EmployeeIdentity userId={manager.id} name={manager.fullName} /></SelectItem>
                 ))}
               </SelectGroup>
             </SelectContent>
@@ -1637,8 +1637,8 @@ export function LeadForm({
                 <SelectContent>
                   <SelectGroup>
                     {managers.map((manager) => (
-                      <SelectItem key={manager.id} value={String(manager.id)}>
-                        {manager.fullName}
+                      <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}>
+                        <EmployeeIdentity userId={manager.id} name={manager.fullName} />
                       </SelectItem>
                     ))}
                   </SelectGroup>

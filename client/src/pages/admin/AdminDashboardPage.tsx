@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
@@ -77,6 +78,7 @@ interface DashboardRiskRow {
   leadName?: string | null;
   courseName?: string | null;
   managerName?: string | null;
+  managerId?: number | null;
   attendancePercent?: number | null;
   dueAt?: string | null;
   amountUzs?: number | string | null;
@@ -700,7 +702,7 @@ export default function AdminDashboardPage() {
                   { key: 'amountUzs', header: t('amount'), accessor: (row: DashboardRiskRow) => Number(row.amountUzs || 0), render: (row: DashboardRiskRow) => fullMoney(Number(row.amountUzs || 0)), sortable: true },
                 ] : [
                   { key: 'courseName', header: t('course'), accessor: (row: DashboardRiskRow) => row.courseName || t('noData') },
-                  { key: 'managerName', header: t('manager'), accessor: (row: DashboardRiskRow) => row.managerName || t('notAssigned') },
+                  { key: 'managerName', header: t('manager'), accessor: (row: DashboardRiskRow) => row.managerName || t('notAssigned'), render: (row: DashboardRiskRow) => <EmployeeIdentity userId={row.managerId} name={row.managerName || t('notAssigned')} /> },
                   { key: 'attendancePercent', header: t('attendanceLabel'), accessor: (row: DashboardRiskRow) => Number(row.attendancePercent || 0), render: (row: DashboardRiskRow) => `${Number(row.attendancePercent || 0)}%`, sortable: true },
                 ]),
               ]}

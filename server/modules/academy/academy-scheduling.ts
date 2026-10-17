@@ -907,6 +907,7 @@ export const listAvailableSchoolSlots = async (options: {
                 endsAt: endsAt.toISOString(),
                 teacherId: Number(teacher.id),
                 teacherName: teacher.fullName,
+                teacherUserId: teacher.userId == null ? null : Number(teacher.userId),
                 roomId,
                 roomName: room?.name ?? null,
                 roomCapacity: room ? Number(room.capacity) : null,

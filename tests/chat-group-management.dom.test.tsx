@@ -146,7 +146,8 @@ it('requires the departing owner to choose a successor and preserves the group o
   await user.click(within(confirm).getByRole('button', { name: i18n.t('chatGroupLeave') }));
   expect(within(confirm).getByRole('alert').textContent).toBe(i18n.t('chatGroupNextOwnerRequired'));
   expect(mocks.api.mock.calls.some(([, path]) => path.endsWith('/leave'))).toBe(false);
-  await user.selectOptions(within(confirm).getByLabelText(i18n.t('chatGroupNextOwner')), '2');
+  await user.click(within(confirm).getByRole('combobox', { name: i18n.t('chatGroupNextOwner') }));
+  await user.click(screen.getByRole('option', { name: 'Alice' }));
   await user.click(within(confirm).getByRole('button', { name: i18n.t('chatGroupLeave') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/chat-groups/10/leave', { nextOwnerId: 2 }));
 });

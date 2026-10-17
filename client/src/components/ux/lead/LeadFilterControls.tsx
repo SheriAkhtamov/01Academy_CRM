@@ -90,6 +90,7 @@ export function FilterMultiSelect<T extends string | number>({
   onChange,
   searchPlaceholder,
   emptyText,
+  renderOption,
 }: {
   id: string;
   placeholder: string;
@@ -98,6 +99,7 @@ export function FilterMultiSelect<T extends string | number>({
   onChange: (next: T[]) => void;
   searchPlaceholder: string;
   emptyText: string;
+  renderOption?: (option: FilterOption<T>) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -143,9 +145,8 @@ export function FilterMultiSelect<T extends string | number>({
     return options.filter((option) => option.label.toLocaleLowerCase().includes(needle));
   }, [options, query, searchable]);
 
-  const selectedLabels = options
-    .filter((option) => selected.includes(option.id))
-    .map((option) => option.label);
+  const selectedOptions = options.filter((option) => selected.includes(option.id));
+  const selectedLabels = selectedOptions.map((option) => option.label);
   const summary = selectedLabels.length === 0
     ? placeholder
     : selectedLabels.length === 1
@@ -197,8 +198,8 @@ export function FilterMultiSelect<T extends string | number>({
           open && 'border-primary-500 ring-4 ring-primary/15',
         )}
       >
-        <span className={cn('truncate', selectedLabels.length === 0 && 'text-muted-foreground')}>
-          {summary}
+        <span className={cn('inline-flex min-w-0 items-center gap-1 truncate', selectedLabels.length === 0 && 'text-muted-foreground')}>
+          {renderOption && selectedOptions.length ? <>{renderOption(selectedOptions[0])}{selectedOptions.length > 1 ? <span className="shrink-0">+{selectedOptions.length - 1}</span> : null}</> : summary}
         </span>
         <ChevronDown
           aria-hidden="true"
@@ -281,7 +282,7 @@ export function FilterMultiSelect<T extends string | number>({
                     {isSelected ? <Check className="size-3" /> : null}
                   </span>
                   <span className={cn('min-w-0 flex-1 truncate', isSelected && 'font-medium')}>
-                    {option.label}
+                    {renderOption ? renderOption(option) : option.label}
                   </span>
                   {typeof option.count === 'number' ? (
                     <span

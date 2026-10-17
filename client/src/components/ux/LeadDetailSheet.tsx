@@ -1856,6 +1856,7 @@ export function LeadDetailSheet({
           phone: lead.phone,
           phoneNumbers: visibleLeadPhones(lead),
           managerName: lead.managerName,
+          managerId: lead.managerId,
           statusName: leadStatusName(lead.statusCode),
         } : {}}
         existingLead={duplicateHint}

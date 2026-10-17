@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useState } from 'react';
 import { Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
@@ -214,7 +215,7 @@ export function BulkLeadActionsDialog({
                     <SelectContent>
                       <SelectGroup>
                         {managers.map((manager) => (
-                          <SelectItem key={manager.id} value={String(manager.id)}>{manager.fullName}</SelectItem>
+                          <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}><EmployeeIdentity userId={manager.id} name={manager.fullName} /></SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>

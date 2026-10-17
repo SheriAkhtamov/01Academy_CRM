@@ -41,7 +41,7 @@ export function useGroupFacets(configuration: GroupConfiguration, params: URLSea
         options: [
           { value: 'unassigned', label: t('notAssigned'), count: teacher.counts.get('unassigned') ?? 0 },
           ...configuration.teachers.map((item) => ({
-            value: String(item.id), label: item.fullName, count: teacher.counts.get(String(item.id)) ?? 0,
+            value: String(item.id), label: item.fullName, employeeUserId: item.userId, count: teacher.counts.get(String(item.id)) ?? 0,
           })),
         ],
       },

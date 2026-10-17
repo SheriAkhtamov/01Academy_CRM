@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { format, isSameDay } from 'date-fns';
 import type { Locale } from 'date-fns';
@@ -286,7 +287,7 @@ export function ScheduleTimeGrid({
                         </span>
                       ) : roomy ? (
                         <span className="truncate text-[10px] opacity-75">
-                          {event.teacherName || t('notAssigned')}
+                          <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-4 text-[8px]" />
                         </span>
                       ) : null}
                       {spacious ? (
@@ -308,7 +309,7 @@ export function ScheduleTimeGrid({
                       {timeRange} · {event.topic || event.courseName || t('lessonColumn')}
                     </p>
                     <p className="text-xs opacity-80">
-                      {event.teacherName || t('notAssigned')}
+                      <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-4 text-[8px]" />
                     </p>
                   </TooltipContent>
                 </Tooltip>

@@ -41,7 +41,7 @@ export const getDemoResourceAvailability = async (
   const [course, school, teachers, rooms, lessons, demos, groups] = await Promise.all([
     queryOne(`SELECT id FROM academy_courses WHERE id = $1 AND is_active = true`, [input.courseId]),
     queryOne(`SELECT id FROM academy_schools WHERE id = $1 AND is_active = true`, [input.schoolId]),
-    query(`SELECT id, full_name, status FROM academy_teachers ORDER BY full_name, id`),
+    query(`SELECT id, user_id, full_name, status FROM academy_teachers ORDER BY full_name, id`),
     query(
       `SELECT id, name, school_id, is_active
        FROM academy_rooms
@@ -99,6 +99,7 @@ export const getDemoResourceAvailability = async (
   return {
     teachers: teachers.map((teacher: Row) => ({
       id: Number(teacher.id),
+      userId: teacher.userId == null ? null : Number(teacher.userId),
       fullName: String(teacher.fullName),
       status: String(teacher.status),
       ...resourceState(

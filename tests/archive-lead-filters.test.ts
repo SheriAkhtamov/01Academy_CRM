@@ -30,6 +30,14 @@ describe('lead archive filters', () => {
     expect(matchesArchivedLeadFilters(lead({ archiveReason: 'not_interested' }), filters)).toBe(false);
   });
 
+  it('distinguishes managers with the same name by employee ID while accepting earlier saved name filters', () => {
+    const filters = { search: '', reason: 'all', manager: 'employee:7', funnel: 'all' };
+    expect(matchesArchivedLeadFilters(lead({ managerId: 7, managerName: 'Same name' }), filters)).toBe(true);
+    expect(matchesArchivedLeadFilters(lead({ managerId: 8, managerName: 'Same name' }), filters)).toBe(false);
+    expect(matchesArchivedLeadFilters(lead({ managerId: null, managerName: 'Same name' }), filters)).toBe(false);
+    expect(matchesArchivedLeadFilters(lead({ managerId: 7, managerName: 'Same name' }), { ...filters, manager: 'Same name' })).toBe(true);
+  });
+
   it('keeps the all-funnel option compatible with unassigned archived leads', () => {
     expect(matchesArchivedLeadFilters(lead({ managerName: null }), {
       search: '',

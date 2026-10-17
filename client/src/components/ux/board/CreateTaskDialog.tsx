@@ -1,3 +1,4 @@
+import { BoardUserAvatar, BoardUserIdentity } from './BoardUserAvatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Loader2 } from 'lucide-react';
@@ -221,8 +222,8 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
         <Label htmlFor="create-task-assignee" className="text-xs text-muted-foreground">{t('assigneeLabel')}</Label>
         {canAssignUsers ? <Select value={assigneeId} onValueChange={setAssigneeId} disabled={attempted || mutation.isPending}>
             <SelectTrigger id="create-task-assignee"><SelectValue placeholder={t('taskAssigneeRequired')} /></SelectTrigger>
-            <SelectContent>{assignableUsers.map((person) => <SelectItem key={person.id} value={String(person.id)}>{person.fullName}</SelectItem>)}</SelectContent>
-        </Select> : <Input id="create-task-assignee" value={currentUser?.fullName ?? ''} disabled />}
+            <SelectContent>{assignableUsers.map((person) => <SelectItem key={person.id} value={String(person.id)} textValue={person.fullName}><BoardUserIdentity user={person} miniMode={miniMode} /></SelectItem>)}</SelectContent>
+        </Select> : <div className="relative"><BoardUserAvatar user={currentUser} miniMode={miniMode} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2" /><Input id="create-task-assignee" className="pl-11" value={currentUser?.fullName ?? ''} disabled /></div>}
     </div>;
     const dueField = <div className="space-y-1.5">
         <Label htmlFor="create-task-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>

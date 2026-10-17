@@ -7,13 +7,14 @@ export const safeChatAttachment = (file: MessageAttachment, groupOnly = false) =
   && (file.url === `/api/chat-groups/attachments/${file.id}` || (!groupOnly && file.url === `/api/messages/attachments/${file.id}`));
 export const CHAT_MEDIA_CATEGORIES = ['photos', 'videos', 'audio', 'files', 'links', 'gifs'] as const;
 export type ChatMediaCategory = typeof CHAT_MEDIA_CATEGORIES[number];
-export type ChatMediaItem = { messageId: number; senderName: string; createdAt: string; file: MessageAttachment };
-export type ChatLinkItem = { messageId: number; senderName: string; createdAt: string; url: string };
+type ChatMediaAuthor = { senderId?: number | null; senderName: string; senderAvatarUrl?: string | null; createdAt: string };
+export type ChatMediaItem = ChatMediaAuthor & { messageId: number; file: MessageAttachment };
+export type ChatLinkItem = ChatMediaAuthor & { messageId: number; url: string };
 export type ChatMediaCatalog = Record<Exclude<ChatMediaCategory, 'links'>, ChatMediaItem[]> & { links: ChatLinkItem[] };
 export function collectChatMedia(messages: GroupMessageDto[]): ChatMediaCatalog {
   const catalog: ChatMediaCatalog = { photos: [], videos: [], audio: [], files: [], links: [], gifs: [] };
   for (const message of [...messages].sort((a, b) => b.id - a.id)) {
-    const identity = { messageId: message.id, senderName: message.senderName, createdAt: message.createdAt };
+    const identity = { messageId: message.id, senderId: message.senderId, senderName: message.senderName, senderAvatarUrl: message.senderAvatarUrl, createdAt: message.createdAt };
     for (const file of message.attachments) {
       if (!safeChatAttachment(file, true)) continue;
       const category = file.mimeType === 'image/gif' ? 'gifs' : file.mimeType.startsWith('image/') ? 'photos'

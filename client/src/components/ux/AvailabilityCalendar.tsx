@@ -1,3 +1,4 @@
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useState } from 'react';
 import { addDays, format, isSameDay, startOfDay } from 'date-fns';
 import { enUS, ru } from 'date-fns/locale';
@@ -101,11 +102,11 @@ export function AvailabilityCalendar({
     [selectedDateKey, slotsByDay],
   );
   const teachers = useMemo(() => {
-    const byId = new Map<number, string>();
+    const byId = new Map<number, { id: number; name: string; userId?: number | null }>();
     for (const slot of availability.data?.slots ?? []) {
-      if (slot.teacherId) byId.set(Number(slot.teacherId), slot.teacherName);
+      if (slot.teacherId) byId.set(Number(slot.teacherId), { id: Number(slot.teacherId), name: slot.teacherName, userId: slot.teacherUserId });
     }
-    return [...byId].map(([id, name]) => ({ id, name }));
+    return [...byId.values()];
   }, [availability.data?.slots]);
   const selectedSlots = useMemo(
     () => (teacherFilter
@@ -304,7 +305,7 @@ export function AvailabilityCalendar({
                   : 'border-border bg-card text-muted-foreground hover:bg-accent',
               )}
             >
-              {teacher.name}
+              <EmployeeIdentity userId={teacher.userId} name={teacher.name} avatarClassName="size-5 text-[9px]" />
             </button>
           ))}
         </div>
@@ -355,7 +356,7 @@ export function AvailabilityCalendar({
                           {selected ? <Check className="ml-auto size-3.5" aria-hidden="true" /> : null}
                         </span>
                         <span className={cn('w-full truncate text-[10px]', selected ? 'opacity-80' : 'text-muted-foreground')}>
-                          {slot.teacherName}
+                          <EmployeeIdentity userId={slot.teacherUserId} name={slot.teacherName} avatarClassName="size-5 text-[9px]" />
                         </span>
                         <span className={cn('w-full truncate text-[10px]', selected ? 'opacity-80' : 'text-muted-foreground')}>
                           {demoFormat === 'online' ? t('online') : slot.roomName ?? t('roomNotFound')}
@@ -381,7 +382,7 @@ export function AvailabilityCalendar({
             <Check data-icon="inline-start" />
             {format(new Date(value.startsAt), 'd MMMM, HH:mm', { locale })}
           </Badge>
-          <span className="truncate text-xs text-muted-foreground">{value.teacherName}</span>
+          <EmployeeIdentity userId={value.teacherUserId} name={value.teacherName} className="text-xs text-muted-foreground" avatarClassName="size-6" />
           <Button
             type="button"
             variant="ghost"

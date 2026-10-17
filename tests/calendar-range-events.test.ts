@@ -212,3 +212,27 @@ describe('calendar time scale position round trip', () => {
     expect(getCalendarMinuteAtPosition(scale, offset, 30)).toBe(630);
   });
 });
+
+
+describe('calendar employee identity', () => {
+  it('preserves real employee IDs for recurring lessons, substitutes and demo teachers', () => {
+    const events = buildSalesScheduleRangeEvents({
+      groups: [{ ...groups[0], teacherUserId: 501 }],
+      lessons: [
+        { id: 101, groupId: 1, teacherId: 10, teacherUserId: 501, scheduledAt: '2026-06-15T10:00:00+05:00' },
+        { id: 102, groupId: 1, teacherId: 11, teacherUserId: 502, scheduledAt: '2026-06-16T10:00:00+05:00' },
+        { id: 103, groupId: 1, teacherId: 12, teacherUserId: null, scheduledAt: '2026-06-17T10:00:00+05:00' },
+        { id: 104, groupId: 1, scheduledAt: '2026-06-18T10:00:00+05:00' },
+      ],
+      demos: [{ id: 201, teacherId: 20, teacherUserId: 503, scheduledAt: '2026-06-19T10:00:00+05:00' }],
+      rangeStart: new Date(2026, 5, 15), dayCount: 7,
+    });
+    expect(events.find((event) => event.id === 'lesson-101')?.teacherUserId).toBe(501);
+    expect(events.find((event) => event.id === 'lesson-102')?.teacherUserId).toBe(502);
+    expect(events.find((event) => event.id === 'lesson-103')?.teacherUserId).toBeNull();
+    expect(events.find((event) => event.id === 'lesson-104')?.teacherUserId).toBe(501);
+    expect(events.find((event) => event.id === 'demo-201')?.teacherUserId).toBe(503);
+    const recurring = buildSalesScheduleRangeEvents({ groups: [{ ...groups[0], teacherUserId: 501 }], lessons: [], demos: [], rangeStart: new Date(2026, 5, 15), dayCount: 7 });
+    expect(recurring[0].teacherUserId).toBe(501);
+  });
+});

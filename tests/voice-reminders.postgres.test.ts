@@ -7,6 +7,7 @@ import { DEFAULT_VOICE_REMINDER_SETTINGS, resolveVoiceReminderLanguage } from '.
 import type { StoredVoiceReminderAudio } from '../server/modules/voice-reminders/application/ports';
 import { RobotCallReceipts } from '../server/infrastructure/voice-telephony/robot-call-receipts';
 import { readVoiceReminderJobs } from './helpers/voice-reminder-jobs';
+import { demoReminderProgressJoinSql } from '../server/modules/academy/demo-reminder-progress';
 
 const url = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `voice_${randomUUID().replace(/-/g, '')}`;
@@ -212,6 +213,142 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     return { job, callId };
   };
   const currentResponse = async (participantId = 1) => (await pool.query('SELECT * FROM voice_reminder_participant_response($1)', [participantId])).rows;
+  const reminderProgress = async (at = now) => (await pool.query(`SELECT reminder_progress.progress_status
+    FROM academy_demo_lesson_participants participant
+    JOIN academy_demo_lessons demo ON demo.id=participant.demo_lesson_id
+    ${demoReminderProgressJoinSql('$1::timestamptz')}
+    WHERE participant.id=1`, [at])).rows[0].progress_status;
+  const progressJob = async (options: { status?: string; kind?: 'same_day' | 'day_before'; attempted?: boolean } = {}) => {
+    const status = options.status ?? 'waiting';
+    const callId = randomUUID();
+    const jobId = (await pool.query(`INSERT INTO voice_reminder_jobs
+      (demo_lesson_id,participant_id,scheduled_at,due_at,lesson_revision,participant_revision,
+       reminder_kind,language,language_revision,status,phone,attempts,last_call_at,lease_token,lease_until,
+       delivery_lesson_revision,delivery_participant_revision)
+      SELECT demo.id,participant.id,demo.scheduled_at AT TIME ZONE 'UTC',
+        (demo.scheduled_at AT TIME ZONE 'UTC')-CASE WHEN $2::text='day_before' THEN interval '1 day' ELSE interval '2 hours' END,
+        demo.voice_reminder_revision,participant.voice_reminder_revision,$2::text,
+        voice_reminder_contact_language(participant.student_id),voice_reminder_contact_language_revision(participant.student_id),
+        $1::text,CASE WHEN $3::boolean THEN voice_reminder_contact_phone(participant.student_id) END,CASE WHEN $3::boolean THEN 1 ELSE 0 END,
+        CASE WHEN $3::boolean THEN $4::timestamptz END,CASE WHEN $1::text='calling' THEN $5::uuid END,
+        CASE WHEN $1::text='calling' THEN $4::timestamptz+interval '5 minutes' END,
+        CASE WHEN $3::boolean THEN demo.voice_response_revision END,CASE WHEN $3::boolean THEN participant.voice_response_revision END
+      FROM academy_demo_lesson_participants participant JOIN academy_demo_lessons demo ON demo.id=participant.demo_lesson_id
+      WHERE participant.id=1 RETURNING id`, [status,options.kind ?? 'same_day',Boolean(options.attempted),now,callId])).rows[0].id;
+    if (options.attempted) await pool.query(`INSERT INTO voice_reminder_call_attempts
+      (call_id,job_id,extension,phone,started_at,completed_at,termination_confirmed_at)
+      VALUES($1,$2,'100','+998901234567',$3,CASE WHEN $4 THEN NULL ELSE $3::timestamptz END,
+        CASE WHEN $4 THEN NULL ELSE $3::timestamptz END)`, [callId,jobId,now,status==='calling']);
+    return { jobId,callId };
+  };
+
+  it('projects queued work and claimed preparation separately from a live call, then a pending retry', async () => {
+    const { jobId } = await progressJob();
+    expect(await reminderProgress()).toBe('waiting');
+    await pool.query(`UPDATE voice_reminder_jobs SET status='calling',lease_token=$2,
+      lease_until=$3::timestamptz+interval '5 minutes' WHERE id=$1`, [jobId,randomUUID(),now]);
+    expect(await reminderProgress()).toBe('waiting');
+    await pool.query(`UPDATE voice_reminder_jobs SET phone='+998901234567',delivery_lesson_revision=0,
+      delivery_participant_revision=0 WHERE id=$1`, [jobId]);
+    const callId = randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+      VALUES($1,$2,'100','+998901234567',$3)`, [callId,jobId,now]);
+    expect(await reminderProgress()).toBe('calling');
+    await pool.query('UPDATE voice_reminder_call_attempts SET completed_at=$2,termination_confirmed_at=$2 WHERE call_id=$1', [callId,now]);
+    await pool.query(`UPDATE voice_reminder_jobs SET status='waiting',lease_token=NULL,lease_until=NULL,
+      attempts=1,last_call_at=$2,not_before_at=$2::timestamptz+interval '10 minutes' WHERE id=$1`, [jobId,now]);
+    expect(await reminderProgress()).toBe('retry');
+  });
+
+  it.each(['unanswered','failed','played'])('keeps the real %s report ahead of a future unattempted reminder and after attendance changes', async (status) => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    await progressJob({ status,kind:'day_before',attempted:true });
+    await progressJob();
+    expect(await reminderProgress()).toBe(status);
+    await pool.query("UPDATE academy_demo_lesson_participants SET status='no_show' WHERE id=1");
+    expect(await reminderProgress()).toBe(status);
+    await pool.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    expect(await reminderProgress()).toBe(status);
+  });
+
+  it('shows a current pre-call failure while never claiming an unattempted played job was delivered', async () => {
+    const { jobId } = await progressJob({ status:'failed' });
+    expect(await reminderProgress()).toBe('failed');
+    await pool.query("UPDATE voice_reminder_jobs SET status='played' WHERE id=$1", [jobId]);
+    expect(await reminderProgress()).toBe('not_started');
+  });
+
+  it('orders actual outcomes by the latest call rather than preferring an older failure', async () => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    const failed = await progressJob({ status:'failed',kind:'day_before',attempted:true });
+    const unanswered = await progressJob({ status:'unanswered',attempted:true });
+    await pool.query("UPDATE voice_reminder_call_attempts SET started_at=$2::timestamptz-interval '1 minute' WHERE call_id=$1", [failed.callId,now]);
+    expect(await reminderProgress()).toBe('unanswered');
+    await pool.query("UPDATE voice_reminder_call_attempts SET started_at=$2::timestamptz-interval '2 minutes' WHERE call_id=$1", [unanswered.callId,now]);
+    expect(await reminderProgress()).toBe('failed');
+  });
+
+  it('does not keep calling after an expired lease and does not promise a retry after its deadline', async () => {
+    await progressJob({ status:'calling',attempted:true });
+    expect(await reminderProgress(new Date(now.getTime()+301_000))).toBe('failed');
+    await pool.query(`UPDATE voice_reminder_jobs SET status='waiting',lease_token=NULL,lease_until=NULL,
+      not_before_at=scheduled_at+interval '1 minute'`);
+    expect(await reminderProgress()).toBe('unanswered');
+  });
+
+  it.each(['phone','schedule','cancel','reinvite'])('hides an obsolete attempted report after %s changes', async (change) => {
+    await progressJob({ status:'unanswered',attempted:true });
+    if (change==='phone') await pool.query("UPDATE academy_leads SET phone='+998901111111' WHERE id=1");
+    if (change==='schedule') await pool.query("UPDATE academy_demo_lessons SET scheduled_at=scheduled_at+interval '1 hour' WHERE id=1");
+    if (change==='cancel') await pool.query("UPDATE academy_demo_lesson_participants SET status='cancelled' WHERE id=1");
+    if (change==='reinvite') {
+      await pool.query("UPDATE academy_demo_lesson_participants SET status='no_show' WHERE id=1");
+      await pool.query("UPDATE academy_demo_lesson_participants SET status='invited' WHERE id=1");
+    }
+    expect(await reminderProgress()).toBe(change==='cancel' ? 'cancelled' : 'not_started');
+  });
+
+  it('keeps a real attempt across a language-only change but rejects queued work in the old language epoch', async () => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    const attempted = await progressJob({ status:'unanswered',kind:'day_before',attempted:true });
+    await progressJob();
+    await pool.query("UPDATE academy_leads SET languages=ARRAY['uz'] WHERE id=1");
+    expect(await reminderProgress()).toBe('unanswered');
+    await pool.query('DELETE FROM voice_reminder_jobs WHERE id=$1', [attempted.jobId]);
+    expect(await reminderProgress()).toBe('not_started');
+  });
+
+  it('uses truthful fallbacks and suppresses archived contacts rather than treating them as missing phones', async () => {
+    expect(await reminderProgress()).toBe('not_started');
+    await pool.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    expect(await reminderProgress()).toBe('disabled');
+    await pool.query('UPDATE academy_leads SET phone=NULL WHERE id=1');
+    expect(await reminderProgress()).toBe('no_phone');
+    await pool.query('UPDATE academy_leads SET is_archived=true WHERE id=1');
+    expect(await reminderProgress()).toBeNull();
+  });
+
+  it.each(['disabled','day_before_disabled','past_demo','past_window','obsolete'])('does not present %s queue rows as pending calls', async (state) => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    const { jobId } = await progressJob({ kind:'day_before' });
+    let at = now;
+    if (state==='disabled') await pool.query('UPDATE voice_reminder_settings SET enabled=false WHERE id=1');
+    if (state==='day_before_disabled') await pool.query('UPDATE voice_reminder_settings SET day_before_enabled=false WHERE id=1');
+    if (state==='past_demo') at = new Date('2030-01-16T07:00:00Z');
+    if (state==='past_window') at = new Date('2030-01-15T15:00:00Z');
+    if (state==='obsolete') await pool.query('UPDATE voice_reminder_jobs SET participant_revision=participant_revision+1 WHERE id=$1', [jobId]);
+    expect(await reminderProgress(at)).toBe(state==='disabled' ? 'disabled' : 'not_started');
+  });
+
+  it('does not promise a reminder when the demo begins before allowed calling hours', async () => {
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-15 03:30:00' WHERE id=1");
+    await progressJob();
+    expect(await reminderProgress(new Date('2030-01-15T00:00:00Z'))).toBe('not_started');
+  });
 
   const addUzLibrary = async (confirmation = false) => {
     for (const target of [{ part: 'intro' }, { part: 'outro' }, { part: 'hour', hour: '11' },

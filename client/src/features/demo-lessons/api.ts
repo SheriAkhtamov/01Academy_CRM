@@ -10,7 +10,7 @@ import type {
   DemoLessonTeacherChange,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
-import type { VoiceReminderDeliveryStatus, VoiceReminderResponse } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderDeliveryStatus, VoiceReminderProgressStatus, VoiceReminderResponse } from '@shared/contracts/voice-reminders';
 
 export interface DemoLessonParticipant {
   id: number;
@@ -32,6 +32,7 @@ export interface DemoLessonParticipant {
   reminderRespondedAt?: string | null;
   reminderDeliveryStatus?: VoiceReminderDeliveryStatus | null;
   reminderDeliveredAt?: string | null;
+  reminderProgressStatus?: VoiceReminderProgressStatus | null;
 }
 
 export interface DemoLesson {

@@ -12,6 +12,8 @@ export type VoiceReminderKind = typeof VOICE_REMINDER_KINDS[number];
 export const voiceReminderResponseSchema = z.enum(['yes', 'no']);
 export type VoiceReminderResponse = z.infer<typeof voiceReminderResponseSchema>;
 export type VoiceReminderDeliveryStatus = 'delivered_no_response';
+export type VoiceReminderProgressStatus = 'calling' | 'waiting' | 'retry' | 'unanswered' | 'failed'
+  | 'played' | 'not_started' | 'disabled' | 'cancelled' | 'no_phone';
 export const voiceReminderLanguageSchema = z.enum(['ru', 'uz']);
 export type VoiceReminderLanguage = z.infer<typeof voiceReminderLanguageSchema>;
 export const resolveVoiceReminderLanguage = (languages: unknown, language?: unknown): VoiceReminderLanguage => (

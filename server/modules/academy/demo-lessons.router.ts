@@ -35,7 +35,10 @@ import { getDemoResourceAvailability } from './demo-resource-availability';
 import { lockDemoParticipantLeads, syncDemoLeadStatuses } from './demo-lead-status';
 import { canManageDemoParticipant, demoAttendanceManagerSql, demoFunnelRoleSql } from './demo-participant-access';
 import { resolveTeacherId } from './academy-analytics';
+import { demoReminderProgressJoinSql } from './demo-reminder-progress';
 
+// Explicit 0/1 limits retain the report functions' real cardinality; default
+// set-returning estimates otherwise trigger costly JIT during schedule polling.
 const queryDemoLessons = async (where: string, values: DbValue[]) => query(
   `SELECT demo.*,
       course.name AS course_name,
@@ -53,6 +56,7 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
             'reminderRespondedAt', reminder_response.response_at,
             'reminderDeliveryStatus', reminder_delivery.delivery_status,
             'reminderDeliveredAt', reminder_delivery.delivered_at,
+            'reminderProgressStatus', reminder_progress.progress_status,
             'result', participant.result,
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
@@ -73,8 +77,9 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
    LEFT JOIN academy_rooms room ON room.id = demo.room_id
    JOIN academy_teachers teacher ON teacher.id = demo.teacher_id
    LEFT JOIN academy_demo_lesson_participants participant ON participant.demo_lesson_id = demo.id
-   LEFT JOIN LATERAL voice_reminder_participant_response(participant.id) reminder_response ON true
-   LEFT JOIN LATERAL voice_reminder_participant_delivery(participant.id) reminder_delivery ON true
+   LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_response(participant.id) LIMIT 1) reminder_response ON true
+   LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_delivery(participant.id) LIMIT 1) reminder_delivery ON true
+   ${demoReminderProgressJoinSql()}
    LEFT JOIN academy_students student ON student.id = participant.student_id
    LEFT JOIN academy_leads lead ON lead.id = student.lead_id
    WHERE ${where}
@@ -140,7 +145,7 @@ const presentDemoLesson = (req: any, demo: Row) => {
       const participantCanManage = canManageParticipant(req, participant);
       return participantCanManage
         ? { ...participant, canManage: true }
-        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, canManage: false };
+        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, canManage: false };
     }),
   };
 };

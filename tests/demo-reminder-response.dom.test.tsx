@@ -73,6 +73,31 @@ const showCachedParent = (load: () => Promise<DemoLesson[]>, context: 'sales' | 
 
 describe('demo reminder answers beside actual attendance', () => {
   it.each([
+    ['calling', 'Auto-informer: Calling', 'Автоинформатор: Звонит'],
+    ['waiting', 'Auto-informer: Awaiting call', 'Автоинформатор: Ожидает звонка'],
+    ['retry', 'Auto-informer: Awaiting retry', 'Автоинформатор: Ожидает повтора'],
+    ['unanswered', 'Auto-informer: No answer', 'Автоинформатор: Не дозвонился'],
+    ['failed', 'Auto-informer: Call failed', 'Автоинформатор: Ошибка звонка'],
+    ['played', 'Auto-informer: Reminder delivered', 'Автоинформатор: Напоминание доставлено'],
+    ['not_started', 'Auto-informer: Not called', 'Автоинформатор: Не звонил'],
+    ['disabled', 'Auto-informer: Disabled', 'Автоинформатор: Отключён'],
+    ['cancelled', 'Auto-informer: Call cancelled', 'Автоинформатор: Звонок отменён'],
+    ['no_phone', 'Auto-informer: No phone number', 'Автоинформатор: Нет номера'],
+  ] as const)('shows the explicit %s bot state beside attendance in both languages without writing attendance', (status, en, ru) => {
+    i18n.setLanguage('en');
+    const view = show({ ...demo, participants: [{ ...demo.participants[0], reminderProgressStatus: status }] });
+    const englishBadge = screen.getByText(en);
+    expect(within(englishBadge.parentElement!).getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.en);
+    act(() => i18n.setLanguage('ru'));
+    expect(screen.getByText(ru)).toBeTruthy();
+    expect(within(screen.getByText(ru).parentElement!).getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.ru);
+    expect(mocks.saveAttendance).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.outcome).not.toHaveBeenCalled();
+    expect(view.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['en', 'yes', 'Auto-informer: Will attend'], ['en', 'no', 'Auto-informer: Will not attend'],
     ['ru', 'yes', 'Автоинформатор: Придёт'], ['ru', 'no', 'Автоинформатор: Не придёт'],
   ] as const)('shows the %s %s source beside the selector without changing attendance', (language, response, label) => {
@@ -90,8 +115,8 @@ describe('demo reminder answers beside actual attendance', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it('does not infer a negative answer when no response exists', () => {
-    show();
+  it.each([undefined, null] as const)('does not invent an answer or progress for a missing or redacted report (%s)', reminderProgressStatus => {
+    show({ ...demo, participants: [{ ...demo.participants[0], reminderProgressStatus }] });
     expect(screen.queryByText(/Auto-informer:/)).toBeNull();
     expect(screen.getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.en);
   });
@@ -170,7 +195,7 @@ describe('demo reminder answers beside actual attendance', () => {
 
   it.each(['en', 'ru'] as const)('shows only the explicit delivered-without-response marker beside attendance in %s', language => {
     i18n.setLanguage(language);
-    show({ ...demo, participants: [{ ...demo.participants[0], reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T11:00:00Z' }] });
+    show({ ...demo, participants: [{ ...demo.participants[0], reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T11:00:00Z', reminderProgressStatus: 'waiting' }] });
     const badge = screen.getByText(language === 'ru' ? 'Напоминание доставлено, ответ не получен' : 'Reminder delivered, no response received');
     expect(within(badge.parentElement!).getByRole('combobox').textContent).toBe(translations.selectAttendanceResult[language]);
     expect(screen.getByRole('dialog')).toBeTruthy();
@@ -182,12 +207,38 @@ describe('demo reminder answers beside actual attendance', () => {
 
   it.each(['yes', 'no'] as const)('keeps a recorded %s answer ahead of delivered-without-response without changing physical attendance', response => {
     show({ ...demo, participants: [{ ...demo.participants[0], reminderResponse: response, reminderRespondedAt: '2026-08-31T11:00:00Z',
-      reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T10:00:00Z' }] });
+      reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T10:00:00Z', reminderProgressStatus: 'failed' }] });
     expect(screen.getByText(response === 'yes' ? 'Auto-informer: Will attend' : 'Auto-informer: Will not attend')).toBeTruthy();
     expect(screen.queryByText('Reminder delivered, no response received')).toBeNull();
+    expect(screen.queryByText('Auto-informer: Call failed')).toBeNull();
     expect(screen.getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.en);
     expect(mocks.saveAttendance).not.toHaveBeenCalled();
     expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it('preserves the open absence-reason draft and unsaved attendance when only bot progress changes', async () => {
+    const value: DemoLesson = { ...demo, participants: [{ ...demo.participants[0], reminderProgressStatus: 'waiting' }] };
+    const view = show(value);
+    const selector = screen.getByRole('combobox');
+    selector.focus();
+    fireEvent.keyDown(selector, { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: translations.demoParticipantNoShow.en }));
+    const reasonDialog = await screen.findByRole('dialog', { name: translations.demoNoShowReasonTitle.en });
+    fireEvent.click(within(reasonDialog).getByRole('radio', { name: translations.demoNoShowReasonForgot.en }));
+    fireEvent.change(within(reasonDialog).getByLabelText(translations.demoNoShowReasonComment.en), { target: { value: 'Parent confirmed absence' } });
+
+    view.update({ ...value, participants: [{ ...value.participants[0], reminderProgressStatus: 'calling' }] });
+    expect(screen.getByRole('dialog', { name: translations.demoNoShowReasonTitle.en })).toBe(reasonDialog);
+    expect((within(reasonDialog).getByLabelText(translations.demoNoShowReasonComment.en) as HTMLTextAreaElement).value).toBe('Parent confirmed absence');
+    expect((within(reasonDialog).getByRole('radio', { name: translations.demoNoShowReasonForgot.en }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(reasonDialog).getByRole('button', { name: translations.confirmAction.en }));
+    view.update({ ...value, participants: [{ ...value.participants[0], reminderProgressStatus: 'retry' }] });
+    expect(screen.getByText('Auto-informer: Awaiting retry')).toBeTruthy();
+    expect(screen.getByRole('combobox').textContent).toBe(translations.demoParticipantNoShow.en);
+    fireEvent.click(screen.getByRole('button', { name: translations.saveAttendance.en }));
+    await waitFor(() => expect(mocks.saveAttendance).toHaveBeenCalledWith(5, {
+      participants: [{ participantId: 11, status: 'no_show', result: null, noShowReasonCode: 'forgot', noShowReasonNote: 'Parent confirmed absence' }],
+    }));
   });
 
   it('refreshes terminal delivery from the real parent cache without discarding dirty attendance and ignores delivery timestamp-only updates', async () => {
@@ -225,7 +276,7 @@ describe('demo reminder answers beside actual attendance', () => {
     const initial: DemoLesson = {
       ...demo,
       courseName: 'AI Kids',
-      participants: [{ ...demo.participants[0], studentName: 'Алия', contactName: 'Индира' }],
+      participants: [{ ...demo.participants[0], studentName: 'Алия', contactName: 'Индира', reminderProgressStatus: 'waiting' }],
     };
     const delivered: DemoLesson = {
       ...initial,
@@ -248,6 +299,7 @@ describe('demo reminder answers beside actual attendance', () => {
     expect(within(dialog).getByText('Алия')).toBeTruthy();
     expect(within(dialog).getByText('Индира')).toBeTruthy();
     await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+    expect(within(dialog).getByText(translations.voiceRemindersProgressWaiting.ru)).toBeTruthy();
     expect(within(dialog).queryByText(translations.voiceRemindersDeliveredNoResponse.ru)).toBeNull();
     const selector = within(dialog).getByRole('combobox');
     selector.focus();
@@ -256,6 +308,7 @@ describe('demo reminder answers beside actual attendance', () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
     const badge = await screen.findByText(translations.voiceRemindersDeliveredNoResponse.ru);
+    expect(within(dialog).queryByText(translations.voiceRemindersProgressWaiting.ru)).toBeNull();
     expect(within(badge.parentElement!).getByRole('combobox').textContent).toBe(translations.demoParticipantAttended.ru);
     expect(within(dialog).queryByText(translations.voiceRemindersResponseYes.ru)).toBeNull();
     expect(within(dialog).queryByText(translations.voiceRemindersResponseNo.ru)).toBeNull();

@@ -1055,7 +1055,7 @@ describe('academy route logic boundaries', () => {
         expect(sql).toContain('WHERE demo.teacher_id = $1');
         expect(values).toEqual([4]);
         return { rows: [{ id: 23, teacher_id: 4, course_name: 'Coding', status: 'scheduled', participants: [
-          { id: 77, studentId: 155, leadId: 2640, managerId: 18, status: 'invited', studentName: 'Demo student', contactName: 'Parent', leadName: 'Sales contact', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-10-07T09:00:00Z' },
+          { id: 77, studentId: 155, leadId: 2640, managerId: 18, status: 'invited', studentName: 'Demo student', contactName: 'Parent', leadName: 'Sales contact', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-10-07T09:00:00Z', reminderProgressStatus: 'played' },
           { id: 78, studentId: 156, status: 'cancelled', studentName: 'Removed student' },
         ] }] };
       }
@@ -1079,15 +1079,17 @@ describe('academy route logic boundaries', () => {
       { id: 78, studentId: 156, managerId: 7, status: 'invited', reminderResponse: 'no', reminderRespondedAt: reportedAt, reminderDeliveryStatus: null, reminderDeliveredAt: null },
       { id: 79, studentId: 157, managerId: 7, status: 'invited', reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: reportedAt },
       { id: 80, studentId: 158, managerId: 7, status: 'invited', reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null },
-    ];
+    ].map((participant) => ({ ...participant, reminderProgressStatus: participant.id===80 ? 'waiting' : 'played' }));
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (!sql.includes('FROM academy_demo_lessons demo')) return emptyResult();
       // Check the actual list query: prepopulated mock rows alone would hide a lost SQL projection.
       for (const projection of [
         "'reminderResponse', reminder_response.response", "'reminderRespondedAt', reminder_response.response_at",
         "'reminderDeliveryStatus', reminder_delivery.delivery_status", "'reminderDeliveredAt', reminder_delivery.delivered_at",
-        'LEFT JOIN LATERAL voice_reminder_participant_response(participant.id)',
-        'LEFT JOIN LATERAL voice_reminder_participant_delivery(participant.id)',
+        "'reminderProgressStatus', reminder_progress.progress_status",
+        'LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_response(participant.id) LIMIT 1)',
+        'LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_delivery(participant.id) LIMIT 1)',
+        'FROM voice_reminder_jobs job',
       ]) expect(sql).toContain(projection);
       expect(sql).toContain("demo.scheduled_at + (demo.duration_minutes * INTERVAL '1 minute') > $1");
       expect(sql).toContain('($2::timestamptz IS NULL OR demo.scheduled_at < $2::timestamptz)');
@@ -1109,8 +1111,8 @@ describe('academy route logic boundaries', () => {
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_demo_lessons demo')) {
         return { rows: [{ id: 23, status: 'scheduled', participants: [
-          { id: 77, studentId: 155, managerId: 7, status: 'invited', studentName: 'Own student', contactName: 'Own contact', leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: null, reminderDeliveredAt: null },
-          { id: 78, studentId: 156, managerId: 18, status: 'invited', studentName: 'Other student', contactName: 'Other contact', leadName: 'Other lead', leadPhone: '+998909876543', reminderResponse: 'no', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-10-07T09:00:00Z' },
+          { id: 77, studentId: 155, managerId: 7, status: 'invited', studentName: 'Own student', contactName: 'Own contact', leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: 'played' },
+          { id: 78, studentId: 156, managerId: 18, status: 'invited', studentName: 'Other student', contactName: 'Other contact', leadName: 'Other lead', leadPhone: '+998909876543', reminderResponse: 'no', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-10-07T09:00:00Z', reminderProgressStatus: 'played' },
         ] }] };
       }
       return emptyResult();
@@ -1121,9 +1123,35 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(200);
     expect(response.body[0].canManage).toBe(false);
     expect(response.body[0].participants).toEqual([
-      expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', canManage: true }),
-      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, canManage: false }),
+      expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderProgressStatus: 'played', canManage: true }),
+      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, canManage: false }),
     ]);
+  });
+
+  it.each([
+    { participantManager: 7, archived: false, expected: 'unanswered' },
+    { participantManager: 18, archived: false, expected: null },
+    { participantManager: 7, archived: true, expected: null },
+  ])('scopes the lead participant progress report to its manager and active contact: $participantManager/$archived', async ({ participantManager, archived, expected }) => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [leadFixture({ manager_id: 7, is_archived: archived })] };
+      }
+      if (!sql.includes('SELECT participant.id AS participant_id')) return emptyResult();
+      expect(values).toEqual([42]);
+      expect(sql).toContain('reminder_progress.progress_status AS reminder_progress_status');
+      expect(sql).toContain('LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_response(participant.id) LIMIT 1)');
+      expect(sql).toContain('LEFT JOIN LATERAL (SELECT * FROM voice_reminder_participant_delivery(participant.id) LIMIT 1)');
+      expect(sql).toContain('FROM voice_reminder_jobs job');
+      return { rows: [{ participant_id: 77, demo_lesson_id: 23, student_id: 155, manager_id: participantManager,
+        status: 'invited', lesson_status: 'scheduled', reminder_response: null, reminder_responded_at: null,
+        reminder_delivery_status: null, reminder_delivered_at: null, reminder_progress_status: 'unanswered' }] };
+    });
+    const response = await request(await createApp()).get('/api/academy/leads/42/demo-participants');
+    expect(response.status).toBe(200);
+    expect(response.body[0]).toMatchObject({ participantId: 77, reminderProgressStatus: expected,
+      reminderResponse: null, reminderDeliveryStatus: null, canManage: expected!==null });
   });
 
   it('fails closed for demo lessons when a teacher profile is missing or inactive', async () => {

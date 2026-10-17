@@ -446,6 +446,7 @@ export const mergeLeadRecords = async (
     [retainedLeadId, duplicateLeadId],
   );
   await query(`UPDATE academy_communications SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
+  await query(`UPDATE voice_reminder_call_details SET lead_id=$1,updated_at=now() WHERE lead_id=$2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_assignment_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(
     `INSERT INTO academy_lead_funnel_qualifications

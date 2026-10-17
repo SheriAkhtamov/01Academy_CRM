@@ -4885,6 +4885,38 @@ describe('academy route logic boundaries', () => {
     }
   });
 
+  it('includes immutable reminder attempts in the normal lead history without attributing them to an employee',async () => {
+    mocks.actor={ id:7,module:'sales',modules:['sales'] };
+    const firstId=crypto.randomUUID(); const retryId=crypto.randomUUID();
+    const human={ id:71,source:'manager',direction:'outgoing',status:'ended',started_at:'2026-10-17T10:10:00Z',user_name:'Employee',has_recording:true };
+    const reminders=[
+      { id:firstId,source:'voice_reminder',voice_reminder_call_id:firstId,direction:'outgoing',status:'ended',
+        started_at:'2026-10-17T10:00:00Z',user_id:null,user_name:null,has_recording:true,reminder_outcome:'delivered_no_response',reminder_response:null },
+      { id:retryId,source:'voice_reminder',voice_reminder_call_id:retryId,direction:'outgoing',status:'ended',
+        started_at:'2026-10-17T10:15:00Z',user_id:null,user_name:null,has_recording:true,reminder_outcome:'played',reminder_response:'yes' },
+    ];
+    mocks.poolQuery.mockImplementation(async (sql:string,values:unknown[] = []) => {
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) return { rows:[leadFixture({ manager_id:7 })] };
+      if (sql.includes('FROM telephony_calls call')) return { rows:[human] };
+      if (sql.includes('FROM voice_reminder_call_details detail JOIN voice_reminder_call_attempts')) {
+        expect(sql).toContain('WHERE detail.lead_id=$1');
+        expect(sql).toContain('NULL::integer AS user_id,NULL::text AS user_name');
+        expect(sql).not.toContain('academy_demo_lesson_participants');
+        expect(sql).not.toContain(' AS recording_url');
+        expect(values).toEqual([42]);
+        return { rows:reminders };
+      }
+      return emptyResult();
+    });
+    const result=await request(await createApp()).get('/api/academy/leads/42');
+    expect(result.status).toBe(200);
+    expect(result.body.calls.map((call:{ id:number|string }) => call.id)).toEqual([retryId,71,firstId]);
+    expect(result.body.calls[0]).toMatchObject({ source:'voice_reminder',voiceReminderCallId:retryId,userId:null,userName:null,
+      reminderOutcome:'played',reminderResponse:'yes',hasRecording:true });
+    expect(result.body.calls[2]).toMatchObject({ reminderResponse:null,reminderOutcome:'delivered_no_response' });
+    expect(mocks.poolQuery.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE) telephony_calls/.test(String(sql)))).toBe(false);
+  });
+
   it('merges lead relationships into the retained card and archives the duplicate atomically', async () => {
     const retained = leadFixture({
       id: 101,
@@ -4949,6 +4981,9 @@ describe('academy route logic boundaries', () => {
     const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
     expect(statements.some((sql) => sql.includes('UPDATE instagram_conversations'))).toBe(true);
     expect(statements.some((sql) => sql.includes('UPDATE academy_tasks'))).toBe(true);
+    expect(mocks.clientQuery).toHaveBeenCalledWith(
+      'UPDATE voice_reminder_call_details SET lead_id=$1,updated_at=now() WHERE lead_id=$2', [101,202],
+    );
     expect(statements.some((sql) => sql.includes('INSERT INTO "audit_logs"'))).toBe(true);
     const archiveUpdate = mocks.clientQuery.mock.calls.find(([sql, values]) => (
       String(sql).includes('UPDATE "academy_leads"') && Number(values?.[0]) === 202

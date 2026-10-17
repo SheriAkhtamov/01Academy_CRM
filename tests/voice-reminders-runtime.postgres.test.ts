@@ -128,6 +128,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
     await database.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0154_voice_reminder_call_history.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -157,6 +158,27 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('preserves a completed transport result and releases its line when only the journal detail write fails',async () => {
+    const query=database.query.bind(database);
+    const failingDatabase={
+      connect:database.connect.bind(database),
+      query:async (sql:string,params?:unknown[]) => {
+        if (sql.startsWith('UPDATE voice_reminder_call_details detail SET')) throw new Error('History write unavailable');
+        return query(sql,params);
+      },
+    } as unknown as Pool;
+    const call=mockCall();
+    const runtime=createVoiceRemindersRuntime(provider(),failingDatabase,{ audioDirectory:directory,performCall:call,now:() => testClock });
+    try {
+      await runtime.tick();
+      expect(call).toHaveBeenCalledOnce();
+      expect((await database.query('SELECT status,attempts FROM voice_reminder_jobs')).rows[0]).toMatchObject({ status:'played',attempts:1 });
+      expect((await database.query('SELECT completed_at,termination_confirmed_at FROM voice_reminder_call_attempts')).rows[0])
+        .toMatchObject({ completed_at:expect.any(Date),termination_confirmed_at:expect.any(Date) });
+      expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    } finally { await runtime.close(); }
   });
 
   it.each([['ru', null], ['uz', null], ['ru', 'yes'], ['uz', 'no']] as const)(

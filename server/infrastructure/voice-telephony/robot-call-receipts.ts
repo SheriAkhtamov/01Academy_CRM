@@ -3,6 +3,8 @@ import { ONLINE_PBX_TRUNK_NUMBER } from '@shared/telephony';
 import { normalizeVoiceReminderTestPhone } from '@shared/contracts/voice-reminders';
 import { normalizeReminderPhone } from '../../modules/voice-reminders/domain/policy';
 import { testCallActorSql, testCallAudioPinsSql } from '../../modules/voice-reminders/infrastructure/test-call-queries';
+import { captureVoiceReminderCallDetails, completeVoiceReminderCallDetails, type ReminderCallCompletion } from '../../services/voice-reminder-call-history';
+import { logger } from '../../lib/logger';
 
 type RobotAttempt = { callId: string; jobId: number | null; providerId: string | null };
 export type RobotAttemptStart = {
@@ -53,6 +55,10 @@ export class RobotCallReceipts {
         [input.callId, input.jobId, input.extension, input.phone, input.jobLeaseToken, input.reservationId],
       );
       if (inserted.rowCount) {
+        if (!await captureVoiceReminderCallDetails(connection,input.callId)) {
+          await connection.query('ROLLBACK');
+          return false;
+        }
         await connection.query(`UPDATE telephony_line_reservations SET dial_authorized_at = now()
           WHERE id = $1 AND owner_type = 'robot'`, [input.reservationId]);
         await connection.query(`UPDATE voice_reminder_jobs SET provider_call_id = $3
@@ -110,7 +116,7 @@ export class RobotCallReceipts {
     } finally { connection.release(); }
   }
 
-  async complete(callId: string, callStarted: boolean, terminationConfirmed = false): Promise<void> {
+  async complete(callId: string, callStarted: boolean, terminationConfirmed = false, result?: ReminderCallCompletion): Promise<void> {
     if (!callStarted) {
       const connection = await this.database.connect();
       try {
@@ -137,6 +143,8 @@ export class RobotCallReceipts {
     await this.database.query(`UPDATE voice_reminder_call_attempts SET completed_at = now(),
       termination_confirmed_at = CASE WHEN $2 THEN COALESCE(termination_confirmed_at, now()) ELSE termination_confirmed_at END
       WHERE call_id = $1`, [callId, terminationConfirmed]);
+    if (result) await completeVoiceReminderCallDetails(this.database,callId,result)
+      .catch(() => logger.warn('Voice reminder call history completion pending', { callId }));
   }
 
   async observe(payload: Record<string, unknown>): Promise<boolean> {
@@ -167,6 +175,21 @@ export class RobotCallReceipts {
     await connection.query(`UPDATE voice_reminder_call_attempts
       SET termination_confirmed_at = COALESCE(termination_confirmed_at, now())
       WHERE call_id::text = $1 OR provider_id = $1`, [providerId]);
+    const boundedSeconds = (value: unknown) => Math.max(0,Math.min(86_400,Math.floor(Number(value))||0));
+    const duration = boundedSeconds(payload.call_duration);
+    const talk = Math.min(duration,boundedSeconds(payload.dialog_duration));
+    const stamp = Number(payload.date);
+    await connection.query(`UPDATE voice_reminder_call_details detail SET
+      status=CASE WHEN GREATEST(detail.talk_seconds,$3::integer)>0 OR detail.answered_at IS NOT NULL THEN 'ended' ELSE 'failed' END,
+      answered_at=COALESCE(detail.answered_at,CASE WHEN $3::integer>0 THEN
+        COALESCE(to_timestamp($4::double precision)+($2*interval '1 second'),now())-($3*interval '1 second') END),
+      ended_at=COALESCE(to_timestamp($4::double precision)+($2*interval '1 second'),detail.ended_at,now()),
+      duration_seconds=GREATEST(detail.duration_seconds,$2::integer),talk_seconds=GREATEST(detail.talk_seconds,$3::integer),
+      hangup_cause=COALESCE(NULLIF($5,''),detail.hangup_cause),updated_at=now()
+      FROM voice_reminder_call_attempts attempt WHERE detail.call_id=attempt.call_id
+        AND (attempt.call_id::text=$1 OR attempt.provider_id=$1)
+        AND ($4::double precision IS NULL OR ABS(EXTRACT(EPOCH FROM attempt.started_at)-$4::double precision)<=5)`,
+    [providerId,duration,talk,Number.isFinite(stamp) && stamp>0 ? stamp : null,String(payload.hangup_cause ?? '').slice(0,120)]);
   }
 
   private async matchAndRecord(input: { providerId: string; extensions: string[]; phones: string[]; startedAt: number; outgoing: boolean }): Promise<boolean> {

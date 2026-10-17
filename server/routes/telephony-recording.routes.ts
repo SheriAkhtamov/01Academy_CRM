@@ -132,10 +132,11 @@ const respondWithRecordingResolutionError = (
     : 'onlinePbxRecordingUnavailable',
 });
 
-const proxyOnlinePbxRecording = async (
+export const proxyOnlinePbxRecording = async (
   recordingUrl: string,
   req: Request,
   res: Parameters<RequestHandler>[1],
+  authorizeBeforeStream?: () => Promise<boolean>,
 ) => {
   let currentUrl: URL;
   try {
@@ -191,6 +192,12 @@ const proxyOnlinePbxRecording = async (
   if (!upstream?.ok) {
     clearTimeout(timeout);
     return res.status(502).json({ error: 'onlinePbxRecordingUnavailable' });
+  }
+  if (authorizeBeforeStream && !await authorizeBeforeStream()) {
+    clearTimeout(timeout);
+    controller.abort();
+    await upstream.body?.cancel();
+    return res.status(404).json({ error:'onlinePbxCallNotFound' });
   }
   const contentType = upstream.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().startsWith('audio/')) {

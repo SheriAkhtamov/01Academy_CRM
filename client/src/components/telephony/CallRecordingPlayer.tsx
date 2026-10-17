@@ -7,20 +7,37 @@ import { telephonyApi } from '@/features/telephony/api';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-export function CallRecordingPlayer({
-  callId,
-  hasRecording,
-  className,
-}: {
-  callId: number;
+type CallRecordingPlayerProps = {
   hasRecording: boolean;
   className?: string;
-}) {
+} & (
+  | { callId: number; voiceReminderCallId?: never }
+  | { callId?: never; voiceReminderCallId: string }
+);
+
+export function CallRecordingPlayer({
+  callId,
+  voiceReminderCallId,
+  hasRecording,
+  className,
+}: CallRecordingPlayerProps) {
   const { t } = useTranslation();
   const playerId = useId();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const requestSequenceRef = useRef(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [url, setUrl] = useState<string | null>(null);
+  const [recording, setRecording] = useState<{ identity: string; url: string } | null>(null);
+  const recordingIdentity = voiceReminderCallId !== undefined ? `reminder:${voiceReminderCallId}` : `call:${callId}`;
+  const url = recording?.identity === recordingIdentity ? recording.url : null;
+
+  useEffect(() => {
+    requestSequenceRef.current += 1;
+    setRecording(null);
+    setIsLoading(false);
+    return () => {
+      requestSequenceRef.current += 1;
+    };
+  }, [recordingIdentity, hasRecording]);
 
   useEffect(() => {
     const pauseForForeignPlayback = (event: Event) => {
@@ -36,18 +53,24 @@ export function CallRecordingPlayer({
 
   useEffect(() => {
     if (!url) return undefined;
+    const audio = audioRef.current;
     window.dispatchEvent(new CustomEvent('crm:recording-play', { detail: { id: playerId } }));
-    return undefined;
+    return () => audio?.pause();
   }, [url, playerId]);
 
   if (!hasRecording) return null;
 
   const loadRecording = async () => {
+    const sequence = ++requestSequenceRef.current;
     setIsLoading(true);
     try {
-      const result = await telephonyApi.getRecordingUrl(callId);
-      setUrl(result.url);
+      const result = voiceReminderCallId !== undefined
+        ? await telephonyApi.getReminderRecordingUrl(voiceReminderCallId)
+        : await telephonyApi.getRecordingUrl(callId);
+      if (requestSequenceRef.current !== sequence) return;
+      setRecording({ identity: recordingIdentity, url: result.url });
     } catch (error) {
+      if (requestSequenceRef.current !== sequence) return;
       const message = error instanceof Error ? error.message : 'onlinePbxRecordingUnavailable';
       toast({
         title: t('telephonyRecordingUnavailable'),
@@ -55,7 +78,7 @@ export function CallRecordingPlayer({
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      if (requestSequenceRef.current === sequence) setIsLoading(false);
     }
   };
 
@@ -76,7 +99,7 @@ export function CallRecordingPlayer({
   }
 
   const handlePlaybackError = () => {
-    setUrl(null);
+    setRecording(null);
     toast({ title: t('telephonyRecordingUnavailable'), variant: 'destructive' });
   };
 
@@ -95,7 +118,7 @@ export function CallRecordingPlayer({
         variant="ghost"
         size="icon"
         className="size-8 shrink-0"
-        onClick={() => setUrl(null)}
+        onClick={() => setRecording(null)}
         aria-label={t('close')}
       >
         <X />

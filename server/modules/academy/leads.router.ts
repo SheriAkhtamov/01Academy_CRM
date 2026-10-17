@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { readLeadCallHistory } from './lead-call-history';
 import { paymentAttachmentsSelect } from './payment-attachments';
 import { assertSalesFunnelAssignment, assertSalesFunnelStage } from './sales-funnel-policy';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -589,23 +590,7 @@ router.get('/leads/:id', async (req, res) => {
         [id],
       ),
       query(`SELECT * FROM academy_communications WHERE lead_id = $1 ORDER BY created_at DESC`, [id]),
-      query(
-        `SELECT call.id, call.direction, call.status, call.phone,
-                call.started_at, call.answered_at, call.ended_at,
-                call.duration_seconds, call.talk_seconds, call.hangup_cause,
-                call.user_id, employee.full_name AS user_name,
-                call.note, call.note_updated_at,
-                call.note_author_id, note_author.full_name AS note_author_name,
-                (NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0)
-                  AS has_recording
-         FROM telephony_calls call
-         LEFT JOIN users employee ON employee.id = call.user_id
-         LEFT JOIN users note_author ON note_author.id = call.note_author_id
-         WHERE call.lead_id = $1
-            OR (call.contact_type = 'lead' AND call.contact_id = $1)
-         ORDER BY call.started_at DESC`,
-        [id],
-      ),
+      readLeadCallHistory(id),
       query(
         `SELECT task.id, task.title, task.description, task.due_at, task.status
          FROM board_tasks task

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, bigserial, boolean, check, index, integer, pgTable, primaryKey, real, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { bigint, bigserial, boolean, check, index, integer, pgTable, primaryKey, real, text, timestamp, uniqueIndex, uuid, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const createVoiceReminderTables = (references: {
   userId: AnyPgColumn;
@@ -263,6 +263,39 @@ export const createVoiceReminderTables = (references: {
     providerId: varchar('provider_id', { length: 160 }).primaryKey(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   });
+  const voiceReminderCallDetails = pgTable('voice_reminder_call_details', {
+    callId: uuid('call_id').primaryKey().references(() => voiceReminderCallAttempts.callId, { onDelete: 'cascade' }),
+    leadId: integer('lead_id').references(() => references.leadId, { onDelete: 'set null' }),
+    studentId: integer('student_id').notNull(),
+    participantId: integer('participant_id').notNull(),
+    status: varchar('status', { length: 40 }).notNull().default('dialing'),
+    answeredAt: timestamp('answered_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    durationSeconds: integer('duration_seconds').notNull().default(0),
+    talkSeconds: integer('talk_seconds').notNull().default(0),
+    hangupCause: varchar('hangup_cause', { length: 120 }),
+    reminderOutcome: varchar('reminder_outcome', { length: 30 }),
+    reminderResponse: varchar('reminder_response', { length: 3 }),
+    recordingUrl: text('recording_url'),
+    recordingProviderId: varchar('recording_provider_id', { length: 160 }),
+    recordingCheckedAt: timestamp('recording_checked_at', { withTimezone: true }),
+    recordingAttempts: integer('recording_attempts').notNull().default(0),
+    recordingStorageKey: varchar('recording_storage_key', { length: 100 }),
+    recordingMimeType: varchar('recording_mime_type', { length: 80 }),
+    recordingSizeBytes: integer('recording_size_bytes'),
+    recordingSha256: varchar('recording_sha256', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  }, table => ({
+    leadIndex: index('voice_reminder_call_details_lead_idx').on(table.leadId, table.callId),
+    pendingRecordingIndex: index('voice_reminder_call_details_pending_recording_idx').on(table.recordingCheckedAt, table.callId)
+      .where(sql`${table.recordingStorageKey} IS NULL AND ${table.endedAt} IS NOT NULL`),
+    statusCheck: check('voice_reminder_call_details_status_check', sql`${table.status} IN ('dialing','connected','ended','failed')`),
+    durationCheck: check('voice_reminder_call_details_duration_seconds_check', sql`${table.durationSeconds}>=0`),
+    talkCheck: check('voice_reminder_call_details_talk_seconds_check', sql`${table.talkSeconds}>=0`),
+    responseCheck: check('voice_reminder_call_details_reminder_response_check', sql`${table.reminderResponse} IN ('yes','no')`),
+    recordingAttemptsCheck: check('voice_reminder_call_details_recording_attempts_check', sql`${table.recordingAttempts}>=0`),
+  }));
   const telephonyManagerLinePriorities = pgTable('telephony_manager_line_priorities', {
     extension: varchar('extension', { length: 20 }).primaryKey(),
     requesterUserId: integer('requester_user_id').references(() => references.userId, { onDelete: 'set null' }),
@@ -275,5 +308,5 @@ export const createVoiceReminderTables = (references: {
     phaseCheck: check('telephony_manager_line_priorities_check', sql`(${table.endedAt} IS NULL AND ${table.priorityUntil} IS NULL)
       OR (${table.endedAt} IS NOT NULL AND ${table.priorityUntil} IS NOT NULL AND ${table.priorityUntil}=${table.endedAt}+interval '3 minutes')`),
   }));
-  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderLeadLanguageEpochs, voiceReminderLocalizedAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, telephonyManagerLinePriorities, voiceReminderCallAttempts, voiceReminderProviderQuarantine };
+  return { voiceReminderAudio, voiceReminderSettings, voiceReminderTimeAudio, voiceReminderLeadLanguageEpochs, voiceReminderLocalizedAudio, voiceReminderHourAudio, voiceReminderMinuteAudio, voiceReminderJobs, voiceReminderTestCalls, telephonyLineReservations, telephonyManagerLinePriorities, voiceReminderCallAttempts, voiceReminderCallDetails, voiceReminderProviderQuarantine };
 };

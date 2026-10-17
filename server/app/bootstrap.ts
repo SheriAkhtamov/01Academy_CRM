@@ -130,6 +130,7 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     await learningRuntime.start();
     startScheduler();
     schedulerStarted = true;
+    voiceReminders.startRecordings();
     const runVoiceReminders = () => {
       void voiceReminders!.tick().catch(() => logger.error('Voice reminder worker failed'));
     };

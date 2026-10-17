@@ -477,7 +477,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     <>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-description" className="text-xs text-muted-foreground">{t('description')}</Label>
-                                            <Textarea disabled={saveMutation.isPending} id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} placeholder={t('taskDescriptionPlaceholder')} />
+                                            <Textarea disabled={saveMutation.isPending} id="task-detail-description" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} rows={3} />
                                         </div>
                                         <TaskColorPicker value={draftColor} onChange={setDraftColor} disabled={saveMutation.isPending} />
                                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -558,7 +558,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <Textarea
                                                     value={commentText}
                                                     onChange={(e) => setCommentText(e.target.value)}
-                                                    placeholder={t('addCommentPlaceholder')}
+                                                    aria-label={t('comment')}
                                                     rows={2}
                                                     className="resize-none"
                                                     onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); } }}
@@ -599,7 +599,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <Input
                                                     value={checklistText}
                                                     onChange={(e) => setChecklistText(e.target.value)}
-                                                    placeholder={t('addChecklistPlaceholder')}
+                                                    aria-label={t('checklistLabel')}
                                                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
                                                 />
                                                 <Button size="sm" disabled={!checklistText.trim() || addChecklistMutation.isPending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>

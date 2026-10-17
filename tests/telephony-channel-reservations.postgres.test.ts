@@ -38,6 +38,8 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
     await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
+    await database.query('CREATE TABLE academy_leads(id integer PRIMARY KEY)');
+    await database.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8').split('-- Older receipts')[0]);
     channels = new TelephonyChannelReservations(database, async () => snapshot);
   });
   beforeEach(async () => {

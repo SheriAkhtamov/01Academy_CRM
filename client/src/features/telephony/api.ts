@@ -91,6 +91,9 @@ export const telephonyApi = {
   getRecordingUrl: (callId: number) => (
     apiRequest('GET', `/api/telephony/calls/${callId}/recording`) as Promise<{ url: string }>
   ),
+  getReminderRecordingUrl: (callId: string) => (
+    apiRequest('GET', `/api/telephony/reminder-calls/${encodeURIComponent(callId)}/recording`) as Promise<{ url: string }>
+  ),
   saveCallNote: (callId: number, note: string | null) => (
     apiRequest('PUT', `/api/telephony/calls/${callId}/note`, { note }) as Promise<{
       id: number;

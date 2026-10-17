@@ -16,6 +16,7 @@ import { logger } from '../lib/logger';
 import { TelephonyChannelReservations, type ProviderChannelSnapshot } from './voice-telephony/channel-reservations';
 import { RobotCallReceipts } from './voice-telephony/robot-call-receipts';
 import { performVertoReminderCall } from './voice-telephony/verto-call';
+import { VoiceReminderCallHistory } from '../services/voice-reminder-call-history';
 
 const logCallDiagnostic = (message: string, details: Record<string, unknown>, warning = false) => {
   try { logger.log(warning ? 'warn' : 'info', message, details); }
@@ -45,6 +46,7 @@ export const createVoiceRemindersRuntime = (
     provider.readLocked ? (connection, excludeId) => provider.readLocked!(connection, excludeId) : undefined);
   const receipts = new RobotCallReceipts(database,
     (connection, reservationId, extension) => channels.canAuthorizeRobotLocked(connection, reservationId, extension));
+  const callHistory = new VoiceReminderCallHistory(database);
   const controllers = new Set<AbortController>();
   const releases = new Map<string, () => Promise<void>>();
   let stopping = false;
@@ -84,6 +86,7 @@ export const createVoiceRemindersRuntime = (
             return { outcome: 'cancelled', callStarted: false, callId: null };
           }
           let markerWritten = false;
+          let answeredAt: Date | null = null;
           let setupPhase = 'bind';
           const diagnosticIdentity = { callId: lease.clientCallId, extension: lease.extension,
             ...(isTest ? { testCallId: input.testCallId } : { jobId: input.jobId }) };
@@ -112,7 +115,10 @@ export const createVoiceRemindersRuntime = (
             setupPhase = 'transport';
             const result = await (options.performCall ?? performVertoReminderCall)(credentials, {
               ...callInput, confirmation, callId: lease.clientCallId, signal: controller.signal,
-              onDiagnostic: event => logCallDiagnostic('Voice reminder call diagnostic', { ...diagnosticIdentity, ...event }),
+              onDiagnostic: event => {
+                if (event.event==='answer' && !answeredAt) answeredAt=new Date();
+                logCallDiagnostic('Voice reminder call diagnostic', { ...diagnosticIdentity, ...event });
+              },
               shouldContinue: (verifyAudio = true) => alive && !stopping ? input.shouldContinue(verifyAudio) : Promise.resolve(false),
               onStarted: async () => {
                 const identity = { callId: lease.clientCallId, extension: lease.extension,
@@ -124,12 +130,12 @@ export const createVoiceRemindersRuntime = (
                 markerWritten = true;
               },
             });
-            await receipts.complete(lease.clientCallId, result.callStarted, result.terminationConfirmed === true);
+            await receipts.complete(lease.clientCallId, result.callStarted, result.terminationConfirmed === true,{ ...result,answeredAt });
             return result;
           } catch (error) {
             logCallDiagnostic('Voice reminder call setup failed', { ...diagnosticIdentity, phase: setupPhase, markerWritten,
               errorCode: error instanceof OnlinePbxError ? error.clientCode : 'voiceReminderTransportUnavailable' }, true);
-            if (markerWritten) await receipts.complete(lease.clientCallId, true, false);
+            if (markerWritten) await receipts.complete(lease.clientCallId, true, false,{ outcome:'failed',answeredAt });
             return { outcome: 'failed', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };
           }
         },
@@ -142,9 +148,11 @@ export const createVoiceRemindersRuntime = (
   const service = new VoiceReminderSettingsService(repository, audioStore, gateway, audioComposer, testRepository, () => new Date(now()));
   return {
     router: createVoiceReminderRouter(service), channels, worker, testWorker, gateway,
+    startRecordings: () => callHistory.start(),
     tick: async () => { await Promise.all([worker.tick(), testWorker.tick()]); },
     observeRobotCall: (payload: Record<string, unknown>) => receipts.observe(payload),
     async close() {
+      callHistory.close();
       stopping = true;
       for (const controller of controllers) controller.abort();
       const workers = await Promise.allSettled([worker.close(), testWorker.close()]);

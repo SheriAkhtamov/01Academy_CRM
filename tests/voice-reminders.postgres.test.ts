@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresVoiceReminderRepository } from '../server/modules/voice-reminders/infrastructure/postgres-repository';
 import { DEFAULT_VOICE_REMINDER_SETTINGS, resolveVoiceReminderLanguage } from '../shared/contracts/voice-reminders';
 import type { StoredVoiceReminderAudio } from '../server/modules/voice-reminders/application/ports';
 import { RobotCallReceipts } from '../server/infrastructure/voice-telephony/robot-call-receipts';
 import { readVoiceReminderJobs } from './helpers/voice-reminder-jobs';
 import { demoReminderProgressJoinSql } from '../server/modules/academy/demo-reminder-progress';
+import { VoiceReminderCallHistory, captureVoiceReminderCallDetails, completeVoiceReminderCallDetails } from '../server/services/voice-reminder-call-history';
 
 const url = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `voice_${randomUUID().replace(/-/g, '')}`;
@@ -48,6 +49,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -213,6 +215,139 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     return { job, callId };
   };
   const currentResponse = async (participantId = 1) => (await pool.query('SELECT * FROM voice_reminder_participant_response($1)', [participantId])).rows;
+  const historyAttempt = async () => {
+    await onlyFirstParticipant();
+    await enableConfirmation();
+    const value = await armedResponse();
+    await captureVoiceReminderCallDetails(pool,value.callId);
+    return value;
+  };
+  const callDetails = async () => (await pool.query('SELECT * FROM voice_reminder_call_details ORDER BY call_id')).rows;
+  const recordingClient = (callId: string, overrides = {}) => ({
+    getCallHistory: vi.fn().mockResolvedValue([{ uuid:callId,callerIdNumber:'100',destinationNumber:'+998901234567',
+      startStamp:now.getTime()/1_000,endStamp:now.getTime()/1_000+40,duration:40,talkTime:20,
+      hangupCause:'NORMAL_CLEARING',direction:'outbound',gateway:'',events:[],...overrides }]),
+    getCallRecordingUrl: vi.fn().mockResolvedValue('https://api2.onlinepbx.ru/calls-records/download/private/audio.mp3'),
+  });
+  const recordingArchive = () => ({
+    save:vi.fn().mockResolvedValue({ storageKey:`${randomUUID()}.mp3`,mimeType:'audio/mpeg',sizeBytes:2048,sha256:'c'.repeat(64),durationSeconds:40 }),
+    resolve:vi.fn().mockResolvedValue('/private/recording.mp3'),
+  });
+
+  it('freezes the dispatched lead/student binding and keeps each attempt response independent of the aggregate job', async () => {
+    const { job,callId } = await historyAttempt();
+    await completeVoiceReminderCallDetails(pool,callId,{ outcome:'delivered_no_response',answeredAt:now });
+    const retryId=randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+      VALUES($1,$2,'100','+998901234567',$3)`, [retryId,job.id,now]);
+    await captureVoiceReminderCallDetails(pool,retryId);
+    await completeVoiceReminderCallDetails(pool,retryId,{ outcome:'played',response:'yes',answeredAt:now });
+    await pool.query("UPDATE academy_demo_lesson_participants SET student_id=2 WHERE id=1");
+    const details=await callDetails();
+    expect(details).toHaveLength(2);
+    expect(details.every(row => row.lead_id===1 && row.student_id===1 && row.participant_id===1)).toBe(true);
+    expect(details.find(row => row.call_id===callId)).toMatchObject({ reminder_outcome:'delivered_no_response',reminder_response:null });
+    expect(details.find(row => row.call_id===retryId)).toMatchObject({ reminder_outcome:'played',reminder_response:'yes' });
+    expect((await pool.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+  });
+
+  it('removes a journal snapshot when the transport proves no INVITE was dispatched', async () => {
+    const { callId }=await historyAttempt();
+    expect(await callDetails()).toHaveLength(1);
+    await new RobotCallReceipts(pool).complete(callId,false);
+    expect(await callDetails()).toEqual([]);
+  });
+
+  it('backfills only proven immutable lineage and does not copy retained delivery onto an unanswered retry', async () => {
+    const { job,callId }=await historyAttempt();
+    const retryId=randomUUID();
+    await pool.query(`UPDATE voice_reminder_call_attempts SET completed_at=$2,termination_confirmed_at=$2 WHERE call_id=$1`, [callId,now]);
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at,completed_at)
+      VALUES($1,$2,'100','+998901234567',$3,$3)`, [retryId,job.id,now]);
+    await pool.query(`UPDATE voice_reminder_jobs SET status='delivered_no_response',lease_token=NULL,lease_until=NULL,
+      retry_phase='response_retry',no_response_count=1,delivered_at=$3,last_retry_outcome='unanswered',provider_call_id=$2 WHERE id=$1`, [job.id,retryId,now]);
+    await pool.query('DROP TABLE voice_reminder_call_details');
+    await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+    const details=await callDetails();
+    expect(details.find(row => row.call_id===callId)).toMatchObject({ reminder_outcome:null,reminder_response:null });
+    expect(details.find(row => row.call_id===retryId)).toMatchObject({ reminder_outcome:'unanswered',reminder_response:null });
+    await pool.query('DROP TABLE voice_reminder_call_details');
+    await pool.query("UPDATE academy_demo_lesson_participants SET student_id=2 WHERE id=1");
+    await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+    expect(await callDetails()).toEqual([]);
+  });
+
+  it('hydrates and archives genuine media by exact native UUID without adding employee calls', async () => {
+    const { callId }=await historyAttempt();
+    const client=recordingClient(callId);
+    const archive=recordingArchive();
+    const history=new VoiceReminderCallHistory(pool,client,archive);
+    await Promise.all([history.hydrate(callId),history.hydrate(callId)]);
+    expect(client.getCallHistory).toHaveBeenCalledTimes(1);
+    expect(client.getCallHistory).toHaveBeenCalledWith({ uuid:callId });
+    expect(client.getCallRecordingUrl).toHaveBeenCalledWith(callId);
+    expect(archive.save).toHaveBeenCalledWith(callId,'https://api2.onlinepbx.ru/calls-records/download/private/audio.mp3');
+    expect((await callDetails())[0]).toMatchObject({ status:'ended',talk_seconds:20,duration_seconds:40,
+      recording_sha256:'c'.repeat(64),recording_mime_type:'audio/mpeg' });
+    await history.hydrate(callId);
+    expect(client.getCallHistory).toHaveBeenCalledTimes(1);
+    expect((await pool.query('SELECT count(*)::int AS count FROM telephony_calls')).rows[0].count).toBe(0);
+  });
+
+  it.each([
+    { callerIdNumber:'101' },{ destinationNumber:'+998901111111' },{ direction:'inbound' },
+    { uuid:'other-call' },{ startStamp:now.getTime()/1_000+6 },{ endStamp:0 },
+  ])('never substitutes a nearby or unfinished recording for the exact reminder identity: %j', async mismatch => {
+    const { callId }=await historyAttempt();
+    const client=recordingClient(callId,mismatch);
+    const archive=recordingArchive();
+    await new VoiceReminderCallHistory(pool,client,archive).hydrate(callId);
+    expect(client.getCallHistory).toHaveBeenCalledWith({ uuid:callId });
+    expect(client.getCallRecordingUrl).not.toHaveBeenCalled();
+    expect(archive.save).not.toHaveBeenCalled();
+    expect((await callDetails())[0].recording_storage_key).toBeNull();
+  });
+
+  it('retries a delayed CDR for a crash-recovered receipt even when the local detail has no end or talk time', async () => {
+    const { callId }=await historyAttempt();
+    await pool.query('UPDATE voice_reminder_call_attempts SET termination_confirmed_at=now() WHERE call_id=$1', [callId]);
+    const client=recordingClient(callId);
+    client.getCallHistory.mockResolvedValueOnce([]);
+    const archive=recordingArchive();
+    const history=new VoiceReminderCallHistory(pool,client,archive);
+    await history.hydratePending();
+    expect(archive.save).not.toHaveBeenCalled();
+    await pool.query("UPDATE voice_reminder_call_details SET recording_checked_at=now()-interval '6 minutes' WHERE call_id=$1", [callId]);
+    await history.hydratePending();
+    expect(archive.save).toHaveBeenCalledTimes(1);
+    expect((await callDetails())[0]).toMatchObject({ status:'ended',talk_seconds:20 });
+  });
+
+  it('recovers a committed answer only for its exact native attempt after interruption',async () => {
+    const { job,callId }=await historyAttempt();
+    const otherId=randomUUID();
+    await pool.query(`INSERT INTO voice_reminder_call_attempts(call_id,job_id,extension,phone,started_at)
+      VALUES($1,$2,'100','+998901234567',$3)`,[otherId,job.id,now]);
+    await captureVoiceReminderCallDetails(pool,otherId);
+    await pool.query("UPDATE voice_reminder_jobs SET response='yes',response_at=$2,response_call_id=$3 WHERE id=$1",[job.id,now,callId]);
+    const client=recordingClient(callId); client.getCallHistory.mockResolvedValue([]);
+    const history=new VoiceReminderCallHistory(pool,client,recordingArchive());
+    await history.hydrate(otherId);
+    await history.hydrate(callId);
+    expect((await callDetails()).find(row => row.call_id===callId)).toMatchObject({ reminder_response:'yes',reminder_outcome:'played' });
+    expect((await callDetails()).find(row => row.call_id===otherId)).toMatchObject({ reminder_response:null,reminder_outcome:null });
+  });
+
+  it('preserves a proven answered call and archives its real recording when the CDR rounds talk time to zero',async () => {
+    const { callId }=await historyAttempt();
+    await completeVoiceReminderCallDetails(pool,callId,{ outcome:'played',response:'yes',answeredAt:now });
+    const client=recordingClient(callId,{ duration:2,talkTime:0,endStamp:now.getTime()/1_000+2 });
+    const archive=recordingArchive();
+    await new VoiceReminderCallHistory(pool,client,archive).hydrate(callId);
+    expect(client.getCallRecordingUrl).toHaveBeenCalledWith(callId);
+    expect(archive.save).toHaveBeenCalledTimes(1);
+    expect((await callDetails())[0]).toMatchObject({ status:'ended',talk_seconds:0,reminder_response:'yes',recording_mime_type:'audio/mpeg' });
+  });
   const reminderProgress = async (at = now) => (await pool.query(`SELECT reminder_progress.progress_status
     FROM academy_demo_lesson_participants participant
     JOIN academy_demo_lessons demo ON demo.id=participant.demo_lesson_id
@@ -1434,6 +1569,25 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     expect(await receipts.start(marker)).toBe(true);
     return { receipts, marker, claimed };
   };
+
+  it.each(['phone','response_epoch'])('refuses INVITE admission when the immutable history binding changed at dispatch: %s',async change => {
+    await onlyFirstParticipant();
+    await repository.synchronize(now,await repository.settings());
+    const job=(await repository.claim(now,2,300))!;
+    await repository.prepare(job,now);
+    const callId=randomUUID(); const reservationId=randomUUID();
+    await pool.query(`INSERT INTO telephony_line_reservations(id,extension,owner_type,client_call_id,phone,job_id,lease_until)
+      VALUES($1,'100','robot',$2,'+998901234567',$3,now()+interval '90 seconds')`,[reservationId,callId,job.id]);
+    if (change==='phone') await pool.query("UPDATE academy_leads SET phone='+998901111111' WHERE id=1");
+    else await pool.query('UPDATE academy_demo_lesson_participants SET voice_response_revision=voice_response_revision+1 WHERE id=1');
+    const admitted=await new RobotCallReceipts(pool).start({ callId,reservationId,jobId:job.id,jobLeaseToken:job.leaseToken,
+      extension:'100',phone:'+998901234567' });
+    expect(admitted).toBe(false);
+    expect((await pool.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(0);
+    expect(await callDetails()).toEqual([]);
+    expect((await pool.query('SELECT dial_authorized_at FROM telephony_line_reservations WHERE id=$1',[reservationId])).rows[0].dial_authorized_at).toBeNull();
+    expect((await pool.query('SELECT provider_call_id FROM voice_reminder_jobs WHERE id=$1',[job.id])).rows[0].provider_call_id).toBeNull();
+  });
 
   it('persists the robot identity before dialing and recognizes delayed callbacks after channel release', async () => {
     const { receipts, marker } = await markedAttempt();

@@ -38,6 +38,7 @@ import {
 } from '../services/telephony-notifications';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { buildCallJournalQuery } from '../services/call-journal';
+import voiceReminderRecordingRoutes from './voice-reminder-recording.routes';
 import { resolveLeadFunnelId } from '../services/lead-funnels';
 
 const router = Router();
@@ -1331,6 +1332,7 @@ router.get('/calls/journal', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 router.use(telephonyRecordingRoutes);
+router.use(voiceReminderRecordingRoutes);
 
 export { isAllowedOnlinePbxRecordingUrl } from './telephony-recording.routes';
 

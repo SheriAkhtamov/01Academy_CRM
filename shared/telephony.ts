@@ -108,3 +108,4 @@ export const isOnlinePbxExtension = (value: unknown): value is string => {
     && extension >= ONLINE_PBX_EXTENSION_MIN
     && extension <= ONLINE_PBX_EXTENSION_MAX;
 };
+export type TelephonyCallSource = 'manager' | 'voice_reminder';

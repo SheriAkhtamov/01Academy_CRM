@@ -59,7 +59,7 @@ it.each([{ actor: 7, canEdit: true }, { actor: 8, canEdit: false }, { actor: 1, 
     mocks.user.id = actor;
     setup();
     expect(Boolean(screen.queryByRole('button', { name: i18n.t('edit') }))).toBe(canEdit);
-    expect(Boolean(screen.queryByPlaceholderText(i18n.t('addCommentPlaceholder')))).toBe(actor === 7 || actor === 8);
+    expect(Boolean(screen.queryByRole('textbox', { name: i18n.t('comment') }))).toBe(actor === 7 || actor === 8);
   },
 );
 
@@ -76,7 +76,7 @@ it('keeps unread dots while viewing and marks the comments read only after closi
 
 it('lets the author reply and clear the viewed incoming comments', async () => {
   const user = setup();
-  await user.type(screen.getByPlaceholderText(i18n.t('addCommentPlaceholder')), 'Answer');
+  await user.type(screen.getByRole('textbox', { name: i18n.t('comment') }), 'Answer');
   await user.click(screen.getByRole('button', { name: i18n.t('send') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks/100/comments', { body: 'Answer', readThroughCommentId: 10 }));
   await waitFor(() => expect(screen.queryByRole('img', { name: i18n.t('unreadTaskComment') })).toBeNull());

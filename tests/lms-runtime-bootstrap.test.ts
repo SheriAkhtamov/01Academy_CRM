@@ -82,7 +82,7 @@ vi.mock("../server/infrastructure/lms-runtime", () => ({
 vi.mock("../server/infrastructure/voice-reminders-runtime", () => ({
   createVoiceRemindersRuntime: () => ({
     router: Router(), channels: {}, observeRobotCall: vi.fn(async () => false),
-    tick: mocks.voiceTick, close: mocks.voiceClose,
+    tick: mocks.voiceTick, close: mocks.voiceClose, startRecordings: vi.fn(),
   }),
 }));
 vi.mock("../server/infrastructure/session", async () => {

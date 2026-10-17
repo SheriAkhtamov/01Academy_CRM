@@ -1,5 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import type { TelephonyCallSource } from '@shared/telephony';
+import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
@@ -52,7 +54,11 @@ export type LeadActivityData = {
     createdAt?: string | null;
   }>;
   calls?: Array<{
-    id: number;
+    id: number | string;
+    source?: TelephonyCallSource;
+    voiceReminderCallId?: string | null;
+    reminderOutcome?: VoiceReminderStatus | null;
+    reminderResponse?: VoiceReminderResponse | null;
     direction: 'incoming' | 'outgoing';
     status: TelephonyCallStatus;
     startedAt: string;
@@ -124,7 +130,7 @@ export function LeadCommentsCard({
                 if (!isPending && draft.trim()) onSubmit();
               }
             }}
-            placeholder={t('addCommentPlaceholder')}
+            aria-label={t('comment')}
             rows={3}
           />
           <div className="flex justify-end">
@@ -177,7 +183,21 @@ type ActivityItem = {
   noteAuthorName?: string | null;
   noteUpdatedAt?: string | null;
   callId: number | null;
+  callSource?: TelephonyCallSource;
+  voiceReminderCallId?: string | null;
+  reminderOutcome?: VoiceReminderStatus | null;
+  reminderResponse?: VoiceReminderResponse | null;
   hasRecording: boolean;
+};
+
+const reminderOutcomeLabels: Record<VoiceReminderStatus, TranslationKey> = {
+  waiting: 'voiceRemindersWaiting',
+  calling: 'voiceRemindersCalling',
+  played: 'voiceRemindersPlayed',
+  delivered_no_response: 'voiceRemindersDeliveredNoResponse',
+  unanswered: 'voiceRemindersUnanswered',
+  failed: 'voiceRemindersFailed',
+  cancelled: 'voiceRemindersCancelled',
 };
 
 type ActivityFilterId = 'all' | 'comments' | 'calls' | 'stages' | 'payments' | 'other';
@@ -273,19 +293,22 @@ export function ActivityTimeline({
       hasRecording: false,
     })),
     ...(lead.calls ?? []).map((item): ActivityItem => ({
-      id: `call-${item.id}`,
+      id: `${item.source === 'voice_reminder' ? 'reminder-call' : 'call'}-${item.id}`,
       kind: 'call',
       at: item.startedAt,
       title: `${item.direction === 'incoming' ? t('incomingCall') : t('outgoingCall')}: ${t(telephonyStatusTranslationKey(item.status))}`,
       text: [
-        item.userName ? `${t('callEmployee')}: ${item.userName}` : null,
+        item.source !== 'voice_reminder' && item.userName ? `${t('callEmployee')}: ${item.userName}` : null,
         `${t('talkTime')}: ${formatCallDuration(item.talkSeconds)}`,
-        item.hangupCause,
       ].filter(Boolean).join(' • '),
       note: item.note,
       noteAuthorName: item.noteAuthorName,
       noteUpdatedAt: item.noteUpdatedAt,
-      callId: item.id,
+      callId: item.source !== 'voice_reminder' && typeof item.id === 'number' ? item.id : null,
+      callSource: item.source,
+      voiceReminderCallId: item.source === 'voice_reminder' ? item.voiceReminderCallId : null,
+      reminderOutcome: item.reminderOutcome,
+      reminderResponse: item.reminderResponse,
       hasRecording: item.hasRecording,
     })),
     ...(lead.assignmentHistory ?? []).map((item): ActivityItem => ({
@@ -415,6 +438,11 @@ export function ActivityTimeline({
                 <ol className="flex flex-col">
                   {group.items.map((item, index) => {
                     const Icon = ACTIVITY_KIND_ICONS[item.kind];
+                    const isReminderCall = item.callSource === 'voice_reminder';
+                    const reminderResultKey = !isReminderCall ? null
+                      : item.reminderResponse === 'yes' ? 'telephonyReminderResponseYes'
+                        : item.reminderResponse === 'no' ? 'telephonyReminderResponseNo'
+                          : item.reminderOutcome ? reminderOutcomeLabels[item.reminderOutcome] : null;
                     return (
                       // Entries slide in from the left, following the timeline
                       // rail, and each waits a beat on the one above it — the
@@ -448,7 +476,11 @@ export function ActivityTimeline({
                         </div>
                         <div className="min-w-0 flex-1 pt-0.5">
                           <div className="flex items-start justify-between gap-3">
-                            <p className="text-sm font-medium leading-tight">{item.title}</p>
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <p className="text-sm font-medium leading-tight">{item.title}</p>
+                              {isReminderCall ? <Badge variant="secondary">{t('telephonySourceVoiceReminder')}</Badge> : null}
+                              {reminderResultKey ? <Badge variant="secondary" className="max-w-full whitespace-normal">{t(reminderResultKey)}</Badge> : null}
+                            </div>
                             <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                               <Clock3 className="size-3" aria-hidden="true" />
                               {dateTime(item.at)}
@@ -457,7 +489,7 @@ export function ActivityTimeline({
                           {item.text ? (
                             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.text}</p>
                           ) : null}
-                          {item.note ? (
+                          {!isReminderCall && item.note ? (
                             <div className="mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
                               <div className="flex flex-wrap items-baseline justify-between gap-2">
                                 <p className="text-xs font-medium text-foreground">
@@ -475,7 +507,9 @@ export function ActivityTimeline({
                               </p>
                             </div>
                           ) : null}
-                          {item.callId && item.hasRecording ? (
+                          {item.hasRecording && item.voiceReminderCallId ? (
+                            <CallRecordingPlayer voiceReminderCallId={item.voiceReminderCallId} hasRecording className="mt-1" />
+                          ) : item.hasRecording && item.callId !== null ? (
                             <CallRecordingPlayer callId={item.callId} hasRecording className="mt-1" />
                           ) : null}
                         </div>

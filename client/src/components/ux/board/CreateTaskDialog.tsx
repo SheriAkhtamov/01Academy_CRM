@@ -206,7 +206,6 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             disabled={attempted || mutation.isPending}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder={t('taskDescriptionPlaceholder')}
             rows={3}
             onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) handleSubmit(); }}
         />
@@ -253,7 +252,6 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                             maxLength={255}
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            placeholder={t('taskTitlePlaceholder')}
                             autoFocus
                         />
                     </div>

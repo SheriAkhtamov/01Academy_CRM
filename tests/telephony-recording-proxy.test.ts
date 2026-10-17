@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { readAcademyModuleSource } from './helpers/read-academy-module';
 
 vi.mock('../server/config', () => ({
   appConfig: {
@@ -37,7 +36,7 @@ const telephonyRecordingRoutes = readFileSync(
   new URL('../server/routes/telephony-recording.routes.ts', import.meta.url),
   'utf8',
 );
-const academyRoutes = readAcademyModuleSource();
+const leadCallHistory = readFileSync(new URL('../server/modules/academy/lead-call-history.ts',import.meta.url),'utf8');
 
 describe('OnlinePBX recording proxy URL validation', () => {
   it('allows only HTTPS recording downloads from the configured OnlinePBX origin', () => {
@@ -62,8 +61,8 @@ describe('OnlinePBX recording proxy URL validation', () => {
     expect(telephonyRoutes).toContain(
       `(NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0) AS "hasRecording"`,
     );
-    expect(academyRoutes).toContain(
-      `(NULLIF(BTRIM(call.recording_url), '') IS NOT NULL OR call.talk_seconds > 0)`,
+    expect(leadCallHistory).toContain(
+      `(NULLIF(BTRIM(call.recording_url),'') IS NOT NULL OR call.talk_seconds>0)`,
     );
     expect(telephonyRecordingRoutes).not.toContain('if (Number(call.talkSeconds) <= 0)');
     expect(telephonyRecordingRoutes).toContain('Using stored OnlinePBX recording URL after refresh failed');

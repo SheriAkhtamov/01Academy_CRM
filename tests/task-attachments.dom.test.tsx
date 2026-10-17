@@ -237,11 +237,11 @@ describe('read-only task details', () => {
     expect(screen.queryByRole('button', { name: i18n.t('edit') })).toBeNull();
     expect(screen.queryByRole('button', { name: i18n.t('deleteTaskTitle') })).toBeNull();
     expect(screen.queryByRole('button', { name: i18n.t('delete') })).toBeNull();
-    expect(screen.queryByPlaceholderText(i18n.t('addCommentPlaceholder'))).toBeNull();
+    expect(screen.queryByRole('textbox', { name: i18n.t('comment') })).toBeNull();
     const user = userEvent.setup();
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('checklistLabel')) }));
     expect((screen.getByRole('checkbox', { name: 'Existing item' }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.queryByPlaceholderText(i18n.t('addChecklistPlaceholder'))).toBeNull();
+    expect(screen.queryByRole('textbox', { name: i18n.t('checklistLabel') })).toBeNull();
     expect(screen.queryByRole('button', { name: i18n.t('delete') })).toBeNull();
     await user.click(screen.getByRole('tab', { name: i18n.t('attachmentsLabel') }));
     expect(screen.queryByRole('button', { name: i18n.t('attachFile') })).toBeNull();
@@ -281,7 +281,7 @@ describe('task drafts and pending submissions', () => {
     const { task } = setupTask();
     let resolve!: (value: unknown) => void;
     mocks.api.mockImplementation((method: string) => method === 'POST' ? new Promise((done) => { resolve = done; }) : Promise.resolve(task));
-    const input = screen.getByPlaceholderText(i18n.t('addCommentPlaceholder')) as HTMLTextAreaElement;
+    const input = screen.getByRole('textbox', { name: i18n.t('comment') }) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: 'First' } });
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });

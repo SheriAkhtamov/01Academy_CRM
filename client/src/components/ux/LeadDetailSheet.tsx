@@ -9,6 +9,8 @@ import { leadsApi } from '@/features/leads/api';
 import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
 import { invalidateLeadData, useLeadDetailsQuery } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
+import type { TelephonyCallSource } from '@shared/telephony';
+import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { paymentsApi } from '@/features/payments/api';
 import { toast } from '@/hooks/use-toast';
@@ -210,7 +212,11 @@ interface LeadDetails {
     createdAt?: string | null;
   }>;
   calls?: Array<{
-    id: number;
+    id: number | string;
+    source?: TelephonyCallSource;
+    voiceReminderCallId?: string | null;
+    reminderOutcome?: VoiceReminderStatus | null;
+    reminderResponse?: VoiceReminderResponse | null;
     direction: 'incoming' | 'outgoing';
     status: TelephonyCallStatus;
     phone: string;
@@ -1341,7 +1347,6 @@ export function LeadDetailSheet({
                               if (body && !addLeadComment.isPending) addLeadComment.mutate(body);
                             }
                           }}
-                          placeholder={t('addCommentPlaceholder')}
                           rows={3}
                           className="resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
                         />

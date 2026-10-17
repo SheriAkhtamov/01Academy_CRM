@@ -8,6 +8,7 @@ import { crmGroupFormat, crmProgramUnits } from "../server/modules/lms/domain/cr
 import { LearningFeatureController } from "../server/infrastructure/learning-flags";
 import { DEFAULT_LEARNING_SCHOOL_SETTINGS, learningSchoolSettingsUpdateSchema } from "@shared/contracts/learning-settings";
 import type { AppConfig } from "../server/config";
+import type { CourseCurriculum } from '@shared/contracts/course-curriculum';
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `crm_preparation_${randomBytes(8).toString("hex")}`;
@@ -17,7 +18,7 @@ let defaultFormat: "offline" | "online" | null = null;
 let compatibility: { before: unknown; after: unknown };
 const administration = { userId: 1, modules: ["administration"], isLeadership: true };
 const sourceTables = ["users", "academy_courses", "academy_groups", "academy_students", "academy_student_group_enrollments", "academy_lessons", "academy_payments"];
-const fingerprints = async () => Object.fromEntries(await Promise.all(sourceTables.map(async table => [table, (await pool.query(`SELECT md5(COALESCE(jsonb_agg(to_jsonb(source) ORDER BY id)::text,'[]')) AS hash FROM ${table} source`)).rows[0].hash])));
+const fingerprints = async () => Object.fromEntries(await Promise.all(sourceTables.map(async table => [table, (await pool.query(`SELECT md5(COALESCE(jsonb_agg(to_jsonb(source)-'selected_course_lesson_ids'-'course_lesson_id' ORDER BY id)::text,'[]')) AS hash FROM ${table} source`)).rows[0].hash])));
 const repository = (sourcePool = pool, groupIds: number[] = []) => new PgCrmLearningPreparationRepository(sourcePool, { enabled: () => enabled, defaultFormat: () => defaultFormat, groupIds });
 const learning = () => new PgLearningRepository(pool, undefined, async () => true, { crmPreparationDefaultFormat: () => defaultFormat });
 const count = async (table: string) => Number((await pool.query(`SELECT count(*) FROM ${table}`)).rows[0].count);
@@ -55,7 +56,7 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
       CREATE TABLE academy_courses(id serial PRIMARY KEY,name text NOT NULL,program jsonb NOT NULL DEFAULT '[]');
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer,full_name text,status text NOT NULL DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text NOT NULL,course_id integer,teacher_id integer,status text NOT NULL DEFAULT 'open',is_archived boolean NOT NULL DEFAULT false,end_date timestamptz,updated_at timestamptz DEFAULT now());
-      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,lesson_number integer,topic text NOT NULL,materials text,scheduled_at timestamptz NOT NULL DEFAULT '2026-10-13',status text NOT NULL DEFAULT 'scheduled',teacher_id integer);
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,course_id integer,lesson_number integer,topic text NOT NULL,materials text,scheduled_at timestamptz NOT NULL DEFAULT '2026-10-13',status text NOT NULL DEFAULT 'scheduled',teacher_id integer);
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,status text NOT NULL DEFAULT 'active',enrolled_at timestamptz NOT NULL DEFAULT '2026-10-01',ended_at timestamptz);
       CREATE TABLE academy_payments(id serial PRIMARY KEY,amount_uzs integer);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY);
@@ -67,6 +68,7 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
       INSERT INTO lms_learning_audit(user_id,run_id,entity_type,entity_id,action) VALUES(1,1,'material',1,'create');`);
     const before = {sources:await fingerprints(),authors:(await pool.query("SELECT material.created_by,version.created_by AS version_author FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id")).rows};
     await pool.query(readFileSync(new URL("../migrations/0137_lms_crm_preparation.sql",import.meta.url),"utf8"));
+    await pool.query(readFileSync(new URL("../migrations/0155_course_curriculum.sql",import.meta.url),"utf8"));
     const after = {sources:await fingerprints(),authors:(await pool.query("SELECT material.created_by,version.created_by AS version_author FROM lms_materials material JOIN lms_material_versions version ON version.material_id=material.id")).rows};
     compatibility = {before,after};
   });
@@ -197,5 +199,43 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
     enabled=true;
     await repository().runOnce();
     expect(await count("lms_group_runs")).toBe(3);
+  });
+
+  it('keeps selected lesson IDs and blocks through automatic and manual LMS preparation', async () => {
+    const program: CourseCurriculum = { version: 1, blocks: [
+      { id: 'block-one', title: 'First block', lessons: [{ id: 'lesson-one', title: 'First', materials: [] }] },
+      { id: 'block-two', title: 'Second block', lessons: [{ id: 'lesson-two', title: 'Second', materials: [] }, { id: 'lesson-three', title: 'Third', materials: [] }] },
+    ] };
+    await pool.query('UPDATE academy_courses SET program=$1 WHERE id=1', [JSON.stringify(program)]);
+    await pool.query(`UPDATE academy_groups SET selected_course_lesson_ids='["lesson-one","lesson-three"]' WHERE id IN(1,2);
+      UPDATE academy_lessons SET course_lesson_id=CASE WHEN id=2 THEN 'lesson-three' ELSE 'lesson-one' END;
+      INSERT INTO lms_course_versions(course_id,version,state,program,created_by) VALUES(1,1,'published','[{"title":"Old staff block","units":[{"title":"Old lesson"}]}]',1)`);
+    await repository().runOnce();
+    const run = (await pool.query('SELECT id,course_version_id FROM lms_group_runs WHERE group_id=1')).rows[0];
+    expect((await pool.query('SELECT state FROM lms_course_versions WHERE id=$1', [run.course_version_id])).rows[0].state).toBe('draft');
+    expect((await pool.query('SELECT section.title,unit.position FROM lms_units unit JOIN lms_sections section ON section.id=unit.section_id WHERE unit.course_version_id=$1 ORDER BY unit.position', [run.course_version_id])).rows).toEqual([
+      { title: 'First block', position: 0 }, { title: 'Second block', position: 1 }, { title: 'Second block', position: 2 },
+    ]);
+    expect((await pool.query('SELECT binding.lesson_id,unit.position FROM lms_lesson_bindings binding JOIN lms_units unit ON unit.id=binding.unit_id WHERE binding.run_id=$1 ORDER BY binding.lesson_id', [run.id])).rows).toEqual([{ lesson_id: 1, position: 0 }, { lesson_id: 2, position: 2 }]);
+    expect((await learning().managementUnits(administration, run.id)).map(unit => unit.position)).toEqual([0, 2]);
+    const unselected = (await pool.query('SELECT id FROM lms_units WHERE course_version_id=$1 AND position=1', [run.course_version_id])).rows[0].id;
+    await expect(learning().assertUnit(pool, run.id, unselected)).rejects.toMatchObject({ message: 'lmsNotFound' });
+    const selected = (await pool.query('SELECT id FROM lms_units WHERE course_version_id=$1 AND position=2', [run.course_version_id])).rows[0].id;
+    const author = await pool.connect(), editor = await pool.connect();
+    try {
+      await author.query('BEGIN');
+      await learning().assertUnit(author, run.id, selected);
+      await editor.query('BEGIN');
+      await editor.query("SET LOCAL lock_timeout='50ms'");
+      await expect(editor.query(`UPDATE academy_groups SET selected_course_lesson_ids='["lesson-one"]' WHERE id=1`)).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await editor.query('ROLLBACK'); await author.query('ROLLBACK'); editor.release(); author.release();
+    }
+    await pool.query('DELETE FROM lms_lesson_bindings WHERE run_id=$1 AND lesson_id=2', [run.id]);
+    expect((await learning().managementUnits(administration, run.id)).map(unit => unit.position)).toEqual([0, 2]);
+    await pool.query(`INSERT INTO academy_groups(id,name,course_id,teacher_id,selected_course_lesson_ids) VALUES(6,'ONL-AI-GRP-26-0006',1,1,'["lesson-three"]')`);
+    await expect(learning().createRun(administration, { groupId: 6, courseVersionId: 1, format: 'online', meetingUrl: null })).rejects.toMatchObject({ message: 'lmsCourseVersionInvalid' });
+    const manual = await learning().createRun(administration, { groupId: 6, format: 'online', meetingUrl: null }) as { id: number };
+    expect((await learning().managementUnits(administration, manual.id)).map(unit => unit.position)).toEqual([2]);
   });
 });

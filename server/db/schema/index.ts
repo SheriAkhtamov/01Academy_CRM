@@ -11,6 +11,7 @@ import { ACADEMY_MODULES, type AcademyAccessModule, type AcademyModule } from ".
 import { isOnlinePbxExtension } from "../../../shared/telephony";
 import { isValidStaffLogin, MAX_STAFF_LOGIN_LENGTH, normalizeStaffLogin } from "../../../shared/staff-login";
 import type { AcademyScheduleItem } from "../../../shared/scheduling";
+import type { CourseCurriculum } from "../../../shared/contracts/course-curriculum";
 import { createAcademyDemoTables } from "./demo-lessons";
 import { createVoiceReminderTables } from './voice-reminders';
 import { createMetaMarketingTables } from "./meta-marketing";
@@ -152,7 +153,7 @@ export const academyCourses = pgTable("academy_courses", {
   discountedPriceUzs: integer("discounted_price_uzs").notNull().default(0),
   ltvTargetMinUzs: integer("ltv_target_min_uzs").notNull().default(0),
   ltvTargetMaxUzs: integer("ltv_target_max_uzs").notNull().default(0),
-  program: jsonb("program").$type<AcademyCourseProgramLesson[]>().notNull().default([]),
+  program: jsonb("program").$type<AcademyCourseProgramLesson[] | CourseCurriculum>().notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false),
   archivedPreviousIsActive: boolean("archived_previous_is_active"),
@@ -241,6 +242,7 @@ export const academyGroups = pgTable("academy_groups", {
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   lessonCount: integer("lesson_count").notNull().default(0),
+  selectedCourseLessonIds: jsonb("selected_course_lesson_ids").$type<string[] | null>(),
   lessonDurationMinutes: integer("lesson_duration_minutes").notNull().default(120),
   durationDays: integer("duration_days").notNull().default(0),
   frequency: varchar("frequency", { length: 255 }),
@@ -547,6 +549,7 @@ export const academyLessons = pgTable("academy_lessons", {
   roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }).notNull(),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   lessonNumber: integer("lesson_number").notNull(),
+  courseLessonId: varchar("course_lesson_id", { length: 100 }),
   topic: varchar("topic", { length: 255 }).notNull(),
   materials: text("materials"),
   scheduledAt: timestamp("scheduled_at").notNull(),

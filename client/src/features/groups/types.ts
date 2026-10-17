@@ -25,6 +25,7 @@ export interface Group {
   teacherUserId?: number | null;
   schedule: WeekScheduleItem[];
   lessonCount: number;
+  selectedCourseLessonIds?: string[] | null;
   lessonDurationMinutes: number;
   durationDays: number;
   frequency?: string | null;

@@ -244,6 +244,7 @@ registerSimpleCrud('teachers', 'academy_teachers', [
 registerSimpleCrud('groups', 'academy_groups', [
   'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',
   'lessonCount', 'lessonDurationMinutes', 'durationDays', 'frequency',
+  'selectedCourseLessonIds',
   'maxStudents', 'status', 'startDate', 'endDate',
 ], {
   orderBy: 'created_at DESC',

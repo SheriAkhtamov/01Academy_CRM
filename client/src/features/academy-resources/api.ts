@@ -28,6 +28,7 @@ export interface Course {
   basePriceUzs: number;
   isActive: boolean;
   isArchived?: boolean;
+  program?: unknown;
 }
 
 export const schoolArchiveApi = {

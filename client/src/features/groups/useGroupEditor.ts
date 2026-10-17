@@ -1,4 +1,5 @@
 import { composeGroupName, parseGroupName, previewGroupCode, type GroupCodeCatalogue } from '@shared/academy-group-code';
+import { flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { useEffect, useMemo, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -55,7 +56,8 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       schoolId: '',
       roomId: '',
       teacherId: '',
-      lessonCount: 10,
+      selectedCourseLessonIds: [],
+      lessonCount: 0,
       lessonDurationMinutes: 120,
       maxStudents: 12,
       status: 'open',
@@ -76,6 +78,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       schoolId: String(group.schoolId),
       roomId: String(group.roomId),
       teacherId: group.teacherId ? String(group.teacherId) : '',
+      selectedCourseLessonIds: group.selectedCourseLessonIds ?? null,
       lessonCount: group.lessonCount || 10,
       lessonDurationMinutes: group.lessonDurationMinutes || 120,
       maxStudents: group.maxStudents || 12,
@@ -91,7 +94,8 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       schoolId: '',
       roomId: '',
       teacherId: '',
-      lessonCount: 10,
+      selectedCourseLessonIds: [],
+      lessonCount: 0,
       lessonDurationMinutes: 120,
       maxStudents: 12,
       status: 'open',
@@ -124,6 +128,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         roomId: Number(values.roomId),
         teacherId,
         schedule: groupSchedule,
+        ...(values.selectedCourseLessonIds !== null ? { selectedCourseLessonIds: values.selectedCourseLessonIds } : {}),
         lessonCount: Number(values.lessonCount),
         lessonDurationMinutes: Number(values.lessonDurationMinutes),
         maxStudents: Number(values.maxStudents),
@@ -180,6 +185,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
 
   const selectedGroupSchoolId = groupForm.watch('schoolId');
   const selectedGroupCourseId = groupForm.watch('courseId');
+  const selectedCourse = courses.find((course) => String(course.id) === selectedGroupCourseId);
   const deliveryMode = groupForm.watch('deliveryMode');
   const trainingType = groupForm.watch('trainingType');
   const nameSuffix = groupForm.watch('nameSuffix');
@@ -219,12 +225,22 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   );
   const submitGroupValues = (values: GroupValues) => {
     if (!editingGroup && (!groupCode || codeCatalogue.isError || codeCatalogue.isFetching)) return;
+    if (values.selectedCourseLessonIds !== null) {
+      const availableIds = new Set(flattenCourseCurriculum(selectedCourse?.program).map((lesson) => lesson.id));
+      if (values.selectedCourseLessonIds.some((id) => !availableIds.has(id))) {
+        groupForm.setError('selectedCourseLessonIds', {
+          type: 'courseLesson', message: t('groupCourseLessonsUnavailable'),
+        }, { shouldFocus: true });
+        return;
+      }
+    }
     // An old unassigned group can retain metadata, but a new lesson plan needs
     // an explicit teacher just like creation. Compare values, not dirty flags,
     // so reverting a field still allows the original metadata-only save.
     if (editingGroup && !values.teacherId) {
       const planChanged = (['courseId', 'schoolId', 'roomId', 'lessonCount', 'lessonDurationMinutes'] as const)
         .some((field) => Number(values[field]) !== Number(editingGroup[field]))
+        || JSON.stringify(values.selectedCourseLessonIds) !== JSON.stringify(editingGroup.selectedCourseLessonIds ?? null)
         || values.startDate !== academyDateInputValue(editingGroup.startDate)
         || values.endDate !== academyDateInputValue(editingGroup.endDate)
         || JSON.stringify(groupSchedule) !== JSON.stringify(groupScheduleBaseline);
@@ -276,6 +292,17 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     setScheduleError(null);
     followEndDate({ schedule });
   };
+  const updateSelectedLessons = (ids: string[]) => {
+    groupForm.setValue('selectedCourseLessonIds', ids, { shouldDirty: true, shouldValidate: true });
+    groupForm.setValue('lessonCount', ids.length, { shouldDirty: true });
+    followEndDate({ lessonCount: ids.length });
+  };
+  const updateSelectedCourse = (courseId: string) => {
+    if (courseId === groupForm.getValues('courseId')) return;
+    groupForm.setValue('courseId', courseId, { shouldDirty: true, shouldValidate: true });
+    const course = courses.find((candidate) => String(candidate.id) === courseId);
+    updateSelectedLessons(flattenCourseCurriculum(course?.program).map((lesson) => lesson.id));
+  };
   const applyScheduleEndDate = () => {
     if (!minimumGroupEndDate) return;
     groupForm.setValue('endDate', minimumGroupEndDate, { shouldDirty: true, shouldValidate: true });
@@ -324,6 +351,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     selectedTeacherId, selectedGroupSchoolId]);
   return {
     t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
+    selectedCourse, updateSelectedCourse, updateSelectedLessons,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate, formattedMinimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,

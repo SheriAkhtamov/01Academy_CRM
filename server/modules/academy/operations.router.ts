@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
+import { assertCourseCurriculumUpdateAllowed, parseCourseCurriculum } from './course-curriculum';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertSalesFunnelStage } from './sales-funnel-policy';
@@ -743,7 +745,9 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   }
   const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
   return {
-    courseValues: { name, slug, ageCategory, description, basePriceUzs, isActive: body.isActive },
+    courseValues: { name, slug, ageCategory, description, basePriceUzs, isActive: body.isActive,
+      ...(body.program === undefined ? {} : { program: parseCourseCurriculum(body.program), lessonCount: flattenCourseCurriculum(body.program).length }),
+    },
     teacherIds: body.teacherIds === undefined ? null : teacherIds,
   };
 };
@@ -816,6 +820,7 @@ const syncCourseTeacherAssignments = async (courseId: number, selectedTeacherIds
 const saveCourseWithTeachers = async (req: any, courseId?: number) => {
   const { courseValues, teacherIds } = parseCourseWithTeachersPayload(req.body ?? {});
   return withTransaction(async () => {
+    await query('SELECT pg_advisory_xact_lock($1)', [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
     const oldCourse = courseId
       ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1 FOR UPDATE`, [courseId])
       : null;
@@ -823,6 +828,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
       throw Object.assign(new Error('courses not found'), { statusCode: 404 });
     }
     if (oldCourse?.isArchived) throw Object.assign(new Error('courseIsArchived'), { statusCode: 409 });
+    if (courseId && 'program' in courseValues) await assertCourseCurriculumUpdateAllowed(courseId, courseValues.program);
     if (courseId && oldCourse?.isActive !== false && courseValues.isActive === false) {
       const activeGroup = await queryOne(
         `SELECT id

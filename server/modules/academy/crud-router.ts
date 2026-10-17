@@ -1,4 +1,5 @@
 import { allocateGroupName } from './group-code';
+import { reconcileGroupCourseLessons } from './course-curriculum';
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -193,6 +194,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           values[column] = toIdOrNull(value, column);
         } else if (column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
+        } else if (column === 'selectedCourseLessonIds') {
+          if (value !== undefined) values[column] = value;
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
         } else if (['isActive', 'isSystem', 'isPipeline'].includes(column)) {
@@ -308,6 +311,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           values[column] = toIdOrNull(value, column);
         } else if (column.endsWith('Uzs') || column.endsWith('Count') || column.endsWith('Minutes') || column.endsWith('Days') || column === 'age' || column === 'score' || column === 'npsScore' || column === 'maxStudents' || column === 'capacity' || column === 'lessonNumber' || column === 'sortOrder') {
           values[column] = toIntegerOrNull(value);
+        } else if (column === 'selectedCourseLessonIds') {
+          values[column] = value;
         } else if (column === 'program' || column === 'schedule' || column === 'availability' || column === 'courseIds' || column === 'schoolIds' || column === 'riskFlags' || column === 'rooms') {
           values[column] = safeJson(value, []);
         } else if (['isActive', 'isSystem', 'isPipeline'].includes(column)) {
@@ -352,6 +357,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
               delete values[field];
             }
           }
+          const selectionChanged = 'selectedCourseLessonIds' in values;
+          if (selectionChanged) {
+            delete values.lessonCount;
+            delete values.endDate;
+          }
           if (options.beforeUpdate) {
             await options.beforeUpdate({ id, values, row: lockedRow, req });
           }
@@ -369,6 +379,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             });
           }
           const updatedGroup = await updateRow(table, id, values);
+          if (selectionChanged && updatedGroup) await reconcileGroupCourseLessons(updatedGroup, lockedRow, prepareLessonMutation, req.user!.id);
           if (updatedGroup && (
             (lockedRow.isArchived === true && values.isArchived === false)
             || (lockedRow.status === 'frozen' && ['open', 'in_progress'].includes(String(values.status)))

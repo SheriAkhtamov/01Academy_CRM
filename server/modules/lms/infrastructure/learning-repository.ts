@@ -1,3 +1,5 @@
+import { insertCrmCourseUnits } from './crm-course-units';
+import { courseLessonPosition, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import type {
   LmsListOptions,
   LmsReportProjectSnapshot,
@@ -39,6 +41,7 @@ import {
   recordStaffAudit,
   idempotentStaffCommand,
   enrollmentVisibilitySql,
+  runUnitSelectionSql,
   recipientEnrollmentVisibilitySql,
   recordEvent,
   denyUnintegratedFiles,
@@ -359,7 +362,7 @@ export class PgLearningRepository {
       FROM visible_publications publication JOIN lms_material_versions version ON version.id=publication.material_version_id
       LEFT JOIN users author ON author.id=version.created_by JOIN lms_materials material ON material.id=publication.material_id
       JOIN lms_group_runs run ON run.id=material.run_id
-      WHERE material.state='published' AND TRUE ${runId ? "AND material.run_id=$2" : ""}
+      WHERE material.state='published' AND (material.unit_id IS NULL OR ${runUnitSelectionSql('run', 'material.unit_id')}) AND TRUE ${runId ? "AND material.run_id=$2" : ""}
       ORDER BY publication.publish_at,publication.id`,
       runId ? [actor.studentId, runId] : [actor.studentId],
       page,
@@ -409,7 +412,7 @@ export class PgLearningRepository {
         AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed)
       ) SELECT unit.id,unit.title,unit.position,unit.required,section.title AS section_title,preview.open_at,(preview.enabled AND preview.visible_from<=now() AND TRUE AND preview.visible_from>=$3::timestamptz AND ($4::timestamptz IS NULL OR preview.visible_from<$4::timestamptz)) AS preview,
       EXISTS(SELECT 1 FROM pending_units pending_unit WHERE pending_unit.unit_id=unit.id) AS pending
-      FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_sections section ON section.id=unit.section_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$2 ORDER BY unit.position`,
+      FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_sections section ON section.id=unit.section_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$2 AND ${runUnitSelectionSql()} ORDER BY unit.position`,
       [actor.studentId, runId, enrollment.enrolledAt, enrollment.endedAt],
     );
     return units
@@ -623,10 +626,11 @@ export class PgLearningRepository {
     return transaction(this.pool, async (sql) => {
       const group = await one<{
         courseId: number;
-        program: { title?: string; topic?: string }[];
+        program: unknown;
+        selectedCourseLessonIds?: string[] | null;
       }>(
         sql,
-        `SELECT g.course_id,course.program FROM academy_groups g JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1 AND ($2 OR ($4::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$3 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$3 AND p.permission='content.manage')) FOR UPDATE OF g`,
+        `SELECT g.course_id,course.program,to_jsonb(g)->'selected_course_lesson_ids' AS selected_course_lesson_ids FROM academy_groups g JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1 AND ($2 OR ($4::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$3 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$3 AND p.permission='content.manage')) FOR UPDATE OF g`,
         [
           input.groupId,
           actor.isLeadership,
@@ -643,14 +647,10 @@ export class PgLearningRepository {
       if (existing) return existing;
       let versionId = input.courseVersionId;
       if (versionId) {
-        if (
-          !(await one(
-            sql,
-            "SELECT id FROM lms_course_versions WHERE id=$1 AND course_id=$2 AND state='published'",
-            [versionId, group.courseId],
-          ))
-        )
-          throw new LmsError("lmsCourseVersionInvalid");
+        const published = await one<{ id: number; program: unknown }>(sql,
+          "SELECT id,program FROM lms_course_versions WHERE id=$1 AND course_id=$2 AND state='published'", [versionId, group.courseId]);
+        const publishedIds = new Set(flattenCourseCurriculum(published?.program).map(lesson => lesson.id));
+        if (!published || group.selectedCourseLessonIds?.some(id => !publishedIds.has(id))) throw new LmsError("lmsCourseVersionInvalid");
       } else {
         await sql.query(
           "SELECT id FROM academy_courses WHERE id=$1 FOR UPDATE",
@@ -662,15 +662,7 @@ export class PgLearningRepository {
           [group.courseId, JSON.stringify(group.program), actor.userId],
         );
         versionId = version!.id;
-        for (let i = 0; i < group.program.length; i++)
-          await sql.query(
-            "INSERT INTO lms_units(course_version_id,title,position) VALUES($1,$2,$3)",
-            [
-              versionId,
-              group.program[i].title ?? group.program[i].topic ?? String(i + 1),
-              i,
-            ],
-          );
+        await insertCrmCourseUnits(sql, versionId, group.program);
       }
       const run = await one<{ id: number }>(
         sql,
@@ -682,9 +674,10 @@ export class PgLearningRepository {
         lessonNumber: number;
         topic: string;
         materials: string | null;
+        courseLessonId?: string | null;
       }>(
         sql,
-        "SELECT id,lesson_number,topic,materials FROM academy_lessons WHERE group_id=$1 ORDER BY lesson_number",
+        "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id FROM academy_lessons WHERE group_id=$1 AND status<>'cancelled' ORDER BY lesson_number",
         [input.groupId],
       );
       const units = await rows<{ id: number; position: number }>(
@@ -702,9 +695,11 @@ export class PgLearningRepository {
           units.push(unit!);
         }
       }
+      const pinned = await one<{ program: unknown }>(sql, "SELECT program FROM lms_course_versions WHERE id=$1", [versionId]);
       for (const lesson of lessons) {
+        const position = courseLessonPosition(pinned?.program, lesson.courseLessonId, lesson.lessonNumber);
         const unit = units.find(
-          (item) => item.position === lesson.lessonNumber - 1,
+          (item) => item.position === position,
         );
         if (unit)
           await sql.query(
@@ -809,11 +804,15 @@ export class PgLearningRepository {
     });
   }
   async assertUnit(sql: LmsSql, runId: number, unitId?: number | null) {
+    if (unitId) await sql.query(
+      'SELECT selected_group.id FROM academy_groups selected_group JOIN lms_group_runs selected_run ON selected_run.group_id=selected_group.id WHERE selected_run.id=$1 FOR SHARE OF selected_group',
+      [runId],
+    );
     if (
       unitId &&
       !(await one(
         sql,
-        "SELECT unit.id FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE run.id=$1 AND unit.id=$2",
+        `SELECT unit.id FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE run.id=$1 AND unit.id=$2 AND ${runUnitSelectionSql()}`,
         [runId, unitId],
       ))
     )
@@ -827,13 +826,14 @@ export class PgLearningRepository {
     publishAt: string,
     recipients?: number[],
   ) {
-    const material = await one<{ runId: number }>(
+    const material = await one<{ runId: number; unitId: number | null }>(
       sql,
-      "SELECT run_id FROM lms_materials WHERE id=$1 FOR UPDATE",
+      "SELECT run_id,unit_id FROM lms_materials WHERE id=$1 FOR UPDATE",
       [materialId],
     );
     if (!material) throw new LmsError("lmsNotFound", 404);
     await this.requireStaffAccess(sql, actor, material.runId, "content.manage");
+    await this.assertUnit(sql, material.runId, material.unitId);
     await sql.query("UPDATE lms_materials SET state='published' WHERE id=$1", [
       materialId,
     ]);
@@ -953,7 +953,7 @@ export class PgLearningRepository {
     await this.requireStaffAccess(this.pool, actor, runId, "content.manage");
     return listRows(
       this.pool,
-      "SELECT material.id,material.run_id,material.unit_id,material.state,version.id AS material_version_id,version.version,version.title,version.body,version.category,version.links,version.file_ids,version.video_url,version.duration_minutes,(SELECT MAX(publish_at) FROM lms_material_publications publication WHERE publication.material_version_id=version.id AND publication.revoked_at IS NULL) AS publish_at FROM lms_materials material JOIN LATERAL(SELECT * FROM lms_material_versions v WHERE v.material_id=material.id ORDER BY version DESC LIMIT 1) version ON true WHERE material.run_id=$1 ORDER BY material.id DESC",
+      `SELECT material.id,material.run_id,material.unit_id,material.state,version.id AS material_version_id,version.version,version.title,version.body,version.category,version.links,version.file_ids,version.video_url,version.duration_minutes,(SELECT MAX(publish_at) FROM lms_material_publications publication WHERE publication.material_version_id=version.id AND publication.revoked_at IS NULL) AS publish_at FROM lms_materials material JOIN lms_group_runs run ON run.id=material.run_id JOIN LATERAL(SELECT * FROM lms_material_versions v WHERE v.material_id=material.id ORDER BY version DESC LIMIT 1) version ON true WHERE material.run_id=$1 AND (material.unit_id IS NULL OR ${runUnitSelectionSql("run", "material.unit_id")}) ORDER BY material.id DESC`,
       [runId],
       page,
     );
@@ -964,9 +964,9 @@ export class PgLearningRepository {
     input: LmsMaterialInput,
   ) {
     return transaction(this.pool, async (sql) => {
-      const material = await one<{ runId: number }>(
+      const material = await one<{ runId: number; unitId: number | null }>(
         sql,
-        "SELECT run_id FROM lms_materials WHERE id=$1 FOR UPDATE",
+        "SELECT run_id,unit_id FROM lms_materials WHERE id=$1 FOR UPDATE",
         [materialId],
       );
       if (!material || material.runId !== input.runId)
@@ -977,6 +977,7 @@ export class PgLearningRepository {
         material.runId,
         "content.manage",
       );
+      await this.assertUnit(sql, material.runId, material.unitId);
       return idempotentStaffCommand(
         sql,
         actor,
@@ -1279,12 +1280,12 @@ export class PgLearningRepository {
       );
       const units = await rows<{ id: number }>(
         sql,
-        "SELECT id FROM lms_units WHERE course_version_id=$1 AND required",
-        [run!.courseVersionId],
+        `SELECT unit.id FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE unit.course_version_id=$1 AND run.id=$2 AND unit.required AND ${runUnitSelectionSql()}`,
+        [run!.courseVersionId, runId],
       );
       const missing = await one<{ count: number }>(
         sql,
-        `SELECT COUNT(*)::int AS count FROM lms_units unit WHERE unit.course_version_id=$1 AND unit.required AND NOT EXISTS(SELECT 1 FROM lms_materials material JOIN lms_material_publications publication ON publication.material_id=material.id JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id WHERE material.unit_id=unit.id AND material.run_id=$2 AND material.state='published' AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND enrollment.student_id=$3)`,
+        `SELECT COUNT(*)::int AS count FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE unit.course_version_id=$1 AND run.id=$2 AND unit.required AND ${runUnitSelectionSql()} AND NOT EXISTS(SELECT 1 FROM lms_materials material JOIN lms_material_publications publication ON publication.material_id=material.id JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id WHERE material.unit_id=unit.id AND material.run_id=$2 AND material.state='published' AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND enrollment.student_id=$3)`,
         [run!.courseVersionId, runId, studentId],
       );
       const progress = await this.progress(
@@ -1536,7 +1537,7 @@ export class PgLearningRepository {
       required: boolean;
     }>(
       this.pool,
-      "SELECT unit.id,unit.title,unit.position,unit.required,COALESCE(preview.enabled,false) AS preview_enabled,preview.visible_from,preview.open_at FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$1 ORDER BY unit.position",
+      `SELECT unit.id,unit.title,unit.position,unit.required,COALESCE(preview.enabled,false) AS preview_enabled,preview.visible_from,preview.open_at FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$1 AND ${runUnitSelectionSql()} ORDER BY unit.position`,
       [runId],
       page,
     );

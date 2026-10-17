@@ -3,13 +3,13 @@ import { forwardRef, useMemo, useRef, type KeyboardEvent, type ReactNode } from 
 import {
   CalendarClock,
   CalendarRange,
-  CheckCircle2,
   GraduationCap,
   RotateCcw,
   TriangleAlert,
   UsersRound,
 } from 'lucide-react';
 import { GroupIdentityFields } from './GroupIdentityFields';
+import { GroupLessonSelect } from './GroupLessonSelect';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -40,7 +40,6 @@ const SCHEDULE_ERROR_KEYS = {
 } as const satisfies Record<GroupScheduleValidationError, TranslationKey>;
 
 const CAPACITY_PRESETS = [6, 8, 10, 12, 15] as const;
-const LESSON_COUNT_PRESETS = [8, 10, 12, 16, 24] as const;
 const DURATION_PRESETS = [60, 90, 120] as const;
 
 const EditorSection = forwardRef<
@@ -154,12 +153,13 @@ export function GroupEditorDialog(props: GroupEditorProps) {
     futureGroupStartValues, setFutureGroupStartValues,
     scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
     roomClashes, busyRoomIds, selectedTeacherConflict, groupTeachers,
+    selectedCourse, updateSelectedCourse, updateSelectedLessons,
   } = useGroupEditor(props);
   const teacherConflictLabel = useTeacherConflictLabel()(selectedTeacherConflict);
   const scheduleRef = useRef<HTMLFieldSetElement>(null);
   const dayNames = [t('monday'), t('tuesday'), t('wednesday'), t('thursday'), t('friday'), t('saturday'), t('sunday')];
-  const shortDayNames = [t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
-    t('fridayShort'), t('saturdayShort'), t('sundayShort')];
+  const shortDayNames = useMemo(() => [t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
+    t('fridayShort'), t('saturdayShort'), t('sundayShort')], [t]);
   const shortDate = (key: string) => new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
     day: 'numeric', month: 'short', timeZone: 'UTC',
   }).format(new Date(`${key}T00:00:00Z`));
@@ -318,7 +318,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     <FormField control={groupForm.control} name="courseId" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('course')}</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select value={field.value} onValueChange={updateSelectedCourse}>
                           <FormControl><SelectTrigger><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
@@ -467,21 +467,12 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                   }
                 >
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <FormField control={groupForm.control} name="lessonCount" render={({ field }) => (
+                    <FormField control={groupForm.control} name="selectedCourseLessonIds" render={({ field }) => (
                       <FormItem>
-                        <FormLabel required>{t('lessonsCount')}</FormLabel>
-                        <FormControl><Input type="number" min="1" {...field} onChange={(event) => {
-                          field.onChange(event);
-                          followEndDate({ lessonCount: Number(event.target.value) });
-                        }} /></FormControl>
-                        <QuickNumberPresets
-                          options={LESSON_COUNT_PRESETS}
-                          currentValue={Number(field.value)}
-                          onSelect={(preset) => {
-                            groupForm.setValue('lessonCount', preset, { shouldDirty: true, shouldValidate: true });
-                            followEndDate({ lessonCount: preset });
-                          }}
-                        />
+                        <FormLabel required>{t('groupCourseLessons')}</FormLabel>
+                        <FormControl><GroupLessonSelect program={selectedCourse?.program}
+                          value={field.value} onChange={updateSelectedLessons} ref={field.ref} onBlur={field.onBlur}
+                          disabled={!selectedCourse} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -529,11 +520,6 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                             <RotateCcw className="size-3" aria-hidden="true" />
                             {t('groupEndDateApplySchedule').replace('{date}', shortDate(minimumGroupEndDate))}
                           </Button>
-                        ) : minimumGroupEndDate && field.value === minimumGroupEndDate ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-                            <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
-                            {t('groupEndDateAutoSynced')}
-                          </span>
                         ) : null}
                       </FormItem>
                     )} />

@@ -1,3 +1,6 @@
+import { CourseEditorDialog } from '@/features/course-curriculum/CourseEditorDialog';
+import { canEditCourseCurriculum } from '@/features/course-curriculum/editor-model';
+import { normalizeCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
 import { groupConfigurationKey } from '@/features/groups/queries';
 import type { Group, GroupConfiguration, GroupTeacher } from '@/features/groups/types';
@@ -25,7 +28,6 @@ import {
 import { formatAcademyNumber } from '@/lib/localeFormat';
 import { toast } from '@/hooks/use-toast';
 import { LeadAssignmentContent } from '@/pages/admin-leads';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,7 +76,6 @@ import type { SalesFunnel } from '@/features/sales-funnels/api';
 import { LeadDistributionPanel } from '@/features/lead-distribution/LeadDistributionPanel';
 import { stagesForSalesFunnel } from '@shared/sales-funnel-workflow';
 import {
-  AlertCircle,
   ArrowDown,
   ArrowUp,
   ArrowRightLeft,
@@ -253,6 +254,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: '',
       basePriceUzs: 0,
       isActive: true,
+      program: { version: 1, blocks: [] },
     },
   });
 
@@ -348,8 +350,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
 
   const saveCourse = useMutation({
     mutationFn: async (values: CourseValues) => {
+      const { program, ...details } = values;
       const payload = {
-        ...values,
+        ...details,
+        ...(editingCourse && !canEditCourseCurriculum(editingCourse.program) ? {} : { program }),
         slug: editingCourse?.slug ?? buildUniqueCourseSlug(
           values.name,
           configuration.data?.courses ?? [],
@@ -550,12 +554,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: course.description ?? '',
       basePriceUzs: course.basePriceUzs ?? 0,
       isActive: course.isActive,
+      program: {
+        version: 1,
+        blocks: normalizeCourseCurriculum(course.program).blocks.map((block, index) => ({
+          ...block, title: block.title || t('courseBlockNumber', { number: index + 1 }),
+        })),
+      },
     } : {
       name: '',
       ageCategory: '',
       description: '',
       basePriceUzs: 0,
       isActive: true,
+      program: { version: 1, blocks: [] },
     });
     setCourseDialogOpen(true);
   };
@@ -949,62 +960,15 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog open={courseDialogOpen} onOpenChange={courseGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{editingCourse ? t('editCourse') : t('addCourse')}</DialogTitle>
-          </DialogHeader>
-          <Form {...courseForm}>
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={courseForm.handleSubmit((values) => saveCourse.mutate(values))}>
-              <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain px-6 py-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <FormField control={courseForm.control} name="name" render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel required>{t('courseName')}</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="ageCategory" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('ageCategory')}</FormLabel>
-                    <FormControl><Input {...field} placeholder="10–15" /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="basePriceUzs" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('basePrice')}</FormLabel>
-                    <FormControl><Input type="number" min="0" step="1000" {...field} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={courseForm.control} name="description" render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>{t('description')}</FormLabel>
-                    <FormControl><Textarea {...field} rows={3} /></FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )} />
-              </div>
-
-              <FormField control={courseForm.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <FormLabel>{t('activeCourse')}</FormLabel>
-                  </div>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
-              </div>
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => courseGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-                <Button type="submit" disabled={saveCourse.isPending}>{saveCourse.isPending ? t('saving') : t('save')}</Button>
-              </div>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+      <CourseEditorDialog
+        open={courseDialogOpen}
+        onOpenChange={courseGuard.handleOpenChange}
+        form={courseForm}
+        editing={editingCourse !== null}
+        saving={saveCourse.isPending}
+        curriculumUnavailable={editingCourse !== null && !canEditCourseCurriculum(editingCourse.program)}
+        onSubmit={(values) => saveCourse.mutate(values)}
+      />
 
       <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
         <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
@@ -1088,16 +1052,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           {pipelineDeleteTarget ? (
             <>
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>
-                  {t('pipelineStageContainsLeads').replace(
-                    '{count}',
-                    formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels),
-                  )}
-                </AlertTitle>
-                <AlertDescription>{t('pipelineStageTransferBeforeDelete')}</AlertDescription>
-              </Alert>
+
 
               <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
                 <div className="space-y-2">
@@ -1145,7 +1100,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     </SelectContent>
                   </Select>
                   {availableTransferStatuses.length === 0 ? (
-                    <p className="text-xs text-destructive">{t('pipelineStageNoTransferTarget')}</p>
+                    <p className="text-xs text-destructive">{t('pipelineStageNoAvailableTargets')}</p>
                   ) : null}
                 </div>
               </div>

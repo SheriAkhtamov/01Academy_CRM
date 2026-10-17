@@ -25,6 +25,8 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
+import { prepareGroupCourseLessons } from './course-curriculum';
+import { courseLessonMaterialsText, orderSelectedCourseLessons } from '@shared/contracts/course-curriculum';
 import {
   CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
@@ -199,7 +201,8 @@ export const prepareGroupMutation = async (options: {
     }
   }
   const course = await queryOne(
-    `SELECT id, lesson_count, lesson_duration_minutes, duration_days, frequency, is_active
+    `SELECT id, lesson_count, lesson_duration_minutes, duration_days, frequency, is_active,
+       to_jsonb(academy_courses)->'program' AS program
      FROM academy_courses
      WHERE id = $1`,
     [courseId],
@@ -210,6 +213,8 @@ export const prepareGroupMutation = async (options: {
   if (course.isActive === false) {
     throw Object.assign(new Error('Course is inactive'), { statusCode: 409 });
   }
+
+  prepareGroupCourseLessons(options.values, options.oldRow, course.program);
 
   const lessonCount = Number(
     options.values.lessonCount !== undefined
@@ -286,6 +291,10 @@ export const prepareGroupMutation = async (options: {
   // branch, never a ceiling on how many students a group may take.
   await assertActiveRoomInSchool(roomId, schoolId);
   const startDate = (options.values.startDate ?? options.oldRow?.startDate) as Date | null | undefined;
+  if (options.oldRow && options.values.selectedCourseLessonIds && startDate) {
+    const end = getMinimumGroupEndDate({ startDate: new Date(startDate).toISOString().slice(0, 10), lessonCount: Math.round(lessonCount), schedule });
+    if (end) options.values.endDate = new Date(`${end}T00:00:00Z`);
+  }
   const endDate = (options.values.endDate ?? options.oldRow?.endDate) as Date | null | undefined;
   if (startDate && endDate && new Date(endDate).getTime() < new Date(startDate).getTime()) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
@@ -365,6 +374,7 @@ export const normalizedGroupScheduleForComparison = (value: unknown) =>
       || Number(left.schoolId ?? 0) - Number(right.schoolId ?? 0));
 
 export const groupLessonBackedFieldChanged = (field: string, nextValue: unknown, previousValue: unknown) => {
+  if (field === 'selectedCourseLessonIds') return JSON.stringify(nextValue ?? null) !== JSON.stringify(previousValue ?? null);
   if (field === 'schedule') {
     return JSON.stringify(normalizedGroupScheduleForComparison(nextValue))
       !== JSON.stringify(normalizedGroupScheduleForComparison(previousValue));
@@ -404,6 +414,7 @@ export const GROUP_LESSON_BACKED_FIELDS = [
 export const GROUP_SCHEDULE_PREPARATION_FIELDS = [
   'courseId',
   'schoolId',
+  'selectedCourseLessonIds',
   ...GROUP_LESSON_BACKED_FIELDS,
 ] as const;
 
@@ -749,8 +760,10 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
   }
 
   const program = readJsonArray(course?.program);
+  const selectedLessons = group.selectedCourseLessonIds == null ? null : orderSelectedCourseLessons(course?.program, group.selectedCourseLessonIds);
   const createdLessons: Row[] = [];
   for (const slot of generatedSlots) {
+    const selectedLesson = selectedLessons?.[slot.lessonNumber - 1];
     const programLesson = program.find(
       (item) => Number(item.lessonNumber) === slot.lessonNumber,
     );
@@ -761,8 +774,9 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
       roomId: Number(group.roomId),
       teacherId: Number(group.teacherId),
       lessonNumber: slot.lessonNumber,
-      topic: nullableText(programLesson?.topic) ?? `Занятие ${slot.lessonNumber}`,
-      materials: nullableText(programLesson?.description) ?? null,
+      courseLessonId: selectedLesson?.id ?? null,
+      topic: selectedLesson?.title ?? nullableText(programLesson?.topic) ?? `Занятие ${slot.lessonNumber}`,
+      materials: selectedLesson ? courseLessonMaterialsText(selectedLesson) : nullableText(programLesson?.description) ?? null,
       scheduledAt: slot.scheduledAt,
       durationMinutes: slot.durationMinutes,
       status: 'scheduled',

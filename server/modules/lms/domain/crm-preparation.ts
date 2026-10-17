@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { courseCurriculumSchema, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 
 export type CrmPreparationActor =
   | { kind: "system" }
@@ -18,7 +19,11 @@ export function crmGroupFormat(name: string, fallback: CrmLearningFormat | null 
   return fallback;
 }
 
-export function crmProgramUnits(program: unknown): { title: string; position: number }[] | null {
+export function crmProgramUnits(program: unknown): { title: string; position: number; sectionTitle?: string }[] | null {
+  if (!Array.isArray(program)) {
+    const parsed = courseCurriculumSchema.safeParse(program);
+    return parsed.success ? flattenCourseCurriculum(parsed.data).map(lesson => ({ title: lesson.title, position: lesson.position, sectionTitle: lesson.blockTitle })) : null;
+  }
   if (!Array.isArray(program) || program.length > 2000) return null;
   const positions = new Set<number>();
   const units = [];

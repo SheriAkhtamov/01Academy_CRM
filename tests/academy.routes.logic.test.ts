@@ -3603,6 +3603,35 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
   });
 
+  it('expands selected lessons through group PATCH and extends the previous short end date', async () => {
+    const program = { version: 1, blocks: [{ id: 'block', title: 'Block', lessons: ['one', 'two', 'three'].map(id => ({ id, title: id, materials: [] })) }] };
+    let group: Record<string, any> = groupFixture({ status: 'open', lesson_count: 1, selected_course_lesson_ids: ['one'], start_date: new Date('2099-01-05'), end_date: new Date('2099-01-05') });
+    const lessons = [lessonFixture({ id: 10, course_lesson_id: 'one', topic: 'one', scheduled_at: new Date('2099-01-05T05:00:00Z') })];
+    mocks.poolQuery.mockImplementation(async (sql: string) => sql.includes('FROM "academy_groups" WHERE id = $1') ? { rows: [group] } : emptyResult());
+    mocks.clientQuery.mockImplementation(async (sql: string, values: any[] = []) => {
+      if (sql.includes('UPDATE "academy_groups"')) {
+        for (const match of sql.matchAll(/"(\w+)" = \$(\d+)/g)) {
+          const value = values[Number(match[2]) - 1];
+          group = { ...group, [match[1]]: match[1] === 'selected_course_lesson_ids' ? JSON.parse(value) : value };
+        }
+        return { rows: [group] };
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) return { rows: [group] };
+      if (sql.includes('FROM academy_courses')) return { rows: [{ id: 1, program, is_active: true, lesson_count: 3, lesson_duration_minutes: 60, duration_days: 30 }] };
+      if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      if (sql.includes('FROM academy_teachers WHERE id = $1')) return { rows: [{ id: 4, status: 'active', course_ids: [1], school_ids: [2], availability: [{ dayOfWeek: 1, startTime: '09:00', endTime: '18:00', schoolId: 2 }] }] };
+      if (sql.includes('FROM academy_lessons lesson WHERE lesson.group_id=$1') || sql.includes('WHERE group_id = $1 ORDER BY scheduled_at')) return { rows: lessons };
+      if (sql.includes('UPDATE "academy_lessons"')) return { rows: [{ id: values[0] }] };
+      if (sql.includes('INSERT INTO "academy_lessons"')) return { rows: [{ id: 10 + lessons.length, scheduled_at: readInsertValue(sql, values, 'scheduled_at') }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).patch('/api/academy/groups/20').send({ selectedCourseLessonIds: ['three', 'one', 'two'], lessonCount: 999, endDate: '2099-01-19' });
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toMatchObject({ lessonCount: 3, selectedCourseLessonIds: ['one', 'two', 'three'], endDate: '2099-01-19T00:00:00.000Z' });
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO "academy_lessons"'))).toHaveLength(2);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
   it('requires explicit confirmation before starting a future group', async () => {
     const group = groupFixture({
       status: 'open',

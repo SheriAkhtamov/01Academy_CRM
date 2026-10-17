@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { courseCurriculumSchema } from '@shared/contracts/course-curriculum';
 import type { TranslationKey } from '@/lib/i18n';
 
 type Translate = (key: TranslationKey) => string;
@@ -28,6 +29,23 @@ export const createCourseSchema = (t: Translate) => z.object({
   description: z.string(),
   basePriceUzs: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(0, t('invalidDataFormat')),
   isActive: z.boolean(),
+  program: z.unknown().transform((value, context) => {
+    const result = courseCurriculumSchema.safeParse(value);
+    if (result.success) return result.data;
+    for (const issue of result.error.issues) {
+      let message = t('invalidDataFormat');
+      if (issue.code === 'custom') {
+        const key = issue.message as 'courseMaterialUrlInvalid' | 'courseCurriculumDuplicateId' | 'courseCurriculumTooManyLessons';
+        message = t(key);
+      } else if (issue.code === 'too_small') {
+        message = t(issue.path[issue.path.length - 1] === 'lessons' ? 'courseBlockLessonsRequired' : 'fieldRequired');
+      } else if (issue.code === 'too_big') {
+        message = t('courseCurriculumLimitExceeded');
+      }
+      context.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message });
+    }
+    return z.NEVER;
+  }),
 });
 
 export const createStatusSchema = (t: Translate) => z.object({
@@ -48,6 +66,7 @@ export const createGroupSchema = (t: Translate, allowUnassignedTeacher = false) 
   roomId: z.string().min(1, t('fieldRequired')),
   teacherId: z.string().regex(/^(?:[1-9]\d*)?$/, t('invalidDataFormat'))
     .refine((value) => allowUnassignedTeacher || value.length > 0, t('teacherRequired')),
+  selectedCourseLessonIds: z.array(z.string().min(1)).min(1, t('groupLessonsRequired')).nullable().default(null),
   lessonCount: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(1, t('invalidDataFormat')),
   lessonDurationMinutes: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(15, t('invalidDataFormat')),
   maxStudents: z.coerce.number({ invalid_type_error: t('invalidDataFormat') }).int(t('invalidDataFormat')).min(1, t('invalidDataFormat')),

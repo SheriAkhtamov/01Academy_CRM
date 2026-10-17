@@ -108,6 +108,16 @@ export const enrollmentVisibilitySql = (
   `${enrollment}.student_id=$1 AND ${publication}>=${enrollment}.enrolled_at AND (${enrollment}.ended_at IS NULL OR ${publication}<${enrollment}.ended_at)`;
 export const recipientEnrollmentVisibilitySql = (recipient = "recipient") =>
   `EXISTS(SELECT 1 FROM academy_student_group_enrollments publication_enrollment WHERE publication_enrollment.id=${recipient}.enrollment_id AND ${recipient}.opens_at>=publication_enrollment.enrolled_at AND (publication_enrollment.ended_at IS NULL OR ${recipient}.opens_at<publication_enrollment.ended_at))`;
+/** Resolve selection against the pinned program; an editable lesson binding is not access authority. */
+export const runUnitSelectionSql = (run = 'run', unitId = 'unit.id') =>
+  `(NOT EXISTS(SELECT 1 FROM academy_groups selected_group WHERE selected_group.id=${run}.group_id
+    AND COALESCE(to_jsonb(selected_group)->'selected_course_lesson_ids','null'::jsonb)<>'null'::jsonb)
+    OR EXISTS(SELECT 1 FROM academy_groups selected_group
+      JOIN lms_course_versions selected_version ON selected_version.id=${run}.course_version_id
+      JOIN lms_units selected_unit ON selected_unit.course_version_id=selected_version.id AND selected_unit.id=${unitId}
+      WHERE selected_group.id=${run}.group_id AND (to_jsonb(selected_group)->'selected_course_lesson_ids') ?
+        CASE WHEN jsonb_typeof(selected_version.program)='array' THEN 'legacy-lesson-'||(selected_unit.position+1)::text
+        ELSE jsonb_path_query_array(selected_version.program,'$.blocks[*].lessons[*].id')->>selected_unit.position END))`;
 export const recordEvent = async (
   sql: LmsSql,
   studentId: number,

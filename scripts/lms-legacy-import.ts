@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import { courseLessonPosition } from "../shared/contracts/course-curriculum";
+import { crmProgramUnits } from "../server/modules/lms/domain/crm-preparation";
+import { insertCrmCourseUnits } from "../server/modules/lms/infrastructure/crm-course-units";
 import { auditLegacyData, auditSourceFiles, type LegacyAudit } from "./lms-legacy-audit";
 
 export const LEGACY_SCOPES = ["courses", "groups", "lessons", "portfolio"] as const;
@@ -39,7 +42,6 @@ export class LegacyImportError extends Error {
   constructor(public readonly code: string) { super(code); }
 }
 type Source = { id: number; [key: string]: unknown };
-type ProgramUnit = { title: string; position: number };
 type ImportTarget = { id?: number; outcome: "created" | "adopted" | "skipped" | "conflict"; code?: string };
 const SOURCE_TABLE: Record<LegacyScope, string> = {
   courses: "academy_courses", groups: "academy_groups", lessons: "academy_lessons", portfolio: "academy_portfolio_projects",
@@ -63,24 +65,14 @@ const one = async <T extends Record<string, unknown>>(sql: PoolClient, query: st
 function sourceSnapshot(scope: LegacyScope, row: Source, format: "offline" | "online") {
   if (scope === "courses") return { id: row.id, program: row.program };
   if (scope === "groups") return { id: row.id, course_id: row.course_id, format };
-  if (scope === "lessons") return { id: row.id, group_id: row.group_id, course_id: row.course_id, lesson_number: row.lesson_number, topic: row.topic, materials: row.materials };
+  if (scope === "lessons") return { id: row.id, group_id: row.group_id, course_id: row.course_id, lesson_number: row.lesson_number, topic: row.topic, materials: row.materials,
+    ...(row.course_lesson_id ? { course_lesson_id: row.course_lesson_id } : {}) };
   return Object.fromEntries(["id", "student_id", "lesson_id", "group_id", "course_id", "title", "url", "file_url", "final_status", "marketing_consent"].map((key) => [key, row[key] ?? null]));
 }
-function programUnits(program: unknown): ProgramUnit[] | null {
-  if (!Array.isArray(program) || program.length > 2_000) return null;
-  const result: ProgramUnit[] = [];
-  const positions = new Set<number>();
-  for (let index = 0; index < program.length; index++) {
-    const entry = program[index];
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-    const position = entry.lessonNumber === undefined ? index : Number(entry.lessonNumber) - 1;
-    const title = typeof entry.topic === "string" ? entry.topic.trim() : typeof entry.title === "string" ? entry.title.trim() : "";
-    if (!Number.isSafeInteger(position) || position < 0 || positions.has(position) || !title) return null;
-    positions.add(position);
-    result.push({ position, title });
-  }
-  return result;
-}
+const programUnits = crmProgramUnits;
+const lessonPosition = (program: unknown, row: Source) => courseLessonPosition(
+  program, typeof row.course_lesson_id === "string" ? row.course_lesson_id : null, Number(row.lesson_number),
+);
 const checkpointScope = (scope: LegacyScope, groupIds: number[]) => `legacy-v1:${scope}:${groupIds.length ? legacySourceHash(groupIds.sort((a, b) => a - b)) : "all"}`;
 
 async function importCourse(sql: PoolClient, row: Source, actorUserId: number): Promise<ImportTarget> {
@@ -90,8 +82,7 @@ async function importCourse(sql: PoolClient, row: Source, actorUserId: number): 
   const existing = await one<{ id: string }>(sql, "SELECT id FROM lms_course_versions WHERE course_id=$1 AND program=$2::jsonb ORDER BY version DESC LIMIT 1", [row.id, JSON.stringify(row.program)]);
   if (existing) return { id: Number(existing.id), outcome: "adopted" };
   const version = await one<{ id: string }>(sql, "INSERT INTO lms_course_versions(course_id,version,state,program,created_by) SELECT $1,COALESCE(MAX(version),0)+1,'draft',$2::jsonb,$3 FROM lms_course_versions WHERE course_id=$1 RETURNING id", [row.id, JSON.stringify(row.program), actorUserId]);
-  for (const unit of units)
-    await sql.query("INSERT INTO lms_units(course_version_id,title,position) VALUES($1,$2,$3)", [version!.id, unit.title, unit.position]);
+  await insertCrmCourseUnits(sql, Number(version!.id), row.program);
   return { id: Number(version!.id), outcome: "created" };
 }
 async function importGroup(sql: PoolClient, row: Source, format: string): Promise<ImportTarget> {
@@ -105,10 +96,10 @@ async function importGroup(sql: PoolClient, row: Source, format: string): Promis
   return { id: Number(created!.id), outcome: "created" };
 }
 async function importLesson(sql: PoolClient, row: Source, actorUserId: number): Promise<ImportTarget> {
-  const run = await one<{ id: string; course_version_id: string; course_id: number }>(sql, "SELECT run.id,run.course_version_id,version.course_id FROM lms_group_runs run JOIN lms_course_versions version ON version.id=run.course_version_id WHERE run.group_id=$1", [row.group_id]);
+  const run = await one<{ id: string; course_version_id: string; course_id: number; program: unknown }>(sql, "SELECT run.id,run.course_version_id,version.course_id,version.program FROM lms_group_runs run JOIN lms_course_versions version ON version.id=run.course_version_id WHERE run.group_id=$1", [row.group_id]);
   if (!run) return { outcome: "skipped", code: "group_run_missing" };
   if (row.course_id !== null && row.course_id !== undefined && run.course_id !== row.course_id) return { outcome: "skipped", code: "lesson_course_mismatch" };
-  const unit = await one<{ id: string }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [run.course_version_id, Number(row.lesson_number) - 1]);
+  const unit = await one<{ id: string }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [run.course_version_id, lessonPosition(run.program, row)]);
   if (!unit) return { outcome: "skipped", code: "lesson_unit_unmatched" };
   const existing = await one<{ id: string; unit_id: string | null }>(sql, "SELECT id,unit_id FROM lms_lesson_bindings WHERE run_id=$1 AND lesson_id=$2", [run.id, row.id]);
   if (existing && existing.unit_id !== unit.id) return { outcome: "conflict", code: "existing_binding_review_required" };
@@ -157,16 +148,16 @@ async function planSource(sql: PoolClient, scope: LegacyScope, row: Source, opti
     if (existing) return { outcome: "conflict", code: "untracked_portfolio_draft" };
     return await one(sql, "SELECT id FROM academy_students WHERE id=$1", [row.student_id]) ? { outcome: "planned" } : { outcome: "skipped", code: "portfolio_student_missing" };
   }
-  const run = await one<{ id: string; course_version_id: string; course_id: number }>(sql, "SELECT run.id,run.course_version_id,version.course_id FROM lms_group_runs run JOIN lms_course_versions version ON version.id=run.course_version_id WHERE run.group_id=$1", [row.group_id]);
+  const run = await one<{ id: string; course_version_id: string; course_id: number; program: unknown }>(sql, "SELECT run.id,run.course_version_id,version.course_id,version.program FROM lms_group_runs run JOIN lms_course_versions version ON version.id=run.course_version_id WHERE run.group_id=$1", [row.group_id]);
   if (!run) {
     const course = await one<{ id: number; program: unknown }>(sql, "SELECT course.id,course.program FROM academy_groups g JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1", [row.group_id]);
     const units = programUnits(course?.program);
     if (!(options.scopes ?? LEGACY_SCOPES).includes("groups") || !units?.length) return { outcome: "skipped", code: "group_run_missing" };
     if (row.course_id !== null && row.course_id !== undefined && row.course_id !== course?.id) return { outcome: "skipped", code: "lesson_course_mismatch" };
-    return units.some((unit) => unit.position === Number(row.lesson_number) - 1) ? { outcome: "planned" } : { outcome: "skipped", code: "lesson_unit_unmatched" };
+    return units.some((unit) => unit.position === lessonPosition(course?.program, row)) ? { outcome: "planned" } : { outcome: "skipped", code: "lesson_unit_unmatched" };
   }
   if (row.course_id !== null && row.course_id !== undefined && row.course_id !== run.course_id) return { outcome: "skipped", code: "lesson_course_mismatch" };
-  const unit = await one<{ id: string }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [run.course_version_id, Number(row.lesson_number) - 1]);
+  const unit = await one<{ id: string }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [run.course_version_id, lessonPosition(run.program, row)]);
   if (!unit) return { outcome: "skipped", code: "lesson_unit_unmatched" };
   const existing = await one<{ id: string; unit_id: string | null }>(sql, "SELECT id,unit_id FROM lms_lesson_bindings WHERE run_id=$1 AND lesson_id=$2", [run.id, row.id]);
   if (existing && existing.unit_id !== unit.id) return { outcome: "conflict", code: "existing_binding_review_required" };
@@ -237,7 +228,8 @@ export async function runLegacyImport(pool: Pool, options: LegacyImportOptions):
         const filter = !groupIds.length ? "" : scope === "courses" ? "AND source.id IN(SELECT course_id FROM academy_groups WHERE id=ANY($3::int[]))" : scope === "groups" ? "AND source.id=ANY($3::int[])" : "AND source.group_id=ANY($3::int[])";
         const values: unknown[] = [lastId, batchSize];
         if (filter) values.push(groupIds);
-        const batchRows = (await sql.query<Source>(`SELECT source.* FROM ${SOURCE_TABLE[scope]} source WHERE source.id>$1 ${filter} ORDER BY source.id LIMIT $2 ${options.apply ? "FOR UPDATE OF source" : ""}`, values)).rows;
+        const activeLessons = scope === "lessons" ? "AND source.status IS DISTINCT FROM 'cancelled'" : "";
+        const batchRows = (await sql.query<Source>(`SELECT source.* FROM ${SOURCE_TABLE[scope]} source WHERE source.id>$1 ${filter} ${activeLessons} ORDER BY source.id LIMIT $2 ${options.apply ? "FOR UPDATE OF source" : ""}`, values)).rows;
         if (!batchRows.length) {
           await sql.query("COMMIT"); inTransaction = false; break;
         }

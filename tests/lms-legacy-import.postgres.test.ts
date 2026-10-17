@@ -61,7 +61,7 @@ describe.skipIf(!databaseUrl)("LMS legacy import isolated PostgreSQL rehearsal",
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer REFERENCES users(id),full_name text,status text DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id integer REFERENCES academy_courses(id),teacher_id integer REFERENCES academy_teachers(id));
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer REFERENCES academy_students(id),group_id integer REFERENCES academy_groups(id),status text DEFAULT 'active',enrolled_at timestamptz,ended_at timestamptz);
-      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer REFERENCES academy_groups(id),course_id integer REFERENCES academy_courses(id),lesson_number integer,topic text,materials text,scheduled_at timestamptz,status text,duration_minutes integer DEFAULT 120);
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer REFERENCES academy_groups(id),course_id integer REFERENCES academy_courses(id),lesson_number integer,topic text,materials text,scheduled_at timestamptz,status text,duration_minutes integer DEFAULT 120,course_lesson_id text);
       CREATE TABLE academy_lesson_reschedules(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),previous_scheduled_at timestamptz,next_scheduled_at timestamptz,created_at timestamptz DEFAULT now());
       CREATE TABLE academy_lesson_status_history(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),from_status text,to_status text,created_at timestamptz DEFAULT now());
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer REFERENCES academy_lessons(id),student_id integer REFERENCES academy_students(id),status text,updated_at timestamptz DEFAULT now());
@@ -139,6 +139,30 @@ describe.skipIf(!databaseUrl)("LMS legacy import isolated PostgreSQL rehearsal",
     expect(reconciled.records.find((item) => item.scope === "lessons" && item.sourceId === 1)).toMatchObject({ outcome: "conflict", code: "source_changed" });
     expect((await counts()).lms_material_versions).toBe(3);
     expect((await pool.query("SELECT body FROM lms_material_versions WHERE material_id=1")).rows[0].body).toContain("Internal note");
+  });
+  it("imports selected structured lessons by stable identity and skips cancelled lessons", async () => {
+    const program = { version: 1, blocks: [
+      { id: "block-1", title: "Basics", lessons: [1, 2, 3].map((n) => ({ id: `topic-${n}`, title: `Topic ${n}`, materials: [] })) },
+      { id: "block-2", title: "Projects", lessons: [4, 5].map((n) => ({ id: `topic-${n}`, title: `Topic ${n}`, materials: [] })) },
+    ] };
+    await pool.query("UPDATE academy_courses SET program=$1::jsonb WHERE id=1", [JSON.stringify(program)]);
+    await pool.query("UPDATE academy_lessons SET course_lesson_id='topic-2',topic='Topic 2' WHERE id=1");
+    await pool.query("UPDATE academy_lessons SET course_lesson_id='topic-5',topic='Topic 5' WHERE id=2");
+    await pool.query("UPDATE academy_lessons SET status='cancelled' WHERE id=3");
+    const planned = await run({ apply: false, audit: false });
+    expect(planned.records.filter((record) => record.scope === "lessons").map((record) => record.outcome)).toEqual(["planned", "planned"]);
+    const original = await originalRows();
+    await run({ audit: false });
+    const bindings = await pool.query(`SELECT lesson.id,unit.title,unit.position,section.title AS section_title FROM lms_lesson_bindings binding
+      JOIN academy_lessons lesson ON lesson.id=binding.lesson_id JOIN lms_units unit ON unit.id=binding.unit_id
+      LEFT JOIN lms_sections section ON section.id=unit.section_id ORDER BY lesson.id`);
+    expect(bindings.rows).toEqual([
+      { id: 1, title: "Topic 2", position: 1, section_title: "Basics" },
+      { id: 2, title: "Topic 5", position: 4, section_title: "Projects" },
+    ]);
+    expect((await counts()).lms_materials).toBe(2);
+    expect(await originalRows()).toEqual(original);
+    expect((await run({ audit: false })).counts.unchanged).toBe(6);
   });
   it("adopts existing staff-created runs, bindings and original material versions without changing content", async () => {
     await pool.query(`INSERT INTO lms_course_versions(course_id,version,state,program,created_by) SELECT id,1,'draft',program,1 FROM academy_courses WHERE id=1;

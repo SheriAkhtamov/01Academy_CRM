@@ -16,9 +16,11 @@ const group = {
   lessonCount: 10, lessonDurationMinutes: 60, maxStudents: 4, currentStudents: 2, reservedStudents: 1,
   startDate: '2026-10-12', endDate: '2026-12-28', isArchived: false,
 };
+const pythonProgram = Array.from({ length: 10 }, (_, index) => ({ lessonNumber: index + 1, topic: `Python lesson ${index + 1}` }));
 const configuration = {
   schools: [{ id: 1, name: 'Cyberpark', isActive: true }],
-  courses: [{ id: 1, name: 'Python', isActive: true }, { id: 2, name: 'AI Kids', isActive: true }],
+  courses: [{ id: 1, name: 'Python', isActive: true, program: pythonProgram },
+    { id: 2, name: 'AI Kids', isActive: true, program: [{ lessonNumber: 1, topic: 'AI introduction' }] }],
   rooms: [{ id: 1, schoolId: 1, name: '101', capacity: 12, isActive: true }],
   teachers: [{ id: 2, fullName: 'Teacher', status: 'active' }],
   groups: [group, { ...group, id: 2, name: 'AI full', courseId: 2, courseName: 'AI Kids', reservedStudents: 2 },
@@ -167,6 +169,56 @@ it('says which field is wrong instead of a generic error', async () => {
   expect(within(dialog).queryByText(i18n.t('invalidData'))).toBeNull();
   // The schedule is reported in the same pass, not only after the fields are fixed.
   expect(within(dialog).getByText(i18n.t('groupScheduleRequired'))).toBeTruthy();
+});
+
+it('edits noncontiguous course lessons without closing the checklist and derives the plan and dates', async () => {
+  const program = {
+    version: 1,
+    blocks: [
+      { id: 'block-1', title: 'Foundations', lessons: [1, 2, 3].map((n) => ({ id: `lesson-${n}`, title: `Topic ${n}`, materials: [] })) },
+      { id: 'block-2', title: 'Practice', lessons: [4, 5].map((n) => ({ id: `lesson-${n}`, title: `Topic ${n}`, materials: [] })) },
+    ],
+  };
+  currentConfiguration = {
+    ...configuration,
+    courses: [{ ...configuration.courses[0], program }],
+    groups: [{ ...group, selectedCourseLessonIds: ['lesson-2', 'lesson-5'], lessonCount: 2, endDate: '2026-10-19' }],
+  };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  expect(within(dialog).queryByRole('spinbutton', { name: i18n.t('lessonsCount') })).toBeNull();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('groupCourseLessons') }));
+  expect(screen.getByText('Foundations')).toBeTruthy();
+  expect(screen.getByText('Practice')).toBeTruthy();
+  expect(screen.getByRole('menuitemcheckbox', { name: 'Topic 2' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('menuitemcheckbox', { name: 'Topic 1' }).getAttribute('aria-checked')).toBe('false');
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Topic 2' }));
+  expect(screen.getByRole('menu')).toBeTruthy();
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Topic 4' }));
+  await userEvent.keyboard('{Escape}');
+  expect((within(dialog).getByLabelText(new RegExp(i18n.t('endDate'))) as HTMLInputElement).value).toBe('2026-10-19');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({
+    selectedCourseLessonIds: ['lesson-4', 'lesson-5'], lessonCount: 2,
+  })));
+});
+
+it('replaces lesson choices when changing the course and rejects an empty selection', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('course') }));
+  await userEvent.click(screen.getByRole('option', { name: 'AI Kids' }));
+  const picker = within(dialog).getByRole('button', { name: i18n.t('groupCourseLessons') });
+  await userEvent.click(picker);
+  expect(screen.queryByRole('menuitemcheckbox', { name: 'Python lesson 1' })).toBeNull();
+  expect(screen.getByRole('menuitemcheckbox', { name: 'AI introduction' }).getAttribute('aria-checked')).toBe('true');
+  await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'AI introduction' }));
+  await userEvent.keyboard('{Escape}');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  expect(await within(dialog).findByText(i18n.t('groupLessonsRequired'))).toBeTruthy();
+  expect(apiRequest).not.toHaveBeenCalled();
 });
 
 it('warns about a busy room and a busy teacher before saving and keeps a typed end date', async () => {

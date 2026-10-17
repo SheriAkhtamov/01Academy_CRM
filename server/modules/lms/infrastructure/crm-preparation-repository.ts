@@ -1,4 +1,6 @@
+import { insertCrmCourseUnits } from './crm-course-units';
 import type { Pool, PoolClient } from "pg";
+import { courseLessonPosition, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { one, rows, transaction } from "./postgres-base";
 import {
   crmGroupFormat,
@@ -19,9 +21,10 @@ type GroupSource = {
   name: string;
   courseId: number | null;
   program: unknown;
+  selectedCourseLessonIds?: string[] | null;
 };
 type SourceMapping = { sourceHash: string; targetId: number };
-type LessonSource = { id: number; lessonNumber: number; topic: string; materials: string | null };
+type LessonSource = { id: number; lessonNumber: number; topic: string; materials: string | null; courseLessonId?: string | null };
 const CURSOR = "crm-preparation:groups:v1";
 
 function ensureLease(signal?: AbortSignal) {
@@ -76,7 +79,7 @@ export class PgCrmLearningPreparationRepository {
       if (!allowed || !this.options.enabled()) return null;
       if (actor.kind === "staff" && !await one(sql, "SELECT id FROM users WHERE id=$1 AND is_active=true AND is_archived=false", [actor.userId])) throw new Error("CRM_PREPARATION_ACTOR_INACTIVE");
       const group = await one<GroupSource>(sql,
-        `SELECT g.id,g.name,course.id AS course_id,course.program FROM academy_groups g
+        `SELECT g.id,g.name,course.id AS course_id,course.program,to_jsonb(g)->'selected_course_lesson_ids' AS selected_course_lesson_ids FROM academy_groups g
          LEFT JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1 FOR UPDATE OF g`, [groupId]);
       if (!group) return null;
       const existing = await one<{ id: number; courseVersionId: number }>(sql, "SELECT id,course_version_id FROM lms_group_runs WHERE group_id=$1 FOR UPDATE", [groupId]);
@@ -94,9 +97,11 @@ export class PgCrmLearningPreparationRepository {
             "SELECT new_value->>'sourceHash' AS source_hash FROM lms_learning_audit WHERE entity_type='lms_course_versions' AND entity_id=$1 AND action='crm.source.linked' AND new_value->>'source'='crm_course' ORDER BY id DESC LIMIT 1", [existing.courseVersionId]);
           if (pinned?.courseId !== group.courseId || (origin && (!units || origin.sourceHash !== crmPreparationHash({courseId:group.courseId,program:group.program})))) status = "needs_program_review";
         } else {
-          const published = await one<{id:number}>(sql,"SELECT id FROM lms_course_versions WHERE course_id=$1 AND state='published' ORDER BY version DESC LIMIT 1",[group.courseId]);
-          versionId = published?.id ?? await this.courseDraft(sql, group, units ?? [], actor);
-          if (!published && !units) status = "needs_program_review";
+          const published = await one<{id:number;program:unknown}>(sql,"SELECT id,program FROM lms_course_versions WHERE course_id=$1 AND state='published' ORDER BY version DESC LIMIT 1",[group.courseId]);
+          const publishedIds = new Set(flattenCourseCurriculum(published?.program).map(lesson => lesson.id));
+          const compatiblePublished = published && (!group.selectedCourseLessonIds || group.selectedCourseLessonIds.every(id => publishedIds.has(id)));
+          versionId = compatiblePublished ? published.id : await this.courseDraft(sql, group, units ?? [], actor);
+          if (!compatiblePublished && !units) status = "needs_program_review";
           const run = await one<{ id: number }>(sql,
             "INSERT INTO lms_group_runs(group_id,course_version_id,format) VALUES($1,$2,$3) ON CONFLICT(group_id) DO NOTHING RETURNING id", [groupId, versionId, format]);
           runId = run?.id ?? (await one<{ id: number }>(sql, "SELECT id FROM lms_group_runs WHERE group_id=$1", [groupId]))!.id;
@@ -131,13 +136,13 @@ export class PgCrmLearningPreparationRepository {
     if (mapped?.sourceHash === hash) {
       const draft = await one<{ id: number; program: unknown; createdBy: number | null; state: string }>(sql, "SELECT id,program,created_by,state FROM lms_course_versions WHERE id=$1 AND course_id=$2", [mapped.targetId, group.courseId]);
       const currentUnits = await rows<{ title: string; position: number }>(sql, "SELECT title,position FROM lms_units WHERE course_version_id=$1 ORDER BY position", [mapped.targetId]);
-      if (draft?.state === "draft" && draft.createdBy === null && crmPreparationHash(draft.program) === crmPreparationHash(program) && crmPreparationHash(currentUnits) === crmPreparationHash([...units].sort((left, right) => left.position - right.position))) return draft.id;
+      if (draft?.state === "draft" && draft.createdBy === null && crmPreparationHash(draft.program) === crmPreparationHash(program) && crmPreparationHash(currentUnits) === crmPreparationHash([...units].sort((left, right) => left.position - right.position).map(unit => ({ title: unit.title, position: unit.position })))) return draft.id;
     }
     const draft = await one<{ id: number }>(sql,
       `INSERT INTO lms_course_versions(course_id,version,state,program,created_by)
        SELECT $1,COALESCE(MAX(version),0)+1,'draft',$2::jsonb,NULL FROM lms_course_versions WHERE course_id=$1 RETURNING id`,
       [group.courseId, JSON.stringify(program)]);
-    for (const unit of units) await sql.query("INSERT INTO lms_units(course_version_id,title,position) VALUES($1,$2,$3)", [draft!.id, unit.title, unit.position]);
+    await insertCrmCourseUnits(sql, draft!.id, program);
     await this.remember(sql, "crm_course", group.courseId!, hash, "lms_course_versions", draft!.id, actor);
     return draft!.id;
   }
@@ -146,11 +151,13 @@ export class PgCrmLearningPreparationRepository {
     const scope = `crm-preparation:lessons:${groupId}`;
     const cursor = await one<{ lastId: number }>(sql, "SELECT last_id FROM lms_legacy_import_checkpoints WHERE scope=$1", [scope]);
     const lessons = await rows<LessonSource>(sql,
-      "SELECT id,lesson_number,topic,materials FROM academy_lessons WHERE group_id=$1 AND id>$2 ORDER BY id LIMIT 200", [groupId, cursor?.lastId ?? 0]);
+      "SELECT id,lesson_number,topic,materials,to_jsonb(academy_lessons)->>'course_lesson_id' AS course_lesson_id FROM academy_lessons WHERE group_id=$1 AND id>$2 AND status<>'cancelled' ORDER BY id LIMIT 200", [groupId, cursor?.lastId ?? 0]);
+    const version = await one<{ program: unknown }>(sql, 'SELECT program FROM lms_course_versions WHERE id=$1', [versionId]);
     for (const lesson of lessons) {
       ensureLease(signal);
       let needsReview = false;
-      const unit = await one<{ id: number }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [versionId, lesson.lessonNumber - 1]);
+      const position = courseLessonPosition(version?.program, lesson.courseLessonId, lesson.lessonNumber);
+      const unit = position === null ? undefined : await one<{ id: number }>(sql, "SELECT id FROM lms_units WHERE course_version_id=$1 AND position=$2", [versionId, position]);
       const binding = await one<{ id: number; unitId: number | null }>(sql, "SELECT id,unit_id FROM lms_lesson_bindings WHERE run_id=$1 AND lesson_id=$2", [runId, lesson.id]);
       if (!binding) {
         const created = await one<{ id: number }>(sql,"INSERT INTO lms_lesson_bindings(run_id,unit_id,lesson_id) VALUES($1,$2,$3) ON CONFLICT(run_id,lesson_id) DO NOTHING RETURNING id", [runId, unit?.id ?? null, lesson.id]);

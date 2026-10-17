@@ -314,7 +314,11 @@ export function ArchiveTab({
 
         <Select value={managerFilter} onValueChange={setManagerFilter}>
           <SelectTrigger className="h-8 w-[13rem] text-xs" aria-label={t('manager')}>
-            <SelectValue>{managerFilter !== 'all' && !managerOptions.some((option) => option.value === managerFilter) ? managerFilter : undefined}</SelectValue>
+            <SelectValue>{managerFilter !== 'all' && !managerOptions.some((option) => option.value === managerFilter)
+              ? managerFilter.startsWith('employee:')
+                ? <EmployeeIdentity userId={Number(managerFilter.slice('employee:'.length))} name={t('notAssigned')} avatarClassName="size-6" />
+                : managerFilter
+              : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('archiveAllManagers')}</SelectItem>

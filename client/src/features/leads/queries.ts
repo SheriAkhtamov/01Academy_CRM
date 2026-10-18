@@ -29,12 +29,12 @@ export const invalidateLeadData = (
   leadId?: number | null,
   { excludeLeadDetailId }: LeadInvalidationOptions = {},
 ) => Promise.all([
-  queryClient.invalidateQueries({
-    queryKey: leadQueryKeys.all,
-    predicate: (query) => excludeLeadDetailId === undefined
-      || query.queryKey.length !== 2
-      || query.queryKey[1] !== excludeLeadDetailId,
-  }),
+  queryClient.invalidateQueries(excludeLeadDetailId === undefined
+    ? { queryKey: leadQueryKeys.all }
+    : {
+      queryKey: leadQueryKeys.all,
+      predicate: (query) => query.queryKey.length !== 2 || query.queryKey[1] !== excludeLeadDetailId,
+    }),
   ...(excludeLeadDetailId !== undefined
     ? [queryClient.invalidateQueries({
       queryKey: leadQueryKeys.detail(excludeLeadDetailId),

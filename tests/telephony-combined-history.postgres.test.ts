@@ -73,7 +73,7 @@ describe.skipIf(!url)('combined call histories on isolated PostgreSQL',() => {
       INSERT INTO academy_sales_funnel_users VALUES(7,1),(8,2);
       INSERT INTO academy_company_settings VALUES(true);
       INSERT INTO academy_leads VALUES(1,7,1,'qualified','Own pupil','Own parent'),(2,8,1,'qualified','Other pupil','Other parent'),
-        (3,NULL,1,'qualified','Shared pupil','Shared parent'),(4,NULL,1,'new','Private initial','Private parent'),
+        (3,NULL,1,'qualified','Shared pupil','Shared parent'),(4,NULL,1,'new','Shared intake','Shared intake parent'),
         (5,NULL,2,'qualified','Foreign funnel','Foreign parent'),(6,8,2,'qualified','Other pupil2','Other parent2')`);
   });
   afterAll(async () => {
@@ -109,11 +109,19 @@ describe.skipIf(!url)('combined call histories on isolated PostgreSQL',() => {
     for (let lead=1;lead<=6;lead++) await reminderCall(lead,lead);
     await managerCall(1,2,7);await managerCall(2,1,8);
     const result=await journal();
-    expect(result.items.filter((call:{source:string}) => call.source==='voice_reminder').map((call:{leadId:number}) => call.leadId).sort()).toEqual([1,3]);
-    expect((await widget()).map((call:{id:number|string}) => call.id)).toEqual([botId(3),botId(1),1]);
+    expect(result.items.filter((call:{source:string}) => call.source==='voice_reminder').map((call:{leadId:number}) => call.leadId).sort()).toEqual([1,3,4]);
+    expect((await widget()).map((call:{id:number|string}) => call.id)).toEqual([botId(4),botId(3),botId(1),1]);
     const history=new VoiceReminderCallHistory(database);
-    for (const id of [1,3]) expect(await history.readAuthorized(botId(id),mocks.viewer)).not.toBeNull();
-    for (const id of [2,4,5,6]) expect(await history.readAuthorized(botId(id),mocks.viewer)).toBeNull();
+    for (const id of [1,3,4]) expect(await history.readAuthorized(botId(id),mocks.viewer)).not.toBeNull();
+    for (const id of [2,5,6]) expect(await history.readAuthorized(botId(id),mocks.viewer)).toBeNull();
+
+    await database.query("UPDATE academy_leads SET status_code='new' WHERE id=5");
+    expect(await history.readAuthorized(botId(5),mocks.viewer)).toBeNull();
+    await database.query('DELETE FROM academy_sales_funnel_users WHERE user_id=7 AND funnel_id=1');
+    expect((await journal()).items.filter((call:{source:string}) => call.source==='voice_reminder').map((call:{leadId:number}) => call.leadId)).toEqual([1]);
+    expect((await widget()).map((call:{id:number|string}) => call.id)).toEqual([botId(1),1]);
+    expect(await history.readAuthorized(botId(1),mocks.viewer)).not.toBeNull();
+    for (const id of [2,3,4,5,6]) expect(await history.readAuthorized(botId(id),mocks.viewer)).toBeNull();
   });
   it('filters bot calls by the selected lead manager while preserving the viewer ACL',async () => {
     await reminderCall(1,1);await reminderCall(2,2);await reminderCall(3,3);await managerCall(8,1,8);

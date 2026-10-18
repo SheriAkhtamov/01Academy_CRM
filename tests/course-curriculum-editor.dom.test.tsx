@@ -118,3 +118,31 @@ it('shows localized nested validation and rejects unsafe material URLs', async (
   expect(await screen.findByText(i18n.t('courseMaterialUrlInvalid'))).toBeTruthy();
   expect(saved).not.toHaveBeenCalled();
 });
+
+it('supports quick age category presets, collapse/expand controls, and duplicating lessons and blocks with fresh IDs', async () => {
+  const saved = vi.fn();
+  render(<Editor program={initialProgram} onSubmit={saved} />);
+
+  fireEvent.click(screen.getByRole('button', { name: '14–17' }));
+  expect((screen.getByLabelText(i18n.t('ageCategory'), { exact: false }) as HTMLInputElement).value).toBe('14–17');
+
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
+  expect(screen.queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseExpandAll') }));
+  expect(screen.getByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: `${i18n.t('courseDuplicateItem')}: Variables` }));
+  fireEvent.click(screen.getByRole('button', { name: `${i18n.t('courseDuplicateItem')}: Foundations` }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  const values = saved.mock.calls[0][0] as CourseValues;
+  expect(values.ageCategory).toBe('14–17');
+  const program = values.program as CourseCurriculum;
+  expect(program.blocks).toHaveLength(2);
+  expect(program.blocks[0].lessons).toHaveLength(3);
+  expect(program.blocks[1].lessons).toHaveLength(3);
+  expect(program.blocks[1].id).not.toBe(program.blocks[0].id);
+  expect(program.blocks[0].lessons[1].id).not.toBe(program.blocks[0].lessons[0].id);
+  expect(program.blocks[0].lessons[1].materials[0].id).not.toBe(program.blocks[0].lessons[0].materials[0].id);
+});

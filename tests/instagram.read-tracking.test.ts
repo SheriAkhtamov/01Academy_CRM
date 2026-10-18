@@ -30,7 +30,9 @@ describe('Instagram per-user read tracking', () => {
     expect(String(sql)).toContain('instagram_conversation_reads conversation_read');
     expect(String(sql)).toContain('conversation_read.user_id = $1');
     expect(String(sql)).toContain('unread_message.id > COALESCE(conversation_read.last_read_message_id, 0)');
-    expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
+    expect(String(sql)).toContain('l.manager_id IS NULL');
+    expect(String(sql)).toContain('assignment.funnel_id = l.funnel_id');
+    expect(String(sql)).not.toContain('auto_lead_distribution_enabled');
     expect(params).toEqual([7]);
   });
 
@@ -43,7 +45,9 @@ describe('Instagram per-user read tracking', () => {
     const [sql, params] = mocks.poolQuery.mock.calls[0];
     expect(String(sql)).toContain('conversation_read.user_id = $1');
     expect(String(sql)).toContain('unread_message.id > COALESCE(conversation_read.last_read_message_id, 0)');
-    expect(String(sql)).toContain('auto_lead_distribution_enabled = true');
+    expect(String(sql)).toContain('l.manager_id IS NULL');
+    expect(String(sql)).toContain('assignment.funnel_id = l.funnel_id');
+    expect(String(sql)).not.toContain('auto_lead_distribution_enabled');
     expect(String(sql)).toContain("a.status = 'connected'");
     expect(params).toEqual([7]);
   });

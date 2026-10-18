@@ -28,10 +28,7 @@ export const canActorViewLead = (
   if (!actorHasModule(actor, 'sales') || !canActorAccessFunnel(actor, lead)) return false;
   if (lead.managerId) return Number(lead.managerId) === actor.userId;
 
-  const hidesSharedNewLead = actor.salesWorkflow?.autoLeadDistributionEnabled === true
-    && lead.statusCode === actor.salesWorkflow.defaultInitialStageCode
-    && Number(lead.funnelId) === Number(actor.salesWorkflow.defaultFunnelId);
-  return !hidesSharedNewLead;
+  return true;
 };
 
 export const canActorMutateLead = (actor: ActorContext, lead?: LeadAccessRecord | null): boolean =>

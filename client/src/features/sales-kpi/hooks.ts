@@ -41,6 +41,8 @@ export const useClaimKpiLead = () => {
 export const useHandoffKpiLead = () => {
   const client = useQueryClient();
   return useMutation({ mutationFn: handoffKpiLead,
-    onSuccess: () => invalidateSalesLeadData(client),
+    // The destination can be outside the sender's visibility. Refresh the
+    // boards while closing the source card without requesting its private data.
+    onSuccess: (_result, { leadId }) => invalidateSalesLeadData(client, undefined, { excludeLeadDetailId: leadId }),
   });
 };

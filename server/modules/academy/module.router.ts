@@ -69,8 +69,7 @@ import {
   normalizeMoney,
   resolveStudentRiskFlags,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange,
-  validateLeadStatusTransition } from '@shared/academy';
+} from '@shared/academy';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,

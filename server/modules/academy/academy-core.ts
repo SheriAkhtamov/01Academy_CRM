@@ -56,8 +56,7 @@ import {
   resolveStudentRiskFlags,
   suggestCourseSlugByAge,
   type AcademyAccessModule,
-  validateLeadForStatusChange,
-  validateLeadStatusTransition } from '@shared/academy';
+} from '@shared/academy';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,
@@ -454,8 +453,8 @@ export const query = async <T = Row>(sql: string, values: DbValue[] = []) => {
     return camelizeRows(result.rows) as T[];
   } catch (error) {
     const failure = error as { code?: string; message?: string; statusCode?: number };
-    if (failure.code === 'P0001' && ['salesFunnelStageUnavailable', 'salesFunnelCloserOnly',
-      'salesFunnelHunterOnly', 'salesFunnelNotAssigned', 'salesWorkflowFunnelProtected', 'pipelineInitialStageProtected', 'pipelineInitialStageCannotBeDeleted', 'invalidData'].includes(failure.message ?? '')) {
+    if (failure.code === 'P0001' && ['salesFunnelStageUnavailable', 'salesFunnelNotAssigned',
+      'pipelineInitialStageProtected', 'pipelineInitialStageCannotBeDeleted', 'invalidData'].includes(failure.message ?? '')) {
       failure.statusCode = failure.message === 'invalidData' ? 400 : 409;
     }
     throw error;
@@ -750,9 +749,8 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
     return leads;
   }
 
-  // A sales employee may work with their own leads and, while automatic
-  // distribution is disabled, the shared unassigned queue. Cards assigned to
-  // another manager are excluded completely instead of exposing a redacted card.
+  // A sales employee may work with their own leads and the shared unassigned
+  // queue in their assigned funnels. Another manager's cards stay private.
   const visibleLeads = leads.filter((lead) => canActorViewLead(context, lead));
   const policy = await getWorkforcePolicy();
   if (policy.salesPhoneVisibility === 'own_leads') return visibleLeads;

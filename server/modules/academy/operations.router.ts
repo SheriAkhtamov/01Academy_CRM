@@ -75,8 +75,7 @@ import {
   normalizeMoney,
   resolveStudentRiskFlags,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange,
-  validateLeadStatusTransition } from '@shared/academy';
+} from '@shared/academy';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,
@@ -1032,11 +1031,6 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
       if (source.funnelId && target.funnelId && Number(source.funnelId) !== Number(target.funnelId)) {
         throw Object.assign(new Error('salesFunnelStageUnavailable'), { statusCode: 409 });
       }
-      const transitionError = validateLeadStatusTransition(String(source.code), String(target.code));
-      if (transitionError) {
-        throw Object.assign(new Error(transitionError), { statusCode: 409 });
-      }
-
       const leads = await query<Row>(
         `SELECT *
          FROM academy_leads
@@ -1049,19 +1043,6 @@ router.post('/pipeline-statuses/:id/transfer-leads-and-delete', async (req, res)
 
       for (const lead of leads) {
         await assertSalesFunnelStage(lead.funnelId, String(target.code));
-        const validationError = validateLeadForStatusChange({
-          nextStatus: String(target.code),
-          studentName: lead.studentName,
-          studentAge: lead.studentAge,
-          courseId: lead.courseId,
-          enrolledGroupId: lead.enrolledGroupId,
-        });
-        if (validationError) {
-          throw Object.assign(new Error(validationError), {
-            statusCode: 409,
-            leadId: lead.id,
-          });
-        }
       }
 
       if (leadIds.length > 0) {

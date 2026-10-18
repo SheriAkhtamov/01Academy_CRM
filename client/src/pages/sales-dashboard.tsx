@@ -21,7 +21,6 @@ import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
 import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
-import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
@@ -191,11 +190,6 @@ interface PipelineStatus {
   isActive?: boolean;
 }
 
-interface PendingLeadMove {
-  lead: Lead;
-  statusCode: string;
-}
-
 const archiveReasonTranslationKeys = Object.fromEntries(
   LEAD_ARCHIVE_REASONS.map((reason) => [reason.code, reason.translationKey]),
 ) as Record<string, TranslationKey>;
@@ -319,96 +313,6 @@ function ArchiveLeadDialog({
   );
 }
 
-function AssignLeadBeforeMoveDialog({
-  pendingMove,
-  managers,
-  canChooseAnyManager,
-  currentUserId,
-  managerId,
-  onManagerIdChange,
-  onClose,
-  onConfirm,
-  isPending,
-  t,
-}: {
-  pendingMove: PendingLeadMove | null;
-  managers: Array<{ id: number; fullName: string }>;
-  canChooseAnyManager: boolean;
-  currentUserId?: number;
-  managerId: string;
-  onManagerIdChange: (managerId: string) => void;
-  onClose: () => void;
-  onConfirm: (managerId: number) => void;
-  isPending: boolean;
-  t: (key: TranslationKey) => string;
-}) {
-  if (!pendingMove) return null;
-
-  const selectedManagerId = canChooseAnyManager ? Number(managerId) : Number(currentUserId);
-  const canConfirm = Number.isInteger(selectedManagerId) && selectedManagerId > 0;
-
-  if (!canChooseAnyManager) {
-    return (
-      <AssignLeadToSelfDialog
-        open
-        leadName={pendingMove.lead.contactName}
-        confirmLabel={t('assignToMeAndMove')}
-        isPending={isPending}
-        confirmDisabled={!canConfirm}
-        onOpenChange={(open) => {
-          if (!open) onClose();
-        }}
-        onConfirm={() => onConfirm(selectedManagerId)}
-      />
-    );
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => {
-      if (!open && !isPending) onClose();
-    }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t('leadRequiresResponsibleManager')}</DialogTitle>
-          <DialogDescription>{pendingMove.lead.contactName}</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="lead-move-manager">
-            {t('responsibleManager')}
-          </label>
-          <Select value={managerId} onValueChange={onManagerIdChange} disabled={isPending}>
-            <SelectTrigger id="lead-move-manager">
-              <SelectValue placeholder={t('selectResponsibleManager')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {managers.map((manager) => (
-                  <SelectItem key={manager.id} value={String(manager.id)} textValue={manager.fullName}><EmployeeIdentity userId={manager.id} name={manager.fullName} /></SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
-            {t('cancel')}
-          </Button>
-          <Button
-            type="button"
-            disabled={!canConfirm || isPending}
-            onClick={() => onConfirm(selectedManagerId)}
-          >
-            <UserCheck data-icon="inline-start" />
-            {isPending ? t('saving') : t('assignManagerAndMove')}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function SalesDashboard({ section = 'overview' }: { section?: SalesSection }) {
   const { t, language } = useTranslation();
   const ceoCopy = useCeoCopy();
@@ -455,8 +359,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveDialogLead, setArchiveDialogLead] = useState<Lead | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
-  const [pendingLeadMove, setPendingLeadMove] = useState<PendingLeadMove | null>(null);
-  const [pendingLeadMoveManagerId, setPendingLeadMoveManagerId] = useState('');
   const [reportingRange, setReportingRange] = useSalesReportingRange();
   const overviewMonth = salesPlanMonth(reportingRange);
 
@@ -749,22 +651,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }),
   });
 
-  const assignAndMoveLead = useMutation({
-    mutationFn: ({ leadId, statusCode, managerId }: { leadId: number; statusCode: string; managerId: number }) =>
-      leadsApi.update<Lead>(leadId, { statusCode, managerId }),
-    onSuccess: () => {
-      setPendingLeadMove(null);
-      setPendingLeadMoveManagerId('');
-      toast({ title: t('leadAssignedAndMoved') });
-      invalidate();
-    },
-    onError: (error: Error) => toast({
-      title: t('statusNotUpdated'),
-      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
-      variant: 'destructive',
-    }),
-  });
-
   const archiveLead = useMutation({
     mutationFn: ({ id, reason, customReason, assignToSelf }: { id: number; reason: string; customReason?: string; assignToSelf?: boolean }) =>
       leadsApi.archive<Lead>(id, { reason, customReason, assignToSelf }),
@@ -907,14 +793,9 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const requestLeadStatusChange = useCallback(async (leadId: number, statusCode: string) => {
     const lead = myLeads.find((item) => item.id === leadId);
     if (!lead) return false;
-    if (!lead.managerId) {
-      setPendingLeadMove({ lead, statusCode });
-      setPendingLeadMoveManagerId(isAdministrationModule ? '' : String(user?.id ?? ''));
-      return false;
-    }
     await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
     return true;
-  }, [isAdministrationModule, myLeads, updateLead, user?.id]);
+  }, [myLeads, updateLead]);
 
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
     if (action === 'payment') {
@@ -1110,7 +991,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           callActionLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
           onArchiveLead={openArchiveDialog}
           onStatusChange={requestLeadStatusChange}
-          isPending={updateLead.isPending || assignAndMoveLead.isPending}
+          isPending={updateLead.isPending}
           showManager={isAdministrationModule}
           selectedLeadIds={pipelineBulkActions.selectedLeadIds}
           onSelectedLeadIdsChange={pipelineBulkActions.setSelectedLeadIds}
@@ -1191,30 +1072,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           assignToSelf,
         })}
         isPending={archiveLead.isPending}
-        t={t}
-      />
-
-      <AssignLeadBeforeMoveDialog
-        pendingMove={pendingLeadMove}
-        managers={salesManagers}
-        canChooseAnyManager={isAdministrationModule}
-        currentUserId={user?.id}
-        managerId={pendingLeadMoveManagerId}
-        onManagerIdChange={setPendingLeadMoveManagerId}
-        onClose={() => {
-          if (assignAndMoveLead.isPending) return;
-          setPendingLeadMove(null);
-          setPendingLeadMoveManagerId('');
-        }}
-        onConfirm={(managerId) => {
-          if (!pendingLeadMove) return;
-          assignAndMoveLead.mutate({
-            leadId: pendingLeadMove.lead.id,
-            statusCode: pendingLeadMove.statusCode,
-            managerId,
-          });
-        }}
-        isPending={assignAndMoveLead.isPending}
         t={t}
       />
 
@@ -1300,7 +1157,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         leadStatusName={leadStatusName}
         dateTime={dateTime}
         money={money}
-        onChanged={invalidate}
+        onChanged={(options) => { void invalidateSalesLeadData(queryClient, undefined, options); }}
         onMerged={(retainedLeadId) => allowNavigation(() => {
           setSelectedLeadId(retainedLeadId);
           setLeadSheetOpen(true);

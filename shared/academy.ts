@@ -265,27 +265,6 @@ export function suggestAgeGroup(age?: number | null): string | null {
   return "15+";
 }
 
-export function validateLeadForStatusChange(input: {
-  nextStatus: string;
-  studentName?: string | null;
-  studentAge?: number | null;
-  courseId?: number | null;
-  enrolledGroupId?: number | null;
-}): string | null {
-  // Stages impose no data requirements. Student, enrollment and payment
-  // commands validate their own concrete entities independently.
-  void input;
-  return null;
-}
-
-export function validateLeadStatusTransition(currentStatus: string, nextStatus: string): string | null {
-  // Payments and pipeline stages are independent. Managers choose every stage
-  // explicitly; payment records remain accounting facts only.
-  void currentStatus;
-  void nextStatus;
-  return null;
-}
-
 export function getComputedPaymentStatus(status: string, dueAt?: string | Date | null): string {
   if (status !== "pending") return status;
   if (!dueAt) return status;

@@ -30,16 +30,10 @@ const panel = readFileSync(
   'utf8',
 );
 
-const salesActor = (autoLeadDistributionEnabled: boolean): ActorContext => ({
+const salesActor = (): ActorContext => ({
   ...actorContextFrom({ id: 7, module: 'sales' }),
   salesWorkflow: {
-    role: 'hunter',
-    hunterFunnelId: 1,
-    closerFunnelId: 2,
-    defaultFunnelId: 1,
-    defaultInitialStageCode: 'intake_a',
     assignedFunnelIds: [1],
-    autoLeadDistributionEnabled,
   },
 });
 
@@ -51,20 +45,20 @@ describe('automatic lead distribution contract and visibility', () => {
   });
 
   it('keeps the unassigned queue shared while distribution is disabled', () => {
-    expect(canActorViewLead(salesActor(false), {
+    expect(canActorViewLead(salesActor(), {
       funnelId: 1,
       managerId: null,
       statusCode: 'intake_a',
     })).toBe(true);
   });
 
-  it('shows each manager only their own leads in the new stage when enabled', () => {
-    const actor = salesActor(true);
+  it('shares unassigned leads in every stage while preserving owner and funnel authorization', () => {
+    const actor = salesActor();
     expect(canActorViewLead(actor, {
       funnelId: 1,
       managerId: null,
       statusCode: 'intake_a',
-    })).toBe(false);
+    })).toBe(true);
     expect(canActorViewLead(actor, {
       funnelId: 1,
       managerId: 7,
@@ -80,6 +74,7 @@ describe('automatic lead distribution contract and visibility', () => {
       managerId: null,
       statusCode: 'qualified',
     })).toBe(true);
+    expect(canActorViewLead(actor, { funnelId: 2, managerId: null, statusCode: 'intake_a' })).toBe(false);
   });
 
   it('keeps leadership and marketing visibility unchanged', () => {
@@ -88,11 +83,22 @@ describe('automatic lead distribution contract and visibility', () => {
     expect(canActorViewLead(actorContextFrom({ id: 2, module: 'marketing' }), lead)).toBe(true);
   });
 
-  it('uses the same unassigned-new-lead rule in SQL notification scopes', () => {
+  it('keeps all unassigned stages visible in SQL scopes without changing caller funnel authorization', () => {
     const sql = unassignedLeadVisibleToSalesSql('lead');
-    expect(sql).toContain('distribution_funnel.initial_stage_code = lead.status_code');
-    expect(sql).toContain('auto_lead_distribution_enabled = true');
-    expect(sql).toContain('distribution_funnel.is_default = true');
+    expect(sql).toContain('lead.manager_id IS NULL');
+    expect(sql).not.toContain('status_code');
+    expect(sql).not.toContain('auto_lead_distribution_enabled');
+  });
+});
+
+describe('manual stage movements migration', () => {
+  const current = readFileSync(new URL('../migrations/0157_manual_sales_stage_movements.sql', import.meta.url), 'utf8');
+  it('limits incoming round-robin to inserted leads and registers the upgrade', () => {
+    expect(current).toContain('DROP TRIGGER IF EXISTS academy_auto_distribute_lead ON academy_leads');
+    expect(current).toContain('CREATE TRIGGER academy_auto_distribute_lead BEFORE INSERT');
+    expect(current).not.toContain('BEFORE INSERT OR UPDATE');
+    expect(journal.entries.filter((entry: { tag: string }) => entry.tag === '0157_manual_sales_stage_movements'))
+      .toEqual([expect.objectContaining({ idx: 157 })]);
   });
 });
 

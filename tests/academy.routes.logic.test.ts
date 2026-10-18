@@ -25,7 +25,10 @@ vi.mock('../server/db', () => ({
   },
 }));
 vi.mock('../server/infrastructure/sales-kpi/sales-workflow-context', () => ({
-  attachSalesWorkflow: async (actor: unknown) => actor,
+  attachSalesWorkflow: async (actor: object) => ({
+    ...actor,
+    ...(mocks.actor.salesWorkflow ? { salesWorkflow: mocks.actor.salesWorkflow } : {}),
+  }),
 }));
 
 vi.mock('../server/middleware/auth.middleware', () => ({
@@ -3220,16 +3223,15 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('does not clear the new marker for an unassigned private intake lead', async () => {
-    mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { role: 'hunter',
-      hunterFunnelId: 3, closerFunnelId: 4, defaultFunnelId: 3, defaultInitialStageCode: 'custom_intake',
-      assignedFunnelIds: [3], autoLeadDistributionEnabled: true } };
+  it('allows an assigned employee to view an unassigned intake lead', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: {
+      assignedFunnelIds: [3] } };
     mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')
       ? { rows: [leadFixture({ funnel_id: 3, manager_id: null, status_code: 'custom_intake' })] } : emptyResult());
     const response = await request(await createApp()).post('/api/academy/leads/42/view');
-    expect(response.status).toBe(403);
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('WITH marked AS'))).toBe(false);
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('WITH marked AS'))).toBe(true);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('qualifies an explicit archive restoration only when it manually exits the same funnel intake', async () => {
@@ -4708,6 +4710,56 @@ describe('academy route logic boundaries', () => {
       String(sql).includes('INSERT INTO "academy_lead_stage_history"')
     ))).toBe(true);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it.each([
+    ['new_request', 'demo_attended'],
+    ['qualified', 'paid'],
+    ['demo_invited', 'enrolled'],
+    ['paid', 'new_request'],
+    ['offer', 'custom_stage'],
+  ])('moves an unassigned lead from %s to %s without student, trial, payment or group prerequisites', async (from, to) => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { assignedFunnelIds: [3] } };
+    const existing = leadFixture({ status_code: from, funnel_id: 3, manager_id: null,
+      student_name: null, student_age: null, course_id: null, enrolled_group_id: 999, demo_attended: false });
+    const moved = { ...existing, status_code: to };
+    mocks.poolQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('WHERE l.id = $1')) return { rows: [existing] };
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ code: to, funnel_id: 3 }] };
+      return emptyResult();
+    });
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [existing] };
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ code: to, funnel_id: 3 }] };
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [moved] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).patch('/api/academy/leads/42').send({ statusCode: to });
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toMatchObject({ statusCode: to, managerId: null, demoAttended: false });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    const writes = mocks.clientQuery.mock.calls.map(([sql]) => String(sql)).filter(sql => /INSERT INTO|UPDATE /.test(sql));
+    expect(writes.some(sql => /(?:INSERT INTO|UPDATE)\s+"?academy_(?:payments|students|student_group_enrollments|demo_lesson_participants)/.test(sql))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('FROM academy_groups'))).toBe(false);
+  });
+
+  it.each(['demo_attended', 'paid'])('bulk-moves unassigned leads to %s without business prerequisites', async (statusCode) => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { assignedFunnelIds: [3] } };
+    const existing = leadFixture({ funnel_id: 3, manager_id: null, student_name: null, student_age: null,
+      course_id: null, demo_attended: false });
+    const moved = { ...existing, status_code: statusCode };
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ code: statusCode, funnel_id: 3 }] };
+      if (sql.includes('FROM academy_leads') && sql.includes('WHERE id = ANY')) return { rows: [existing] };
+      if (sql.includes('UPDATE academy_leads')) return { rows: [moved] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).post('/api/academy/leads/bulk-status')
+      .send({ leadIds: [42], statusCode });
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body).toEqual({ updatedCount: 1, statusCode });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE)\s+"?academy_(?:payments|students|demo_lesson_participants)/.test(String(sql)))).toBe(false);
   });
 
   it('rejects retired referral fields before any write: validates referrers and prevents self-referral under the lead lock', async () => {

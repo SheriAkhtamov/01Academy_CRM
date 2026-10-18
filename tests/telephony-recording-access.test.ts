@@ -41,7 +41,8 @@ describe('direct recording and note visibility', () => {
     const [sql, params] = mocks.query.mock.calls[0];
     expect(sql).toContain(`WHERE call.id = $1 AND ${telephonyCallVisibilityCondition(mocks.viewer, '$2')}`);
     expect(sql).toContain('assignment.funnel_id = lead.funnel_id');
-    expect(sql).toContain('auto_lead_distribution_enabled = true');
+    expect(sql).toContain('lead.manager_id IS NULL');
+    expect(sql).not.toContain('auto_lead_distribution_enabled');
     expect(params).toEqual([71, 7]);
     expect(mocks.query).toHaveBeenCalledTimes(1);
   });

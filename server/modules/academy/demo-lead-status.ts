@@ -1,6 +1,6 @@
 import type { ActorSource } from '../leads/domain/actor-context';
 import { createAudit, query, type Row } from './academy-core';
-import { recordDemoLeadAttendance } from './demo-lead-transition';
+import { recordDemoLeadAttendance } from './demo-lead-attendance';
 
 // Call inside the demo transaction, BEFORE locking students. Payments and lead
 // lifecycle commands also lock parents before their children.
@@ -44,7 +44,7 @@ export const syncDemoLeadStatuses = async (
     const latest = demos[0];
     const demoAttended = Boolean(latest && latest.status !== 'not_conducted' && latest.statuses.includes('attended'));
     if (lead.demoAttended === demoAttended) continue;
-    const updated = await recordDemoLeadAttendance(source, lead, demoAttended);
+    const updated = await recordDemoLeadAttendance(lead, demoAttended);
     if (lead.statusCode === updated.statusCode && lead.funnelId === updated.funnelId
       && lead.demoAttended === updated.demoAttended) continue;
     await createAudit(source, 'SYNC_ACADEMY_DEMO_LEAD_STATUS', 'academy_lead', Number(lead.id),

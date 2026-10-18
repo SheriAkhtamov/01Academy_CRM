@@ -12,7 +12,7 @@ vi.mock('../server/services/meta-marketing',()=>({}));
 vi.mock('../server/lib/logger',()=>({logger:{error:vi.fn()}}));
 import {registerAcademyModuleRoutes} from '../server/modules/academy/module.router';
 it('search includes ownership so domain access preserves a manager-owned new lead',async()=>{
- const actor={...actorContextFrom({id:7,module:'sales'}),salesWorkflow:{role:'hunter',hunterFunnelId:1,closerFunnelId:2,defaultFunnelId:1,assignedFunnelIds:[1],autoLeadDistributionEnabled:true}};
+ const actor={...actorContextFrom({id:7,module:'sales'}),salesWorkflow:{assignedFunnelIds:[1]}};
  const ownLead={id:10,contactName:'Parent',phone:'+998901234567',studentName:'Student',isArchived:false,funnelId:1,statusCode:'new_request',managerId:7};
  expect(canActorViewLead(actor,ownLead)).toBe(true);
  mocks.query.mockImplementation(async(sql:string)=>{

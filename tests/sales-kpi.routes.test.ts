@@ -123,6 +123,16 @@ describe('sales KPI HTTP access and version selection', () => {
     expect((await request(app).post(`${path}/leads/10/claim`).send({ closerId: 999 })).status).toBe(200);
     expect(mocks.claim).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10);
     expect((await request(app).post(`${path}/leads/10/handoff`).send({ targetFunnelId: 2 })).status).toBe(200);
-    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10, 2);
+    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10, 2, undefined);
+  });
+  it('forwards an explicitly chosen destination stage without business-stage restrictions', async () => {
+    mocks.handoff.mockResolvedValue({ id: 10 });
+    const app = appFor();
+    expect((await request(app).post(`${path}/leads/10/handoff`).send({ targetFunnelId: 2, targetStageCode: 'paid_b' })).status).toBe(200);
+    expect(mocks.handoff).toHaveBeenCalledWith({ id: 7, isAdministration: false }, expect.anything(), 10, 2, 'paid_b');
+    for (const targetStageCode of ['', '  ', 3, 'a'.repeat(81)]) {
+      expect((await request(app).post(`${path}/leads/10/handoff`).send({ targetFunnelId: 2, targetStageCode })).status).toBe(400);
+    }
+    expect(mocks.handoff).toHaveBeenCalledOnce();
   });
 });

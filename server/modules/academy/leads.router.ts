@@ -63,8 +63,7 @@ import {
   normalizeMoney,
   resolveStudentRiskFlags,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange,
-  validateLeadStatusTransition } from '@shared/academy';
+} from '@shared/academy';
 import {
   getGroupScheduleValidationError,
   getMinimumGroupEndDate,
@@ -347,16 +346,6 @@ router.post('/leads', async (req, res) => {
         courseId = Number(enrolledGroup.courseId);
       }
       const schoolId = enrolledGroup?.schoolId ? Number(enrolledGroup.schoolId) : null;
-      const validationError = validateLeadForStatusChange({
-        nextStatus: statusCode,
-        studentName: nullableText(input.studentName),
-        studentAge: studentAge ?? null,
-        courseId,
-        enrolledGroupId,
-      });
-      if (validationError) {
-        throw Object.assign(new Error(validationError), { statusCode: 400 });
-      }
       const source = await queryOne(`SELECT * FROM academy_lead_sources WHERE id = $1`, [sourceId]);
       const initialComment = nullableText(input.comment);
       const languages = input.languages ?? (input.language ? [input.language] : []);
@@ -879,18 +868,6 @@ router.post('/leads/:id/restore', async (req, res) => {
     );
     if (!targetStatus) return res.status(400).json({ error: 'invalidData' });
 
-    const transitionError = validateLeadStatusTransition(oldLead.statusCode, targetStatusCode);
-    if (transitionError) return res.status(400).json({ error: transitionError });
-
-    const validationError = validateLeadForStatusChange({
-      nextStatus: targetStatusCode,
-      studentName: oldLead.studentName,
-      studentAge: oldLead.studentAge,
-      courseId: oldLead.courseId,
-      enrolledGroupId: oldLead.enrolledGroupId,
-    });
-    if (validationError) return res.status(400).json({ error: validationError });
-
     const restored = await withTransaction(async () => {
       if (!await getActiveLeadStatus(targetStatusCode, true)) {
         throw Object.assign(new Error('invalidData'), { statusCode: 400 });
@@ -900,9 +877,6 @@ router.post('/leads/:id/restore', async (req, res) => {
       if (!canMutateLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
       if (!lockedLead.isArchived) return lockedLead;
       await assertSalesFunnelStage(lockedLead.funnelId, targetStatusCode);
-      if (lockedLead.enrolledGroupId) {
-        await validateLeadSelectedGroups(id, Number(lockedLead.enrolledGroupId));
-      }
       const restored = await updateRow('academy_leads', id, {
         statusCode: targetStatusCode, isArchived: false, archiveReason: null, archivedAt: null, archivedBy: null,
       });
@@ -987,11 +961,7 @@ router.patch('/leads/:id', async (req, res) => {
       const targetStatus = await getActiveLeadStatus(requestedStatusCode);
       if (!targetStatus) return res.status(400).json({ error: 'invalidLeadStatus' });
     }
-    const nextStatus = requestedStatusCode ?? oldLead.statusCode;
-    const transitionError = validateLeadStatusTransition(oldLead.statusCode, nextStatus);
-    if (transitionError) return res.status(400).json({ error: transitionError });
     const merged = {
-      nextStatus,
       studentName: req.body.studentName === undefined
         ? oldLead.studentName
         : nullableText(req.body.studentName),
@@ -1007,8 +977,6 @@ router.patch('/leads/:id', async (req, res) => {
         ? oldLead.enrolledGroupId
         : requestedGroupId,
     };
-    const validationError = validateLeadForStatusChange(merged);
-    if (validationError) return res.status(400).json({ error: validationError });
     const canAssignAnyManager = hasLeadershipAccess(req.user) || canAccessAcademyModule(req.user, 'marketing');
     const hasRequestedManager = req.body.managerId !== undefined;
     const requestedManagerId = hasRequestedManager ? parseId(req.body.managerId) : undefined;
@@ -1021,9 +989,6 @@ router.patch('/leads/:id', async (req, res) => {
     const managerId = requestedManagerId
       ? await resolveLeadManagerId(req.actor!, requestedManagerId, oldLead.funnelRole, oldLead.funnelId)
       : undefined;
-    if (nextStatus !== oldLead.statusCode && !oldLead.managerId && !managerId) {
-      return res.status(409).json({ error: 'leadRequiresResponsibleManager' });
-    }
     const requestedPhones = req.body.phoneNumbers !== undefined || req.body.phone !== undefined
       ? normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone)
       : undefined;

@@ -1,10 +1,6 @@
 import type { Router } from 'express';
 import { assertSalesFunnelStage } from './sales-funnel-policy';
 import {
-  validateLeadForStatusChange,
-  validateLeadStatusTransition,
-} from '@shared/academy';
-import {
   bulkArchiveLeadsRequestSchema,
   bulkUpdateLeadStatusRequestSchema,
 } from '@shared/contracts/academy-leads';
@@ -180,23 +176,6 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
           await assertSalesFunnelStage(lead.funnelId, statusCode);
           if (lead.isArchived) {
             throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeUpdate'), { statusCode: 409 });
-          }
-          if (!lead.managerId) {
-            throw Object.assign(new Error('leadRequiresResponsibleManager'), { statusCode: 409 });
-          }
-          const transitionError = validateLeadStatusTransition(String(lead.statusCode), statusCode);
-          if (transitionError) {
-            throw Object.assign(new Error(transitionError), { statusCode: 409 });
-          }
-          const validationError = validateLeadForStatusChange({
-            nextStatus: statusCode,
-            studentName: lead.studentName,
-            studentAge: lead.studentAge,
-            courseId: lead.courseId,
-            enrolledGroupId: lead.enrolledGroupId,
-          });
-          if (validationError) {
-            throw Object.assign(new Error(validationError), { statusCode: 409 });
           }
         }
         if (changedLeads.length === 0) return [];

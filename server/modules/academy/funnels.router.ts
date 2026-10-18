@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { canActorAccessFunnel } from '../leads/domain/access-policy';
+import { listSalesFunnelTransferOptions } from './sales-funnel-transfers';
 import {
   isLeadIntegrationProvider,
   type LeadIntegrationProvider,
@@ -121,6 +122,16 @@ const mapUniqueViolation = (error: any) => {
 };
 
 export const registerAcademyFunnelRoutes = (router: ReturnType<typeof Router>) => {
+  router.get('/sales-funnels/transfer-options', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    try {
+      res.json(await listSalesFunnelTransferOptions());
+    } catch (error) {
+      logger.error('Failed to fetch sales funnel transfer options', { error });
+      res.status(500).json({ error: 'failedToLoadData' });
+    }
+  });
+
   router.get('/sales-funnels', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     try {

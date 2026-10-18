@@ -1100,6 +1100,13 @@
       "when": 1791889606161,
       "tag": "0156_course_material_files",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1791889606162,
+      "tag": "0157_manual_sales_stage_movements",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,7 @@
-import type { ActorSource } from '../leads/domain/actor-context';
 import { queryOne, type Row } from './academy-core';
 
 /** Attendance updates the attendance fact; it never chooses a sales stage or funnel. */
 export const recordDemoLeadAttendance = async (
-  _source: ActorSource,
   lead: Row,
   demoAttended: boolean,
 ): Promise<Row> => {

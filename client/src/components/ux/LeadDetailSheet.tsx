@@ -7,7 +7,7 @@ import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
 import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
-import { invalidateLeadData, useLeadDetailsQuery } from '@/features/leads/queries';
+import { invalidateLeadData, useLeadDetailsQuery, type LeadInvalidationOptions } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
 import type { TelephonyCallSource } from '@shared/telephony';
 import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
@@ -31,7 +31,8 @@ import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
 import { DemoLessonEnrollmentDialog } from '@/components/ux/DemoLessonEnrollmentDialog';
-import type { SalesFunnel } from '@/features/sales-funnels/api';
+import type { SalesFunnelTransferOption } from '@shared/contracts/sales-funnels';
+import { useFunnelTransferOptions } from '@/features/sales-funnels/queries';
 import { LeadTagsEditor } from '@/components/ux/lead/LeadTagsEditor';
 import { LeadSocialAccountsEditor } from '@/components/ux/lead/LeadSocialAccountsEditor';
 import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
@@ -47,7 +48,6 @@ import {
   type LeadMergeDialogLead,
 } from '@/components/ux/LeadMergeConflictDialog';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -90,7 +90,6 @@ import {
   visibleLeadPhones,
 } from '@/lib/leadContact';
 import {
-  AlertCircle,
   ArrowRight,
   Banknote,
   Briefcase,
@@ -293,7 +292,7 @@ interface LeadDetailSheetProps {
   leadStatusName: (code: string) => string;
   dateTime: (value: string | null | undefined) => string;
   money: (value: number | string | null | undefined) => string;
-  onChanged: () => void;
+  onChanged: (options?: LeadInvalidationOptions) => void;
   onMerged?: (retainedLeadId: number) => void;
 }
 
@@ -427,10 +426,7 @@ export function LeadDetailSheet({
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
-  const salesFunnelsQuery = useQuery<SalesFunnel[]>({
-    queryKey: ['/api/academy/sales-funnels'],
-    enabled: open,
-  });
+  const transferOptionsQuery = useFunnelTransferOptions(open && funnelTransferOpen && leadQuery.isSuccess);
   const funnelStatuses = useMemo(() => salesFunnelStages(statuses, undefined, leadQuery.data?.funnelId),
     [statuses, leadQuery.data?.funnelId]);
 
@@ -884,16 +880,17 @@ export function LeadDetailSheet({
     if (!target) scrollRef.current?.scrollTo({ top: 0 });
   };
   const goToStudents = () => navigateTo('deal', 'students');
-  const sendLeadToFunnel = (target: SalesFunnel) => {
+  const sendLeadToFunnel = (target: SalesFunnelTransferOption, targetStageCode: string) => {
     if (!lead) return;
     unsavedGuard.requestAction(() => transferFunnel.mutate({
       leadId: lead.id,
       targetFunnelId: target.id,
+      targetStageCode,
     }, {
       onSuccess: () => {
         setFunnelTransferOpen(false);
         toast({ title: t('leadSentToFunnel').replace('{name}', target.name) });
-        onChanged();
+        onChanged({ excludeLeadDetailId: lead.id });
         onOpenChange(false);
       },
       onError: (error) => toast({
@@ -993,17 +990,10 @@ export function LeadDetailSheet({
         {leadQuery.isError ? (
           <div className="flex flex-col gap-5 p-4 sm:p-6">
             <SheetTitle>{t('lead')}</SheetTitle>
-            <SheetDescription>{t('failedToLoadData')}</SheetDescription>
-            <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-              <AlertDescription className="flex flex-col items-start gap-3">
-                <span>{leadQuery.error instanceof Error ? leadQuery.error.message : t('errorOccurred')}</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => leadQuery.refetch()}>
-                  {t('retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
+            <p role="status" className="text-sm text-destructive">{t('failedToLoadData')}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => leadQuery.refetch()}>
+              {t('retry')}
+            </Button>
           </div>
         ) : leadQuery.isLoading || !lead ? (
           <div className="flex flex-col gap-4 overflow-y-auto p-4 sm:p-6">
@@ -1751,12 +1741,12 @@ export function LeadDetailSheet({
         <LeadFunnelTransferDialog
           open={funnelTransferOpen}
           currentFunnelId={lead.funnelId}
-          funnels={salesFunnelsQuery.data ?? []}
-          isLoading={salesFunnelsQuery.isLoading}
-          isError={salesFunnelsQuery.isError}
+          funnels={transferOptionsQuery.data ?? []}
+          isLoading={transferOptionsQuery.isPending || transferOptionsQuery.isFetching}
+          isError={transferOptionsQuery.isError}
           isPending={transferFunnel.isPending}
           onOpenChange={setFunnelTransferOpen}
-          onRetry={() => void salesFunnelsQuery.refetch()}
+          onRetry={() => void transferOptionsQuery.refetch()}
           onConfirm={sendLeadToFunnel}
         />
       ) : null}
@@ -1844,7 +1834,7 @@ export function LeadDetailSheet({
           initialLeadId={lead.id}
           initialStudentIds={demoCreationStudentIds}
           initialSchoolId={lead.schoolId}
-          onCreated={onChanged}
+          onCreated={() => onChanged()}
         />
       ) : null}
       <LeadMergeConflictDialog

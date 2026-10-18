@@ -1,5 +1,6 @@
 import { apiRequest } from '@/lib/queryClient';
 import type { SalesFunnelRole } from '@shared/sales-funnel-workflow';
+import type { SalesFunnelTransferOption } from '@shared/contracts/sales-funnels';
 
 export interface SalesFunnel {
   id: number;
@@ -23,6 +24,9 @@ export type SalesFunnelInput = {
 };
 
 export const salesFunnelsApi = {
+  transferOptions: (): Promise<SalesFunnelTransferOption[]> => (
+    apiRequest('GET', '/api/academy/sales-funnels/transfer-options')
+  ),
   create: (input: SalesFunnelInput) => apiRequest('POST', '/api/academy/sales-funnels', input),
   update: (funnelId: number, input: SalesFunnelInput) => (
     apiRequest('PATCH', `/api/academy/sales-funnels/${funnelId}`, input)

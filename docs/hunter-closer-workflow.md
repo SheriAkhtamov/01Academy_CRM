@@ -1,9 +1,12 @@
 # Sales funnels and event facts
 
-The current workflow starts with migration `0128_generic_funnel_stages_and_qualification`.
+The current workflow starts with migration `0128_generic_funnel_stages_and_qualification`
+and applies `0157_manual_sales_stage_movements` for unrestricted manual movements.
 Every funnel owns its stages and records its intake explicitly in
 `academy_sales_funnels.initial_stage_code`. The first stage handles incoming leads
-and automatic assignment when enabled. Renaming its label keeps intake behavior.
+and automatic assignment of newly inserted leads when enabled. Moving or restoring
+an existing lead never invokes automatic assignment. Renaming the first label
+keeps incoming intake behavior.
 Other stages are editable, deletable labels with no automatic invoices, tasks,
 demo bookings, attendance, payments or funnel transfers.
 
@@ -11,7 +14,25 @@ Employees can use every funnel explicitly selected for them. Their KPI role and
 whether sales is their primary or additional module do not select a funnel.
 Attendance, corrections, invitations and payments preserve the lead's selected
 stage, funnel, owner and task executors. A transfer is an explicit action with a
-chosen destination; the lead enters that destination's configured intake.
+chosen destination and any active stage in that funnel. Older API clients that
+omit the destination stage retain the configured intake as their default.
+
+The transfer dialog lists active destination funnels and their available stages
+independently of the employee's working-funnel list. Seeing this list grants no
+access to destination leads. An employee can transfer their own active lead or
+an unassigned lead in a funnel assigned to them; leadership can transfer any
+active lead. No prior claim, attendance, payment, course or completed profile is
+required. If its current owner belongs to the destination, that
+owner stays responsible. Otherwise the lead enters the destination's unassigned
+queue. Student ownership, unfinished tasks and assignment history follow the
+resulting owner. Unassigned leads remain visible and claimable to that funnel's
+employees at every stage, including the default intake with distribution enabled.
+
+There are no automatic destination rules based on attendance, stage labels or
+employee KPI roles. The request must include the selected destination. Sales
+access context contains only explicit funnel memberships,
+without inferred hunter or closer destinations. Demo synchronization writes
+only the attendance fact.
 
 Qualification records an employee's first manual move from the intake to another
 stage within the same funnel. Creation, automatic changes, ownership claims,

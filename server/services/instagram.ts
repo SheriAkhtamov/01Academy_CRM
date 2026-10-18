@@ -1493,7 +1493,6 @@ const processReceiptEvent = async (account: InstagramAccountRow, event: any) => 
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id,
       conversation.funnel_id,
-      conversation.status_code,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
@@ -1701,7 +1700,6 @@ const processMessagingEvent = async (account: InstagramAccountRow, event: any) =
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       result.managerId,
       result.funnelId,
-      result.statusCode,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
@@ -2642,7 +2640,6 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
       conversation.funnel_id ? Number(conversation.funnel_id) : null,
-      conversation.status_code ?? null,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',
@@ -2678,7 +2675,6 @@ export const sendInstagramTextMessage = async (
     const audienceUserIds = await getInstagramConversationAudienceUserIds(
       conversation.manager_id ? Number(conversation.manager_id) : null,
       conversation.funnel_id ? Number(conversation.funnel_id) : null,
-      conversation.status_code ?? null,
     );
     publishRealtimeEvent({
       type: 'INSTAGRAM_CONVERSATION_UPDATED',

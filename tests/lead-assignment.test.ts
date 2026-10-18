@@ -25,7 +25,7 @@ import { LegacyLeadAssignmentRepository } from '../server/modules/leads/infrastr
 
 const salesperson = {
   ...actorContextFrom({ id: 18, module: 'sales' }),
-  salesWorkflow: { role: 'full_cycle', hunterFunnelId: 1, closerFunnelId: 3, assignedFunnelIds: [1, 3] },
+  salesWorkflow: { assignedFunnelIds: [1, 3] },
 };
 const freeLead = { id: 2718, contactName: 'Parent', funnelId: 3, managerId: null, statusCode: 'demo_attended' };
 

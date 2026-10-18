@@ -12,27 +12,19 @@ const moduleAccessSql = (module: 'administration' | 'sales') => `(
 export const getInstagramConversationAudienceUserIds = async (
   managerId?: number | null,
   funnelId?: number | null,
-  statusCode?: string | null,
 ): Promise<number[]> => {
   const normalizedManagerId = Number(managerId) > 0 ? Number(managerId) : null;
   const normalizedFunnelId = Number(funnelId) > 0 ? Number(funnelId) : null;
   try {
     const params: unknown[] = normalizedManagerId
       ? [normalizedManagerId]
-      : normalizedFunnelId ? [normalizedFunnelId, statusCode ?? null] : [];
+      : normalizedFunnelId ? [normalizedFunnelId] : [];
     const salesScope = normalizedManagerId
       ? `(u.id = $1 AND ${moduleAccessSql('sales')})`
       : normalizedFunnelId
         ? `(${moduleAccessSql('sales')} AND EXISTS (
           SELECT 1 FROM academy_sales_funnel_users assignment
           WHERE assignment.user_id = u.id AND assignment.funnel_id = $1
-        ) AND NOT EXISTS (
-          SELECT 1
-          FROM academy_company_settings distribution_settings
-          JOIN academy_sales_funnels distribution_funnel ON distribution_funnel.id = $1
-          WHERE distribution_settings.auto_lead_distribution_enabled = true
-            AND distribution_funnel.is_default = true
-            AND distribution_funnel.initial_stage_code = $2
         ))`
         : moduleAccessSql('sales');
     const { rows } = await pool.query<{ id: number | string }>(

@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { invalidateLeadData } from '../leads/queries';
+import { invalidateLeadData, type LeadInvalidationOptions } from '../leads/queries';
 
 export const salesQueryKeys = {
   module: ['/api/academy/modules/sales'] as const,
@@ -16,9 +16,10 @@ export const invalidateSalesData = (queryClient: QueryClient) => Promise.all([
 export const invalidateSalesLeadData = (
   queryClient: QueryClient,
   leadId?: number | null,
+  options?: LeadInvalidationOptions,
 ) => Promise.all([
   invalidateSalesData(queryClient),
-  invalidateLeadData(queryClient, leadId),
+  invalidateLeadData(queryClient, leadId, options),
   queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-kpi'] }),
   queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] }),
 ]);

@@ -22,13 +22,28 @@ export const useLeadMergePreviewQuery = <T>(
   enabled: Boolean(firstLeadId && secondLeadId && firstLeadId !== secondLeadId),
 });
 
+export type LeadInvalidationOptions = { excludeLeadDetailId?: number };
+
 export const invalidateLeadData = (
   queryClient: QueryClient,
   leadId?: number | null,
+  { excludeLeadDetailId }: LeadInvalidationOptions = {},
 ) => Promise.all([
-  queryClient.invalidateQueries({ queryKey: leadQueryKeys.all }),
+  queryClient.invalidateQueries({
+    queryKey: leadQueryKeys.all,
+    predicate: (query) => excludeLeadDetailId === undefined
+      || query.queryKey.length !== 2
+      || query.queryKey[1] !== excludeLeadDetailId,
+  }),
+  ...(excludeLeadDetailId !== undefined
+    ? [queryClient.invalidateQueries({
+      queryKey: leadQueryKeys.detail(excludeLeadDetailId),
+      exact: true,
+      refetchType: 'none',
+    })]
+    : []),
   queryClient.invalidateQueries({ queryKey: leadQueryKeys.tags }),
-  ...(leadId
+  ...(leadId && leadId !== excludeLeadDetailId
     ? [queryClient.invalidateQueries({ queryKey: leadQueryKeys.detail(leadId) })]
     : []),
 ]);

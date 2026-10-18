@@ -12,13 +12,7 @@ export type ActorContext = {
   isLeadership: boolean;
   displayName?: string;
   salesWorkflow?: {
-    role: string | null;
-    hunterFunnelId: number | null;
-    closerFunnelId: number | null;
-    defaultFunnelId?: number | null;
-    defaultInitialStageCode?: string | null;
     assignedFunnelIds: number[];
-    autoLeadDistributionEnabled?: boolean;
   };
 };
 

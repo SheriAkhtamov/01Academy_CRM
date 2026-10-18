@@ -17,8 +17,6 @@ import {
   resolveStudentRiskFlags,
   suggestAgeGroup,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange,
-  validateLeadStatusTransition,
 } from "../shared/academy";
 
 describe("01 Academy business rules", () => {
@@ -120,57 +118,6 @@ describe("01 Academy business rules", () => {
     expect(suggestAgeGroup(8)).toBe("7-10");
     expect(suggestAgeGroup(13)).toBe("10-15");
     expect(suggestAgeGroup(16)).toBe("15+");
-  });
-
-  it("keeps lead qualification independent from student records", () => {
-    expect(validateLeadForStatusChange({ nextStatus: "qualified" })).toBeNull();
-    expect(validateLeadForStatusChange({
-      nextStatus: "qualified",
-      studentName: "Timur",
-      studentAge: 10,
-      courseId: 1,
-    })).toBeNull();
-    expect(validateLeadForStatusChange({
-      nextStatus: "qualified",
-      studentName: "Timur",
-      studentAge: -10,
-      courseId: 1,
-    })).toBeNull();
-  });
-
-  it("leaves enrollment validation to the concrete student workflow", () => {
-    expect(validateLeadForStatusChange({
-      nextStatus: "enrolled",
-      studentName: "Student",
-      studentAge: 12,
-      courseId: 1,
-    })).toBeNull();
-    expect(validateLeadForStatusChange({
-      nextStatus: "enrolled",
-      studentName: "Student",
-      studentAge: 12,
-      courseId: 1,
-      enrolledGroupId: 10,
-    })).toBeNull();
-    expect(validateLeadForStatusChange({
-      nextStatus: "paid",
-      studentName: "Student",
-      studentAge: 12,
-      courseId: 1,
-    })).toBeNull();
-    expect(validateLeadForStatusChange({
-      nextStatus: "paid",
-      studentName: null,
-      studentAge: 12,
-      courseId: 1,
-      enrolledGroupId: 10,
-    })).toBeNull();
-  });
-
-  it("keeps payment records independent from manually selected lead stages", () => {
-    expect(validateLeadStatusTransition("qualified", "paid")).toBeNull();
-    expect(validateLeadStatusTransition("paid", "thinking")).toBeNull();
-    expect(validateLeadStatusTransition("paid", "paid")).toBeNull();
   });
 
   it("calculates attendance, progress, NPS, CAC, ROAS, and LTV", () => {

@@ -10,7 +10,6 @@ import {
   normalizeMoney,
   resolveStudentRiskFlags,
   suggestCourseSlugByAge,
-  validateLeadForStatusChange,
 } from '@shared/academy';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { selectedLeadLanguages } from '@shared/lead-languages';
@@ -813,17 +812,6 @@ export const mergeLeadDraftIntoExisting = async (
     ? Number(requestedGroup.courseId)
     : preferLeadValue(retainedLead.courseId, toIdOrNull(draft.courseId, 'courseId'));
   const nextEnrolledGroupId = preferLeadValue(retainedLead.enrolledGroupId, requestedGroupId);
-  const validationError = validateLeadForStatusChange({
-    nextStatus: retainedLead.statusCode,
-    studentName: nextStudentName,
-    studentAge: nextStudentAge,
-    courseId: nextCourseId,
-    enrolledGroupId: nextEnrolledGroupId,
-  });
-  if (validationError) {
-    throw Object.assign(new Error(validationError), { statusCode: 409 });
-  }
-
   const retainedContactName = isGeneratedInstagramLeadName(retainedLead.contactName)
     && nullableText(draft.contactName)
     ? nullableText(draft.contactName)

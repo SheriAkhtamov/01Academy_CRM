@@ -146,3 +146,45 @@ it('supports quick age category presets, collapse/expand controls, and duplicati
   expect(program.blocks[0].lessons[1].id).not.toBe(program.blocks[0].lessons[0].id);
   expect(program.blocks[0].lessons[1].materials[0].id).not.toBe(program.blocks[0].lessons[0].materials[0].id);
 });
+
+it('does not show premature errors when adding empty blocks, lessons, or materials and auto-expands only invalid sections on submit', async () => {
+  const saved = vi.fn();
+  render(<Editor program={initialProgram} onSubmit={saved} />);
+
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseAddBlock') }));
+  expect(screen.queryAllByRole('alert')).toHaveLength(0);
+
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
+  expect(screen.queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+  expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
+  expect(saved).not.toHaveBeenCalled();
+
+  const validBlock = screen.getByRole('region', { name: 'Foundations' });
+  const invalidBlock = screen.getByRole('region', { name: i18n.t('courseBlockNumber', { number: 2 }) });
+  expect(within(validBlock).queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  expect(within(invalidBlock).getByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeTruthy();
+
+  fireEvent.click(within(invalidBlock).getByRole('button', { name: `${i18n.t('courseCollapseSection')}: ${i18n.t('courseBlockNumber', { number: 2 })}` }));
+  expect(within(invalidBlock).queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+});
+
+it('rejects an empty base price instead of coercing it to zero and normalizes leading zeros', async () => {
+  const saved = vi.fn();
+  render(<Editor program={initialProgram} onSubmit={saved} />);
+
+  const priceInput = screen.getByLabelText(i18n.t('basePrice'), { exact: false }) as HTMLInputElement;
+  fireEvent.change(priceInput, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+
+  expect(await screen.findByText(i18n.t('fieldRequired'))).toBeTruthy();
+  expect(saved).not.toHaveBeenCalled();
+
+  fireEvent.change(priceInput, { target: { value: '0250000' } });
+  expect(priceInput.value).toBe('250000');
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  expect(saved.mock.calls[0][0].basePriceUzs).toBe(250000);
+});

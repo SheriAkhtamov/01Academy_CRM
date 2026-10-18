@@ -56,6 +56,8 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
   const active = useRef<AbortController | null>(null);
   const onUploadedRef = useRef(onUploaded);
   onUploadedRef.current = onUploaded;
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
   const [pending, setPending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -67,15 +69,15 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
   useEffect(() => () => {
     active.current?.abort();
     active.current = null;
-    onBusyChange(materialId, false);
-  }, [materialId, onBusyChange]);
+    onBusyChangeRef.current(materialId, false);
+  }, [materialId]);
 
   const upload = async (selected: File) => {
     if (active.current || disabled) return;
     const controller = new AbortController();
     active.current = controller;
     setError(''); setRetryFile(null); setProgress(0); setChecking(false); setPending(true);
-    onBusyChange(materialId, true);
+    onBusyChangeRef.current(materialId, true);
     try {
       let uploaded: PortalFileDto = await courseMaterialFilesApi.upload(selected, controller.signal, (percent) => {
         if (!controller.signal.aborted) setProgress(percent);
@@ -99,7 +101,7 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
       if (active.current === controller) {
         active.current = null;
         setPending(false); setChecking(false);
-        onBusyChange(materialId, false);
+        onBusyChangeRef.current(materialId, false);
       }
     }
   };
@@ -118,7 +120,7 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
   const cancel = () => {
     active.current?.abort(); active.current = null;
     setPending(false); setChecking(false);
-    onBusyChange(materialId, false);
+    onBusyChangeRef.current(materialId, false);
   };
 
   return (

@@ -269,40 +269,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     },
   });
 
-  // Closing any resource dialog with unsaved edits asks for confirmation
-  // instead of silently discarding them.
-  const schoolGuard = useUnsavedChangesGuard({
-    open: schoolDialogOpen,
-    isDirty: schoolForm.formState.isDirty,
-    onOpenChange: (open) => {
-      setSchoolDialogOpen(open);
-      if (!open) setEditingSchool(null);
-    },
-  });
-  const roomGuard = useUnsavedChangesGuard({
-    open: roomDialogOpen,
-    isDirty: roomForm.formState.isDirty,
-    onOpenChange: (open) => {
-      setRoomDialogOpen(open);
-      if (!open) setEditingRoom(null);
-    },
-  });
-  const courseGuard = useUnsavedChangesGuard({
-    open: courseDialogOpen,
-    isDirty: courseForm.formState.isDirty,
-    onOpenChange: (open) => {
-      setCourseDialogOpen(open);
-      if (!open) setEditingCourse(null);
-    },
-  });
-  const statusGuard = useUnsavedChangesGuard({
-    open: statusDialogOpen,
-    isDirty: statusForm.formState.isDirty,
-    onOpenChange: (open) => {
-      setStatusDialogOpen(open);
-      if (!open) setEditingStatus(null);
-    },
-  });
   const saveSchool = useMutation({
     mutationFn: (values: SchoolValues) => {
       return editingSchool
@@ -401,6 +367,45 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: error.message,
       variant: 'destructive',
     }),
+  });
+
+  // Closing any resource dialog with unsaved edits asks for confirmation
+  // instead of silently discarding them.
+  const schoolGuard = useUnsavedChangesGuard({
+    open: schoolDialogOpen,
+    isDirty: schoolForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setSchoolDialogOpen(open);
+      if (!open) setEditingSchool(null);
+    },
+  });
+  const roomGuard = useUnsavedChangesGuard({
+    open: roomDialogOpen,
+    isDirty: roomForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setRoomDialogOpen(open);
+      if (!open) setEditingRoom(null);
+    },
+  });
+  const courseGuard = useUnsavedChangesGuard({
+    open: courseDialogOpen,
+    isDirty: courseForm.formState.isDirty,
+    isPending: saveCourse.isPending,
+    onOpenChange: (open) => {
+      setCourseDialogOpen(open);
+      if (!open) {
+        setEditingCourse(null);
+        courseForm.reset();
+      }
+    },
+  });
+  const statusGuard = useUnsavedChangesGuard({
+    open: statusDialogOpen,
+    isDirty: statusForm.formState.isDirty,
+    onOpenChange: (open) => {
+      setStatusDialogOpen(open);
+      if (!open) setEditingStatus(null);
+    },
   });
 
   const deleteResource = useMutation({

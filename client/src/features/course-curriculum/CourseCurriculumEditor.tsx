@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { useFormContext, useWatch, type FieldError, type FieldPath } from 'react-hook-form';
 import {
   ArrowDown,
@@ -42,7 +42,6 @@ import {
   duplicateCurriculumLesson,
   insertCurriculumItemAfter,
   moveCurriculumItem,
-  summarizeCourseCurriculum,
 } from './editor-model';
 import { CourseMaterialFileUpload } from './CourseMaterialFileUpload';
 
@@ -84,13 +83,14 @@ function CurriculumField({ path, label, children, required = true }: {
   );
 }
 
-function ItemActions({ index, count, onMove, onDuplicate, onDelete, label }: {
+function ItemActions({ index, count, onMove, onDuplicate, onDelete, label, disabled = false }: {
   index: number;
   count: number;
   onMove: (direction: -1 | 1) => void;
   onDuplicate?: () => void;
   onDelete: () => void;
   label: string;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -101,6 +101,7 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label }: {
           size="icon"
           variant="ghost"
           className="size-7 text-muted-foreground hover:text-foreground"
+          disabled={disabled}
           aria-label={`${t('courseDuplicateItem')}: ${label}`}
           onClick={onDuplicate}
         >
@@ -112,7 +113,7 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label }: {
         size="icon"
         variant="ghost"
         className="size-7"
-        disabled={index === 0}
+        disabled={disabled || index === 0}
         aria-label={`${t('moveUp')}: ${label}`}
         onClick={() => onMove(-1)}
       >
@@ -123,7 +124,7 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label }: {
         size="icon"
         variant="ghost"
         className="size-7"
-        disabled={index === count - 1}
+        disabled={disabled || index === count - 1}
         aria-label={`${t('moveDown')}: ${label}`}
         onClick={() => onMove(1)}
       >
@@ -134,6 +135,7 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label }: {
         size="icon"
         variant="ghost"
         className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        disabled={disabled}
         aria-label={`${t('delete')}: ${label}`}
         onClick={onDelete}
       >
@@ -153,6 +155,7 @@ function CurriculumMaterialCard({
   materialCount,
   materialOptions,
   disabled,
+  isUploading,
   onUploadBusyChange,
   onUpdate,
   onUploadedFile,
@@ -169,6 +172,7 @@ function CurriculumMaterialCard({
   materialCount: number;
   materialOptions: Array<{ value: CourseCurriculumMaterial['type']; label: string }>;
   disabled: boolean;
+  isUploading: boolean;
   onUploadBusyChange: (id: string, busy: boolean) => void;
   onUpdate: (updates: Partial<CourseCurriculumMaterial>) => void;
   onUploadedFile: (file: NonNullable<CourseCurriculumMaterial['file']>) => void;
@@ -180,6 +184,7 @@ function CurriculumMaterialCard({
   const materialLabel = material.title || t('courseMaterialNumber', { number: materialIndex + 1 });
   const style = MATERIAL_STYLE[material.type];
   const TypeIcon = style.icon;
+  const typeSelectDisabled = disabled || isUploading;
 
   return (
     <section
@@ -199,6 +204,7 @@ function CurriculumMaterialCard({
           index={materialIndex}
           count={materialCount}
           label={materialLabel}
+          disabled={disabled}
           onMove={onMove}
           onDelete={onDelete}
         />
@@ -221,12 +227,21 @@ function CurriculumMaterialCard({
           {(attributes) => (
             <Select
               value={material.type}
+              disabled={typeSelectDisabled}
               onValueChange={(type: CourseCurriculumMaterial['type']) => {
-                if (material.file && type !== 'file') onRequestTypeChange(type);
-                else onUpdate({ type });
+                if (material.file && type !== 'file') {
+                  onRequestTypeChange(type);
+                  return;
+                }
+                const shouldClearTextContent =
+                  material.type === 'text' &&
+                  type !== 'text' &&
+                  material.content.length > 0 &&
+                  !material.content.trim().startsWith('https://');
+                onUpdate(shouldClearTextContent ? { type, content: '' } : { type });
               }}
             >
-              <SelectTrigger {...attributes} className="bg-background">
+              <SelectTrigger {...attributes} disabled={typeSelectDisabled} className="bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -289,6 +304,8 @@ function CurriculumLessonCard({
   lesson,
   lessonIndex,
   collapsed,
+  lessonUploading,
+  uploadingMaterialIds,
   onToggleCollapse,
   materialOptions,
   disabled,
@@ -307,11 +324,13 @@ function CurriculumLessonCard({
   lesson: CourseCurriculumLesson;
   lessonIndex: number;
   collapsed: boolean;
+  lessonUploading: boolean;
+  uploadingMaterialIds: ReadonlySet<string>;
   onToggleCollapse: () => void;
   materialOptions: Array<{ value: CourseCurriculumMaterial['type']; label: string }>;
   disabled: boolean;
   onUploadBusyChange: (id: string, busy: boolean) => void;
-  onUpdateLesson: (updates: Partial<CourseCurriculumLesson>) => void;
+  onUpdateLesson: (updates: Partial<CourseCurriculumLesson>, options?: { validate?: boolean }) => void;
   onUpdateMaterial: (materialIndex: number, updates: Partial<CourseCurriculumMaterial>) => void;
   onUploadedMaterialFile: (materialId: string, file: NonNullable<CourseCurriculumMaterial['file']>) => void;
   onRequestTypeChange: (materialId: string, type: CourseCurriculumMaterial['type']) => void;
@@ -335,6 +354,7 @@ function CurriculumLessonCard({
             size="icon"
             variant="ghost"
             className="size-7 shrink-0 text-muted-foreground"
+            disabled={lessonUploading}
             aria-label={`${collapsed ? t('courseExpandSection') : t('courseCollapseSection')}: ${lessonLabel}`}
             aria-expanded={!collapsed}
             onClick={onToggleCollapse}
@@ -355,6 +375,7 @@ function CurriculumLessonCard({
           index={lessonIndex}
           count={block.lessons.length}
           label={lessonLabel}
+          disabled={disabled}
           onDuplicate={onDuplicateLesson}
           onMove={onMoveLesson}
           onDelete={onDeleteLesson}
@@ -387,6 +408,7 @@ function CurriculumLessonCard({
                   materialCount={lesson.materials.length}
                   materialOptions={materialOptions}
                   disabled={disabled}
+                  isUploading={uploadingMaterialIds.has(material.id)}
                   onUploadBusyChange={onUploadBusyChange}
                   onUpdate={(updates) => onUpdateMaterial(materialIndex, updates)}
                   onUploadedFile={(file) => onUploadedMaterialFile(material.id, file)}
@@ -402,7 +424,7 @@ function CurriculumLessonCard({
               variant="outline"
               size="sm"
               className="border-dashed"
-              onClick={() => onUpdateLesson({ materials: [...lesson.materials, createCurriculumMaterial()] })}
+              onClick={() => onUpdateLesson({ materials: [...lesson.materials, createCurriculumMaterial()] }, { validate: false })}
             >
               <Plus className="mr-1.5 size-4" />
               {t('courseAddMaterial')}
@@ -428,7 +450,9 @@ export function CourseCurriculumEditor({
   const { t } = useTranslation();
   const form = useFormContext<CourseValues>();
   const program = useWatch({ control: form.control, name: 'program' });
+  const { submitCount, isSubmitted, errors } = form.formState;
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const [uploadingMaterialIds, setUploadingMaterialIds] = useState<Set<string>>(() => new Set());
   const [deleteTarget, setDeleteTarget] = useState<{
     blockId: string;
     lessonId?: string;
@@ -442,8 +466,47 @@ export function CourseCurriculumEditor({
     type: CourseCurriculumMaterial['type'];
   } | null>(null);
 
-  const hasProgramErrors = Boolean(form.formState.errors.program);
-  const stats = summarizeCourseCurriculum(program);
+  const handleUploadBusyChange = useCallback((id: string, busy: boolean) => {
+    onUploadBusyChange(id, busy);
+    setUploadingMaterialIds((prev) => {
+      const has = prev.has(id);
+      if (busy === has) return prev;
+      const next = new Set(prev);
+      if (busy) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, [onUploadBusyChange]);
+
+  useEffect(() => {
+    if (submitCount === 0) return;
+    const blockErrors = form.formState.errors.program?.blocks;
+    if (!Array.isArray(blockErrors)) return;
+    const currentBlocks = form.getValues('program').blocks;
+    const idsToExpand = new Set<string>();
+    currentBlocks.forEach((block, blockIndex) => {
+      const blockError = blockErrors[blockIndex];
+      if (!blockError) return;
+      idsToExpand.add(block.id);
+      const lessonErrors = blockError.lessons;
+      if (Array.isArray(lessonErrors)) {
+        block.lessons.forEach((lesson, lessonIndex) => {
+          if (lessonErrors[lessonIndex]) {
+            idsToExpand.add(lesson.id);
+          }
+        });
+      }
+    });
+    if (idsToExpand.size === 0) return;
+    setCollapsedIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      idsToExpand.forEach((id) => {
+        if (next.delete(id)) changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [form, submitCount]);
 
   useEffect(() => {
     if (!focusBlockRequest) return;
@@ -453,8 +516,11 @@ export function CourseCurriculumEditor({
       next.delete(focusBlockRequest.blockId);
       return next;
     });
-    const element = document.getElementById(`course-block-${focusBlockRequest.blockId}`);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const frameId = requestAnimationFrame(() => {
+      const element = document.getElementById(`course-block-${focusBlockRequest.blockId}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(frameId);
   }, [focusBlockRequest]);
 
   const toggleCollapsed = (id: string) => {
@@ -473,8 +539,22 @@ export function CourseCurriculumEditor({
   const allCollapsed = allCollapsibleIds.length > 0 && allCollapsibleIds.every((id) => collapsedIds.has(id));
 
   const toggleCollapseAll = () => {
-    if (allCollapsed) setCollapsedIds(new Set());
-    else setCollapsedIds(new Set(allCollapsibleIds));
+    if (allCollapsed) {
+      setCollapsedIds(new Set());
+      return;
+    }
+    const next = new Set<string>();
+    program.blocks.forEach((block) => {
+      const blockUploading = block.lessons.some((lesson) =>
+        lesson.materials.some((material) => uploadingMaterialIds.has(material.id)),
+      );
+      if (!blockUploading) next.add(block.id);
+      block.lessons.forEach((lesson) => {
+        const lessonUploading = lesson.materials.some((material) => uploadingMaterialIds.has(material.id));
+        if (!lessonUploading) next.add(lesson.id);
+      });
+    });
+    setCollapsedIds(next);
   };
 
   const materialOptions: Array<{ value: CourseCurriculumMaterial['type']; label: string }> = [
@@ -484,13 +564,35 @@ export function CourseCurriculumEditor({
     { value: 'file', label: t('courseMaterialFile') },
   ];
 
-  const change = (next: CourseCurriculum) => form.setValue('program', next, { shouldDirty: true, shouldValidate: true });
-  const updateBlock = (blockIndex: number, updates: Partial<CourseCurriculum['blocks'][number]>) => {
-    change({ ...program, blocks: program.blocks.map((block, index) => index === blockIndex ? { ...block, ...updates } : block) });
+  const change = (
+    next: CourseCurriculum,
+    options?: { validate?: boolean },
+  ) => {
+    const shouldValidate = options?.validate ?? (isSubmitted || Boolean(errors.program));
+    form.setValue('program', next, { shouldDirty: true, shouldValidate });
   };
-  const updateLesson = (blockIndex: number, lessonIndex: number, updates: Partial<CourseCurriculum['blocks'][number]['lessons'][number]>) => {
+  const updateBlock = (
+    blockIndex: number,
+    updates: Partial<CourseCurriculum['blocks'][number]>,
+    options?: { validate?: boolean },
+  ) => {
+    change(
+      { ...program, blocks: program.blocks.map((block, index) => index === blockIndex ? { ...block, ...updates } : block) },
+      options,
+    );
+  };
+  const updateLesson = (
+    blockIndex: number,
+    lessonIndex: number,
+    updates: Partial<CourseCurriculum['blocks'][number]['lessons'][number]>,
+    options?: { validate?: boolean },
+  ) => {
     const block = program.blocks[blockIndex];
-    updateBlock(blockIndex, { lessons: block.lessons.map((lesson, index) => index === lessonIndex ? { ...lesson, ...updates } : lesson) });
+    updateBlock(
+      blockIndex,
+      { lessons: block.lessons.map((lesson, index) => index === lessonIndex ? { ...lesson, ...updates } : lesson) },
+      options,
+    );
   };
   const updateMaterial = (blockIndex: number, lessonIndex: number, materialIndex: number, updates: Partial<CourseCurriculumMaterial>) => {
     const lesson = program.blocks[blockIndex].lessons[lessonIndex];
@@ -508,22 +610,40 @@ export function CourseCurriculumEditor({
   const confirmDelete = () => {
     if (!deleteTarget) return;
     const { blockId, lessonId, materialId } = deleteTarget;
+    const deletedCollapseIds = new Set<string>();
     const blocks = program.blocks.flatMap((block) => {
       if (block.id !== blockId) return [block];
-      if (!lessonId) return [];
+      if (!lessonId) {
+        deletedCollapseIds.add(block.id);
+        block.lessons.forEach((lesson) => deletedCollapseIds.add(lesson.id));
+        return [];
+      }
       return [{ ...block, lessons: block.lessons.flatMap((lesson) => {
         if (lesson.id !== lessonId) return [lesson];
-        if (!materialId) return [];
+        if (!materialId) {
+          deletedCollapseIds.add(lesson.id);
+          return [];
+        }
         return [{ ...lesson, materials: lesson.materials.filter((material) => material.id !== materialId) }];
       }) }];
     });
+    if (deletedCollapseIds.size > 0) {
+      setCollapsedIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        deletedCollapseIds.forEach((id) => {
+          if (next.delete(id)) changed = true;
+        });
+        return changed ? next : prev;
+      });
+    }
     change({ ...program, blocks });
     setDeleteTarget(null);
   };
 
   if (unavailable) {
     return (
-      <section className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-5" aria-label={t('courseCurriculum')}>
+      <section className="mt-4 space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-5 sm:mt-6" aria-label={t('courseCurriculum')}>
         <h3 className="text-base font-semibold">{t('courseCurriculum')}</h3>
         <p role="alert" className="text-sm font-medium text-destructive">{t('courseCurriculumLoadFailed')}</p>
       </section>
@@ -532,47 +652,41 @@ export function CourseCurriculumEditor({
 
   return (
     <section className="space-y-4" aria-label={t('courseCurriculum')}>
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <BookOpen className="size-4" aria-hidden="true" />
-          </span>
-          <h3 className="text-base font-semibold">{t('courseCurriculum')}</h3>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary" className="text-xs font-medium">
-              {t('courseBlocksStat', { count: stats.blockCount })}
-            </Badge>
-            <Badge variant="outline" className="text-xs font-normal">
-              {t('courseLessonsStat', { count: stats.lessonCount })}
-            </Badge>
+      <div className="sticky top-0 z-10 -mx-4 bg-background/95 px-4 pt-4 pb-3 backdrop-blur sm:-mx-6 sm:px-6 sm:pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <BookOpen className="size-4" aria-hidden="true" />
+            </span>
+            <h3 className="text-base font-semibold">{t('courseCurriculum')}</h3>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {program.blocks.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {program.blocks.length > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleCollapseAll}
+              >
+                {allCollapsed ? (
+                  <ChevronsUpDown className="mr-1.5 size-4" aria-hidden="true" />
+                ) : (
+                  <ChevronsDownUp className="mr-1.5 size-4" aria-hidden="true" />
+                )}
+                {allCollapsed ? t('courseExpandAll') : t('courseCollapseAll')}
+              </Button>
+            ) : null}
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={toggleCollapseAll}
+              className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
+              onClick={() => change({ ...program, blocks: [...program.blocks, createCurriculumBlock()] }, { validate: false })}
             >
-              {allCollapsed ? (
-                <ChevronsUpDown className="mr-1.5 size-4" aria-hidden="true" />
-              ) : (
-                <ChevronsDownUp className="mr-1.5 size-4" aria-hidden="true" />
-              )}
-              {allCollapsed ? t('courseExpandAll') : t('courseCollapseAll')}
+              <Plus className="mr-1.5 size-4" />
+              {t('courseAddBlock')}
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
-            onClick={() => change({ ...program, blocks: [...program.blocks, createCurriculumBlock()] })}
-          >
-            <Plus className="mr-1.5 size-4" />
-            {t('courseAddBlock')}
-          </Button>
+          </div>
         </div>
       </div>
 
@@ -587,12 +701,15 @@ export function CourseCurriculumEditor({
 
       {program.blocks.map((block, blockIndex) => {
         const blockLabel = block.title || t('courseBlockNumber', { number: blockIndex + 1 });
-        const blockCollapsed = !hasProgramErrors && collapsedIds.has(block.id);
+        const blockUploading = block.lessons.some((lesson) =>
+          lesson.materials.some((material) => uploadingMaterialIds.has(material.id)),
+        );
+        const blockCollapsed = !blockUploading && collapsedIds.has(block.id);
         return (
           <section
             key={block.id}
             id={`course-block-${block.id}`}
-            className="min-w-0 overflow-hidden rounded-2xl border border-l-4 border-l-primary/70 bg-muted/15 shadow-sm transition-all"
+            className="scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-l-4 border-l-primary/70 bg-muted/15 shadow-sm transition-all"
             aria-label={blockLabel}
           >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
@@ -602,6 +719,7 @@ export function CourseCurriculumEditor({
                   size="icon"
                   variant="ghost"
                   className="size-7 shrink-0 text-muted-foreground"
+                  disabled={blockUploading}
                   aria-label={`${blockCollapsed ? t('courseExpandSection') : t('courseCollapseSection')}: ${blockLabel}`}
                   aria-expanded={!blockCollapsed}
                   onClick={() => toggleCollapsed(block.id)}
@@ -622,6 +740,7 @@ export function CourseCurriculumEditor({
                 index={blockIndex}
                 count={program.blocks.length}
                 label={blockLabel}
+                disabled={disabled}
                 onDuplicate={() => change({
                   ...program,
                   blocks: insertCurriculumItemAfter(program.blocks, blockIndex, duplicateCurriculumBlock(block)),
@@ -646,63 +765,71 @@ export function CourseCurriculumEditor({
                 </CurriculumField>
 
                 <div className="space-y-3 border-l-2 border-primary/20 pl-3 sm:pl-4">
-                  {block.lessons.map((lesson, lessonIndex) => (
-                    <CurriculumLessonCard
-                      key={lesson.id}
-                      block={block}
-                      blockIndex={blockIndex}
-                      lesson={lesson}
-                      lessonIndex={lessonIndex}
-                      collapsed={!hasProgramErrors && collapsedIds.has(lesson.id)}
-                      onToggleCollapse={() => toggleCollapsed(lesson.id)}
-                      materialOptions={materialOptions}
-                      disabled={disabled}
-                      onUploadBusyChange={onUploadBusyChange}
-                      onUpdateLesson={(updates) => updateLesson(blockIndex, lessonIndex, updates)}
-                      onUpdateMaterial={(materialIndex, updates) => updateMaterial(blockIndex, lessonIndex, materialIndex, updates)}
-                      onUploadedMaterialFile={(materialId, file) => {
-                        const current = form.getValues('program').blocks.find((item) => item.id === block.id)?.lessons
-                          .find((item) => item.id === lesson.id)?.materials.find((item) => item.id === materialId);
-                        if (current?.type === 'file') {
-                          updateMaterialById(block.id, lesson.id, materialId, {
-                            file,
-                            content: '',
-                            title: current.title || file.name,
-                          });
-                        }
-                      }}
-                      onRequestTypeChange={(materialId, type) => setTypeChange({
-                        blockId: block.id,
-                        lessonId: lesson.id,
-                        materialId,
-                        type,
-                      })}
-                      onDuplicateLesson={() => updateBlock(blockIndex, {
-                        lessons: insertCurriculumItemAfter(block.lessons, lessonIndex, duplicateCurriculumLesson(lesson)),
-                      })}
-                      onMoveLesson={(direction) => updateBlock(blockIndex, {
-                        lessons: moveCurriculumItem(block.lessons, lessonIndex, direction),
-                      })}
-                      onDeleteLesson={() => setDeleteTarget({
-                        blockId: block.id,
-                        lessonId: lesson.id,
-                        name: lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 }),
-                      })}
-                      onDeleteMaterial={(materialId, name) => setDeleteTarget({
-                        blockId: block.id,
-                        lessonId: lesson.id,
-                        materialId,
-                        name,
-                      })}
-                    />
-                  ))}
+                  {block.lessons.map((lesson, lessonIndex) => {
+                    const lessonUploading = lesson.materials.some((material) => uploadingMaterialIds.has(material.id));
+                    return (
+                      <CurriculumLessonCard
+                        key={lesson.id}
+                        block={block}
+                        blockIndex={blockIndex}
+                        lesson={lesson}
+                        lessonIndex={lessonIndex}
+                        collapsed={!lessonUploading && collapsedIds.has(lesson.id)}
+                        lessonUploading={lessonUploading}
+                        uploadingMaterialIds={uploadingMaterialIds}
+                        onToggleCollapse={() => toggleCollapsed(lesson.id)}
+                        materialOptions={materialOptions}
+                        disabled={disabled}
+                        onUploadBusyChange={handleUploadBusyChange}
+                        onUpdateLesson={(updates, options) => updateLesson(blockIndex, lessonIndex, updates, options)}
+                        onUpdateMaterial={(materialIndex, updates) => updateMaterial(blockIndex, lessonIndex, materialIndex, updates)}
+                        onUploadedMaterialFile={(materialId, file) => {
+                          const current = form.getValues('program').blocks.find((item) => item.id === block.id)?.lessons
+                            .find((item) => item.id === lesson.id)?.materials.find((item) => item.id === materialId);
+                          if (current?.type === 'file') {
+                            updateMaterialById(block.id, lesson.id, materialId, {
+                              file,
+                              content: '',
+                              title: current.title || file.name,
+                            });
+                          }
+                        }}
+                        onRequestTypeChange={(materialId, type) => setTypeChange({
+                          blockId: block.id,
+                          lessonId: lesson.id,
+                          materialId,
+                          type,
+                        })}
+                        onDuplicateLesson={() => updateBlock(blockIndex, {
+                          lessons: insertCurriculumItemAfter(block.lessons, lessonIndex, duplicateCurriculumLesson(lesson)),
+                        })}
+                        onMoveLesson={(direction) => updateBlock(blockIndex, {
+                          lessons: moveCurriculumItem(block.lessons, lessonIndex, direction),
+                        })}
+                        onDeleteLesson={() => setDeleteTarget({
+                          blockId: block.id,
+                          lessonId: lesson.id,
+                          name: lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 }),
+                        })}
+                        onDeleteMaterial={(materialId, name) => setDeleteTarget({
+                          blockId: block.id,
+                          lessonId: lesson.id,
+                          materialId,
+                          name,
+                        })}
+                      />
+                    );
+                  })}
                   <CurriculumField path={`program.blocks.${blockIndex}.lessons`} />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="w-full justify-center border-dashed bg-background/70 hover:bg-background"
-                    onClick={() => updateBlock(blockIndex, { lessons: [...block.lessons, createCurriculumLesson()] })}
+                    onClick={() => {
+                      updateBlock(blockIndex, { lessons: [...block.lessons, createCurriculumLesson()] }, { validate: false });
+                      form.clearErrors(`program.blocks.${blockIndex}.lessons`);
+                    }}
                   >
                     <Plus className="mr-1.5 size-4" />
                     {t('courseAddLesson')}

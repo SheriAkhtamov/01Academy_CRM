@@ -156,7 +156,6 @@ export function IntegrationSettingsDialog({
                     }
                     setDraft((current) => ({ ...current, [field.name]: event.target.value }));
                   }}
-                  placeholder={field.secret && safe?.[`${field.name}Configured`] ? t('integrationKeepSecret') : undefined}
                   required={field.required || (field.secret && requiredSecrets.has(field.name)
                     && !safe?.[`${field.name}Configured`])}
                 />

@@ -256,13 +256,7 @@ export default function UpdatesPage() {
                   >
                     <X className="size-4" />
                   </Button>
-                ) : (
-                  <kbd
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground select-none"
-                  >
-                    /
-                  </kbd>
-                )}
+                ) : null}
               </div>
 
               {/* Year filter chips */}

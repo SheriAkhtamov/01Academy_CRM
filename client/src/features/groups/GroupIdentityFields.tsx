@@ -81,7 +81,6 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
             type="button"
             onClick={() => { void handleCopyCode(); }}
             aria-label={t('copyGroupCode')}
-            title={t('copyGroupCode')}
             className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/8 px-2 py-0.5 font-mono text-xs font-semibold text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span>{code}</span>
@@ -94,8 +93,7 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
         ) : null}
       </div>
       <FormControl><ProtectedGroupNameInput ref={field.ref} code={code} addition={field.value}
-        onAdditionChange={field.onChange} onBlur={field.onBlur} pending={pending}
-        placeholder={t('groupNameAdditionPlaceholder')} /></FormControl>
+        onAdditionChange={field.onChange} onBlur={field.onBlur} pending={pending} /></FormControl>
       {error ? <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-1.5">
         <p className="text-sm font-medium text-destructive" role="alert">{error}</p>
         {onRetry ? (
@@ -109,7 +107,7 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
           : <FormMessage />}
     </FormItem>} /> : <FormField control={form.control} name="name" render={({ field }) => <FormItem className="sm:col-span-2">
       <FormLabel required>{t('groupName')}</FormLabel>
-      <FormControl><Input {...field} placeholder={t('groupNamePlaceholder')} /></FormControl>
+      <FormControl><Input {...field} /></FormControl>
       <FormMessage />
     </FormItem>} />}
   </>;

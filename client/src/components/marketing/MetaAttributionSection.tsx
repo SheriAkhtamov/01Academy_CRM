@@ -230,7 +230,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
                 rel="noreferrer noopener"
                 onClick={(event) => event.stopPropagation()}
                 aria-label={t('openMetaPublication')}
-                title={t('openMetaPublication')}
                 className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <ExternalLink className="size-4" />
@@ -275,7 +274,6 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             setSelectedLeadsCreative(row);
           }}
           aria-label={`${t('metaViewAttributedLeads')}: ${row.leads}`}
-          title={t('metaViewAttributedLeads')}
         >
           {row.leads}
         </button>
@@ -525,7 +523,6 @@ function AttributedLeadRow({
     <a
       href={href}
       className="group flex items-center gap-3 py-4 outline-none transition-colors hover:bg-muted/35 focus-visible:bg-muted/50"
-      title={t('openLead')}
     >
       <Avatar className="size-10 border border-border/60">
         <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">

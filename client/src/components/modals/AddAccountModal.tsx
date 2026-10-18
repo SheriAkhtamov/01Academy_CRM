@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useToast } from '@/hooks/use-toast';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
 import {
   Dialog,
   DialogContent,
@@ -58,7 +59,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
       onOpenChange(false);
     } catch (err: any) {
       const message = typeof err?.message === 'string' && err.message.trim()
-        ? err.message
+        ? localizeApiErrorMessage(err.message, err.status ?? 0)
         : t('addAccountFailed');
       setError(message);
     }
@@ -98,7 +99,6 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
                   <FormLabel>{t('loginOrEmailLabel')}</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={t('loginOrEmailPlaceholder')}
                       {...field}
                       onChange={(e) => {
                         setError('');

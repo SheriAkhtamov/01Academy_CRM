@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils';
 interface EmptyStateProps {
   icon: LucideIcon;
   title: string;
-  description?: string;
   action?: React.ReactNode;
   className?: string;
 }
@@ -18,7 +17,7 @@ interface EmptyStateProps {
  * The icon lands on a bounce a beat before the text, which draws the eye to
  * the call to action rather than to the absence.
  */
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, action, className }: EmptyStateProps) {
   return (
     <motion.div
       className={cn('flex flex-col items-center justify-center py-16 text-center', className)}
@@ -37,11 +36,6 @@ export function EmptyState({ icon: Icon, title, description, action, className }
       <motion.h3 variants={fadeInUp} className="mt-4 text-base font-semibold text-foreground">
         {title}
       </motion.h3>
-      {description && (
-        <motion.p variants={fadeInUp} className="mt-1 max-w-sm text-sm text-muted-foreground">
-          {description}
-        </motion.p>
-      )}
       {action && (
         <motion.div variants={fadeInUp} className="mt-5">
           {action}

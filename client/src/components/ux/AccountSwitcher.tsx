@@ -126,7 +126,7 @@ export default function AccountSwitcher() {
                       <button
                         onClick={(e) => handleRemoveClick(account, e)}
                         className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                        title={t('removeAccount')}
+                        aria-label={t('removeAccount')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

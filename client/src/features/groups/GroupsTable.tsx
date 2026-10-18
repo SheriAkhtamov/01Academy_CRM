@@ -173,7 +173,6 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
               size="icon"
               className="min-h-11 min-w-11"
               aria-label={t('editGroup')}
-              title={t('editGroup')}
               onClick={() => onEdit(row)}
             >
               <Edit3 />
@@ -200,7 +199,6 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
                   className="min-h-11 min-w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   disabled={deleting}
                   aria-label={t('deleteGroupPermanently')}
-                  title={t('deleteGroupPermanently')}
                   onClick={() => onDelete(row)}
                 >
                   <Trash2 />
@@ -211,7 +209,6 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
                 variant="ghost"
                 size="icon"
                 className="min-h-11 min-w-11"
-                title={t('archiveGroup')}
                 aria-label={isArchiving ? t('saving') : t('archiveGroup')}
                 disabled={archivingId !== null}
                 onClick={() => onArchive(row)}

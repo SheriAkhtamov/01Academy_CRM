@@ -747,7 +747,10 @@ it.each([
 ] as const)("keeps LMS error wording local for status %i and API code %s", (status, code, label) => {
   render(<PortalError error={new PortalApiError(status, code)} retry={vi.fn()} />);
   expect(screen.getByText(i18n.t(label))).toBeTruthy();
-  expect(screen.queryByText(i18n.t(code))).toBeNull();
+  expect(screen.queryByText(code)).toBeNull();
+  if (i18n.t(code) !== i18n.t(label)) {
+    expect(screen.queryByText(i18n.t(code))).toBeNull();
+  }
 });
 
 it("collects all backend list pages with the same scope and period filters", async () => {

@@ -242,7 +242,6 @@ export function TelephonyWidget() {
                 aria-pressed={telephony.isRingtoneMuted}
                 onClick={telephony.toggleRingtoneMuted}
                 aria-label={telephony.isRingtoneMuted ? t('telephonyRingtoneOff') : t('telephonyRingtoneOn')}
-                title={telephony.isRingtoneMuted ? t('telephonyRingtoneOff') : t('telephonyRingtoneOn')}
               >
                 {telephony.isRingtoneMuted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
               </button>
@@ -251,7 +250,6 @@ export function TelephonyWidget() {
                 onClick={collapse}
                 className="flex size-9 cursor-pointer items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label={t('telephonyOpenJournal')}
-                title={t('telephonyOpenJournal')}
               >
                 <ScrollText className="size-4" />
               </Link>
@@ -260,7 +258,6 @@ export function TelephonyWidget() {
                 className="flex size-9 cursor-pointer items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={collapse}
                 aria-label={t('telephonyCollapse')}
-                title={t('telephonyCollapse')}
               >
                 <ChevronDown className="size-5" />
               </button>
@@ -384,7 +381,6 @@ export function TelephonyWidget() {
             className="flex h-full max-w-64 cursor-pointer items-center gap-3 px-4 text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
             onClick={() => setIsOpen(true)}
             aria-label={t('telephonyOpen')}
-            title={t('telephonyOpen')}
           >
             <PhoneCall className={cn('size-5 shrink-0', isRinging && 'animate-pulse')} />
             {isLive && activeCall ? (
@@ -406,7 +402,6 @@ export function TelephonyWidget() {
             {!isLive && unreadMissed > 0 ? (
               <span
                 className="rounded-full bg-red-600 px-1.5 text-[10px] font-semibold tabular-nums text-white"
-                title={t('telephonyMissedCallsBadge')}
               >
                 {unreadMissed}
               </span>
@@ -431,7 +426,6 @@ export function TelephonyWidget() {
                 onClick={() => runCallAction(telephony.answerCall)}
                 disabled={telephony.isPending}
                 aria-label={t('telephonyAnswer')}
-                title={t('telephonyAnswer')}
               >
                 <PhoneCall className="size-5" />
               </button>
@@ -440,7 +434,6 @@ export function TelephonyWidget() {
                 className="flex size-11 cursor-pointer items-center justify-center rounded-full bg-red-600 text-white shadow-md transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 onClick={() => runCallAction(telephony.hangupCall)}
                 aria-label={t('telephonyDecline')}
-                title={t('telephonyDecline')}
               >
                 <PhoneOff className="size-5" />
               </button>

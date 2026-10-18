@@ -1,10 +1,5 @@
 import { type ButtonHTMLAttributes } from 'react';
 import { Badge } from '@/components/ui/badge';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { CalendarClock, CheckCircle2, CheckSquare, MessageSquare, Paperclip, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -42,17 +37,12 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
             )}
         >
             <div className="flex items-start gap-2">
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <span className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', priority.dot)} />
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{t(priority.labelKey)}</TooltipContent>
-                </Tooltip>
+                <span aria-hidden="true" className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', priority.dot)} />
                 <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-3">
                     {task.title}
                 </span>
                 {task.status === 'done' && task.awaitingAcceptance ? (
-                    <span role="img" aria-label={t('taskAwaitingAcceptance')} title={t('taskAwaitingAcceptance')} className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />
+                    <span role="img" aria-label={t('taskAwaitingAcceptance')}  className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />
                 ) : null}
             </div>
 

@@ -9,7 +9,7 @@ import {
   safeLeadChannelProfileUrl,
 } from '@shared/lead-channels';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Fragment } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -89,12 +89,7 @@ export function LeadChannelLinks({
         );
 
         return (
-          <Tooltip key={channel.id}>
-            <TooltipTrigger asChild>
-              {content}
-            </TooltipTrigger>
-            <TooltipContent>{label}</TooltipContent>
-          </Tooltip>
+          <Fragment key={channel.id}>{content}</Fragment>
         );
       })}
     </div>

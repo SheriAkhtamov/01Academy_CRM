@@ -292,7 +292,6 @@ export function DataTable<T extends Record<string, any>>({
           size="icon"
           className="size-9 shrink-0 bg-background"
           aria-label={t('toggleSortDirection')}
-          title={sortDirection === 'desc' ? t('sortDescending') : t('sortAscending')}
           disabled={!sortKey}
           onClick={() => setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
         >

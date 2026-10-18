@@ -41,13 +41,6 @@ const channelTranslationKeys = {
   whatsapp: 'socialNetworkWhatsApp',
 } satisfies Record<LeadChannelKind, TranslationKey>;
 
-const placeholderTranslationKeys = {
-  instagram: 'socialAccountInstagramPlaceholder',
-  telegram: 'socialAccountTelegramPlaceholder',
-  facebook: 'socialAccountFacebookPlaceholder',
-  whatsapp: 'socialAccountWhatsAppPlaceholder',
-} satisfies Record<LeadChannelKind, TranslationKey>;
-
 interface SocialAccountDraft {
   mode: 'create' | 'edit';
   accountId?: number;
@@ -364,9 +357,6 @@ export function LeadSocialAccountsEditor({
                   setShowValidation(false);
                 }}
                 onBlur={() => setShowValidation(true)}
-                placeholder={draft?.channel
-                  ? t(placeholderTranslationKeys[draft.channel])
-                  : t('selectSocialNetworkFirst')}
                 autoComplete="off"
                 maxLength={500}
                 aria-invalid={Boolean(validationMessage)}

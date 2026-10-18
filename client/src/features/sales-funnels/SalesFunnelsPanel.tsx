@@ -353,7 +353,6 @@ export function SalesFunnelsPanel() {
                 autoFocus
                 value={draft.name}
                 maxLength={120}
-                placeholder={t('salesFunnelNamePlaceholder')}
                 onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && draft.name.trim() && !saveFunnel.isPending) saveFunnel.mutate();

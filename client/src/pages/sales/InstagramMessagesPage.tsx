@@ -30,11 +30,6 @@ import { ModulePage } from '@/components/ux/ModulePage';
 import { InstagramMessageAuthor } from '@/features/sales/ui/InstagramMessageAuthor';
 import { ACADEMY_TIME_ZONE, academyDateInputValue, academyDateTimeFormat } from '@/lib/localeFormat';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   AlertCircle,
   ArrowDown,
   ArrowDownUp,
@@ -1467,38 +1462,28 @@ export default function MessagesPage() {
                     </p>
                   </div>
                   <div className="ml-auto flex items-center gap-1">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={sortByUnread ? t('sortByUnread') : t('sortNewest')}
-                          aria-pressed={sortByUnread}
-                          onClick={() => toggleSortByUnread(!sortByUnread)}
-                          className={cn('h-8 w-8', sortByUnread && 'bg-primary/10 text-primary')}
-                        >
-                          <ArrowDownUp className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{sortByUnread ? t('sortByUnread') : t('sortNewest')}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          aria-label={t('instagramSync')}
-                          onClick={() => syncConversations.mutate()}
-                          disabled={syncRunning}
-                        >
-                          {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('instagramSync')}</TooltipContent>
-                    </Tooltip>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={sortByUnread ? t('sortByUnread') : t('sortNewest')}
+                      aria-pressed={sortByUnread}
+                      onClick={() => toggleSortByUnread(!sortByUnread)}
+                      className={cn('h-8 w-8', sortByUnread && 'bg-primary/10 text-primary')}
+                    >
+                      <ArrowDownUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label={t('instagramSync')}
+                      onClick={() => syncConversations.mutate()}
+                      disabled={syncRunning}
+                    >
+                      {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    </Button>
                   </div>
                 </div>
                 <div className="relative">
@@ -1727,43 +1712,31 @@ export default function MessagesPage() {
                       </p>
                     </div>
                     <div className="ml-auto flex items-center gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t('search')}
-                            onClick={() => setConversationSearchOpen((value) => !value)}
-                            className={conversationSearchOpen ? 'bg-muted text-primary' : ''}
-                          >
-                            <Search className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('search')}</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className={leadSheetOpen ? 'bg-muted text-primary' : ''}
-                              aria-label={selectedConversation.leadId ? t('openLeadPanel') : t('notLinkedToLead')}
-                              aria-haspopup="dialog"
-                              aria-expanded={leadSheetOpen && leadSheetLeadId === selectedConversation.leadId}
-                              disabled={!selectedConversation.leadId}
-                              onClick={() => openLeadSheet(selectedConversation.leadId)}
-                            >
-                              <UserRoundCog className="h-5 w-5" />
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {selectedConversation.leadId ? t('openLeadPanel') : t('notLinkedToLead')}
-                        </TooltipContent>
-                      </Tooltip>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t('search')}
+                        onClick={() => setConversationSearchOpen((value) => !value)}
+                        className={conversationSearchOpen ? 'bg-muted text-primary' : ''}
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                      <span className="inline-flex">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className={leadSheetOpen ? 'bg-muted text-primary' : ''}
+                          aria-label={selectedConversation.leadId ? t('openLeadPanel') : t('notLinkedToLead')}
+                          aria-haspopup="dialog"
+                          aria-expanded={leadSheetOpen && leadSheetLeadId === selectedConversation.leadId}
+                          disabled={!selectedConversation.leadId}
+                          onClick={() => openLeadSheet(selectedConversation.leadId)}
+                        >
+                          <UserRoundCog className="h-5 w-5" />
+                        </Button>
+                      </span>
                     </div>
                   </div>
 
@@ -1966,7 +1939,6 @@ export default function MessagesPage() {
                                         type="button"
                                         className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-primary"
                                         aria-label={t('replyToMessage')}
-                                        title={t('replyToMessage')}
                                         onClick={() => replyToMessage(message)}
                                       >
                                         <CornerUpLeft className="h-3.5 w-3.5" />
@@ -1975,7 +1947,6 @@ export default function MessagesPage() {
                                         type="button"
                                         className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-primary"
                                         aria-label={t('copy')}
-                                        title={t('copy')}
                                         onClick={() => copyMessage(message.content, message.id)}
                                       >
                                         {copiedId === message.id ? (
@@ -2209,13 +2180,10 @@ export default function MessagesPage() {
                             submitMessage();
                           }
                         }}
-                        placeholder={selectedCanReply
-                          ? t('instagramMessagePlaceholder')
-                          : t('replyWindowClosed')}
                         disabled={!selectedCanReply || sendMessage.isPending}
                         className="max-h-40 min-h-[44px] flex-1 resize-none rounded-md"
                         maxLength={composerMaxLength}
-                        aria-label={t('instagramMessagePlaceholder')}
+                        aria-label={t('message')}
                       />
                       <Button
                         className="h-11 w-11 shrink-0 rounded-md p-0 shadow-sm"

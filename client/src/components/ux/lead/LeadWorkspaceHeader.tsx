@@ -69,14 +69,12 @@ export function LeadWorkspaceHeader({
                   <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <a
                     href={`tel:${phone.replace(/[^\d+]/g, '')}`}
-                    title={t('callShort')}
                     className="truncate tabular-nums transition-colors hover:text-primary"
                   >
                     {phone}
                   </a>
                   <button
                     type="button"
-                    title={t('telephonyCopyNumber')}
                     aria-label={`${t('telephonyCopyNumber')}: ${phone}`}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => copyPhone(phone)}

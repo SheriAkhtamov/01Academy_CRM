@@ -53,15 +53,15 @@ export function EmployeeRowActions({
   return (
     <div className="flex items-center justify-end space-x-2">
       {employee.isArchived ? (
-        <Button variant="ghost" size="sm" onClick={() => onRestore(employee)} title={restoreLabel} aria-label={restoreLabel}>
+        <Button variant="ghost" size="sm" onClick={() => onRestore(employee)} aria-label={restoreLabel}>
           <ArchiveRestore className="h-3 w-3" />
         </Button>
       ) : (
         <>
-          <Button variant="ghost" size="sm" onClick={() => onCredentials(employee)} title={credentialsLabel} aria-label={credentialsLabel}>
+          <Button variant="ghost" size="sm" onClick={() => onCredentials(employee)} aria-label={credentialsLabel}>
             <Key className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => onEdit(employee)} title={editLabel} aria-label={editLabel}>
+          <Button variant="ghost" size="sm" onClick={() => onEdit(employee)} aria-label={editLabel}>
             <Edit className="h-3 w-3" />
           </Button>
           <Button
@@ -69,7 +69,6 @@ export function EmployeeRowActions({
             size="sm"
             onClick={() => onArchive(employee)}
             disabled={isCurrentUser}
-            title={archiveLabel}
             aria-label={archiveLabel}
           >
             <Archive className="h-3 w-3" />
@@ -82,7 +81,6 @@ export function EmployeeRowActions({
         onClick={() => onDelete(employee)}
         disabled={isCurrentUser}
         className="text-red-600 hover:text-red-800"
-        title={deleteLabel}
         aria-label={deleteLabel}
       >
         <Trash2 className="h-3 w-3" />

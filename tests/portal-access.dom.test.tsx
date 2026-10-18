@@ -359,7 +359,8 @@ describe("contact match warnings inside the invitation modal", () => {
     fireEvent.change(document.getElementById("portal-invite-fullName")!, { target: { value: "New Parent" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+998 90 123 45 67" } });
     next();
-    expect(await screen.findByText("These contacts match existing accounts. Verify the recipient.")).toBeTruthy();
+    expect(await screen.findByText("Parent One")).toBeTruthy();
+    expect(screen.queryByText("These contacts match existing accounts. Verify the recipient.")).toBeNull();
     expect(mocks.checkContacts).toHaveBeenCalledWith(42, { email: null, phone: "+998 90 123 45 67" });
     expect(mocks.invite).not.toHaveBeenCalled(); expect(screen.getByLabelText("Login")).toBeTruthy();
     next(); expect(await screen.findByText("Check contacts before continuing")).toBeTruthy();
@@ -373,7 +374,7 @@ describe("contact match warnings inside the invitation modal", () => {
     renderAccess(); await openInvitation(); next();
     fireEvent.change(screen.getByLabelText("Login"), { target: { value: "separate.child" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "998901234567" } }); next();
-    await screen.findByText("These contacts match existing accounts. Verify the recipient.");
+    await screen.findByText("Parent One");
     expect((screen.getByRole("button", { name: "Use account" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Create a separate account" })); next(); fillVerification(); next();
     fireEvent.click(screen.getByRole("button", { name: "Create invitation" }));
@@ -389,7 +390,7 @@ describe("contact match warnings inside the invitation modal", () => {
     await waitFor(() => expect(mocks.checkContacts).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "998901234568" } });
     resolve({ items: [], additionalMatches: false });
-    expect(await screen.findByText("Check the updated contacts")).toBeTruthy();
+    expect(await screen.findByText("Contacts changed")).toBeTruthy();
     expect(screen.queryByLabelText("Verification method")).toBeNull(); next();
     expect(await screen.findByLabelText("Verification method")).toBeTruthy();
     expect(mocks.checkContacts).toHaveBeenLastCalledWith(42, { email: null, phone: "998901234568" });

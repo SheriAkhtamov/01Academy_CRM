@@ -22,6 +22,7 @@ import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import { setActivePlatformRealm } from '@/lib/platformSession';
 import { isLearningModulePath, isLegacyLearningPath, isPlatformAccountPath, learningModuleBase, learningModuleForSubject, learningModuleFromPath, toLearningModuleHref } from '@shared/platform-routes';
 import { resolveLoginRealm } from '@/lib/session';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
 
 export default function Login() {
   const [error, setError] = useState('');
@@ -121,7 +122,9 @@ export default function Login() {
       const errorMessage =
         err?.rawMessage && (err.rawMessage === 'invalidCredentialsMessage' || err.rawMessage === 'loginOrEmailRequired' || err.rawMessage === 'passwordRequired')
           ? t(err.rawMessage)
-          : (err.message || t('loginFailedMessage'));
+          : err?.message
+            ? localizeApiErrorMessage(err.message, err.status ?? 0)
+            : t('loginFailedMessage');
       setError(errorMessage);
       setIsSubmitting(false);
     } finally {
@@ -195,7 +198,6 @@ export default function Login() {
                         <Input
                           type="text"
                           autoComplete="username"
-                          placeholder={t('loginOrEmailPlaceholder')}
                           {...field}
                           onChange={(event) => {
                             setError('');

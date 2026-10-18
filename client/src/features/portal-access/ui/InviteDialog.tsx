@@ -525,8 +525,7 @@ export function InviteDialog({
                           </Button>
                           {contactMatches && !currentMatches ? <p role="status" className="text-sm">{t("lmsAccessContactsChanged")}</p> : null}
                           {hasMatches && currentMatches ? (
-                            <div className="space-y-3 rounded-lg border border-amber-500/50 p-3">
-                              <p role="status" className="text-sm font-medium">{t("lmsAccessContactMatches")}</p>
+                            <div className="space-y-3">
                               {currentMatches.items.map((account) => (
                                 <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 rounded border p-3">
                                   <div className="min-w-0">

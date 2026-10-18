@@ -148,7 +148,7 @@ export function LeadArchiveActions({
                   .replace('{lead}', lead.contactName)
                   .replace('{stage}', leadStatusName(restoreStatus))
                 : t('restoreLeadNoStages')
-              : <>{lead.contactName}. {t('archiveLeadDescription')}</>}
+              : lead.contactName}
           </AlertDialogDescription>
         </AlertDialogHeader>
 

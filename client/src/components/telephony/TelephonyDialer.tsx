@@ -152,7 +152,6 @@ export function TelephonyDialer({
           className="absolute left-2.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => void (dialedNumber ? copyNumber() : pasteNumber())}
           aria-label={dialedNumber ? t('telephonyCopyNumber') : t('telephonyPasteNumber')}
-          title={dialedNumber ? t('telephonyCopyNumber') : t('telephonyPasteNumber')}
         >
           {dialedNumber ? <Copy className="size-4" /> : <ClipboardPaste className="size-4" />}
         </button>
@@ -187,7 +186,6 @@ export function TelephonyDialer({
             data-no-drag
             className="flex cursor-pointer items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-mono text-muted-foreground transition hover:bg-accent hover:text-foreground"
             onClick={() => onDialedNumberChange(lastNumber)}
-            title={t('telephonyRedial')}
             aria-label={t('telephonyRedial')}
           >
             <RotateCcw className="size-3.5" />

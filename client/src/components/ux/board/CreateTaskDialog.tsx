@@ -278,7 +278,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                             <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
                         </div> : null}
                     </div> : <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />}
-                    {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskCreateRetryHint') : t('taskAttachmentPartialFailure')}</p> : null}
+                    {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskSaveIncomplete') : t('taskAttachmentPartialFailure')}</p> : null}
                     </div>
 
                     <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">

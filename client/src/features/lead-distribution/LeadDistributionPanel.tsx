@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Shuffle } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -115,20 +114,6 @@ export function LeadDistributionPanel() {
           />
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {cannotEnable ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>{t('autoLeadDistributionUnavailable')}</AlertTitle>
-            <AlertDescription>
-              {t(data.defaultFunnelId
-                ? 'autoLeadDistributionNoManagers'
-                : 'autoLeadDistributionDefaultFunnelRequired')}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-      </CardContent>
     </Card>
       <AlertDialogContent>
         <AlertDialogHeader>

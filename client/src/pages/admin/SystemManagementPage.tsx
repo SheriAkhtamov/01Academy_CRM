@@ -467,7 +467,6 @@ function EmployeeNotificationsPage() {
                   id="employee-broadcast-title"
                   value={notificationTitle}
                   onChange={(event) => setNotificationTitle(event.target.value)}
-                  placeholder={t('notificationTitlePlaceholder')}
                   maxLength={255}
                   autoFocus
                 />
@@ -480,9 +479,6 @@ function EmployeeNotificationsPage() {
                 id="employee-broadcast-content"
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
-                placeholder={channel === 'notification'
-                  ? t('systemNotificationPlaceholder')
-                  : t('personalMessagePlaceholder')}
                 maxLength={10_000}
                 rows={7}
                 autoFocus={channel === 'message'}

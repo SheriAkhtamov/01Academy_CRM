@@ -36,7 +36,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('leadWorkspaceDiscardTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('leadWorkspaceDiscardHint')}</AlertDialogDescription>
+            <AlertDialogDescription>{t('leadWorkspaceDiscardDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel>

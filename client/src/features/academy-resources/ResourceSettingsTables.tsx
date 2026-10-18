@@ -52,8 +52,7 @@ export function SchoolSettingsTable(props: ResourceTableProps<School>) {
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}
-      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending}
-        title={archiveActionLabel(row.isArchived)} aria-label={archiveActionLabel(row.isArchived)}>
+      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} aria-label={archiveActionLabel(row.isArchived)}>
         {row.isArchived ? <RotateCcw /> : <Archive />}
       </Button>
       <Button variant="ghost" size="icon" onClick={() => props.onDelete(row)} aria-label={t('delete')}><Trash2 /></Button>
@@ -87,7 +86,7 @@ export function RoomSettingsTable(props: ResourceTableProps<Room> & { schools: S
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}
-      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} title={actionLabel(row.isArchived)} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
+      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
       <Button variant="ghost" size="icon" onClick={() => props.onDelete(row)} aria-label={t('delete')}><Trash2 /></Button>
     </div> },
   ];
@@ -114,7 +113,7 @@ export function CourseSettingsTable(props: ResourceTableProps<Course>) {
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}
-      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} title={actionLabel(row.isArchived)} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
+      <Button variant="ghost" size="icon" onClick={() => openArchive(row)} disabled={mutation.isPending} aria-label={actionLabel(row.isArchived)}>{row.isArchived ? <RotateCcw /> : <Archive />}</Button>
       <Button variant="ghost" size="icon" onClick={() => props.onDelete(row)} aria-label={t('delete')}><Trash2 /></Button>
     </div> },
   ];

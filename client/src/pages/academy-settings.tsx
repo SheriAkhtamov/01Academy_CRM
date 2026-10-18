@@ -933,7 +933,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <FormField control={roomForm.control} name="name" render={({ field }) => (
                 <FormItem>
                   <FormLabel required>{t('roomName')}</FormLabel>
-                  <FormControl><Input {...field} placeholder={t('roomPlaceholder')} /></FormControl>
+                  <FormControl><Input {...field} /></FormControl>
                   <LocalizedFormMessage />
                 </FormItem>
               )} />

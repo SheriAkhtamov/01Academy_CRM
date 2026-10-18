@@ -403,7 +403,12 @@ export function DemoLessonDialog({
                 step={15}
                 value={durationMinutes}
                 onChange={(event) => setDurationMinutes(event.target.value)}
+                aria-invalid={durationOutOfRange}
+                aria-describedby={durationOutOfRange ? 'demo-duration-error' : undefined}
               />
+              {durationOutOfRange ? (
+                <p id="demo-duration-error" role="alert" className="text-sm text-destructive">{t('demoDurationInvalid')}</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="demo-teacher">{t('teacher')}</Label>
@@ -437,12 +442,7 @@ export function DemoLessonDialog({
           </div>
 
           <div aria-live="polite">
-            {durationOutOfRange ? (
-              <Alert variant="destructive">
-                <CircleAlert />
-                <AlertDescription>{t('demoDurationRangeHint')}</AlertDescription>
-              </Alert>
-            ) : !availabilityRequest ? null : resourceAvailability.isFetching ? (
+            {!availabilityRequest ? null : resourceAvailability.isFetching ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />{t('checkingAvailability')}
               </p>

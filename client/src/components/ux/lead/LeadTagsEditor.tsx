@@ -238,7 +238,6 @@ export function LeadTagsEditor({
             <Badge
               variant="outline"
               className="h-6 max-w-full shrink-0 gap-1 px-2 py-0"
-              title={t('automaticTag')}
             >
               <span className="truncate">{automaticTag}</span>
               <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
@@ -290,7 +289,6 @@ export function LeadTagsEditor({
             className="h-6 min-w-32 flex-1 bg-transparent px-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-wait"
             value={customTagName}
             maxLength={MAX_LEAD_TAG_NAME_LENGTH}
-            placeholder={t('customTagPlaceholder')}
             disabled={isBusy}
             onFocus={() => {
               setActiveSuggestionIndex(0);

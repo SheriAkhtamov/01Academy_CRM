@@ -25,7 +25,6 @@ export function TrendBadge({
   suffix?: string;
   className?: string;
 }) {
-  const { t } = useTranslation();
   if (delta === null) return null;
   if (delta === 0) {
     return (
@@ -34,7 +33,6 @@ export function TrendBadge({
           'inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground',
           className,
         )}
-        title={t('previousPeriodLabel')}
       >
         <Minus className="size-3" aria-hidden="true" />0{suffix}
       </span>
@@ -51,7 +49,6 @@ export function TrendBadge({
           : 'bg-red-500/10 text-red-600 dark:text-red-400',
         className,
       )}
-      title={t('previousPeriodLabel')}
     >
       <Icon className="size-3" aria-hidden="true" />
       {delta > 0 ? '+' : ''}{delta}{suffix}

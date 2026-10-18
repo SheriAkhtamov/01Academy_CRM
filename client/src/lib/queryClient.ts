@@ -194,6 +194,8 @@ export async function apiRequest(
     headers,
     body,
     credentials: options?.credentials ?? "include",
+  }).catch(() => {
+    throw new Error(i18n.t("failedToLoadData"));
   });
 
   await throwIfResNotOk(res);
@@ -201,7 +203,9 @@ export async function apiRequest(
   // Return JSON data instead of Response object
   const contentType = res.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
-    return await res.json();
+    return await res.json().catch(() => {
+      throw new Error(i18n.t("failedToLoadData"));
+    });
   }
   return res;
 }
@@ -219,6 +223,8 @@ const getQueryFn: <T>(options: {
       const url = queryKey[0] as string;
       const res = await fetch(url, {
         credentials: "include",
+      }).catch(() => {
+        throw new Error(i18n.t("failedToLoadData"));
       });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
@@ -226,7 +232,9 @@ const getQueryFn: <T>(options: {
       }
 
       await throwIfResNotOk(res);
-      return await res.json();
+      return await res.json().catch(() => {
+        throw new Error(i18n.t("failedToLoadData"));
+      });
     };
 
 const anonymousSession: AuthSession = { kind: "anonymous" };

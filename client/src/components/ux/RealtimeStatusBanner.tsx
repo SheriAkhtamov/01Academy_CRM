@@ -34,9 +34,6 @@ export function RealtimeStatusBanner({ status, onReconnect }: RealtimeStatusBann
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 text-sm md:px-6">
             <WifiOff className="size-4 shrink-0 animate-pulse" aria-hidden="true" />
             <span className="font-medium">{t('realtimeDisconnectedTitle')}</span>
-            <span className="min-w-0 text-xs text-amber-900/80 dark:text-amber-100/80">
-              {t('realtimeDisconnectedDescription')}
-            </span>
             <Button
               type="button"
               variant="outline"

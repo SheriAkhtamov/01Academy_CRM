@@ -134,9 +134,6 @@ export function GroupsToolbar({
           aria-keyshortcuts={CREATE_GROUP_KEY_LABEL} onClick={onCreate}>
           <Plus data-icon="inline-start" />
           <span className="hidden sm:inline">{t('addGroup')}</span>
-          <kbd aria-hidden="true" className="ml-1 hidden rounded bg-primary-foreground/15 px-1.5 font-mono text-[11px] leading-5 lg:inline">
-            {CREATE_GROUP_KEY_LABEL}
-          </kbd>
         </Button>
       </div>
 
@@ -173,11 +170,7 @@ export function GroupsToolbar({
           >
             <X />
           </Button>
-        ) : (
-          <kbd aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1.5 font-mono text-[11px] leading-5 text-muted-foreground md:block">
-            /
-          </kbd>
-        )}
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">

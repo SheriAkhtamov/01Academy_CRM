@@ -122,7 +122,6 @@ export function TelephonyCallHistory({
               className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setSearch('')}
               aria-label={t('clearSearch')}
-              title={t('clearSearch')}
             >
               <X className="size-3.5" />
             </button>
@@ -201,7 +200,6 @@ export function TelephonyCallHistory({
                         onClick={onCollapse}
                         className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-primary"
                         aria-label={t('telephonyOpenContact')}
-                        title={t('telephonyOpenContact')}
                       >
                         <ArrowUpRight className="size-4" />
                       </Link>
@@ -215,7 +213,6 @@ export function TelephonyCallHistory({
                       aria-pressed={noteOpen}
                       onClick={() => setExpandedNoteCallId(noteOpen ? null : managerCallId)}
                       aria-label={t('telephonyAddNote')}
-                      title={t('telephonyAddNote')}
                     >
                       <NotebookPen className="size-4" />
                     </button> : null}

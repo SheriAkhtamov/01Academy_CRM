@@ -3,7 +3,6 @@ import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -83,17 +82,12 @@ export function LeadMergeConflictDialog({
     <AlertDialog open={open} onOpenChange={(nextOpen) => {
       if (!nextOpen && !isPending) onCancel();
     }}>
-      <AlertDialogContent className="max-w-2xl">
+      <AlertDialogContent className="max-w-2xl" aria-describedby={undefined}>
         <AlertDialogHeader>
           <div className="flex items-center gap-2">
             <AlertCircle className="text-amber-600" />
             <AlertDialogTitle>{t('leadDuplicateFoundTitle')}</AlertDialogTitle>
           </div>
-          <AlertDialogDescription>
-            {mode === 'draft'
-              ? t('leadDuplicateFoundDescriptionDraft')
-              : t('leadDuplicateFoundDescriptionMerge')}
-          </AlertDialogDescription>
         </AlertDialogHeader>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

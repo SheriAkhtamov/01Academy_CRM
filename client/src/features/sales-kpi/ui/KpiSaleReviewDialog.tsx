@@ -35,7 +35,7 @@ function SaleEditor({ sale, onClose }: { sale: KpiSaleFact; onClose: () => void 
           </select>
         </div>
         {['renewal', 'upsell'].includes(kind) ? <div className="space-y-1.5"><label htmlFor="kpi-sale-cycle">{t('kpiCycleKey')}</label>
-          <input className={fieldClass} id="kpi-sale-cycle" maxLength={120} value={cycleKey} required placeholder={t('kpiCyclePlaceholder')} onChange={(event) => setCycleKey(event.target.value)} /></div> : null}
+          <input className={fieldClass} id="kpi-sale-cycle" maxLength={120} value={cycleKey} required onChange={(event) => setCycleKey(event.target.value)} /></div> : null}
         <div className="space-y-1.5"><label htmlFor="kpi-review-reason">{t('kpiReviewReason')}</label>
           <textarea className={`${fieldClass} min-h-24`} id="kpi-review-reason" required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></div>
         {validationError ? <p role="alert" className="text-sm text-destructive">{['renewal', 'upsell'].includes(kind) && !cycleKey.trim() ? t('kpiCycleRequired') : t('fillRequiredFields')}</p> : null}

@@ -765,7 +765,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                               <FormItem>
                                 <FormLabel required>{t('fullName')}</FormLabel>
                                 <FormControl>
-                                  <Input placeholder={t('fullNamePlaceholder')} {...field} />
+                                  <Input {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -781,7 +781,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                     <Input
                                       type="text"
                                       autoComplete="username"
-                                      placeholder={t('loginOrEmailPlaceholder')}
                                       readOnly
                                       {...field}
                                     />
@@ -810,7 +809,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                               <FormItem>
                                 <FormLabel>{t('position')}</FormLabel>
                                 <FormControl>
-                                  <Input placeholder={t('positionPlaceholder')} {...field} />
+                                  <Input {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -882,7 +881,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                   const value = option.value;
                                   const checked = (field.value ?? []).includes(value);
                                   const isPrimary = primaryModuleValue === value;
-
                                   return (
                                     <label
                                       key={value}
@@ -897,7 +895,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                                             field.onChange([...new Set([...currentModules, value])]);
                                             return;
                                           }
-
                                           field.onChange(currentModules.filter((module) => module !== value));
                                         }}
                                       />
@@ -913,7 +910,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                             </FormItem>
                           )}
                         />
-
                         {assignedModuleValues.includes('sales') ? (
                           <>
                             <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} />
@@ -1234,7 +1230,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     <FormItem>
                       <FormLabel required>{t('loginLabel')}</FormLabel>
                       <FormControl>
-                        <Input type="text" autoComplete="username" placeholder={t('loginOrEmailPlaceholder')} {...field} />
+                        <Input type="text" autoComplete="username" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

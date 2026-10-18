@@ -399,7 +399,6 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                     {dashboard.data.summary.profitChangePercent >= 0 ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
                     {dashboard.data.summary.profitChangePercent > 0 ? '+' : ''}{Math.round(dashboard.data.summary.profitChangePercent)}% {copy.vsPreviousPeriod}
                   </span>
-                  <span>{copy.profitFormula}</span>
                 </div>
               )}
             />

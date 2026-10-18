@@ -275,7 +275,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       {t('fullName')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('enterFullName')} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -293,7 +293,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       {t('loginLabel')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} type="text" autoComplete="username" placeholder={t('loginOrEmailPlaceholder')} />
+                      <Input {...field} type="text" autoComplete="username" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -311,7 +311,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       {t('position')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('enterPosition')} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

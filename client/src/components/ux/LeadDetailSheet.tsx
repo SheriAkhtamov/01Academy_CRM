@@ -1077,7 +1077,6 @@ export function LeadDetailSheet({
                     {dealFormDirty ? (
                       <span
                         className="size-1.5 rounded-full bg-amber-500"
-                        title={t('unsavedChanges')}
                         aria-hidden="true"
                       />
                     ) : null}
@@ -1755,7 +1754,7 @@ export function LeadDetailSheet({
           <AlertDialogHeader>
             <AlertDialogTitle>{t('leadWorkspaceRemovePhoneTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {removePhoneIndex !== null ? phoneValues[removePhoneIndex] : null} {t('leadWorkspaceRemovePhoneHint')}
+              {removePhoneIndex !== null ? phoneValues[removePhoneIndex] : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -15,7 +15,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
-  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -158,12 +157,7 @@ export function AvailabilityCalendar({
   }, [teacherFilter, teachers]);
 
   if (!schoolId || !courseId) {
-    return (
-      <div className={cn('flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 text-center', className)}>
-        <CalendarDays className="text-muted-foreground" />
-        <p className="text-sm font-medium">{t('selectSchoolAndCourseForSlots')}</p>
-      </div>
-    );
+    return null;
   }
 
   return (

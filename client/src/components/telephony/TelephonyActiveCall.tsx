@@ -366,7 +366,6 @@ export function TelephonyActiveCall({
             onClick={onAnswer}
             disabled={isPending}
             aria-label={t('telephonyAnswer')}
-            title={t('telephonyAnswer')}
           >
             {isPending
               ? <Loader2 className="size-6 animate-spin" />
@@ -382,7 +381,6 @@ export function TelephonyActiveCall({
             className="size-14 rounded-full bg-red-600 p-0 text-white hover:bg-red-700"
             onClick={onHangup}
             aria-label={isRingingIncoming ? t('telephonyDecline') : t('telephonyHangup')}
-            title={isRingingIncoming ? t('telephonyDecline') : t('telephonyHangup')}
           >
             <PhoneOff className="size-6" />
           </Button>

@@ -45,7 +45,6 @@ export function TaskColorPicker({ value, onChange, disabled = false }: TaskColor
                         <label
                             key={optionKey}
                             htmlFor={optionId}
-                            title={optionLabel}
                             className={cn('relative cursor-pointer rounded-full', disabled && 'cursor-not-allowed opacity-50')}
                         >
                             <input

@@ -75,7 +75,7 @@ describe('employee plain login forms', () => {
     const login = loginInput(dialog);
     expect(login.value).toBe('Golosbaxti'); expect(login.type).toBe('text'); expect(login.readOnly).toBe(true);
     expect(login.disabled).toBe(false); expect(login.checkValidity()).toBe(true);
-    expect(login.autocomplete).toBe('username'); expect(login.placeholder).toBe(i18n.t('loginOrEmailPlaceholder'));
+    expect(login.autocomplete).toBe('username'); expect(login.placeholder).toBe('');
     setField('fullName', 'Renamed employee');
     fireEvent.change(dialog.getByRole('textbox', { name: i18n.t('phone') }), { target: { value: '+7 (999) 123-45-67' } });
     await userEvent.click(dialog.getByRole('button', { name: i18n.t('updateUser') }));
@@ -160,7 +160,7 @@ describe('own account plain login settings', () => {
   it('saves a profile with an unchanged plain login without requesting a current password', async () => {
     const close = settings(); const login = loginInput();
     expect(login.value).toBe('Golosbaxti'); expect(login.type).toBe('text'); expect(login.checkValidity()).toBe(true);
-    expect(login.autocomplete).toBe('username'); expect(login.placeholder).toBe(i18n.t('loginOrEmailPlaceholder'));
+    expect(login.autocomplete).toBe('username'); expect(login.placeholder).toBe('');
     setField('fullName', 'Renamed administrator'); await submitSettings();
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0]).toMatchObject({ url: '/api/auth/me/settings', body: { fullName: 'Renamed administrator', email: 'golosbaxti' } });

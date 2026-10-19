@@ -960,6 +960,8 @@ export const translations = {
   cancelled: { en: 'Cancelled', ru: 'Отменено' },
   publicAttendanceJournal: { en: 'Attendance register', ru: 'Журнал посещаемости' },
   publicAttendanceReportTab: { en: 'Report', ru: 'Отчёт' },
+  publicAttendanceReportByStudent: { en: 'Student attendance', ru: 'Посещаемость учеников' },
+  publicAttendanceReportSearch: { en: 'Student or organization', ru: 'Ученик или организация' },
   publicAttendanceReportTitle: { en: 'Attendance across all streams', ru: 'Посещаемость всех потоков' },
   publicAttendanceReportLessons: { en: 'Started lessons', ru: 'Начавшиеся занятия' },
   publicAttendanceReportRate: { en: 'Attendance, %', ru: 'Посещаемость, %' },

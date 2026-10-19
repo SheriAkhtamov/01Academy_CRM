@@ -15,10 +15,10 @@
 .pa-report-metrics dd { margin: 4px 0 0; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pa-report-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--pa-line); border-radius: var(--pa-radius); }
 .pa-report-table { width: 100%; min-width: 660px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-.pa-report-table th, .pa-report-table td { padding: 12px; border-bottom: 1px solid var(--pa-line, hsl(var(--border))); text-align: right; vertical-align: middle; }
+.pa-report-table th, .pa-report-table td { padding: 12px; border-bottom: 1px solid var(--pa-line, var(--border)); text-align: right; vertical-align: middle; }
 .pa-report-table th:first-child { min-width: 160px; text-align: left; }
 .pa-report-table thead th { font-size: 12px; font-weight: 600; }
-.pa-report-table tfoot { background: var(--pa-surface-2); font-weight: 700; }
+.pa-report-table tfoot { background: var(--pa-surface-2, var(--muted)); font-weight: 700; }
 .pa-report-table tfoot th, .pa-report-table tfoot td, .pa-report-details tbody tr:last-child > * { border-bottom: 0; }
 .pa-report-table .pa-report-present { color: var(--pa-present-ink, #047857); }
 .pa-report-table .pa-report-absent { color: var(--pa-absent-ink, #be123c); }
@@ -26,6 +26,12 @@
 .pa-report-group:hover { text-decoration: underline; }
 .pa-report-organization { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; }
 .pa-report-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pa-report-detail-scroll { flex: 1; min-height: 0; max-height: 55dvh; max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.pa-report-details thead th { position: sticky; top: 0; z-index: 1; background: var(--background); }
+.pa-report-students { min-width: 480px; }
+.pa-report-students tbody th { overflow-wrap: anywhere; }
+.dark .pa-report-table .pa-report-present { color: #a7f3d0; }
+.dark .pa-report-table .pa-report-absent { color: #fecdd3; }
 @media (max-width: 600px) {
   .pa-report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pa-report { padding-inline: 12px; }

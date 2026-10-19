@@ -1,23 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import type { PublicAttendanceReportCounts } from '@shared/contracts/public-attendance';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import { attendanceErrorKey } from '../presentation';
 import { usePublicAttendanceReport } from '../usePublicAttendanceReport';
-
-const rate = ({ present, absent }: PublicAttendanceReportCounts) => present + absent > 0
-  ? `${Math.round(present / (present + absent) * 100)}%` : '—';
-
-function AttendanceCountCells({ counts }: { counts: PublicAttendanceReportCounts }) {
-  return <><td className="pa-report-present">{counts.present}</td><td className="pa-report-absent">{counts.absent}</td>
-    <td>{counts.unmarked}</td><td>{rate(counts)}</td></>;
-}
-
-function AttendanceCountHeaders() {
-  const { t } = useTranslation();
-  return <><th scope="col">{t('publicAttendancePresentPlural')}</th><th scope="col">{t('publicAttendanceAbsentPlural')}</th>
-    <th scope="col">{t('publicAttendancePending')}</th><th scope="col">{t('publicAttendanceReportRate')}</th></>;
-}
+import { AttendanceReportDetails } from './AttendanceReportDetails';
+import { AttendanceCountCells, AttendanceCountHeaders, attendanceReportRate as rate } from './AttendanceReportCounts';
 
 export function AttendanceReport({ menu, onAccessLost }: { menu: ReactNode; onAccessLost: () => void }) {
   const { t } = useTranslation();
@@ -65,19 +52,9 @@ export function AttendanceReport({ menu, onAccessLost }: { menu: ReactNode; onAc
             </table>
           </div> : <p className="pa-context-empty">{t('publicAttendanceReportEmpty')}</p>}
           <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setGroupId(null); }}>
-            <DialogContent className="max-w-4xl" aria-describedby={undefined}>
+            <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col overflow-hidden" aria-describedby={undefined}>
               <DialogHeader><DialogTitle>{selected?.name}</DialogTitle></DialogHeader>
-              {selected?.students.length ? <div className="overflow-x-auto" role="region" aria-label={selected.name} tabIndex={0}>
-                <table className="pa-report-table pa-report-details">
-                  <caption className="sr-only">{selected.name}</caption>
-                  <thead><tr><th scope="col">{t('studentName')}</th><th scope="col">{t('publicAttendanceReportLessons')}</th>
-                    <AttendanceCountHeaders /></tr></thead>
-                  <tbody>{selected.students.map((student) => <tr key={student.id}>
-                    <th scope="row"><span>{student.name}</span>{student.organization ? <span className="pa-report-organization">{student.organization}</span> : null}</th>
-                    <td>{student.present + student.absent + student.unmarked}</td><AttendanceCountCells counts={student} />
-                  </tr>)}</tbody>
-                </table>
-              </div> : <p>{t('publicAttendanceReportEmpty')}</p>}
+              {selected ? <AttendanceReportDetails key={selected.id} group={selected} /> : null}
             </DialogContent>
           </Dialog>
         </>

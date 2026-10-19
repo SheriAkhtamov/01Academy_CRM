@@ -175,11 +175,24 @@ try {
   // KPI role, can use their selected funnels. A peer without B cannot claim B.
   const freeLead = await insertRow('academy_leads', { contactName: 'Free lead', phone: `free-${suffix}`, sourceId: source.id,
     funnelId: funnelB.id, statusCode: funnelB.initialStageCode });
+  for (const app of apps.slice(1, 3)) {
+    checkResponse(await request(app).patch(`/api/academy/leads/${freeLead.id}`).send({ statusCode: funnelB.nextStageCode }), 409);
+    checkResponse(await request(app).patch(`/api/academy/leads/${freeLead.id}`).send({ contactName: 'Cannot edit before claiming' }), 409);
+    checkResponse(await request(app).post(`/api/academy/sales-kpi/leads/${freeLead.id}/handoff`)
+      .send({ targetFunnelId: funnelA.id, targetStageCode: funnelA.nextStageCode }), 409);
+  }
+  const untouched = await queryOne('SELECT * FROM academy_leads WHERE id=$1', [freeLead.id]);
+  assert.deepEqual([untouched?.managerId, untouched?.statusCode, untouched?.funnelId, untouched?.contactName],
+    [null, funnelB.initialStageCode, funnelB.id, 'Free lead'], 'Rejected processing leaves a free lead unchanged');
   checkResponse(await request(apps[3]).post(`/api/academy/sales-kpi/leads/${freeLead.id}/claim`), 403);
   const claims = await Promise.all(apps.slice(1,3).map((app) => request(app).post(`/api/academy/sales-kpi/leads/${freeLead.id}/claim`)));
   assert.deepEqual(claims.map((response) => response.status).sort(), [200,409], JSON.stringify(claims.map((response) => response.body)));
   assert.equal((await query('SELECT * FROM academy_lead_funnel_qualifications WHERE lead_id=$1', [freeLead.id])).length, 0,
     'Claiming an intake is ownership, not qualification');
+  const winner = claims.findIndex(response => response.status === 200) + 1;
+  checkResponse(await request(apps[winner]).patch(`/api/academy/leads/${freeLead.id}`).send({ statusCode: funnelB.nextStageCode }), 200);
+  assert.equal((await queryOne('SELECT * FROM academy_leads WHERE id=$1', [freeLead.id]))?.statusCode, funnelB.nextStageCode,
+    'The successful claimant can process the lead without trial or payment prerequisites');
   console.log('PASS: actual manual-move, attendance, transfer, archive, sibling payment and claim HTTP handlers; qualification per funnel and global deduplication');
 } finally {
   await pool.end();

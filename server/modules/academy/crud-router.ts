@@ -81,6 +81,8 @@ import {
 import {
   ACADEMY_SCHEDULING_ADVISORY_LOCK,
   Row,
+  canAccessLeadRow,
+  canMutateLeadRow,
   createAudit,
   deleteRow,
   ensureAdministrationModuleAccess,
@@ -114,6 +116,19 @@ import {
   prepareLessonMutation,
   restoreArchivedGroupLessons,
 } from './academy-route-support';
+
+const assertTaskLeadMutation = async (req: any, ...tasks: Row[]) => {
+  const leadIds = [...new Set(tasks.filter(task => task.entityType === 'lead')
+    .map(task => parseId(task.entityId)).filter((id): id is number => id !== null))].sort((a, b) => a - b);
+  for (const leadId of leadIds) {
+    const lead = await queryOne('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE', [leadId]);
+    if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+    if (!canMutateLeadRow(req.actor!, lead)) {
+      const needsClaim = !lead.managerId && canAccessLeadRow(req.actor!, lead);
+      throw Object.assign(new Error(needsClaim ? 'leadAssignmentRequired' : 'accessDenied'), { statusCode: needsClaim ? 409 : 403 });
+    }
+  }
+};
 
 export const createAcademyCrudRegistrar = (router: ReturnType<typeof Router>) => {
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
@@ -269,6 +284,11 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
             const teacher = await insertRow(table, values);
             return teacher;
+          })
+        : table === 'academy_tasks' && values.entityType === 'lead'
+          ? await withTransaction(async () => {
+            await assertTaskLeadMutation(req, values);
+            return insertRow(table, values);
           })
         : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
@@ -438,6 +458,19 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             }
             const updatedTeacher = await updateRow(table, id, values);
             return updatedTeacher;
+          })
+        : table === 'academy_tasks' && (oldRow.entityType === 'lead' || values.entityType === 'lead')
+          ? await withTransaction(async () => {
+            await assertTaskLeadMutation(req, oldRow, { ...oldRow, ...values });
+            const lockedTask = await queryOne(`SELECT * FROM academy_tasks WHERE id = $1 FOR UPDATE`, [id]);
+            if (!lockedTask) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+            if (lockedTask.entityType !== oldRow.entityType || lockedTask.entityId !== oldRow.entityId) {
+              throw Object.assign(new Error('invalidData'), { statusCode: 409 });
+            }
+            if (!hasLeadershipAccess(req.user) && Number(lockedTask.responsibleId) !== Number(req.user!.id)) {
+              throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+            }
+            return updateRow(table, id, values);
           })
         : options.beforeUpdate
           ? await withTransaction(async () => {

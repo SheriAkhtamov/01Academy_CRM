@@ -65,7 +65,11 @@ describe('self-assignment inside the lead modal', () => {
     const { user, onOpenChange } = renderSheet();
     const button = await screen.findByRole('button', { name: i18n.t('assignLeadToMe') });
     expect((button as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(false);
+    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: i18n.t('bookDemoLesson') }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: i18n.t('callShort') }).matches(':disabled')).toBe(true);
+    expect(screen.getByText('+998901234567').getAttribute('href')).toBeNull();
     expect(screen.queryByRole('combobox', { name: i18n.t('responsibleManager') })).toBeNull();
     await user.click(button);
     const confirmation = await screen.findByRole('alertdialog');
@@ -77,6 +81,7 @@ describe('self-assignment inside the lead modal', () => {
     }]));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(queryClient.getQueryData(['/api/academy/leads', 15])).toMatchObject({ managerId: 18 });
+    await waitFor(() => expect(screen.getByLabelText(i18n.t('contactPersonName')).matches(':disabled')).toBe(false));
   });
 
   it('cancels a claim without any write', async () => {
@@ -85,6 +90,18 @@ describe('self-assignment inside the lead modal', () => {
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('cancel') }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(requests).toHaveLength(0);
+  });
+
+  it('allows browsing activity and tasks but prevents processing before claiming', async () => {
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Parent' });
+    await user.click(screen.getByRole('tab', { name: i18n.t('activityTab') }));
+    const note = screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') });
+    expect(note.matches(':disabled')).toBe(true);
+    await user.type(note, 'Cannot save a note yet');
+    await user.click(screen.getByRole('tab', { name: i18n.t('taskBoard') }));
+    expect(requests).toEqual([]);
+    expect(screen.getByRole('button', { name: i18n.t('assignLeadToMe') }).matches(':disabled')).toBe(false);
   });
 
   it.each([18, 7])('does not offer claiming or transferring an assigned lead (manager %s)', async (managerId) => {

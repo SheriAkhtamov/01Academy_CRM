@@ -26,6 +26,8 @@ describe('generic funnel stage visibility', () => {
     for (const funnelId of [1, 2]) {
       expect(canActorViewLead(user, { ...lead, funnelId, managerId: null })).toBe(true);
       expect(canActorAssignLead(user, { ...lead, funnelId, managerId: null }, 7)).toBe(true);
+      expect(canActorMutateLead(user, { ...lead, funnelId, managerId: null })).toBe(false);
+      expect(canActorMutateLead(user, { ...lead, funnelId })).toBe(true);
       expect(canActorViewLead(user, { ...lead, funnelId, managerId: 8 })).toBe(false);
       expect(canActorMutateLead(user, { ...lead, funnelId, managerId: 8 })).toBe(false);
     }
@@ -120,17 +122,16 @@ describe('explicit transfer between funnels', () => {
     expect(mocks.queryOne).toHaveBeenLastCalledWith(expect.stringContaining('FOR SHARE'), ['foreign_stage', 2]);
     expect(mocks.createStageHistory).not.toHaveBeenCalled();
   });
-  it.each([true, false])('allows an unassigned source lead only for a current funnel member: %s', async isAssigned => {
+  it.each([true, false])('requires ownership before transferring an unassigned source lead (funnel member: %s)', async isAssigned => {
     const unassigned = { ...lead, managerId: null, isAssigned };
     mocks.queryOne.mockResolvedValueOnce({ managerId: null }).mockResolvedValueOnce(unassigned)
       .mockResolvedValueOnce({ id: 2 }).mockResolvedValueOnce({ ...unassigned, funnelId: 2, statusCode: 'intake_b' });
     const result = handoffKpiLead({ id: 7, isAdministration: false }, actor, 10, 2);
-    if (isAssigned) {
-      await expect(result).resolves.toEqual({ id: 10, mode: 'transfer', funnelId: 2 });
-      expect(mocks.syncLeadManagerRelations).toHaveBeenCalledWith(10, null);
-    } else {
-      await expect(result).rejects.toMatchObject({ message: 'accessDenied', statusCode: 403 });
-      expect(mocks.syncLeadManagerRelations).not.toHaveBeenCalled();
-    }
+    await expect(result).rejects.toMatchObject(isAssigned
+      ? { message: 'leadAssignmentRequired', statusCode: 409 }
+      : { message: 'accessDenied', statusCode: 403 });
+    expect(mocks.syncLeadManagerRelations).not.toHaveBeenCalled();
+    expect(mocks.createStageHistory).not.toHaveBeenCalled();
+    expect(mocks.createAudit).not.toHaveBeenCalled();
   });
 });

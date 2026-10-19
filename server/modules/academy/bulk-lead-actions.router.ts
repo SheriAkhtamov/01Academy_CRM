@@ -8,6 +8,7 @@ import { getPublicErrorMessage } from '../../lib/http-errors';
 import { logger } from '../../lib/logger';
 import {
   LEAD_MODULES,
+  canAccessLeadRow,
   canMutateLeadRow,
   createAudit,
   ensureModuleAccess,
@@ -67,7 +68,7 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
           throw Object.assign(new Error('One or more leads were not found'), { statusCode: 404 });
         }
         for (const lead of leads) {
-          if (!canMutateLeadRow(req.actor!, lead)) {
+          if (!canAccessLeadRow(req.actor!, lead)) {
             throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
           }
         }
@@ -101,6 +102,9 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
             assignedCount += 1;
           }
           beforeArchive.set(Number(lead.id), leadBeforeArchive);
+          if (!canMutateLeadRow(req.actor!, leadBeforeArchive)) {
+            throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+          }
         }
 
         if (activeLeads.length === 0) return { archivedCount: 0, assignedCount };
@@ -168,6 +172,9 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
 
         for (const lead of leads) {
           if (!canMutateLeadRow(req.actor!, lead)) {
+            if (!lead.managerId && canAccessLeadRow(req.actor!, lead)) {
+              throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
+            }
             throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
           }
         }

@@ -522,7 +522,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     () => pipelineLeads.filter((lead) => leadMatchesFilters(lead, leadFilters)),
     [leadFilters, pipelineLeads],
   );
-  const pipelineBulkActions = useSalesPipelineBulkActions({ leads: filteredPipelineLeads, statuses: activePipelineStatuses });
+  const pipelineBulkActions = useSalesPipelineBulkActions({ leads: filteredPipelineLeads, statuses: activePipelineStatuses,
+    canManageAllLeads: isAdministrationModule });
 
   const overviewLeads = useMemo(() => {
     if (overviewManagerNumericId === null) return myLeads;
@@ -793,11 +794,20 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const requestLeadStatusChange = useCallback(async (leadId: number, statusCode: string) => {
     const lead = myLeads.find((item) => item.id === leadId);
     if (!lead) return false;
+    if (!isAdministrationModule && !lead.managerId) {
+      toast({ title: t('leadAssignmentRequired'), variant: 'destructive' });
+      openLead(lead.id);
+      return false;
+    }
     await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
     return true;
-  }, [myLeads, updateLead]);
+  }, [isAdministrationModule, myLeads, openLead, t, updateLead]);
 
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
+    if (!isAdministrationModule && !lead.managerId) {
+      openLead(lead.id);
+      return;
+    }
     if (action === 'payment') {
       openLead(lead.id, 'payment');
       return;
@@ -827,7 +837,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       return;
     }
-  }, [isCallPending, isLineBusyWithReminder, openLead, setLocation, startOnlinePbxCall, t]);
+  }, [isAdministrationModule, isCallPending, isLineBusyWithReminder, openLead, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);

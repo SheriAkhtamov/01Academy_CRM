@@ -19,10 +19,12 @@ omit the destination stage retain the configured intake as their default.
 
 The transfer dialog lists active destination funnels and their available stages
 independently of the employee's working-funnel list. Seeing this list grants no
-access to destination leads. An employee can transfer their own active lead or
-an unassigned lead in a funnel assigned to them; leadership can transfer any
-active lead. No prior claim, attendance, payment, course or completed profile is
-required. If its current owner belongs to the destination, that
+access to destination leads. An employee can process and transfer only their own
+active leads. Unassigned leads in their selected funnels remain readable and
+claimable, but must be assigned to the employee before editing, changing stages,
+transferring, contacting or creating related work. Leadership can transfer any
+active lead. No attendance, payment, course or completed profile is required.
+If its current owner belongs to the destination, that
 owner stays responsible. Otherwise the lead enters the destination's unassigned
 queue. Student ownership, unfinished tasks and assignment history follow the
 resulting owner. Unassigned leads remain visible and claimable to that funnel's

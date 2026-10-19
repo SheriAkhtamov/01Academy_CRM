@@ -336,8 +336,11 @@ router.post('/tasks', async (req, res) => {
             const canLinkLead = isTaskSupervisor(req.user!)
                 || (
                     getAssignedModules(req.user).includes('sales')
-                    && (lead.managerId === null || Number(lead.managerId) === Number(req.user!.id))
+                    && Number(lead.managerId) === Number(req.user!.id)
                 );
+            if (!canLinkLead && lead.managerId === null && getAssignedModules(req.user).includes('sales')) {
+                return res.status(409).json({ error: 'leadAssignmentRequired' });
+            }
             if (!canLinkLead) return res.status(403).json({ error: 'accessDenied' });
         }
 

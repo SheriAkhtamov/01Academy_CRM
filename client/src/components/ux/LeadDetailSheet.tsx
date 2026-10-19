@@ -835,6 +835,7 @@ export function LeadDetailSheet({
     ? leadForm.formState.errors.phoneNumbers.message as TranslationKey
     : null;
   const lead = leadQuery.data;
+  const leadNeedsClaim = canClaimUnassignedLead && Boolean(lead && !lead.managerId);
   const paymentActionLabel = lead?.payments?.some((payment) => payment.status === 'paid') ? t('recordAnotherPayment') : t('recordPayment');
   const paymentNeedsStudent = (lead?.students?.length ?? 0) === 0;
   const canClaimLead = canClaimUnassignedLead && Boolean(currentUserId) && Boolean(lead && !lead.managerId && !lead.isArchived);
@@ -929,7 +930,7 @@ export function LeadDetailSheet({
     navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'languages' ? 'contacts' : 'details');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
-    if (!updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
+    if (!leadNeedsClaim && !updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
   }, showDealErrors);
 
   const dealFormDirty = leadForm.formState.isDirty;
@@ -1007,6 +1008,7 @@ export function LeadDetailSheet({
         ) : (
           <>
             <LeadWorkspaceHeader
+              actionsDisabled={leadNeedsClaim}
               lead={lead}
               visiblePhoneNumbers={visiblePhoneNumbers}
               primaryPhone={primaryPhone}
@@ -1046,7 +1048,7 @@ export function LeadDetailSheet({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={transferFunnel.isPending}
+                      disabled={leadNeedsClaim || transferFunnel.isPending}
                       onClick={() => setFunnelTransferOpen(true)}
                     >
                       <ArrowRight data-icon="inline-start" />
@@ -1063,7 +1065,7 @@ export function LeadDetailSheet({
               )}
             />
 
-            <fieldset className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Tabs
               value={activeTab}
               onValueChange={(value) => navigateTo(value as LeadSheetTab)}
@@ -1100,6 +1102,7 @@ export function LeadDetailSheet({
               </div>
 
               <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/40 p-4 sm:p-6">
+              <fieldset disabled={leadNeedsClaim} className="min-w-0">
             {versionConflict ? <LeadVersionNotice pending={reviewingVersion}
               onKeepDraft={() => void reviewLatestVersion(true)}
               onUseServer={() => unsavedGuard.requestAction(() => void reviewLatestVersion(false))}
@@ -1526,14 +1529,15 @@ export function LeadDetailSheet({
                     </Card>
                   </div>
                 </TabsContent>
+              </fieldset>
               </div>
             </Tabs>
-            </fieldset>
+            </div>
             <LeadSaveBar
               key={lead.id}
               dirty={dealFormDirty}
               pending={updateLead.isPending}
-              saveDisabled={versionConflict || reviewingVersion}
+              saveDisabled={leadNeedsClaim || versionConflict || reviewingVersion}
               onDiscard={() => leadForm.reset(leadToFormValues(lead))}
             />
           </>

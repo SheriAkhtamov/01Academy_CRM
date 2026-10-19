@@ -2575,6 +2575,9 @@ export const sendInstagramTextMessage = async (
   user: InstagramUser,
 ) => {
   const conversation = await assertConversationAccess(conversationId, user);
+  if (conversation.lead_id && !conversation.manager_id && !hasLeadershipAccess(user)) {
+    throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
+  }
   if (conversation.account_status !== 'connected' || !conversation.access_token_encrypted) {
     throw Object.assign(new Error('instagramAccountDisconnected'), { statusCode: 409 });
   }

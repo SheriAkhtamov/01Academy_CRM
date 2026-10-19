@@ -442,6 +442,16 @@ describe("board routes", () => {
     expect(missing.status).toBe(404);
   });
 
+  it('requires claiming a free lead before creating a linked task', async () => {
+    mockStorage.board.getLeadReference.mockResolvedValue({ id: 42, contactName: 'Free lead', managerId: null });
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: staffUser.id });
+    const response = await agent.post('/api/board/tasks').send({ title: 'Call the lead', leadId: 42 });
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('leadAssignmentRequired');
+    expect(mockStorage.board.createTask).not.toHaveBeenCalled();
+  });
+
   it("does not let an unrelated employee attach a task to a sales lead", async () => {
     const app = await createApp();
     const agent = request.agent(app);

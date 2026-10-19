@@ -23,9 +23,11 @@ interface SelectablePipelineStatus {
 export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineStatus>({
   leads,
   statuses,
+  canManageAllLeads = false,
 }: {
   leads: SelectablePipelineLead[];
   statuses: TStatus[];
+  canManageAllLeads?: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -37,10 +39,10 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     [leads, selectedLeadIds],
   );
   const availableMoveStatuses = useMemo(
-    () => statuses.filter((status) => (
+    () => !canManageAllLeads && selectedLeads.some(lead => !lead.managerId) ? [] : statuses.filter((status) => (
       selectedLeads.some((lead) => lead.statusCode !== status.code)
     )),
-    [selectedLeads, statuses],
+    [canManageAllLeads, selectedLeads, statuses],
   );
   const archiveNeedsManagerAssignment = selectedLeads.some((lead) => !lead.managerId);
   const canArchiveSelected = selectedLeads.length > 0;
@@ -156,6 +158,10 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     clearSelection,
     isPending: bulkMove.isPending || bulkAssign.isPending || bulkArchive.isPending || bulkDelete.isPending,
     moveSelected: async (statusCode: string) => {
+      if (!canManageAllLeads && selectedLeads.some(lead => !lead.managerId)) {
+        toast({ title: t('leadAssignmentRequired'), variant: 'destructive' });
+        return;
+      }
       await bulkMove.mutateAsync({ leadIds: [...selectedLeadIds], statusCode });
     },
     assignSelected: async (managerId: number) => {

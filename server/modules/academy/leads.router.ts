@@ -91,6 +91,7 @@ import {
   SALES_MODULES,
   applyLeadVisibilityForActor,
   applyLeadVisibilityForRequest,
+  canAccessLeadRow,
   canMutateLeadRow,
   createAudit,
   createNotification,
@@ -538,7 +539,7 @@ router.post('/leads/:id/view', async (req, res) => {
     const viewed = await withTransaction(async () => {
       const lead = await queryOne<Row>(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
       if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-      if (!canMutateLeadRow(req.actor!, lead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      if (!canAccessLeadRow(req.actor!, lead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
       return markLeadViewed(id, req.user!.id, transactionContext.getStore());
     });
     res.json(viewed);
@@ -782,7 +783,7 @@ router.post('/leads/:id/archive', async (req, res) => {
 
     const oldLead = await getLead(id);
     if (!oldLead) return res.status(404).json({ error: 'Lead not found' });
-    if (!ensureLeadMutationAccess(req, res, oldLead)) return;
+    if (!ensureLeadRowAccess(req, res, oldLead)) return;
 
     if (oldLead.isArchived) return res.json(oldLead);
 
@@ -808,7 +809,7 @@ router.post('/leads/:id/archive', async (req, res) => {
       if (assignToSelf) await getActiveSalesManager(req.user!.id, true);
       const lockedLead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
       if (!lockedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-      if (!canMutateLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+      if (!canAccessLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
       if (lockedLead.isArchived) { archived = lockedLead; return; }
       let leadBeforeArchive = lockedLead;
 
@@ -827,6 +828,7 @@ router.post('/leads/:id/archive', async (req, res) => {
         await createAudit(req.actor!, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', assignedLead.id, assignedLead, leadBeforeArchive);
         leadBeforeArchive = assignedLead;
       }
+      if (!canMutateLeadRow(req.actor!, leadBeforeArchive)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
 
       archived = await updateRow('academy_leads', id, {
         isArchived: true,
@@ -1324,7 +1326,9 @@ router.post('/leads/:id/convert-to-student', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!ensureLeadMutationAccess(req, res, lead)) return;
     const student = await withTransaction(async () => {
-      await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      const lockedLead = await queryOne(`SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [id]);
+      if (!lockedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+      if (!canMutateLeadRow(req.actor!, lockedLead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
       const paidPayment = await queryOne(
         `SELECT id FROM academy_payments WHERE lead_id = $1 AND status = 'paid' ORDER BY paid_at DESC, id DESC LIMIT 1`,
         [id],

@@ -739,6 +739,10 @@ export const canMutateLeadRow = (source: ActorSource, lead?: Row | null) => (
 
 export const ensureLeadMutationAccess = (req: any, res: any, lead?: Row | null) => {
   if (canMutateLeadRow(req, lead)) return true;
+  if (lead && !lead.managerId && canAccessLeadRow(req, lead)) {
+    res.status(409).json({ error: 'leadAssignmentRequired' });
+    return false;
+  }
   res.status(403).json({ error: 'Lead mutation access required' });
   return false;
 };

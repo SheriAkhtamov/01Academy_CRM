@@ -68,7 +68,8 @@ export function LeadWorkspaceHeader({
                 >
                   <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <a
-                    href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                    href={actionsDisabled ? undefined : `tel:${phone.replace(/[^\d+]/g, '')}`}
+                    aria-disabled={actionsDisabled || undefined}
                     className="truncate tabular-nums transition-colors hover:text-primary"
                   >
                     {phone}

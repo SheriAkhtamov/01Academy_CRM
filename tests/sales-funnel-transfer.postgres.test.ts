@@ -194,12 +194,19 @@ describe.skipIf(!databaseUrl)('manual sales funnel transfer with PostgreSQL owne
     expect((await lead()).funnel_id).toBe(1);
   });
 
-  it('allows an unassigned source-funnel member to transfer without first claiming, while denying another funnel member', async () => {
+  it('rejects a free lead transfer until its source-funnel member claims it', async () => {
     await fixture.pool.query('UPDATE academy_leads SET manager_id=NULL WHERE id=10');
     expect((await request(app).post(path).set('x-test-user', '8').send({ targetFunnelId: 2, targetStageCode: 'paid_b' })).status).toBe(403);
     const result = await request(app).post(path).send({ targetFunnelId: 2, targetStageCode: 'paid_b' });
-    expect(result.status, result.text).toBe(200);
-    expect(await lead()).toMatchObject({ funnel_id: 2, status_code: 'paid_b', manager_id: null });
+    expect(result.status, result.text).toBe(409);
+    expect(result.body).toMatchObject({ error: 'leadAssignmentRequired' });
+    expect(await lead()).toMatchObject({ funnel_id: 1, status_code: 'intake_a', manager_id: null });
+    expect(fixture.audit).not.toHaveBeenCalled();
+    expect((await fixture.pool.query('SELECT COUNT(*)::int AS count FROM academy_lead_stage_history')).rows[0].count).toBe(0);
+    await fixture.pool.query('UPDATE academy_leads SET manager_id=7 WHERE id=10');
+    const claimed = await request(app).post(path).send({ targetFunnelId: 2, targetStageCode: 'paid_b' });
+    expect(claimed.status, claimed.text).toBe(200);
+    expect(await lead()).toMatchObject({ funnel_id: 2, status_code: 'paid_b' });
   });
 
   it('distributes new incoming inserts while stage moves, restoration and ownership release never invoke distribution', async () => {

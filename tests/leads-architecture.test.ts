@@ -42,9 +42,12 @@ describe('lead actor context and access policy', () => {
     const teacher = actorContextFrom({ id: 9, module: 'teacher' });
 
     expect(canActorViewLead(salesperson, { managerId: 7 })).toBe(true);
-    expect(canActorMutateLead(salesperson, { managerId: null })).toBe(true);
+    expect(canActorViewLead(salesperson, { managerId: null })).toBe(true);
+    expect(canActorMutateLead(salesperson, { managerId: null })).toBe(false);
+    expect(canActorMutateLead(salesperson, { managerId: 7 })).toBe(true);
     expect(canActorViewLead(salesperson, { managerId: 8 })).toBe(false);
     expect(canActorMutateLead(administration, { managerId: 8 })).toBe(true);
+    expect(canActorMutateLead(administration, { managerId: null })).toBe(true);
     expect(canActorViewLead(teacher, { managerId: 9 })).toBe(false);
   });
 });

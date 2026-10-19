@@ -31,8 +31,13 @@ export const canActorViewLead = (
   return true;
 };
 
+// Queue visibility permits reading and claiming; processing requires ownership.
 export const canActorMutateLead = (actor: ActorContext, lead?: LeadAccessRecord | null): boolean =>
-  canActorViewLead(actor, lead);
+  canActorViewLead(actor, lead) && (
+    actor.isLeadership
+    || !actorHasModule(actor, 'sales')
+    || (lead?.managerId != null && Number(lead.managerId) === actor.userId)
+  );
 
 // Taking a free lead is not editing an already-owned lead. Repeat assignment
 // to oneself is harmless, but employees may never transfer or take another's lead.

@@ -13,6 +13,7 @@ vi.mock('../server/db', () => ({
 import {
   listInstagramConversations,
   markInstagramConversationRead,
+  sendInstagramTextMessage,
 } from '../server/services/instagram';
 import { countUnreadInstagramMessages } from '../server/services/instagram-conversation-count';
 
@@ -107,5 +108,18 @@ describe('Instagram per-user read tracking', () => {
       .mockResolvedValueOnce({ rows: [] });
     await expect(markInstagramConversationRead(9, { id: 7, module: 'sales' }, 99))
       .rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('allows reading a free lead conversation but requires claiming before replying', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 9, lead_id: 42, manager_id: null,
+      has_funnel_access: true, unassigned_visible: true, account_status: 'connected' }] });
+    await expect(sendInstagramTextMessage(9, 'Hello', { id: 7, module: 'sales' }))
+      .rejects.toMatchObject({ statusCode: 409, message: 'leadAssignmentRequired' });
+    expect(mocks.poolQuery).toHaveBeenCalledTimes(1);
+    mocks.poolQuery.mockResolvedValueOnce({ rows: [{ id: 9, lead_id: 42, manager_id: null,
+      has_funnel_access: true, unassigned_visible: true }] })
+      .mockResolvedValueOnce({ rows: [{ id: 9, unread_count: 0 }] });
+    await expect(markInstagramConversationRead(9, { id: 7, module: 'sales' }, 31))
+      .resolves.toMatchObject({ id: 9 });
   });
 });

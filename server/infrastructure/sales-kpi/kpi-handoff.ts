@@ -89,6 +89,9 @@ export async function handoffKpiLead(
     ))) {
       throw kpiError(new Error('accessDenied'), 403);
     }
+    if (!actor.isAdministration && lead.managerId == null) {
+      throw kpiError(new Error('leadAssignmentRequired'), 409);
+    }
     if (Number(lead.managerId ?? 0) !== Number(owner?.managerId ?? 0)) {
       throw kpiError(new Error('invalidData'), 409);
     }

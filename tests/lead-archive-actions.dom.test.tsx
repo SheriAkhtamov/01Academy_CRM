@@ -62,7 +62,7 @@ beforeEach(() => {
         ...lead,
         isArchived: url.endsWith('/archive'),
         statusCode: body.statusCode ?? lead.statusCode,
-        managerId: body.assignToSelf ? 1 : lead.managerId,
+        managerId: url.endsWith('/assign') ? Number(body.managerId) : body.assignToSelf ? 1 : lead.managerId,
         updatedAt: '2026-09-02T08:00:00.000Z',
       };
     }
@@ -188,15 +188,23 @@ describe('lead sheet archive quick actions', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
-  it('asks an eligible manager to claim an unassigned lead as part of archive confirmation', async () => {
+  it('requires claiming before opening archive confirmation for an unassigned lead', async () => {
     lead = { ...lead, managerId: null };
     renderSheet();
-    const dialog = await openAction();
-    expect(within(dialog).getByText(i18n.t('leadRequiresResponsibleManager'))).toBeTruthy();
-    await choose(dialog, 'archiveReason', i18n.t('archiveReasonNoAnswer'));
+    const claim = await openAction();
+    expect(within(claim).getByText(i18n.t('leadAssignmentRequired'))).toBeTruthy();
+    expect(within(claim).queryByRole('combobox')).toBeNull();
     expect(requests).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('assignToMeAndArchive') }));
-    await waitFor(() => expect(requests[0]?.body).toEqual({ reason: 'no_answer', assignToSelf: true }));
+    fireEvent.click(within(claim).getByRole('button', { name: i18n.t('assignLeadToMe') }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(requests).toEqual([{ url: '/api/academy/leads/15/assign', body: { managerId: 1 } }]);
+    const dialog = await openAction();
+    await choose(dialog, 'archiveReason', i18n.t('archiveReasonNoAnswer'));
+    fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('sendToArchive') }));
+    await waitFor(() => expect(requests).toEqual([
+      { url: '/api/academy/leads/15/assign', body: { managerId: 1 } },
+      { url: '/api/academy/leads/15/archive', body: { reason: 'no_answer' } },
+    ]));
   });
 
   it('does not claim an unassigned lead for an ineligible user', async () => {

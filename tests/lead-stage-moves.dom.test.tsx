@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SalesDashboard from '../client/src/pages/sales-dashboard';
@@ -93,8 +93,9 @@ describe('manual stage changes from the sales pipeline', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('actions') }));
     await user.click(screen.getByRole('menuitem', { name: i18n.t('moveLeadToStage') }));
     await user.click(await screen.findByRole('menuitem', { name }));
-    expect(await screen.findByRole('button', { name: i18n.t('assignLeadToMe') })).toBeTruthy();
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('leadAssignmentRequired') });
+    expect(within(dialog).getByRole('button', { name: i18n.t('assignToMeAndContinue') })).toBeTruthy();
     expect(writes.some(write => write.method === 'PATCH' || write.url.endsWith('/assign'))).toBe(false);
-    expect(screen.getByLabelText(i18n.t('contactPersonName')).matches(':disabled')).toBe(true);
+    expect(screen.queryByLabelText(i18n.t('contactPersonName'))).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogFooter, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,10 +42,10 @@ export function AddChatParticipantsDialog({ participants, pending, error, onClos
         {!employees.isPending && !employees.isError && !visible.length ? <p>{t(search ? 'noSearchResults' : 'chatGroupNoAvailableEmployees')}</p> : null}
       </div>
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      <div className="flex shrink-0 justify-end gap-2">
+      <DialogFooter className="flex shrink-0 justify-end gap-2">
         <Button variant="outline" onClick={onClose} disabled={pending}>{t('cancel')}</Button>
         <Button onClick={() => onAdd(ids)} disabled={pending || employees.isError || !ids.length}>{t(pending ? 'saving' : 'chatGroupAddParticipants')}</Button>
-      </div>
+      </DialogFooter>
     </DialogContent>
   </Dialog>;
 }

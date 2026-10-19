@@ -32,6 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -899,13 +900,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </FormItem>
               )} />
               </div>
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
+              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>
                   {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                   {saveSchool.isPending ? t('saving') : t('save')}
                 </Button>
-              </div>
+              </DialogFooter>
             </form>
           </Form>
         </DialogContent>
@@ -956,10 +957,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                 </FormItem>
               )} />
               </div>
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
+              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
-              </div>
+              </DialogFooter>
             </form>
           </Form>
         </DialogContent>
@@ -1021,7 +1022,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               )} />
 
               </div>
-              <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
+              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                 <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button
                   type="submit"
@@ -1030,7 +1031,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   {saveStatus.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                   {saveStatus.isPending ? t('saving') : t('save')}
                 </Button>
-              </div>
+              </DialogFooter>
             </form>
           </Form>
         </DialogContent>

@@ -46,6 +46,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -292,7 +293,7 @@ function ArchiveLeadDialog({
             </div>
           ) : null}
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
               {t('cancel')}
             </Button>
@@ -308,7 +309,7 @@ function ArchiveLeadDialog({
               {needsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
               {isPending ? t('saving') : needsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
             </Button>
-          </div>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>

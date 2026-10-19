@@ -73,19 +73,19 @@ export const TimePicker = forwardRef<HTMLInputElement, TimePickerProps>(function
       <Clock3 aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
     </div>
     <Dialog open={open && !disabled} onOpenChange={setOpen}>
-      <DialogContent aria-describedby={undefined} className="max-w-xs" onCloseAutoFocus={event => { event.preventDefault(); input.current?.focus(); }}>
+      <DialogContent aria-describedby={undefined} className="max-w-xs gap-4 p-5" onCloseAutoFocus={event => { event.preventDefault(); input.current?.focus(); }}>
         <DialogHeader><DialogTitle>{t('time')}</DialogTitle></DialogHeader>
-        <div className="flex gap-3">
+        <div className="grid min-w-0 grid-cols-2 gap-3">
           <TimeWheel ref={hourColumn} label={t('clockHours')} value={hour} options={hours} onValueChange={nextHour => {
             const choices = allowed.filter(minute => Math.floor(minute / 60) === nextHour);
             setDraft(nearestClockMinute(choices, clockValue(nextHour * 60 + draft % 60)));
           }} />
           <TimeWheel ref={minuteColumn} label={t('clockMinutes')} value={draft % 60} options={minutes} onValueChange={minute => setDraft(hour * 60 + minute)} />
         </div>
-        <DialogFooter>
+        <DialogFooter className="grid w-full grid-cols-2 sm:grid">
           {!props.required ? <Button type="button" variant="ghost" onClick={() => { onValueChange(''); setOpen(false); }}>{t('reset')}</Button> : null}
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>{t('cancel')}</Button>
-          <Button type="button" disabled={allowed.length === 0} onClick={() => {
+          <Button type="button" variant="outline" className={props.required ? 'col-span-2' : undefined} onClick={() => setOpen(false)}>{t('cancel')}</Button>
+          <Button type="button" className="col-span-2 w-full" disabled={allowed.length === 0} onClick={() => {
             const visible = (hourColumn.current?.getValue() ?? hour) * 60 + (minuteColumn.current?.getValue() ?? draft % 60);
             onValueChange(clockValue(nearestClockMinute(allowed, clockValue(visible))));
             setOpen(false);

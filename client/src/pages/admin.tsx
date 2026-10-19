@@ -24,6 +24,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/components/ux/UnsavedChangesGuard';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -1147,7 +1148,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             ) : null}
           </div>
 
-          <div className="flex justify-end gap-2">
+          <DialogFooter className="flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
@@ -1186,7 +1187,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                 ? t('saving')
                 : t('disableSalesAndTransfer')}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

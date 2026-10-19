@@ -2,6 +2,7 @@ import { UserCheck } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -48,7 +49,7 @@ export function AssignLeadToSelfDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex justify-end gap-2">
+        <DialogFooter className="flex justify-end gap-2">
           <Button
             type="button"
             variant="outline"
@@ -61,7 +62,7 @@ export function AssignLeadToSelfDialog({
             <UserCheck data-icon="inline-start" />
             {isPending ? t('saving') : confirmLabel}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

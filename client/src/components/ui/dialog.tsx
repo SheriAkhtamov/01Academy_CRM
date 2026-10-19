@@ -49,7 +49,9 @@ const DialogContent = React.forwardRef<
           // where `sm:rounded-xl` then squared its corners off so it read as a
           // page rather than a dialog. It now keeps a 1rem gutter and its
           // corners below `sm`; from `sm` up the box is what it always was.
-          "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-xl border border-border/70 bg-popover text-popover-foreground p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[46%] sm:w-full",
+          // An explicit minmax(0, 1fr) track keeps wide footer content from
+          // expanding the grid beyond a narrow dialog's own width.
+          "fixed left-[50%] top-[50%] z-50 grid min-w-0 grid-cols-1 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-xl border border-border/70 bg-popover text-popover-foreground p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[46%] sm:w-full",
           // The dialog rises the last few pixels on an expo curve, which is
           // what separates "appeared" from "arrived".
           "data-[state=open]:duration-300 data-[state=open]:ease-out-expo data-[state=closed]:duration-150 data-[state=closed]:ease-in-expo",
@@ -75,7 +77,7 @@ const DialogHeader = ({
   <div
     data-topographic="header"
     className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left",
+      "flex min-w-0 flex-col space-y-1.5 text-center sm:text-left",
       className
     )}
     {...props}
@@ -90,7 +92,7 @@ const DialogTitle = React.forwardRef<
   <DialogPrimitive.Title
     ref={ref}
     className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
+      "break-words text-lg font-semibold leading-none tracking-tight",
       className
     )}
     {...props}
@@ -115,7 +117,7 @@ const DialogFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
+    className={cn("flex min-w-0 flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end [&>button]:h-auto [&>button]:min-h-10 [&>button]:min-w-0 [&>button]:max-w-full [&>button]:whitespace-normal [&>button]:[overflow-wrap:anywhere]", className)}
     {...props}
   />
 )

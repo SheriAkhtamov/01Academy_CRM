@@ -13,6 +13,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import { formatUserModule } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -424,7 +425,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             </div>
             </div>
 
-            <div className="flex shrink-0 items-center justify-end gap-3 border-t bg-background/95 px-6 py-4">
+            <DialogFooter className="flex shrink-0 items-center justify-end gap-3 border-t bg-background/95 px-6 py-4">
               <Button
                 type="button"
                 variant="outline"
@@ -449,7 +450,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                   </>
                 )}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </Form>
         </DialogContent>

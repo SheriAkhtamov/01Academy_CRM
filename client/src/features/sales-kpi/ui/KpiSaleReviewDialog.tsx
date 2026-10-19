@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DialogFooter } from '@/components/ui/dialog';
 import { kpiSaleReviewSchema, type KpiSaleFact, type KpiSaleReview } from '@shared/sales-kpi';
 import { kpiMonth } from '@shared/sales-kpi-time';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -40,7 +41,7 @@ function SaleEditor({ sale, onClose }: { sale: KpiSaleFact; onClose: () => void 
           <textarea className={`${fieldClass} min-h-24`} id="kpi-review-reason" required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></div>
         {validationError ? <p role="alert" className="text-sm text-destructive">{['renewal', 'upsell'].includes(kind) && !cycleKey.trim() ? t('kpiCycleRequired') : t('fillRequiredFields')}</p> : null}
         {mutation.isError ? <p role="alert" className="text-sm text-destructive">{mutation.error.message}</p> : null}
-        <div className="flex justify-end gap-2"><button type="button" className={`${overviewButton} border`} onClick={() => guard.handleOpenChange(false)} disabled={mutation.isPending}>{t('cancel')}</button><button type="submit" className={`${overviewButton} bg-primary text-primary-foreground hover:bg-primary/90`} disabled={mutation.isPending}>{t(mutation.isPending ? 'saving' : 'save')}</button></div>
+        <DialogFooter><button type="button" className={`${overviewButton} border`} onClick={() => guard.handleOpenChange(false)} disabled={mutation.isPending}>{t('cancel')}</button><button type="submit" className={`${overviewButton} bg-primary text-primary-foreground hover:bg-primary/90`} disabled={mutation.isPending}>{t(mutation.isPending ? 'saving' : 'save')}</button></DialogFooter>
       </form>
     </OverviewDialog>
     {guard.confirmationOpen ? <OverviewDialog role="alertdialog" title={t('unsavedChangesTitle')} description={t('unsavedChangesDescription')} onClose={() => guard.setConfirmationOpen(false)}>

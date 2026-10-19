@@ -1,7 +1,7 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,8 +66,8 @@ export function CreateChatGroupDialog({ open, onOpenChange, onCreated, mode = 'g
           {!employees.isLoading && !employees.isError && visible.length === 0 ? <p className="text-sm text-muted-foreground">{t('noSearchResults')}</p> : null}
         </div>
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-        <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={create.isPending} onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
-          {mode === 'group' ? <Button type="submit" disabled={create.isPending || employees.isLoading || employees.isError}>{t(create.isPending ? 'saving' : 'createGroup')}</Button> : null}</div>
+        <DialogFooter><Button type="button" variant="outline" disabled={create.isPending} onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
+          {mode === 'group' ? <Button type="submit" disabled={create.isPending || employees.isLoading || employees.isError}>{t(create.isPending ? 'saving' : 'createGroup')}</Button> : null}</DialogFooter>
       </form>
     </DialogContent>
   </Dialog>;

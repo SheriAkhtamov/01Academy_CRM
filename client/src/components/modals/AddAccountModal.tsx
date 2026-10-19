@@ -7,6 +7,7 @@ import { useAccounts } from '@/hooks/useAccounts';
 import { useToast } from '@/hooks/use-toast';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import {
+  DialogFooter,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -133,7 +134,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
               )}
             />
 
-            <div className="flex justify-end gap-2 pt-2">
+            <DialogFooter className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"
@@ -150,7 +151,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
                 )}
                 {t('addAccount')}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </Form>
       </DialogContent>

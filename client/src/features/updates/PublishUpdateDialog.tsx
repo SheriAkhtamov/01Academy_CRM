@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Eye, Plus, Trash2, RotateCcw } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogFooter, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -667,14 +667,14 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
 
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
 
-          <div className="flex shrink-0 justify-end gap-2 border-t pt-4">
+          <DialogFooter className="flex shrink-0 justify-end gap-2 border-t pt-4">
             <Button variant="outline" disabled={publish.isPending} onClick={() => guard.handleOpenChange(false)}>
               {t('cancel')}
             </Button>
             <Button disabled={publish.isPending} onClick={submit}>
               {publish.isPending ? t('saving') : t('updatesPublish')}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <ConfirmDialog

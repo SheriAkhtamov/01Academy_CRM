@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import {
+    DialogFooter,
     Dialog,
     DialogContent,
     DialogDescription,
@@ -282,7 +283,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                     {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskSaveIncomplete') : t('taskAttachmentPartialFailure')}</p> : null}
                     </div>
 
-                    <div className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
+                    <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
                         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                             {t('cancel')}
                         </Button>
@@ -290,7 +291,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                             {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                             {mutation.isPending ? activeFile ? t('attachmentUploading') : t('saving') : mutation.isError ? t('attachmentRetry') : t('createTask')}
                         </Button>
-                    </div>
+                    </DialogFooter>
                 </form>
             </DialogContent>
         </Dialog>

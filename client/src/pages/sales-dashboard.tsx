@@ -19,6 +19,8 @@ import { salesFunnelStages } from '@shared/sales-funnel-workflow';
 import { useLeadFilters } from '@/features/sales/useLeadFilters';
 import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
+import { useLeadClaimAction } from '@/features/sales/useLeadClaimAction';
+import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
 import { studentsApi } from '@/features/students/api';
@@ -322,6 +324,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     isLineBusyWithReminder, callButtonLabel } = useOnlinePbxCall();
   const isAdministrationModule = hasLeadershipAccess(user);
   const hasSalesModule = getAssignedModules(user).includes('sales');
+  const leadClaimAction = useLeadClaimAction(user?.id);
+  const requestLeadClaim = leadClaimAction.request;
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
@@ -794,20 +798,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const requestLeadStatusChange = useCallback(async (leadId: number, statusCode: string) => {
     const lead = myLeads.find((item) => item.id === leadId);
     if (!lead) return false;
-    if (!isAdministrationModule && !lead.managerId) {
-      toast({ title: t('leadAssignmentRequired'), variant: 'destructive' });
-      openLead(lead.id);
-      return false;
-    }
     await updateLead.mutateAsync({ id: leadId, payload: { statusCode } });
     return true;
-  }, [isAdministrationModule, myLeads, openLead, t, updateLead]);
+  }, [myLeads, updateLead]);
+
+  const beforeLeadAction = useCallback((lead: { id: number; contactName: string; managerId?: number | null }, proceed: () => void) => {
+    if (!isAdministrationModule && !lead.managerId) requestLeadClaim(lead, proceed);
+    else proceed();
+  }, [isAdministrationModule, requestLeadClaim]);
 
   const handleQuickAction = useCallback((action: QuickAction, lead: Lead) => {
-    if (!isAdministrationModule && !lead.managerId) {
-      openLead(lead.id);
-      return;
-    }
     if (action === 'payment') {
       openLead(lead.id, 'payment');
       return;
@@ -837,7 +837,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       }
       return;
     }
-  }, [isAdministrationModule, isCallPending, isLineBusyWithReminder, openLead, setLocation, startOnlinePbxCall, t]);
+  }, [isCallPending, isLineBusyWithReminder, openLead, setLocation, startOnlinePbxCall, t]);
 
   const openArchiveDialog = useCallback((lead: Lead) => {
     setArchiveDialogLead(lead);
@@ -1001,6 +1001,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           callActionLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
           onArchiveLead={openArchiveDialog}
           onStatusChange={requestLeadStatusChange}
+          beforeLeadAction={beforeLeadAction}
           isPending={updateLead.isPending}
           showManager={isAdministrationModule}
           selectedLeadIds={pipelineBulkActions.selectedLeadIds}
@@ -1145,6 +1146,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         onCall={startOnlinePbxCall}
         disabled={isCallPending}
         disabledLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
+      />
+      <AssignLeadToSelfDialog
+        open={Boolean(leadClaimAction.lead)}
+        leadName={leadClaimAction.lead?.contactName}
+        description={t('leadClaimRequiredDescription')}
+        confirmLabel={t('assignToMeAndContinue')}
+        isPending={leadClaimAction.isPending}
+        confirmDisabled={!user?.id}
+        onOpenChange={(nextOpen) => { if (!nextOpen) leadClaimAction.close(); }}
+        onConfirm={leadClaimAction.confirm}
       />
       <LeadDetailSheet
         leadId={selectedLeadId}

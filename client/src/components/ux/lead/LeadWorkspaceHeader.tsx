@@ -28,13 +28,12 @@ interface LeadWorkspaceHeaderProps {
   tagsEditor: ReactNode;
   archiveAction: ReactNode;
   workflowActions?: ReactNode;
-  assignmentAction?: ReactNode;
 }
 
 export function LeadWorkspaceHeader({
   lead, visiblePhoneNumbers, primaryPhone, messageTarget, statuses,
   leadStatusName, onlinePbxCall, copyPhone, tagsEditor, archiveAction, workflowActions,
-  assignmentAction, actionsDisabled = false,
+  actionsDisabled = false,
 }: LeadWorkspaceHeaderProps) {
   const { t } = useTranslation();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
@@ -68,6 +67,7 @@ export function LeadWorkspaceHeader({
                 >
                   <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <a
+                    data-lead-processing
                     href={actionsDisabled ? undefined : `tel:${phone.replace(/[^\d+]/g, '')}`}
                     aria-disabled={actionsDisabled || undefined}
                     className="truncate tabular-nums transition-colors hover:text-primary"
@@ -90,7 +90,7 @@ export function LeadWorkspaceHeader({
             )}
           </div>
 
-          <fieldset disabled={actionsDisabled} className="min-w-0">
+          <fieldset data-lead-processing disabled={actionsDisabled} className="min-w-0">
             {tagsEditor}
           </fieldset>
         </div>
@@ -103,8 +103,7 @@ export function LeadWorkspaceHeader({
       />
 
       {/* Quick actions — single prominent CTA + secondary outline buttons */}
-      {assignmentAction}
-      <fieldset disabled={actionsDisabled} className="flex flex-wrap gap-2">
+      <fieldset data-lead-processing disabled={actionsDisabled} className="flex flex-wrap gap-2">
         {primaryPhone ? (
           <Button
             type="button"

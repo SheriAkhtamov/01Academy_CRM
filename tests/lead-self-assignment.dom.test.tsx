@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
@@ -9,8 +9,9 @@ import { localizeApiErrorMessage } from '../client/src/lib/queryClient';
 
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
 
+const startCall = vi.hoisted(() => vi.fn());
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
-  useOnlinePbxCall: () => ({ startCall: vi.fn(), isPending: false, pendingPhone: null }),
+  useOnlinePbxCall: () => ({ startCall, isPending: false, pendingPhone: null }),
 }));
 
 const initialLead = {
@@ -25,6 +26,7 @@ let queryClient: QueryClient;
 
 beforeEach(() => {
   i18n.setLanguage('ru');
+  startCall.mockClear();
   lead = structuredClone(initialLead);
   requests = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -61,35 +63,37 @@ function renderSheet(canTransferLeads = false) {
 }
 
 describe('self-assignment inside the lead modal', () => {
-  it('claims an unassigned lead only after confirmation, independently of the lead form', async () => {
+  it('requires claiming when editing and keeps the lead open after confirmation', async () => {
     const { user, onOpenChange } = renderSheet();
-    const button = await screen.findByRole('button', { name: i18n.t('assignLeadToMe') });
-    expect((button as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') }).matches(':disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: i18n.t('bookDemoLesson') }).matches(':disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: i18n.t('callShort') }).matches(':disabled')).toBe(true);
-    expect(screen.getByText('+998901234567').getAttribute('href')).toBeNull();
+    await screen.findByRole('heading', { name: 'Parent' });
+    expect(screen.queryByRole('button', { name: i18n.t('assignLeadToMe') })).toBeNull();
     expect(screen.queryByRole('combobox', { name: i18n.t('responsibleManager') })).toBeNull();
-    await user.click(button);
+    await user.click(screen.getByLabelText(i18n.t('contactPersonName')));
     const confirmation = await screen.findByRole('alertdialog');
-    expect(within(confirmation).getByText(i18n.t('confirmLeadClaim'))).toBeTruthy();
+    expect(within(confirmation).getByText(i18n.t('leadAssignmentRequired'))).toBeTruthy();
     expect(requests).toHaveLength(0);
     await user.click(within(confirmation).getByRole('button', { name: i18n.t('assignLeadToMe') }));
     await waitFor(() => expect(requests).toEqual([{
       url: '/api/academy/leads/15/assign', method: 'POST', body: { managerId: 18 },
     }]));
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(queryClient.getQueryData(['/api/academy/leads', 15])).toMatchObject({ managerId: 18 });
-    await waitFor(() => expect(screen.getByLabelText(i18n.t('contactPersonName')).matches(':disabled')).toBe(false));
+    await user.type(screen.getByLabelText(i18n.t('contactPersonName')), ' updated');
+    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).value).toBe('Parent updated');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('callShort') }));
+    expect(startCall).toHaveBeenCalledExactlyOnceWith('+998901234567');
   });
 
   it('cancels a claim without any write', async () => {
     const { user } = renderSheet();
-    await user.click(await screen.findByRole('button', { name: i18n.t('assignLeadToMe') }));
+    await user.click(await screen.findByRole('button', { name: i18n.t('bookDemoLesson') }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('cancel') }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(requests).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: i18n.t('sendToAnotherFunnel') }));
+    expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
   });
 
   it('allows browsing activity and tasks but prevents processing before claiming', async () => {
@@ -97,11 +101,45 @@ describe('self-assignment inside the lead modal', () => {
     await screen.findByRole('heading', { name: 'Parent' });
     await user.click(screen.getByRole('tab', { name: i18n.t('activityTab') }));
     const note = screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') });
-    expect(note.matches(':disabled')).toBe(true);
-    await user.type(note, 'Cannot save a note yet');
     await user.click(screen.getByRole('tab', { name: i18n.t('taskBoard') }));
     expect(requests).toEqual([]);
-    expect(screen.getByRole('button', { name: i18n.t('assignLeadToMe') }).matches(':disabled')).toBe(false);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('createTask') }));
+    expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('cancel') }));
+    await user.click(screen.getByRole('tab', { name: i18n.t('activityTab') }));
+    await user.click(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }));
+    expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+    expect((note as HTMLTextAreaElement).value).toBe('');
+    expect(requests).toEqual([]);
+  });
+
+  it.each(['callShort', 'sendToAnotherFunnel', 'bookDemoLesson', 'archiveLeadShort', 'addPhone'] as const)(
+    'prompts before the %s action without sending a write', async key => {
+      const { user } = renderSheet();
+      await user.click(await screen.findByRole('button', { name: i18n.t(key) }));
+      expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+      expect(requests).toEqual([]);
+      expect(startCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('guards form changes dispatched without a preceding pointer click', async () => {
+    renderSheet();
+    await screen.findByRole('heading', { name: 'Parent' });
+    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Changed before claim' } });
+    expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+    expect(requests).toEqual([]);
+  });
+
+  it('requires claiming before opening a new payment', async () => {
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Parent' });
+    await user.click(screen.getByRole('tab', { name: i18n.t('payment') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('recordPayment') }));
+    expect(screen.getByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull();
+    expect(requests).toEqual([]);
   });
 
   it.each([18, 7])('does not offer claiming or transferring an assigned lead (manager %s)', async (managerId) => {

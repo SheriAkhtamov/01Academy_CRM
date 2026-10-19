@@ -130,15 +130,15 @@ describe('lead modal behavior', () => {
     });
   });
 
-  it('asks to claim an unassigned lead and retries the payment with confirmation', async () => {
+  it('asks before assigning an unassigned student linked to an owned lead during payment', async () => {
     const paymentBodies: Array<Record<string, unknown>> = [];
     let claimed = false;
     const lead = () => ({
       id: 15,
       contactName: 'Alexandra Zadorozhnaya',
       statusCode: 'paid',
-      managerId: claimed ? 1 : null,
-      managerName: claimed ? 'Sales Manager' : null,
+      managerId: 1,
+      managerName: 'Sales Manager',
       sourceId: 1,
       expectedPaymentUzs: 100_000,
       createdAt: '2026-08-01T08:00:00.000Z',

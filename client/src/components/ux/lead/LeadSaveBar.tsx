@@ -27,7 +27,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
             <span className="sr-only sm:not-sr-only">{t('undoChanges')}</span>
           </Button>
         ) : null}
-        <Button type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending || saveDisabled}>
+        <Button data-lead-processing type="submit" form="lead-details-form" size="sm" disabled={!dirty || pending || saveDisabled}>
           {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
           {pending ? t('saving') : t('saveChanges')}
         </Button>

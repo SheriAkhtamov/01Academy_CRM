@@ -106,6 +106,7 @@ interface KanbanBoardProps {
   statuses: readonly KanbanStatus[];
   leads: KanbanLead[];
   onStatusChange: (leadId: number, statusCode: string) => boolean | void | Promise<boolean | void>;
+  beforeLeadAction?: (lead: KanbanLead, proceed: () => void) => void;
   onQuickAction?: (action: 'payment' | 'call' | 'message', lead: KanbanLead) => void;
   callActionDisabled?: boolean;
   callActionLabel?: string;
@@ -206,7 +207,13 @@ function LeadCardContent({
               onPointerDown={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
               onTouchStart={(event) => event.stopPropagation()}
-              onClick={stopCardInteraction}
+              onClick={(event) => {
+                stopCardInteraction(event);
+                if (!lead.managerId && onQuickAction) {
+                  event.preventDefault();
+                  onQuickAction('call', lead);
+                }
+              }}
             >
               {visiblePhone}
             </a>
@@ -485,6 +492,8 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
+      role="region"
+      aria-label={status.name}
       className={cn(
         // A full 320px column on a 375px phone leaves ~23px of the next one
         // showing once the gap is taken out, which reads as a rendering edge
@@ -587,6 +596,7 @@ export function KanbanBoard({
   statuses,
   leads,
   onStatusChange,
+  beforeLeadAction,
   onQuickAction,
   callActionDisabled,
   callActionLabel,
@@ -636,38 +646,47 @@ export function KanbanBoard({
   const moveLead = useCallback((leadId: number, statusCode: string) => {
     const lead = boardLeads.find((item) => item.id === leadId);
     if (!lead || lead.statusCode === statusCode || !statusesByCode.has(statusCode)) return;
-    const baselineStatusCode = latestLeadsRef.current.find((item) => item.id === leadId)?.statusCode
-      ?? lead.statusCode;
-    const token = ++nextMoveTokenRef.current;
-    pendingMovesRef.current.set(leadId, {
-      token,
-      value: statusCode,
-      baselineValue: baselineStatusCode,
-    });
-
-    setBoardLeads((current) => current.map((item) => (
-      item.id === leadId ? { ...item, statusCode } : item
-    )));
-
-    const finishMove = (accepted: boolean) => {
-      const change = finishOptimisticChange(pendingMovesRef.current, leadId, token);
-      if (!change) return;
-
-      const latestLead = latestLeadsRef.current.find((item) => item.id === leadId);
-      if (!accepted || incomingValueChangedSinceStart(latestLead, change, (item) => item.statusCode)) {
-        setBoardLeads(reconcileKanbanLeads(latestLeadsRef.current, pendingMovesRef.current));
-      }
-    };
-
-    Promise.resolve()
-      .then(() => onStatusChange(leadId, statusCode))
-      .then((accepted) => {
-        finishMove(accepted !== false);
-      })
-      .catch(() => {
-        finishMove(false);
+    const proceed = () => {
+      const baselineStatusCode = latestLeadsRef.current.find((item) => item.id === leadId)?.statusCode
+        ?? lead.statusCode;
+      const token = ++nextMoveTokenRef.current;
+      pendingMovesRef.current.set(leadId, {
+        token,
+        value: statusCode,
+        baselineValue: baselineStatusCode,
       });
-  }, [boardLeads, onStatusChange, statusesByCode]);
+
+      setBoardLeads((current) => current.map((item) => (
+        item.id === leadId ? { ...item, statusCode } : item
+      )));
+
+      const finishMove = (accepted: boolean) => {
+        const change = finishOptimisticChange(pendingMovesRef.current, leadId, token);
+        if (!change) return;
+
+        const latestLead = latestLeadsRef.current.find((item) => item.id === leadId);
+        if (!accepted || incomingValueChangedSinceStart(latestLead, change, (item) => item.statusCode)) {
+          setBoardLeads(reconcileKanbanLeads(latestLeadsRef.current, pendingMovesRef.current));
+        }
+      };
+
+      Promise.resolve()
+        .then(() => onStatusChange(leadId, statusCode))
+        .then((accepted) => {
+          finishMove(accepted !== false);
+        })
+        .catch(() => {
+          finishMove(false);
+        });
+    };
+    if (beforeLeadAction) beforeLeadAction(lead, proceed);
+    else proceed();
+  }, [beforeLeadAction, boardLeads, onStatusChange, statusesByCode]);
+
+  const runLeadAction = (lead: KanbanLead, proceed: () => void) => {
+    if (beforeLeadAction) beforeLeadAction(lead, proceed);
+    else proceed();
+  };
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveLeadId(Number(event.active.data.current?.leadId));
@@ -738,11 +757,11 @@ export function KanbanBoard({
                 statuses={statuses}
                 onMove={moveLead}
                 leads={boardLeads.filter((lead) => lead.statusCode === status.code)}
-                onQuickAction={onQuickAction}
+                onQuickAction={onQuickAction ? (action, lead) => runLeadAction(lead, () => onQuickAction(action, lead)) : undefined}
                 callActionDisabled={callActionDisabled}
                 callActionLabel={callActionLabel}
-                onArchiveLead={onArchiveLead}
-                onEnrollDemo={setDemoEnrollmentLead}
+                onArchiveLead={onArchiveLead ? lead => runLeadAction(lead, () => onArchiveLead(lead)) : undefined}
+                onEnrollDemo={lead => runLeadAction(lead, () => setDemoEnrollmentLead(lead))}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}
                 showManager={showManager}

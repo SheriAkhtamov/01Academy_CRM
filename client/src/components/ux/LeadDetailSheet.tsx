@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
+import { leadProcessingGuard } from '@/features/leads/lead-processing-guard';
 import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
 import { invalidateLeadData, useLeadDetailsQuery, type LeadInvalidationOptions } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
@@ -423,6 +424,7 @@ export function LeadDetailSheet({
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const tasksCardRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   const [focusTarget, setFocusTarget] = useState<'contacts' | 'students' | 'details' | 'comment' | 'task' | 'tasks' | null>(null);
   const [invalidField, setInvalidField] = useState<FieldPath<LeadFormValues> | null>(null);
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
@@ -490,6 +492,7 @@ export function LeadDetailSheet({
   useEffect(() => {
     setCommentDraft('');
     setPendingPaymentClaim(null);
+    setPendingManagerId(null);
     setTaskDialogOpen(false);
     setPaymentDialogOpen(false);
     clearPaymentFiles();
@@ -704,11 +707,11 @@ export function LeadDetailSheet({
   const assignLead = useMutation({
     mutationFn: (managerId: number) => leadsApi.assign(leadId!, { managerId }),
     onSuccess: async (_result, managerId) => {
-      setPendingManagerId(null);
       await invalidateLeadData(queryClient, leadId);
+      setPendingManagerId(null);
       toast({ title: canClaimUnassignedLead && managerId === currentUserId ? t('leadAssignedToMe') : t('leadTransferred') });
       onChanged();
-      onOpenChange(false);
+      if (!(canClaimUnassignedLead && managerId === currentUserId)) onOpenChange(false);
     },
     onError: (error: Error) => {
       setPendingManagerId(null);
@@ -841,7 +844,8 @@ export function LeadDetailSheet({
   const paymentActionLabel = lead?.payments?.some((payment) => payment.status === 'paid') ? t('recordAnotherPayment') : t('recordPayment');
   const paymentNeedsStudent = (lead?.students?.length ?? 0) === 0;
   const canClaimLead = canClaimUnassignedLead && Boolean(currentUserId) && Boolean(lead && !lead.managerId && !lead.isArchived);
-  const confirmingSelfClaim = canClaimLead && pendingManagerId === currentUserId;
+  const leadReadOnly = leadNeedsClaim && !canClaimLead;
+  const confirmingSelfClaim = canClaimUnassignedLead && pendingManagerId !== null && pendingManagerId === currentUserId;
   const visiblePhoneNumbers = visibleLeadPhones(lead);
   const primaryPhone = primaryVisibleLeadPhone(lead);
   const messageTarget = leadMessageTarget(lead);
@@ -978,12 +982,21 @@ export function LeadDetailSheet({
       onOpenChange={unsavedGuard.handleOpenChange}
     >
       <SheetContent
+        ref={sheetRef}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          sheetRef.current?.focus();
+        }}
+        {...leadProcessingGuard(canClaimLead, () => { if (currentUserId) setPendingManagerId(currentUserId); })}
         className="flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl"
         onKeyDown={(event) => {
           if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]') !== event.currentTarget) return;
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            if (leadForm.formState.isDirty && !updateLead.isPending) void saveDeal();
+            if (leadForm.formState.isDirty && !updateLead.isPending) {
+              if (canClaimLead && currentUserId) setPendingManagerId(currentUserId);
+              else void saveDeal();
+            }
           }
         }}
         onEscapeKeyDown={(event) => {
@@ -1010,7 +1023,7 @@ export function LeadDetailSheet({
         ) : (
           <>
             <LeadWorkspaceHeader
-              actionsDisabled={leadNeedsClaim}
+              actionsDisabled={leadReadOnly}
               lead={lead}
               visiblePhoneNumbers={visiblePhoneNumbers}
               primaryPhone={primaryPhone}
@@ -1019,12 +1032,6 @@ export function LeadDetailSheet({
               leadStatusName={(code) => funnelStatuses.find((status) => status.code === code)?.name ?? leadStatusName(code)}
               onlinePbxCall={onlinePbxCall}
               copyPhone={copyPhone}
-              assignmentAction={canClaimLead ? (
-                <Button type="button" size="sm" className="self-start" disabled={assignLead.isPending}
-                  onClick={() => { if (currentUserId) setPendingManagerId(currentUserId); }}>
-                  {t('assignLeadToMe')}
-                </Button>
-              ) : null}
               tagsEditor={(
                 <LeadTagsEditor
                   leadId={lead.id}
@@ -1050,7 +1057,7 @@ export function LeadDetailSheet({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={leadNeedsClaim || transferFunnel.isPending}
+                      disabled={leadReadOnly || transferFunnel.isPending}
                       onClick={() => setFunnelTransferOpen(true)}
                     >
                       <ArrowRight data-icon="inline-start" />
@@ -1104,7 +1111,7 @@ export function LeadDetailSheet({
               </div>
 
               <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/40 p-4 sm:p-6">
-              <fieldset disabled={leadNeedsClaim} className="min-w-0">
+              <fieldset disabled={leadReadOnly} className="min-w-0">
             {versionConflict ? <LeadVersionNotice pending={reviewingVersion}
               onKeepDraft={() => void reviewLatestVersion(true)}
               onUseServer={() => unsavedGuard.requestAction(() => void reviewLatestVersion(false))}
@@ -1122,7 +1129,7 @@ export function LeadDetailSheet({
               ]} /> : null}
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <Form {...leadForm}>
-                    <form id="lead-details-form" noValidate onSubmit={saveDeal}>
+                    <form data-lead-processing id="lead-details-form" noValidate onSubmit={saveDeal}>
                       <fieldset disabled={updateLead.isPending} className="flex min-w-0 flex-col gap-4">
                         <Card ref={contactsCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-sky-200/80 shadow-sm focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-900/70 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-900">
                           <CardHeader className="border-b border-sky-100 bg-sky-50/80 pb-3 dark:border-sky-900/60 dark:bg-sky-950/30">
@@ -1322,6 +1329,7 @@ export function LeadDetailSheet({
                     money={money}
                     composer={(
                       <form
+                        data-lead-processing
                         className="rounded-xl border border-border bg-muted/20 p-3 transition-colors focus-within:border-primary/40 focus-within:bg-background"
                         onSubmit={(event) => {
                           event.preventDefault();
@@ -1395,7 +1403,7 @@ export function LeadDetailSheet({
                           {t('paymentHistory')}
                           {paymentsCount > 0 ? <Badge variant="secondary">{paymentsCount}</Badge> : null}
                         </CardTitle>
-                        <Button type="button" size="sm" className="w-full sm:w-auto" onClick={() => setPaymentDialogOpen(true)}>
+                        <Button data-lead-processing type="button" size="sm" className="w-full sm:w-auto" onClick={() => setPaymentDialogOpen(true)}>
                           <CreditCard data-icon="inline-start" />
                           {paymentActionLabel}
                         </Button>
@@ -1455,7 +1463,7 @@ export function LeadDetailSheet({
                             <Badge variant="secondary">{(lead.tasks ?? []).length}</Badge>
                           ) : null}
                         </CardTitle>
-                        <Button type="button" size="sm" onClick={() => setTaskDialogOpen(true)}>
+                        <Button data-lead-processing type="button" size="sm" onClick={() => setTaskDialogOpen(true)}>
                           <Plus data-icon="inline-start" />
                           {t('createTask')}
                         </Button>
@@ -1515,6 +1523,7 @@ export function LeadDetailSheet({
                                       variant="ghost"
                                       size="sm"
                                       className="h-7 px-2"
+                                      data-lead-processing
                                       disabled={updateTask.isPending}
                                       onClick={() => updateTask.mutate(task.id)}
                                     >
@@ -1539,7 +1548,7 @@ export function LeadDetailSheet({
               key={lead.id}
               dirty={dealFormDirty}
               pending={updateLead.isPending}
-              saveDisabled={leadNeedsClaim || versionConflict || reviewingVersion}
+              saveDisabled={leadReadOnly || versionConflict || reviewingVersion}
               onDiscard={() => leadForm.reset(leadToFormValues(lead))}
             />
           </>
@@ -1791,11 +1800,14 @@ export function LeadDetailSheet({
       <AlertDialog open={pendingManagerId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen && !assignLead.isPending) setPendingManagerId(null);
       }}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          sheetRef.current?.focus();
+        }}>
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirmingSelfClaim ? t('confirmLeadClaim') : t('confirmLeadTransfer')}</AlertDialogTitle>
+            <AlertDialogTitle>{confirmingSelfClaim ? t('leadAssignmentRequired') : t('confirmLeadTransfer')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmingSelfClaim ? t('confirmLeadClaimDescription') : t('confirmLeadTransferDescription')
+              {confirmingSelfClaim ? t('leadClaimRequiredDescription') : t('confirmLeadTransferDescription')
                 .replace('{manager}', managers.find((manager) => manager.id === pendingManagerId)?.fullName ?? '')}
             </AlertDialogDescription>
           </AlertDialogHeader>

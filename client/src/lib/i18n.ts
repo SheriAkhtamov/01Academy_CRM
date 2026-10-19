@@ -3465,11 +3465,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   confirmLeadTransfer: { en: 'Transfer this lead?', ru: 'Передать этого лида?' },
   assignLeadToMe: { en: 'Assign to me', ru: 'Присвоить себе' },
   leadAssignedToMe: { en: 'Lead assigned to you', ru: 'Лид присвоен вам' },
-  confirmLeadClaim: { en: 'Take this lead?', ru: 'Взять этого лида в работу?' },
-  confirmLeadClaimDescription: {
-    en: 'You will be responsible for the lead and its open related tasks.',
-    ru: 'Вы станете ответственным за лида и его открытые связанные задачи.',
-  },
+  leadClaimFailed: { en: 'Could not assign the lead to you', ru: 'Не удалось присвоить лид себе' },
+  leadClaimRequiredDescription: { en: 'Assign this lead to yourself before processing it.', ru: 'Чтобы обработать лид, сначала присвойте его себе.' },
   confirmLeadTransferDescription: {
     en: 'The lead and open related tasks will be transferred to {manager}.',
     ru: 'Лид и открытые связанные задачи будут переданы менеджеру {manager}.',

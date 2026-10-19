@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SalesScheduleCalendar } from '../client/src/components/ux/SalesScheduleCalendar';
@@ -63,10 +63,10 @@ const groups = [
   },
 ];
 
-const renderSalesSchedule = () => render(
+const renderSalesSchedule = (visibleGroups = groups) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <SalesScheduleCalendar
-      groups={groups}
+      groups={visibleGroups}
       lessons={[]}
       courses={[{ id: 1, name: 'AI Kids' }, { id: 2, name: 'Vibe Coding' }]}
       schools={[{ id: 1, name: 'Cyberpark' }]}
@@ -129,6 +129,37 @@ describe('sales schedule calendar views', () => {
     renderSalesSchedule();
     expect(screen.getByRole('button', { name: 'Month' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByText('June 2026')).toBeTruthy();
+  });
+
+  it('opens overflowing lessons in a modal while keeping the month view and opens a hidden lesson from the list', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderSalesSchedule([groups[0], ...[1, 2, 3].map(index => ({
+      ...groups[0], id: index + 2, name: `Extra group ${index}`,
+      schedule: [{ dayOfWeek: 1, startTime: `${10 + index}:00`, endTime: `${11 + index}:00` }],
+    }))]);
+    const month = screen.getByRole('button', { name: 'Month' });
+    await user.click(month);
+    const day = screen.getByRole('button', { name: 'Monday, 15 June' }).parentElement!.parentElement!;
+    const more = within(day).getByRole('button', { name: '+1 more' });
+
+    await user.click(more);
+    const dialog = screen.getByRole('dialog', { name: i18n.t('schedule') });
+    expect(within(dialog).getByText('Monday, 15 June')).toBeTruthy();
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(dialog).getByRole('button', { name: '13:00–14:00, Extra group 3' })).toBeTruthy();
+    expect(month.getAttribute('aria-pressed')).toBe('true');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    expect(month.getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(more);
+    await user.click(within(screen.getByRole('dialog', { name: i18n.t('schedule') }))
+      .getByRole('button', { name: '13:00–14:00, Extra group 3' }));
+    expect(screen.getByRole('dialog', { name: 'Extra group 3' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: i18n.t('schedule') })).toBeNull();
+    expect(month.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('collapses the filter panel and counts what is hidden', async () => {

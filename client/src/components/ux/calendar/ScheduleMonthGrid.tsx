@@ -1,5 +1,8 @@
+import { useRef, useState } from 'react';
 import { format, isSameDay, isSameMonth } from 'date-fns';
 import type { Locale } from 'date-fns';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScheduleAgendaList } from '@/components/ux/calendar/ScheduleAgendaList';
 import {
   calendarToneAt,
   demoToneForStatus,
@@ -43,6 +46,8 @@ export function ScheduleMonthGrid({
   onSelectDay,
 }: ScheduleMonthGridProps) {
   const { t } = useTranslation();
+  const [expandedDay, setExpandedDay] = useState<Date | null>(null);
+  const overflowTrigger = useRef<HTMLButtonElement | null>(null);
 
   return (
     <div className="h-full overflow-auto">
@@ -136,7 +141,10 @@ export function ScheduleMonthGrid({
                     <button
                       type="button"
                       className="rounded px-1 py-0.5 text-left text-[10px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => onSelectDay(day)}
+                      onClick={(event) => {
+                        overflowTrigger.current = event.currentTarget;
+                        setExpandedDay(day);
+                      }}
                     >
                       {t('moreEventsCount').replace('{count}', String(overflow))}
                     </button>
@@ -147,6 +155,33 @@ export function ScheduleMonthGrid({
           })}
         </div>
       </div>
+      <Dialog open={expandedDay !== null} onOpenChange={(open) => { if (!open) setExpandedDay(null); }}>
+        <DialogContent className="flex max-h-[90dvh] max-w-3xl flex-col overflow-hidden" aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            overflowTrigger.current?.focus();
+          }}>
+          <DialogHeader className="pr-8">
+            <DialogTitle>{t('schedule')}</DialogTitle>
+          </DialogHeader>
+          {expandedDay ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ScheduleAgendaList
+                days={[expandedDay]}
+                eventsByDate={eventsByDate}
+                now={now}
+                locale={locale}
+                groupIndexById={groupIndexById}
+                onSelectEvent={(event) => {
+                  overflowTrigger.current = null;
+                  setExpandedDay(null);
+                  onSelectEvent(event);
+                }}
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

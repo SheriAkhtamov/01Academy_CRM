@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { planTelegramTaskReminders, planTelegramWeeklyDigest, weekKeys, type ReminderTask } from '../server/services/telegram-task-reminder-plan';
+import { planTelegramTaskReminders, planTelegramWeeklyDigest, planTelegramOverdueReminders, weekKeys, type ReminderTask } from '../server/services/telegram-task-reminder-plan';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(), release: vi.fn(), connect: vi.fn(), identity: vi.fn(), fetch: vi.fn(), warn: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../server/config', () => ({
 vi.mock('../server/services/telegram-tasks', () => ({ getTelegramTaskIdentity: mocks.identity }));
 vi.mock('../server/lib/logger', () => ({ logger: { warn: mocks.warn } }));
 vi.mock('node:timers/promises', () => ({ setTimeout: async () => {} }));
-import { notifyTelegramTaskProgress, processTelegramTaskReminders, sendTelegramTaskReminder } from '../server/services/telegram-task-reminders';
+import { processTelegramTaskReminders, sendTelegramTaskReminder } from '../server/services/telegram-task-reminders';
 
 const zone = 'Asia/Tashkent';
 const morning = new Date('2026-09-04T04:00:00Z');
@@ -50,6 +50,8 @@ beforeEach(() => {
       return { rows: recipients.filter((binding) => ![...claims.values()].some((row) =>
         row.bindingId === binding.id && [400, 403].includes(row.code ?? 0) && row.updated.getTime() > args[1].getTime() - 86_400_000)) };
     }
+    if (sql.includes('FROM telegram_task_events')) return { rows: [] };
+    if (sql.includes('(assignee_id = $1 OR creator_id = $1)')) return { rows: tasks.filter((task) => task.due_at && task.due_at <= args[1]) };
     if (sql.includes('FROM board_tasks task')) {
       expect(sql).toContain('task.assignee_id <> $1');
       expect(sql).toContain('employee.is_active = true AND employee.is_archived = false');
@@ -139,7 +141,7 @@ describe('Telegram reminder delivery', () => {
     expect(await processTelegramTaskReminders(zone, morning)).toBe(1);
     const payload = JSON.parse(mocks.fetch.mock.calls[0][1].body);
     expect(payload.chat_id).toBe('700'); expect(payload.parse_mode).toBeUndefined();
-    expect(payload.reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://crm.example.test/miniapp/tasks');
+    expect(payload.reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://crm.example.test/miniapp/tasks?view=mine');
     expect(mocks.release).toHaveBeenCalledOnce();
   });
   it('sends an administrator personal tasks first, followed by other active employees', async () => {
@@ -176,7 +178,8 @@ describe('Telegram reminder delivery', () => {
     await processTelegramTaskReminders(zone, morning); await processTelegramTaskReminders(zone, morning);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     await processTelegramTaskReminders(zone, new Date('2026-09-05T04:00:00Z'));
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch).toHaveBeenCalledTimes(3); // New daily digest plus the first overdue notice.
+    expect(JSON.parse(mocks.fetch.mock.calls[2][1].body).text).toContain('Задача просрочена');
   });
   it('does not notify outside production or without bot configuration', async () => {
     mocks.config.production = false; await processTelegramTaskReminders(zone);
@@ -251,35 +254,6 @@ describe('Telegram reminder delivery', () => {
   });
 });
 
-describe('Delegated task progress notification', () => {
-  const event = { title: 'Подготовить\nдокументы', creatorId: 7, assigneeId: 8, actorId: 8, actorName: 'Алина', status: 'in_progress' as const };
-
-  it('sends a plain private message to the verified creator when work starts or completes', async () => {
-    expect(await notifyTelegramTaskProgress(event)).toBe(true);
-    const started = JSON.parse(mocks.fetch.mock.calls[0][1].body);
-    expect(started.chat_id).toBe('700');
-    expect(started.text).toContain('Задача в работе\nПодготовить документы\nИсполнитель: Алина');
-    expect(started.parse_mode).toBeUndefined();
-    expect(started.reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://crm.example.test/miniapp/tasks');
-    expect(await notifyTelegramTaskProgress({ ...event, status: 'done' })).toBe(true);
-    expect(JSON.parse(mocks.fetch.mock.calls[1][1].body).text).toContain('Задача отмечена выполненной');
-  });
-
-  it('does not send for self-assigned tasks, another actor or an invalid binding', async () => {
-    expect(await notifyTelegramTaskProgress({ ...event, creatorId: 8 })).toBe(false);
-    expect(await notifyTelegramTaskProgress({ ...event, actorId: 1 })).toBe(false);
-    mocks.identity.mockResolvedValue(null);
-    expect(await notifyTelegramTaskProgress(event)).toBe(false);
-    expect(mocks.fetch).not.toHaveBeenCalled();
-  });
-
-  it('does not use copied bot settings outside production', async () => {
-    mocks.config.production = false;
-    expect(await notifyTelegramTaskProgress(event)).toBe(false);
-    expect(mocks.query).not.toHaveBeenCalled();
-  });
-});
-
 it('registers a non-destructive delivery-history migration after source restoration', () => {
   const migration = readFileSync(new URL('../migrations/0103_telegram_task_reminders.sql', import.meta.url), 'utf8');
   expect(migration).toContain('UNIQUE (binding_id, kind, event_key)');
@@ -287,4 +261,23 @@ it('registers a non-destructive delivery-history migration after source restorat
   expect(migration).not.toMatch(/(?:^|;)\s*(?:DROP|DELETE|UPDATE)\b/m);
   const journal = JSON.parse(readFileSync(new URL('../migrations/meta/_journal.json', import.meta.url), 'utf8'));
   expect(journal.entries).toContainEqual(expect.objectContaining({ idx: 103, tag: '0103_telegram_task_reminders' }));
+});
+
+it('sends overdue once per recipient and deadline, including the creator, and links to the task', async () => {
+  const now = new Date('2026-09-04T10:00:00Z');
+  tasks = [{ ...task(50, '2026-09-04T09:59:00Z'), creator_id: 7, assignee_id: 8 }];
+  expect(await processTelegramTaskReminders(zone, now)).toBe(1);
+  expect(await processTelegramTaskReminders(zone, now)).toBe(0);
+  const payload = JSON.parse(mocks.fetch.mock.calls[0][1].body);
+  expect(payload.text).toContain('Задача просрочена');
+  expect(payload.reply_markup.inline_keyboard[0][0].web_app.url).toContain('task=50');
+  expect(payload.reply_markup.inline_keyboard[0][0].web_app.url).toContain('view=assigned');
+  expect(planTelegramOverdueReminders([{ ...tasks[0], status: 'done' }], now, zone)).toEqual([]);
+  expect(planTelegramOverdueReminders([{ ...tasks[0], status: 'accepted' }], now, zone)).toEqual([]);
+});
+
+it('links each digest task and the due reminder to its own task rather than a general list', () => {
+  const entries = [task(10, '2026-09-04T04:30:00Z'), task(11, null)];
+  expect(planTelegramWeeklyDigest(entries, morning, zone)[0].buttons.slice(1).map((b) => b.destination.taskId)).toEqual([10, 11]);
+  expect(planTelegramTaskReminders(entries, morning, zone)[0].buttons[0].destination.taskId).toBe(10);
 });

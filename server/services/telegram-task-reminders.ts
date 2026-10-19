@@ -2,72 +2,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pool } from '../db';
 import { appConfig, isProductionEnvironment } from '../config';
 import { logger } from '../lib/logger';
-import { t } from '../lib/i18n';
 import { hasLeadershipAccess } from '@shared/academy';
 import { getTelegramTaskIdentity } from './telegram-tasks';
-import { planTelegramTaskReminders, planTelegramWeeklyDigest, type ReminderTask } from './telegram-task-reminder-plan';
+import { planTelegramTaskReminders, planTelegramWeeklyDigest, planTelegramOverdueReminders, type ReminderTask } from './telegram-task-reminder-plan';
 
-type Delivery = { status: 'sent' | 'deferred' | 'failed' | 'uncertain'; code: number | null; retrySeconds: number | null };
-
-export type TelegramTaskProgress = {
-  title: string;
-  creatorId: number | null;
-  assigneeId: number | null;
-  actorId: number;
-  actorName: string;
-  status: 'in_progress' | 'done';
-};
-
-const messageLine = (value: string, limit: number) => Array.from(value.replace(/[\r\n\t]/g, ' ').trim()).slice(0, limit).join('');
-
-export async function sendTelegramTaskReminder(botToken: string, chatId: string, text: string, appUrl: string): Promise<Delivery> {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, link_preview_options: { is_disabled: true },
-        reply_markup: { inline_keyboard: [[{ text: t('telegramReminderOpen'), web_app: { url: appUrl } }]] } }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    const result = await response.json() as { ok?: boolean; error_code?: number; parameters?: { retry_after?: number } };
-    if (response.ok && result.ok === true) return { status: 'sent', code: null, retrySeconds: null };
-    const code = Number(result.error_code ?? response.status);
-    if (code === 429) {
-      const retry = Number(result.parameters?.retry_after);
-      return { status: 'deferred', code, retrySeconds: Number.isFinite(retry) && retry > 0 ? Math.ceil(retry) : 60 };
-    }
-    return { status: code >= 500 ? 'uncertain' : 'failed', code, retrySeconds: null };
-  } catch {
-    // Telegram sendMessage has no idempotency key. Do not blindly resend after
-    // a timeout: Telegram may have accepted the first message. Tomorrow's
-    // digest still covers unfinished work. Never log raw URLs/errors/tokens.
-    return { status: 'uncertain', code: null, retrySeconds: null };
-  }
-}
-
-export async function notifyTelegramTaskProgress(event: TelegramTaskProgress): Promise<boolean> {
-  if (!event.creatorId || !event.assigneeId || event.creatorId === event.assigneeId || event.actorId !== event.assigneeId) return false;
-  const config = appConfig.integrations?.telegramTasks;
-  const token = config?.botToken?.trim();
-  if (!isProductionEnvironment || !token || !config?.webhookSecret?.trim()) return false;
-  const appUrl = new URL('/miniapp/tasks', appConfig.server.appUrl).href;
-  if (!appUrl.startsWith('https://')) return false;
-  const botId = token.split(':')[0];
-  const { rows } = await pool.query<{ telegram_user_id: string; verification_id: string }>(
-    'SELECT telegram_user_id, verification_id FROM telegram_task_bindings WHERE bot_id = $1 AND user_id = $2',
-    [botId, event.creatorId],
-  );
-  const binding = rows[0];
-  if (!binding) return false;
-  const identity = await getTelegramTaskIdentity(botId, binding.telegram_user_id);
-  if (!identity || identity.user.id !== event.creatorId || identity.binding.verification_id !== binding.verification_id) return false;
-  const key = event.status === 'done' ? 'telegramTaskProgressDone' : 'telegramTaskProgressStarted';
-  const text = t(key, { title: messageLine(event.title, 220), assignee: messageLine(event.actorName, 100) });
-  const delivery = await sendTelegramTaskReminder(token, binding.telegram_user_id, text, appUrl);
-  if (delivery.status !== 'sent') {
-    logger.warn('Telegram task progress notification not confirmed', { status: delivery.status, errorCode: delivery.code });
-  }
-  return delivery.status === 'sent';
-}
+import { sendTelegramTaskReminder } from './telegram-task-delivery';
+export { sendTelegramTaskReminder } from './telegram-task-delivery';
 
 export async function processTelegramTaskReminders(timeZone: string, now = new Date()): Promise<number> {
   const config = appConfig.integrations?.telegramTasks;
@@ -91,6 +31,9 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
        JOIN telegram_task_bindings binding ON binding.id = reminder.binding_id
        WHERE binding.bot_id = $1 AND reminder.error_code = 429 AND reminder.next_attempt_at > $2 LIMIT 1`, [botId, now]);
     if (cooldown.rows.length) return 0;
+    const eventCooldown = await client.query(
+      "SELECT 1 FROM telegram_task_events WHERE status = 'deferred' AND next_attempt_at > $1 LIMIT 1", [now]);
+    if (eventCooldown.rows.length) return 0;
     const bindings = await client.query<{ id: number; user_id: number; telegram_user_id: string; verification_id: string }>(
       `SELECT binding.id, binding.user_id, binding.telegram_user_id, binding.verification_id
        FROM telegram_task_bindings binding JOIN users employee ON employee.id = binding.user_id
@@ -112,7 +55,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
       const daily = planTelegramWeeklyDigest(tasks.rows, now, timeZone);
       if (daily.length && hasLeadershipAccess(identity.user)) {
         const team = await client.query<ReminderTask>(
-          `SELECT task.id, task.title, task.due_at, task.status, employee.full_name AS assignee_name
+          `SELECT task.id, task.title, task.due_at, task.status, task.assignee_id, employee.full_name AS assignee_name
            FROM board_tasks task
            JOIN users employee ON employee.id = task.assignee_id
            WHERE task.assignee_id <> $1 AND task.status <> 'accepted'
@@ -124,7 +67,12 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
         tasks.rows.filter((task) => ['backlog', 'todo', 'in_progress'].includes(task.status ?? '')),
         now, timeZone,
       );
-      for (const reminder of [...daily, ...dueSoon]) {
+      const overdueTasks = await client.query<ReminderTask>(
+        `SELECT id, title, due_at, status, assignee_id, creator_id FROM board_tasks
+         WHERE (assignee_id = $1 OR creator_id = $1) AND status IN ('backlog', 'todo', 'in_progress') AND due_at <= $2
+         ORDER BY due_at, id`, [binding.user_id, now]);
+      const overdue = planTelegramOverdueReminders(overdueTasks.rows, now, timeZone, binding.user_id);
+      for (const reminder of [...daily, ...dueSoon, ...overdue]) {
         if (Date.now() - started > 40_000) break;
         // Persist the claim BEFORE calling Telegram. It survives restarts, and
         // the unique key also protects against concurrent workers/repeated ticks.
@@ -146,7 +94,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
           }
           continue;
         }
-        const delivery = await sendTelegramTaskReminder(token, binding.telegram_user_id, reminder.text, appUrl);
+        const delivery = await sendTelegramTaskReminder(token, binding.telegram_user_id, reminder.text, appUrl, reminder.buttons);
         const nextAttempt = delivery.retrySeconds === null ? null : new Date(Date.now() + delivery.retrySeconds * 1000);
         await client.query(
           `UPDATE telegram_task_reminders SET status = $2, error_code = $3, next_attempt_at = $4,
@@ -159,7 +107,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
         if (delivery.status !== 'sent') break;
         // Pace consecutive chunks below Telegram's free broadcast limit.
         await delay(100);
-        if (reminder.kind === 'due_soon') break;
+        if (reminder.kind !== 'daily') break;
       }
     }
     return sent;

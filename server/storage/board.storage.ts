@@ -1,3 +1,4 @@
+import { queueTaskNotices } from './board-telegram-events';
 import { db } from '../db';
 import {
     boards,
@@ -395,8 +396,11 @@ class BoardStorage {
 
     async createTask(data: InsertBoardTask): Promise<BoardTask> {
         requireTaskAssignee(data.assigneeId);
-        const [row] = await db.insert(boardTasks).values(data).returning();
-        return row;
+        return db.transaction(async (tx) => {
+            const [row] = await tx.insert(boardTasks).values(data).returning();
+            await queueTaskNotices(tx, 'created', row, row.creatorId);
+            return row;
+        });
     }
 
     async createTaskWithActivity(
@@ -420,6 +424,7 @@ class BoardStorage {
             await tx.insert(boardTaskActivity).values({ ...activity, taskId: row.id,
                 ...(requestKey ? { meta: { requestKey } } : {}),
             });
+            await queueTaskNotices(tx, 'created', row, activity.actorId ?? row.creatorId);
             return row;
         });
     }
@@ -442,6 +447,7 @@ class BoardStorage {
         creatorId?: number,
     ): Promise<BoardTask> {
         return db.transaction(async (tx) => {
+            const [previous] = await tx.select().from(boardTasks).where(eq(boardTasks.id, id)).for('update');
             const [row] = await tx
                 .update(boardTasks)
                 .set({ ...data, updatedAt: new Date() })
@@ -460,6 +466,14 @@ class BoardStorage {
                     activities.map((activity) => ({ ...activity, taskId: id })),
                 );
             }
+            if (previous) {
+                const actorId = activities[0]?.actorId ?? creatorId ?? assigneeId ?? null;
+                const kind = previous.status === row.status ? 'updated'
+                    : row.status === 'accepted' ? 'accepted'
+                    : (previous.status === 'accepted' || previous.status === 'done') ? 'reopened'
+                    : row.status === 'in_progress' ? 'started' : row.status === 'done' ? 'done' : 'status';
+                await queueTaskNotices(tx, kind, row, actorId, { previous });
+            }
             return row;
         });
     }
@@ -467,7 +481,7 @@ class BoardStorage {
     async deleteTask(id: number, creatorId?: number): Promise<string[]> {
         return db.transaction(async (tx) => {
             // Lock the parent before collecting files; a concurrent upload cannot slip past deletion.
-            const [task] = await tx.select({ id: boardTasks.id }).from(boardTasks).where(and(
+            const [task] = await tx.select().from(boardTasks).where(and(
                 eq(boardTasks.id, id),
                 creatorId === undefined ? undefined : eq(boardTasks.creatorId, creatorId),
             )).for('update');
@@ -477,6 +491,7 @@ class BoardStorage {
             if (!task) return [];
             const attachments = await tx.select({ fileName: boardTaskAttachments.fileName })
                 .from(boardTaskAttachments).where(eq(boardTaskAttachments.taskId, id));
+            await queueTaskNotices(tx, 'deleted', task, creatorId ?? task.creatorId);
             await tx.delete(boardTasks).where(eq(boardTasks.id, id));
             return attachments.map((attachment) => attachment.fileName);
         });
@@ -500,6 +515,8 @@ class BoardStorage {
             if (data.authorId && readThroughCommentId) {
                 await saveBoardCommentRead(tx, data.taskId, data.authorId, readThroughCommentId);
             }
+            const [task] = await tx.select().from(boardTasks).where(eq(boardTasks.id, data.taskId));
+            if (task) await queueTaskNotices(tx, 'comment', task, data.authorId ?? null, { commentId: row.id });
             return row;
         });
     }
@@ -567,6 +584,8 @@ class BoardStorage {
                 type: 'attachment_added', fromValue: null, toValue: data.originalName.slice(0, 120),
                 meta: { attachmentId: row.id, originalName: data.originalName, ...(requestKey ? { requestKey } : {}) },
             });
+            const [task] = await tx.select().from(boardTasks).where(eq(boardTasks.id, data.taskId));
+            if (task) await queueTaskNotices(tx, 'attachment', task, data.uploadedBy ?? null, { attachmentId: row.id });
             return row;
         });
     }

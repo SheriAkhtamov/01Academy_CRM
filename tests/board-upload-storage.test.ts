@@ -11,7 +11,7 @@ describe('board retry transactions', () => {
   const filters: unknown[] = [];
   const tx = {
     execute: vi.fn(),
-    select: vi.fn(() => ({ from: () => ({ innerJoin: () => ({ where: (filter: unknown) => {
+    select: vi.fn(() => ({ from: () => ({ where: async () => [], innerJoin: () => ({ where: (filter: unknown) => {
       filters.push(filter);
       return { limit: async () => matches };
     } }) }) })),

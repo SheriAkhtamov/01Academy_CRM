@@ -1,6 +1,7 @@
+import type { TelegramTaskSection } from '@shared/telegram-task-links';
 import { getPendingAttachment, retainPendingAttachment, clearPendingAttachment } from '@/features/board/pending-attachments';
 import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import {
@@ -71,6 +72,9 @@ import {
 } from '@/lib/boardTypes';
 
 interface TaskDetailSheetProps {
+    initialSection?: TelegramTaskSection;
+    focusCommentId?: number;
+    focusAttachmentId?: number;
     tasksOnly?: boolean;
     taskId: number | null;
     open: boolean;
@@ -121,7 +125,7 @@ function columnLabel(status: string | null, t: (k: any) => string): string {
     }
 }
 
-export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly = false }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly = false, initialSection, focusCommentId, focusAttachmentId }: TaskDetailSheetProps) {
     const { t, language } = useTranslation();
     const { toast } = useToast();
     const { user } = useAuth();
@@ -156,7 +160,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
     const submittingComment = useRef(false);
     const submittingChecklist = useRef(false);
     const [failedUpload, setFailedUpload] = useState<File | null>(null);
-    const [activeTab, setActiveTab] = useState('comments');
+    const [activeTab, setActiveTab] = useState<string>(initialSection ?? 'comments');
+    const tabsRef = useRef<HTMLDivElement>(null);
+    const focusedTarget = useRef<string | null>(null);
     const userId = user?.id;
     const [uploadPercent, setUploadPercent] = useState<number | null>(null);
     const commentReads = useTaskCommentReads(task, userId, open, activeTab === 'comments');
@@ -169,8 +175,25 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
         setPendingDelete(null);
         const pending = userId && taskId ? getPendingAttachment(userId, taskId) : null;
         setFailedUpload(pending);
-        setActiveTab(pending ? 'attachments' : 'comments');
-    }, [taskId, open, userId]);
+        setActiveTab(initialSection ?? (pending ? 'attachments' : 'comments'));
+        focusedTarget.current = null;
+    }, [taskId, open, userId, initialSection]);
+
+    const focusNotificationTarget = useCallback(() => {
+        if (!open || task?.id !== taskId) return false;
+        const target = activeTab === 'comments' && focusCommentId ? `comment-${focusCommentId}`
+            : activeTab === 'attachments' && focusAttachmentId ? `attachment-${focusAttachmentId}` : null;
+        if (!target) return false;
+        if (focusedTarget.current === target) return true;
+        const element = tabsRef.current?.querySelector<HTMLElement>(`[data-task-target="${target}"]`);
+        if (!element) return false;
+        element.scrollIntoView?.({ block: 'center' });
+        element.focus({ preventScroll: true });
+        focusedTarget.current = target;
+        return true;
+    }, [open, taskId, task, activeTab, focusCommentId, focusAttachmentId]);
+
+    useEffect(() => { focusNotificationTarget(); }, [focusNotificationTarget]);
 
     useEffect(() => {
         if (task && !editing) {
@@ -358,7 +381,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
     return (
         <Sheet open={open} onOpenChange={unsavedGuard.handleOpenChange}>
-            <SheetContent data-mini-task-sheet={tasksOnly || undefined} className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+            <SheetContent onOpenAutoFocus={(event) => { if (focusNotificationTarget()) event.preventDefault(); }} data-mini-task-sheet={tasksOnly || undefined} className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
                 {isError ? (
                     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                         <SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle>
@@ -542,7 +565,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             </div>
 
                             {/* Tabs */}
-                            <Tabs value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
+                            <Tabs ref={tabsRef} value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
                                 <TabsList className={cn('grid h-auto w-full grid-cols-4 gap-1', tasksOnly && 'flex justify-start overflow-x-auto')}>
                                     <TabsTrigger value="comments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}{task.comments.some((comment) => comment.isUnread) ? <UnreadTaskCommentDot /> : null}</TabsTrigger>
                                     <TabsTrigger value="checklist" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>
@@ -572,7 +595,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     ) : (
                                         <ul className="space-y-3">
                                             {task.comments.map((c) => (
-                                                <li key={c.id} className="rounded-lg border border-border bg-card p-3">
+                                                <li key={c.id} data-task-target={`comment-${c.id}`} tabIndex={-1} className="rounded-lg border border-border bg-card p-3">
                                                     <div className="flex items-center justify-between gap-2">
                                                         <div className="flex items-center gap-2">
                                                             <BoardUserAvatar user={c.author} miniMode={tasksOnly} />
@@ -655,7 +678,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     ) : (
                                         <ul className="space-y-2">
                                             {task.attachments.map((a) => (
-                                                <li key={a.id} className="flex items-center gap-2 rounded-lg border border-border bg-card p-2.5">
+                                                <li key={a.id} data-task-target={`attachment-${a.id}`} tabIndex={-1} className="flex items-center gap-2 rounded-lg border border-border bg-card p-2.5">
                                                     {isPhotoAttachment(a.originalName) ? <TaskPhotoPreview name={a.originalName} attachmentId={a.id} /> : <Paperclip className="size-4 shrink-0 text-muted-foreground" />}
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm text-foreground">{a.originalName}</p>

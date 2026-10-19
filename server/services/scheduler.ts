@@ -1,3 +1,4 @@
+import { processTelegramTaskEvents } from './telegram-task-events';
 import cron from "node-cron";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
@@ -48,6 +49,12 @@ export const startScheduler = () => {
 
 
   cron.schedule("* * * * *", async () => {
+    try {
+      const sent = await processTelegramTaskEvents();
+      if (sent > 0) logger.info('[scheduler] Telegram task events sent', { count: sent });
+    } catch {
+      logger.error('[scheduler] Telegram task event worker failed');
+    }
     try {
       const sent = await processTelegramTaskReminders(SCHEDULER_TIME_ZONE);
       if (sent > 0) logger.info('[scheduler] Telegram task reminders sent', { count: sent });

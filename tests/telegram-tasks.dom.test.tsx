@@ -31,6 +31,7 @@ beforeEach(() => {
   Element.prototype.setPointerCapture ??= () => undefined;
   Element.prototype.releasePointerCapture ??= () => undefined;
   Element.prototype.scrollIntoView ??= () => undefined;
+  window.history.replaceState(null, '', '/');
   vi.clearAllMocks(); i18n.setLanguage('en');
   mocks.board.mockImplementation(async (_method, url) => ({ tasks: url.includes('archived=true') ? [{ ...task, id: 3, title: 'Archived task', status: 'accepted' }] : [task, delegatedTask] }));
   mocks.mini.mockResolvedValue([{ id: 7, fullName: 'Employee' }]);
@@ -297,4 +298,25 @@ describe('Mobile tasks interface', () => {
     expect(screen.queryByText('Готово')).toBeNull();
     expect(screen.queryByText('Ждут приёмки')).toBeNull();
   });
+});
+
+it.each([
+  ['?view=assigned&task=2&section=comments&comment=50', 'Assigned by me', { taskId: 2, initialSection: 'comments', focusCommentId: 50 }],
+  ['?view=archive&task=3&section=attachments&attachment=60', 'Archive', { taskId: 3, initialSection: 'attachments', focusAttachmentId: 60 }],
+])('opens notification destination %s directly in a task modal', async (search, label, props) => {
+  window.history.replaceState(null, '', '/miniapp/tasks' + search);
+  setup();
+  await waitFor(() => expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, ...props })));
+  expect(screen.getByRole('navigation').querySelector('[aria-current=page]')?.getAttribute('aria-label')).toBe(label);
+  act(() => mocks.detail.mock.lastCall![0].onOpenChange(false));
+  expect(window.location.search).toBe('');
+  expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: false }));
+});
+
+it('opens a task from a team digest in the selected employee list', async () => {
+  window.history.replaceState(null, '', '/miniapp/tasks?view=mine&owner=8&task=2');
+  setup();
+  await screen.findByText('Delegated task');
+  expect(screen.queryByText('My assigned task')).toBeNull();
+  expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 2 }));
 });

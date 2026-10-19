@@ -1,3 +1,4 @@
+import { readTelegramTaskDestination } from '@shared/telegram-task-links';
 import { BoardUserAvatar, BoardUserIdentity } from '@/components/ux/board/BoardUserAvatar';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -60,12 +61,13 @@ export function TasksApp() {
   const { t, language } = useTranslation();
   const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<TaskTab>('mine');
-  const [owner, setOwner] = useState(OWNER_SELF);
+  const [destination, setDestination] = useState(() => readTelegramTaskDestination(window.location.search));
+  const [tab, setTab] = useState<TaskTab>(destination.view ?? 'mine');
+  const [owner, setOwner] = useState(destination.ownerId ? String(destination.ownerId) : OWNER_SELF);
   const [filter, setFilter] = useState<QuickFilter>('all');
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase());
-  const [taskId, setTaskId] = useState<number | null>(null);
+  const [taskId, setTaskId] = useState<number | null>(destination.taskId ?? null);
   const [creating, setCreating] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [pullActive, setPullActive] = useState(false);
@@ -147,7 +149,7 @@ export function TasksApp() {
     setFilter('all');
     setSearch('');
   };
-  const openTask = (id: number) => { hapticSelect(); setTaskId(id); };
+  const openTask = (id: number) => { hapticSelect(); setDestination({}); setTaskId(id); };
 
   const onTouchStart = (event: React.TouchEvent) => {
     if (window.scrollY > 0 || tasks.isFetching) return;
@@ -250,6 +252,6 @@ export function TasksApp() {
       <button type="button" aria-label={t('taskArchive')} aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => changeTab('archive')}><Archive className="size-5" /><span>{t('taskArchive')}</span></button>
     </div></nav>
     <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={(created) => changeTab(created.assigneeId === user.id ? 'mine' : 'assigned')} users={users.data ?? []} currentUser={user} canAssignUsers miniMode />
-    <TaskDetailSheet open={taskId !== null} taskId={taskId} onOpenChange={(open) => { if (!open) setTaskId(null); }} users={users.data ?? []} tasksOnly />
+    <TaskDetailSheet open={taskId !== null} taskId={taskId} initialSection={destination.section} focusCommentId={destination.commentId} focusAttachmentId={destination.attachmentId} onOpenChange={(open) => { if (!open) { setTaskId(null); setDestination({}); window.history.replaceState(null, '', window.location.pathname); } }} users={users.data ?? []} tasksOnly />
   </div>;
 }

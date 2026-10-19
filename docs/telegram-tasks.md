@@ -105,7 +105,7 @@ refresh button is immediate. Only a task's creator can accept or reopen it.
 
 ## Task reminders outside the Mini App
 
-Apply `0103_telegram_task_reminders` with the normal migration runner after an
+Apply `0103_telegram_task_reminders` and `0158_telegram_task_events` with the normal migration runner after an
 approved database backup. The existing bot token/webhook config is reused;
 no new bot, credentials, webhook or paid broadcasts are needed.
 
@@ -122,17 +122,34 @@ no new bot, credentials, webhook or paid broadcasts are needed.
   is allowed until 10:00 only.
 - Within the final hour before the deadline, send a one-time reminder per
   task/deadline/recipient. Late-created tasks get the remaining-time reminder;
-  a changed deadline uses a new key. No deadline means daily digest only.
-- When the assigned employee moves a delegated task to `in_progress` or `done`,
-  the bot sends the creator a private message after the status change succeeds.
-  Moving a task on someone else's behalf, self-assigned work, and a repeated
-  selection of the current status do not send this message. Delivery happens
-  outside the request, so a Telegram outage does not block changing the task.
-  Progress messages are best effort; a failed Telegram request is logged.
-- Scheduled reminders include task titles and deadlines; team digests also
-  include assignee names. Progress messages
-  include the task title and assignee. Neither includes descriptions, lead cards,
-  attachments or internal task IDs. Each has a button opening `/miniapp/tasks`.
+  a changed deadline uses a new key. Tasks without deadlines receive the digest
+  and event notifications, without deadline reminders.
+- Once a deadline passes, notify both the author and assignee once per task,
+  deadline and recipient. Completed and accepted tasks are excluded.
+- Task creation, reassignment, title/description/priority/deadline changes,
+  comments, attachments, every status change (including acceptance and reopening)
+  and deletion queue notifications in the same database transaction as the change.
+  A rollback queues nothing. Creation/upload retries and unchanged field/status
+  submissions do not queue duplicate notifications. Several field changes in one
+  save produce one message per recipient.
+- The author and assignee receive relevant events, excluding the employee who
+  performed the action. A reassignment notifies both the new and former assignee;
+  the former assignee gets a task-list link. Self-assigned actions do not notify
+  their own actor. Start/completion messages go to the author; acceptance and
+  reopening by the author notify the assignee.
+- The production scheduler processes queued events every minute. Before claiming
+  a delivery it verifies the employee and current task participation; deleted
+  comments/files and obsolete task recipients are skipped. A deletion notice
+  survives the task's cascade and opens the task list.
+- Every message has inline Web App buttons. Task events and deadline reminders
+  open the exact task in the existing modal; comments and files select their tab,
+  scroll to and focus the matching item. Acceptance opens the archived task.
+  Digests include a list button and buttons for each listed task; long lists are
+  split to bound both message length and keyboard size. Team task buttons select
+  the corresponding employee's task list. Bot creation confirmations link to the
+  created task as well. Links contain object locations, never session credentials.
+- Message text contains task titles, deadlines and assignee names where relevant;
+  descriptions, comment bodies, lead cards, files and internal IDs are omitted.
 - Before each recipient's messages, recheck the same live employee/phone
   identity as Mini App auth. Unbound, inactive, archived or ambiguous identities
   receive nothing; reassigned tasks no longer remind the old assignee.
@@ -142,7 +159,8 @@ no new bot, credentials, webhook or paid broadcasts are needed.
   interrupted claimed attempt is not retried, to avoid double notifications.
   The next daily digest covers unfinished work again.
 - Retry explicit 429 responses only after Telegram's `retry_after`, with a
-  bot-wide cooldown. Blocked/missing chats (400/403) are suppressed for 24 hours.
+  bot-wide cooldown shared by event and reminder workers. Scheduled reminders
+  suppress blocked/missing chats (400/403) for 24 hours; event deliveries fail once.
   Digest chunks are sent in order and paced at most 10/sec.
 - Tests mock Telegram; do not send test messages to real employees or run the
   worker against copied production credentials in a local environment.

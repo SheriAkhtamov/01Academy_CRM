@@ -6,6 +6,27 @@
 type Language = 'en' | 'ru';
 
 const translations = {
+    telegramTaskCreated: { en: "🆕 New task\n{title}", ru: "🆕 Новая задача\n{title}" },
+    telegramTaskAssigned: { en: "👤 Task assigned to you\n{title}", ru: "👤 Вам назначена задача\n{title}" },
+    telegramTaskUnassigned: { en: "👤 Task reassigned\n{title}", ru: "👤 Задача передана другому исполнителю\n{title}" },
+    telegramTaskUpdated: { en: "✏️ Task updated\n{title}", ru: "✏️ Задача изменена\n{title}" },
+    telegramTaskAccepted: { en: "✅ Task accepted\n{title}", ru: "✅ Задача принята\n{title}" },
+    telegramTaskReopened: { en: "↩️ Task reopened\n{title}", ru: "↩️ Задача возвращена в работу\n{title}" },
+    telegramTaskStatusChanged: { en: "🔄 Task status changed\n{title}", ru: "🔄 Статус задачи изменён\n{title}" },
+    telegramTaskDeleted: { en: "🗑 Task deleted\n{title}", ru: "🗑 Задача удалена\n{title}" },
+    telegramTaskComment: { en: "💬 New task comment\n{title}", ru: "💬 Новый комментарий к задаче\n{title}" },
+    telegramTaskAttachment: { en: "📎 New task attachment\n{title}", ru: "📎 Новый файл в задаче\n{title}" },
+    telegramTaskChangedFields: { en: "Changed: {fields}", ru: "Изменено: {fields}" },
+    telegramTaskFieldTitle: { en: "title", ru: "название" },
+    telegramTaskFieldDescription: { en: "description", ru: "описание" },
+    telegramTaskFieldPriority: { en: "priority", ru: "приоритет" },
+    telegramTaskFieldDeadline: { en: "deadline", ru: "срок" },
+    telegramTaskFieldAssignee: { en: "assignee", ru: "исполнитель" },
+    telegramTaskOpen: { en: "Open task", ru: "Открыть задачу" },
+    telegramTaskOpenComments: { en: "Open comments", ru: "Открыть комментарии" },
+    telegramTaskOpenAttachments: { en: "Open files", ru: "Открыть файлы" },
+    telegramReminderExpired: { en: "🚨 Task overdue\n{title}\nDue: {deadline} ({timezone}).", ru: "🚨 Задача просрочена\n{title}\nСрок: {deadline} ({timezone})." },
+
     portalDirectoryStudent: { en: 'Student', ru: 'Ученик' },
     portalDirectoryGroups: { en: 'Groups', ru: 'Группы' },
     portalDirectorySelfAccount: { en: 'Student account', ru: 'Аккаунт ученика' },

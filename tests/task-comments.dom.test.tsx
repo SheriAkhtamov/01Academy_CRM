@@ -54,6 +54,24 @@ const setup = () => {
   return userEvent.setup();
 };
 
+it('opens a notification comment in the existing modal and focuses its exact row', async () => {
+  client.setQueryData(['/api/board/tasks/100'], task);
+  render(<QueryClientProvider client={client}><TaskDetailSheet taskId={100} open onOpenChange={vi.fn()} users={[creator, assignee]} initialSection="comments" focusCommentId={10} /></QueryClientProvider>);
+  await waitFor(() => expect(document.activeElement?.getAttribute('data-task-target')).toBe('comment-10'));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.getByRole('tab', { name: /Комментарии/ }).getAttribute('aria-selected')).toBe('true');
+});
+
+it('opens the attachment tab for a file notification and preserves the modal', async () => {
+  task.attachments = [{ id: 20, taskId: 100, fileName: 'file.pdf', originalName: 'Отчёт.pdf', mimeType: 'application/pdf', size: 1024,
+    createdAt: '2026-10-19T10:00:00Z', uploadedBy: assignee }];
+  client.setQueryData(['/api/board/tasks/100'], task);
+  render(<QueryClientProvider client={client}><TaskDetailSheet taskId={100} open onOpenChange={vi.fn()} users={[creator, assignee]} initialSection="attachments" focusAttachmentId={20} /></QueryClientProvider>);
+  await waitFor(() => expect(document.activeElement?.getAttribute('data-task-target')).toBe('attachment-20'));
+  expect(screen.getByRole('tab', { name: /Вложения/ }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
 it.each([{ actor: 7, canEdit: true }, { actor: 8, canEdit: false }, { actor: 1, canEdit: false }])(
   'shows the edit button only to the creator, including for administrators ($actor)', ({ actor, canEdit }) => {
     mocks.user.id = actor;

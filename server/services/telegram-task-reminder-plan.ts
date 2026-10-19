@@ -1,3 +1,4 @@
+import type { TelegramTaskButton } from './telegram-task-keyboard';
 import { t } from '../lib/i18n';
 
 export interface ReminderTask {
@@ -6,12 +7,15 @@ export interface ReminderTask {
   due_at: Date | null;
   status?: string;
   assignee_name?: string;
+  assignee_id?: number;
+  creator_id?: number;
 }
 
 export interface TaskReminder {
-  kind: 'daily' | 'due_soon';
+  kind: 'daily' | 'due_soon' | 'overdue';
   eventKey: string;
   text: string;
+  buttons: TelegramTaskButton[];
 }
 
 type Language = 'ru' | 'en';
@@ -81,10 +85,11 @@ export function planTelegramWeeklyDigest(
     ...days.map((day) => ({ label: dayLabel(day, language), tasks: relevant.filter((task) => task.due_at && dateKey(task.due_at, timeZone) === day) })),
     { label: t('telegramReminderUndated', language), tasks: relevant.filter((task) => !task.due_at) },
   ];
-  const chunks: string[] = [];
+  const chunks: Array<{ text: string; buttons: TelegramTaskButton[] }> = [];
+  let buttons: TelegramTaskButton[] = [];
   let lines: string[] = [heading];
   let activeGroup = '';
-  const flush = () => { chunks.push(lines.join('\n')); lines = [heading]; activeGroup = ''; };
+  const flush = () => { chunks.push({ text: lines.join('\n'), buttons }); lines = [heading]; buttons = []; activeGroup = ''; };
   for (const group of groups) {
     const sorted = [...group.tasks].sort((a, b) =>
       (a.due_at?.getTime() ?? 0) - (b.due_at?.getTime() ?? 0)
@@ -93,18 +98,22 @@ export function planTelegramWeeklyDigest(
     for (const task of sorted) {
       const line = taskLine(task, timeZone, language, section);
       const groupHeading = group.label !== activeGroup ? `\n${group.label}` : '';
-      if (lines.join('\n').length + groupHeading.length + line.length + 2 > MAX_MESSAGE_LENGTH) flush();
+      if (lines.join('\n').length + groupHeading.length + line.length + 2 > MAX_MESSAGE_LENGTH || buttons.length >= 40) flush();
       if (group.label !== activeGroup) { lines.push('', group.label); activeGroup = group.label; }
       lines.push(line);
+      buttons.push({ text: section === 'team' ? `${clean(task.assignee_name ?? '')}: ${clean(task.title)}` : clean(task.title),
+        destination: { taskId: task.id, ...(section === 'team' && task.assignee_id ? { ownerId: task.assignee_id } : {}) } });
     }
   }
   if (lines.length === 1) lines.push(t('telegramReminderWeeklyEmpty', language));
-  chunks.push(lines.join('\n'));
-  return chunks.map((text, index) => ({
+  flush();
+  return chunks.map((chunk, index) => ({
     kind: 'daily',
     // Keep the previous key for the first personal digest during rollout.
     eventKey: section === 'own' && index === 0 ? today : `${today}:${section}:${index}`,
-    text,
+    text: chunk.text,
+    buttons: section === 'team' && chunk.buttons.length ? chunk.buttons
+      : [{ text: t('telegramReminderOpen', language), destination: {} }, ...chunk.buttons],
   }));
 }
 
@@ -120,6 +129,7 @@ export const planTelegramTaskReminders = (
     if (remaining <= 0 || remaining > 60 * 60_000) continue;
     reminders.push({
       kind: 'due_soon', eventKey: `${task.id}:${task.due_at.toISOString()}`,
+      buttons: [{ text: t('telegramTaskOpen', language), destination: { taskId: task.id } }],
       text: t('telegramReminderDueSoon', language, {
         minutes: String(Math.ceil(remaining / 60_000)), title: clean(task.title),
         deadline: dateLabel(task.due_at, timeZone, language), timezone: timeZone,
@@ -128,3 +138,15 @@ export const planTelegramTaskReminders = (
   }
   return reminders;
 };
+
+export function planTelegramOverdueReminders(
+  tasks: readonly ReminderTask[], now: Date, timeZone: string, recipientId?: number,
+): TaskReminder[] {
+  return tasks.filter((task) => task.due_at && task.due_at <= now && ['backlog', 'todo', 'in_progress'].includes(task.status ?? ''))
+    .map((task) => ({
+      kind: 'overdue', eventKey: `${task.id}:${task.due_at!.toISOString()}`,
+      text: t('telegramReminderExpired', { title: clean(task.title), deadline: dateLabel(task.due_at!, timeZone, 'ru'), timezone: timeZone }),
+      buttons: [{ text: t('telegramTaskOpen'), destination: { taskId: task.id,
+        view: recipientId === task.creator_id && recipientId !== task.assignee_id ? 'assigned' : 'mine' } }],
+    }));
+}

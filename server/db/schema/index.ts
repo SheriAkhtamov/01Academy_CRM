@@ -1,3 +1,4 @@
+import { createTelegramTaskEventsTable } from './telegram-task-events';
 import { createPlatformUpdatesTable } from './platform-updates';
 import { createChatGroupTables } from './chat-groups';
 import { academySchools, academyRooms } from './academy-resources';
@@ -74,6 +75,7 @@ export const telegramTaskBindings = pgTable("telegram_task_bindings", {
   telegramUnique: uniqueIndex("telegram_task_bindings_telegram_unique").on(table.botId, table.telegramUserId),
   employeeUnique: uniqueIndex("telegram_task_bindings_employee_unique").on(table.botId, table.userId),
 }));
+export const telegramTaskEvents = createTelegramTaskEventsTable(users.id);
 export const telegramTaskReminders = createTelegramTaskRemindersTable(telegramTaskBindings.id);
 
 export const telephonyManagedExtensions = pgTable("telephony_managed_extensions", {

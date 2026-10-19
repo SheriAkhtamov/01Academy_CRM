@@ -1,3 +1,4 @@
+import { telegramTaskUrl } from '@shared/telegram-task-links';
 import { MAX_UPLOAD_BYTES } from '@shared/upload-policy';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -633,7 +634,7 @@ export const processTelegramTaskAgentMessage = async (
     assignee: created.assignee.fullName,
     deadline: formatDeadline(created.dueAt, message.language),
   }), {
-    inline_keyboard: [[{ text: t('telegramReminderOpen', message.language), web_app: { url: message.appUrl } }]],
+    inline_keyboard: [[{ text: t('telegramTaskOpen', message.language), web_app: { url: telegramTaskUrl(message.appUrl, { taskId: created.task.id, view: created.task.assigneeId === message.actor.id ? 'mine' : 'assigned' }) } }]],
   });
 };
 

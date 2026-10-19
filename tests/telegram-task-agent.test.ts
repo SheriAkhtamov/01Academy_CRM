@@ -135,7 +135,7 @@ describe('Telegram task agent', () => {
     expect(transport.sentMessages.at(-1).text).toContain('Постановщик: Шерзод Ахтамов');
     expect(transport.sentMessages.at(-1).text).toContain('Хонзода Каримова');
     expect(transport.sentMessages.at(-1).reply_markup.inline_keyboard[0][0].web_app.url)
-      .toBe('https://crm.example.test/miniapp/tasks');
+      .toBe('https://crm.example.test/miniapp/tasks?view=assigned&task=81');
   });
 
   it('keeps a structured draft and merges the employee reply', async () => {

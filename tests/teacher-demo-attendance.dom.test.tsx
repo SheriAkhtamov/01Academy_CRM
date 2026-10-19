@@ -155,17 +155,26 @@ describe('teacher demo attendance', () => {
     const dateInput = within(dialog).getByLabelText(translations.newLessonDate.en);
     const reasonInput = within(dialog).getByLabelText(translations.rescheduleReason.en);
     const submit = within(dialog).getByRole('button', { name: translations.rescheduleLesson.en }) as HTMLButtonElement;
+    const selectDateAndTime = () => {
+      const [day, time] = date.split('T');
+      const [hour, minute] = time.split(':');
+      fireEvent.change(dateInput, { target: { value: day } });
+      fireEvent.click(within(dialog).getByRole('textbox', { name: translations.time.en }));
+      fireEvent.click(within(screen.getByRole('listbox', { name: translations.clockHours.en })).getByRole('option', { name: hour }));
+      fireEvent.click(within(screen.getByRole('listbox', { name: translations.clockMinutes.en })).getByRole('option', { name: minute }));
+      fireEvent.click(screen.getByRole('button', { name: translations.clockSelect.en }));
+    };
 
     expect(dateInput.getAttribute('min')).toBeNull();
     expect(submit.disabled).toBe(true);
-    fireEvent.change(dateInput, { target: { value: date } });
+    selectDateAndTime();
     fireEvent.change(reasonInput, { target: { value: '   ' } });
     expect(submit.disabled).toBe(true);
     fireEvent.change(reasonInput, { target: { value: '  Correct lesson date  ' } });
     expect(submit.disabled).toBe(false);
     fireEvent.change(dateInput, { target: { value: '' } });
     expect(submit.disabled).toBe(true);
-    fireEvent.change(dateInput, { target: { value: date } });
+    selectDateAndTime();
     fireEvent.click(submit);
 
     const confirmation = await screen.findByRole('alertdialog', { name: translations.rescheduleConfirmTitle.en });

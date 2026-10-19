@@ -297,8 +297,10 @@ describe('week schedule editor', () => {
 
     expect(screen.getByText('End is not after start')).toBeTruthy();
 
-    await user.clear(screen.getByLabelText('Mon: End'));
-    await user.type(screen.getByLabelText('Mon: End'), '11:30');
+    await user.click(screen.getByLabelText('Mon: End'));
+    await user.click(within(screen.getByRole('listbox', { name: 'Hours' })).getByRole('option', { name: '11' }));
+    await user.click(within(screen.getByRole('listbox', { name: 'Minutes' })).getByRole('option', { name: '30' }));
+    await user.click(screen.getByRole('button', { name: 'Select time' }));
 
     expect(screen.queryByText('End is not after start')).toBeNull();
     expect(screen.getByText('1h 30min')).toBeTruthy();

@@ -112,7 +112,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
           <form
             ref={formRef}
             noValidate
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
             onSubmit={(event) => {
               if (uploading.current.size > 0 || saving) { event.preventDefault(); return; }
               void form.handleSubmit(

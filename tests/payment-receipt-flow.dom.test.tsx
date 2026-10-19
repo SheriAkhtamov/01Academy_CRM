@@ -34,7 +34,8 @@ beforeEach(() => {
       });
     }
     const lead = { id: 15, contactName: 'Payment parent', statusCode: 'new_request', funnelId: 1,
-      managerId: 7, sourceId: 1, language: 'ru', createdAt: '2026-10-01T08:00:00Z', updatedAt: '2026-10-01T08:00:00Z',
+      managerId: 7, sourceId: 1, language: 'ru', expectedPaymentTotalUzs: 100000,
+      createdAt: '2026-10-01T08:00:00Z', updatedAt: '2026-10-01T08:00:00Z',
       students: [{ id: 50, studentName: 'Child', managerId: 7, expectedPaymentUzs: 100000, status: 'studying' }],
       phoneNumbers: [], tasks: [], comments: [], payments: saved ? [{ id: 99, status: 'paid', amountUzs: 100000,
         paidAt: '2026-10-19T08:00:00Z', attachments: [{ id: 123, originalName: 'receipt.pdf', size: 3, mimeType: 'application/pdf' }] }] : [],
@@ -81,6 +82,8 @@ describe('payment receipt submission from the lead modal', () => {
 
   it('sends selected files and a pasted screenshot in the same payment and exposes saved attachments', async () => {
     const { user, dialog } = await openPayment();
+    const remaining = () => screen.getByText(i18n.t('studentPaymentRemaining')).closest('dt')?.nextElementSibling?.textContent;
+    expect(remaining()).toBe('100000');
     const pdf = new File(['pdf'], 'receipt.pdf', { type: 'application/pdf' });
     const image = new File(['image'], 'screenshot.png', { type: 'image/png' });
     await user.upload(within(dialog).getByLabelText(i18n.t('paymentReceiptFiles'), { selector: 'input' }), pdf);
@@ -92,6 +95,7 @@ describe('payment receipt submission from the lead modal', () => {
     expect(requests[0].get('amountUzs')).toBe('100000');
     expect(requests[0].getAll('files')).toEqual([pdf, image]);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
+    await waitFor(() => expect(remaining()).toBe('0'));
     expect(await screen.findByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.pdf') })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: i18n.t('recordAnotherPayment') }));
     const next = await screen.findByRole('dialog', { name: i18n.t('recordAnotherPayment') });

@@ -28,6 +28,7 @@ import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
+import { LeadPaymentSummary } from '@/components/ux/lead/LeadPaymentSummary';
 import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
 import { usePaymentFiles } from '@/features/payments/usePaymentFiles';
 import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
@@ -94,7 +95,6 @@ import {
 } from '@/lib/leadContact';
 import {
   ArrowRight,
-  Banknote,
   Briefcase,
   CheckCircle2,
   ClipboardList,
@@ -955,10 +955,6 @@ export function LeadDetailSheet({
     Boolean(task.dueAt) && new Date(task.dueAt!).getTime() < Date.now()
   ));
 
-  const totalPaidUzs = (lead?.payments ?? [])
-    .filter((payment) => payment.status === 'paid')
-    .reduce((sum, payment) => sum + Number(payment.amountUzs || 0), 0);
-
   const dateOnly = (value: string | null | undefined) => formatAcademyDate(value, language) || '—';
 
   const paymentMethodLabel = (method?: string | null) => (
@@ -1374,28 +1370,12 @@ export function LeadDetailSheet({
 
                 <TabsContent value="payment" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="flex items-center gap-3 rounded-xl border border-sky-200/80 bg-sky-50/70 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
-                        <Banknote className="size-4 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs text-muted-foreground">{t('expectedPayment')}</p>
-                          <p className="truncate text-sm font-semibold tabular-nums">
-                            {(lead.expectedPaymentTotalUzs !== undefined ? lead.expectedPaymentTotalUzs : lead.expectedPaymentUzs) != null
-                              ? money(lead.expectedPaymentTotalUzs !== undefined ? lead.expectedPaymentTotalUzs : lead.expectedPaymentUzs)
-                              : '—'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 dark:border-emerald-900/70 dark:bg-emerald-950/30">
-                        <Wallet className="size-4 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs text-muted-foreground">{t('totalPaidLabel')}</p>
-                          <p className="truncate text-sm font-semibold tabular-nums">
-                            {totalPaidUzs > 0 ? money(totalPaidUzs) : '—'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                    <LeadPaymentSummary
+                      expectedPaymentTotalUzs={lead.expectedPaymentTotalUzs}
+                      expectedPaymentUzs={lead.expectedPaymentUzs}
+                      payments={lead.payments}
+                      money={money}
+                    />
 
                     <Card className="overflow-hidden border-emerald-200/80 dark:border-emerald-900/70">
                       <CardHeader className="flex flex-col items-start gap-3 border-b border-emerald-100 bg-emerald-50/80 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-900/60 dark:bg-emerald-950/30">

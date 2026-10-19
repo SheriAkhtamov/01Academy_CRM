@@ -1,10 +1,10 @@
-import type { ChangeEvent } from 'react';
-import { Download, FileText, X } from 'lucide-react';
-import { MAX_PAYMENT_ATTACHMENTS, validatePaymentAttachment } from '@shared/payment-attachments';
+import { useId, useRef, useState, type ChangeEvent } from 'react';
+import { Download, FileText, Paperclip, X } from 'lucide-react';
+import { PAYMENT_ATTACHMENT_ACCEPT } from '@shared/payment-attachments';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { paymentsApi } from '@/features/payments/api';
 
 export interface PaymentReceiptAttachment {
@@ -14,44 +14,40 @@ export interface PaymentReceiptAttachment {
   mimeType: string;
 }
 
-export function PaymentFilesField({ files, onChange, disabled }: {
+export function PaymentFilesField({ files, onAdd, onRemove, disabled }: {
   files: File[];
-  onChange: (files: File[]) => void;
+  onAdd: (files: File[]) => void;
+  onRemove: (file: File) => void;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [fileToRemove, setFileToRemove] = useState<File | null>(null);
   const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const next = [...files];
-    for (const file of Array.from(event.target.files ?? [])) {
-      const errorKey = file.size === 0 ? 'paymentFileEmpty'
-        : validatePaymentAttachment(file.name, file.type, file.size);
-      if (errorKey) {
-        toast({ title: t(errorKey), variant: 'destructive' });
-        continue;
-      }
-      if (next.length >= MAX_PAYMENT_ATTACHMENTS) {
-        toast({ title: t('paymentFileLimit'), variant: 'destructive' });
-        break;
-      }
-      if (!next.some((current) => current.name === file.name && current.size === file.size && current.lastModified === file.lastModified)) {
-        next.push(file);
-      }
-    }
+    if (disabled || event.currentTarget.matches(':disabled')) return;
+    onAdd(Array.from(event.target.files ?? []));
     event.target.value = '';
-    onChange(next);
   };
 
   return (
     <div className="space-y-2 md:col-span-2">
-      <label htmlFor="payment-receipt-files" className="text-sm font-medium">{t('paymentReceiptFiles')}</label>
-      <Input
-        id="payment-receipt-files"
+      <label htmlFor={inputId} className="block text-sm font-medium">{t('paymentReceiptFiles')}</label>
+      <input
+        ref={inputRef}
+        id={inputId}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+        accept={PAYMENT_ATTACHMENT_ACCEPT}
+        className="sr-only"
+        tabIndex={-1}
         disabled={disabled}
         onChange={selectFiles}
       />
+      <Button type="button" variant="outline" disabled={disabled} onClick={() => inputRef.current?.click()}>
+        <Paperclip data-icon="inline-start" />
+        {t('paymentAttachFiles')}
+      </Button>
       {files.length > 0 ? (
         <ul className="space-y-1" aria-label={t('paymentReceiptFiles')}>
           {files.map((file, index) => (
@@ -65,7 +61,7 @@ export function PaymentFilesField({ files, onChange, disabled }: {
                 className="size-7"
                 disabled={disabled}
                 aria-label={t('paymentRemoveFile').replace('{name}', file.name)}
-                onClick={() => onChange(files.filter((_, fileIndex) => fileIndex !== index))}
+                onClick={() => setFileToRemove(file)}
               >
                 <X className="size-4" aria-hidden="true" />
               </Button>
@@ -73,6 +69,19 @@ export function PaymentFilesField({ files, onChange, disabled }: {
           ))}
         </ul>
       ) : null}
+      <ConfirmDialog
+        open={fileToRemove !== null}
+        onOpenChange={open => { if (!open) setFileToRemove(null); }}
+        title={t('paymentRemoveFileTitle')}
+        description={t('paymentRemoveFileConfirm').replace('{name}', fileToRemove?.name ?? '')}
+        confirmLabel={t('paymentRemoveFileTitle')}
+        confirmDisabled={disabled}
+        onConfirm={() => {
+          if (disabled || !fileToRemove) return;
+          onRemove(fileToRemove);
+          setFileToRemove(null);
+        }}
+      />
     </div>
   );
 }

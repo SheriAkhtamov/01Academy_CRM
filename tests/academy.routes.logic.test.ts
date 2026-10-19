@@ -2341,7 +2341,15 @@ describe('academy route logic boundaries', () => {
     expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
   });
 
-  it('saves receipt files with the payment and makes them available for download', async () => {
+  it.each([
+    ['receipt.pdf', '%PDF-1.4 receipt', 'application/pdf'],
+    ['receipt.png', 'image receipt', 'image/png'],
+    ['Чек из буфера-1.png', 'clipboard receipt', 'image/png'],
+    ['receipt.docx', 'document receipt', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['receipt.xlsx', 'spreadsheet receipt', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['receipt.txt', 'text receipt', 'text/plain'],
+    ['receipt.zip', 'archive receipt', 'application/zip'],
+  ])('saves %s with the payment and makes it available for download', async (name, content, mime) => {
     let savedFileName = '';
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
@@ -2354,6 +2362,8 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('INSERT INTO "academy_payment_attachments"')) {
         savedFileName = String(readInsertValue(sql, values, 'file_name'));
         expect(readInsertValue(sql, values, 'payment_id')).toBe(99);
+        expect(readInsertValue(sql, values, 'original_name')).toBe(name);
+        expect(readInsertValue(sql, values, 'mime_type')).toBe(mime);
         return { rows: [{ id: 123, payment_id: 99 }] };
       }
       return emptyResult();
@@ -2364,17 +2374,17 @@ describe('academy route logic boundaries', () => {
       .field('studentId', '5')
       .field('amountUzs', '100000')
       .field('status', 'pending')
-      .attach('files', Buffer.from('%PDF-1.4 receipt'), 'receipt.pdf');
+      .attach('files', Buffer.from(content), { filename: name, contentType: mime });
 
     const filePath = path.resolve('uploads', 'payments', savedFileName);
     try {
       expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
-      expect(savedFileName).toMatch(/\.pdf$/);
-      expect(await fs.promises.readFile(filePath, 'utf8')).toBe('%PDF-1.4 receipt');
+      expect(savedFileName.endsWith(path.extname(name))).toBe(true);
+      expect(await fs.promises.readFile(filePath, 'utf8')).toBe(content);
 
       mocks.poolQuery.mockImplementation(async (sql: string) => {
         if (sql.includes('FROM academy_payment_attachments attachment')) {
-          return { rows: [{ file_name: savedFileName, original_name: 'receipt.pdf', lead_id: 42 }] };
+          return { rows: [{ file_name: savedFileName, original_name: name, lead_id: 42 }] };
         }
         if (sql.includes('FROM academy_leads WHERE id = $1')) return { rows: [leadFixture()] };
         return emptyResult();
@@ -2382,8 +2392,10 @@ describe('academy route logic boundaries', () => {
       const download = await request(await createApp())
         .get('/api/academy/payments/99/attachments/123/download');
       expect(download.status).toBe(200);
-      expect(download.headers['content-disposition']).toContain('receipt.pdf');
-      expect(download.body.toString()).toBe('%PDF-1.4 receipt');
+      expect(download.headers['content-disposition']).toContain(/[^\x00-\x7F]/.test(name) ? encodeURIComponent(name) : name);
+      expect(download.headers['content-type']).toContain('application/octet-stream');
+      expect(download.headers['x-content-type-options']).toBe('nosniff');
+      expect(download.body.toString()).toBe(content);
     } finally {
       await fs.promises.unlink(filePath).catch(() => {});
     }

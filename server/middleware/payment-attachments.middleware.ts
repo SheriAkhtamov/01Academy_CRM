@@ -7,10 +7,10 @@ import { MAX_PAYMENT_ATTACHMENTS, MAX_PAYMENT_ATTACHMENT_BYTES, validatePaymentA
 import { attachmentUploadLimiter } from './rateLimiter';
 
 export const PAYMENT_UPLOAD_DIR = path.resolve(process.cwd(), 'uploads', 'payments');
-const storedFileName = /^[A-Za-z0-9_-]{10,64}\.(?:jpg|jpeg|png|webp|heic|heif|pdf)$/;
+const storedFileName = /^[A-Za-z0-9_-]{10,64}\.[a-z0-9]{1,10}$/i;
 
 export const paymentFilePath = (fileName: string): string | null => {
-  if (!storedFileName.test(fileName)) return null;
+  if (!storedFileName.test(fileName) || validatePaymentAttachment(fileName, '', 0)) return null;
   const filePath = path.resolve(PAYMENT_UPLOAD_DIR, fileName);
   return path.dirname(filePath) === PAYMENT_UPLOAD_DIR ? filePath : null;
 };
@@ -38,6 +38,11 @@ const upload = multer({
   }),
   limits: { fileSize: MAX_PAYMENT_ATTACHMENT_BYTES, files: MAX_PAYMENT_ATTACHMENTS, fields: 12, parts: 20 },
   fileFilter: (_req, file, cb) => {
+    // Multipart filenames from browser uploads can arrive decoded as Latin-1.
+    if ([...file.originalname].every(character => character.charCodeAt(0) <= 255)) {
+      const decoded = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      if (!decoded.includes('\uFFFD')) file.originalname = decoded;
+    }
     const errorKey = validatePaymentAttachment(file.originalname, file.mimetype, 0);
     if (errorKey) return cb(new Error(errorKey));
     cb(null, true);

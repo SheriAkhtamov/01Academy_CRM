@@ -27,6 +27,7 @@ import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
 import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
+import { usePaymentFiles } from '@/features/payments/usePaymentFiles';
 import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
 import { DemoLessonDialog, type DemoLessonDialogLead } from '@/components/ux/DemoLessonDialog';
@@ -403,7 +404,8 @@ export function LeadDetailSheet({
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [paymentFiles, setPaymentFiles] = useState<File[]>([]);
+  const { files: paymentFiles, add: addPaymentFiles, remove: removePaymentFile,
+    clear: clearPaymentFiles, paste: pastePaymentFiles } = usePaymentFiles();
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
   const [pendingPaymentClaim, setPendingPaymentClaim] = useState<PaymentFormValues | null>(null);
   const [duplicateHint, setDuplicateHint] = useState<DuplicateLeadHint | null>(null);
@@ -490,7 +492,7 @@ export function LeadDetailSheet({
     setPendingPaymentClaim(null);
     setTaskDialogOpen(false);
     setPaymentDialogOpen(false);
-    setPaymentFiles([]);
+    clearPaymentFiles();
     taskForm.reset({ title: '', deadlineAt: '', description: '' });
     setDuplicateHint(null);
     setSocialAccountsDirty(false);
@@ -498,7 +500,7 @@ export function LeadDetailSheet({
     setFocusTarget(null);
     setInvalidField(null);
     setRemovePhoneIndex(null);
-  }, [leadId, taskForm]);
+  }, [clearPaymentFiles, leadId, taskForm]);
 
   const [versionConflict, setVersionConflict] = useState(false);
   const editVersion = useRef<LeadDetails['updatedAt']>();
@@ -601,12 +603,12 @@ export function LeadDetailSheet({
       setCommentDraft('');
       setTaskDialogOpen(false);
       setPaymentDialogOpen(false);
-      setPaymentFiles([]);
+      clearPaymentFiles();
       taskForm.reset({ title: '', deadlineAt: '', description: '' });
       leadForm.reset();
       paymentForm.reset();
     }
-  }, [open, leadForm, paymentForm, taskForm]);
+  }, [clearPaymentFiles, open, leadForm, paymentForm, taskForm]);
 
   const finishMutation = async (title: string) => {
     toast({ title });
@@ -745,7 +747,7 @@ export function LeadDetailSheet({
     onSuccess: async () => {
       setPendingPaymentClaim(null);
       setPaymentDialogOpen(false);
-      setPaymentFiles([]);
+      clearPaymentFiles();
       const refreshed = await leadQuery.refetch();
       const refreshedLead = refreshed.data;
       paymentForm.reset({
@@ -1547,7 +1549,8 @@ export function LeadDetailSheet({
         <Dialog open={paymentDialogOpen} onOpenChange={(nextOpen) => {
           if (!createPayment.isPending) setPaymentDialogOpen(nextOpen);
         }}>
-          <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+            onPaste={event => pastePaymentFiles(event, !paymentDialogOpen || createPayment.isPending || paymentNeedsStudent || leadNeedsClaim)}>
             <DialogHeader>
               <DialogTitle>{paymentActionLabel}</DialogTitle>
             </DialogHeader>
@@ -1660,7 +1663,8 @@ export function LeadDetailSheet({
                         </FormItem>
                       )}
                     />
-                    <PaymentFilesField files={paymentFiles} onChange={setPaymentFiles} disabled={createPayment.isPending} />
+                    <PaymentFilesField files={paymentFiles} onAdd={addPaymentFiles} onRemove={removePaymentFile}
+                      disabled={createPayment.isPending || paymentNeedsStudent || leadNeedsClaim} />
                     <DialogFooter className="md:col-span-2">
                       <Button type="button" variant="outline" disabled={createPayment.isPending} onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
                       <Button type="submit" disabled={createPayment.isPending}>

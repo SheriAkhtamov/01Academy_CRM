@@ -309,7 +309,8 @@ it.each([
   await waitFor(() => expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, ...props })));
   expect(screen.getByRole('navigation').querySelector('[aria-current=page]')?.getAttribute('aria-label')).toBe(label);
   act(() => mocks.detail.mock.lastCall![0].onOpenChange(false));
-  expect(window.location.search).toBe('');
+  expect(new URLSearchParams(window.location.search).has('task')).toBe(false);
+  expect(new URLSearchParams(window.location.search).get('view')).toBe(new URLSearchParams(search).get('view'));
   expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: false }));
 });
 
@@ -319,4 +320,14 @@ it('opens a task from a team digest in the selected employee list', async () => 
   await screen.findByText('Delegated task');
   expect(screen.queryByText('My assigned task')).toBeNull();
   expect(mocks.detail).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, taskId: 2 }));
+});
+
+it('preserves Telegram launch parameters and the hash when closing a linked task', async () => {
+  window.history.replaceState(null, '', '/miniapp/tasks?view=assigned&task=2&tgWebAppVersion=8.0#tgWebAppData=signed');
+  setup();
+  await screen.findByText('Delegated task');
+  act(() => mocks.detail.mock.lastCall![0].onOpenChange(false));
+  expect(window.location.hash).toBe('#tgWebAppData=signed');
+  expect(new URLSearchParams(window.location.search).get('tgWebAppVersion')).toBe('8.0');
+  expect(new URLSearchParams(window.location.search).has('task')).toBe(false);
 });

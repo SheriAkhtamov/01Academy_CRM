@@ -150,6 +150,13 @@ export function TasksApp() {
     setSearch('');
   };
   const openTask = (id: number) => { hapticSelect(); setDestination({}); setTaskId(id); };
+  const closeTask = () => {
+    setTaskId(null);
+    setDestination({});
+    const url = new URL(window.location.href);
+    for (const key of ['task', 'section', 'comment', 'attachment']) url.searchParams.delete(key);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  };
 
   const onTouchStart = (event: React.TouchEvent) => {
     if (window.scrollY > 0 || tasks.isFetching) return;
@@ -252,6 +259,6 @@ export function TasksApp() {
       <button type="button" aria-label={t('taskArchive')} aria-current={tab === 'archive' ? 'page' : undefined} onClick={() => changeTab('archive')}><Archive className="size-5" /><span>{t('taskArchive')}</span></button>
     </div></nav>
     <CreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={(created) => changeTab(created.assigneeId === user.id ? 'mine' : 'assigned')} users={users.data ?? []} currentUser={user} canAssignUsers miniMode />
-    <TaskDetailSheet open={taskId !== null} taskId={taskId} initialSection={destination.section} focusCommentId={destination.commentId} focusAttachmentId={destination.attachmentId} onOpenChange={(open) => { if (!open) { setTaskId(null); setDestination({}); window.history.replaceState(null, '', window.location.pathname); } }} users={users.data ?? []} tasksOnly />
+    <TaskDetailSheet open={taskId !== null} taskId={taskId} initialSection={destination.section} focusCommentId={destination.commentId} focusAttachmentId={destination.attachmentId} onOpenChange={(open) => { if (!open) closeTask(); }} users={users.data ?? []} tasksOnly />
   </div>;
 }

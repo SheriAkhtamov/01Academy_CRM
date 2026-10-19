@@ -239,15 +239,15 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
 
     return (
         <><Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+            <DialogContent data-mini-task-create={miniMode || undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
                 <DialogHeader className="shrink-0 border-b px-6 py-4">
                     <DialogTitle>{t('addTask')}</DialogTitle>
                     <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
-                    <fieldset disabled={attempted || mutation.isPending} className="min-w-0 space-y-4">
+                    <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4', miniMode ? 'mini-task-create-body' : 'space-y-4')}>
+                    <fieldset disabled={attempted || mutation.isPending} className={cn('min-w-0', miniMode ? 'mini-task-create-fields' : 'space-y-4')}>
                     <div className="space-y-1.5">
                         <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')} <span aria-hidden="true" className="select-none text-destructive">*</span></Label>
                         <Input
@@ -261,8 +261,8 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
 
                     {miniMode ? <>
                         {assigneeField}
-                        {dueField}
                         {priorityField}
+                        {dueField}
                     </> : <>
                         {descriptionField}
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{priorityField}{assigneeField}</div>
@@ -283,7 +283,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                     {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskSaveIncomplete') : t('taskAttachmentPartialFailure')}</p> : null}
                     </div>
 
-                    <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
+                    <DialogFooter className={cn('flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4', miniMode && 'mini-task-create-footer')}>
                         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                             {t('cancel')}
                         </Button>

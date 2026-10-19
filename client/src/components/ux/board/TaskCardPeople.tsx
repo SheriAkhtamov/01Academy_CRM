@@ -16,7 +16,7 @@ export function TaskCardPeople({ creator, assignee, className, miniMode = false 
     ];
 
     return (
-        <span className={cn('grid min-w-0 gap-1.5', className)}>
+        <span className={cn('grid min-w-0 gap-1.5', miniMode && 'mini-task-people', className)}>
             {people.map(({ role, user, name }, index) => (
                 <span
                     key={index}

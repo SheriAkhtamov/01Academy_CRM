@@ -401,7 +401,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                 ) : (
                     <>
                         <SheetHeader className="space-y-0 border-b border-border p-4 pr-12 sm:p-5 sm:pr-14">
-                            <div className="flex items-start justify-between gap-3">
+                            <div className={cn('flex items-start justify-between gap-3', tasksOnly && 'mini-task-heading')}>
                                 <div className="min-w-0 flex-1">
                                     {editing && canEdit ? (
                                         <><SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle><Input disabled={saveMutation.isPending} aria-label={t('taskTitle')} value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} className="text-base font-semibold" /></>
@@ -444,10 +444,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
 
                         <div className="min-h-0 flex-1 overflow-y-auto">
                             {/* Status actions */}
-                            <div className={cn('flex flex-wrap items-center gap-2 border-b border-border p-5', tasksOnly && 'p-4')}>
+                            <div className={cn('flex flex-wrap items-center gap-2 border-b border-border p-5', tasksOnly && 'mini-task-actions')}>
                                 {tasksOnly && canManage && (task.status === 'backlog' || task.status === 'todo' || task.status === 'in_progress') ? (
                                     <Button
-                                        className="w-full"
+                                        className="mini-task-primary-action"
                                         onClick={() => statusMutation.mutate(task.status === 'in_progress' ? 'done' : 'in_progress')}
                                         disabled={statusMutation.isPending}
                                     >
@@ -461,7 +461,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         onValueChange={(v) => statusMutation.mutate(v as BoardStatus)}
                                         disabled={!canManage || task.status === 'accepted' || statusMutation.isPending}
                                     >
-                                        <SelectTrigger aria-label={t('status')} className={cn('h-9 w-44', tasksOnly && 'w-full')}><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
+                                        <SelectTrigger aria-label={t('status')} className={cn('h-9 w-44', tasksOnly && 'mini-task-status-select')}><SelectValue placeholder={columnLabel(task.status, t)} /></SelectTrigger>
                                         <SelectContent>
                                             {WORKING_STATUSES.map((s) => (
                                                 <SelectItem key={s} value={s}>{columnLabel(s, t)}</SelectItem>
@@ -473,7 +473,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                 {task.status === 'done' && canFinalize ? (
                                     <Button
                                         size="sm"
-                                        className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
+                                        className={cn('gap-1.5', tasksOnly && 'mini-task-primary-action order-first')}
                                         onClick={() => statusMutation.mutate('accepted')}
                                         disabled={statusMutation.isPending}
                                     >
@@ -485,7 +485,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        className={cn('gap-1.5', tasksOnly && 'order-first w-full')}
+                                        className={cn('gap-1.5', tasksOnly && 'mini-task-primary-action order-first')}
                                         onClick={() => statusMutation.mutate('in_progress')}
                                         disabled={statusMutation.isPending}
                                     >
@@ -496,7 +496,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             </div>
 
                             {/* Meta + edit form */}
-                            <div className="space-y-4 border-b border-border p-5">
+                            <div className={cn('border-b border-border p-5', tasksOnly ? 'mini-task-details' : 'space-y-4')}>
                                 {editing && canEdit ? (
                                     <>
                                         <div className="space-y-1.5">
@@ -541,7 +541,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         {task.description ? (
                                             <p className="whitespace-pre-wrap text-sm text-foreground/90">{task.description}</p>
                                         ) : null}
-                                        <div className={cn('grid grid-cols-2 gap-x-4 gap-y-3 text-sm', tasksOnly && 'grid-cols-1')}>
+                                        <div className={cn('grid grid-cols-2 gap-x-4 gap-y-3 text-sm', tasksOnly && 'mini-task-metadata')}>
                                             <MetaRow label={t('creatorLabel')}><UserChip user={task.creator} miniMode={tasksOnly} /></MetaRow>
                                             <MetaRow label={t('assigneeLabel')}><UserChip user={task.assignee} miniMode={tasksOnly} /></MetaRow>
                                             <MetaRow label={t('dueDateLabel')}>
@@ -566,7 +566,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             </div>
 
                             {/* Tabs */}
-                            <Tabs ref={tabsRef} value={activeTab} onValueChange={setActiveTab} className="p-4 sm:p-5">
+                            <Tabs ref={tabsRef} value={activeTab} onValueChange={setActiveTab} className={cn('p-4 sm:p-5', tasksOnly && 'mini-task-tabs')}>
                                 <TabsList className={cn('grid h-auto w-full grid-cols-4 gap-1', tasksOnly && 'flex justify-start overflow-x-auto')}>
                                     <TabsTrigger value="comments" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('commentsLabel')}{task.comments.length ? ` (${task.comments.length})` : ''}{task.comments.some((comment) => comment.isUnread) ? <UnreadTaskCommentDot /> : null}</TabsTrigger>
                                     <TabsTrigger value="checklist" className={cn('min-w-0 truncate gap-1 px-1 py-2 text-xs sm:gap-1.5 sm:px-3 sm:text-sm', tasksOnly && 'shrink-0 px-3')}>{t('checklistLabel')}{task.checklist.length ? ` ${checklistDone}/${task.checklist.length}` : ''}</TabsTrigger>

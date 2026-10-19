@@ -2,7 +2,7 @@ import { readTelegramTaskDestination } from '@shared/telegram-task-links';
 import { BoardUserAvatar, BoardUserIdentity } from '@/components/ux/board/BoardUserAvatar';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowUpRight, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
+import { Archive, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -54,7 +54,7 @@ function sortTasks(left: TaskSummary, right: TaskSummary): number {
 }
 
 function TaskSkeletons() {
-  return <div className="space-y-4" aria-hidden="true">{[0, 1, 2].map((index) => <div key={index} className="space-y-2"><Skeleton className="h-3 w-28" /><Skeleton className="h-28 w-full rounded-2xl" /></div>)}</div>;
+  return <div className="space-y-3" aria-hidden="true">{[0, 1, 2].map((index) => <div key={index} className="space-y-1.5"><Skeleton className="h-3 w-28" /><Skeleton className="h-28 w-full rounded-xl" /></div>)}</div>;
 }
 
 export function TasksApp() {
@@ -184,31 +184,37 @@ export function TasksApp() {
   const hasCompletedAssignments = assignedTasks.some((task) => isBoardTaskAwaitingAcceptance(user, task));
 
   const renderCard = (task: TaskSummary) => {
-    return <button key={task.id} type="button" className="mini-task-card" data-color={task.color ?? undefined} onClick={() => openTask(task.id)}>
-      <span className="mini-task-card-top">
-        {isBoardTaskAwaitingAcceptance(user, task) ? <span role="img" aria-label={t('taskAwaitingAcceptance')} className="mini-task-completion-dot" /> : null}
-        <span className="mini-task-status">{statusLabel(task.status)}</span>{task.priority === 'urgent' ? <span className="mini-task-urgent">{t('priorityUrgent')}</span> : null}
-      </span>
-      <span className="mini-task-title">{task.title}</span>
-      <span className="mini-task-meta">
-        <span className={cn('mini-task-date', isOverdue(task) && 'mini-task-date-overdue')}><CalendarClock className="size-4 shrink-0" />{task.status === 'accepted' && task.acceptedAt
-          ? `${t('taskAcceptedOn')} ${formatBoardDateTime(task.acceptedAt, language)}`
-          : task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('miniTasksNoDeadline')}</span>
-      </span>
-      <TaskCardPeople creator={task.creator} assignee={task.assignee} miniMode />
-      {task.checklistTotal || task.commentCount || task.attachmentCount ? <span className="mini-task-stats">
-        {task.checklistTotal ? <span aria-label={`${t('checklistLabel')}: ${task.checklistDone}/${task.checklistTotal}`}><ListChecks className="size-3.5" />{task.checklistDone}/{task.checklistTotal}</span> : null}
-        {task.commentCount ? <span aria-label={`${t('commentsLabel')}: ${task.commentCount}`}><MessageCircle className="size-3.5" />{task.commentCount}</span> : null}
-        {task.attachmentCount ? <span aria-label={`${t('attachmentsLabel')}: ${task.attachmentCount}`}><Paperclip className="size-3.5" />{task.attachmentCount}</span> : null}
-      </span> : null}
-      <ArrowUpRight className="mini-task-arrow size-4" aria-hidden="true" />
-    </button>;
+    return (
+      <button key={task.id} type="button" className="mini-task-card" data-color={task.color ?? undefined} onClick={() => openTask(task.id)}>
+        <span className="mini-task-card-top">
+          {isBoardTaskAwaitingAcceptance(user, task) ? <span role="img" aria-label={t('taskAwaitingAcceptance')} className="mini-task-completion-dot" /> : null}
+          <span className="mini-task-status">{statusLabel(task.status)}</span>
+          {task.priority === 'urgent' ? <span className="mini-task-urgent">{t('priorityUrgent')}</span> : null}
+        </span>
+        <span className="mini-task-title">{task.title}</span>
+        <TaskCardPeople creator={task.creator} assignee={task.assignee} miniMode />
+        <span className="mini-task-footer">
+          <span className={cn('mini-task-date', isOverdue(task) && 'mini-task-date-overdue')}>
+            <CalendarClock className="size-3.5 shrink-0" />
+            <span>{task.status === 'accepted' && task.acceptedAt
+              ? `${t('taskAcceptedOn')} ${formatBoardDateTime(task.acceptedAt, language)}`
+              : task.dueAt ? formatBoardDateTime(task.dueAt, language) : t('miniTasksNoDeadline')}</span>
+          </span>
+          {task.checklistTotal || task.commentCount || task.attachmentCount ? (
+            <span className="mini-task-stats">
+              {task.checklistTotal ? <span aria-label={`${t('checklistLabel')}: ${task.checklistDone}/${task.checklistTotal}`}><ListChecks className="size-3.5" />{task.checklistDone}/{task.checklistTotal}</span> : null}
+              {task.commentCount ? <span aria-label={`${t('commentsLabel')}: ${task.commentCount}`}><MessageCircle className="size-3.5" />{task.commentCount}</span> : null}
+              {task.attachmentCount ? <span aria-label={`${t('attachmentsLabel')}: ${task.attachmentCount}`}><Paperclip className="size-3.5" />{task.attachmentCount}</span> : null}
+            </span>
+          ) : null}
+        </span>
+      </button>
+    );
   };
 
   return <div className="mini-shell" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
     <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">{pullDistance > 0 ? <RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin', !tasks.isFetching && !pullActive && 'opacity-50')} /> : null}</div>
     <header className="mini-header">
-      <div className="mini-header-top"><BoardUserIdentity user={user} miniMode className="text-sm text-muted-foreground" /><Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin')} /></Button></div>
       <div className="mini-title-row">
         <div className="min-w-0 flex-1">
           <h1>
@@ -230,9 +236,12 @@ export function TasksApp() {
           </h1>
           <p className="mini-task-total">{t('miniTasksTasksCount')}: {active.length}</p>
         </div>
-        <Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button>
+        <div className="mini-header-actions">
+          <Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-4', tasks.isFetching && 'animate-spin')} /></Button>
+          <Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button>
+        </div>
       </div>
-      <div className="mini-search"><Search className="pointer-events-none absolute left-3 top-3 size-5 text-muted-foreground" /><Input className="h-11 pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>
+      <div className="mini-search"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-10 pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>
       {tab !== 'archive' ? <div className="mini-filters" role="group" aria-label={t('miniTasksFilters')}>
         {([
           ['all', t('allStatuses'), active.length],

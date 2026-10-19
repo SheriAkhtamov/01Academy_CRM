@@ -59,6 +59,10 @@ export function usePublicAttendance({ onNotice }: { onNotice: (notice: Attendanc
     onAccessLost: () => host.current.forgetAccess('expired'),
     onNotice: (notice) => host.current.onNotice(notice),
   }));
+  const expireAccess = useCallback(() => {
+    queue.lock();
+    forgetAccess('expired');
+  }, [forgetAccess, queue]);
   const marks = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
 
   const groups = useQuery({ queryKey: attendanceGroupsKey, queryFn: ({ signal }) => publicAttendanceApi.groups(signal), enabled: authenticated });
@@ -212,6 +216,6 @@ export function usePublicAttendance({ onNotice }: { onNotice: (notice: Attendanc
 
   return {
     session, groups, group, lesson, roster, students, marks, lessonMarks, bulkCount: restIds.length, open, signOut, authenticated, expired,
-    nextOpenLesson, mark, markRest, retry, retryAll, retryLesson, chooseGroup, chooseLesson, refresh,
+    nextOpenLesson, mark, markRest, retry, retryAll, retryLesson, chooseGroup, chooseLesson, refresh, expireAccess,
   };
 }

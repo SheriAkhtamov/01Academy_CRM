@@ -34,12 +34,40 @@ beforeEach(() => {
   settings = { passwordHash: hash, groupIds: [55, 56, 57] };
   service = {
     listGroups: vi.fn().mockResolvedValue([]), loadRoster: vi.fn().mockResolvedValue({ lesson: {}, students: [] }),
+    report: vi.fn().mockResolvedValue({ groups: [], totals: { present: 0, absent: 0, unmarked: 0, lessonCount: 0, studentCount: 0 } }),
     mark: vi.fn().mockResolvedValue({ lesson: {}, students: [] }), markMany: vi.fn().mockResolvedValue({ lesson: {}, students: [] }),
   };
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe('public attendance access', () => {
+  it('keeps the report behind page access and restricts it to the configured streams', async () => {
+    const agent = request.agent(createApp());
+    expect((await agent.get('/api/public/attendance/report')).status).toBe(401);
+    expect(service.report).not.toHaveBeenCalled();
+    await enter(agent);
+    const result = await agent.get('/api/public/attendance/report?from=2026-10-01&to=2026-10-19&groupIds=999');
+    expect(result.status).toBe(200);
+    expect(result.headers['cache-control']).toBe('no-store');
+    expect(service.report).toHaveBeenCalledWith([55, 56, 57], { from: '2026-10-01', to: '2026-10-19' });
+    expect((await agent.get('/api/public/attendance/report')).status).toBe(200);
+    expect(service.report).toHaveBeenLastCalledWith([55, 56, 57], {});
+    settings = { passwordHash: hash, groupIds: [55] };
+    expect((await agent.get('/api/public/attendance/report')).status).toBe(401);
+    expect(service.report).toHaveBeenCalledTimes(2);
+  });
+  it('rejects invalid dates and reversed report periods before loading student data', async () => {
+    const agent = request.agent(createApp());
+    await enter(agent);
+    for (const query of ['from=2026-02-30', 'from=bad', 'from=2026-10-20&to=2026-10-01', 'to=2026-13-01', 'from=2026-10-01&from=2026-10-02']) {
+      const result = await agent.get(`/api/public/attendance/report?${query}`);
+      expect(result.status).toBe(400);
+      expect(result.body).toEqual({ error: 'publicAttendanceReportInvalidPeriod' });
+    }
+    expect(service.report).not.toHaveBeenCalled();
+    vi.mocked(service.report).mockRejectedValueOnce(new Error('private database failure'));
+    expect((await agent.get('/api/public/attendance/report')).body).toEqual({ error: 'publicAttendanceLoadFailed' });
+  });
   it('does not expose students before the page password is entered and does not create a CRM user', async () => {
     const agent = request.agent(createApp());
     const result = await agent.get('/api/public/attendance/session');

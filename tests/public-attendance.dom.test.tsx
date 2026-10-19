@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -12,7 +12,7 @@ import { pickDefaultAttendanceLesson } from '../client/src/features/public-atten
 import type { PublicAttendanceLesson, PublicAttendanceRoster } from '../shared/contracts/public-attendance';
 
 const mocks = vi.hoisted(() => ({
-  api: { session: vi.fn(), open: vi.fn(), close: vi.fn(), groups: vi.fn(), roster: vi.fn(), mark: vi.fn(), markMany: vi.fn() },
+  api: { session: vi.fn(), open: vi.fn(), close: vi.fn(), groups: vi.fn(), roster: vi.fn(), mark: vi.fn(), markMany: vi.fn(), report: vi.fn() },
   ordinaryProviders: vi.fn(), ordinaryRouter: vi.fn(),
 }));
 vi.mock('../client/src/features/public-attendance/api', async (importActual) => ({ ...await importActual<typeof import('../client/src/features/public-attendance/api')>(), publicAttendanceApi: mocks.api }));
@@ -56,6 +56,15 @@ beforeEach(() => {
   mocks.api.open.mockResolvedValue({ available: true, authenticated: true, csrfToken: 'csrf' });
   mocks.api.close.mockResolvedValue({ ok: true });
   mocks.api.groups.mockResolvedValue({ groups: [{ id: 55, name: 'Поток 1', lessons }] });
+  mocks.api.report.mockResolvedValue({ groups: [
+    { id: 55, name: 'Поток 1', lessonCount: 2, present: 2, absent: 1, unmarked: 1, students: [
+      { id: 328, name: 'Adham Zokirov', organization: 'Aloqabank', present: 1, absent: 1, unmarked: 0 },
+      { id: 329, name: 'Albert Aliyev', organization: 'Mikrokreditbank', present: 1, absent: 0, unmarked: 1 },
+    ] },
+    { id: 56, name: 'Поток 2', lessonCount: 1, present: 0, absent: 0, unmarked: 1, students: [
+      { id: 330, name: 'Student 3', organization: null, present: 0, absent: 0, unmarked: 1 },
+    ] },
+  ], totals: { lessonCount: 3, studentCount: 3, present: 2, absent: 1, unmarked: 2 } });
   mocks.api.roster.mockImplementation(async (id: number) => ({ ...structuredClone(current), lesson: lessons.find((lesson) => lesson.id === id)! }));
   mocks.api.mark.mockImplementation(async (_id: number, mark: { studentId: number; status: 'present' | 'absent' | null }) => applyMark(mark));
   mocks.api.markMany.mockImplementation(async (_id: number, input: { studentIds: number[]; status: 'present' | 'absent' }) => {
@@ -70,6 +79,63 @@ const setup = async () => {
   await screen.findByText('Adham Zokirov');
   return userEvent.setup();
 };
+it('opens a report of every stream on its own tab and shows student details in a modal', async () => {
+  const user = await setup();
+  expect(mocks.api.report).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceReportTab') }));
+  const table = await screen.findByRole('table', { name: i18n.t('publicAttendanceReportTitle') });
+  expect(mocks.api.report).toHaveBeenCalledWith({}, expect.anything());
+  expect(within(table).getByText('Поток 2')).toBeTruthy();
+  const first = within(table).getByRole('row', { name: /Поток 1/ });
+  expect(within(first).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['2', '2', '2', '1', '1', '67%']);
+  const second = within(table).getByRole('row', { name: /Поток 2/ });
+  expect(within(second).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['1', '1', '0', '0', '1', '—']);
+  await user.click(within(first).getByRole('button', { name: 'Поток 1' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Поток 1' });
+  expect(within(dialog).getByText('Adham Zokirov')).toBeTruthy();
+  expect(within(dialog).getByText('Aloqabank')).toBeTruthy();
+  expect(within(dialog).getByText('50%')).toBeTruthy();
+  await user.click(within(dialog).getByRole('button', { name: i18n.t('close') }));
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceJournal') }));
+  await screen.findByText('Adham Zokirov');
+});
+it('applies and resets report dates, and rejects a reversed range without loading it', async () => {
+  const user = await setup();
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceReportTab') }));
+  await screen.findByRole('table');
+  fireEvent.change(screen.getByLabelText(i18n.t('dateFrom')), { target: { value: '2026-10-01' } });
+  fireEvent.change(screen.getByLabelText(i18n.t('dateTo')), { target: { value: '2026-10-19' } });
+  await user.click(screen.getByRole('button', { name: i18n.t('publicAttendanceReportApply') }));
+  await waitFor(() => expect(mocks.api.report).toHaveBeenLastCalledWith({ from: '2026-10-01', to: '2026-10-19' }, expect.anything()));
+  const count = mocks.api.report.mock.calls.length;
+  fireEvent.change(screen.getByLabelText(i18n.t('dateFrom')), { target: { value: '2026-10-20' } });
+  await user.click(screen.getByRole('button', { name: i18n.t('publicAttendanceReportApply') }));
+  expect(screen.getByText(i18n.t('publicAttendanceReportInvalidPeriod')).getAttribute('role')).toBe('alert');
+  expect(mocks.api.report).toHaveBeenCalledTimes(count);
+  await user.click(screen.getByRole('button', { name: i18n.t('publicAttendanceReportAllTime') }));
+  await waitFor(() => expect(mocks.api.report).toHaveBeenLastCalledWith({}, expect.anything()));
+  expect((screen.getByLabelText(i18n.t('dateFrom')) as HTMLInputElement).value).toBe('');
+  expect(screen.queryByText(i18n.t('publicAttendanceReportInvalidPeriod'))).toBeNull();
+});
+it('requires the page password again when report access expires', async () => {
+  const user = await setup();
+  mocks.api.report.mockRejectedValue(new PublicAttendanceApiError(401, 'publicAttendanceAccessExpired'));
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceReportTab') }));
+  await screen.findByLabelText(i18n.t('publicAttendancePassword'));
+  expect(screen.queryByRole('table')).toBeNull();
+});
+it('refreshes a previously loaded report after a journal mark is saved', async () => {
+  const user = await setup();
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceReportTab') }));
+  await screen.findByRole('table');
+  const key = ['public-attendance', 'report', {}];
+  expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceJournal') }));
+  await user.click(await screen.findByRole('button', { name: label('Adham Zokirov', i18n.t('publicAttendancePresent')) }));
+  await waitFor(() => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
+  await user.click(screen.getByRole('tab', { name: i18n.t('publicAttendanceReportTab') }));
+  await waitFor(() => expect(mocks.api.report).toHaveBeenCalledTimes(2));
+});
 it('opens the public URL outside ordinary CRM authentication and keeps the roster behind the password', async () => {
   mocks.api.session.mockResolvedValue({ available: true, authenticated: false });
   render(<App />);
@@ -77,6 +143,7 @@ it('opens the public URL outside ordinary CRM authentication and keeps the roste
   expect(mocks.ordinaryProviders).not.toHaveBeenCalled();
   expect(mocks.ordinaryRouter).not.toHaveBeenCalled();
   expect(mocks.api.groups).not.toHaveBeenCalled();
+  expect(mocks.api.report).not.toHaveBeenCalled();
   expect(screen.queryByText('Adham Zokirov')).toBeNull();
   const user = userEvent.setup();
   await user.type(input, 'page-password');

@@ -1,5 +1,5 @@
 import type {
-  PublicAttendanceBulkMark, PublicAttendanceGroup, PublicAttendanceMark, PublicAttendanceRoster, PublicAttendanceSession,
+  PublicAttendanceBulkMark, PublicAttendanceGroup, PublicAttendanceMark, PublicAttendanceReport, PublicAttendanceReportQuery, PublicAttendanceRoster, PublicAttendanceSession,
 } from '@shared/contracts/public-attendance';
 
 export class PublicAttendanceApiError extends Error {
@@ -73,6 +73,12 @@ export const publicAttendanceApi = {
   open: (password: string) => request<PublicAttendanceSession>('/access', { method: 'POST', body: { password } }),
   close: (csrfToken: string) => request<{ ok: boolean }>('/exit', { method: 'POST', csrfToken }),
   groups: (signal?: AbortSignal) => request<{ groups: PublicAttendanceGroup[] }>('/groups', { signal }),
+  report: (period: PublicAttendanceReportQuery, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (period.from) params.set('from', period.from);
+    if (period.to) params.set('to', period.to);
+    return request<PublicAttendanceReport>(`/report?${params}`, { signal });
+  },
   roster: (lessonId: number, signal?: AbortSignal) => request<PublicAttendanceRoster>(`/lessons/${lessonId}`, { signal }),
   mark: (lessonId: number, input: PublicAttendanceMark, csrfToken: string) => request<PublicAttendanceRoster>(`/lessons/${lessonId}/attendance`, { method: 'PATCH', body: input, csrfToken }),
   markMany: (lessonId: number, input: PublicAttendanceBulkMark, csrfToken: string) => request<PublicAttendanceRoster>(`/lessons/${lessonId}/attendance/bulk`, { method: 'PATCH', body: input, csrfToken }),

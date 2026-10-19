@@ -407,6 +407,7 @@ export class AttendanceMarkQueue {
     marked answer asks for the list of streams to be read again.
   */
   private apply(roster: PublicAttendanceRoster) {
+    void this.client.invalidateQueries({ queryKey: ['public-attendance', 'report'] });
     this.client.setQueryData(attendanceRosterKey(roster.lesson.id), roster);
     this.client.setQueryData<{ groups: PublicAttendanceGroup[] }>(attendanceGroupsKey, (data) => data && {
       groups: data.groups.map((group) => group.id !== roster.lesson.groupId ? group : {

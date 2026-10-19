@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import * as Tabs from '@radix-ui/react-tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
@@ -12,8 +13,10 @@ import { AttendanceLogin } from '@/features/public-attendance/components/Attenda
 import { AttendanceNavigation, AttendancePageMenu } from '@/features/public-attendance/components/AttendanceNavigation';
 import { AttendanceRoster, AttendanceRosterSkeleton } from '@/features/public-attendance/components/AttendanceRoster';
 import { AttendanceSnackbar, type AttendanceNotice } from '@/features/public-attendance/components/AttendanceSnackbar';
+import { AttendanceReport } from '@/features/public-attendance/components/AttendanceReport';
 import type { PublicAttendanceMarkedStatus, PublicAttendanceRoster, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
 import '@/features/public-attendance/public-attendance.css';
+import '@/features/public-attendance/attendance-report.css';
 
 const bulkKeys = {
   present: { restKey: 'publicAttendanceBulkRestPresentTitle', allKey: 'publicAttendanceBulkAllPresentTitle', confirmKey: 'publicAttendanceBulkConfirmPresent' },
@@ -155,33 +158,42 @@ export default function PublicAttendancePage() {
             onPasswordChange={(value) => { setPassword(value); state.open.reset(); }} onSubmit={(event) => void open(event)}
             onRetry={() => void state.session.refetch()} />
         ) : (
-          <>
+          <Tabs.Root defaultValue="journal" className="pa-sections">
             <h1 className="sr-only">{t('publicAttendanceJournal')}</h1>
-            {/* A failed background re-read never replaces streams that are already on screen. */}
-            {state.groups.data ? (
-              state.group ? (
-                <AttendanceNavigation groups={state.groups.data.groups} group={state.group} lesson={state.lesson} unsavedLessons={state.marks.lessons}
-                  menu={menu} onGroup={state.chooseGroup} onLesson={state.chooseLesson} />
-              ) : <AttendanceContextShell menu={menu}><p className="pa-context-empty">{t('publicAttendanceNoLessons')}</p></AttendanceContextShell>
-            ) : state.groups.isPending ? <AttendanceNavigationSkeleton menu={menu} />
-              : (
-                <AttendanceContextShell menu={menu}>
-                  <AttendanceLoadError inline message={attendanceErrorKey(state.groups.error, 'load')} onRetry={() => void refresh()} />
-                </AttendanceContextShell>
-              )}
-            {state.lesson ? (
-              state.roster.isPending ? <AttendanceRosterSkeleton />
-                : !roster ? <AttendanceLoadError message={attendanceErrorKey(state.roster.error, 'load')} onRetry={() => void refresh()} />
-                  : (
-                    // While the previous lesson's list stands in, every label comes from the lesson that was chosen.
-                    <AttendanceRoster lesson={placeholder ? state.lesson : roster.lesson} students={state.students} placeholder={placeholder}
-                      waiting={state.marks.waiting} waitingCount={state.marks.pending} pending={state.lessonMarks.pending} failures={state.lessonMarks.failed}
-                      savedAt={state.marks.savedAt} bulkCount={state.bulkCount} search={search} filter={filter} nextOpenLesson={state.nextOpenLesson}
-                      onSearch={setSearch} onFilter={setFilter} onMark={onMark} onClear={onClear} onRetry={onRetry} onRetryAll={state.retryLesson}
-                      onBulk={setBulk} onOpenLesson={state.chooseLesson} />
-                  )
-            ) : null}
-          </>
+            <Tabs.List className="pa-section-tabs" aria-label={t('publicAttendanceJournal')}>
+              <Tabs.Trigger value="journal">{t('publicAttendanceJournal')}</Tabs.Trigger>
+              <Tabs.Trigger value="report">{t('publicAttendanceReportTab')}</Tabs.Trigger>
+            </Tabs.List>
+            <Tabs.Content value="journal" className="pa-section-panel">
+              {/* A failed background re-read never replaces streams that are already on screen. */}
+              {state.groups.data ? (
+                state.group ? (
+                  <AttendanceNavigation groups={state.groups.data.groups} group={state.group} lesson={state.lesson} unsavedLessons={state.marks.lessons}
+                    menu={menu} onGroup={state.chooseGroup} onLesson={state.chooseLesson} />
+                ) : <AttendanceContextShell menu={menu}><p className="pa-context-empty">{t('publicAttendanceNoLessons')}</p></AttendanceContextShell>
+              ) : state.groups.isPending ? <AttendanceNavigationSkeleton menu={menu} />
+                : (
+                  <AttendanceContextShell menu={menu}>
+                    <AttendanceLoadError inline message={attendanceErrorKey(state.groups.error, 'load')} onRetry={() => void refresh()} />
+                  </AttendanceContextShell>
+                )}
+              {state.lesson ? (
+                state.roster.isPending ? <AttendanceRosterSkeleton />
+                  : !roster ? <AttendanceLoadError message={attendanceErrorKey(state.roster.error, 'load')} onRetry={() => void refresh()} />
+                    : (
+                      // While the previous lesson's list stands in, every label comes from the lesson that was chosen.
+                      <AttendanceRoster lesson={placeholder ? state.lesson : roster.lesson} students={state.students} placeholder={placeholder}
+                        waiting={state.marks.waiting} waitingCount={state.marks.pending} pending={state.lessonMarks.pending} failures={state.lessonMarks.failed}
+                        savedAt={state.marks.savedAt} bulkCount={state.bulkCount} search={search} filter={filter} nextOpenLesson={state.nextOpenLesson}
+                        onSearch={setSearch} onFilter={setFilter} onMark={onMark} onClear={onClear} onRetry={onRetry} onRetryAll={state.retryLesson}
+                        onBulk={setBulk} onOpenLesson={state.chooseLesson} />
+                    )
+              ) : null}
+            </Tabs.Content>
+            <Tabs.Content value="report" className="pa-section-panel">
+              <AttendanceReport menu={menu} onAccessLost={state.expireAccess} />
+            </Tabs.Content>
+          </Tabs.Root>
         )}
       </main>
 

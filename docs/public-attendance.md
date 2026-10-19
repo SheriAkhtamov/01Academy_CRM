@@ -14,6 +14,8 @@ Restart the CRM after configuring it. To close the temporary page, run `node scr
 
 ## Records
 
+The **Report** tab reads `GET /api/public/attendance/report` behind the same page session and configured group allowlist. Optional ISO dates `from` and `to` include both boundary days in Asia/Tashkent. The report includes active allowed streams, only started scheduled/conducted lessons, and each lesson's historical roster. It shows stream totals and student details in a dialog; future/cancelled lessons and marks outside the historical roster are excluded. Total students are distinct across streams. Attendance percentage is present / (present + absent); missing marks are shown separately, and an entirely unmarked stream has no percentage. Report data refreshes after saved marks and every 45 seconds while the report tab is open. No migrations are needed.
+
 The API lives at `/api/public/attendance`. Each visitor receives password-gated access in an HTTP-only, same-site server session. Password attempts are rate limited. Mutations require both the existing origin protection and an attendance-specific CSRF token. Every roster and write checks the configured group allowlist and the student's historical lesson membership; responses contain names, organizations, and attendance, without contact or finance fields.
 
 A single mark is saved to `academy_attendance`, preserving existing notes and project links on status changes. Removing a mark requires a confirmation and removes its attendance row. The previous row is retained in `audit_logs`. Revision checks prevent overwriting another visitor's change; retries of an already-saved value are harmless. Future and cancelled lessons cannot be marked.

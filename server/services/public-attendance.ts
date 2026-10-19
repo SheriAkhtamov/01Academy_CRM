@@ -1,8 +1,9 @@
 import { createHash, scrypt, timingSafeEqual } from 'node:crypto';
-import type { PublicAttendanceBulkMark, PublicAttendanceGroup, PublicAttendanceLesson, PublicAttendanceMark, PublicAttendanceRoster } from '@shared/contracts/public-attendance';
+import type { PublicAttendanceBulkMark, PublicAttendanceGroup, PublicAttendanceLesson, PublicAttendanceMark, PublicAttendanceReport, PublicAttendanceReportQuery, PublicAttendanceRoster } from '@shared/contracts/public-attendance';
 import { ACADEMY_SCHEDULING_ADVISORY_LOCK, query, queryOne, withTransaction, type Row } from '../modules/academy/academy-core';
 import { getLessonRoster } from '../modules/academy/academy-route-support';
 import { recalculateStudentMetrics } from '../modules/academy/academy-leads';
+import { loadPublicAttendanceReport } from './public-attendance-report';
 
 export interface PublicAttendanceSettings {
   passwordHash: string;
@@ -125,12 +126,14 @@ const completeFilledLessons = async (groupId: number) => {
 
 export interface PublicAttendanceService {
   listGroups(groupIds: number[]): Promise<PublicAttendanceGroup[]>;
+  report(groupIds: number[], period: PublicAttendanceReportQuery): Promise<PublicAttendanceReport>;
   loadRoster(lessonId: number, groupIds: number[]): Promise<PublicAttendanceRoster>;
   mark(lessonId: number, groupIds: number[], input: PublicAttendanceMark): Promise<PublicAttendanceRoster>;
   markMany(lessonId: number, groupIds: number[], input: PublicAttendanceBulkMark): Promise<PublicAttendanceRoster>;
 }
 
 export const publicAttendanceService: PublicAttendanceService = {
+  report: loadPublicAttendanceReport,
   async listGroups(groupIds) {
     const [groups, lessons] = await Promise.all([
       query(`SELECT id, name FROM academy_groups WHERE id = ANY($1::int[]) AND is_archived = false ORDER BY id`, [groupIds]),

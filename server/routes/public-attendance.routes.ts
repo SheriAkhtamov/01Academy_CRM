@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Router, type Request } from 'express';
 import rateLimit from 'express-rate-limit';
+import { publicAttendanceReportQuerySchema } from '@shared/contracts/public-attendance';
 import { appConfig } from '../config';
 import { logger } from '../lib/logger';
 import {
@@ -88,6 +89,16 @@ export const createPublicAttendanceRouter = ({ settings, service }: RouterOption
       res.json({ groups: await service.listGroups(settings()!.groupIds) });
     } catch (error) {
       logger.error('Failed to list public attendance groups', { error });
+      res.status(500).json({ error: 'publicAttendanceLoadFailed' });
+    }
+  });
+  router.get('/report', async (req, res) => {
+    const period = publicAttendanceReportQuerySchema.safeParse(req.query);
+    if (!period.success) return res.status(400).json({ error: 'publicAttendanceReportInvalidPeriod' });
+    try {
+      res.json(await service.report(settings()!.groupIds, period.data));
+    } catch (error) {
+      logger.error('Failed to load public attendance report', { error });
       res.status(500).json({ error: 'publicAttendanceLoadFailed' });
     }
   });

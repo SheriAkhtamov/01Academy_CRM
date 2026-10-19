@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export type PublicAttendanceStatus = 'present' | 'absent' | null;
 export type PublicAttendanceMarkedStatus = Exclude<PublicAttendanceStatus, null>;
 
@@ -49,4 +51,35 @@ export interface PublicAttendanceMark {
 export interface PublicAttendanceBulkMark {
   studentIds: number[];
   status: PublicAttendanceMarkedStatus;
+}
+
+export const publicAttendanceReportQuerySchema = z.object({
+  from: z.string().date().optional(),
+  to: z.string().date().optional(),
+}).refine(({ from, to }) => !from || !to || from <= to);
+
+export type PublicAttendanceReportQuery = z.infer<typeof publicAttendanceReportQuerySchema>;
+
+export interface PublicAttendanceReportCounts {
+  present: number;
+  absent: number;
+  unmarked: number;
+}
+
+export interface PublicAttendanceReportStudent extends PublicAttendanceReportCounts {
+  id: number;
+  name: string;
+  organization: string | null;
+}
+
+export interface PublicAttendanceReportGroup extends PublicAttendanceReportCounts {
+  id: number;
+  name: string;
+  lessonCount: number;
+  students: PublicAttendanceReportStudent[];
+}
+
+export interface PublicAttendanceReport {
+  groups: PublicAttendanceReportGroup[];
+  totals: PublicAttendanceReportCounts & { lessonCount: number; studentCount: number };
 }

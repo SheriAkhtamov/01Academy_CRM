@@ -73,7 +73,11 @@ export function PlatformLayout({
     const toggle = menuToggleRef.current;
     const main = mainRef.current;
     const frame = requestAnimationFrame(() => {
-      drawerRef.current?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
+      const drawer = drawerRef.current;
+      // A quick selection can open a dialog or restore its opener before this
+      // frame runs. Preserve that focus instead of restarting drawer entry.
+      if (!drawer || hasOpenDialog() || drawer.contains(document.activeElement)) return;
+      drawer.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
     });
     if (page) page.inert = true;
     return () => {

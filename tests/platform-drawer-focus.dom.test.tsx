@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useRef, useState } from 'react';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PlatformLayout } from '../client/src/components/ux/PlatformLayout';
@@ -20,7 +20,7 @@ function Probe() {
       mainRef={mainRef}
       navigationKey={route}
       renderHeader={({ onMenuToggle, menuButtonRef }) => <button ref={menuButtonRef} onClick={onMenuToggle}>Menu</button>}
-      renderSidebar={({ onClose }) => <nav><AlertDialogTrigger asChild><button>Courses</button></AlertDialogTrigger><button onClick={onClose}>Close menu</button></nav>}
+      renderSidebar={({ onClose }) => <nav><button onClick={onClose}>Close menu</button><AlertDialogTrigger asChild><button>Courses</button></AlertDialogTrigger></nav>}
       overlays={(
           <AlertDialogContent>
             <AlertDialogTitle>Discard draft?</AlertDialogTitle>
@@ -43,6 +43,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const drawer = (state: 'open' | 'closed') => document.querySelector(`[data-platform-drawer="${state}"]`);
 const main = () => screen.getByRole('main', { hidden: true });
+
+it.each(['dialog', 'restored opener'])('does not overwrite focus on the %s when drawer entry runs late', async (destination) => {
+  let enterDrawer: FrameRequestCallback | undefined;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { enterDrawer = callback; return 1; });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  render(<Probe />);
+  fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+  const courses = screen.getByRole('button', { name: 'Courses' });
+  act(() => courses.focus());
+  fireEvent.click(courses);
+  const cancel = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' });
+  await waitFor(() => expect(document.activeElement).toBe(cancel));
+  expect(enterDrawer).toBeTypeOf('function');
+  if (destination === 'dialog') {
+    act(() => enterDrawer!(0));
+    expect(document.activeElement).toBe(cancel);
+  }
+  fireEvent.click(cancel);
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(courses));
+  if (destination === 'restored opener') act(() => enterDrawer!(0));
+  expect(document.activeElement).toBe(courses);
+  expect(drawer('open')).toBeTruthy();
+  expect(screen.getByTestId('route').textContent).toBe('home');
+});
 
 it('cancels the top confirmation with Escape and leaves the dirty mobile drawer open until a second Escape', async () => {
   render(<Probe />);

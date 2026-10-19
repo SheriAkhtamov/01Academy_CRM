@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
@@ -20,6 +20,12 @@ interface SelectablePipelineStatus {
   code: string;
 }
 
+interface PendingBulkMove {
+  leadIds: number[];
+  statusCode: string;
+  unassignedCount: number;
+}
+
 export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineStatus>({
   leads,
   statuses,
@@ -32,17 +38,19 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(() => new Set());
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, updateDialogOpen] = useState(false);
+  const [pendingMove, setPendingMove] = useState<PendingBulkMove | null>(null);
+  const moveInFlight = useRef(false);
 
   const selectedLeads = useMemo(
     () => leads.filter((lead) => selectedLeadIds.has(lead.id)),
     [leads, selectedLeadIds],
   );
   const availableMoveStatuses = useMemo(
-    () => !canManageAllLeads && selectedLeads.some(lead => !lead.managerId) ? [] : statuses.filter((status) => (
+    () => statuses.filter((status) => (
       selectedLeads.some((lead) => lead.statusCode !== status.code)
     )),
-    [canManageAllLeads, selectedLeads, statuses],
+    [selectedLeads, statuses],
   );
   const archiveNeedsManagerAssignment = selectedLeads.some((lead) => !lead.managerId);
   const canArchiveSelected = selectedLeads.length > 0;
@@ -56,25 +64,34 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
   }, [leads]);
 
   useEffect(() => {
-    if (selectedLeadIds.size === 0) setDialogOpen(false);
+    if (selectedLeadIds.size === 0) {
+      updateDialogOpen(false);
+      setPendingMove(null);
+    }
   }, [selectedLeadIds.size]);
 
+  const setDialogOpen = (open: boolean) => {
+    if (moveInFlight.current) return;
+    updateDialogOpen(open);
+    if (!open) setPendingMove(null);
+  };
   const clearSelection = () => setSelectedLeadIds(new Set());
   const finishAction = () => {
     clearSelection();
-    setDialogOpen(false);
+    updateDialogOpen(false);
+    setPendingMove(null);
     return invalidateSalesLeadData(queryClient);
   };
 
   const bulkMove = useMutation({
-    mutationFn: ({ leadIds, statusCode }: { leadIds: number[]; statusCode: string }) =>
-      leadsApi.bulkUpdateStatus<{ updatedCount: number; statusCode: string }>({ leadIds, statusCode }),
+    mutationFn: (input: { leadIds: number[]; statusCode: string; assignToSelf?: boolean }) =>
+      leadsApi.bulkUpdateStatus<{ updatedCount: number; statusCode: string }>(input),
     onSuccess: (result) => {
       toast({
         title: t('bulkMoveSuccess'),
         description: t('bulkMoveSuccessDescription').replace('{count}', String(result.updatedCount)),
       });
-      finishAction();
+      return finishAction();
     },
     onError: (error: Error) => toast({
       title: t('bulkMoveFailed'),
@@ -147,6 +164,16 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     }),
   });
 
+  const performMove = async (input: { leadIds: number[]; statusCode: string; assignToSelf?: boolean }) => {
+    if (moveInFlight.current) return;
+    moveInFlight.current = true;
+    try {
+      await bulkMove.mutateAsync(input);
+    } finally {
+      moveInFlight.current = false;
+    }
+  };
+
   return {
     selectedLeadIds,
     setSelectedLeadIds,
@@ -157,12 +184,22 @@ export function useSalesPipelineBulkActions<TStatus extends SelectablePipelineSt
     canArchiveSelected,
     clearSelection,
     isPending: bulkMove.isPending || bulkAssign.isPending || bulkArchive.isPending || bulkDelete.isPending,
+    moveClaimCount: pendingMove?.unassignedCount ?? 0,
+    cancelMoveClaim: () => {
+      if (!moveInFlight.current) setPendingMove(null);
+    },
+    confirmMoveClaim: async () => {
+      if (!pendingMove) return;
+      await performMove({ leadIds: pendingMove.leadIds, statusCode: pendingMove.statusCode, assignToSelf: true });
+    },
     moveSelected: async (statusCode: string) => {
-      if (!canManageAllLeads && selectedLeads.some(lead => !lead.managerId)) {
-        toast({ title: t('leadAssignmentRequired'), variant: 'destructive' });
+      if (moveInFlight.current || pendingMove || selectedLeadIds.size === 0) return;
+      const unassignedCount = selectedLeads.filter(lead => !lead.managerId).length;
+      if (!canManageAllLeads && unassignedCount > 0) {
+        setPendingMove({ leadIds: [...selectedLeadIds], statusCode, unassignedCount });
         return;
       }
-      await bulkMove.mutateAsync({ leadIds: [...selectedLeadIds], statusCode });
+      await performMove({ leadIds: [...selectedLeadIds], statusCode });
     },
     assignSelected: async (managerId: number) => {
       await bulkAssign.mutateAsync({ leadIds: [...selectedLeadIds], managerId });

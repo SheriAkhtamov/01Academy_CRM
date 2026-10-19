@@ -77,6 +77,9 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
     canArchiveSelected: boolean;
     clearSelection: () => void;
     isPending: boolean;
+    moveClaimCount: number;
+    confirmMoveClaim: () => Promise<void>;
+    cancelMoveClaim: () => void;
     moveSelected: (statusCode: string) => Promise<void>;
     assignSelected: (managerId: number) => Promise<void>;
     archiveSelected: (reason: string, customReason?: string, assignToSelf?: boolean) => Promise<void>;
@@ -121,6 +124,9 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
         archiveNeedsManagerAssignment={bulkActions.archiveNeedsManagerAssignment}
         canArchiveSelected={bulkActions.canArchiveSelected}
         isPending={bulkActions.isPending}
+        moveClaimCount={bulkActions.moveClaimCount}
+        onConfirmMoveClaim={bulkActions.confirmMoveClaim}
+        onCancelMoveClaim={bulkActions.cancelMoveClaim}
         onMove={bulkActions.moveSelected}
         onAssign={bulkActions.assignSelected}
         onArchive={bulkActions.archiveSelected}

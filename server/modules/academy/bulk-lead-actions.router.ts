@@ -153,6 +153,10 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
       const statusCode = input.data.statusCode;
 
       const changes = await withTransaction(async () => {
+        // Keep the assignment lock order: manager first, then leads by ID.
+        const currentManager = input.data.assignToSelf === true
+          ? await getActiveSalesManager(req.user!.id, true)
+          : null;
         const targetStatus = await getActiveLeadStatus(statusCode, true);
         if (!targetStatus) {
           throw Object.assign(new Error('invalidLeadStatus'), { statusCode: 400 });
@@ -173,18 +177,37 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
         for (const lead of leads) {
           if (!canMutateLeadRow(req.actor!, lead)) {
             if (!lead.managerId && canAccessLeadRow(req.actor!, lead)) {
+              if (currentManager) continue;
               throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
             }
             throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
           }
         }
-        const changedLeads = leads.filter((lead) => String(lead.statusCode) !== statusCode);
-        for (const lead of changedLeads) {
-          await assertSalesFunnelStage(lead.funnelId, statusCode);
-          if (lead.isArchived) {
+        for (const lead of leads) {
+          const changesStage = String(lead.statusCode) !== statusCode;
+          if (changesStage) await assertSalesFunnelStage(lead.funnelId, statusCode);
+          if (lead.isArchived && (changesStage || (!lead.managerId && currentManager))) {
             throw Object.assign(new Error('archivedLeadMustBeRestoredBeforeUpdate'), { statusCode: 409 });
           }
         }
+
+        const preparedLeads = [];
+        for (const lead of leads) {
+          let preparedLead = lead;
+          if (!lead.managerId && currentManager) {
+            preparedLead = await reassignLead(
+              req.actor!, lead, currentManager, 'Присвоено себе перед массовым переносом',
+            );
+            await createAudit(
+              req.actor!, 'ASSIGN_ACADEMY_LEAD', 'academy_lead', Number(lead.id), preparedLead, lead,
+            );
+          }
+          if (!canMutateLeadRow(req.actor!, preparedLead)) {
+            throw Object.assign(new Error('Lead mutation access required'), { statusCode: 403 });
+          }
+          preparedLeads.push(preparedLead);
+        }
+        const changedLeads = preparedLeads.filter((lead) => String(lead.statusCode) !== statusCode);
         if (changedLeads.length === 0) return [];
 
         const changedIds = changedLeads.map((lead) => Number(lead.id));

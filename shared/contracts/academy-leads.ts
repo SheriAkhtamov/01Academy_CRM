@@ -62,6 +62,7 @@ export const bulkAssignLeadsRequestSchema = z.object({
 export const bulkUpdateLeadStatusRequestSchema = z.object({
   leadIds: z.array(positiveIdSchema).min(1).max(500),
   statusCode: z.string().trim().min(1).max(80),
+  assignToSelf: z.boolean().optional(),
 });
 
 export const bulkDeleteLeadsRequestSchema = z.object({

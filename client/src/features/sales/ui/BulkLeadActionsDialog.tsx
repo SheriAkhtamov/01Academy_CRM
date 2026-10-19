@@ -1,5 +1,5 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import {
@@ -48,6 +48,9 @@ interface BulkLeadActionsDialogProps {
   archiveNeedsManagerAssignment: boolean;
   canArchiveSelected: boolean;
   isPending: boolean;
+  moveClaimCount: number;
+  onConfirmMoveClaim: () => Promise<void>;
+  onCancelMoveClaim: () => void;
   onMove: (statusCode: string) => Promise<void>;
   onAssign: (managerId: number) => Promise<void>;
   onArchive: (reason: string, customReason?: string, assignToSelf?: boolean) => Promise<void>;
@@ -65,6 +68,9 @@ export function BulkLeadActionsDialog({
   archiveNeedsManagerAssignment,
   canArchiveSelected,
   isPending,
+  moveClaimCount,
+  onConfirmMoveClaim,
+  onCancelMoveClaim,
   onMove,
   onAssign,
   onArchive,
@@ -81,6 +87,7 @@ export function BulkLeadActionsDialog({
   const [archiveConfirmationOpen, setArchiveConfirmationOpen] = useState(false);
   const [firstDeleteConfirmationOpen, setFirstDeleteConfirmationOpen] = useState(false);
   const [finalDeleteConfirmationOpen, setFinalDeleteConfirmationOpen] = useState(false);
+  const moveButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -111,6 +118,14 @@ export function BulkLeadActionsDialog({
       await onAssign(managerId);
     } catch {
       // The mutation owns the localized error toast; keep the dialog open for retry.
+    }
+  };
+
+  const confirmMoveClaim = async () => {
+    try {
+      await onConfirmMoveClaim();
+    } catch {
+      // Keep the claim confirmation and selection available after a failed move.
     }
   };
 
@@ -298,7 +313,7 @@ export function BulkLeadActionsDialog({
                 {t('cancel')}
               </Button>
               {action === 'status' ? (
-                <Button type="button" onClick={() => void runMove()} disabled={!targetStatusCode || isPending}>
+                <Button ref={moveButtonRef} type="button" onClick={() => void runMove()} disabled={!targetStatusCode || isPending}>
                   <GitBranch data-icon="inline-start" />
                   {isPending ? t('saving') : t('bulkMoveLeads')}
                 </Button>
@@ -334,6 +349,37 @@ export function BulkLeadActionsDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={moveClaimCount > 0}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !isPending) onCancelMoveClaim();
+        }}
+      >
+        <AlertDialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          moveButtonRef.current?.focus();
+        }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('bulkLeadAssignmentRequired')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('bulkUnassignedLeadCount', { count: moveClaimCount })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmMoveClaim();
+              }}
+            >
+              {isPending ? t('saving') : t('assignToMeAndContinue')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={archiveConfirmationOpen} onOpenChange={setArchiveConfirmationOpen}>
         <AlertDialogContent>

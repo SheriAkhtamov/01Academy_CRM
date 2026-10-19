@@ -2133,6 +2133,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   leadArchiveFailed: { en: 'Lead was not archived', ru: 'Не удалось добавить лида в архив' },
   leadArchived: { en: 'Lead archived', ru: 'Лид добавлен в архив' },
   leadAssignmentRequired: { en: 'Assign the lead to continue', ru: 'Присвойте лид, чтобы продолжить' },
+  bulkLeadAssignmentRequired: { en: 'Assign the leads to yourself first', ru: 'Сначала присвойте лиды себе' },
+  bulkUnassignedLeadCount: { en: 'Unassigned leads: {count}', ru: 'Лидов без ответственного: {count}' },
   leadActionRequiresAssignmentDescription: { en: "Assign a responsible manager first.", ru: "Сначала назначьте ответственного менеджера." },
   leadRequiresResponsibleManager: { en: 'Lead has no responsible manager', ru: 'У лида нет ответственного менеджера' },
   selectResponsibleManager: { en: 'Select responsible manager', ru: 'Выберите ответственного менеджера' },

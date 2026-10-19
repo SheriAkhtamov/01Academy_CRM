@@ -81,6 +81,9 @@ describe('bulk actions on the sales pipeline', () => {
         archiveNeedsManagerAssignment={false}
         canArchiveSelected
         isPending={false}
+        moveClaimCount={0}
+        onConfirmMoveClaim={vi.fn()}
+        onCancelMoveClaim={vi.fn()}
         onMove={vi.fn()}
         onAssign={vi.fn()}
         onArchive={vi.fn()}
@@ -116,6 +119,9 @@ describe('bulk actions on the sales pipeline', () => {
         archiveNeedsManagerAssignment={false}
         canArchiveSelected
         isPending={false}
+        moveClaimCount={0}
+        onConfirmMoveClaim={vi.fn()}
+        onCancelMoveClaim={vi.fn()}
         onMove={vi.fn()}
         onAssign={vi.fn()}
         onArchive={onArchive}

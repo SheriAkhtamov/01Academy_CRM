@@ -4846,6 +4846,141 @@ describe('academy route logic boundaries', () => {
     expect(mocks.createAuditLog).not.toHaveBeenCalled();
   });
 
+  describe('confirmed bulk stage move with self-assignment', () => {
+    let selected: ReturnType<typeof leadFixture>[];
+    let failAssignmentId: number | null;
+    let failStageMove: boolean;
+
+    beforeEach(() => {
+      mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { assignedFunnelIds: [3] } };
+      selected = [
+        leadFixture({ id: 42, funnel_id: 3, manager_id: 7 }),
+        leadFixture({ id: 43, funnel_id: 3, manager_id: null }),
+      ];
+      failAssignmentId = null;
+      failStageMove = false;
+      mocks.clientQuery.mockImplementation(async (sql: string, values: any[] = []) => {
+        if (sql.includes('FROM users u')) return { rows: [{ id: 7, full_name: 'Sales Manager' }] };
+        if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ code: 'paid', funnel_id: 3 }] };
+        if (sql.includes('FROM academy_sales_funnels')) return { rows: [{ is_assigned: true }] };
+        if (sql.includes('FROM academy_leads') && sql.includes('WHERE id = ANY')) return { rows: selected };
+        if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) {
+          return { rows: selected.filter(lead => lead.id === values[0]) };
+        }
+        if (sql.includes('UPDATE "academy_leads"')) {
+          const leadId = Number(values[0]);
+          if (leadId === failAssignmentId) throw new Error('Assignment write failed');
+          return { rows: selected.filter(lead => lead.id === leadId).map(lead => ({ ...lead, manager_id: 7 })) };
+        }
+        if (sql.includes('UPDATE academy_leads') && sql.includes('SET status_code')) {
+          if (failStageMove) throw new Error('Stage write failed');
+          return { rows: selected.filter(lead => values[1].includes(lead.id)).map(lead => ({ ...lead, manager_id: 7, status_code: values[0] })) };
+        }
+        return emptyResult();
+      });
+    });
+
+    const move = async (body: object = {}) => request(await createApp()).post('/api/academy/leads/bulk-status')
+      .send({ leadIds: selected.map(lead => lead.id), statusCode: 'paid', assignToSelf: true, ...body });
+    const writes = () => mocks.clientQuery.mock.calls.map(([sql]) => String(sql)).filter(sql => /^\s*(?:INSERT|UPDATE|DELETE)\b/.test(sql));
+
+    it('claims only free leads before moving a mixed selection, preserving manager ownership and lock order', async () => {
+      const response = await move({ leadIds: [42, 43, 43] });
+      expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+      expect(response.body).toEqual({ updatedCount: 2, statusCode: 'paid' });
+      const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+      const managerLock = statements.findIndex(sql => sql.includes('FOR UPDATE OF u'));
+      const leadsLock = statements.findIndex(sql => sql.includes('WHERE id = ANY') && sql.includes('FOR UPDATE'));
+      const assignment = statements.findIndex(sql => sql.includes('UPDATE "academy_leads"'));
+      const stageMove = statements.findIndex(sql => sql.includes('SET status_code'));
+      expect(managerLock).toBeGreaterThanOrEqual(0);
+      expect(leadsLock).toBeGreaterThan(managerLock);
+      expect(assignment).toBeGreaterThan(leadsLock);
+      expect(stageMove).toBeGreaterThan(assignment);
+      expect(statements.indexOf('COMMIT')).toBeGreaterThan(stageMove);
+      const assignmentWrites = mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('UPDATE "academy_leads"'));
+      expect(assignmentWrites).toHaveLength(1);
+      expect(assignmentWrites[0][1][0]).toBe(43);
+      expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE academy_students'), [7, 43]);
+      expect(mocks.createAuditLog.mock.calls.filter(([event]) => event.action === 'ASSIGN_ACADEMY_LEAD')).toHaveLength(1);
+      expect(mocks.createAuditLog.mock.calls.filter(([event]) => event.action === 'BULK_UPDATE_ACADEMY_LEAD_STATUS')).toHaveLength(2);
+      expect(mocks.createNotification).toHaveBeenCalledTimes(1);
+      expect(mocks.clientQuery).not.toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('claims a selected free lead even when it is already at the target stage', async () => {
+      selected[1].status_code = 'paid';
+      const response = await move();
+      expect(response.status).toBe(200);
+      expect(response.body.updatedCount).toBe(1);
+      expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('SET status_code'), ['paid', [42]]);
+      expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'ASSIGN_ACADEMY_LEAD', entityId: 43 }));
+    });
+
+    it.each([false, undefined])('rejects an unconfirmed mixed selection (assignToSelf: %s)', async assignToSelf => {
+      const response = await move({ assignToSelf });
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('leadAssignmentRequired');
+      expect(writes()).toEqual([]);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('rejects non-boolean consent before accessing the database', async () => {
+      const response = await move({ assignToSelf: 'true' });
+      expect(response.status).toBe(400);
+      expect(mocks.clientQuery).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { manager_id: 8 },
+      { funnel_id: 4 },
+      { is_archived: true },
+      { is_archived: true, status_code: 'paid' },
+    ])('validates the entire selection before any assignment: %j', async override => {
+      selected.push(leadFixture({ id: 44, manager_id: null, funnel_id: 3, ...override }));
+      const response = await move();
+      expect([403, 409]).toContain(response.status);
+      expect(writes()).toEqual([]);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+      expect(mocks.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('rolls back earlier claims if a later assignment fails, without moving any stage or sending notifications', async () => {
+      selected.push(leadFixture({ id: 44, manager_id: null, funnel_id: 3 }));
+      failAssignmentId = 44;
+      const response = await move();
+      expect(response.status).toBe(500);
+      expect(writes().some(sql => sql.includes('UPDATE "academy_leads"'))).toBe(true);
+      expect(writes().some(sql => sql.includes('SET status_code'))).toBe(false);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+      expect(mocks.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('retains leadership access to move unassigned leads without claiming them', async () => {
+      mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+      const response = await move({ assignToSelf: undefined });
+      expect(response.status).toBe(200);
+      expect(writes().some(sql => sql.includes('UPDATE "academy_leads"'))).toBe(false);
+      expect(mocks.createAuditLog.mock.calls.filter(([event]) => event.action === 'ASSIGN_ACADEMY_LEAD')).toHaveLength(0);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('rolls back self-assignment if the subsequent stage update fails', async () => {
+      failStageMove = true;
+      const response = await move();
+      expect(response.status).toBe(500);
+      expect(writes().some(sql => sql.includes('UPDATE "academy_leads"'))).toBe(true);
+      expect(writes().some(sql => sql.includes('SET status_code'))).toBe(true);
+      expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+      expect(mocks.createAuditLog).not.toHaveBeenCalled();
+      expect(mocks.createNotification).not.toHaveBeenCalled();
+    });
+  });
+
   it('rejects retired referral fields before any write: validates referrers and prevents self-referral under the lead lock', async () => {
     const response = await request(await createApp()).patch('/api/academy/leads/42').send({ referrerStudentId: 5 });
     expect(response.status).toBe(400);

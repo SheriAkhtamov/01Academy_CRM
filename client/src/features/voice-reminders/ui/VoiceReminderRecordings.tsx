@@ -1,3 +1,4 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import { useEffect, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
 import type { VoiceReminderAudio, VoiceReminderAudioLibrary, VoiceReminderKind, VoiceReminderLanguage } from '@shared/contracts/voice-reminders';
@@ -133,8 +134,8 @@ function ClockRecordings({ unit, entries, draft, disabled, language, onValue, on
     }}>
       <div className="space-y-2">
         <Label htmlFor={`voice-reminders-${unit}-value`}>{t(unitLabels[unit])}</Label>
-        {unit === 'time' ? <Input id={`voice-reminders-${unit}-value`} type="time" step={60}
-          value={draft.value} disabled={disabled} onChange={(event) => onValue(event.target.value)} />
+        {unit === 'time' ? <TimePicker id={`voice-reminders-${unit}-value`} step={60}
+          value={draft.value} disabled={disabled} onValueChange={(value) => onValue(value)} />
           : <select id={`voice-reminders-${unit}-value`} value={draft.value} disabled={disabled}
             className="h-9 w-full rounded-md border bg-background px-3 text-sm"
             onChange={(event) => onValue(event.target.value)}>
@@ -231,8 +232,7 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
       <VoiceReminderKindSelect id="voice-reminders-preview-kind" value={previewKind}
         disabled={disabled} onChange={setPreviewKind} />
       <Label htmlFor="voice-reminders-preview-time">{t('voiceRemindersFullPreview')}</Label>
-      <Input id="voice-reminders-preview-time" aria-label={t('voiceRemindersPreviewTime')}
-        type="time" step={60} value={previewTime} onChange={(event) => setPreviewTime(event.target.value)} disabled={disabled} />
+      <TimePicker id="voice-reminders-preview-time" aria-label={t('voiceRemindersPreviewTime')} step={60} value={previewTime} onValueChange={(value) => setPreviewTime(value)} disabled={disabled} />
       {previewUrl ? <audio key={previewUrl} controls preload="none" className="w-full"
         aria-label={t('voiceRemindersPlayFullPreview')} src={previewUrl} onError={onPreviewError} /> : null}
     </section>

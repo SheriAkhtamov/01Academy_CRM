@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -327,20 +328,18 @@ export function QuizEditor({
         </StaffField>
         <div className="grid gap-4 sm:grid-cols-2">
           <StaffField id="quiz-opens" labelKey="lmsStaffOpensAt">
-            <Input
+            <DateTimeInput
               id="quiz-opens"
-              type="datetime-local"
               value={opens}
-              onChange={(event) => setOpens(event.target.value)}
+              onValueChange={(value) => setOpens(value)}
               required
             />
           </StaffField>
           <StaffField id="quiz-close" labelKey="lmsStaffHardClose">
-            <Input
+            <DateTimeInput
               id="quiz-close"
-              type="datetime-local"
               value={close}
-              onChange={(event) => setClose(event.target.value)}
+              onValueChange={(value) => setClose(value)}
               required={disclosure === "closed"}
             />
           </StaffField>

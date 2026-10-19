@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -245,20 +246,18 @@ function UnitPreviewEditor({
           {t("lmsStaffPreviewUnit")}
         </label>
         <StaffField id="unit-visible-from" labelKey="lmsStaffPreviewFrom">
-          <Input
+          <DateTimeInput
             id="unit-visible-from"
-            type="datetime-local"
             value={from}
-            onChange={(event) => setFrom(event.target.value)}
+            onValueChange={(value) => setFrom(value)}
             required
           />
         </StaffField>
         <StaffField id="unit-open-at" labelKey="lmsStaffUnitOpensAt">
-          <Input
+          <DateTimeInput
             id="unit-open-at"
-            type="datetime-local"
             value={openAt}
-            onChange={(event) => setOpenAt(event.target.value)}
+            onValueChange={(value) => setOpenAt(value)}
             required
           />
         </StaffField>

@@ -1,3 +1,4 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import { useEffect } from 'react';
 import { Loader2, Phone } from 'lucide-react';
 import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
@@ -59,8 +60,8 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
       </div>
       <div className="space-y-2">
         <Label htmlFor="voice-reminders-test-time">{t('time')}</Label>
-        <Input id="voice-reminders-test-time" type="time" step={60} value={displayedTime}
-          disabled={disabled || call.locked} onChange={(event) => call.editClockTime(event.target.value)} />
+        <TimePicker id="voice-reminders-test-time" step={60} value={displayedTime}
+          disabled={disabled || call.locked} onValueChange={(value) => call.editClockTime(value)} />
       </div>
       <VoiceReminderKindSelect id="voice-reminders-test-kind" value={displayedKind}
         disabled={disabled || call.locked} onChange={call.editReminderKind} />

@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { BoardUserAvatar, BoardUserIdentity } from './BoardUserAvatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -232,7 +233,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={dueAt === tomorrowDue} className={cn('rounded-full', dueAt === tomorrowDue && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt(tomorrowDue)}>{t('adminTomorrow')}</Button>
             <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={!dueAt} className={cn('rounded-full', !dueAt && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt('')}>{t('noDueDate')}</Button>
         </div> : null}
-        <Input id="create-task-due" type="datetime-local" min={`${academyToday()}T00:00`} value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+        <DateTimeInput id="create-task-due" min={`${academyToday()}T00:00`} value={dueAt} onValueChange={(value) => setDueAt(value)} />
     </div>;
 
     return (

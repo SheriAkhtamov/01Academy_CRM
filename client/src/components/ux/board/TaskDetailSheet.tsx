@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import type { TelegramTaskSection } from '@shared/telegram-task-links';
 import { getPendingAttachment, retainPendingAttachment, clearPendingAttachment } from '@/features/board/pending-attachments';
 import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
@@ -532,7 +533,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         </div>
                                         <div className="space-y-1.5">
                                             <Label htmlFor="task-detail-due" className="text-xs text-muted-foreground">{t('dueDateLabel')}</Label>
-                                            <Input disabled={saveMutation.isPending} id="task-detail-due" type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)} />
+                                            <DateTimeInput disabled={saveMutation.isPending} id="task-detail-due" value={draftDue} onValueChange={(value) => setDraftDue(value)} />
                                         </div>
                                     </>
                                 ) : (

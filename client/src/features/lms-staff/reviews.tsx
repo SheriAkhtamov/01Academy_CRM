@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { PortalSheetContent as SheetContent } from "../learning-content/modal-content";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -590,11 +591,10 @@ export function ReviewContent({
         />
       </StaffField>
       <StaffField id="review-new-due" labelKey="lmsStaffDueAt">
-        <Input
+        <DateTimeInput
           id="review-new-due"
-          type="datetime-local"
           value={due}
-          onChange={(event) => setDue(event.target.value)}
+          onValueChange={(value) => setDue(value)}
         />
       </StaffField>
       {detail.status !== "submitted" && (

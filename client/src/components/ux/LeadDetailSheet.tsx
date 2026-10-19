@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
 import { LeadVersionNotice } from '@/components/ux/lead/LeadVersionNotice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1724,7 +1725,7 @@ export function LeadDetailSheet({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('deadline')}</FormLabel>
-                    <FormControl><Input {...field} type="datetime-local" /></FormControl>
+                    <FormControl><DateTimeInput {...field} onValueChange={field.onChange} /></FormControl>
                     <LocalizedFormMessage />
                   </FormItem>
                 )}

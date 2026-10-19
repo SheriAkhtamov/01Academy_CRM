@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -336,11 +337,10 @@ export function MaterialEditor({
         {publish && (
           <>
             <StaffField id="material-publishAt" labelKey="lmsStaffOpensAt">
-              <Input
+              <DateTimeInput
                 id="material-publishAt"
-                type="datetime-local"
                 value={publishAt}
-                onChange={(event) => setPublishAt(event.target.value)}
+                onValueChange={(value) => setPublishAt(value)}
                 required
               />
             </StaffField>

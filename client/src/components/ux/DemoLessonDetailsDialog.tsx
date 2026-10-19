@@ -1,3 +1,4 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import { useUnsavedChangesGuard, UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1123,11 +1124,10 @@ export function DemoLessonDetailsDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="demo-reschedule-time">{t('time')}</Label>
-                <Input
+                <TimePicker
                   id="demo-reschedule-time"
-                  type="time"
                   value={rescheduleTime}
-                  onChange={(event) => setRescheduleTime(event.target.value)}
+                  onValueChange={(value) => setRescheduleTime(value)}
                   required
                 />
               </div>

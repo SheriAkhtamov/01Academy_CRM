@@ -626,7 +626,7 @@ describe('voice reminder settings and test calls', () => {
     const { user, client } = await renderDialog(data);
     await openRecordings(user);
     const previewTime = screen.getByLabelText('Preview time');
-    expect(previewTime.getAttribute('type')).toBe('time');
+    expect(previewTime.getAttribute('aria-haspopup')).toBe('dialog');
     expect(previewTime.getAttribute('step')).toBe('60');
     fireEvent.change(previewTime, { target: { value: '14:00' } });
     expect(screen.queryByLabelText('Play the full reminder')).toBeNull();

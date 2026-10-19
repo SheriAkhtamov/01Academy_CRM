@@ -1,3 +1,4 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -385,12 +386,11 @@ export function DemoLessonDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="demo-time">{t('time')}</Label>
-              <Input
+              <TimePicker
                 id="demo-time"
-                type="time"
                 step={900}
                 value={demoTime}
-                onChange={(event) => setDemoTime(event.target.value)}
+                onValueChange={(value) => setDemoTime(value)}
               />
             </div>
             <div className="space-y-2">

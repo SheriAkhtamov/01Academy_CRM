@@ -1,8 +1,8 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import { useState } from 'react';
 import { CircleAlert, Clock, CopyCheck, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
@@ -295,23 +295,21 @@ export function WeekScheduleEditor({
                   {dayName}
                 </Label>
               </div>
-              <Input
-                type="time"
+              <TimePicker
                 className={cn('h-8.5 text-xs tabular-nums sm:text-sm', !enabled && 'opacity-50')}
                 aria-label={`${dayName}: ${resolvedStartLabel}`}
                 aria-invalid={invalid}
                 value={item?.startTime ?? ''}
                 disabled={!enabled || disabled}
-                onChange={(event) => updateDay(dayOfWeek, { startTime: event.target.value })}
+                onValueChange={(value) => updateDay(dayOfWeek, { startTime: value })}
               />
-              <Input
-                type="time"
+              <TimePicker
                 className={cn('h-8.5 text-xs tabular-nums sm:text-sm', !enabled && 'opacity-50')}
                 aria-label={`${dayName}: ${resolvedEndLabel}`}
                 aria-invalid={invalid}
                 value={item?.endTime ?? ''}
                 disabled={!enabled || disabled}
-                onChange={(event) => updateDay(dayOfWeek, { endTime: event.target.value })}
+                onValueChange={(value) => updateDay(dayOfWeek, { endTime: value })}
               />
               <span
                 className={cn(

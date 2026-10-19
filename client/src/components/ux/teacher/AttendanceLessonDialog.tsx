@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -542,12 +543,11 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                         <Label htmlFor="reschedule-at" className="text-xs font-medium text-muted-foreground">
                           {t('newLessonDate')}
                         </Label>
-                        <Input
+                        <DateTimeInput
                           id="reschedule-at"
-                          type="datetime-local"
                           value={rescheduleAt}
                           disabled={mutationPending}
-                          onChange={(event) => onRescheduleAtChange(event.target.value)}
+                          onValueChange={(value) => onRescheduleAtChange(value)}
                           className="h-11 rounded-lg text-sm"
                         />
                       </div>

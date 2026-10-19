@@ -1,9 +1,9 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { LmsStaffMakeupDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { lmsStaffApi } from "./api";
 import { useStaffQuery, useStaffInvalidate } from "./queries";
@@ -171,11 +171,10 @@ function MakeupEditor({
             </select>
           </StaffField>
           <StaffField id="makeup-due" labelKey="lmsStaffDueAt">
-            <Input
+            <DateTimeInput
               id="makeup-due"
-              type="datetime-local"
               value={due}
-              onChange={(event) => setDue(event.target.value)}
+              onValueChange={(value) => setDue(value)}
             />
           </StaffField>
           {action.error && (

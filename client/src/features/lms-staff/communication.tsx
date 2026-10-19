@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { lmsAnnouncementSchema } from "@shared/contracts/lms";
@@ -162,20 +163,18 @@ function AnnouncementEditor({
         </StaffField>
         <div className="grid gap-4 sm:grid-cols-2">
           <StaffField id="announcement-publish" labelKey="lmsStaffOpensAt">
-            <Input
+            <DateTimeInput
               id="announcement-publish"
-              type="datetime-local"
               value={publish}
-              onChange={(event) => setPublish(event.target.value)}
+              onValueChange={(value) => setPublish(value)}
               required
             />
           </StaffField>
           <StaffField id="announcement-pinned" labelKey="lmsStaffPinnedUntil">
-            <Input
+            <DateTimeInput
               id="announcement-pinned"
-              type="datetime-local"
               value={pinned}
-              onChange={(event) => setPinned(event.target.value)}
+              onValueChange={(value) => setPinned(value)}
             />
           </StaffField>
         </div>

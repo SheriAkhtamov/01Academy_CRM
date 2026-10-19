@@ -552,8 +552,6 @@
   /* Native widgets (date pickers, checkboxes, scrollbars inside inputs)
      follow color-scheme, which the theme provider sets on <html>. */
   .dark input[type="date"]::-webkit-calendar-picker-indicator,
-  .dark input[type="time"]::-webkit-calendar-picker-indicator,
-  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
   .dark input[type="month"]::-webkit-calendar-picker-indicator,
   .dark input[type="week"]::-webkit-calendar-picker-indicator {
     filter: invert(1) brightness(0.85);
@@ -561,9 +559,7 @@
     cursor: pointer;
   }
 
-  .dark input[type="date"]::-webkit-calendar-picker-indicator:hover,
-  .dark input[type="time"]::-webkit-calendar-picker-indicator:hover,
-  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  .dark input[type="date"]::-webkit-calendar-picker-indicator:hover {
     opacity: 1;
   }
 }

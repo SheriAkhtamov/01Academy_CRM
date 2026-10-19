@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -279,28 +280,25 @@ function AssignmentEditor({
         </StaffField>
         <div className="grid gap-4 sm:grid-cols-2">
           <StaffField id="assignment-open" labelKey="lmsStaffOpensAt">
-            <Input
+            <DateTimeInput
               id="assignment-open"
-              type="datetime-local"
               value={opens}
-              onChange={(event) => setOpens(event.target.value)}
+              onValueChange={(value) => setOpens(value)}
               required
             />
           </StaffField>
           <StaffField id="assignment-due" labelKey="lmsStaffDueAt">
-            <Input
+            <DateTimeInput
               id="assignment-due"
-              type="datetime-local"
               value={due}
-              onChange={(event) => setDue(event.target.value)}
+              onValueChange={(value) => setDue(value)}
             />
           </StaffField>
           <StaffField id="assignment-close" labelKey="lmsStaffHardClose">
-            <Input
+            <DateTimeInput
               id="assignment-close"
-              type="datetime-local"
               value={close}
-              onChange={(event) => setClose(event.target.value)}
+              onValueChange={(value) => setClose(value)}
             />
           </StaffField>
           <StaffField id="assignment-grade" labelKey="lmsStaffGradingMode">
@@ -733,11 +731,10 @@ function RecipientEditor({
         }}
       >
         <StaffField id="recipient-due" labelKey="lmsStaffDueAt">
-          <Input
+          <DateTimeInput
             id="recipient-due"
-            type="datetime-local"
             value={due}
-            onChange={(event) => setDue(event.target.value)}
+            onValueChange={(value) => setDue(value)}
           />
         </StaffField>
         <StaffField id="recipient-status" labelKey="portalAssignments">
@@ -886,11 +883,10 @@ function AssignNewStudents({
           ))}
         </fieldset>
         <StaffField id="new-student-due" labelKey="lmsStaffDueAt">
-          <Input
+          <DateTimeInput
             id="new-student-due"
-            type="datetime-local"
             value={due}
-            onChange={(event) => setDue(event.target.value)}
+            onValueChange={(value) => setDue(value)}
           />
         </StaffField>
         <StaffField id="new-student-reason" labelKey="lmsStaffReason">

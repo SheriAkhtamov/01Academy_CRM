@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -143,6 +143,27 @@ describe('task creation with attachments', () => {
 });
 
 describe('miniapp task creation', () => {
+  it('edits tomorrow’s clock in scrolling columns without changing the day or opening a calendar', async () => {
+    const user = userEvent.setup();
+    render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[employee]} currentUser={employee} canAssignUsers miniMode />));
+    await user.type(screen.getByRole('textbox', { name: 'Task title' }), 'Call tomorrow');
+    await user.click(screen.getByRole('button', { name: 'Tomorrow' }));
+    const day = screen.getByLabelText('Due date', { selector: 'input' }) as HTMLInputElement;
+    const tomorrow = day.value;
+    expect(day.type).toBe('date');
+    await user.click(screen.getByRole('textbox', { name: 'Time' }));
+    const clock = screen.getByRole('dialog', { name: 'Time' });
+    expect(clock.querySelector('input[type="date"], input[type="datetime-local"]')).toBeNull();
+    await user.click(within(screen.getByRole('listbox', { name: 'Hours' })).getByRole('option', { name: '15' }));
+    await user.click(within(screen.getByRole('listbox', { name: 'Minutes' })).getByRole('option', { name: '45' }));
+    await user.click(within(clock).getByRole('button', { name: 'Select time' }));
+    expect(day.value).toBe(tomorrow);
+    await user.click(screen.getByRole('button', { name: 'Create task' }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({
+      title: 'Call tomorrow', dueAt: new Date(`${tomorrow}T15:45:00+05:00`).toISOString(),
+    })));
+  });
+
   it('keeps extra fields behind a toggle and submits the chosen deadline', async () => {
     const user = userEvent.setup();
     render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[employee]} currentUser={employee} canAssignUsers miniMode />));

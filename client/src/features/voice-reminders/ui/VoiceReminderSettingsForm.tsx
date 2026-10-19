@@ -1,3 +1,4 @@
+import { TimePicker } from '@/components/ui/time-picker';
 import type { VoiceReminderSettingsInput } from '@shared/contracts/voice-reminders';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -90,35 +91,33 @@ export function VoiceReminderSettingsForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-start">{t('voiceRemindersStartTime')}</Label>
-          <Input
+          <TimePicker
             id="voice-reminders-start"
-            type="time"
             required
             value={draft.allowedStartTime}
-            onChange={(event) => update('allowedStartTime', event.target.value)}
+            onValueChange={(value) => update('allowedStartTime', value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-end">{t('voiceRemindersEndTime')}</Label>
-          <Input
+          <TimePicker
             id="voice-reminders-end"
-            type="time"
             required
             value={draft.allowedEndTime}
-            onChange={(event) => update('allowedEndTime', event.target.value)}
+            onValueChange={(value) => update('allowedEndTime', value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-day-before-start">{t('voiceRemindersDayBeforeStart')}</Label>
-          <Input id="voice-reminders-day-before-start" type="time" step={60} min="10:00" max="20:00" required
+          <TimePicker id="voice-reminders-day-before-start" step={60} min="10:00" max="20:00" required
             value={draft.dayBeforeStartTime}
-            onChange={(event) => update('dayBeforeStartTime', event.target.value)} />
+            onValueChange={(value) => update('dayBeforeStartTime', value)} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-day-before-end">{t('voiceRemindersDayBeforeEnd')}</Label>
-          <Input id="voice-reminders-day-before-end" type="time" step={60} min="10:00" max="20:00" required
+          <TimePicker id="voice-reminders-day-before-end" step={60} min="10:00" max="20:00" required
             value={draft.dayBeforeEndTime}
-            onChange={(event) => update('dayBeforeEndTime', event.target.value)} />
+            onValueChange={(value) => update('dayBeforeEndTime', value)} />
         </div>
       </div>
     </fieldset>

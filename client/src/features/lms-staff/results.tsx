@@ -1,3 +1,4 @@
+import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type {
@@ -487,20 +488,18 @@ function ResultEditor({
         {mode === "report" && (
           <div className="grid gap-4 sm:grid-cols-2">
             <StaffField id="report-from" labelKey="lmsStaffPeriodFrom">
-              <Input
+              <DateTimeInput
                 id="report-from"
-                type="datetime-local"
                 value={from}
-                onChange={(event) => setFrom(event.target.value)}
+                onValueChange={(value) => setFrom(value)}
                 required
               />
             </StaffField>
             <StaffField id="report-to" labelKey="lmsStaffPeriodTo">
-              <Input
+              <DateTimeInput
                 id="report-to"
-                type="datetime-local"
                 value={to}
-                onChange={(event) => setTo(event.target.value)}
+                onValueChange={(value) => setTo(value)}
                 required
               />
             </StaffField>

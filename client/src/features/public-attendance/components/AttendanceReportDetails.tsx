@@ -11,7 +11,7 @@ export function AttendanceReportDetails({ group }: { group: PublicAttendanceRepo
   const term = search.trim().toLocaleLowerCase();
   const students = group.students.filter(student => !term || `${student.name} ${student.organization ?? ''}`.toLocaleLowerCase().includes(term));
 
-  return <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto">
     <div className="grid shrink-0 gap-2">
       <label htmlFor={searchId} className="text-sm font-medium">{t('publicAttendanceReportSearch')}</label>
       <Input id={searchId} type="search" value={search} onChange={event => setSearch(event.target.value)} />

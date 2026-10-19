@@ -36,7 +36,7 @@ export function OverviewDialog({ title, description, children, onClose, role = '
     <dialog ref={ref} role={role} aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-4xl overflow-auto rounded-2xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/50 backdrop:backdrop-blur-sm">
-      <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-card p-5 sm:p-6">
+      <header data-topographic={role === 'dialog' ? 'header' : undefined} className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-card p-5 sm:p-6">
         <div><h2 id={titleId} className="text-lg font-semibold tracking-tight">{title}</h2>
           {description ? <p id={descriptionId} className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p> : null}</div>
         <button type="button" className={`${overviewButton} shrink-0`} onClick={onClose} aria-label={t('close')}><X className="size-5" aria-hidden="true" /></button>

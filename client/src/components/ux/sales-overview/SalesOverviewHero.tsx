@@ -33,7 +33,7 @@ export function SalesOverviewHero({ stats, metrics, payments, students, reportin
   return <div className="min-w-0 xl:col-span-12">
     <div className="grid grid-cols-1 gap-10 pb-8 ">
       <section className="min-w-0" aria-label={t('revenue')}>
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header data-topographic="header" className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">{t('revenue')}</h2>
           {revenueDelta !== null && revenueDelta !== 0 ? <TrendBadge delta={revenueDelta} suffix="%" /> : null}
         </header>

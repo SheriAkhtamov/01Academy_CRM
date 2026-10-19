@@ -20,6 +20,7 @@ interface EmptyStateProps {
 export function EmptyState({ icon: Icon, title, action, className }: EmptyStateProps) {
   return (
     <motion.div
+      data-topographic="empty"
       className={cn('flex flex-col items-center justify-center py-16 text-center', className)}
       variants={staggerContainer(0.06, 0.05)}
       initial="hidden"

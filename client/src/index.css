@@ -118,8 +118,6 @@
               hsl(210, 40%, 99%);
   --login-card-background: hsl(0 0% 100% / 0.9);
   --login-card-border: hsl(0 0% 100% / 0.6);
-  --login-glow-blue: hsla(221, 83%, 60%, 0.18);
-  --login-glow-purple: hsla(271, 81%, 60%, 0.16);
 
   /* Surface elevation ladder.
      0 = page canvas, 1 = cards/sidebar, 2 = inputs & muted blocks,
@@ -219,9 +217,7 @@
 :root[data-motion-decor='off'] .animate-float,
 :root[data-motion-decor='off'] .animate-gradient-pan,
 :root[data-motion-decor='off'] .animate-pulse-ring,
-:root[data-motion-decor='off'] .animate-skeleton-sweep,
-:root[data-motion-decor='off'] .login-page::before,
-:root[data-motion-decor='off'] .login-page::after {
+:root[data-motion-decor='off'] .animate-skeleton-sweep {
   animation: none !important;
 }
 
@@ -353,8 +349,6 @@
               hsl(224, 27%, 6%);
   --login-card-background: hsla(224, 22%, 10%, 0.86);
   --login-card-border: hsla(224, 20%, 32%, 0.6);
-  --login-glow-blue: hsla(217, 91%, 60%, 0.22);
-  --login-glow-purple: hsla(268, 84%, 62%, 0.18);
 
   --danger-tint-background: hsl(0, 46%, 13%);
   --danger-tint-border: hsl(0, 45%, 27%);
@@ -456,6 +450,45 @@
     opacity: 0.4;
   }
 
+  /* Transparent ink keeps the surface's own colour. Negative stacking leaves
+     labels, controls, focus rings, and menus above the decorative layer. */
+  [data-topographic],
+  .login-page {
+    position: relative;
+    isolation: isolate;
+  }
+
+  [data-topographic]::before,
+  .login-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: url('./assets/topographic-contours.webp') right top / max(100%, 36rem) auto no-repeat;
+    mask-image: radial-gradient(ellipse at top right, #000, transparent 75%);
+    opacity: 0.16;
+  }
+
+  .dark [data-topographic]::before,
+  .dark .login-page::before {
+    filter: brightness(1.4) saturate(0.8);
+    opacity: 0.12;
+  }
+
+  [data-topographic='card'] {
+    border-start-start-radius: inherit;
+    border-start-end-radius: inherit;
+  }
+
+  [data-topographic='empty']::before {
+    background-position: center;
+    background-size: cover;
+    mask-image: radial-gradient(ellipse, transparent 25%, #000);
+    opacity: 0.07;
+  }
+
   @media (min-width: 640px) {
     [data-platform-shell]::before {
       background-position: center;
@@ -463,7 +496,9 @@
   }
 
   @media print, (forced-colors: active) {
-    [data-platform-shell]::before {
+    [data-platform-shell]::before,
+    [data-topographic]::before,
+    .login-page::before {
       display: none;
     }
   }
@@ -805,16 +840,6 @@
     background-color: transparent;
   }
 
-  /* Login Page.
-     `aurora` lives here rather than in tailwind.config because it is only ever
-     applied to pseudo-elements, and Tailwind emits a @keyframes block only for
-     animations reached through a utility class. */
-  @keyframes aurora {
-    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    33% { transform: translate3d(4%, -6%, 0) scale(1.08); }
-    66% { transform: translate3d(-5%, 4%, 0) scale(0.95); }
-  }
-
   /* `dvh`, not `vh`: on a phone `100vh` is the viewport with the browser
      chrome pretended away, so the card sat a toolbar's height below centre and
      the page scrolled by exactly that much. The gutter is what keeps the card
@@ -824,33 +849,23 @@
     background: var(--login-bg);
   }
 
-  .login-page::before,
-  .login-page::after {
-    content: '';
-    @apply absolute rounded-full blur-3xl pointer-events-none;
-  }
-
-  /* The two glows drift on long, offset cycles so they never line up into a
-     recognisable loop. This is the one place in the app with a permanent
-     ambient animation — it is a landing surface nobody works inside, and the
-     global prefers-reduced-motion rule still stops it. */
+  /* Login uses the same contours across the canvas, with a clear centre
+     behind the form. The artwork is static in every motion mode. */
   .login-page::before {
-    width: 420px;
-    height: 420px;
-    top: -120px;
-    left: -80px;
-    background: radial-gradient(circle, var(--login-glow-blue), transparent 70%);
-    animation: aurora 18s ease-in-out infinite;
+    background-position: left top;
+    background-size: cover;
+    mask-image: none;
+    opacity: 0.22;
   }
 
-  .login-page::after {
-    width: 460px;
-    height: 460px;
-    bottom: -160px;
-    right: -100px;
-    background: radial-gradient(circle, var(--login-glow-purple), transparent 70%);
-    animation: aurora 24s ease-in-out infinite reverse;
-    animation-delay: -6s;
+  .dark .login-page::before {
+    opacity: 0.18;
+  }
+
+  @media (min-width: 640px) {
+    .login-page::before {
+      background-position: center;
+    }
   }
 
   .login-card {

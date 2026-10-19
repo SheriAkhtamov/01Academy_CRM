@@ -20,6 +20,7 @@ export function PageHeader({
     // Every module page opens with the same title and action layout.
     <motion.div
       data-page-header
+      data-topographic="header"
       className="mb-6 flex min-w-0 shrink-0 flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between"
       variants={staggerContainer(0.05)}
       initial="hidden"

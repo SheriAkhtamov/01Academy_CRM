@@ -28,7 +28,7 @@ export function AppSidebarFrame({
       )}
       data-platform-sidebar
     >
-      <div className="flex items-center border-b border-border/70 px-3 py-4">
+      <div data-topographic="header" className="flex items-center border-b border-border/70 px-3 py-4">
         <div className="flex items-center w-full">
           <Logo size="sm" className="shrink-0" />
           <div className="ml-2 flex min-w-0 flex-1 flex-col gap-0.5">

@@ -1,0 +1,7 @@
+Tool: built-in image_gen
+Output: topographic-contours.webp (transparent WebP, 1024 x 577)
+Reference: topographic-background.webp (selected concept 01)
+
+Use case: background-extraction.
+Input image 1 is the EDIT TARGET: the selected topographic contour background for 01 Academy CRM.
+Prepare this artwork as a transparent decorative overlay. Remove the entire white and pale off-white background, replacing it with genuinely transparent alpha. Preserve the existing flowing fine topographic contour line paths, their arrangement around all four edges and corners, their thin elegant blue and lavender ink and the large clear central area. Keep original framing and landscape proportions. The spaces between the lines must be transparent, including the center. Retain smooth antialiased strokes with moderate visible ink opacity so this overlay can be placed on white, navy and pastel card surfaces. No white rectangular ground, no checkerboard baked into pixels, no solid filled shapes, no text, no added elements. Only delicate blue-lavender contour linework over genuine transparency.

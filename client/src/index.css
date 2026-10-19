@@ -431,6 +431,43 @@
     background-attachment: fixed;
   }
 
+  /* The shell anchors the artwork to the viewport while <main> scrolls.
+     Its isolated negative layer stays behind content and cannot catch clicks. */
+  [data-platform-shell] {
+    position: relative;
+    isolation: isolate;
+    background: var(--app-bg);
+  }
+
+  [data-platform-shell]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: url('./assets/topographic-background.webp') left top / cover no-repeat;
+    mix-blend-mode: multiply;
+    opacity: 0.8;
+  }
+
+  .dark [data-platform-shell]::before {
+    filter: invert(1) hue-rotate(180deg);
+    mix-blend-mode: screen;
+    opacity: 0.4;
+  }
+
+  @media (min-width: 640px) {
+    [data-platform-shell]::before {
+      background-position: center;
+    }
+  }
+
+  @media print, (forced-colors: active) {
+    [data-platform-shell]::before {
+      display: none;
+    }
+  }
+
   html.app-shell-active {
     height: 100dvh;
     max-height: 100dvh;

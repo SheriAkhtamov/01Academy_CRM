@@ -1,4 +1,5 @@
-import { apiRequest } from '@/lib/queryClient';
+import { MAX_PAYMENT_ATTACHMENT_BYTES } from '@shared/payment-attachments';
+import { apiRequest, throwIfResNotOk } from '@/lib/queryClient';
 
 export type CreatePaymentInput = {
   leadId: number;
@@ -14,6 +15,16 @@ export type CreatePaymentInput = {
 };
 
 export const paymentsApi = {
+  attachmentBlob: async (paymentId: number, attachmentId: number, signal: AbortSignal): Promise<Blob> => {
+    const response = await fetch(`/api/academy/payments/${paymentId}/attachments/${attachmentId}/download`, {
+      credentials: 'same-origin', signal,
+    });
+    await throwIfResNotOk(response);
+    if (Number(response.headers.get('Content-Length')) > MAX_PAYMENT_ATTACHMENT_BYTES) throw new Error('paymentFileTooLarge');
+    const blob = await response.blob();
+    if (blob.size > MAX_PAYMENT_ATTACHMENT_BYTES) throw new Error('paymentFileTooLarge');
+    return blob;
+  },
   create: <T>(input: CreatePaymentInput): Promise<T> => {
     const { files = [], ...values } = input;
     if (files.length === 0) return apiRequest('POST', '/api/academy/payments', values) as Promise<T>;

@@ -1,11 +1,12 @@
 import { useId, useRef, useState, type ChangeEvent } from 'react';
-import { Download, FileText, Paperclip, X } from 'lucide-react';
+import { Download, Paperclip, X } from 'lucide-react';
 import { PAYMENT_ATTACHMENT_ACCEPT } from '@shared/payment-attachments';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { paymentsApi } from '@/features/payments/api';
+import { PaymentAttachmentPreview } from '@/features/payments/PaymentAttachmentPreview';
 
 export interface PaymentReceiptAttachment {
   id: number;
@@ -49,10 +50,10 @@ export function PaymentFilesField({ files, onAdd, onRemove, disabled }: {
         {t('paymentAttachFiles')}
       </Button>
       {files.length > 0 ? (
-        <ul className="space-y-1" aria-label={t('paymentReceiptFiles')}>
+        <ul className="space-y-2" aria-label={t('paymentReceiptFiles')}>
           {files.map((file, index) => (
-            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
-              <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm">
+              <PaymentAttachmentPreview name={file.name} file={file} />
               <span className="min-w-0 flex-1 truncate">{file.name}</span>
               <Button
                 type="button"
@@ -94,7 +95,7 @@ export function PaymentAttachmentLinks({ paymentId, attachments }: {
   if (attachments.length === 0) return null;
 
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mt-2 flex flex-wrap gap-2">
       {attachments.map((attachment) => (
         <button
           key={attachment.id}
@@ -104,10 +105,10 @@ export function PaymentAttachmentLinks({ paymentId, attachments }: {
               .catch(() => toast({ title: t('attachmentDownloadFailed'), variant: 'destructive' }));
           }}
           aria-label={t('paymentDownloadFile').replace('{name}', attachment.originalName)}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border p-2 text-left text-xs text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <FileText className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{attachment.originalName}</span>
+          <PaymentAttachmentPreview name={attachment.originalName} paymentId={paymentId} attachmentId={attachment.id} />
+          <span className="min-w-0 truncate">{attachment.originalName}</span>
           <Download className="size-3.5 shrink-0" aria-hidden="true" />
         </button>
       ))}

@@ -1295,6 +1295,7 @@ export const translations = {
   telegramReminderDueSoon: { en: '⏰ Task deadline in {minutes} min.\n{title}\nDue: {deadline} ({timezone}).', ru: '⏰ До срока задачи осталось {minutes} мин.\n{title}\nСрок: {deadline} ({timezone}).' },
   telegramReminderOpen: { en: 'Open tasks', ru: 'Открыть задачи' },
   miniTasksTitle: { en: '01 Academy · Tasks', ru: '01 Academy · Задачи' },
+  openTasksInTelegram: { en: 'Tasks in Telegram', ru: 'Задачи в Telegram' },
   miniTasksAssigned: { en: 'Assigned by me', ru: 'Порученные' },
   miniTasksSearch: { en: 'Search tasks', ru: 'Поиск задач' },
   miniTasksEmpty: { en: 'No tasks here yet', ru: 'Здесь пока нет задач' },

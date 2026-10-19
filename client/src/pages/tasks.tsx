@@ -2,7 +2,7 @@ import { BoardUserAvatar } from '@/components/ux/board/BoardUserAvatar';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Archive, CalendarDays, Columns3, ListTodo, Plus, Users, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Archive, CalendarDays, Columns3, ListTodo, Plus, Send, Users, type LucideIcon } from 'lucide-react';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -368,6 +368,12 @@ export default function TasksPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <Button asChild variant="outline" className="w-full gap-2 max-md:min-h-11 sm:w-auto">
+                                <a href="https://t.me/ZeroOneAcademy_Taskbot" target="_blank" rel="noopener noreferrer">
+                                    <Send className="size-4" aria-hidden="true" />
+                                    {t('openTasksInTelegram')}
+                                </a>
+                            </Button>
                             {!isArchiveView ? (
                                 <Button className="gap-1.5" onClick={() => setCreateOpen(true)}>
                                     <Plus className="size-4" /> {t('addTask')}

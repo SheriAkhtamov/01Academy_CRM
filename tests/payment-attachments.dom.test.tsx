@@ -107,4 +107,18 @@ describe('receipt selection and clipboard paste', () => {
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('paymentRemoveFileTitle') }));
     expect(screen.queryByText('receipt.pdf')).toBeNull();
   });
+
+  it('does not attach clipboard files through an open receipt preview', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    paste(screen.getByRole('dialog'), [new File(['image'], 'receipt.png', { type: 'image/png' })]);
+    await user.click(screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.png') }));
+    const preview = screen.getByRole('dialog', { name: 'receipt.png' });
+    paste(preview, [new File(['pdf'], 'extra.pdf', { type: 'application/pdf' })]);
+    expect(screen.queryByText('extra.pdf')).toBeNull();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'receipt.png' })).toBeNull();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('receipt.png')).toBeTruthy();
+  });
 });

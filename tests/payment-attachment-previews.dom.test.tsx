@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PaymentAttachmentLinks, PaymentFilesField } from '../client/src/components/ux/lead/PaymentAttachments';
 import { PaymentAttachmentPreview } from '../client/src/features/payments/PaymentAttachmentPreview';
@@ -44,7 +45,8 @@ describe('payment attachment miniatures', () => {
     expect(createUrl).not.toHaveBeenCalled();
   });
 
-  it('loads a saved image through its authenticated download route and retains the download action', async () => {
+  it('opens a saved image in a large modal and downloads only from its explicit button', async () => {
+    const user = userEvent.setup();
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('photo', {
       headers: { 'content-type': 'application/octet-stream' },
     }));
@@ -57,8 +59,17 @@ describe('payment attachment miniatures', () => {
       credentials: 'same-origin', signal: expect.any(AbortSignal),
     });
     expect(createUrl.mock.calls[0][0].type).toBe('image/jpeg');
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'receipt.jpg') }));
+    const trigger = screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.jpg') });
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'receipt.jpg' });
+    expect(within(dialog).getByRole('img', { name: 'receipt.jpg' }).getAttribute('src')).toBe('blob:receipt-1');
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(download).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'receipt.jpg') }));
     expect(download).toHaveBeenCalledWith(12, 34, 'receipt.jpg');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it('keeps the filename and format card if an image cannot be decoded', async () => {
@@ -76,6 +87,8 @@ describe('payment attachment miniatures', () => {
     ]} />);
     await act(async () => undefined);
     expect(createUrl).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.png') }));
+    expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toBe(i18n.t('attachmentPreviewUnavailable'));
     expect(screen.getByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'receipt.png') })).toBeTruthy();
     expect(screen.getByText('png')).toBeTruthy();
   });
@@ -106,5 +119,67 @@ describe('payment attachment miniatures', () => {
     }));
     await expect(paymentsApi.attachmentBlob(12, 34, new AbortController().signal)).rejects.toThrow('paymentFileTooLarge');
     expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('loads PDF content only after opening and releases it on close', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('pdf', {
+      headers: { 'content-type': 'application/octet-stream' },
+    }));
+    const download = vi.spyOn(paymentsApi, 'downloadAttachment').mockResolvedValue();
+    render(<PaymentAttachmentPreview name="receipt.pdf" paymentId={12} attachmentId={34} />);
+    expect(fetch).not.toHaveBeenCalled();
+    const trigger = screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.pdf') });
+    await user.click(trigger);
+    const frame = await screen.findByTitle('receipt.pdf');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame.getAttribute('src')).toBe('blob:receipt-1');
+    expect(createUrl.mock.calls[0][0].type).toBe('application/pdf');
+    expect(download).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: i18n.t('close') }));
+    expect(revokeUrl).toHaveBeenCalledWith('blob:receipt-1');
+    expect(screen.queryByTitle('receipt.pdf')).toBeNull();
+    await user.click(trigger);
+    expect((await screen.findByTitle('receipt.pdf')).getAttribute('src')).toBe('blob:receipt-2');
+  });
+
+  it('aborts a pending PDF preview on close and ignores a late response', async () => {
+    const user = userEvent.setup();
+    let resolve: (response: Response) => void = () => undefined;
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(done => { resolve = done; }));
+    render(<PaymentAttachmentPreview name="receipt.pdf" paymentId={12} attachmentId={34} />);
+    await user.click(screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.pdf') }));
+    expect(screen.getByLabelText(i18n.t('paymentPreviewLoading'))).toBeTruthy();
+    const signal = fetch.mock.calls[0][1]!.signal!;
+    await user.keyboard('{Escape}');
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolve(new Response('pdf')));
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens a selected image locally without submitting or downloading it', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    render(<PaymentFilesField files={[new File(['image'], 'local.png', { type: 'image/png' })]} onAdd={vi.fn()} onRemove={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'local.png') }));
+    const dialog = screen.getByRole('dialog', { name: 'local.png' });
+    expect(within(dialog).getByRole('img', { name: 'local.png' })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'local.png') })).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('opens other formats as file cards without automatic downloads', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    const download = vi.spyOn(paymentsApi, 'downloadAttachment').mockResolvedValue();
+    render(<PaymentAttachmentPreview name="checks.zip" paymentId={12} attachmentId={34} />);
+    await user.click(screen.getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'checks.zip') }));
+    const dialog = screen.getByRole('dialog', { name: 'checks.zip' });
+    expect(within(dialog).getByRole('status').textContent).toBe(i18n.t('attachmentPreviewUnavailable'));
+    expect(fetch).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'checks.zip') }));
+    expect(download).toHaveBeenCalledWith(12, 34, 'checks.zip');
   });
 });

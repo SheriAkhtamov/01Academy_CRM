@@ -1652,6 +1652,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   paymentRemoveFileConfirm: { en: 'Remove “{name}” from the payment?', ru: 'Убрать «{name}» из оплаты?' },
   paymentRemoveFile: { en: 'Remove {name}', ru: 'Убрать {name}' },
   paymentDownloadFile: { en: 'Download {name}', ru: 'Скачать {name}' },
+  paymentPreviewFile: { en: 'View {name}', ru: 'Посмотреть {name}' },
+  paymentPreviewLoading: { en: 'Loading receipt…', ru: 'Загрузка чека…' },
   paymentFileLimit: { en: 'Attach up to 5 files', ru: 'Можно прикрепить до 5 файлов' },
   paymentFileTooLarge: { en: 'Each file must be 10 MB or less', ru: 'Размер каждого файла — до 10 МБ' },
   paymentFileTypeUnsupported: { en: 'This file type is not supported', ru: 'Этот формат файла не поддерживается' },

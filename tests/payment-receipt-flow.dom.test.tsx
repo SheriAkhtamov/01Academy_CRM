@@ -61,6 +61,24 @@ function pasteFile(target: Element, file: File) {
 }
 
 describe('payment receipt submission from the lead modal', () => {
+  it('closes only the receipt preview and keeps the payment draft intact', async () => {
+    const { user, dialog } = await openPayment();
+    const image = new File(['image'], 'screenshot.png', { type: 'image/png' });
+    await user.type(within(dialog).getByLabelText(i18n.t('comment')), 'Receipt checked');
+    pasteFile(dialog, image);
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'screenshot.png') }));
+    expect(screen.getByRole('dialog', { name: 'screenshot.png' })).toBeTruthy();
+    expect(requests).toHaveLength(0);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'screenshot.png' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: i18n.t('recordPayment') })).toBeTruthy();
+    expect((within(dialog).getByLabelText(i18n.t('comment')) as HTMLTextAreaElement).value).toBe('Receipt checked');
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].getAll('files')).toEqual([image]);
+    expect(requests[0].get('comment')).toBe('Receipt checked');
+  });
+
   it('sends selected files and a pasted screenshot in the same payment and exposes saved attachments', async () => {
     const { user, dialog } = await openPayment();
     const pdf = new File(['pdf'], 'receipt.pdf', { type: 'application/pdf' });
@@ -74,7 +92,7 @@ describe('payment receipt submission from the lead modal', () => {
     expect(requests[0].get('amountUzs')).toBe('100000');
     expect(requests[0].getAll('files')).toEqual([pdf, image]);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
-    expect(await screen.findByRole('button', { name: i18n.t('paymentDownloadFile').replace('{name}', 'receipt.pdf') })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'receipt.pdf') })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: i18n.t('recordAnotherPayment') }));
     const next = await screen.findByRole('dialog', { name: i18n.t('recordAnotherPayment') });
     expect(within(next).queryByRole('list', { name: i18n.t('paymentReceiptFiles') })).toBeNull();

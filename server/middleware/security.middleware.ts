@@ -77,6 +77,7 @@ export const securityHeadersMiddleware = (
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
+    "frame-src 'self' blob:",
     miniAppPage ? 'frame-ancestors https://web.telegram.org https://webk.telegram.org https://webz.telegram.org' : "frame-ancestors 'none'",
     "form-action 'self'",
     `script-src ${scriptSources.join(' ')}`,

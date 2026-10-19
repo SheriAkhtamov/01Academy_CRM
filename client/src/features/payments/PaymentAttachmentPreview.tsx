@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react';
-import { FileArchive, FileImage, FileMusic, FileSpreadsheet, FileText, FileVideo } from 'lucide-react';
+import { useState } from 'react';
+import { Trigger as DialogTrigger } from '@radix-ui/react-dialog';
+import { Download, FileArchive, FileImage, FileMusic, FileSpreadsheet, FileText, FileVideo, Loader2 } from 'lucide-react';
 import { attachmentExtension } from '@shared/board-attachments';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useTranslation } from '@/hooks/useTranslation';
+import { toast } from '@/hooks/use-toast';
 import { paymentsApi } from './api';
+import { usePaymentAttachmentUrl, type PaymentAttachmentSource } from './usePaymentAttachmentUrl';
 
 const imageTypes: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg',
@@ -19,48 +25,77 @@ function fileIcon(extension: string) {
   return FileText;
 }
 
-export function PaymentAttachmentPreview({ name, file, paymentId, attachmentId }: {
+function PdfPreview({ name, ...source }: PaymentAttachmentSource & { name: string }) {
+  const { t } = useTranslation();
+  const { src, failed, fail } = usePaymentAttachmentUrl(source, 'application/pdf');
+  if (failed) return <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>;
+  if (!src) return <Loader2 className="size-8 animate-spin" aria-label={t('paymentPreviewLoading')} />;
+  return <iframe title={name} src={src} className="h-[65dvh] w-full rounded-md border" onError={fail} />;
+}
+
+export function PaymentAttachmentPreview({ name, showName = false, disabled, ...source }: PaymentAttachmentSource & {
   name: string;
-  file?: File;
-  paymentId?: number;
-  attachmentId?: number;
+  showName?: boolean;
+  disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const extension = attachmentExtension(name);
   const imageType = imageTypes[extension];
-  const source = file ?? `${paymentId}/${attachmentId}/${imageType}`;
-  const [preview, setPreview] = useState<{ source: File | string; url: string }>();
-  const [failedUrl, setFailedUrl] = useState<string>();
-  const src = preview?.source === source ? preview.url : undefined;
+  const { src, failed, fail } = usePaymentAttachmentUrl(source, imageType);
+  const [open, setOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const Icon = fileIcon(extension);
-
-  useEffect(() => {
-    if (!imageType) return;
-    const controller = new AbortController();
-    let url: string | undefined;
-    void (async () => {
-      const blob = file ?? await paymentsApi.attachmentBlob(paymentId!, attachmentId!, controller.signal);
-      if (controller.signal.aborted) return;
-      // The download endpoint deliberately returns octet-stream. Only raster
-      // extensions receive an image MIME type for the local preview URL.
-      url = URL.createObjectURL(blob.slice(0, blob.size, imageType));
-      setPreview({ source, url });
-    })().catch(() => undefined);
-    return () => {
-      controller.abort();
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [file, paymentId, attachmentId, imageType, source]);
+  const download = async () => {
+    if (downloading || source.file) return;
+    setDownloading(true);
+    try {
+      await paymentsApi.downloadAttachment(source.paymentId!, source.attachmentId!, name);
+    } catch {
+      toast({ title: t('attachmentDownloadFailed'), variant: 'destructive' });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
-    <span aria-hidden="true" className="flex size-12 shrink-0 flex-col items-center justify-center overflow-hidden rounded-md border bg-muted text-muted-foreground">
-      {src && src !== failedUrl ? (
-        <img src={src} alt="" className="size-full object-cover" onError={() => setFailedUrl(src)} />
-      ) : (
-        <>
-          <Icon className="size-5" />
-          <span className="mt-0.5 max-w-full truncate px-1 text-[9px] font-semibold uppercase leading-none">{extension.slice(1)}</span>
-        </>
-      )}
-    </span>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button type="button" disabled={disabled} aria-label={t('paymentPreviewFile').replace('{name}', name)}
+          className={showName
+            ? 'inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border p-2 text-left text-xs text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+            : 'shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'}>
+          <span aria-hidden="true" className="flex size-12 shrink-0 flex-col items-center justify-center overflow-hidden rounded-md border bg-muted text-muted-foreground">
+            {src ? <img src={src} alt="" className="size-full object-cover" onError={fail} /> : <>
+              <Icon className="size-5" />
+              <span className="mt-0.5 max-w-full truncate px-1 text-[9px] font-semibold uppercase leading-none">{extension.slice(1)}</span>
+            </>}
+          </span>
+          {showName ? <span className="min-w-0 truncate">{name}</span> : null}
+        </button>
+      </DialogTrigger>
+      {open ? (
+        <DialogContent className="flex max-h-[90dvh] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
+          <DialogHeader className="min-w-0 pr-8">
+            <DialogTitle className="break-words">{name}</DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-40 min-w-0 flex-1 items-center justify-center overflow-auto">
+            {imageType ? (failed
+              ? <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>
+              : src ? <img src={src} alt={name} className="max-h-[65dvh] max-w-full object-contain" onError={fail} />
+                : <Loader2 className="size-8 animate-spin" aria-label={t('paymentPreviewLoading')} />)
+              : extension === '.pdf' ? <PdfPreview {...source} name={name} />
+                : <div className="flex flex-col items-center gap-3 py-8">
+                  <Icon className="size-16 text-muted-foreground" aria-hidden="true" />
+                  <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>
+                </div>}
+          </div>
+          {!source.file ? <DialogFooter>
+            <Button type="button" disabled={downloading} aria-label={t('paymentDownloadFile').replace('{name}', name)} onClick={() => { void download(); }}>
+              <Download className="size-4" aria-hidden="true" />{t('download')}
+            </Button>
+          </DialogFooter> : null}
+        </DialogContent>
+      ) : null}
+    </Dialog>
   );
 }

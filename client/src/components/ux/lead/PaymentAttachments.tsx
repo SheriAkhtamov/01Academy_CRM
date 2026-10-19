@@ -1,11 +1,9 @@
 import { useId, useRef, useState, type ChangeEvent } from 'react';
-import { Download, Paperclip, X } from 'lucide-react';
+import { Paperclip, X } from 'lucide-react';
 import { PAYMENT_ATTACHMENT_ACCEPT } from '@shared/payment-attachments';
 import { useTranslation } from '@/hooks/useTranslation';
-import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { paymentsApi } from '@/features/payments/api';
 import { PaymentAttachmentPreview } from '@/features/payments/PaymentAttachmentPreview';
 
 export interface PaymentReceiptAttachment {
@@ -53,7 +51,7 @@ export function PaymentFilesField({ files, onAdd, onRemove, disabled }: {
         <ul className="space-y-2" aria-label={t('paymentReceiptFiles')}>
           {files.map((file, index) => (
             <li key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm">
-              <PaymentAttachmentPreview name={file.name} file={file} />
+              <PaymentAttachmentPreview name={file.name} file={file} disabled={disabled} />
               <span className="min-w-0 flex-1 truncate">{file.name}</span>
               <Button
                 type="button"
@@ -91,26 +89,18 @@ export function PaymentAttachmentLinks({ paymentId, attachments }: {
   paymentId: number;
   attachments: PaymentReceiptAttachment[];
 }) {
-  const { t } = useTranslation();
   if (attachments.length === 0) return null;
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {attachments.map((attachment) => (
-        <button
+        <PaymentAttachmentPreview
           key={attachment.id}
-          type="button"
-          onClick={() => {
-            void paymentsApi.downloadAttachment(paymentId, attachment.id, attachment.originalName)
-              .catch(() => toast({ title: t('attachmentDownloadFailed'), variant: 'destructive' }));
-          }}
-          aria-label={t('paymentDownloadFile').replace('{name}', attachment.originalName)}
-          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border p-2 text-left text-xs text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <PaymentAttachmentPreview name={attachment.originalName} paymentId={paymentId} attachmentId={attachment.id} />
-          <span className="min-w-0 truncate">{attachment.originalName}</span>
-          <Download className="size-3.5 shrink-0" aria-hidden="true" />
-        </button>
+          name={attachment.originalName}
+          paymentId={paymentId}
+          attachmentId={attachment.id}
+          showName
+        />
       ))}
     </div>
   );

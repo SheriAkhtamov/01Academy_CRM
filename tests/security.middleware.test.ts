@@ -58,6 +58,8 @@ describe('HTTP security middleware', () => {
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBe('https://crm.01academy.uz');
     expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(response.headers['content-security-policy']).toContain("frame-src 'self' blob:");
+    expect(response.headers['content-security-policy']).toContain("object-src 'none'");
     expect(response.headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(response.headers['content-security-policy']).not.toContain("'unsafe-eval'");
     expect(response.headers['content-security-policy']).toContain(

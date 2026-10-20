@@ -99,7 +99,12 @@ export async function refreshTelegramDigest(request: RefreshRequest, now = new D
       [claim.rows[0].id, delivery.status, delivery.code,
         delivery.retrySeconds ? new Date(Date.now() + delivery.retrySeconds * 1000) : null, new Date()]);
     const deletion = await deleteDigestMessage(token, request.telegramUserId, source.messageId);
-    if (deletion.status !== 'sent') { await record(deletion); return 'failed'; }
+    if (deletion.status !== 'sent') {
+      // A missing/deleted source message is not a blocked chat. Do not let a
+      // deleteMessage 400 suppress the recipient's normal reminders for a day.
+      await record({ ...deletion, code: deletion.code === 400 ? null : deletion.code });
+      return 'failed';
+    }
     for (const message of messages) {
       const delivery = await sendTelegramTaskReminder(token, request.telegramUserId, message.text, appUrl, message.buttons);
       if (delivery.status !== 'sent') {

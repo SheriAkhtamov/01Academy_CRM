@@ -77,6 +77,14 @@ describe('exact morning-digest replacement', () => {
     await refreshTelegramDigest(request(), now);
     expect(mock.fetch).toHaveBeenCalledOnce();
   });
+  it('does not suppress normal reminders when the original message was already deleted', async () => {
+    mock.fetch.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ ok: false, error_code: 400 }) });
+    expect(await refreshTelegramDigest(request(), now)).toBe('failed');
+    expect(mock.send).not.toHaveBeenCalled();
+    const update = mock.query.mock.calls.find(([sql]) => sql.startsWith('UPDATE telegram_task_reminders'))!;
+    expect(update[1][1]).toBe('failed');
+    expect(update[1][2]).toBeNull();
+  });
   it('does not replay a partially delivered replacement after an ambiguous send', async () => {
     mock.send.mockResolvedValueOnce({ status: 'uncertain', code: null, retrySeconds: null });
     expect(await refreshTelegramDigest(request(), now)).toBe('failed');

@@ -60,8 +60,9 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     mocks.transaction = new AsyncLocalStorage();
     await mocks.pool.query(`
       CREATE TABLE users(id integer PRIMARY KEY);
-      CREATE TABLE academy_leads(id integer PRIMARY KEY,manager_id integer,is_archived boolean DEFAULT false);
-      CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer REFERENCES academy_leads(id),updated_at timestamptz DEFAULT now());
+      CREATE TABLE academy_leads(id integer PRIMARY KEY,manager_id integer,funnel_id integer,is_archived boolean DEFAULT false);
+      CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer REFERENCES academy_leads(id),
+        student_name text,contact_name text DEFAULT 'Contact',phone text,status text DEFAULT 'studying',updated_at timestamptz DEFAULT now());
       INSERT INTO users VALUES(7),(8),(9);
       INSERT INTO academy_leads(id,manager_id) VALUES(11,7),(12,8);
       INSERT INTO academy_students(id,lead_id) VALUES(21,11),(22,11),(23,12),(24,NULL);
@@ -87,6 +88,39 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     expect(await service.forStudent(manager, 21)).toEqual(results[0]);
     const after = (await mocks.pool.query("SELECT updated_at FROM academy_students WHERE id=21")).rows[0].updated_at;
     expect(after).toEqual(before);
+  });
+  it("lists only attached contracts visible under lead and funnel permissions, including historical numbers without files", async () => {
+    await service.create(manager, { leadId: 11 });
+    const owned = await service.create(manager, { studentId: 21 });
+    const other = await service.create(otherManager, { studentId: 23 });
+    await service.create(administrator, { studentId: 24 });
+    const historical = await service.changeNumber(manager, owned.id, owned.version, "А-07/01");
+    await mocks.pool.query("UPDATE academy_students SET student_name='Марсель',phone='+998901234567' WHERE id=21");
+    const list = (actor = manager, q = "", page = 1, pageSize = 25) => service.list(actor, { q, page, pageSize });
+    expect((await list()).items.map(row => row.contract.id)).toEqual([owned.id]);
+    const result = await list(manager, "а-07/01");
+    expect(result.items).toMatchObject([{ contract: { id: historical.id, file: null }, student: { id: 21, studentName: "Марсель" } }]);
+    expect(result.items[0].contract).not.toHaveProperty("fileKey");
+    expect(result.items[0].student.updatedAt).toMatch(/Z$/);
+    expect((await list(manager, "марсель")).total).toBe(1);
+    expect((await list(manager, "901234")).total).toBe(1);
+    expect((await list(manager, "%")).total).toBe(0);
+    expect((await list(administrator)).total).toBe(3);
+    expect((await list(actorContextFrom({ id: 9, modules: ["marketing"] }))).total).toBe(2);
+    expect((await list(administrator, "", 999, 2))).toMatchObject({ page: 2, total: 3, pageSize: 2, items: [expect.anything()] });
+    await expect(list(actorContextFrom({ id: 9, modules: ["teacher"] }))).rejects.toMatchObject({ code: "accessDenied" });
+    await mocks.pool.query("UPDATE academy_leads SET manager_id=NULL,funnel_id=5 WHERE id=12");
+    try {
+      expect((await list()).total).toBe(1);
+      expect((await list({ ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).items.map(row => row.contract.id)).toContain(other.id);
+      await mocks.pool.query("UPDATE academy_leads SET funnel_id=NULL WHERE id=12");
+      expect((await list()).total).toBe(2);
+      await service.cancel(manager, historical.id, historical.version);
+      expect((await list(manager, "марсель")).total).toBe(0);
+    } finally {
+      await mocks.pool.query("UPDATE academy_leads SET manager_id=8,funnel_id=NULL WHERE id=12");
+      await mocks.pool.query("UPDATE academy_students SET student_name=NULL,phone=NULL WHERE id=21");
+    }
   });
   it("generates unique numbers concurrently and skips existing imported generated-style numbers", async () => {
     const first = await service.create(manager, { studentId: 21 });

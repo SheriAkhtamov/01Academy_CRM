@@ -5,6 +5,19 @@ import { i18n } from '../client/src/lib/i18n';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('sends contract search and pagination with authenticated requests', async () => {
+  const response = { items: [], total: 0, page: 2, pageSize: 25 };
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetch);
+  await expect(studentContractsApi.list({ q: 'А-07/01 +998', page: 2, pageSize: 25 })).resolves.toEqual(response);
+  const [url, options] = fetch.mock.calls[0];
+  const parameters = new URL(url, 'http://localhost').searchParams;
+  expect(parameters.get('q')).toBe('А-07/01 +998');
+  expect(parameters.get('page')).toBe('2');
+  expect(parameters.get('pageSize')).toBe('25');
+  expect(options).toMatchObject({ method: 'GET', credentials: 'include' });
+});
+
 it('uploads the actual contract file with the optimistic version using authenticated multipart data', async () => {
   const response = { id: 'contract-id', number: '01A-26-123456', version: 4, file: null };
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {

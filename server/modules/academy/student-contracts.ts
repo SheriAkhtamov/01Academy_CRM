@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
-import type { StudentContract } from "@shared/contracts/student-contracts";
+import type { StudentContract, StudentContractList, StudentContractListQuery } from "@shared/contracts/student-contracts";
 import { studentContractDraftSchema, studentContractNumberSchema } from "@shared/contracts/student-contracts";
 import type { ResourceFileStore } from "../portal-resources/application/ports";
 import { LocalResourceFileStore } from "../portal-resources/infrastructure/file-store";
@@ -81,6 +81,41 @@ async function audit(actor: ActorContext, action: string, row: Row) {
 
 export class StudentContractService {
   constructor(private readonly store: ResourceFileStore = new LocalResourceFileStore(path.resolve("uploads/contracts"))) {}
+
+  async list(actor: ActorContext, input: StudentContractListQuery): Promise<StudentContractList> {
+    assertStaff(actor);
+    const unrestricted = actor.isLeadership || actor.modules.includes("marketing");
+    // Match canActorViewLead, including funnel visibility for unassigned leads.
+    // Students without a linked lead remain visible only to leadership.
+    const visibility = unrestricted
+      ? (actor.isLeadership ? "TRUE" : "l.id IS NOT NULL")
+      : `l.id IS NOT NULL AND (l.manager_id=$2 OR (l.manager_id IS NULL
+          AND (l.funnel_id IS NULL OR l.funnel_id=ANY($3::int[]))))`;
+    const values = unrestricted ? [input.q] : [input.q, actor.userId, actor.salesWorkflow?.assignedFunnelIds ?? []];
+    const from = `FROM academy_student_contracts c
+      JOIN academy_students s ON s.id=c.student_id
+      LEFT JOIN academy_leads l ON l.id=s.lead_id
+      WHERE (${visibility}) AND ($1='' OR position(lower($1) in
+        lower(concat_ws(' ',c.number,s.student_name,s.contact_name,s.phone)))>0)`;
+    const total = await queryOne(`SELECT count(*)::int AS total ${from}`, values);
+    const page = Math.min(input.page, Math.max(1, Math.ceil(Number(total!.total) / input.pageSize)));
+    const rows = await query(`SELECT c.*,s.updated_at AS student_updated_at,json_build_object(
+        'id',s.id,'studentName',s.student_name,'contactName',s.contact_name,
+        'phone',s.phone,'status',s.status,'leadId',s.lead_id) AS student
+      ${from} ORDER BY c.created_at DESC,c.id DESC
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, input.pageSize, (page - 1) * input.pageSize]);
+    return {
+      items: rows.map(row => ({
+        contract: present(row),
+        student: {
+          ...row.student,
+          updatedAt: row.studentUpdatedAt ? new Date(row.studentUpdatedAt).toISOString() : undefined,
+        },
+      })),
+      total: Number(total!.total), page, pageSize: input.pageSize,
+    };
+  }
 
   async forStudent(actor: ActorContext, studentId: number) {
     await authorizeStudent(actor, studentId, false);

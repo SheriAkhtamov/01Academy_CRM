@@ -109,6 +109,7 @@ export function useStudentContract({
     },
     onSuccess: (next, action) => {
       queryClient.setQueryData(action.target.queryKey, next);
+      void queryClient.invalidateQueries({ queryKey: ['student-contracts', action.target.accountId] });
       if (!action.target.studentId) {
         const nextDraftId = next?.id ?? null;
         rememberContractDraft(action.target.accountId, action.target.leadId, nextDraftId);
@@ -198,6 +199,7 @@ export function useStudentContract({
       ? run({ kind: 'file', contract, file })
       : Promise.resolve(false),
     releaseAttachedDraft: () => {
+      void queryClient.invalidateQueries({ queryKey: ['student-contracts', accountId] });
       rememberContractDraft(accountId, leadId, null);
       setDraftRecord({ identity, id: null });
       setNumberDraft(null);

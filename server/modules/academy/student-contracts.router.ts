@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Request, RequestHandler, Router } from "express";
 import { z } from "zod";
 import {
-  studentContractUpdateSchema, studentContractVersionSchema,
+  studentContractListQuerySchema, studentContractUpdateSchema, studentContractVersionSchema,
 } from "@shared/contracts/student-contracts";
 import { attachmentUploadLimiter } from "../../middleware/rateLimiter";
 import { createResourceUploadParser } from "../portal-resources/infrastructure/upload-parser";
@@ -11,7 +11,7 @@ import { actorContextFrom } from "../leads/domain/actor-context";
 import { StudentContractError, StudentContractService } from "./student-contracts";
 import { logger } from "../../lib/logger";
 
-type ContractService = Pick<StudentContractService, "get" | "forStudent" | "create" | "changeNumber" | "cancel" | "upload" | "download">;
+type ContractService = Pick<StudentContractService, "list" | "get" | "forStudent" | "create" | "changeNumber" | "cancel" | "upload" | "download">;
 const actor = (request: Request) => request.actor ?? actorContextFrom(request.user);
 const uuid = (value: string) => {
   const parsed = z.string().uuid().safeParse(value);
@@ -52,6 +52,12 @@ export function registerStudentContractRoutes(
   service: ContractService = new StudentContractService(),
   parser: RequestHandler = createResourceUploadParser(path.resolve("uploads/contracts/quarantine")),
 ) {
+  router.get("/student-contracts", handled(async (request, response) => {
+    const parsed = studentContractListQuerySchema.safeParse(request.query);
+    if (!parsed.success) throw new StudentContractError("invalidData");
+    response.setHeader("Cache-Control", "private, no-store");
+    response.json(await service.list(actor(request), parsed.data));
+  }));
   router.get("/students/:id/contract", handled(async (request, response) => {
     response.setHeader("Cache-Control", "private, no-store");
     response.json(await service.forStudent(actor(request), numericId(request.params.id)));

@@ -19,7 +19,7 @@ import { StudentContractError } from "../server/modules/academy/student-contract
 const contractId = "51e08276-4354-4c37-bb91-89bf701ad5c0";
 const contract = { id: contractId, number: "01A-26-000123", version: 2, studentId: 21, file: null, createdAt: "", updatedAt: "" };
 const service = {
-  get: vi.fn(), forStudent: vi.fn(), create: vi.fn(), changeNumber: vi.fn(),
+  list: vi.fn(), get: vi.fn(), forStudent: vi.fn(), create: vi.fn(), changeNumber: vi.fn(),
   cancel: vi.fn(), upload: vi.fn(), download: vi.fn(),
 };
 const parser = vi.fn<RequestHandler>((_request, _response, next) => next());
@@ -52,6 +52,22 @@ describe("student contract HTTP boundary", () => {
     expect(service.create).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 7 }), { studentId: 21 });
     expect((await request(app).post("/leads/11/contract-drafts").send({})).status).toBe(201);
     expect(service.create).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 7 }), { leadId: 11 });
+  });
+  it("lists contracts with validated pagination, literal search and the authenticated actor", async () => {
+    const page = { items: [{ contract, student: { id: 21, contactName: "Student", status: "studying" } }], total: 1, page: 1, pageSize: 25 };
+    service.list.mockResolvedValueOnce(page);
+    const response = await request(app).get("/student-contracts").query({ q: " А-07/01 " });
+    expect(response.status).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.body).toEqual(page);
+    expect(service.list).toHaveBeenCalledWith(expect.objectContaining({ userId: 7 }), { q: "А-07/01", page: 1, pageSize: 25 });
+    service.list.mockClear();
+    for (const query of [{ page: 0 }, { pageSize: 101 }, { q: "a".repeat(121) }, { page: "invalid" }]) {
+      expect((await request(app).get("/student-contracts").query(query)).status).toBe(400);
+    }
+    expect(service.list).not.toHaveBeenCalled();
+    service.list.mockRejectedValueOnce(new StudentContractError("accessDenied", 403));
+    expect((await request(app).get("/student-contracts")).status).toBe(403);
   });
   it("requires a valid version for regenerate and cancellation and trims historical numbers", async () => {
     expect((await request(app).post(`/student-contracts/${contractId}/regenerate`).send({})).status).toBe(400);

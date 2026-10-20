@@ -9,6 +9,7 @@ import { SchoolSettingsTable, RoomSettingsTable, CourseSettingsTable } from '@/f
 import type { School, Room, Course } from '@/features/academy-resources/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AcademyPortalAccess } from '@/features/portal-access/AcademyPortalAccess';
+import { ContractsDirectory } from '@/features/student-contracts/ContractsDirectory';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -85,6 +86,7 @@ import {
   ChevronRight,
   DoorOpen,
   Edit3,
+  FileSignature,
   GitBranch,
   Loader2,
   Plus,
@@ -128,7 +130,7 @@ function EmptyTableState({ title }: { title: string }) {
   );
 }
 
-const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'access'];
+const academyConfigurationTabs = ['schools', 'rooms', 'courses', 'groups', 'contracts', 'access'];
 const salesSettingsTabs = ['lead-assignment', 'pipeline', 'funnels', 'lead-merge', 'kpi'];
 
 interface AcademySettingsProps {
@@ -698,6 +700,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <TabsTrigger value="groups" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UsersRound />{t('navGroups')}
               </TabsTrigger>
+              <TabsTrigger value="contracts" className="gap-2 pb-2.5 data-[state=active]:text-primary">
+                <FileSignature />{t('studentContractsTitle')}
+              </TabsTrigger>
               <TabsTrigger value="access" className="gap-2 pb-2.5 data-[state=active]:text-primary">
                 <UserRoundCheck />{t('academyAccessTab')}
               </TabsTrigger>
@@ -713,6 +718,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         {!isSalesSettingsMode && <TabsContent value="access" className="mt-0"><AcademyPortalAccess /></TabsContent>}
+        {!isSalesSettingsMode && <TabsContent value="contracts" className="mt-0"><ContractsDirectory enabled={activeTab === 'contracts'} /></TabsContent>}
 
         <TabsContent value="schools" className="mt-0">
           <SchoolSettingsTable data={schools} archived={requestedFilter === 'archive'}

@@ -1,9 +1,13 @@
-import type { StudentContract } from '@shared/contracts/student-contracts';
+import type { StudentContract, StudentContractList, StudentContractListQuery } from '@shared/contracts/student-contracts';
 import { apiRequest } from '@/lib/queryClient';
 
 const contractUrl = (contractId: string) => `/api/academy/student-contracts/${encodeURIComponent(contractId)}`;
 
 export const studentContractsApi = {
+  list: (query: StudentContractListQuery) => {
+    const parameters = new URLSearchParams({ q: query.q, page: String(query.page), pageSize: String(query.pageSize) });
+    return apiRequest('GET', `/api/academy/student-contracts?${parameters}`) as Promise<StudentContractList>;
+  },
   forStudent: (studentId: number) => (
     apiRequest('GET', `/api/academy/students/${studentId}/contract`) as Promise<StudentContract | null>
   ),

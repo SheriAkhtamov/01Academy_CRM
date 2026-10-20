@@ -32,6 +32,7 @@ import { registerAcademyLeadDistributionRoutes } from './lead-distribution.route
 import { registerSchoolArchiveRoutes } from './school-archive.router';
 import { registerResourceArchiveRoutes } from './resource-archive.router';
 import { registerCourseMaterialFileRoutes } from './course-material-files.router';
+import { registerStudentContractRoutes } from './student-contracts.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -68,6 +69,7 @@ registerAcademyLeadDistributionRoutes(router);
 registerSchoolArchiveRoutes(router);
 registerResourceArchiveRoutes(router);
 registerCourseMaterialFileRoutes(router);
+registerStudentContractRoutes(router);
 registerAcademyModuleRoutes(router);
 registerGroupManagementRoutes(router);
 registerAcademyLeadRoutes(router);

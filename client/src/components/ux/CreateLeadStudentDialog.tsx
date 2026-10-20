@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { GraduationCap, Loader2, Plus, Save, Users } from 'lucide-react';
 import { leadsApi } from '@/features/leads/api';
 import { studentsApi } from '@/features/students/api';
+import { StudentContractFields } from '@/features/student-contracts/StudentContractFields';
+import { useStudentContract } from '@/features/student-contracts/useStudentContract';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
@@ -13,6 +15,7 @@ import { academyToday } from '@/lib/localeFormat';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -218,6 +221,7 @@ function LeadStudentFormDialog({
   const paymentSnapshot = useRef({ amount: expectedPaymentUzs ?? null, updatedAt: studentUpdatedAt });
   const selectedGroupIds = form.watch('groupIds');
   const primaryGroupId = form.watch('primaryGroupId');
+  const contract = useStudentContract({ studentId: editedStudent?.id, leadId, open });
 
   const availableGroups = useMemo(() => {
     const options = new Map(groups.map((group) => [group.id, group]));
@@ -266,6 +270,7 @@ function LeadStudentFormDialog({
 
   const saveStudent = useMutation({
     mutationFn: async ({ values }: StudentSaveIntent) => {
+      if (!await contract.saveNumber()) throw new Error('studentContractSaveFailed');
       const amount = values.expectedPaymentUzs === '' ? null : Number(values.expectedPaymentUzs);
       const payment = amount === paymentSnapshot.current.amount ? {} : { expectedPaymentUzs: amount };
       if (modeProps.mode === 'edit') {
@@ -302,6 +307,7 @@ function LeadStudentFormDialog({
         enrolledAt: values.demoOnly || values.groupIds.length === 0 ? null : values.enrolledAt,
         demoOnly: values.demoOnly,
         ...(purpose === 'enrollment' ? { expectedPaymentUzs: amount } : {}),
+        ...(contract.draftId ? { contractDraftId: contract.draftId } : {}),
       });
     },
     onSuccess: async (student, variables) => {
@@ -311,6 +317,7 @@ function LeadStudentFormDialog({
         onOpenChange(false);
         return;
       }
+      contract.releaseAttachedDraft();
       await modeProps.onCreated(student);
       setCreatedCount((count) => count + 1);
       toast({
@@ -336,7 +343,16 @@ function LeadStudentFormDialog({
       variant: 'destructive',
     }),
   });
+  const isPending = saveStudent.isPending || contract.isPending;
+  const saveDisabled = isPending || contract.isLoading || Boolean(contract.loadError);
+  const guard = useUnsavedChangesGuard({
+    open,
+    onOpenChange,
+    isDirty: contract.numberChanged,
+    isPending,
+  });
   const requestSave = (intent: Pick<StudentSaveIntent, 'values' | 'createAnother'>) => {
+    if (saveDisabled) return;
     if (showIdentityChoices && !whoStudies) {
       setWhoStudiesError(true);
       document.getElementById('lead-student-person-lead')?.focus();
@@ -348,7 +364,7 @@ function LeadStudentFormDialog({
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !saveStudent.isPending && onOpenChange(nextOpen)}>
+    <Dialog open={open} onOpenChange={guard.handleOpenChange}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
@@ -529,22 +545,24 @@ function LeadStudentFormDialog({
                 )}
               />
             ) : null}
+            <StudentContractFields key={editedStudent ? `student:${editedStudent.id}` : `lead:${leadId}`}
+              controls={contract} disabled={saveStudent.isPending} />
             </div>
 
             <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4 sm:flex-wrap">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saveStudent.isPending}>
+              <Button type="button" variant="outline" onClick={() => guard.handleOpenChange(false)} disabled={isPending}>
                 {t('cancel')}
               </Button>
               {!isEditing ? <Button
                 type="button"
                 variant="secondary"
-                disabled={saveStudent.isPending}
+                disabled={saveDisabled}
                 onClick={() => form.handleSubmit((values) => requestSave({ values, createAnother: true }))()}
               >
                 <Plus data-icon="inline-start" />
                 {t('createAndAddAnotherStudent')}
               </Button> : null}
-              <Button type="submit" disabled={saveStudent.isPending}>
+              <Button type="submit" disabled={saveDisabled}>
                 {saveStudent.isPending
                   ? <Loader2 className="animate-spin" data-icon="inline-start" />
                   : isEditing
@@ -556,6 +574,8 @@ function LeadStudentFormDialog({
           </form>
         </Form>
       </DialogContent>
+      <UnsavedChangesDialog open={guard.confirmationOpen}
+        onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
     </Dialog>
   );
 }

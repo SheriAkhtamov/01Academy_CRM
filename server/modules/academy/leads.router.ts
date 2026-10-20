@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { attachStudentContractDraft } from './student-contracts';
 import { readLeadCallHistory } from './lead-call-history';
 import { paymentAttachmentsSelect } from './payment-attachments';
 import { assertSalesFunnelAssignment, assertSalesFunnelStage } from './sales-funnel-policy';
@@ -1431,6 +1432,7 @@ router.post('/leads/:id/students', async (req, res) => {
         marketingConsent: req.body.marketingConsent === true,
         riskFlags: [],
       });
+      await attachStudentContractDraft(req.actor!, req.body, Number(createdStudent.id), leadId);
       if (hasEnrollment) {
         await query(
           `INSERT INTO academy_student_group_enrollments

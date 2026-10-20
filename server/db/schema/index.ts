@@ -5,7 +5,7 @@ import { academySchools, academyRooms } from './academy-resources';
 export { academySchools, academyRooms } from './academy-resources';
 import type { MessageAttachment } from '@shared/contracts/messages';
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_MODULES, type AcademyAccessModule, type AcademyModule } from "../../../shared/academy";
@@ -478,6 +478,29 @@ export const academyStudents = pgTable("academy_students", {
   managerIdx: index("academy_students_manager_idx").on(table.managerId),
   schoolIdx: index("academy_students_school_idx").on(table.schoolId),
   statusIdx: index("academy_students_status_idx").on(table.status),
+}));
+
+export const academyStudentContracts = pgTable("academy_student_contracts", {
+  id: uuid("id").primaryKey(),
+  studentId: integer("student_id").unique().references(() => academyStudents.id, { onDelete: "cascade" }),
+  draftLeadId: integer("draft_lead_id").references(() => academyLeads.id, { onDelete: "cascade" }),
+  createdBy: integer("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  number: varchar("number", { length: 100 }).notNull(),
+  version: integer("version").notNull().default(1),
+  fileKey: varchar("file_key", { length: 80 }),
+  fileName: varchar("file_name", { length: 255 }),
+  fileMime: varchar("file_mime", { length: 100 }),
+  fileSize: integer("file_size"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  numberUnique: uniqueIndex("academy_student_contracts_number_unique").on(sql`lower(${table.number})`),
+  draftOwnerIdx: index("academy_student_contracts_draft_owner_idx").on(table.createdBy, table.draftLeadId).where(sql`${table.studentId} IS NULL`),
+  ownerCheck: check("academy_student_contracts_owner_check", sql`(${table.studentId} IS NOT NULL) <> (${table.draftLeadId} IS NOT NULL)`),
+  versionCheck: check("academy_student_contracts_version_check", sql`${table.version} > 0`),
+  numberCheck: check("academy_student_contracts_number_check", sql`${table.number} = btrim(${table.number}) AND length(${table.number}) > 0 AND ${table.number} !~ '[[:cntrl:]]'`),
+  fileCheck: check("academy_student_contracts_file_check", sql`(${table.fileKey} IS NULL AND ${table.fileName} IS NULL AND ${table.fileMime} IS NULL AND ${table.fileSize} IS NULL)
+    OR (${table.fileKey} IS NOT NULL AND ${table.fileName} IS NOT NULL AND ${table.fileMime} IS NOT NULL AND ${table.fileSize} IS NOT NULL AND ${table.fileSize} BETWEEN 1 AND 10485760)`),
 }));
 
 export const academyLeadImportRecords = pgTable("academy_lead_import_records", {

@@ -16,6 +16,9 @@ vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.us
 vi.mock('../client/src/hooks/use-toast', () => ({ toast: mocks.toast, useToast: () => ({ toast: mocks.toast }) }));
 vi.mock('../client/src/features/leads/api', () => ({ leadsApi: { createStudent: mocks.createStudent } }));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: { updateDetails: mocks.updateDetails, addGroup: mocks.addGroup } }));
+vi.mock('../client/src/features/student-contracts/api', () => ({
+  studentContractsApi: { forStudent: async () => null },
+}));
 vi.mock('../client/src/features/portal-access/api', () => ({ portalAccessApi: mocks.access }));
 vi.mock('../client/src/features/learning-rollout/api', () => ({ learningCapabilitiesQuery: { queryKey: ['learning-capabilities'], queryFn: mocks.status, staleTime: 30_000 } }));
 
@@ -109,6 +112,7 @@ describe('Lead conversion learner and portal access choices', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
     const student: ComponentProps<typeof EditLeadStudentDialog>['student'] = { id: 42, studentName: 'Existing Learner', groups: [] };
     render(<QueryClientProvider client={client}><EditLeadStudentDialog open onOpenChange={mocks.close} leadId={12} contactName="Lead Contact" groups={[]} student={student} onUpdated={mocks.updated} /></QueryClientProvider>);
+    await waitFor(() => expect((screen.getByRole('button', { name: i18n.t('saveChanges') }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByRole('group', { name: 'Who will study?' })).toBeNull();
     enterName('Renamed Learner'); fireEvent.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(mocks.updated).toHaveBeenCalledWith({ id: 42, studentName: 'Renamed Learner' }));

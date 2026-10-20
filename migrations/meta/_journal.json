@@ -1114,6 +1114,13 @@
       "when": 1791889606163,
       "tag": "0158_telegram_task_events",
       "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1791889606164,
+      "tag": "0159_student_contracts",
+      "breakpoints": true
     }
   ]
 }

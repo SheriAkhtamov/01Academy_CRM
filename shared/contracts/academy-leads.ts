@@ -4,6 +4,7 @@ import { LEAD_CHANNELS } from '../lead-channels';
 import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '../lead-preferences';
 import { LEAD_LANGUAGES } from '../lead-languages';
 import { positiveIdSchema } from './messages';
+import { studentContractDraftSchema } from './student-contracts';
 
 const optionalPositiveIdInput = z.preprocess(
   (value) => (value === '' || value === null ? undefined : value),
@@ -164,6 +165,7 @@ export const studentExpectedPaymentRequestSchema = z.object({
 export type StudentExpectedPaymentRequest = z.infer<typeof studentExpectedPaymentRequestSchema>;
 
 export const createLeadStudentRequestSchema = z.object({
+  contractDraftId: studentContractDraftSchema.shape.contractDraftId,
   expectedPaymentUzs: studentExpectedPaymentRequestSchema.shape.expectedPaymentUzs,
   studentName: z.string().trim().min(1).max(255),
   studentAge: z.coerce.number().int().min(1).max(120).optional().nullable(),

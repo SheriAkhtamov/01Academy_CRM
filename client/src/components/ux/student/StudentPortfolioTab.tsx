@@ -19,6 +19,7 @@ import { studentsApi } from "@/features/students/api";
 import { useTranslation } from "@/hooks/useTranslation";
 import { toast } from "@/hooks/use-toast";
 import { localizeApiErrorMessage } from "@/lib/queryClient";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -113,38 +114,42 @@ export function StudentPortfolioTab({
     });
   };
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">
-          {t("portfolio")}{" "}
-          <span className="ml-1 text-muted-foreground">{projects.length}</span>
-        </h3>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold">{t("portfolio")}</h3>
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
+            {projects.length}
+          </Badge>
+        </div>
         {!readOnly ? (
           <Button
             size="sm"
             variant="outline"
+            className="h-7 px-2.5 text-xs"
             disabled={adding || loading}
             onClick={() => setAdding(true)}
           >
-            <Plus data-icon="inline-start" />
+            <Plus className="size-3.5" data-icon="inline-start" />
             {t("studentProjectAdd")}
           </Button>
         ) : null}
       </div>
       {adding ? (
         <form
-          className="space-y-3 rounded-xl border bg-muted/30 p-4"
+          className="space-y-2.5 rounded-lg border bg-muted/20 p-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (!save.isPending) submit();
           }}
         >
-          <div className="space-y-1.5">
-            <Label htmlFor={`${fieldId}-title`}>
+          <div className="space-y-1">
+            <Label htmlFor={`${fieldId}-title`} className="text-xs">
               {t("studentProjectTitle")}
             </Label>
             <Input
               id={`${fieldId}-title`}
+              className="h-8 text-xs"
               value={title}
               maxLength={255}
               autoFocus
@@ -153,25 +158,26 @@ export function StudentPortfolioTab({
             />
           </div>
           <Tabs value={mode} onValueChange={changeMode}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="link" disabled={save.isPending}>
-                <Link className="mr-2 size-4" />
+            <TabsList className="grid h-8 w-full grid-cols-2 p-0.5">
+              <TabsTrigger value="link" disabled={save.isPending} className="h-7 text-xs">
+                <Link className="mr-1.5 size-3.5" />
                 {t("studentProjectLink")}
               </TabsTrigger>
-              <TabsTrigger value="file" disabled={save.isPending}>
-                <File className="mr-2 size-4" />
+              <TabsTrigger value="file" disabled={save.isPending} className="h-7 text-xs">
+                <File className="mr-1.5 size-3.5" />
                 {t("mediaFile")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
           {mode === "link" ? (
-            <div className="space-y-1.5">
-              <Label htmlFor={`${fieldId}-link`}>
+            <div className="space-y-1">
+              <Label htmlFor={`${fieldId}-link`} className="text-xs">
                 {t("studentProjectLink")}
               </Label>
               <Input
                 id={`${fieldId}-link`}
                 type="url"
+                className="h-8 text-xs"
                 value={url}
                 disabled={save.isPending}
                 maxLength={2000}
@@ -207,11 +213,11 @@ export function StudentPortfolioTab({
               <Button
                 type="button"
                 variant="outline"
-                className="h-auto min-h-12 w-full justify-start gap-3 border-dashed py-3"
+                className="h-auto min-h-9 w-full justify-start gap-2 border-dashed px-3 py-1.5 text-xs"
                 disabled={save.isPending}
                 onClick={() => fileInput.current?.click()}
               >
-                <Upload className="size-4 shrink-0" />
+                <Upload className="size-3.5 shrink-0" />
                 <span className="min-w-0 break-all text-left">
                   {file?.name ?? t("studentProjectChooseFile")}
                 </span>
@@ -219,25 +225,27 @@ export function StudentPortfolioTab({
             </div>
           )}
           {save.isPending && mode === "file" ? (
-            <div className="space-y-1.5">
-              <p role="status" className="text-xs text-muted-foreground">
+            <div className="space-y-1">
+              <p role="status" className="text-[11px] text-muted-foreground">
                 {t("studentProjectUploading").replace(
                   "{percent}",
                   String(percent),
                 )}
               </p>
-              <Progress value={percent} aria-label={t("mediaFile")} />
+              <Progress value={percent} aria-label={t("mediaFile")} className="h-1.5" />
             </div>
           ) : null}
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           ) : null}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-1.5">
             <Button
               type="button"
+              size="sm"
               variant="ghost"
+              className="h-7 px-2.5 text-xs"
               disabled={save.isPending}
               onClick={() =>
                 requestAction(() => {
@@ -249,14 +257,14 @@ export function StudentPortfolioTab({
                 })
               }
             >
-              <X data-icon="inline-start" />
+              <X className="size-3.5" data-icon="inline-start" />
               {t("cancel")}
             </Button>
-            <Button type="submit" disabled={save.isPending}>
+            <Button type="submit" size="sm" className="h-7 px-2.5 text-xs" disabled={save.isPending}>
               {save.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
+                <Loader2 data-icon="inline-start" className="size-3.5 animate-spin" />
               ) : (
-                <Plus data-icon="inline-start" />
+                <Plus className="size-3.5" data-icon="inline-start" />
               )}
               {t("studentProjectAdd")}
             </Button>
@@ -266,46 +274,46 @@ export function StudentPortfolioTab({
       {loading ? (
         <p
           role="status"
-          className="py-6 text-center text-sm text-muted-foreground"
+          className="py-5 text-center text-xs text-muted-foreground"
         >
           {t("loading")}
         </p>
       ) : projects.length === 0 && !adding ? (
-        <div className="grid place-items-center gap-2 rounded-xl border border-dashed py-10 text-sm text-muted-foreground">
-          <FolderOpen className="size-7 opacity-60" />
+        <div className="grid place-items-center gap-1.5 rounded-lg border border-dashed py-6 text-xs text-muted-foreground">
+          <FolderOpen className="size-5 opacity-60" />
           {t("noProjects")}
         </div>
       ) : (
-        <div className="divide-y rounded-xl border">
+        <div className="divide-y rounded-lg border bg-card">
           {projects.map((project) => (
             <div
               key={project.id}
-              className="flex flex-wrap items-center gap-3 p-3"
+              className="flex flex-wrap items-center gap-2.5 px-3 py-2"
             >
-              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/5 text-primary">
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
                 {project.fileUrl ? (
-                  <File className="size-5" />
+                  <File className="size-3.5" />
                 ) : (
-                  <Link className="size-5" />
+                  <Link className="size-3.5" />
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="break-words text-sm font-medium">
+                <p className="break-words text-xs font-medium leading-tight">
                   {project.title}
                 </p>
-                <p className="mt-0.5 break-all text-xs text-muted-foreground">
+                <p className="mt-0.5 break-all text-[11px] text-muted-foreground">
                   {project.fileName || dateTime(project.createdAt)}
                 </p>
               </div>
               {project.url &&
               studentProjectLinkSchema.safeParse(project.url).success ? (
-                <Button size="sm" variant="ghost" asChild>
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" asChild>
                   <a
                     href={project.url}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <ExternalLink data-icon="inline-start" />
+                    <ExternalLink className="size-3.5" data-icon="inline-start" />
                     {t("studentProjectOpen")}
                   </a>
                 </Button>
@@ -314,7 +322,7 @@ export function StudentPortfolioTab({
               project.fileUrl.startsWith(
                 `/api/academy/students/${studentId}/projects/files/`,
               ) ? (
-                <Button size="sm" variant="outline" asChild>
+                <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" asChild>
                   <a
                     href={
                       readOnly
@@ -335,11 +343,11 @@ export function StudentPortfolioTab({
                 .map((attachment) => (
                   <div
                     key={attachment.id}
-                    className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 p-3"
+                    className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 px-2.5 py-1.5"
                   >
                     <div className="min-w-0">
-                      <p className="break-words text-sm">{attachment.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="break-words text-xs">{attachment.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
                         {new Intl.NumberFormat(
                           language === "ru" ? "ru" : "en",
                           {
@@ -351,7 +359,7 @@ export function StudentPortfolioTab({
                         ).format(attachment.size / 1_000_000)}
                       </p>
                     </div>
-                    <Button size="sm" variant="outline" asChild>
+                    <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" asChild>
                       <a href={attachment.downloadUrl} download>
                         {t("download")}
                       </a>

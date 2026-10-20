@@ -362,23 +362,24 @@ function LeadStudentFormDialog({
   };
 
   const groupError = form.formState.errors.groupIds?.message || form.formState.errors.primaryGroupId?.message;
+  const showEnrolledAt = purpose === 'enrollment' && selectedGroupIds.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="shrink-0 border-b px-6 py-4">
-          <DialogTitle className="flex items-center gap-2">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <GraduationCap className="size-5" />
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="shrink-0 space-y-1 border-b bg-muted/15 px-4 py-3 sm:px-5">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <GraduationCap className="size-4" />
             </span>
             {isEditing ? t('editStudent') : t('createStudent')}
             {!isEditing && createdCount > 0 ? (
-              <Badge variant="secondary">
+              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
                 {t('studentsCreatedCount').replace('{count}', String(createdCount))}
               </Badge>
             ) : null}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs">
             {showIdentityChoices ? `${t('studentLinkedLead')}: ${contactName}` : contactName}
           </DialogDescription>
         </DialogHeader>
@@ -391,191 +392,277 @@ function LeadStudentFormDialog({
               void form.handleSubmit((values) => requestSave({ values, createAnother: false }))(event);
             }}
           >
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
-            {showIdentityChoices ? <>
-              <fieldset className="space-y-2 md:col-span-2" disabled={saveStudent.isPending}>
-                <legend className="text-sm font-medium">{t('lmsLeadWhoStudies')}</legend>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {(['lead', 'child', 'other'] as const).map((person) => <label key={person}
-                    className={cn('flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm', whoStudies === person && 'border-primary bg-primary/5')}>
-                    <input id={`lead-student-person-${person}`} type="radio" name="lead-student-person" value={person}
-                      checked={whoStudies === person} aria-invalid={whoStudiesError} aria-describedby={whoStudiesError ? 'lead-student-person-error' : undefined}
-                      onChange={() => { setWhoStudies(person); setWhoStudiesError(false); form.setValue('studentName', person === 'lead' ? contactName : '', { shouldDirty: true, shouldValidate: true }); }} />
-                    {t(({ lead: 'lmsLeadContactStudies', child: 'lmsLeadChildStudies', other: 'lmsLeadOtherStudies' } as const)[person])}
-                  </label>)}
-                </div>
-                {whoStudiesError ? <p id="lead-student-person-error" role="alert" className="text-sm font-medium text-destructive">{t('lmsLeadWhoStudiesRequired')}</p> : null}
-              </fieldset>
-
-            </> : null}
-            <FormField
-              control={form.control}
-              name="studentName"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>{t('studentName')}</FormLabel>
-                  <FormControl><Input {...field} autoFocus aria-invalid={fieldState.invalid} /></FormControl>
-                  {fieldState.error ? <p className="text-sm font-medium text-destructive">{t('studentNameRequired')}</p> : null}
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="studentAge"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>{t('age')}</FormLabel>
-                  <FormControl><Input {...field} type="number" min="1" max="120" aria-invalid={fieldState.invalid} /></FormControl>
-                  {fieldState.error ? <p className="text-sm font-medium text-destructive">{t('invalidStudentAge')}</p> : null}
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>{t('studentPhoneOptional')}</FormLabel>
-                  <FormControl>
-                    <PhoneInput value={field.value} onValueChange={field.onChange} />
-                  </FormControl>
-                  {fieldState.error ? <p className="text-sm font-medium text-destructive">{t('invalidStudentPhone')}</p> : null}
-                </FormItem>
-              )}
-            />
-            {purpose === 'enrollment' ? (
-              <FormField
-                control={form.control}
-                name="expectedPaymentUzs"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormLabel>{t('expectedPayment')}</FormLabel>
-                    <FormControl>
-                      <CurrencyInput {...field} onValueChange={field.onChange} aria-invalid={fieldState.invalid} />
-                    </FormControl>
-                    <LocalizedFormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : null}
-            {purpose === 'enrollment' && selectedGroupIds.length > 0 ? (
-              <FormField
-                control={form.control}
-                name="enrolledAt"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormLabel>{t('enrollmentDate')}</FormLabel>
-                    <FormControl><Input {...field} type="date" aria-invalid={fieldState.invalid} /></FormControl>
-                  </FormItem>
-                )}
-              />
-            ) : null}
-
-            {purpose === 'enrollment' ? <div className="md:col-span-2">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <FormLabel>{t('chooseGroupsOptional')}</FormLabel>
-                <Badge variant="secondary">{t('selectedGroupsCount').replace('{count}', String(selectedGroupIds.length))}</Badge>
-              </div>
-              <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-border bg-muted/20 p-2 md:grid-cols-2">
-                {availableGroups.length === 0 ? (
-                  <div className="col-span-full flex items-center gap-2 px-2 py-6 text-sm text-muted-foreground">
-                    <Users className="size-4" />
-                    {t('noAvailableGroups')}
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain px-4 py-3.5 sm:grid-cols-12 sm:px-5">
+              {showIdentityChoices ? (
+                <fieldset className="space-y-1.5 sm:col-span-12" disabled={saveStudent.isPending}>
+                  <legend className="text-xs font-medium">{t('lmsLeadWhoStudies')}</legend>
+                  <div className="grid gap-1.5 sm:grid-cols-3">
+                    {(['lead', 'child', 'other'] as const).map((person) => (
+                      <label
+                        key={person}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40',
+                          whoStudies === person && 'border-primary bg-primary/5 text-primary',
+                        )}
+                      >
+                        <input
+                          id={`lead-student-person-${person}`}
+                          type="radio"
+                          name="lead-student-person"
+                          value={person}
+                          checked={whoStudies === person}
+                          aria-invalid={whoStudiesError}
+                          aria-describedby={whoStudiesError ? 'lead-student-person-error' : undefined}
+                          onChange={() => {
+                            setWhoStudies(person);
+                            setWhoStudiesError(false);
+                            form.setValue('studentName', person === 'lead' ? contactName : '', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                          }}
+                        />
+                        {t(({ lead: 'lmsLeadContactStudies', child: 'lmsLeadChildStudies', other: 'lmsLeadOtherStudies' } as const)[person])}
+                      </label>
+                    ))}
                   </div>
-                ) : availableGroups.map((group) => {
-                  const value = String(group.id);
-                  const checked = selectedGroupIds.includes(value);
-                  const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                  const capacity = Number(group.maxStudents || 12);
-                  const full = occupied >= capacity;
-                  const labelId = `lead-student-group-${group.id}`;
-                  return (
-                    <label
-                      key={group.id}
-                      id={labelId}
-                      className={cn(
-                        'flex cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-background p-3 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5',
-                        !checked && full && 'cursor-not-allowed opacity-60',
-                        isEditing && currentGroupIds.includes(value) && 'cursor-default',
-                      )}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        disabled={(!checked && full) || (isEditing && currentGroupIds.includes(value))}
-                        aria-labelledby={labelId}
-                        onCheckedChange={(nextChecked) => {
-                          const next = nextChecked
-                            ? [...selectedGroupIds, value]
-                            : selectedGroupIds.filter((id) => id !== value);
-                          form.setValue('groupIds', next, { shouldDirty: true, shouldValidate: true });
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{group.name}</span>
-                        <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                          {[group.courseName, group.schoolName].filter(Boolean).join(' · ') || t('group')}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{occupied}/{capacity}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {groupError ? <p className="mt-2 text-sm font-medium text-destructive">{t('studentGroupRequired')}</p> : null}
-            </div> : null}
+                  {whoStudiesError ? (
+                    <p id="lead-student-person-error" role="alert" className="text-xs font-medium text-destructive">
+                      {t('lmsLeadWhoStudiesRequired')}
+                    </p>
+                  ) : null}
+                </fieldset>
+              ) : null}
 
-            {purpose === 'enrollment' && selectedGroups.length > 1 ? (
               <FormField
                 control={form.control}
-                name="primaryGroupId"
-                render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>{t('primaryGroup')}</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          {selectedGroups.map((group) => (
-                            <SelectItem key={group.id} value={String(group.id)}>{group.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                name="studentName"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1 sm:col-span-8">
+                    <FormLabel className="text-xs">{t('studentName')}</FormLabel>
+                    <FormControl>
+                      <Input {...field} autoFocus className="h-8 text-xs" aria-invalid={fieldState.invalid} />
+                    </FormControl>
+                    {fieldState.error ? (
+                      <p className="text-xs font-medium text-destructive">{t('studentNameRequired')}</p>
+                    ) : null}
                   </FormItem>
                 )}
               />
-            ) : null}
-            <StudentContractFields key={editedStudent ? `student:${editedStudent.id}` : `lead:${leadId}`}
-              controls={contract} disabled={saveStudent.isPending} />
+              <FormField
+                control={form.control}
+                name="studentAge"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1 sm:col-span-4">
+                    <FormLabel className="text-xs">{t('age')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        min="1"
+                        max="120"
+                        className="h-8 text-xs"
+                        aria-invalid={fieldState.invalid}
+                      />
+                    </FormControl>
+                    {fieldState.error ? (
+                      <p className="text-xs font-medium text-destructive">{t('invalidStudentAge')}</p>
+                    ) : null}
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field, fieldState }) => (
+                  <FormItem className={cn('space-y-1', purpose === 'enrollment' ? (showEnrolledAt ? 'sm:col-span-4' : 'sm:col-span-6') : 'sm:col-span-12')}>
+                    <FormLabel className="text-xs">{t('studentPhoneOptional')}</FormLabel>
+                    <FormControl>
+                      <PhoneInput value={field.value} onValueChange={field.onChange} className="h-8 text-xs" />
+                    </FormControl>
+                    {fieldState.error ? (
+                      <p className="text-xs font-medium text-destructive">{t('invalidStudentPhone')}</p>
+                    ) : null}
+                  </FormItem>
+                )}
+              />
+              {purpose === 'enrollment' ? (
+                <FormField
+                  control={form.control}
+                  name="expectedPaymentUzs"
+                  render={({ field, fieldState }) => (
+                    <FormItem className={cn('space-y-1', showEnrolledAt ? 'sm:col-span-4' : 'sm:col-span-6')}>
+                      <FormLabel className="text-xs">{t('expectedPayment')}</FormLabel>
+                      <FormControl>
+                        <CurrencyInput
+                          {...field}
+                          onValueChange={field.onChange}
+                          className="h-8 text-xs"
+                          aria-invalid={fieldState.invalid}
+                        />
+                      </FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+              {showEnrolledAt ? (
+                <FormField
+                  control={form.control}
+                  name="enrolledAt"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-1 sm:col-span-4">
+                      <FormLabel className="text-xs">{t('enrollmentDate')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" className="h-8 text-xs" aria-invalid={fieldState.invalid} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+
+              {purpose === 'enrollment' ? (
+                <div className="space-y-1.5 sm:col-span-12">
+                  <div className="flex items-center justify-between gap-2">
+                    <FormLabel className="text-xs">{t('chooseGroupsOptional')}</FormLabel>
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                      {t('selectedGroupsCount').replace('{count}', String(selectedGroupIds.length))}
+                    </Badge>
+                  </div>
+                  <div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto rounded-lg border border-border bg-muted/20 p-1.5 sm:grid-cols-2">
+                    {availableGroups.length === 0 ? (
+                      <div className="col-span-full flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground">
+                        <Users className="size-3.5" />
+                        {t('noAvailableGroups')}
+                      </div>
+                    ) : (
+                      availableGroups.map((group) => {
+                        const value = String(group.id);
+                        const checked = selectedGroupIds.includes(value);
+                        const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                        const capacity = Number(group.maxStudents || 12);
+                        const full = occupied >= capacity;
+                        const labelId = `lead-student-group-${group.id}`;
+                        return (
+                          <label
+                            key={group.id}
+                            id={labelId}
+                            className={cn(
+                              'flex cursor-pointer items-start gap-2 rounded-md border border-transparent bg-background px-2.5 py-2 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5',
+                              !checked && full && 'cursor-not-allowed opacity-60',
+                              isEditing && currentGroupIds.includes(value) && 'cursor-default',
+                            )}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              disabled={(!checked && full) || (isEditing && currentGroupIds.includes(value))}
+                              aria-labelledby={labelId}
+                              className="mt-0.5"
+                              onCheckedChange={(nextChecked) => {
+                                const next = nextChecked
+                                  ? [...selectedGroupIds, value]
+                                  : selectedGroupIds.filter((id) => id !== value);
+                                form.setValue('groupIds', next, { shouldDirty: true, shouldValidate: true });
+                              }}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-medium leading-tight">{group.name}</span>
+                              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                {[group.courseName, group.schoolName].filter(Boolean).join(' · ') || t('group')}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                              {occupied}/{capacity}
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                  {groupError ? (
+                    <p className="text-xs font-medium text-destructive">{t('studentGroupRequired')}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {purpose === 'enrollment' && selectedGroups.length > 1 ? (
+                <FormField
+                  control={form.control}
+                  name="primaryGroupId"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1 sm:col-span-12">
+                      <FormLabel className="text-xs">{t('primaryGroup')}</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectGroup>
+                            {selectedGroups.map((group) => (
+                              <SelectItem key={group.id} value={String(group.id)} className="text-xs">
+                                {group.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+
+              <StudentContractFields
+                key={editedStudent ? `student:${editedStudent.id}` : `lead:${leadId}`}
+                controls={contract}
+                disabled={saveStudent.isPending}
+              />
             </div>
 
-            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4 sm:flex-wrap">
-              <Button type="button" variant="outline" onClick={() => guard.handleOpenChange(false)} disabled={isPending}>
+            <DialogFooter className="shrink-0 border-t bg-muted/10 px-4 py-2.5 sm:flex-wrap sm:px-5">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => guard.handleOpenChange(false)}
+                disabled={isPending}
+              >
                 {t('cancel')}
               </Button>
-              {!isEditing ? <Button
-                type="button"
-                variant="secondary"
-                disabled={saveDisabled}
-                onClick={() => form.handleSubmit((values) => requestSave({ values, createAnother: true }))()}
-              >
-                <Plus data-icon="inline-start" />
-                {t('createAndAddAnotherStudent')}
-              </Button> : null}
-              <Button type="submit" disabled={saveDisabled}>
-                {saveStudent.isPending
-                  ? <Loader2 className="animate-spin" data-icon="inline-start" />
-                  : isEditing
-                    ? <Save data-icon="inline-start" />
-                    : <Plus data-icon="inline-start" />}
+              {!isEditing ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 text-xs"
+                  disabled={saveDisabled}
+                  onClick={() => form.handleSubmit((values) => requestSave({ values, createAnother: true }))()}
+                >
+                  <Plus className="size-3.5" data-icon="inline-start" />
+                  {t('createAndAddAnotherStudent')}
+                </Button>
+              ) : null}
+              <Button type="submit" size="sm" className="h-8 text-xs" disabled={saveDisabled}>
+                {saveStudent.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" />
+                ) : isEditing ? (
+                  <Save className="size-3.5" data-icon="inline-start" />
+                ) : (
+                  <Plus className="size-3.5" data-icon="inline-start" />
+                )}
                 {saveStudent.isPending ? t('saving') : isEditing ? t('saveChanges') : t('createStudent')}
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
-      <UnsavedChangesDialog open={guard.confirmationOpen}
-        onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
+      <UnsavedChangesDialog
+        open={guard.confirmationOpen}
+        onOpenChange={guard.setConfirmationOpen}
+        onDiscard={guard.discardChanges}
+      />
     </Dialog>
   );
 }

@@ -63,8 +63,23 @@ describe('new student detail dialog', () => {
     expect(screen.getByText('Vibe Coding')).toBeTruthy();
     expect(screen.getAllByText('11').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: i18n.t('openLead') }));
-    expect(callbacks.onOpenLead).toHaveBeenCalledWith(12);
+    expect( callbacks.onOpenLead).toHaveBeenCalledWith(12);
     expect(callbacks.onOpenChange).toHaveBeenCalledWith(false);
+  });
+  it('renders enrolled groups once with inline management controls when group mutations are enabled', async () => {
+    const onAddGroup = vi.fn().mockResolvedValue(undefined);
+    const onRemoveGroup = vi.fn().mockResolvedValue(undefined);
+    const twoGroups = [
+      ...groups,
+      { groupId: 6, groupName: 'CYP-VC-GRP-26-0002', courseName: 'Python', schoolName: 'Cyberpark', teacherName: 'Teacher', isPrimary: false, enrolledAt: null, totalLessons: 12, completedLessons: 2, remainingLessons: 10, attendedLessons: 2, missedLessons: 0 },
+    ];
+    mocks.profile.mockResolvedValue({ ...profile, groups: twoGroups, summary: summarizeStudentProfile(twoGroups, attendance, payments) });
+    show({ onAddGroup, onRemoveGroup, data: { groups: [{ id: 7, name: 'CYP-VC-GRP-26-0003', status: 'open' }] } });
+    await screen.findByText('Current parent');
+    expect(screen.getAllByText(/CYP-VC-GRP-26-0001/)).toHaveLength(1);
+    expect(screen.getAllByText(/CYP-VC-GRP-26-0002/)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('makePrimaryGroup') }));
+    await waitFor(() => expect(onAddGroup).toHaveBeenCalledWith(321, 6, true));
   });
   it('opens payment entry for this student when the lead has several students', async () => {
     const callbacks = show(); await screen.findByText('Current parent');

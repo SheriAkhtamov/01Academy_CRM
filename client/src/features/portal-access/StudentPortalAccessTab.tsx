@@ -120,16 +120,16 @@ export function StudentPortalAccessTab({
   if (!enabled || !canManageAccess) return null;
   if (controls.query.isPending)
     return (
-      <div role="status" aria-label={t("loading")} className="space-y-4">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-36 w-full" />
+      <div role="status" aria-label={t("loading")} className="space-y-2.5">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
       </div>
     );
   if (controls.query.isError)
     return (
-      <div role="alert" className="space-y-3 rounded-lg border p-4">
+      <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs">
         <p>{t("lmsStaffLoadFailed")}</p>
-        <Button variant="outline" onClick={() => void controls.query.refetch()}>
+        <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => void controls.query.refetch()}>
           {t("lmsStaffRetry")}
         </Button>
       </div>
@@ -169,71 +169,84 @@ export function StudentPortalAccessTab({
     }
   };
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-4">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">
-            {t("lmsStaffClassification")}
-          </p>
-          <Badge variant="secondary">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t("lmsStaffClassification")}:
+          </span>
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
             {t(classificationLabel[data.classification])}
           </Badge>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setClassificationOpen(true)}
-        >
-          <ShieldCheck data-icon="inline-start" />
-          {t("lmsAccessConfirmIdentity")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setClassificationOpen(true)}
+          >
+            <ShieldCheck className="size-3.5" data-icon="inline-start" />
+            {t("lmsAccessConfirmIdentity")}
+          </Button>
+          <Button size="sm" className="h-7 px-2.5 text-xs" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="size-3.5" data-icon="inline-start" />
+            {t("lmsStaffInvite")}
+          </Button>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-semibold">{t("lmsStaffAccess")}</h3>
-        <Button size="sm" onClick={() => setInviteOpen(true)}>
-          <UserPlus data-icon="inline-start" />
-          {t("lmsStaffInvite")}
-        </Button>
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-semibold">{t("lmsStaffAccess")}</h3>
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
+            {data.links.length}
+          </Badge>
+        </div>
       </div>
+
       {!data.links.length ? (
-        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">
           {t("lmsStaffNoAccess")}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {data.links.map((link) => (
-            <article key={link.id} className="space-y-3 rounded-lg border p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <article key={link.id} className="space-y-2 rounded-lg border bg-card p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="break-words font-medium">
-                    {link.account.fullName}
-                  </p>
-                  <p className="break-all text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="break-words text-xs font-semibold leading-tight">
+                      {link.account.fullName}
+                    </p>
+                    <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal">
+                      {link.kind === "self"
+                        ? t("lmsAccessExistingStudent")
+                        : t(relationshipKeys[link.relationship ?? "other"])}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 break-all text-[11px] text-muted-foreground">
                     {link.account.login}
                   </p>
                 </div>
                 <Badge
                   variant={link.status === "active" ? "default" : "secondary"}
+                  className="h-5 px-1.5 text-[10px]"
                 >
                   {t(statusKeys[link.status])}
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {link.kind === "self"
-                  ? t("lmsAccessExistingStudent")
-                  : t(relationshipKeys[link.relationship ?? "other"])}
-              </p>
-              {link.kind === "representative" ? (
+              {link.kind === "representative" && link.permissions.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {link.permissions.map((permission) => (
-                    <Badge variant="outline" key={permission}>
+                    <Badge variant="outline" key={permission} className="h-5 px-1.5 text-[10px]">
                       {t(permissionLabels[permission])}
                     </Badge>
                   ))}
                 </div>
               ) : null}
               {link.invitation ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                   <span>{t(invitationKeys[link.invitation.status])}</span>
                   <span>
                     {t("lmsAccessExpires")}: {date(link.invitation.expiresAt)}
@@ -241,11 +254,12 @@ export function StudentPortalAccessTab({
                 </div>
               ) : null}
               {link.status !== "revoked" ? (
-                <div className="flex flex-wrap gap-2 border-t pt-3">
+                <div className="flex flex-wrap gap-1.5 border-t pt-2">
                   {link.kind === "representative" ? (
                     <Button
                       size="sm"
                       variant="outline"
+                      className="h-7 px-2 text-xs"
                       onClick={() => setEditing(link)}
                     >
                       {t("lmsAccessEditPermissions")}
@@ -254,15 +268,17 @@ export function StudentPortalAccessTab({
                   <Button
                     size="sm"
                     variant="outline"
+                    className="h-7 px-2 text-xs"
                     onClick={() => setResetting(link)}
                   >
-                    <KeyRound data-icon="inline-start" />
+                    <KeyRound className="size-3.5" data-icon="inline-start" />
                     {t("lmsAccessReset")}
                   </Button>
                   {canSuspendAccounts ? (
                     <Button
                       size="sm"
                       variant="outline"
+                      className="h-7 px-2 text-xs"
                       onClick={() => {
                         controls.accountStatus.reset();
                         setStatusTarget(link);
@@ -276,7 +292,7 @@ export function StudentPortalAccessTab({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="text-destructive"
+                    className="h-7 px-2 text-xs text-destructive"
                     onClick={() => {
                       controls.revoke.reset();
                       setRevoking(link);
@@ -315,7 +331,7 @@ export function StudentPortalAccessTab({
         link={editing}
         classification={data.classification}
         controls={controls}
-        onDraftChange={classificationDraft}
+        onDraftChange={permissionDraft}
       />
       <StaffRecoveryDialog
         open={Boolean(resetting)}

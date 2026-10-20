@@ -134,6 +134,20 @@ describe('Telegram reminder schedule and message', () => {
     expect(team[0].text).toContain('Боб: Подготовить план');
     expect(team[0].eventKey).toBe('2026-09-04:team:0');
   });
+  it.each([0, 30, 100])('keeps one Mini App button per team digest message for %i tasks', (count) => {
+    const entries = Array.from({ length: count }, (_, index) => ({
+      ...task(index + 1, null, `Задача ${index + 1} ${'Подготовить отчёт '.repeat(5)}`),
+      assignee_id: index + 10,
+      assignee_name: `Сотрудник ${index + 1}`,
+    }));
+    const planned = planTelegramWeeklyDigest(entries, morning, zone, 'team');
+    expect(planned.length).toBeGreaterThan(0);
+    if (count === 100) expect(planned.length).toBeGreaterThan(1);
+    for (const message of planned) {
+      expect(message.buttons).toEqual([{ text: 'Открыть задачи', destination: {} }]);
+    }
+    if (count) expect(planned.map((message) => message.text).join('\n')).toContain(`Сотрудник ${count}: Задача ${count}`);
+  });
 });
 
 describe('Telegram reminder delivery', () => {
@@ -158,6 +172,9 @@ describe('Telegram reminder delivery', () => {
     expect(messages[1]).toContain('Алина: Отчёт отдела');
     expect(messages[1]).toContain('Боб: План отдела');
     expect(messages[1]).not.toContain('Позвонить клиенту');
+    expect(JSON.parse(mocks.fetch.mock.calls[1][1].body).reply_markup.inline_keyboard).toEqual([
+      [{ text: 'Открыть задачи', web_app: { url: 'https://crm.example.test/miniapp/tasks?view=mine' } }],
+    ]);
     await processTelegramTaskReminders(zone, morning);
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });

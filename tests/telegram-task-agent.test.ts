@@ -538,6 +538,9 @@ describe('Telegram task agent', () => {
     expect(transport.sentMessages.at(-1).text).toContain('Текущих задач: 7');
     expect(transport.sentMessages.at(-1).text).toContain('Хонзода Каримова — 4');
     expect(transport.sentMessages.at(-1).text).toContain('[В работе]');
+    expect(transport.sentMessages.at(-1).reply_markup.inline_keyboard).toEqual([
+      [{ text: 'Открыть задачи', web_app: { url: 'https://crm.example.test/miniapp/tasks' } }],
+    ]);
     expect(JSON.stringify(transport.openRouterBodies[0])).not.toContain('Позвонить клиенту');
   });
 

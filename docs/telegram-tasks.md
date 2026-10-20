@@ -144,9 +144,11 @@ no new bot, credentials, webhook or paid broadcasts are needed.
 - Every message has inline Web App buttons. Task events and deadline reminders
   open the exact task in the existing modal; comments and files select their tab,
   scroll to and focus the matching item. Acceptance opens the archived task.
-  Digests include a list button and buttons for each listed task; long lists are
-  split to bound both message length and keyboard size. Team task buttons select
-  the corresponding employee's task list. Bot creation confirmations link to the
+  Personal digests include a list button and buttons for each listed task; long
+  lists are split to bound both message length and keyboard size. Every team
+  digest message and AI team-summary reply has exactly one Open tasks button
+  launching the Mini App, regardless of the number of employees or tasks.
+  Bot creation confirmations link to the
   created task as well. Links contain object locations, never session credentials.
 - Message text contains task titles, deadlines and assignee names where relevant;
   descriptions, comment bodies, lead cards, files and internal IDs are omitted.

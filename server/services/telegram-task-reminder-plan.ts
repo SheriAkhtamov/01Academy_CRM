@@ -101,8 +101,9 @@ export function planTelegramWeeklyDigest(
       if (lines.join('\n').length + groupHeading.length + line.length + 2 > MAX_MESSAGE_LENGTH || buttons.length >= 40) flush();
       if (group.label !== activeGroup) { lines.push('', group.label); activeGroup = group.label; }
       lines.push(line);
-      buttons.push({ text: section === 'team' ? `${clean(task.assignee_name ?? '')}: ${clean(task.title)}` : clean(task.title),
-        destination: { taskId: task.id, ...(section === 'team' && task.assignee_id ? { ownerId: task.assignee_id } : {}) } });
+      if (section === 'own') {
+        buttons.push({ text: clean(task.title), destination: { taskId: task.id } });
+      }
     }
   }
   if (lines.length === 1) lines.push(t('telegramReminderWeeklyEmpty', language));
@@ -112,8 +113,7 @@ export function planTelegramWeeklyDigest(
     // Keep the previous key for the first personal digest during rollout.
     eventKey: section === 'own' && index === 0 ? today : `${today}:${section}:${index}`,
     text: chunk.text,
-    buttons: section === 'team' && chunk.buttons.length ? chunk.buttons
-      : [{ text: t('telegramReminderOpen', language), destination: {} }, ...chunk.buttons],
+    buttons: [{ text: t('telegramReminderOpen', language), destination: {} }, ...chunk.buttons],
   }));
 }
 

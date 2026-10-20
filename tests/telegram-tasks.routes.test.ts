@@ -5,10 +5,14 @@ import fs from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mock = vi.hoisted(() => ({ identity: vi.fn(), bind: vi.fn(), users: vi.fn(), canDownload: vi.fn(), tasks: vi.fn(), detail: vi.fn(), task: vi.fn(), agent: vi.fn() }));
+const mock = vi.hoisted(() => ({ identity: vi.fn(), bind: vi.fn(), users: vi.fn(), canDownload: vi.fn(), tasks: vi.fn(), detail: vi.fn(), task: vi.fn(), agent: vi.fn(), refresh: vi.fn() }));
 vi.mock('../server/config', () => ({ isProductionEnvironment: false, isDevelopmentEnvironment: false, appConfig: { session: { secret: 'test-session-secret' }, server: { appUrl: 'https://crm.example.test' }, integrations: { telegramTasks: { botToken: '12345:test-only-token', webhookSecret: 'test-webhook-secret', openRouterApiKey: ['sk', 'or', 'v1-test-only-not-a-real-key'].join('-') } } } }));
 vi.mock('../server/services/telegram-tasks', () => ({ getTelegramTaskIdentity: mock.identity, bindTelegramTaskEmployee: mock.bind, TelegramBindingDenied: class extends Error {}, telegramTaskAccess: { getAssignableUsers: mock.users, canDownload: mock.canDownload } }));
 vi.mock('../server/services/telegram-task-agent', () => ({ enqueueTelegramTaskAgentMessage: mock.agent }));
+vi.mock('../server/services/telegram-digest-refresh', () => ({
+  enqueueTelegramDigestRefresh: mock.refresh,
+  isTelegramDigestRefreshCommand: (text: string) => /^\/refresh_summary(?:@\w+)?$/i.test(text.trim()),
+}));
 vi.mock('../server/storage', () => ({ storage: { board: { getDefaultBoard: async () => ({ id: 1 }), getBoard: async () => ({ id: 1 }), getTasks: mock.tasks, getTaskDetail: mock.detail, getTask: mock.task } } }));
 import { registerTelegramTaskRoutes } from '../server/routes/telegram-tasks.routes';
 import { signTaskToken } from '../server/services/telegram-tasks-crypto';
@@ -29,6 +33,19 @@ const message = { from: { id: 654321 }, chat: { id: 654321, type: 'private' }, t
 const webhook = (body: object) => request(app()).post('/api/incoming/telegram-tasks').set('X-Telegram-Bot-Api-Secret-Token', 'test-webhook-secret').send({ update_id: 123, message: body });
 beforeEach(() => { vi.clearAllMocks(); mock.identity.mockResolvedValue({ user, binding }); mock.bind.mockResolvedValue({ user, binding }); mock.tasks.mockResolvedValue([]); mock.canDownload.mockResolvedValue(true); mock.users.mockResolvedValue([{ id: 7, fullName: user.fullName }]); });
 describe('Telegram bot and isolated task API', () => {
+  it('dispatches a digest replacement only for the verified sender in their own private chat', async () => {
+    const source = { message_id: 70, text: 'Digest' };
+    const response = await webhook({ ...message, text: '/refresh_summary', reply_to_message: source });
+    expect(response.body).toEqual({ ok: true });
+    expect(mock.refresh).toHaveBeenCalledExactlyOnceWith({ botId: '12345', telegramUserId: '654321', source, language: 'ru' });
+    expect(mock.agent).not.toHaveBeenCalled();
+    mock.refresh.mockClear();
+    await webhook({ ...message, text: '/refresh_summary', chat: { id: -1, type: 'group' }, reply_to_message: source });
+    expect(mock.refresh).not.toHaveBeenCalled();
+    mock.identity.mockResolvedValue(null);
+    await webhook({ ...message, text: '/refresh_summary', reply_to_message: source });
+    expect(mock.refresh).not.toHaveBeenCalled();
+  });
   it('rejects unauthenticated webhooks before checking employee data', async () => {
     expect((await request(app()).post('/api/incoming/telegram-tasks').send({ message })).status).toBe(403);
     expect(mock.identity).not.toHaveBeenCalled();

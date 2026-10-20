@@ -63,7 +63,13 @@ export function planTelegramWeeklyDigest(
     timeZone, hour: '2-digit', hourCycle: 'h23',
   }).format(now));
   if (hour !== 9) return [];
+  return buildTelegramWeeklyDigest(tasks, now, timeZone, section, language);
+}
 
+export function buildTelegramWeeklyDigest(
+  tasks: readonly ReminderTask[], now: Date, timeZone: string,
+  section: Section = 'own', language: Language = 'ru',
+): TaskReminder[] {
   const days = weekKeys(now, timeZone);
   const today = dateKey(now, timeZone);
   const firstDay = days[0];

@@ -9,6 +9,7 @@ import { secureEqual, signTaskToken, validateTelegramInitData, verifyTaskToken, 
 import { enqueueTelegramTaskAgentMessage } from '../services/telegram-task-agent';
 import { t } from '../lib/i18n';
 import { hasLeadershipAccess } from '@shared/academy';
+import { enqueueTelegramDigestRefresh, isTelegramDigestRefreshCommand } from '../services/telegram-digest-refresh';
 
 const messages = {
   ru: {
@@ -96,6 +97,12 @@ export function registerTelegramTaskRoutes(app: Express) {
       }
       if (!identity) return void reply(text.register, keyboard);
       const rawText = typeof message.text === 'string' ? message.text.trim() : '';
+      if (isTelegramDigestRefreshCommand(rawText)) {
+        res.json({ ok: true });
+        enqueueTelegramDigestRefresh({ botId, telegramUserId: String(sender.id), source: message.reply_to_message,
+          language: sender.language_code === 'en' ? 'en' : 'ru' });
+        return;
+      }
       const isStart = /^\/start(?:@\w+)?(?:\s|$)/i.test(rawText);
       const hasVoice = typeof message.voice?.file_id === 'string' && message.voice.file_id.length > 0;
       const isAgentInput = hasVoice || (rawText.length > 0 && !isStart);

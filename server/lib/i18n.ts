@@ -6,8 +6,6 @@
 type Language = 'en' | 'ru';
 
 const translations = {
-    telegramDigestReplyRequired: { en: 'Select today’s morning digest.', ru: 'Выберите сегодняшнюю утреннюю сводку.' },
-    telegramDigestRefreshFailed: { en: 'Unable to replace the digest.', ru: 'Не удалось заменить сводку.' },
     telegramTaskCreated: { en: "🆕 New task\n{title}", ru: "🆕 Новая задача\n{title}" },
     telegramTaskAssigned: { en: "👤 Task assigned to you\n{title}", ru: "👤 Вам назначена задача\n{title}" },
     telegramTaskUnassigned: { en: "👤 Task reassigned\n{title}", ru: "👤 Задача передана другому исполнителю\n{title}" },

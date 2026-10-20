@@ -167,21 +167,6 @@ no new bot, credentials, webhook or paid broadcasts are needed.
 - Tests mock Telegram; do not send test messages to real employees or run the
   worker against copied production credentials in a local environment.
 
-## Replace an already sent morning digest
-
-A verified employee can reply to the bot's exact morning-digest message with
-`/refresh_summary`. The bot builds a fresh digest, deletes that one message and
-sends the replacement in the same private chat. Team digests require the live
-administration module and have one Mini App button per message.
-
-Only this bot's original digest sent today in the academy time zone is accepted;
-forwarded messages, other chats, ordinary messages and earlier dates are refused.
-This reply supplies the original Telegram message ID, which older scheduled
-deliveries did not retain. The command does not require an AI key or change the
-09:00 schedule. Existing daily-delivery claims prevent webhook retries from
-duplicating a replacement. An explicit deletion rate limit can be retried after
-its cooldown; an ambiguous deletion or partial resend is not automatically replayed.
-
 ## Employee cannot register
 
 Check the employee is active and not archived, has the correct full phone

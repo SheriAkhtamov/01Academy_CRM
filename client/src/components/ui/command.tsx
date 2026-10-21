@@ -4,6 +4,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { NestedControlContext } from "@/lib/nested-control-context"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 const Command = React.forwardRef<
@@ -114,7 +115,7 @@ const CommandItem = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Item>
 >(({ className, ...props }, ref) => (
-  <CommandPrimitive.Item
+  <NestedControlContext.Provider value={true}><CommandPrimitive.Item
     ref={ref}
     className={cn(
       // The selected row leans toward the pointer. In a palette driven by
@@ -124,7 +125,7 @@ const CommandItem = React.forwardRef<
       className
     )}
     {...props}
-  />
+  /></NestedControlContext.Provider>
 ))
 
 CommandItem.displayName = CommandPrimitive.Item.displayName

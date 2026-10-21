@@ -36,7 +36,7 @@ export function AddChatParticipantsDialog({ participants, pending, error, onClos
             onCheckedChange={(checked) => setSelected((current) => {
               const next = new Set(current); if (checked) next.add(employee.id); else next.delete(employee.id); return next;
             })} />
-          <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-8 text-xs" />
+          <EmployeeAvatar interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-8 text-xs" />
           <span className="min-w-0 break-words text-sm">{employee.fullName}</span>
         </label>)}
         {!employees.isPending && !employees.isError && !visible.length ? <p>{t(search ? 'noSearchResults' : 'chatGroupNoAvailableEmployees')}</p> : null}

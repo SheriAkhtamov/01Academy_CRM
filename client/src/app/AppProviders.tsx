@@ -5,6 +5,7 @@ import { AuthProvider } from '@/hooks/useAuth';
 import { TelephonyProvider, useTelephony } from '@/contexts/TelephonyContext';
 import { AppErrorBoundary } from '@/components/ux/AppErrorBoundary';
 import { EmployeeIdentityProvider } from '@/features/employees/EmployeeIdentityProvider';
+import { EmployeeCardProvider } from '@/features/employees/EmployeeCardProvider';
 
 const TelephonyWidget = lazy(() => (
   import('@/components/telephony/TelephonyWidget')
@@ -25,12 +26,14 @@ export function AppProviders({ children, telephony = true }: { children: ReactNo
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <EmployeeIdentityProvider>
+        <EmployeeCardProvider>
         {telephony ? <TelephonyProvider>
           {children}
           <AppErrorBoundary variant="widget">
             <TelephonyOverlay />
           </AppErrorBoundary>
         </TelephonyProvider> : children}
+        </EmployeeCardProvider>
         </EmployeeIdentityProvider>
       </AuthProvider>
     </QueryClientProvider>

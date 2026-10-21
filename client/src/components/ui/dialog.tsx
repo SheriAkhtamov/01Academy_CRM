@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { useTranslation } from "@/hooks/useTranslation"
 
 const Dialog = DialogPrimitive.Root
+const DialogTrigger = DialogPrimitive.Trigger
 
 const DialogPortal = DialogPrimitive.Portal
 
@@ -125,6 +126,7 @@ DialogFooter.displayName = "DialogFooter"
 
 export {
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogFooter,

@@ -27,6 +27,7 @@ function mount(editable = true, identities: ReadonlyMap<number, EmployeeIdentity
   </QueryClientProvider>);
 }
 beforeAll(() => {
+  globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.setPointerCapture ??= () => undefined;
   Element.prototype.releasePointerCapture ??= () => undefined;
@@ -68,8 +69,8 @@ it('uses linked employee photos in the lesson team and choices, with initials fo
   await waitFor(() => expect([...view.container.querySelectorAll('img')].map(image => image.getAttribute('src'))).toEqual([mainPhoto, assistantPhoto]));
   expect(screen.getByText('ВА')).toBeTruthy();
   await userEvent.click(button('lessonAssistantAdd'));
-  const option = screen.getByRole('menuitemcheckbox', { name: assistants[0].fullName });
-  await waitFor(() => expect(option.querySelector('img')?.getAttribute('src')).toBe(assistantPhoto));
+  const option = screen.getByRole('checkbox', { name: assistants[0].fullName });
+  await waitFor(() => expect(option.parentElement?.querySelector('img')?.getAttribute('src')).toBe(assistantPhoto));
   expect(document.querySelector(`img[src="${unrelatedPhoto}"]`)).toBeNull();
 });
 
@@ -77,10 +78,10 @@ it('adds several teachers to this lesson and restores their names after reopenin
   const view = mount();
   expect(await screen.findByText(main.fullName)).toBeTruthy();
   await userEvent.click(button('lessonAssistantAdd'));
-  expect(screen.queryByRole('menuitemcheckbox', { name: main.fullName })).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: main.fullName })).toBeNull();
   for (const teacher of assistants) {
-    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: teacher.fullName }));
-    await waitFor(() => expect(screen.getByRole('menuitemcheckbox', { name: teacher.fullName }).getAttribute('aria-checked')).toBe('true'));
+    await userEvent.click(screen.getByRole('checkbox', { name: teacher.fullName }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: teacher.fullName }).getAttribute('aria-checked')).toBe('true'));
     expect(api.add).toHaveBeenCalledWith(17, teacher.id);
   }
   await userEvent.keyboard('{Escape}');
@@ -145,10 +146,10 @@ it('blocks duplicate commands while an assignment is saving and reports pending 
   api.add.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   mount();
   await userEvent.click(await screen.findByRole('button', { name: i18n.t('lessonAssistantAdd') }));
-  const option = screen.getByRole('menuitemcheckbox', { name: assistants[0].fullName });
+  const option = screen.getByRole('checkbox', { name: assistants[0].fullName });
   await userEvent.click(option);
   await waitFor(() => expect(pendingChange).toHaveBeenLastCalledWith(true));
-  expect(option.getAttribute('aria-disabled')).toBe('true');
+  expect((option as HTMLButtonElement).disabled).toBe(true);
   await userEvent.click(option);
   expect(api.add).toHaveBeenCalledTimes(1);
   await act(async () => finish({ ...staff, assistants: [assistants[0]] }));

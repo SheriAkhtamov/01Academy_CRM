@@ -329,7 +329,7 @@ export function DemoLessonEnrollmentDialog({
                       <span className="min-w-0 px-3 py-3">
                         <span className="block truncate text-sm font-semibold">{demo.courseName}</span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                          <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} avatarClassName="size-6" />
+                          <EmployeeIdentity interactive={false} userId={demo.teacherUserId} name={demo.teacherName} avatarClassName="size-6" />
                         </span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                           <MapPin className="size-3.5 shrink-0" />

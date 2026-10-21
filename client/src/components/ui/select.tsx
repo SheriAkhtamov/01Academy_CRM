@@ -5,6 +5,7 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { NestedControlContext } from "@/lib/nested-control-context"
 
 const Select = SelectPrimitive.Root
 
@@ -16,7 +17,7 @@ const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger
+  <NestedControlContext.Provider value={true}><SelectPrimitive.Trigger
     ref={ref}
     className={cn(
       "flex h-10 w-full items-center justify-between rounded-md border border-input bg-input-background px-3 py-2 text-sm shadow-2xs ring-offset-background transition-[border-color,box-shadow,background-color] duration-200 data-[placeholder]:text-muted-foreground hover:border-primary/50 focus:outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
@@ -29,7 +30,7 @@ const SelectTrigger = React.forwardRef<
     <SelectPrimitive.Icon asChild>
       <ChevronDown className="h-4 w-4 opacity-50" />
     </SelectPrimitive.Icon>
-  </SelectPrimitive.Trigger>
+  </SelectPrimitive.Trigger></NestedControlContext.Provider>
 ))
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
 
@@ -112,7 +113,7 @@ const SelectItem = React.forwardRef<
     trailing?: React.ReactNode
   }
 >(({ className, children, trailing, ...props }, ref) => (
-  <SelectPrimitive.Item
+  <NestedControlContext.Provider value={true}><SelectPrimitive.Item
     ref={ref}
     className={cn(
       "relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none transition-[background-color,color,transform] duration-150 ease-out focus:translate-x-0.5 focus:bg-primary/10 focus:text-primary-700 data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary-700 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
@@ -130,7 +131,7 @@ const SelectItem = React.forwardRef<
     {trailing ? (
       <span className="ml-auto flex shrink-0 items-center gap-1 pl-3 text-xs text-muted-foreground">{trailing}</span>
     ) : null}
-  </SelectPrimitive.Item>
+  </SelectPrimitive.Item></NestedControlContext.Provider>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName
 

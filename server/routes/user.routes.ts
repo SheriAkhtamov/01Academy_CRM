@@ -527,6 +527,30 @@ router.get('/identities', requireAuth, async (_req, res) => {
     }
 });
 
+router.get('/:id/profile', requireAuth, async (req, res) => {
+    const userId = parsePositiveId(req.params.id);
+    if (!userId || userId > 2_147_483_647) {
+        return res.status(400).json({ error: 'invalidData' });
+    }
+    try {
+        const employee = await storage.getUser(userId);
+        if (!employee) return res.status(404).json({ error: 'employeeCardUnavailable' });
+        const isArchived = Boolean(employee.isArchived || !employee.isActive);
+        const canReadDetails = !isArchived || getAssignedModules(req.user).includes('administration');
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json({
+            id: employee.id, fullName: employee.fullName,
+            avatarUrl: safeEmployeePhotoUrl(employee.avatarUrl) ?? null,
+            isArchived, position: canReadDetails ? employee.position ?? null : null,
+            modules: canReadDetails ? getAssignedModules(employee) : [],
+            phoneNumbers: canReadDetails ? [...new Set(employee.phoneNumbers?.length ? employee.phoneNumbers : employee.phone ? [employee.phone] : [])] : [],
+        });
+    } catch (error) {
+        logger.error('Failed to load employee profile', { error });
+        res.status(500).json({ error: 'employeeCardUnavailable' });
+    }
+});
+
 router.get('/', requireAuth, async (req, res) => {
     try {
         const users = await storage.getUsers();

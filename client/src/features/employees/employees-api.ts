@@ -1,5 +1,8 @@
 import { apiRequest } from '@/lib/queryClient';
 import { withUserPhoto } from './user-photo-api';
+import type { EmployeeProfile } from '@shared/contracts/employee-profile';
+
+export const getEmployeeProfile = (userId: number): Promise<EmployeeProfile> => apiRequest('GET', `/api/users/${userId}/profile`);
 
 export const createEmployee = (data: unknown, photo?: File | null) => apiRequest('POST', '/api/users', withUserPhoto(data, photo));
 

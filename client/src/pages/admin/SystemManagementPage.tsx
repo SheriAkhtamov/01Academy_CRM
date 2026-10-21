@@ -346,7 +346,7 @@ function EmployeeNotificationsPage() {
                           aria-label={t('selectEmployeeForBroadcast').replace('{name}', employee.fullName)}
                         />
                         <Label htmlFor={checkboxId} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                          <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-9 text-xs" />
+                          <EmployeeAvatar interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-9 text-xs" />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium text-foreground">
                               {employee.fullName}

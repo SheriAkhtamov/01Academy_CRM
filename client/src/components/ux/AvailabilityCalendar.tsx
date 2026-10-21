@@ -299,7 +299,7 @@ export function AvailabilityCalendar({
                   : 'border-border bg-card text-muted-foreground hover:bg-accent',
               )}
             >
-              <EmployeeIdentity userId={teacher.userId} name={teacher.name} avatarClassName="size-5 text-[9px]" />
+              <EmployeeIdentity interactive={false} userId={teacher.userId} name={teacher.name} avatarClassName="size-5 text-[9px]" />
             </button>
           ))}
         </div>
@@ -350,7 +350,7 @@ export function AvailabilityCalendar({
                           {selected ? <Check className="ml-auto size-3.5" aria-hidden="true" /> : null}
                         </span>
                         <span className={cn('w-full truncate text-[10px]', selected ? 'opacity-80' : 'text-muted-foreground')}>
-                          <EmployeeIdentity userId={slot.teacherUserId} name={slot.teacherName} avatarClassName="size-5 text-[9px]" />
+                          <EmployeeIdentity interactive={false} userId={slot.teacherUserId} name={slot.teacherName} avatarClassName="size-5 text-[9px]" />
                         </span>
                         <span className={cn('w-full truncate text-[10px]', selected ? 'opacity-80' : 'text-muted-foreground')}>
                           {demoFormat === 'online' ? t('online') : slot.roomName ?? t('roomNotFound')}

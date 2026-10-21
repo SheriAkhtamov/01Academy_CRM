@@ -106,7 +106,7 @@ export default function Header({
               <div className="px-3 py-2">
                 <p className="text-xs text-muted-foreground">{t('currentAccount')}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <EmployeeAvatar userId={user?.id} name={user?.fullName} avatarUrl={user?.avatarUrl} className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" />
+                  <EmployeeAvatar interactive={false} userId={user?.id} name={user?.fullName} avatarUrl={user?.avatarUrl} className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{user?.fullName}</p>
                     <p className="text-xs text-muted-foreground truncate">{user?.email}</p>

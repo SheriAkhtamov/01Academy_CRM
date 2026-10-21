@@ -1,4 +1,5 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeCardButton } from '@/features/employees/EmployeeCardTrigger';
 import { forwardRef, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import {
   CalendarClock,
@@ -385,7 +386,9 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     )} />
                     <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
                       <FormItem>
-                        <FormLabel required={!editingGroup || Boolean(editingGroup.teacherId)}>{t('teacher')}</FormLabel>
+                        <div className="flex items-center justify-between gap-2"><FormLabel required={!editingGroup || Boolean(editingGroup.teacherId)}>{t('teacher')}</FormLabel><EmployeeCardButton
+                          userId={groupTeachers.find(teacher => String(teacher.id) === field.value)?.userId ?? (field.value === String(editingGroup?.teacherId) ? editingGroup?.teacherUserId : undefined)}
+                          name={groupTeachers.find(teacher => String(teacher.id) === field.value)?.fullName ?? editingGroup?.teacherName} /></div>
                         <Select value={field.value} onValueChange={field.onChange}>
                           <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectTeacher')}>
                             {field.value === String(editingGroup?.teacherId) && !groupTeachers.some((teacher) => String(teacher.id) === field.value)

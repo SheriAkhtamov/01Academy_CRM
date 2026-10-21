@@ -9,6 +9,7 @@ import { metricKeys } from '../copy';
 import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
 import { KpiMetricDetails } from './KpiMetricDetails';
 import { KpiSaleReviewDialog } from './KpiSaleReviewDialog';
+import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
 
 function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOverviewEmployee; periodLabel: string; onClose: () => void }) {
   const { t } = useTranslation();
@@ -16,7 +17,7 @@ function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOver
   const [reviewOpen, setReviewOpen] = useState(false);
   if (reviewOpen) return <KpiSaleReviewDialog sales={employee.calculation.reviewableSales} onClose={() => setReviewOpen(false)} />;
   return <>
-    <OverviewDialog title={<span className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true"><EmployeeAvatar userId={employee.id} name={employee.name} className="size-9" /></span><span>{t('salesEmployeeResult').replace('{name}', employee.name)}</span></span>} description={periodLabel} onClose={onClose}>
+    <OverviewDialog title={<EmployeeCardTrigger userId={employee.id} name={employee.name} className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true"><EmployeeAvatar interactive={false} userId={employee.id} name={employee.name} className="size-9" /></span><span>{t('salesEmployeeResult').replace('{name}', employee.name)}</span></EmployeeCardTrigger>} description={periodLabel} onClose={onClose}>
       <KpiMetricsGrid metrics={employee.calculation.metrics} onSelect={setMetric} />
       {employee.calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</button> : null}
     </OverviewDialog>
@@ -49,10 +50,12 @@ export function SalesKpiOverview({ month, employees, loading, failed, onRetry }:
         : employee ? <div className="grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">{primary.map((item) => <KpiMetricRow key={item.id} metric={item} onSelect={setMetric} compact />)}</div>
           : <div className="divide-y divide-border/60">{employees.map((item) => {
             const result = item.calculation.metrics.find((entry) => entry.id === (item.role === 'hunter' ? 'bookings' : 'newStudents'));
-            return <button type="button" key={item.id} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-lg py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setSelectedId(item.id)} aria-haspopup="dialog">
+            return <div key={item.id} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-lg py-3">
               <EmployeeIdentity userId={item.id} name={item.name} className="text-sm font-medium" avatarClassName="size-9" />
+              <button type="button" className="min-h-11 w-full max-w-sm rounded-lg text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setSelectedId(item.id)} aria-haspopup="dialog" aria-label={t('salesAllMetrics')}>
               {result ? <span className="w-full max-w-sm text-xs text-muted-foreground"><span className="flex items-center justify-between gap-3">{t(metricKeys[result.id])}<span className="text-sm font-semibold tabular-nums text-foreground">{result.value ?? '—'} / {result.target ?? '—'}</span><ArrowUpRight className="size-3.5" aria-hidden="true" /></span>{result.target !== null ? <SalesTargetBullet value={result.value} target={result.target} label={`${t('kpiPlanFact')}: ${result.value ?? '—'} / ${result.target}`} className="mt-1 text-blue-500 dark:text-blue-400" /> : null}</span> : null}
-            </button>;
+              </button>
+            </div>;
           })}</div>}
     {selected ? <EmployeeDetails employee={selected} periodLabel={periodLabel} onClose={() => setSelectedId(null)} /> : null}
     {metric && employee ? <KpiMetricDetails metric={metric} onClose={() => setMetric(null)} /> : null}

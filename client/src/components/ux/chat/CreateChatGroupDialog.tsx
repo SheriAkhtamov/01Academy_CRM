@@ -61,7 +61,7 @@ export function CreateChatGroupDialog({ open, onOpenChange, onCreated, mode = 'g
             : <label key={employee.id} className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted">
             <Checkbox aria-label={employee.fullName} checked={selected.has(employee.id)} disabled={create.isPending || (!selected.has(employee.id) && selected.size >= 99)}
               onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(employee.id); else next.delete(employee.id); return next; })} />
-            <EmployeeIdentity userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="text-sm" avatarClassName="size-8" />
+            <EmployeeIdentity interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="text-sm" avatarClassName="size-8" />
           </label>)}
           {!employees.isLoading && !employees.isError && visible.length === 0 ? <p className="text-sm text-muted-foreground">{t('noSearchResults')}</p> : null}
         </div>

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { chatGroupKeys, chatGroupsApi } from '@/features/messages/chat-groups-api';
@@ -104,9 +104,8 @@ export function ChatGroupDetailsDialog({ group, onClose, onLeft }: { group: Chat
           </div>
           <ul aria-label={t('chatGroupParticipants')} className="space-y-2">
             {participants.map((member) => <li key={member.id} className="flex items-center gap-3 rounded-lg border p-3">
-              <EmployeeAvatar userId={member.id} name={member.fullName} avatarUrl={member.avatarUrl} className="size-9 text-xs" />
               <div className="min-w-0 flex-1">
-                <p className="break-words text-sm font-medium">{member.fullName}{member.id === user?.id ? <span className="ml-2 text-xs">{t('chatGroupYou')}</span> : null}</p>
+                <div className="flex flex-wrap items-center gap-2"><EmployeeIdentity userId={member.id} name={member.fullName} avatarUrl={member.avatarUrl} className="text-sm font-medium" avatarClassName="size-9 text-xs" wrapName />{member.id === user?.id ? <span className="text-xs">{t('chatGroupYou')}</span> : null}</div>
                 {member.position ? <p className="break-words text-xs text-muted-foreground">{member.position}</p> : null}
                 {member.id === detail.createdBy ? <Badge variant="secondary" className="mt-1">{t('chatGroupOwner')}</Badge> : null}
               </div>

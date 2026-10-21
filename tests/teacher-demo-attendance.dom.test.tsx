@@ -213,7 +213,7 @@ describe('teacher demo attendance', () => {
     mount('/teacher-module/attendance?lesson=17');
     const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
     await user.click(await within(dialog).findByRole('button', { name: translations.lessonAssistantAdd.en }));
-    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Assistant teacher' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Assistant teacher' }));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('POST', '/api/academy/lessons/17/assistants', { teacherId: 5 }));
     await user.keyboard('{Escape}');
     const close = within(dialog).getByRole('button', { name: translations.close.en });

@@ -254,7 +254,7 @@ export default function AuditPage() {
                           </Badge>
                           <span className="text-sm font-medium">{entityLabel(log.entityType, ceoCopy.audit, t)}</span>
                         </div>
-                        <p className="truncate text-sm">{log.action.startsWith('PUBLIC_ATTENDANCE_') ? t('publicAttendanceActor') : log.userId ? <EmployeeIdentity userId={log.userId} name={log.userName} /> : log.userName ?? ceoCopy.audit.system}</p>
+                        <p className="truncate text-sm">{log.action.startsWith('PUBLIC_ATTENDANCE_') ? t('publicAttendanceActor') : log.userId ? <EmployeeIdentity interactive={false} userId={log.userId} name={log.userName} /> : log.userName ?? ceoCopy.audit.system}</p>
                         <p className="truncate text-xs text-muted-foreground">
                           {auditVisibleFields(jsonObject(log.oldValues), jsonObject(log.newValues)).slice(0, 3).map((field) => auditFieldLabel(field, t)).join(', ') || '—'}
                         </p>

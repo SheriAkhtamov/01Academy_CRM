@@ -20,7 +20,7 @@ import {
   type DemoNoShowReasonCode,
 } from '@shared/contracts/demo-lessons';
 import type { VoiceReminderProgressStatus } from '@shared/contracts/voice-reminders';
-import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -528,9 +528,8 @@ export function DemoLessonDetailsDialog({
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <EmployeeAvatar userId={demo.teacherUserId} name={demo.teacherName} className="size-8" />
               <div>
-                <p className="text-sm font-medium">{demo.teacherName}</p>
+                <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
                 <p className="text-xs text-muted-foreground">{t('teacher')}</p>
               </div>
             </div>
@@ -1000,9 +999,8 @@ export function DemoLessonDetailsDialog({
 
             <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
               <div className="flex items-start gap-3">
-                <EmployeeAvatar userId={demo.teacherUserId} name={demo.teacherName} className="size-8" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{demo.teacherName}</p>
+                  <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
                   <p className="text-xs text-muted-foreground">{t('teacher')}</p>
                 </div>
               </div>

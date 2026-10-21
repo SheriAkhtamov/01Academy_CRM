@@ -66,7 +66,7 @@ export function SalesScheduleTeacherFilter({
           {selectedTeachers.length > 0 ? (
             <span className="flex shrink-0 -space-x-1.5" aria-hidden="true">
               {selectedTeachers.slice(0, 3).map((teacher) => (
-                <EmployeeAvatar key={teacher.id} userId={teacher.userId} name={teacher.name} className="size-7 border-2 border-card text-[9px]" />
+                <EmployeeAvatar interactive={false} key={teacher.id} userId={teacher.userId} name={teacher.name} className="size-7 border-2 border-card text-[9px]" />
               ))}
             </span>
           ) : (
@@ -120,7 +120,7 @@ export function SalesScheduleTeacherFilter({
               className="pr-2"
               aria-label={`${teacher.name}. ${t('lessonsThisWeekCount').replace('{count}', String(eventCount))}`}
             >
-              <span aria-hidden="true"><EmployeeAvatar userId={teacher.userId} name={teacher.name} className="size-7 text-[9px]" /></span>
+              <span aria-hidden="true"><EmployeeAvatar interactive={false} userId={teacher.userId} name={teacher.name} className="size-7 text-[9px]" /></span>
               <span className="min-w-0 flex-1 truncate">{teacher.name}</span>
               <span
                 className="min-w-6 rounded-md bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground"

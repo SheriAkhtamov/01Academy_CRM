@@ -2,6 +2,7 @@ import * as React from "react"
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
 import { Check, ChevronRight, Circle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { NestedControlContext } from "@/lib/nested-control-context"
 
 const DropdownMenu = DropdownMenuPrimitive.Root
 
@@ -59,7 +60,7 @@ const DropdownMenuItem = React.forwardRef<
     inset?: boolean
   }
 >(({ className, inset, ...props }, ref) => (
-  <DropdownMenuPrimitive.Item
+  <NestedControlContext.Provider value={true}><DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
       // The 2px nudge on hover gives a dense menu a sense of depth that a
@@ -69,7 +70,7 @@ const DropdownMenuItem = React.forwardRef<
       className
     )}
     {...props}
-  />
+  /></NestedControlContext.Provider>
 ))
 DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
 
@@ -77,7 +78,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>
 >(({ className, children, checked, ...props }, ref) => (
-  <DropdownMenuPrimitive.CheckboxItem
+  <NestedControlContext.Provider value={true}><DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
       "relative flex min-h-10 cursor-default select-none items-center rounded-md py-2 pl-9 pr-2 text-sm outline-none transition-colors focus:bg-primary/10 focus:text-primary-700 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
@@ -92,7 +93,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
-  </DropdownMenuPrimitive.CheckboxItem>
+  </DropdownMenuPrimitive.CheckboxItem></NestedControlContext.Provider>
 ))
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName
 

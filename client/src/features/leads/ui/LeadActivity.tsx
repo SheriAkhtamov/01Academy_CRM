@@ -4,6 +4,7 @@ import type { TelephonyCallSource } from '@shared/telephony';
 import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -161,7 +162,7 @@ export function LeadCommentsCard({
                   <EmployeeAvatar userId={comment.authorId} name={authorName} className="size-9 border border-border" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                      <p className="text-sm font-medium">{authorName}</p>
+                      <EmployeeCardTrigger userId={comment.authorId} name={authorName} className="text-sm font-medium">{authorName}</EmployeeCardTrigger>
                       <time className="text-xs text-muted-foreground">{dateTime(comment.createdAt)}</time>
                     </div>
                     <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">{comment.body}</p>

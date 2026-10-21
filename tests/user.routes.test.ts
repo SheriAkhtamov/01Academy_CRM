@@ -81,6 +81,42 @@ describe('user route validation', () => {
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
+  it('requires staff authentication before reading an employee card', async () => {
+    expect((await request(await createApp()).get('/api/users/20/profile')).status).toBe(401);
+    expect(mockStorage.getUser).not.toHaveBeenCalled();
+  });
+
+  it('returns a private allowlisted employee card without credentials or financial fields', async () => {
+    mockStorage.getUser.mockImplementation(async id => id === 7 ? administrationUser : {
+      id: 20, fullName: 'Employee', avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa', position: 'Teacher',
+      module: 'teacher', modules: ['teacher'], phoneNumbers: ['+998901234567', '+998901234567'],
+      isActive: true, isArchived: false, email: 'private-login', password: 'private-hash',
+      credentialPasswordCiphertext: 'private-secret', baseSalaryUzs: 9000000, dateOfBirth: '1990-01-01',
+    });
+    const agent = request.agent(await createApp()); await agent.post('/test/session');
+    const response = await agent.get('/api/users/20/profile').expect(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.body).toEqual({ id: 20, fullName: 'Employee', avatarUrl: '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa',
+      position: 'Teacher', modules: ['teacher'], phoneNumbers: ['+998901234567'], isArchived: false });
+  });
+
+  it('hides archived employee contacts from ordinary staff and keeps basic historical identity readable', async () => {
+    mockStorage.getUser.mockImplementation(async id => id === 7
+      ? { ...administrationUser, module: 'teacher', modules: ['teacher'] }
+      : { id: 20, fullName: 'Former employee', avatarUrl: null, position: 'Teacher', module: 'teacher', phone: '+998901234567', isArchived: true, isActive: false });
+    const agent = request.agent(await createApp()); await agent.post('/test/session');
+    expect((await agent.get('/api/users/20/profile').expect(200)).body).toEqual({
+      id: 20, fullName: 'Former employee', avatarUrl: null, isArchived: true, position: null, modules: [], phoneNumbers: [],
+    });
+  });
+
+  it('rejects malformed card identifiers and reports a missing employee', async () => {
+    const agent = request.agent(await createApp()); await agent.post('/test/session');
+    for (const id of ['0', '1abc', '-1', '9007199254740992']) await agent.get(`/api/users/${id}/profile`).expect(400);
+    mockStorage.getUser.mockImplementation(async id => id === 7 ? administrationUser : undefined);
+    expect((await agent.get('/api/users/20/profile').expect(404)).body).toEqual({ error: 'employeeCardUnavailable' });
+  });
+
   it('rejects malformed IDs instead of partially parsing them', async () => {
     const app = await createApp();
     const agent = request.agent(app);

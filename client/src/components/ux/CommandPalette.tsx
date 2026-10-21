@@ -17,6 +17,7 @@ import {
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { useEmployeeCard } from '@/features/employees/employee-card-context';
 import {
   AlertCircle,
   BookOpen,
@@ -57,6 +58,7 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const openEmployee = useEmployeeCard();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
   const [searchType, setSearchType] = useState<AcademySearchType | 'all'>('all');
@@ -279,10 +281,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 <CommandItem
                   key={item.id}
                   value={item.id}
-                  onSelect={() => handleSelect(item.href)}
                   className="cursor-pointer flex items-center gap-2"
+                  onSelect={() => {
+                    onOpenChange(false);
+                    if (item.userId && openEmployee) openEmployee(item.userId);
+                    else handleSelect(item.href);
+                  }}
                 >
-                  {item.userId ? <span aria-hidden="true"><EmployeeAvatar userId={item.userId} name={item.title} className="size-8" /></span>
+                  {item.userId ? <span aria-hidden="true"><EmployeeAvatar interactive={false} userId={item.userId} name={item.title} className="size-8" /></span>
                     : Icon ? <Icon className="h-4 w-4 text-muted-foreground shrink-0" /> : null}
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="truncate font-medium">{item.title}</span>

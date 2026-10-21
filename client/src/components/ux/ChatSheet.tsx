@@ -11,7 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
 import { Badge } from '@/components/ui/badge';
 import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -374,15 +375,13 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                   const isOnline = Boolean(userStatus?.isOnline);
 
                   return (
-                    <button
-                      key={employee.id}
-                      type="button"
-                      className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    <div key={employee.id} className="flex items-center gap-1">
+                    <EmployeeCardTrigger userId={employee.id} name={employee.fullName}
+                      className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                         selectedEmployeeId === employee.id ? 'bg-primary/10 ring-1 ring-primary/20' : ''
                       }`}
-                      onClick={() => { setSelectedGroupId(null); setSelectedEmployeeId(employee.id); }}
                     >
-                      <EmployeeAvatar userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-10 text-xs" />
+                      <EmployeeAvatar interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} className="size-10 text-xs" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
                           {employee.fullName}
@@ -403,7 +402,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                           </span>
                         </div>
                       </div>
-                    </button>
+                    </EmployeeCardTrigger>
+                    <Button type="button" size="icon" variant="ghost" className="shrink-0" aria-label={t('openEmployeeChatName', { name: employee.fullName })}
+                      onClick={() => { setSelectedGroupId(null); setSelectedEmployeeId(employee.id); }}><MessageCircle className="size-4" /></Button>
+                    </div>
                   );
                 })}
                 {filteredEmployees.length === 0 && conversationsLoading && (
@@ -435,9 +437,8 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 {/* Chat Header */}
                 <div className="border-b border-border bg-muted/40 p-4">
                   <div className="flex items-center gap-3">
-                    <EmployeeAvatar userId={selectedEmployee?.id} name={selectedEmployee?.fullName} avatarUrl={selectedEmployee?.avatarUrl} className="size-8 text-xs" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-foreground">{selectedEmployee.fullName}</p>
+                      <EmployeeIdentity userId={selectedEmployee.id} name={selectedEmployee.fullName} avatarUrl={selectedEmployee.avatarUrl} className="font-medium text-foreground" avatarClassName="size-8 text-xs" />
                       <p className="text-xs text-muted-foreground">{selectedEmployee.position}</p>
                       {!selectedEmployee.isOnline && selectedEmployee.lastSeenAt && !Number.isNaN(Date.parse(selectedEmployee.lastSeenAt)) ? <p className="mt-1 text-xs text-muted-foreground">
                         {t('employeeLastSeen').replace('{date}', formatAcademyDate(selectedEmployee.lastSeenAt, language, {

@@ -43,6 +43,7 @@ import { LeadArchiveActions } from '@/components/ux/lead/LeadArchiveActions';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { useHandoffKpiLead } from '@/features/sales-kpi/hooks';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeCardButton } from '@/features/employees/EmployeeCardTrigger';
 import {
   LocalizedFormMessage,
   TabCount,
@@ -1280,7 +1281,7 @@ export function LeadDetailSheet({
                               )}
                             />
                             <FormItem>
-                              <FormLabel>{t('responsibleManager')}</FormLabel>
+                              <div className="flex items-center justify-between gap-2"><FormLabel>{t('responsibleManager')}</FormLabel>{canTransferLeads ? <EmployeeCardButton userId={lead.managerId} name={lead.managerName} /> : null}</div>
                               {canTransferLeads ? <Select
                                 value={lead.managerId ? String(lead.managerId) : undefined}
                                 onValueChange={(value) => {

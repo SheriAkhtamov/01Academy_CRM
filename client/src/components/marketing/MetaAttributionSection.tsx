@@ -544,7 +544,7 @@ function AttributedLeadRow({
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>{lead.phone || t('noData')}</span>
-          <span className="inline-flex min-w-0 items-center gap-1">{t('manager')}: <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} avatarClassName="size-5 text-[9px]" /></span>
+          <span className="inline-flex min-w-0 items-center gap-1">{t('manager')}: <EmployeeIdentity interactive={false} userId={lead.managerId} name={lead.managerName || t('notAssigned')} avatarClassName="size-5 text-[9px]" /></span>
           <span>{t('metaLeadReceivedAt')}: {dateTime(lead.capturedAt)}</span>
         </div>
       </div>

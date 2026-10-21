@@ -8,6 +8,7 @@ import { boardTransportSession, hasMiniBoardSession, subscribeBoardTransportSess
 import { fetchMiniBoardUserPhoto } from '@/features/board/user-photo';
 import { safeEmployeePhotoUrl } from '@shared/user-photo';
 import { useEmployeeIdentity } from '@/features/employees/EmployeeIdentityProvider';
+import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
 
 interface BoardUserAvatarProps {
   user?: { id?: number; fullName?: string; avatarUrl?: string | null } | null;
@@ -56,8 +57,8 @@ export function BoardUserAvatar({ user, className, miniMode = false }: BoardUser
 
 export function BoardUserIdentity({ user, miniMode = false, className, avatarClassName }: BoardUserAvatarProps & { avatarClassName?: string }) {
   const identity = useEmployeeIdentity(miniMode ? undefined : user?.id) ?? user;
-  return <span className={cn('inline-flex min-w-0 max-w-full items-center gap-2 align-middle', className)}>
+  return <EmployeeCardTrigger userId={user?.id} name={identity?.fullName} interactive={!miniMode} className={cn('inline-flex min-w-0 max-w-full items-center gap-2 align-middle', className)}>
     {identity ? <BoardUserAvatar user={identity} miniMode={miniMode} className={avatarClassName} /> : null}
     <span className="min-w-0 truncate">{identity?.fullName || '—'}</span>
-  </span>;
+  </EmployeeCardTrigger>;
 }

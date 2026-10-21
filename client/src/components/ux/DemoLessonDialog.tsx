@@ -1,5 +1,6 @@
 import { TimePicker } from '@/components/ui/time-picker';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { EmployeeCardButton } from '@/features/employees/EmployeeCardTrigger';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -411,7 +412,7 @@ export function DemoLessonDialog({
               ) : null}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="demo-teacher">{t('teacher')}</Label>
+              <div className="flex items-center justify-between gap-2"><Label htmlFor="demo-teacher">{t('teacher')}</Label><EmployeeCardButton userId={selectedTeacher?.userId} name={selectedTeacher?.fullName} /></div>
               <Select value={teacherId} onValueChange={setTeacherId} disabled={!resourceAvailability.data}>
                 <SelectTrigger id="demo-teacher"><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger>
                 <SelectContent>

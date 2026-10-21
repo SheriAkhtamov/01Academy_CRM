@@ -4,16 +4,14 @@ import { ChevronDown, Loader2, UserRound, X } from 'lucide-react';
 import type { LessonStaffTeacher } from '@shared/contracts/lesson-staff';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useTranslation } from '@/hooks/useTranslation';
 import { lessonStaffApi, lessonStaffQueryKey } from './api';
 
 function LessonTeacherIdentity({ teacher }: { teacher: LessonStaffTeacher }) {
-  return <span className="inline-flex min-w-0 items-center gap-2">
-    <span aria-hidden="true" className="shrink-0"><EmployeeAvatar userId={teacher.userId} name={teacher.fullName} /></span>
-    <span className="min-w-0 break-words">{teacher.fullName}</span>
-  </span>;
+  return <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} wrapName showAvatar />;
 }
 
 export function LessonStaffSection({ lessonId, editable, disabled, onPendingChange }: {
@@ -70,26 +68,28 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-semibold text-muted-foreground">{t('lessonAssistants')}</h4>
             {canManage ? (
-              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-                <DropdownMenuTrigger asChild>
+              <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+                <DialogTrigger asChild>
                   <Button type="button" variant="outline" size="sm" className="min-h-11 gap-2" disabled={busy}>
                     {pending ? <Loader2 className="size-4 animate-spin" /> : null}
                     {t('lessonAssistantAdd')}<ChevronDown className="size-4" aria-hidden="true" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="max-h-64 min-w-56 max-w-[calc(100vw-3rem)] overflow-y-auto">
+                </DialogTrigger>
+                <DialogContent aria-describedby={undefined} className="max-w-md">
+                  <DialogHeader><DialogTitle>{t('lessonAssistants')}</DialogTitle></DialogHeader>
+                  <div className="space-y-3">
                   {staff.data.teachers.length ? staff.data.teachers.map(teacher => (
-                    <DropdownMenuCheckboxItem key={teacher.id} checked={selected.has(teacher.id)} disabled={busy}
-                      onSelect={event => event.preventDefault()}
-                      onCheckedChange={checked => {
+                    <div key={teacher.id} className="flex items-center gap-3">
+                      <Checkbox checked={selected.has(teacher.id)} disabled={busy} aria-label={teacher.fullName} onCheckedChange={checked => {
                         if (checked) change(teacher.id, false);
                         else { setMenuOpen(false); mutation.reset(); setRemoving(teacher); }
-                      }}>
+                      }} />
                       <LessonTeacherIdentity teacher={teacher} />
-                    </DropdownMenuCheckboxItem>
+                    </div>
                   )) : <p className="p-2 text-sm">{t('noTeachers')}</p>}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  </div>
+                </DialogContent>
+              </Dialog>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">

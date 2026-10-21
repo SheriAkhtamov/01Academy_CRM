@@ -92,10 +92,7 @@ function UserChip({ user, miniMode = false }: { user: UserMini | null; miniMode?
     const { t } = useTranslation();
     if (!user) return <span className="text-sm text-muted-foreground">{t('unassigned')}</span>;
     return (
-        <span className="flex items-center gap-2">
-            <BoardUserAvatar user={user} miniMode={miniMode} />
-            <span className="text-sm text-foreground">{user.fullName}</span>
-        </span>
+        <BoardUserIdentity user={user} miniMode={miniMode} className="text-sm text-foreground" />
     );
 }
 
@@ -599,8 +596,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 <li key={c.id} data-task-target={`comment-${c.id}`} tabIndex={-1} className="rounded-lg border border-border bg-card p-3">
                                                     <div className="flex items-center justify-between gap-2">
                                                         <div className="flex items-center gap-2">
-                                                            <BoardUserAvatar user={c.author} miniMode={tasksOnly} />
-                                                            <span className="text-xs font-medium text-foreground">{c.author?.fullName ?? '—'}</span>
+                                                            <BoardUserIdentity user={c.author} miniMode={tasksOnly} className="text-xs font-medium text-foreground" />
                                                             {c.isUnread ? <UnreadTaskCommentDot /> : null}
                                                             <span className="text-[11px] text-muted-foreground">{formatBoardDateTime(c.createdAt, language)}</span>
                                                         </div>

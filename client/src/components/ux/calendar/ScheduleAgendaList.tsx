@@ -134,7 +134,7 @@ export function ScheduleAgendaList({
                           ) : null}
                         </span>
                         <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                          <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-5 text-[9px]" />
+                          <EmployeeIdentity interactive={false} userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-5 text-[9px]" />
                           <span className="truncate">{[event.topic || event.courseName, event.schoolName].filter(Boolean).join(' · ')}</span>
                         </span>
                       </span>

@@ -287,7 +287,7 @@ export function ScheduleTimeGrid({
                         </span>
                       ) : roomy ? (
                         <span className="truncate text-[10px] opacity-75">
-                          <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-4 text-[8px]" />
+                          <EmployeeIdentity interactive={false} userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} avatarClassName="size-4 text-[8px]" />
                         </span>
                       ) : null}
                       {spacious ? (

@@ -27,16 +27,18 @@ async function authorize(actor: ActorContext, lessonId: number, mutate: boolean)
 
 async function present(lesson: Row): Promise<LessonStaff> {
   const [assistants, teachers] = await Promise.all([
-    query(`SELECT teacher.id,teacher.full_name FROM academy_lesson_assistants assistant
+    query(`SELECT teacher.id,teacher.user_id,teacher.full_name FROM academy_lesson_assistants assistant
       JOIN academy_teachers teacher ON teacher.id=assistant.teacher_id
       WHERE assistant.lesson_id=$1 ORDER BY teacher.full_name,teacher.id`, [lesson.id]),
     lesson.canManage
-      ? query("SELECT id,full_name FROM academy_teachers WHERE status='active' AND id<>$1 ORDER BY full_name,id", [lesson.teacherId ?? 0])
+      ? query("SELECT id,user_id,full_name FROM academy_teachers WHERE status='active' AND id<>$1 ORDER BY full_name,id", [lesson.teacherId ?? 0])
       : Promise.resolve([]),
   ]);
-  const teacher = (row: Row): LessonStaffTeacher => ({ id: Number(row.id), fullName: row.fullName });
+  const teacher = (row: Row): LessonStaffTeacher => ({
+    id: Number(row.id), userId: row.userId == null ? null : Number(row.userId), fullName: row.fullName,
+  });
   return {
-    teacher: lesson.teacherId ? { id: Number(lesson.teacherId), fullName: lesson.teacherName } : null,
+    teacher: lesson.teacherId ? teacher({ id: lesson.teacherId, userId: lesson.teacherUserId, fullName: lesson.teacherName }) : null,
     assistants: assistants.map(teacher), teachers: teachers.map(teacher),
     canManage: lesson.canManage,
   };

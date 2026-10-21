@@ -5,8 +5,16 @@ import type { LessonStaffTeacher } from '@shared/contracts/lesson-staff';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { useTranslation } from '@/hooks/useTranslation';
 import { lessonStaffApi, lessonStaffQueryKey } from './api';
+
+function LessonTeacherIdentity({ teacher }: { teacher: LessonStaffTeacher }) {
+  return <span className="inline-flex min-w-0 items-center gap-2">
+    <span aria-hidden="true" className="shrink-0"><EmployeeAvatar userId={teacher.userId} name={teacher.fullName} /></span>
+    <span className="min-w-0 break-words">{teacher.fullName}</span>
+  </span>;
+}
 
 export function LessonStaffSection({ lessonId, editable, disabled, onPendingChange }: {
   lessonId: number;
@@ -48,7 +56,8 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
           <UserRound className="size-4" aria-hidden="true" />{t('teacher')}
         </h3>
         {staff.isPending ? <div role="status" aria-label={t('loading')}><Loader2 className="size-4 animate-spin" /></div>
-          : staff.data ? <p className="break-words text-sm font-semibold">{staff.data.teacher?.fullName ?? t('lessonTeacherUnassigned')}</p> : null}
+          : staff.data ? <p className="text-sm font-semibold">{staff.data.teacher
+            ? <LessonTeacherIdentity teacher={staff.data.teacher} /> : t('lessonTeacherUnassigned')}</p> : null}
       </div>
       {staff.isError ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -76,7 +85,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
                         if (checked) change(teacher.id, false);
                         else { setMenuOpen(false); mutation.reset(); setRemoving(teacher); }
                       }}>
-                      <span className="break-words">{teacher.fullName}</span>
+                      <LessonTeacherIdentity teacher={teacher} />
                     </DropdownMenuCheckboxItem>
                   )) : <p className="p-2 text-sm">{t('noTeachers')}</p>}
                 </DropdownMenuContent>
@@ -86,7 +95,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
           <div className="flex flex-wrap gap-2">
             {staff.data.assistants.length ? staff.data.assistants.map(teacher => (
               <span key={teacher.id} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-background py-1 pl-3 pr-1 text-sm">
-                <span className="min-w-0 break-words">{teacher.fullName}</span>
+                <LessonTeacherIdentity teacher={teacher} />
                 {canManage ? <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={busy}
                   aria-label={t('lessonAssistantRemoveName', { name: teacher.fullName })}
                   onClick={() => { mutation.reset(); setRemoving(teacher); }}><X className="size-4" /></Button> : null}

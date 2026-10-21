@@ -38,7 +38,7 @@ const search = async (modules: string[], query = {}) => {
 describe('search destinations respect assigned modules', () => {
   it('never sends an administration-only actor into operational modules', async () => {
     const result = await search(['administration']);
-    expect(result).toEqual([expect.objectContaining({ entityType: 'user', href: '/employees?employee=6' })]);
+    expect(result).toEqual([expect.objectContaining({ entityType: 'user', userId: 6, href: '/employees?employee=6' })]);
     expect(mocks.query).toHaveBeenCalledTimes(1);
   });
   it('opens the actual group for a teacher result and uses a supported course filter', async () => {

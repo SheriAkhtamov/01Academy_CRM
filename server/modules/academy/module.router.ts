@@ -902,6 +902,7 @@ router.get('/search', async (req, res) => {
         results.push(...users.map((user) => ({
           id: `user-${user.id}`,
           entityType: 'user',
+          userId: Number(user.id),
           title: user.fullName,
           module: user.module,
           href: `/employees?employee=${user.id}`,

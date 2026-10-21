@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const lessonAssistantSchema = z.object({ teacherId: z.number().int().positive().max(2_147_483_647) }).strict();
-export type LessonStaffTeacher = { id: number; fullName: string };
+export type LessonStaffTeacher = { id: number; userId?: number | null; fullName: string };
 export type LessonStaff = {
   canManage: boolean;
   teacher: LessonStaffTeacher | null;

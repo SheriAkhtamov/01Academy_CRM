@@ -3,6 +3,7 @@ export type AcademySearchType = typeof academySearchTypes[number];
 export interface AcademySearchItem {
   id: string;
   entityType: AcademySearchType;
+  userId?: number;
   title: string;
   subtitle?: string;
   module?: string;

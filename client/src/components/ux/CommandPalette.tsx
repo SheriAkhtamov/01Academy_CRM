@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/command';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
+import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import {
   AlertCircle,
   BookOpen,
@@ -39,6 +40,7 @@ import { MODULE_NAVIGATION, SYSTEM_MANAGEMENT_NAVIGATION_ITEMS, TASKS_NAVIGATION
 
 interface SearchItem {
   id: string;
+  userId?: number;
   type: string;
   title: string;
   subtitle?: string;
@@ -172,7 +174,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const entityItems: SearchItem[] = serverResults.map((item) => ({
     id: item.id, type: labelForEntity(item.entityType), title: item.title || t('noData'),
     subtitle: [item.subtitle, item.module ? formatUserModule(item.module, t) : '', item.isArchived ? t('leadArchive') : ''].filter(Boolean).join(' · '),
-    href: item.href, icon: iconForEntity(item.entityType),
+    href: item.href, icon: iconForEntity(item.entityType), userId: item.userId,
   }));
 
   const filteredNavigation = useMemo(() => {
@@ -280,7 +282,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   onSelect={() => handleSelect(item.href)}
                   className="cursor-pointer flex items-center gap-2"
                 >
-                  {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  {item.userId ? <span aria-hidden="true"><EmployeeAvatar userId={item.userId} name={item.title} className="size-8" /></span>
+                    : Icon ? <Icon className="h-4 w-4 text-muted-foreground shrink-0" /> : null}
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="truncate font-medium">{item.title}</span>
                     {item.subtitle && (

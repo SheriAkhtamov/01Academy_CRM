@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { LessonStaff } from '../shared/contracts/lesson-staff';
+import type { EmployeeIdentity } from '../shared/contracts/employee-identity';
+import { EmployeeIdentityContext } from '../client/src/features/employees/EmployeeIdentityProvider';
 import { LessonStaffSection } from '../client/src/features/lesson-staff/LessonStaffSection';
 import { i18n } from '../client/src/lib/i18n';
 
@@ -14,12 +16,14 @@ vi.mock('../client/src/features/lesson-staff/api', () => ({
 let client: QueryClient;
 let staff: LessonStaff;
 const pendingChange = vi.fn();
-const main = { id: 4, fullName: 'Основной учитель' };
-const assistants = [{ id: 5, fullName: 'Первый ассистент' }, { id: 6, fullName: 'Второй ассистент' }];
+const main = { id: 4, userId: 7, fullName: 'Основной учитель' };
+const assistants = [{ id: 5, userId: 10, fullName: 'Первый ассистент' }, { id: 6, userId: null, fullName: 'Второй ассистент' }];
 const button = (key: Parameters<typeof i18n.t>[0]) => screen.getByRole('button', { name: i18n.t(key) });
-function mount(editable = true) {
+function mount(editable = true, identities: ReadonlyMap<number, EmployeeIdentity> = new Map()) {
   return render(<QueryClientProvider client={client}>
+    <EmployeeIdentityContext.Provider value={identities}>
     <LessonStaffSection lessonId={17} editable={editable} onPendingChange={pendingChange} />
+    </EmployeeIdentityContext.Provider>
   </QueryClientProvider>);
 }
 beforeAll(() => {
@@ -44,7 +48,30 @@ beforeEach(() => {
   });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60_000 }, mutations: { retry: false } } });
 });
-afterEach(async () => { cleanup(); client.clear(); await new Promise(resolve => setTimeout(resolve, 0)); });
+afterEach(async () => { cleanup(); client.clear(); vi.unstubAllGlobals(); await new Promise(resolve => setTimeout(resolve, 0)); });
+
+it('uses linked employee photos in the lesson team and choices, with initials for an unlinked teacher', async () => {
+  const mainPhoto = '/api/users/photos/aaaaaaaaaaaaaaaaaaaaa';
+  const assistantPhoto = '/api/users/photos/bbbbbbbbbbbbbbbbbbbbb';
+  const unrelatedPhoto = '/api/users/photos/ccccccccccccccccccccc';
+  vi.stubGlobal('Image', class extends EventTarget {
+    complete = false;
+    naturalWidth = 0;
+    set src(_src: string) { queueMicrotask(() => { this.complete = true; this.naturalWidth = 24; this.dispatchEvent(new Event('load')); }); }
+  });
+  staff = { ...staff, assistants };
+  const view = mount(true, new Map([
+    [7, { id: 7, fullName: main.fullName, avatarUrl: mainPhoto }],
+    [10, { id: 10, fullName: assistants[0].fullName, avatarUrl: assistantPhoto }],
+    [4, { id: 4, fullName: main.fullName, avatarUrl: unrelatedPhoto }],
+  ]));
+  await waitFor(() => expect([...view.container.querySelectorAll('img')].map(image => image.getAttribute('src'))).toEqual([mainPhoto, assistantPhoto]));
+  expect(screen.getByText('ВА')).toBeTruthy();
+  await userEvent.click(button('lessonAssistantAdd'));
+  const option = screen.getByRole('menuitemcheckbox', { name: assistants[0].fullName });
+  await waitFor(() => expect(option.querySelector('img')?.getAttribute('src')).toBe(assistantPhoto));
+  expect(document.querySelector(`img[src="${unrelatedPhoto}"]`)).toBeNull();
+});
 
 it('adds several teachers to this lesson and restores their names after reopening', async () => {
   const view = mount();

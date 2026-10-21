@@ -58,8 +58,8 @@ describe.skipIf(!databaseUrl)('lesson staff persistence and access', () => {
   });
   it('shows the primary teacher and offers only active alternatives', async () => {
     expect(await service.get(main, 17)).toEqual({
-      canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [],
-      teachers: [{ id: 5, fullName: 'First assistant' }, { id: 7, fullName: 'Other teacher' }, { id: 8, fullName: 'Second assistant' }],
+      canManage: true, teacher: { id: 4, userId: 7, fullName: 'Main teacher' }, assistants: [],
+      teachers: [{ id: 5, userId: 10, fullName: 'First assistant' }, { id: 7, userId: 8, fullName: 'Other teacher' }, { id: 8, userId: 12, fullName: 'Second assistant' }],
     });
   });
   it('persists repeated concurrent assignments once and keeps other assignments when removing one', async () => {
@@ -67,7 +67,7 @@ describe.skipIf(!databaseUrl)('lesson staff persistence and access', () => {
     expect(mocks.audit).toHaveBeenCalledTimes(1);
     await service.add(main, 17, 8);
     expect((await new LessonStaffService().get(main, 17)).assistants).toHaveLength(2);
-    expect((await service.remove(main, 17, 5)).assistants).toEqual([{ id: 8, fullName: 'Second assistant' }]);
+    expect((await service.remove(main, 17, 5)).assistants).toEqual([{ id: 8, userId: 12, fullName: 'Second assistant' }]);
     await service.remove(main, 17, 5);
     expect(mocks.audit).toHaveBeenCalledTimes(3);
   });

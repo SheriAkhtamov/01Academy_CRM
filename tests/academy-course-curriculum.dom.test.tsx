@@ -31,7 +31,7 @@ beforeEach(() => {
       ? { courses, schools: [], rooms: [], groups: [], statuses: [], teachers: [] } : [],
   } } });
   mocks.api.mockImplementation(async (method, _path, payload) => {
-    const saved: Course = { ...courses.find(course => course.id === 7), id: 7, ...payload };
+    const saved: Course = { basePriceUzs: 0, ...courses.find(course => course.id === 7), id: 7, ...payload };
     courses = method === 'POST' ? [...courses, saved] : courses.map(course => course.id === saved.id ? saved : course);
     return saved;
   });
@@ -64,6 +64,7 @@ it('saves the curriculum through course creation, reloads it for editing and pre
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/academy/courses/with-teachers', expect.objectContaining({
     name: 'Программирование', program: { version: 1, blocks: [expect.objectContaining({ title: 'Основы', lessons: [expect.objectContaining({ title: 'Переменные' })] })] },
   })));
+  expect(mocks.api.mock.calls[0][2]).not.toHaveProperty('basePriceUzs');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await screen.findByText('Программирование');
   const beforeEdit = flattenCourseCurriculum(courses[0].program)[0];
@@ -82,15 +83,19 @@ it('saves the curriculum through course creation, reloads it for editing and pre
 });
 
 it('opens a legacy course program with stable lesson IDs and retains its existing lesson content when saving', async () => {
-  courses = [{ id: 7, name: 'Legacy course', slug: 'legacy-course', ageCategory: '12+', basePriceUzs: 0, isActive: true,
+  courses = [{ id: 7, name: 'Legacy course', slug: 'legacy-course', ageCategory: '12+', basePriceUzs: 1_500_000, isActive: true,
     program: [{ lessonNumber: 1, topic: 'Existing lesson', description: 'Existing notes' }] }];
   const user = mount();
   await user.click(await screen.findByRole('button', { name: i18n.t('edit') }));
   const dialog = within(screen.getByRole('dialog', { name: i18n.t('editCourse') }));
+  expect(screen.queryByRole('columnheader', { name: /базовая цена/i })).toBeNull();
+  expect(dialog.queryByLabelText(/базовая цена/i)).toBeNull();
   expect((dialog.getByLabelText(i18n.t('courseBlockTitle'), { exact: false }) as HTMLInputElement).value).toBe(i18n.t('courseBlockNumber', { number: 1 }));
   expect((dialog.getByLabelText(i18n.t('courseMaterialContent'), { exact: false }) as HTMLTextAreaElement).value).toBe('Existing notes');
   await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledOnce());
+  expect(mocks.api.mock.calls[0][2]).not.toHaveProperty('basePriceUzs');
+  expect(courses[0].basePriceUzs).toBe(1_500_000);
   expect(flattenCourseCurriculum(mocks.api.mock.calls[0][2].program)).toMatchObject([{ id: 'legacy-lesson-1', title: 'Existing lesson', materials: [{ content: 'Existing notes' }] }]);
 });
 

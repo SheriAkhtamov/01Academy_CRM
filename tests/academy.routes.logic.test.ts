@@ -4418,7 +4418,7 @@ describe('academy route logic boundaries', () => {
     ]);
   });
 
-  it('saves course basics without changing teacher qualifications', async () => {
+  it('creates a course without a base price or changes to teacher qualifications', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
       if (sql.includes('INSERT INTO "academy_courses"')) {
@@ -4434,16 +4434,38 @@ describe('academy route logic boundaries', () => {
         slug: 'design',
         ageCategory: '12-16',
         description: '',
-        basePriceUzs: 1_200_000,
         isActive: true,
       });
 
     expect(response.status).toBe(201);
+    const [insertSql] = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_courses"'))!;
+    expect(insertSql).not.toContain('base_price_uzs');
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => (
       String(sql).includes('FROM academy_teachers')
       || String(sql).includes('UPDATE "academy_teachers"')
     ))).toBe(false);
+  });
+
+  it('preserves the stored base price when a course is edited without a price', async () => {
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT * FROM academy_courses WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 9, name: 'Design', slug: 'design', age_category: '12-16', base_price_uzs: 1_500_000, is_active: true }] };
+      }
+      if (sql.includes('UPDATE "academy_courses"')) {
+        return { rows: [{ id: 9, name: 'Design updated', base_price_uzs: 1_500_000 }] };
+      }
+      return emptyResult();
+    });
+    const response = await request(await createApp())
+      .patch('/api/academy/courses/9/with-teachers')
+      .send({ name: 'Design updated', slug: 'design', ageCategory: '12-16', description: '', isActive: true });
+
+    expect(response.status).toBe(200);
+    const [updateSql] = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE "academy_courses"'))!;
+    expect(updateSql).not.toContain('base_price_uzs');
+    expect(response.body.basePriceUzs).toBe(1_500_000);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('preserves a course assignment required by an active group or scheduled lesson', async () => {

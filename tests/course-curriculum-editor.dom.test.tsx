@@ -19,15 +19,16 @@ const initialProgram: CourseCurriculum = {
   }],
 };
 
-function Editor({ program = { version: 1, blocks: [] }, onSubmit = vi.fn() }: {
+function Editor({ program = { version: 1, blocks: [] }, onSubmit = vi.fn(), editing = false }: {
   program?: CourseCurriculum;
   onSubmit?: (values: CourseValues) => void;
+  editing?: boolean;
 }) {
   const form = useForm<CourseValues>({
     resolver: zodResolver(createCourseSchema(key => i18n.t(key))),
-    defaultValues: { name: 'Programming', ageCategory: '12+', description: '', basePriceUzs: 0, isActive: true, program },
+    defaultValues: { name: 'Programming', ageCategory: '12+', description: '', isActive: true, program },
   });
-  return <CourseEditorDialog open onOpenChange={vi.fn()} form={form} editing={false} saving={false} onSubmit={onSubmit} />;
+  return <CourseEditorDialog open onOpenChange={vi.fn()} form={form} editing={editing} saving={false} onSubmit={onSubmit} />;
 }
 
 beforeEach(() => {
@@ -170,21 +171,14 @@ it('does not show premature errors when adding empty blocks, lessons, or materia
   expect(within(invalidBlock).queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
 });
 
-it('rejects an empty base price instead of coercing it to zero and normalizes leading zeros', async () => {
+it.each([false, true])('saves a course without a price field (editing: %s)', async (editing) => {
   const saved = vi.fn();
-  render(<Editor program={initialProgram} onSubmit={saved} />);
+  render(<Editor program={initialProgram} onSubmit={saved} editing={editing} />);
 
-  const priceInput = screen.getByLabelText(i18n.t('basePrice'), { exact: false }) as HTMLInputElement;
-  fireEvent.change(priceInput, { target: { value: '' } });
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
-
-  expect(await screen.findByText(i18n.t('fieldRequired'))).toBeTruthy();
-  expect(saved).not.toHaveBeenCalled();
-
-  fireEvent.change(priceInput, { target: { value: '0250000' } });
-  expect(priceInput.value).toBe('250000');
+  expect(screen.queryByLabelText(/base price/i)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
 
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
-  expect(saved.mock.calls[0][0].basePriceUzs).toBe(250000);
+  expect(saved.mock.calls[0][0]).not.toHaveProperty('basePriceUzs');
+  expect(saved.mock.calls[0][0]).toMatchObject({ name: 'Programming', program: initialProgram });
 });

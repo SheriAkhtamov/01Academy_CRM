@@ -255,7 +255,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       name: '',
       ageCategory: '',
       description: '',
-      basePriceUzs: 0,
       isActive: true,
       program: { version: 1, blocks: [] },
     },
@@ -560,7 +559,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       name: course.name,
       ageCategory: course.ageCategory,
       description: course.description ?? '',
-      basePriceUzs: course.basePriceUzs ?? 0,
       isActive: course.isActive,
       program: {
         version: 1,
@@ -572,7 +570,6 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       name: '',
       ageCategory: '',
       description: '',
-      basePriceUzs: 0,
       isActive: true,
       program: { version: 1, blocks: [] },
     });

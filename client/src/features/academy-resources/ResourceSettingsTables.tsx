@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ux/EmptyState';
 import { useTranslation } from '@/hooks/useTranslation';
 import { type Course, type Room, type School } from './api';
 import { useResourceArchive } from './useResourceArchive';
-import { formatAcademyNumber } from '@/lib/localeFormat';
 
 interface ResourceTableProps<T> {
   data: T[];
@@ -103,13 +102,11 @@ export function RoomSettingsTable(props: ResourceTableProps<Room> & { schools: S
 
 
 export function CourseSettingsTable(props: ResourceTableProps<Course>) {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const { mutation, openArchive, actionLabel, dialogProps } = useResourceArchive<Course>('courses', props.onChanged);
   const columns: DataTableColumn<Course>[] = [
     { key: 'name', header: t('course'), sortable: true, accessor: (row) => row.name,
       render: (row) => <div><p className="font-medium text-foreground">{row.name}</p><p className="text-xs text-muted-foreground">{row.ageCategory}</p></div> },
-    { key: 'basePrice', header: t('basePrice'), sortable: true, accessor: (row) => row.basePriceUzs,
-      render: (row) => `${formatAcademyNumber(row.basePriceUzs, language)}${t('uzs')}` },
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}

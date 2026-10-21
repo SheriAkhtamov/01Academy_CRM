@@ -27,18 +27,6 @@ export const createCourseSchema = (t: Translate) => z.object({
   name: z.string().trim().min(1, t('fieldRequired')),
   ageCategory: z.string().trim().min(1, t('fieldRequired')),
   description: z.string(),
-  basePriceUzs: z.union([z.string(), z.number()]).transform((value, context) => {
-    if (typeof value === 'string' && value.trim() === '') {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: t('fieldRequired') });
-      return z.NEVER;
-    }
-    const parsed = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > 2_147_483_647) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: t('invalidDataFormat') });
-      return z.NEVER;
-    }
-    return parsed;
-  }),
   isActive: z.boolean(),
   program: z.unknown().transform((value, context) => {
     const result = courseCurriculumSchema.safeParse(value);

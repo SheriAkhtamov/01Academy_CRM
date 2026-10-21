@@ -720,7 +720,7 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   const slug = nullableText(body.slug);
   const ageCategory = nullableText(body.ageCategory);
   const description = nullableText(body.description) ?? null;
-  const basePriceUzs = Number(body.basePriceUzs);
+  const basePriceUzs = body.basePriceUzs === undefined ? undefined : Number(body.basePriceUzs);
   if (!name || name.length > 255) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
@@ -730,7 +730,7 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   if (!ageCategory || ageCategory.length > 100) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
-  if (!Number.isSafeInteger(basePriceUzs) || basePriceUzs < 0 || basePriceUzs > 2_147_483_647) {
+  if (basePriceUzs !== undefined && (!Number.isSafeInteger(basePriceUzs) || basePriceUzs < 0 || basePriceUzs > 2_147_483_647)) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   if (typeof body.isActive !== 'boolean') {
@@ -745,7 +745,8 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   }
   const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
   return {
-    courseValues: { name, slug, ageCategory, description, basePriceUzs, isActive: body.isActive,
+    courseValues: { name, slug, ageCategory, description, isActive: body.isActive,
+      ...(basePriceUzs === undefined ? {} : { basePriceUzs }),
       ...(body.program === undefined ? {} : { program: parseCourseCurriculum(body.program), lessonCount: flattenCourseCurriculum(body.program).length }),
     },
     teacherIds: body.teacherIds === undefined ? null : teacherIds,

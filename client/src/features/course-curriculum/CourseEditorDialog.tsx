@@ -188,46 +188,6 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
 
                     <FormField
                       control={form.control}
-                      name="basePriceUzs"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel required>{t('basePrice')}</FormLabel>
-                          <div className="relative">
-                            <FormControl>
-                              <Input
-                                {...field}
-                                type="number"
-                                min="0"
-                                inputMode="numeric"
-                                className="pr-14 font-mono"
-                                onFocus={(event) => {
-                                  if (String(field.value) === '0') {
-                                    event.currentTarget.select();
-                                  }
-                                }}
-                                onChange={(event) => {
-                                  const normalized = event.target.value.replace(/^0+(?=\d)/, '');
-                                  if (normalized !== event.target.value) {
-                                    event.target.value = normalized;
-                                  }
-                                  field.onChange(normalized);
-                                }}
-                              />
-                            </FormControl>
-                            <span
-                              aria-hidden="true"
-                              className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs font-semibold uppercase text-muted-foreground"
-                            >
-                              {t('courseCurrencyShort')}
-                            </span>
-                          </div>
-                          <FormMessage role="alert" />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
                       name="description"
                       render={({ field }) => (
                         <FormItem>

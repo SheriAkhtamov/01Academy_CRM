@@ -964,6 +964,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       return (
         <TeacherScheduleSection
           days={scheduleDays}
+          currentUserId={user?.id}
           nextLesson={nextLesson}
           dayNames={dayNames}
           todayKey={todayKey}

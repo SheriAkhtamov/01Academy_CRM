@@ -2252,6 +2252,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   weekdayNotSpecified: { en: 'Day not specified', ru: 'День не указан' },
   durationMinutesValue: { en: '{count} min', ru: '{count} мин' },
   scheduleWeekLessonsSummary: { en: '{total} lessons, {conducted} conducted', ru: 'Занятий: {total}, проведено: {conducted}' },
+  lessonRolePrimaryTeacher: { en: 'Primary teacher', ru: 'Основной преподаватель' },
+  lessonRoleAssistant: { en: 'Assistant', ru: 'Ассистент' },
   scheduleEmptyDaysCollapsed: { en: 'Days without lessons: {count}', ru: 'Дней без занятий: {count}' },
   noLessonsThisDay: { en: 'No lessons', ru: 'Занятий нет' },
   searchGroupsPlaceholder: { en: 'Search by group, course or branch', ru: 'Поиск по группе, курсу или филиалу' },

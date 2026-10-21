@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { CalendarDays, ClipboardCheck } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
@@ -24,6 +25,7 @@ export type TeacherScheduleDayView = {
 
 interface TeacherScheduleSectionProps {
   days: TeacherScheduleDayView[];
+  currentUserId?: number;
   nextLesson?: TeacherLesson | null;
   dayNames: string[];
   todayKey: string;
@@ -44,6 +46,7 @@ interface TeacherScheduleSectionProps {
  */
 export function TeacherScheduleSection({
   days,
+  currentUserId,
   nextLesson,
   dayNames,
   todayKey,
@@ -202,6 +205,19 @@ export function TeacherScheduleSection({
                           </span>
                           <LessonStatusBadge status={lesson.status} />
                         </div>
+                        {currentUserId ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'max-w-full whitespace-normal break-words text-left font-medium',
+                              lesson.teacherUserId === currentUserId
+                                ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                : 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-300',
+                            )}
+                          >
+                            {t(lesson.teacherUserId === currentUserId ? 'lessonRolePrimaryTeacher' : 'lessonRoleAssistant')}
+                          </Badge>
+                        ) : null}
                         <TruncatedText
                           text={lesson.groupName || t('noGroup')}
                           className="block font-medium text-foreground"

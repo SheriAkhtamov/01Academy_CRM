@@ -42,7 +42,7 @@ beforeEach(() => {
     staff = { ...staff, assistants: staff.assistants.filter(teacher => teacher.id !== teacherId) };
     return structuredClone(staff);
   });
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60_000 }, mutations: { retry: false } } });
 });
 afterEach(async () => { cleanup(); client.clear(); await new Promise(resolve => setTimeout(resolve, 0)); });
 
@@ -85,6 +85,7 @@ it('refreshes colleague assignments when reopening with a warm application cache
   const view = mount();
   await screen.findByText(main.fullName);
   view.unmount();
+  expect(client.getQueryData(['/api/academy/lessons', 17, 'staff'])).toBeTruthy();
   staff = { ...staff, assistants: [assistants[1]] };
   mount();
   expect(await screen.findByText(assistants[1].fullName)).toBeTruthy();

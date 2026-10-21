@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { studentContractsApi } from '../client/src/features/student-contracts/api';
 import { i18n } from '../client/src/lib/i18n';
+import { MAX_STUDENT_CONTRACT_BYTES } from '../shared/contracts/student-contracts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -45,4 +46,29 @@ it('retains the status and localized conflict returned by the server without exp
     status: 409,
     message: i18n.t('studentContractNumberTaken'),
   });
+});
+
+it('reads private file bytes without caching and passes cancellation to the authenticated request', async () => {
+  const response = new Response('%PDF-1.7\ncontract', { headers: { 'Content-Type': 'application/octet-stream' } });
+  const fetch = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal('fetch', fetch);
+  const controller = new AbortController();
+  const blob = await studentContractsApi.fileBlob('contract-id', controller.signal);
+  const text = await new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsText(blob);
+  });
+  expect(text).toBe('%PDF-1.7\ncontract');
+  expect(fetch).toHaveBeenCalledWith('/api/academy/student-contracts/contract-id/file', {
+    credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+  });
+});
+
+it('rejects denied and oversized preview responses', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('{"error":"accessDenied"}', { status: 403 }))
+    .mockResolvedValueOnce(new Response('large', { headers: { 'Content-Length': String(MAX_STUDENT_CONTRACT_BYTES + 1) } })));
+  const signal = new AbortController().signal;
+  await expect(studentContractsApi.fileBlob('other-student', signal)).rejects.toMatchObject({ status: 403 });
+  await expect(studentContractsApi.fileBlob('contract-id', signal)).rejects.toThrow('studentContractFileTooLarge');
 });

@@ -12,7 +12,7 @@ import { i18n } from '../client/src/lib/i18n';
 const mocks = vi.hoisted(() => ({
   user: { id: 7, module: 'sales', modules: ['sales'] },
   profile: vi.fn(), close: vi.fn(),
-  contracts: { forStudent: vi.fn(), create: vi.fn(), changeNumber: vi.fn(), uploadFile: vi.fn(), cancel: vi.fn(), regenerate: vi.fn() },
+  contracts: { forStudent: vi.fn(), create: vi.fn(), changeNumber: vi.fn(), uploadFile: vi.fn(), cancel: vi.fn(), regenerate: vi.fn(), fileBlob: vi.fn() },
 }));
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: { profile: mocks.profile } }));
@@ -67,10 +67,31 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup(); client.clear();
+  vi.unstubAllGlobals();
   await new Promise(resolve => setTimeout(resolve, 0));
 });
 
 describe('contract tab in the student detail modal', () => {
+  it('opens the attached contract inside the student modal while retaining its download link', async () => {
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = vi.fn(() => 'blob:student-contract');
+      static revokeObjectURL = vi.fn();
+    });
+    mocks.contracts.fileBlob.mockResolvedValue(new Blob(['%PDF-1.7\ncontract']));
+    currentContract = { ...initialContract, file: {
+      name: 'Договор.pdf', mime: 'application/pdf', size: 18, downloadUrl: '/api/private/file',
+    } };
+    mount({ initialTab: 'contract' });
+    await userEvent.click(await screen.findByRole('button', { name: i18n.t('studentContractPreview') }));
+    const frame = await screen.findByTitle('Договор.pdf');
+    expect(screen.getByRole('tabpanel', { name: i18n.t('studentContract') }).contains(frame)).toBe(true);
+    expect(screen.getByRole('dialog', { name: student.studentName }).contains(frame)).toBe(true);
+    expect(screen.getByRole('link', { name: 'Договор.pdf' }).getAttribute('download')).toBe('Договор.pdf');
+    const signal = mocks.contracts.fileBlob.mock.calls[0][1] as AbortSignal;
+    await userEvent.click(screen.getByRole('tab', { name: i18n.t('studentLearning') }));
+    expect(signal.aborted).toBe(true);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:student-contract');
+  });
   it('loads on opening the tab, saves a historical number and restores it after reopening', async () => {
     mount();
     expect(mocks.contracts.forStudent).not.toHaveBeenCalled();

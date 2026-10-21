@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { StudentContractFields } from './StudentContractFields';
+import { StudentContractPreview } from './StudentContractPreview';
 import { useStudentContract } from './useStudentContract';
 
 export function StudentContractTab({
@@ -23,5 +24,12 @@ export function StudentContractTab({
 
   useEffect(() => () => onDraftChange(false, false), [onDraftChange]);
 
-  return <StudentContractFields controls={controls} />;
+  return (
+    <div className="space-y-3">
+      <StudentContractFields controls={controls} />
+      {open && active && controls.contract?.file ? (
+        <StudentContractPreview key={controls.contract.id} contract={controls.contract} file={controls.contract.file} />
+      ) : null}
+    </div>
+  );
 }

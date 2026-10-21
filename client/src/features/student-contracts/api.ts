@@ -1,9 +1,20 @@
-import type { StudentContract, StudentContractList, StudentContractListQuery } from '@shared/contracts/student-contracts';
-import { apiRequest } from '@/lib/queryClient';
+import { MAX_STUDENT_CONTRACT_BYTES, type StudentContract, type StudentContractList, type StudentContractListQuery } from '@shared/contracts/student-contracts';
+import { apiRequest, throwIfResNotOk } from '@/lib/queryClient';
 
 const contractUrl = (contractId: string) => `/api/academy/student-contracts/${encodeURIComponent(contractId)}`;
 
 export const studentContractsApi = {
+  fileBlob: async (contractId: string, signal: AbortSignal): Promise<Blob> => {
+    const response = await fetch(`${contractUrl(contractId)}/file`, {
+      credentials: 'same-origin', cache: 'no-store', signal,
+    });
+    await throwIfResNotOk(response);
+    if (Number(response.headers.get('Content-Length')) > MAX_STUDENT_CONTRACT_BYTES) throw new Error('studentContractFileTooLarge');
+    const blob = await response.blob();
+    if (blob.size > MAX_STUDENT_CONTRACT_BYTES) throw new Error('studentContractFileTooLarge');
+    if (!blob.size) throw new Error('studentContractFileRequired');
+    return blob;
+  },
   list: (query: StudentContractListQuery) => {
     const parameters = new URLSearchParams({ q: query.q, page: String(query.page), pageSize: String(query.pageSize) });
     return apiRequest('GET', `/api/academy/student-contracts?${parameters}`) as Promise<StudentContractList>;

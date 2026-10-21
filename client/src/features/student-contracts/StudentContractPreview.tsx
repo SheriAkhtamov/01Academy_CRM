@@ -59,8 +59,8 @@ function ContractFileContent({ contractId, file }: { contractId: string; file: S
       onError={fail} />
   );
   return (
-    <div className="overflow-auto rounded-lg border bg-muted/15 p-2">
-      <img src={content.url} alt={file.name} className="mx-auto max-h-[65dvh] max-w-full object-contain"
+    <div className="max-h-[65dvh] overflow-auto rounded-lg border bg-muted/15 p-2">
+      <img src={content.url} alt={file.name} className="mx-auto h-auto max-w-full"
         onError={fail} />
     </div>
   );

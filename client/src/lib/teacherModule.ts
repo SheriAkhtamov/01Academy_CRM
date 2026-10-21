@@ -24,6 +24,8 @@ export type TeacherLesson = {
   teacherId?: number;
   teacherName?: string;
   teacherUserId?: number | null;
+  canManageLesson?: boolean;
+  hasPreviousIncompleteLesson?: boolean;
   schoolId?: number;
   schoolName?: string;
   lessonNumber: number;

@@ -22,6 +22,8 @@ vi.mock('../server/modules/academy/academy-core', () => {
 });
 import { LessonStaffService } from '../server/modules/academy/lesson-staff';
 import { actorContextFrom } from '../server/modules/leads/domain/actor-context';
+import { canRecordTeacherLessonAttendance } from '../server/modules/academy/teacher-lesson-access';
+import { queryOne, withTransaction } from '../server/modules/academy/academy-core';
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `lesson_staff_${randomUUID().replace(/-/g, '')}`;
 const main = actorContextFrom({ id: 7, modules: ['teacher'] });
@@ -56,7 +58,7 @@ describe.skipIf(!databaseUrl)('lesson staff persistence and access', () => {
   });
   it('shows the primary teacher and offers only active alternatives', async () => {
     expect(await service.get(main, 17)).toEqual({
-      teacher: { id: 4, fullName: 'Main teacher' }, assistants: [],
+      canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [],
       teachers: [{ id: 5, fullName: 'First assistant' }, { id: 7, fullName: 'Other teacher' }, { id: 8, fullName: 'Second assistant' }],
     });
   });
@@ -76,6 +78,41 @@ describe.skipIf(!databaseUrl)('lesson staff persistence and access', () => {
       await expect(service.remove(actor, 17, 5)).rejects.toMatchObject({ statusCode: 403 });
     }
     expect((await service.add(adminActor, 17, 5)).assistants).toHaveLength(1);
+  });
+  it('lets an assigned assistant read the team without managing assignments and revokes access after removal', async () => {
+    const assistant = actorContextFrom({ id: 10, modules: ['teacher'] });
+    await service.add(main, 17, 5);
+    expect(await service.get(assistant, 17)).toMatchObject({ canManage: false, teachers: [],
+      teacher: { id: 4 }, assistants: [{ id: 5 }] });
+    await expect(service.add(assistant, 17, 8)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(service.remove(assistant, 17, 5)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(service.get(assistant, 18)).rejects.toMatchObject({ statusCode: 403 });
+    await service.remove(main, 17, 5);
+    await expect(service.get(assistant, 17)).rejects.toMatchObject({ statusCode: 403 });
+  });
+  it('checks assignment revocation after waiting for the lesson lock', async () => {
+    const assistant = actorContextFrom({ id: 10, modules: ['teacher'] });
+    await service.add(main, 17, 5);
+    const remover = await mocks.pool.connect();
+    await remover.query('BEGIN');
+    await remover.query('SELECT id FROM academy_lessons WHERE id=17 FOR UPDATE');
+    await remover.query('DELETE FROM academy_lesson_assistants WHERE lesson_id=17 AND teacher_id=5');
+    let checkStarted!: () => void;
+    const started = new Promise<void>(resolve => { checkStarted = resolve; });
+    const permission = withTransaction(async () => {
+      checkStarted();
+      const lesson = await queryOne('SELECT * FROM academy_lessons WHERE id=17 FOR UPDATE');
+      return canRecordTeacherLessonAttendance(assistant, lesson!);
+    });
+    await started;
+    await remover.query('COMMIT');
+    remover.release();
+    expect(await permission).toBe(false);
+  });
+  it('denies inactive assigned teachers', async () => {
+    const assistant = actorContextFrom({ id: 11, modules: ['teacher'] });
+    await mocks.pool.query('INSERT INTO academy_lesson_assistants(lesson_id,teacher_id) VALUES(17,6)');
+    await expect(service.get(assistant, 17)).rejects.toMatchObject({ statusCode: 403 });
   });
   it('rejects primary, inactive and missing teachers and changes to cancelled lessons', async () => {
     await expect(service.add(main, 17, 4)).rejects.toMatchObject({ code: 'lessonAssistantIsTeacher' });

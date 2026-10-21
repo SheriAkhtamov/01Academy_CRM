@@ -1,4 +1,5 @@
 import { summarizeLeadQualifications, type LeadQualificationFact } from '@shared/lead-qualification';
+import { teacherLessonVisibilitySql } from './teacher-lesson-access';
 import { Router } from 'express';
 import { buildMarketingSourceMetrics, marketingPaymentAttribution } from './marketing-source-metrics';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -337,14 +338,14 @@ export const getAcademyDataset = async (
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
       LEFT JOIN academy_rooms r ON r.id = l.room_id
-      WHERE 1=1 ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}
+      WHERE 1=1 ${isTeacherScoped ? `AND ${teacherLessonVisibilitySql('l')}` : ''}
       ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : [])
     )),
     slice('attendance', () => (
       query(`SELECT a.*
       FROM academy_attendance a
       JOIN academy_lessons l ON l.id = a.lesson_id
-      WHERE l.status = 'conducted' ${isTeacherScoped ? 'AND l.teacher_id = $1' : ''}`,
+      WHERE l.status = 'conducted' ${isTeacherScoped ? `AND ${teacherLessonVisibilitySql('l')}` : ''}`,
     isTeacherScoped ? [teacherId] : [])
     )),
     slice('payments', () => (
@@ -431,7 +432,9 @@ export const getAcademyDataset = async (
     leads: visibleLeads,
     archivedLeads: visibleArchivedLeads,
     students: isTeacherScoped ? students.map(teacherStudentRecord) : students,
-    lessons,
+    lessons: isTeacherScoped ? lessons.map<Row>(lesson => ({ ...lesson,
+      canManageLesson: hasLeadershipAccess(actor) || Number(lesson.teacherUserId) === actor?.userId,
+    })) : lessons,
     attendance,
     payments,
     tasks,

@@ -1021,7 +1021,7 @@ describe('academy route logic boundaries', () => {
           : { rows: [{ id: 999, student_name: 'Another teacher student', group_id: 99 }] };
       }
       if (sql.includes('SELECT l.*, g.name AS group_name')) {
-        return sql.includes('AND l.teacher_id = $1')
+        return sql.includes('l.teacher_id = $1') && sql.includes('academy_lesson_assistants')
           ? { rows: [{ id: 40, group_id: 20, teacher_id: 4, topic: 'My lesson' }] }
           : { rows: [{ id: 999, group_id: 99, teacher_id: 8, topic: 'Another lesson' }] };
       }
@@ -1040,7 +1040,7 @@ describe('academy route logic boundaries', () => {
     expect(response.body.students).toEqual([expect.objectContaining({ id: 30, groupId: 20 })]);
     expect(response.body.lessons).toEqual([expect.objectContaining({ id: 40, teacherId: 4 })]);
     expect(mocks.poolQuery.mock.calls.some(([sql, values]) => (
-      String(sql).includes('AND l.teacher_id = $1') && Number(values?.[0]) === 4
+      String(sql).includes('l.teacher_id = $1') && String(sql).includes('academy_lesson_assistants') && Number(values?.[0]) === 4
     ))).toBe(true);
   });
 
@@ -1351,6 +1351,28 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
+  it.each([true, false])('loads the historical roster only while the assistant is assigned: %s', async assigned => {
+    mocks.actor = { id: 8, module: 'teacher', modules: ['teacher'] };
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FOR SHARE OF lesson')) return { rows: [{
+        id: 10, group_id: 20, teacher_user_id: 99, status: 'scheduled', scheduled_at: new Date(),
+        has_previous_incomplete_lesson: true,
+      }] };
+      if (sql.includes('FROM academy_lesson_assistants assistant')) return { rows: assigned ? [{ teacher_id: 5 }] : [] };
+      if (sql.includes('FROM academy_students student')) return { rows: [{ id: 5, student_name: 'Assigned student',
+        contact_name: 'Parent', phone: 'private-phone', paid_amount_uzs: 100000, manager_id: 99 }] };
+      return emptyResult();
+    });
+    const response = await request(await createApp()).get('/api/academy/lessons/10/attendance-roster');
+    expect(response.status).toBe(assigned ? 200 : 403);
+    if (assigned) {
+      expect(response.body.lesson).toMatchObject({ canManageLesson: false, hasPreviousIncompleteLesson: true });
+      expect(response.body.students).toEqual([{ id: 5, studentName: 'Assigned student', contactName: 'Parent' }]);
+    } else {
+      expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('FROM academy_students student'))).toBe(false);
+    }
+  });
+
   it('does not let a scheduled lesson be completed before it starts', async () => {
     const scheduledAt = new Date(Date.now() + 60 * 60 * 1000);
     mocks.clientQuery.mockImplementation(async (sql: string) => {
@@ -1433,7 +1455,10 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
-  it('marks a started lesson conducted and saves the complete historical roster atomically', async () => {
+  it.each(['administrator', 'primary teacher', 'assigned assistant'])('lets the %s complete a started lesson and saves the historical roster atomically', async role => {
+    mocks.actor = role === 'administrator'
+      ? { id: 1, module: 'administration', modules: ['administration'] }
+      : { id: role === 'assigned assistant' ? 8 : 1, module: 'teacher', modules: ['teacher'] };
     const scheduledAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
@@ -1442,12 +1467,14 @@ describe('academy route logic boundaries', () => {
           rows: [{
             id: 10,
             group_id: 20,
+            teacher_user_id: role === 'assigned assistant' ? 99 : 1,
             status: 'scheduled',
             scheduled_at: scheduledAt,
             duration_minutes: 60,
           }],
         };
       }
+      if (sql.includes('FROM academy_lesson_assistants assistant')) return { rows: role === 'assigned assistant' ? [{ teacher_id: 5 }] : [] };
       if (sql.includes('FROM academy_students student') && sql.includes('FOR UPDATE OF student')) {
         return {
           rows: [
@@ -1489,6 +1516,7 @@ describe('academy route logic boundaries', () => {
     expect(response.body.attendance).toHaveLength(2);
     const attendanceWrites = mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO academy_attendance'));
     expect(attendanceWrites).toHaveLength(2);
+    expect(attendanceWrites.every(([, values]) => values[5] === mocks.actor.id)).toBe(true);
     expect(attendanceWrites.every(([, values]) => values[6] === false && values[7] === false)).toBe(true);
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO "academy_lesson_status_history"'))).toBe(true);
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('academy_notification_outbox'))).toBe(false);

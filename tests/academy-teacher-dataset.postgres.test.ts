@@ -83,11 +83,12 @@ describe.skipIf(!databaseUrl)(
       CREATE TABLE academy_students(id integer PRIMARY KEY,student_name text,contact_name text,student_age integer,status text DEFAULT 'studying',created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),enrolled_at timestamptz DEFAULT now(),enrollment_date date DEFAULT current_date,attendance_percent numeric,progress_percent numeric,course_id integer,group_id integer,manager_id integer,school_id integer,lead_id integer,phone text,paid_amount_uzs bigint);
       CREATE TABLE academy_student_group_enrollments(student_id integer,group_id integer,status text,is_primary boolean,enrolled_at timestamptz DEFAULT now());
       CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,teacher_id integer,course_id integer,school_id integer,room_id integer,topic text,scheduled_at timestamptz DEFAULT now(),status text);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer REFERENCES academy_lessons(id),teacher_id integer REFERENCES academy_teachers(id),PRIMARY KEY(lesson_id,teacher_id));
       CREATE TABLE academy_attendance(id integer PRIMARY KEY,lesson_id integer,student_id integer,status text);
       CREATE TABLE academy_portfolio_projects(id integer PRIMARY KEY,student_id integer,group_id integer,title text,created_at timestamptz DEFAULT now());
-      INSERT INTO users VALUES(10,'Teacher one'),(11,'Teacher two');
+      INSERT INTO users VALUES(10,'Teacher one'),(11,'Teacher two'),(12,'Assistant');
       INSERT INTO academy_schools(id,name) VALUES(1,'School'); INSERT INTO academy_rooms(id,name,school_id) VALUES(1,'Room',1);
-      INSERT INTO academy_courses VALUES(1,'First course'),(2,'Second course'); INSERT INTO academy_teachers VALUES(1,10,'Teacher one','active'),(2,11,'Teacher two','active');
+      INSERT INTO academy_courses VALUES(1,'First course'),(2,'Second course'); INSERT INTO academy_teachers VALUES(1,10,'Teacher one','active'),(2,11,'Teacher two','active'),(3,12,'Assistant','active');
       INSERT INTO academy_groups(id,name,course_id,teacher_id,school_id,room_id) VALUES(1,'First group',1,1,1,1),(2,'Second group',2,2,1,1);
       INSERT INTO academy_students(id,student_name,contact_name,student_age,course_id,group_id,manager_id,school_id,phone,paid_amount_uzs) VALUES(41,'Shared learner','Contact',18,2,2,11,1,'private-contact',100000),(42,'Foreign learner','Other contact',20,2,2,11,1,'foreign-contact',200000);
       INSERT INTO academy_student_group_enrollments(student_id,group_id,status,is_primary) VALUES(41,1,'active',false),(41,2,'active',true),(42,2,'active',true);
@@ -95,8 +96,9 @@ describe.skipIf(!databaseUrl)(
       INSERT INTO academy_attendance VALUES(1,1,41,'present'),(2,2,42,'absent');
       INSERT INTO academy_portfolio_projects(id,student_id,group_id,title) VALUES(1,41,1,'Own project'),(2,42,2,'Foreign project');`);
     });
-    beforeEach(() => {
+    beforeEach(async () => {
       fixture.queries = [];
+      await fixture.pool.query('DELETE FROM academy_lesson_assistants');
     });
     afterAll(async () => {
       if (fixture.pool) await fixture.pool.end();
@@ -158,6 +160,31 @@ describe.skipIf(!databaseUrl)(
         unmapped.projects,
       ])
         expect(items).toEqual([]);
+    });
+    it('adds only assigned assistant lessons and their attendance without granting whole-group access', async () => {
+      await fixture.pool.query('INSERT INTO academy_lesson_assistants VALUES(2,3)');
+      const assistant = await dataset(12);
+      expect(assistant.lessons.map(lesson => lesson.id)).toEqual([2]);
+      expect(assistant.lessons[0]).toMatchObject({ teacherName: 'Teacher two', canManageLesson: false });
+      expect(assistant.attendance.map(mark => mark.id)).toEqual([2]);
+      expect(assistant.groups).toEqual([]);
+      expect(assistant.students).toEqual([]);
+      expect(assistant.projects).toEqual([]);
+      await fixture.pool.query('DELETE FROM academy_lesson_assistants WHERE teacher_id=3');
+      expect((await dataset(12)).lessons).toEqual([]);
+      expect((await dataset(12)).attendance).toEqual([]);
+    });
+    it('combines primary and assistant lessons and excludes unassigned lessons from the same group', async () => {
+      await fixture.pool.query(`INSERT INTO academy_lessons(id,group_id,teacher_id,course_id,school_id,room_id,topic,status)
+        VALUES(3,2,2,2,1,1,'Unassigned group lesson','conducted');
+        INSERT INTO academy_lesson_assistants VALUES(2,1);`);
+      try {
+        const result = await dataset(10);
+        expect(result.lessons.map(lesson => lesson.id).sort()).toEqual([1, 2]);
+        expect(result.lessons.find(lesson => lesson.id===1)?.canManageLesson).toBe(true);
+        expect(result.lessons.find(lesson => lesson.id===2)?.canManageLesson).toBe(false);
+        expect(result.groups.map(group => group.id)).toEqual([1]);
+      } finally { await fixture.pool.query('DELETE FROM academy_lessons WHERE id=3'); }
     });
   },
 );

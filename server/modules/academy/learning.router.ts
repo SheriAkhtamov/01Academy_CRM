@@ -113,6 +113,8 @@ import {
   prepareLessonMutation,
   restoreArchivedGroupLessons,
 } from './academy-route-support';
+import { actorContextFrom } from '../leads/domain/actor-context';
+import { canManageTeacherLesson, canRecordTeacherLessonAttendance } from './teacher-lesson-access';
 
 export const registerAcademyLearningRoutes = (router: ReturnType<typeof Router>) => {
 router.get('/lessons/:id/attendance-roster', async (req, res) => {
@@ -120,27 +122,38 @@ router.get('/lessons/:id/attendance-roster', async (req, res) => {
   try {
     const lessonId = parseId(req.params.id);
     if (!lessonId) return res.status(400).json({ error: 'Invalid lesson id' });
-    const lesson = await queryOne(
-      `SELECT lesson.*, teacher.user_id AS teacher_user_id
-       FROM academy_lessons lesson
-       LEFT JOIN academy_teachers teacher
-         ON teacher.id = lesson.teacher_id AND teacher.status = 'active'
-       WHERE lesson.id = $1`,
-      [lessonId],
-    );
-    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    if (
-      getAssignedModules(req.user).includes('teacher')
-      && !hasLeadershipAccess(req.user)
-      && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== Number(req.user!.id))
-    ) {
-      return res.status(403).json({ error: 'teacherOwnLessonRosterOnly' });
-    }
-    const [students, attendance] = await Promise.all([
-      getLessonRoster(Number(lesson.groupId), lesson.scheduledAt),
-      query(`SELECT * FROM academy_attendance WHERE lesson_id = $1 ORDER BY student_id`, [lessonId]),
-    ]);
-    res.json({ lesson, students, attendance });
+    const actor = req.actor ?? actorContextFrom(req.user);
+    const result = await withTransaction(async () => {
+      const lesson = await queryOne(
+        `SELECT lesson.*, teacher.user_id AS teacher_user_id,
+           (lesson.status <> 'conducted' AND EXISTS (
+             SELECT 1 FROM academy_lessons previous_lesson WHERE previous_lesson.group_id=lesson.group_id
+               AND previous_lesson.status='scheduled' AND previous_lesson.scheduled_at<lesson.scheduled_at
+           )) AS has_previous_incomplete_lesson
+         FROM academy_lessons lesson
+         LEFT JOIN academy_teachers teacher
+           ON teacher.id = lesson.teacher_id AND teacher.status = 'active'
+         WHERE lesson.id = $1 FOR SHARE OF lesson`,
+        [lessonId],
+      );
+      if (!lesson) throw Object.assign(new Error('Lesson not found'), { statusCode: 404 });
+      if (!await canRecordTeacherLessonAttendance(actor, lesson)) {
+        throw Object.assign(new Error('teacherOwnLessonRosterOnly'), { statusCode: 403 });
+      }
+      const [students, attendance] = await Promise.all([
+        getLessonRoster(Number(lesson.groupId), lesson.scheduledAt),
+        query(`SELECT * FROM academy_attendance WHERE lesson_id = $1 ORDER BY student_id`, [lessonId]),
+      ]);
+      return {
+        lesson: { ...lesson, canManageLesson: canManageTeacherLesson(actor, lesson) },
+        students: actor.modules.includes('teacher') && !actor.isLeadership ? students.map(student => ({
+          id: student.id, studentName: student.studentName, contactName: student.contactName,
+          attendancePercent: student.attendancePercent, progressPercent: student.progressPercent, status: student.status,
+        })) : students,
+        attendance,
+      };
+    });
+    res.json(result);
   } catch (error: any) {
     logger.error('Failed to load lesson attendance roster', { error, lessonId: req.params.id });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to load attendance roster') });
@@ -421,11 +434,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       if (lesson.status === 'cancelled') {
         throw Object.assign(new Error('cancelledLessonAttendanceNotAllowed'), { statusCode: 400 });
       }
-      if (
-        getAssignedModules(req.user).includes('teacher')
-        && !hasLeadershipAccess(req.user)
-        && (!lesson.teacherUserId || Number(lesson.teacherUserId) !== req.user!.id)
-      ) {
+      if (!await canRecordTeacherLessonAttendance(req.actor ?? actorContextFrom(req.user), lesson)) {
         throw Object.assign(new Error('teacherOwnLessonAttendanceOnly'), { statusCode: 403 });
       }
       if (lesson.status === 'conducted' && requestedLessonStatus === 'scheduled') {

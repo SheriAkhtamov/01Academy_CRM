@@ -32,7 +32,7 @@ beforeEach(() => {
   Object.values(api).forEach(mock => mock.mockReset());
   pendingChange.mockReset();
   i18n.setLanguage('ru');
-  staff = { teacher: main, assistants: [], teachers: assistants };
+  staff = { canManage: true, teacher: main, assistants: [], teachers: assistants };
   api.get.mockImplementation(async () => structuredClone(staff));
   api.add.mockImplementation(async (_id, teacherId) => {
     staff = { ...staff, assistants: [...staff.assistants, assistants.find(teacher => teacher.id === teacherId)!] };
@@ -90,6 +90,14 @@ it('refreshes colleague assignments when reopening with a warm application cache
   mount();
   expect(await screen.findByText(assistants[1].fullName)).toBeTruthy();
   expect(api.get).toHaveBeenCalledTimes(2);
+});
+it('shows the team to an assistant while hiding all assignment controls', async () => {
+  staff = { ...staff, canManage: false, teachers: [], assistants: [assistants[0]] };
+  mount();
+  expect(await screen.findByText(main.fullName)).toBeTruthy();
+  expect(screen.getByText(assistants[0].fullName)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: i18n.t('lessonAssistantAdd') })).toBeNull();
+  expect(screen.queryByRole('button', { name: i18n.t('lessonAssistantRemoveName', { name: assistants[0].fullName }) })).toBeNull();
 });
 
 it('keeps a failed removal in its confirmation and allows retry', async () => {

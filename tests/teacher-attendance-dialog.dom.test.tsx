@@ -12,7 +12,7 @@ import { i18n, translations } from '../client/src/lib/i18n';
 const clients: QueryClient[] = [];
 vi.mock('../client/src/features/lesson-staff/api', () => ({
   lessonStaffQueryKey: (id: number) => ['/api/academy/lessons', id, 'staff'],
-  lessonStaffApi: { get: async () => ({ teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] }) },
+  lessonStaffApi: { get: async () => ({ canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] }) },
 }));
 
 function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) {

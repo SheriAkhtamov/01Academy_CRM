@@ -711,6 +711,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const allAttendanceMarked = selectedLessonStudents.every(
     (student) => attendanceDraft[student.id] !== undefined,
   );
+  const hasPreviousIncompleteLesson = Boolean(previousIncompleteLesson || selectedLessonDetails?.hasPreviousIncompleteLesson);
   const selectedLessonHasStarted = Boolean(
     selectedLessonDetails && new Date(selectedLessonDetails.scheduledAt).getTime() <= now,
   );
@@ -719,13 +720,14 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     && allAttendanceMarked
     && !attendanceRosterQuery.isPending
     && !attendanceRosterQuery.isError
-    && !previousIncompleteLesson
+    && !hasPreviousIncompleteLesson
     && (selectedLessonDetails.status === 'conducted' || selectedLessonHasStarted),
   );
   const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
   const rescheduleTimestamp = parsedRescheduleAt?.getTime() ?? Number.NaN;
   const canRescheduleLesson = Boolean(
-    ['scheduled', 'conducted'].includes(selectedLessonDetails?.status ?? '')
+    selectedLessonDetails?.canManageLesson !== false
+    && ['scheduled', 'conducted'].includes(selectedLessonDetails?.status ?? '')
     && Number.isFinite(rescheduleTimestamp)
     && rescheduleReason.trim(),
   );
@@ -1118,7 +1120,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             onRetryRoster={() => attendanceRosterQuery.refetch()}
             mutationPending={lessonMutationPending}
             lessonHasStarted={selectedLessonHasStarted}
-            hasPreviousIncompleteLesson={Boolean(previousIncompleteLesson)}
+            hasPreviousIncompleteLesson={hasPreviousIncompleteLesson}
             rescheduleOpen={isRescheduleOpen}
             onRescheduleOpenChange={setIsRescheduleOpen}
             rescheduleAt={rescheduleAt}

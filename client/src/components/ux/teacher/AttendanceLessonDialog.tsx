@@ -447,7 +447,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
               </div>
             ) : null}
 
-            {!isRosterPending && !isRosterError && lesson
+            {!isRosterPending && !isRosterError && lesson && lesson.canManageLesson !== false
               && (lesson.status === 'scheduled' || lesson.status === 'conducted') ? (
               <div className={cn('space-y-3 rounded-xl border', TEACHER_CARD_PADDING, TEACHER_TONE_CLASS.warning)}>
                 <button

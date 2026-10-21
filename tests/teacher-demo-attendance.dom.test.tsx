@@ -28,7 +28,7 @@ const regularLessonFixture = {
 };
 const clients: QueryClient[] = [];
 let demos: DemoLesson[];
-let regularLesson: typeof regularLessonFixture;
+let regularLesson: typeof regularLessonFixture & { teacherUserId?: number; canManageLesson?: boolean; hasPreviousIncompleteLesson?: boolean };
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -61,7 +61,7 @@ beforeEach(() => {
       demos = [{ ...demos[0], status: payload.status }];
       return demos[0];
     }
-    if (url === '/api/academy/lessons/17/staff') return { teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] };
+    if (url === '/api/academy/lessons/17/staff') return { canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] };
     if (url === '/api/academy/lessons/17/attendance-roster') return { lesson: regularLesson, students: [], attendance: [] };
     if (url === '/api/academy/lessons/17/reschedule' && method === 'POST') {
       regularLesson = { ...regularLesson, scheduledAt: payload.scheduledAt, status: 'scheduled' };
@@ -76,7 +76,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[]) {
+function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[], section: 'attendance' | 'schedule' = 'attendance') {
   const location = memoryLocation({ path });
   const client = new QueryClient({ defaultOptions: { queries: {
     retry: false, gcTime: 0, staleTime: 5 * 60_000, queryFn: ({ queryKey }) => apiMock('GET', queryKey[0]),
@@ -85,7 +85,7 @@ function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[]) 
   clients.push(client);
   render(<QueryClientProvider client={client}>
     <Router hook={location.hook} searchHook={location.searchHook}>
-      <TeacherModule section="attendance" />
+      <TeacherModule section={section} />
     </Router>
   </QueryClientProvider>);
   return location;
@@ -144,11 +144,67 @@ describe('teacher demo attendance', () => {
     expect(screen.queryByRole('dialog', { name: translations.demoLesson.en })).toBeNull();
   });
 
+  it('shows an assigned assistant lesson in the schedule even without ownership of its group', async () => {
+    regularLesson = { ...regularLesson, teacherUserId: 99, canManageLesson: false };
+    mount('/teacher-module/schedule?week=2026-09-14', undefined, 'schedule');
+    expect(await screen.findByText(regularLesson.topic)).toBeTruthy();
+    expect(screen.getByText(regularLesson.groupName)).toBeTruthy();
+  });
+
+  it('lets an assistant save attendance and restores marks after reopening without management controls', async () => {
+    regularLesson = { ...regularLesson, teacherUserId: 99, canManageLesson: false };
+    const existing = apiMock.getMockImplementation()!;
+    let attendance: Array<{ studentId: number; status: string }> = [];
+    apiMock.mockImplementation((method, url, payload) => {
+      if (url === '/api/academy/lessons/17/staff') return Promise.resolve({ canManage: false,
+        teacher: { id: 4, fullName: 'Main teacher' }, assistants: [{ id: 5, fullName: 'Teacher' }], teachers: [] });
+      if (url === '/api/academy/lessons/17/attendance-roster') return Promise.resolve({ lesson: regularLesson,
+        students: [{ id: 155, studentName: 'Assigned student', contactName: 'Parent', attendancePercent: 80, progressPercent: 20, status: 'studying' }], attendance });
+      if (url === '/api/academy/lessons/17/attendance' && method === 'POST') {
+        attendance = payload.attendance;
+        regularLesson = { ...regularLesson, status: 'conducted' };
+        return Promise.resolve({ lesson: regularLesson, attendance });
+      }
+      return existing(method, url, payload);
+    });
+    mount('/teacher-module/attendance?lesson=17');
+    const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
+    expect(await within(dialog).findByText('Main teacher')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: translations.lessonAssistantAdd.en })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: translations.lessonRescheduling.en })).toBeNull();
+    fireEvent.click(await within(dialog).findByRole('button', { name: translations.present.en }));
+    fireEvent.click(within(dialog).getByRole('button', { name: translations.finishLessonAndSaveAttendance.en }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('POST', '/api/academy/lessons/17/attendance', {
+      lessonStatus: 'conducted', attendance: [{ studentId: 155, status: 'present' }],
+    }));
+    await within(dialog).findByRole('button', { name: translations.updateAttendance.en });
+    fireEvent.click(within(dialog).getByRole('button', { name: translations.close.en }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByTestId('attendance-calendar-lesson-17'));
+    const reopened = await screen.findByRole('dialog', { name: regularLesson.topic });
+    await waitFor(() => expect(within(reopened).getByRole('button', { name: translations.present.en }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it('blocks completing an assistant lesson when an earlier unassigned lesson is incomplete', async () => {
+    regularLesson = { ...regularLesson, canManageLesson: false, hasPreviousIncompleteLesson: true };
+    const existing = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((method, url, payload) => {
+      if (url === '/api/academy/lessons/17/attendance-roster') return Promise.resolve({ lesson: regularLesson,
+        students: [{ id: 155, studentName: 'Assigned student', contactName: 'Parent' }],
+        attendance: [{ studentId: 155, status: 'present' }] });
+      return existing(method, url, payload);
+    });
+    mount('/teacher-module/attendance?lesson=17');
+    const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
+    expect(await within(dialog).findByText(translations.previousLessonMustBeCompleted.en)).toBeTruthy();
+    expect((within(dialog).getByRole('button', { name: translations.finishLessonAndSaveAttendance.en }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('keeps the lesson modal open while an assistant assignment is saving', async () => {
     const user = userEvent.setup();
     const existing = apiMock.getMockImplementation()!;
     let finish!: (value: unknown) => void;
-    const staff = { teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [{ id: 5, fullName: 'Assistant teacher' }] };
+    const staff = { canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [{ id: 5, fullName: 'Assistant teacher' }] };
     apiMock.mockImplementation((method, url, payload) => {
       if (url === '/api/academy/lessons/17/staff') return Promise.resolve(staff);
       if (url === '/api/academy/lessons/17/assistants' && method === 'POST') return new Promise(resolve => { finish = resolve; });

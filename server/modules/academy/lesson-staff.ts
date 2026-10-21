@@ -1,13 +1,14 @@
 import type { LessonStaff, LessonStaffTeacher } from '@shared/contracts/lesson-staff';
 import type { ActorContext } from '../leads/domain/actor-context';
 import { createAudit, query, queryOne, withTransaction, type Row } from './academy-core';
+import { canManageTeacherLesson, canRecordTeacherLessonAttendance } from './teacher-lesson-access';
 
 export class LessonStaffError extends Error {
   constructor(public readonly code: string, public readonly statusCode = 400) { super(code); }
 }
 const fail = (code: string, status = 400): never => { throw new LessonStaffError(code, status); };
 
-async function authorize(actor: ActorContext, lessonId: number, mutate: boolean) {
+async function authorize(actor: ActorContext, lessonId: number, mutate: boolean): Promise<Row> {
   if (!actor.userId || !(actor.isLeadership || actor.modules.some(module => ['administration', 'teacher'].includes(module)))) {
     fail('accessDenied', 403);
   }
@@ -16,12 +17,12 @@ async function authorize(actor: ActorContext, lessonId: number, mutate: boolean)
     FROM academy_lessons lesson LEFT JOIN academy_teachers teacher ON teacher.id=lesson.teacher_id
     WHERE lesson.id=$1 FOR ${mutate ? 'UPDATE' : 'SHARE'} OF lesson`, [lessonId]);
   if (!lesson) fail('lessonStaffNotFound', 404);
-  if (actor.modules.includes('teacher') && !actor.isLeadership
-    && (Number(lesson!.teacherUserId) !== actor.userId || lesson!.teacherStatus !== 'active')) {
+  const canManage = canManageTeacherLesson(actor, lesson!);
+  if (!canManage && (mutate || !await canRecordTeacherLessonAttendance(actor, lesson!))) {
     fail('teacherOwnLessonRosterOnly', 403);
   }
   if (mutate && !['scheduled', 'conducted'].includes(lesson!.status)) fail('lessonStaffReadOnly', 409);
-  return lesson!;
+  return { ...lesson!, canManage };
 }
 
 async function present(lesson: Row): Promise<LessonStaff> {
@@ -29,12 +30,15 @@ async function present(lesson: Row): Promise<LessonStaff> {
     query(`SELECT teacher.id,teacher.full_name FROM academy_lesson_assistants assistant
       JOIN academy_teachers teacher ON teacher.id=assistant.teacher_id
       WHERE assistant.lesson_id=$1 ORDER BY teacher.full_name,teacher.id`, [lesson.id]),
-    query("SELECT id,full_name FROM academy_teachers WHERE status='active' AND id<>$1 ORDER BY full_name,id", [lesson.teacherId ?? 0]),
+    lesson.canManage
+      ? query("SELECT id,full_name FROM academy_teachers WHERE status='active' AND id<>$1 ORDER BY full_name,id", [lesson.teacherId ?? 0])
+      : Promise.resolve([]),
   ]);
   const teacher = (row: Row): LessonStaffTeacher => ({ id: Number(row.id), fullName: row.fullName });
   return {
     teacher: lesson.teacherId ? { id: Number(lesson.teacherId), fullName: lesson.teacherName } : null,
     assistants: assistants.map(teacher), teachers: teachers.map(teacher),
+    canManage: lesson.canManage,
   };
 }
 

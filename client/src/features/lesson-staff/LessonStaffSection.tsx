@@ -34,8 +34,9 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
   useEffect(() => { onPendingChange?.(pending); }, [pending, onPendingChange]);
   useEffect(() => () => onPendingChange?.(false), [onPendingChange]);
   const busy = disabled || pending;
+  const canManage = editable && staff.data?.canManage === true;
   const change = (teacherId: number, remove: boolean) => {
-    if (!busy && editable) mutation.mutate({ teacherId, remove });
+    if (!busy && canManage) mutation.mutate({ teacherId, remove });
   };
   const selected = new Set(staff.data?.assistants.map(teacher => teacher.id));
   const error = mutation.error?.message || t('lessonStaffSaveFailed');
@@ -59,7 +60,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
         <div className="space-y-2 border-t border-border/60 pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-semibold text-muted-foreground">{t('lessonAssistants')}</h4>
-            {editable ? (
+            {canManage ? (
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" variant="outline" size="sm" className="min-h-11 gap-2" disabled={busy}>
@@ -86,7 +87,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
             {staff.data.assistants.length ? staff.data.assistants.map(teacher => (
               <span key={teacher.id} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-background py-1 pl-3 pr-1 text-sm">
                 <span className="min-w-0 break-words">{teacher.fullName}</span>
-                {editable ? <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={busy}
+                {canManage ? <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={busy}
                   aria-label={t('lessonAssistantRemoveName', { name: teacher.fullName })}
                   onClick={() => { mutation.reset(); setRemoving(teacher); }}><X className="size-4" /></Button> : null}
               </span>

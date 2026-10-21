@@ -8,7 +8,7 @@ import { actorContextFrom } from '../server/modules/leads/domain/actor-context';
 vi.mock('../server/modules/academy/academy-core', () => ({ query: vi.fn(), queryOne: vi.fn(), createAudit: vi.fn(), withTransaction: vi.fn() }));
 vi.mock('../server/lib/logger', () => ({ logger: { error: vi.fn() } }));
 const service = { get: vi.fn(), add: vi.fn(), remove: vi.fn() };
-const staff = { teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [{ id: 5, fullName: 'Assistant' }] };
+const staff = { canManage: true, teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [{ id: 5, fullName: 'Assistant' }] };
 const actor = actorContextFrom({ id: 7, modules: ['teacher'] });
 const app = express();
 app.use(express.json());

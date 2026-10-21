@@ -6,18 +6,12 @@ import { CalendarNavigator } from '@/components/ux/calendar/CalendarNavigator';
 import { CALENDAR_TONES } from '@/components/ux/calendar/calendarTones';
 import {
   buildMonthDays,
-  buildWeekDays,
   dateFromDayKey,
-  shiftDayKey,
   shiftMonthKey,
-  weekStartDayKey,
 } from '@/lib/calendarDays';
 import { EmptyState } from '@/components/ux/EmptyState';
-import { useCalendarPreference } from '@/hooks/useCalendarPreference';
 import { useCalendarShortcuts } from '@/hooks/useCalendarShortcuts';
-import { useIsCompactViewport } from '@/hooks/useMediaQuery';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { CalendarViewMode } from '@/lib/calendarPreferences';
 import type { TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { ACADEMY_TIME_ZONE, resolveLocale } from '@/lib/localeFormat';
@@ -40,8 +34,6 @@ interface AttendanceCalendarProps {
 
 type AttendanceState = 'pending' | 'upcoming' | 'conducted';
 
-const VIEWS = ['month', 'week', 'agenda'] as const satisfies readonly CalendarViewMode[];
-const COMPACT_VIEWS = ['agenda'] as const satisfies readonly CalendarViewMode[];
 const VISIBLE_PER_DAY = 3;
 
 const STATE_TONES = {
@@ -86,12 +78,6 @@ export function AttendanceCalendar({
   onSelectLesson,
 }: AttendanceCalendarProps) {
   const { t, language } = useTranslation();
-  const isCompactViewport = useIsCompactViewport();
-  const [view, setView] = useCalendarPreference<CalendarViewMode>(
-    'attendanceCalendarView',
-    VIEWS,
-    isCompactViewport ? 'agenda' : 'month',
-  );
   const todayKey = academyDateKey(new Date(now));
   const [anchorKey, setAnchorKey] = useState(todayKey);
   const [hiddenStates, setHiddenStates] = useState<Set<AttendanceState>>(() => new Set());
@@ -99,14 +85,9 @@ export function AttendanceCalendar({
   const scopeRef = useRef<HTMLDivElement>(null);
   const locale = resolveLocale(language);
 
-  /* A grid 760px wide inside a 375px viewport is a horizontal scroller nested
-     in a vertical one — the two fight on every touch drag. The stored
-     preference is left alone; only what gets painted changes. */
-  const effectiveView: CalendarViewMode = isCompactViewport && view !== 'agenda' ? 'agenda' : view;
-
   const calendarDays = useMemo(
-    () => (effectiveView === 'month' ? buildMonthDays(anchorKey) : buildWeekDays(anchorKey)),
-    [anchorKey, effectiveView],
+    () => buildMonthDays(anchorKey),
+    [anchorKey],
   );
   /* Trailing cells of the neighbouring month paint their lessons, so they have
      to be counted too — otherwise the filter badges disagree with the screen,
@@ -118,7 +99,7 @@ export function AttendanceCalendar({
 
   useEffect(() => {
     setExpandedDayKey(null);
-  }, [anchorKey, effectiveView]);
+  }, [anchorKey]);
 
   const toggleExpandedDay = (dateKey: string) => {
     const willExpand = expandedDayKey !== dateKey;
@@ -222,11 +203,7 @@ export function AttendanceCalendar({
   ), [lessons, now]);
 
   const shift = (direction: number) => {
-    setAnchorKey((current) => (
-      effectiveView === 'month'
-        ? shiftMonthKey(current, direction)
-        : shiftDayKey(current, direction * 7)
-    ));
+    setAnchorKey((current) => shiftMonthKey(current, direction));
   };
   const goToday = () => setAnchorKey(todayKey);
 
@@ -238,15 +215,8 @@ export function AttendanceCalendar({
   });
 
   const anchorDate = dateFromDayKey(anchorKey);
-  const rangeLabel = effectiveView === 'month'
-    ? new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
-      .format(anchorDate)
-    : `${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' })
-      .format(calendarDays[0].date)} — ${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-      .format(calendarDays[calendarDays.length - 1].date)}`;
-  const atToday = effectiveView === 'month'
-    ? anchorKey.slice(0, 7) === todayKey.slice(0, 7)
-    : weekStartDayKey(anchorKey) === weekStartDayKey(todayKey);
+  const rangeLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(anchorDate);
+  const atToday = anchorKey.slice(0, 7) === todayKey.slice(0, 7);
 
   const dayNames = [
     t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
@@ -280,7 +250,7 @@ export function AttendanceCalendar({
     setHiddenStates(new Set());
   };
 
-  const lessonButton = (lesson: AttendanceCalendarLesson, roomy = false) => {
+  const lessonButton = (lesson: AttendanceCalendarLesson) => {
     const state = lessonState(lesson, now);
     const tone = STATE_TONES[state];
     const isSelected = String(lesson.id) === selectedLessonId;
@@ -311,7 +281,7 @@ export function AttendanceCalendar({
           'w-full rounded-md border border-l-[3px] text-left transition-[box-shadow,transform] duration-150 ease-out',
           'hover:scale-[1.02] hover:shadow-md active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'disabled:cursor-not-allowed disabled:opacity-60',
-          roomy ? 'px-3 py-2.5' : 'px-1.5 py-1',
+          'px-1.5 py-1',
           isSelected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         )}
         style={{
@@ -325,10 +295,10 @@ export function AttendanceCalendar({
           <Clock3 className="size-3" aria-hidden="true" />
           {time}
         </span>
-        <span className={cn('block truncate font-medium', roomy ? 'mt-1 text-sm' : 'text-xs')}>
+        <span className="block truncate text-xs font-medium">
           {lesson.topic}
         </span>
-        <span className={cn('block truncate opacity-90', roomy ? 'mt-0.5 text-xs' : 'text-xs')}>
+        <span className="block truncate text-xs opacity-90">
           {lesson.groupName || t('noGroup')}
         </span>
       </button>
@@ -390,15 +360,12 @@ export function AttendanceCalendar({
 
         <CalendarNavigator
           label={rangeLabel}
-          previousLabel={effectiveView === 'month' ? t('previousMonth') : t('previousWeek')}
-          nextLabel={effectiveView === 'month' ? t('nextMonth') : t('nextWeek')}
+          previousLabel={t('previousMonth')}
+          nextLabel={t('nextMonth')}
           atToday={atToday}
           onPrevious={() => shift(-1)}
           onNext={() => shift(1)}
           onToday={goToday}
-          views={isCompactViewport ? COMPACT_VIEWS : VIEWS}
-          view={effectiveView}
-          onViewChange={setView}
         />
       </CardHeader>
 
@@ -438,114 +405,80 @@ export function AttendanceCalendar({
           </div>
         ) : null}
 
-        {effectiveView === 'agenda' ? (
-          <div className="max-h-[32rem] min-h-56 divide-y divide-border/60 overflow-auto">
-            {calendarDays.map((day) => {
-              const dayLessons = visibleLessonsFor(day.dateKey);
-              if (dayLessons.length === 0) return null;
-              const dateLabel = new Intl.DateTimeFormat(locale, {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                timeZone: 'UTC',
-              }).format(day.date);
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-7 border-b bg-muted/30">
+              {dayNames.map((dayName, index) => (
+                <div
+                  key={`day-header-${index}`}
+                  className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  {dayName}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {calendarDays.map((day) => {
+                const dayLessons = visibleLessonsFor(day.dateKey);
+                const isExpanded = expandedDayKey === day.dateKey;
+                const shown = !isExpanded
+                  ? dayLessons.slice(0, VISIBLE_PER_DAY)
+                  : dayLessons;
+                const overflow = dayLessons.length - shown.length;
+                const canExpandDay = dayLessons.length > VISIBLE_PER_DAY;
+                const isToday = day.dateKey === todayKey;
 
-              return (
-                <section key={day.dateKey} className="space-y-2 p-4 pt-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className={cn(
-                      'text-sm font-semibold capitalize',
-                      day.dateKey === todayKey && 'text-primary',
-                    )}>
-                      {dateLabel}
-                    </h4>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {dayLessons.length}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {dayLessons.map((lesson) => lessonButton(lesson, true))}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <div className={cn(effectiveView === 'month' ? 'min-w-[760px]' : 'min-w-[640px]')}>
-              <div className="grid grid-cols-7 border-b bg-muted/30">
-                {dayNames.map((dayName, index) => (
+                return (
                   <div
-                    key={`day-header-${index}`}
-                    className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    key={day.dateKey}
+                    className={cn(
+                      'flex flex-col gap-1 border-b border-r border-border/70 p-1.5 [&:nth-child(7n)]:border-r-0',
+                      'min-h-28',
+                      !day.isCurrentMonth && 'bg-muted/20 text-muted-foreground',
+                      isToday && 'bg-primary/[0.05]',
+                    )}
                   >
-                    {dayName}
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7">
-                {calendarDays.map((day) => {
-                  const dayLessons = visibleLessonsFor(day.dateKey);
-                  const isExpanded = expandedDayKey === day.dateKey;
-                  const shown = effectiveView === 'month' && !isExpanded
-                    ? dayLessons.slice(0, VISIBLE_PER_DAY)
-                    : dayLessons;
-                  const overflow = dayLessons.length - shown.length;
-                  const canExpandDay = effectiveView === 'month' && dayLessons.length > VISIBLE_PER_DAY;
-                  const isToday = day.dateKey === todayKey;
-
-                  return (
-                    <div
-                      key={day.dateKey}
-                      className={cn(
-                        'flex flex-col gap-1 border-b border-r border-border/70 p-1.5 [&:nth-child(7n)]:border-r-0',
-                        effectiveView === 'month' ? 'min-h-28' : 'min-h-40',
-                        !day.isCurrentMonth && 'bg-muted/20 text-muted-foreground',
-                        isToday && 'bg-primary/[0.05]',
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className={cn(
-                            'inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
-                            isToday && 'bg-primary text-primary-foreground',
-                          )}
-                        >
-                          {day.date.getUTCDate()}
-                        </span>
-                        {dayLessons.some((lesson) => lesson.status === 'conducted') ? (
-                          <CircleCheck className="size-3.5 text-emerald-500" aria-hidden="true" />
-                        ) : null}
-                      </div>
-                      <div id={`attendance-day-${day.dateKey}`} className="flex flex-col gap-1">
-                        {shown.map((lesson) => lessonButton(lesson))}
-                      </div>
-                      {/* One trigger with a real `aria-expanded` and an
-                          `aria-controls` pointing at the list it opens, instead
-                          of two buttons with the value hardcoded. Expanding a
-                          crowded day must not rewrite the teacher's saved
-                          default view for every future visit — it only opens
-                          this cell. */}
-                      {canExpandDay ? (
-                        <button
-                          type="button"
-                          aria-expanded={isExpanded}
-                          aria-controls={`attendance-day-${day.dateKey}`}
-                          className="min-h-9 rounded px-1 py-0.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => toggleExpandedDay(day.dateKey)}
-                        >
-                          {isExpanded
-                            ? t('collapseDay')
-                            : t('moreEventsCount').replace('{count}', String(overflow))}
-                        </button>
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={cn(
+                          'inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
+                          isToday && 'bg-primary text-primary-foreground',
+                        )}
+                      >
+                        {day.date.getUTCDate()}
+                      </span>
+                      {dayLessons.some((lesson) => lesson.status === 'conducted') ? (
+                        <CircleCheck className="size-3.5 text-emerald-500" aria-hidden="true" />
                       ) : null}
                     </div>
-                  );
-                })}
-              </div>
+                    <div id={`attendance-day-${day.dateKey}`} className="flex flex-col gap-1">
+                      {shown.map((lesson) => lessonButton(lesson))}
+                    </div>
+                    {/* One trigger with a real `aria-expanded` and an
+                        `aria-controls` pointing at the list it opens, instead
+                        of two buttons with the value hardcoded. Expanding a
+                        crowded day must not rewrite the teacher's saved
+                        default view for every future visit — it only opens
+                        this cell. */}
+                    {canExpandDay ? (
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        aria-controls={`attendance-day-${day.dateKey}`}
+                        className="min-h-9 rounded px-1 py-0.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => toggleExpandedDay(day.dateKey)}
+                      >
+                        {isExpanded
+                          ? t('collapseDay')
+                          : t('moreEventsCount').replace('{count}', String(overflow))}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );

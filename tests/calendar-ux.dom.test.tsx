@@ -214,6 +214,21 @@ describe('attendance calendar', () => {
     return onSelect;
   };
 
+  it.each(['week', 'agenda'])('always shows a month despite a saved %s preference', async savedView => {
+    window.localStorage.setItem('academy-calendar:attendanceCalendarView', savedView);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderAttendance();
+    expect(screen.getByText('June 2026')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: i18n.t('calendarViewMode') })).toBeNull();
+    for (const name of [i18n.t('calendarViewMonth'), i18n.t('calendarViewWeek'), i18n.t('calendarViewAgenda')]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    await user.click(screen.getByRole('button', { name: i18n.t('nextMonth') }));
+    expect(screen.getByText('July 2026')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: i18n.t('previousMonth') }));
+    expect(screen.getByText('June 2026')).toBeTruthy();
+  });
+
   it('hides a status when its chip is switched off', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderAttendance();

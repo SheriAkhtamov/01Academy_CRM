@@ -1,5 +1,5 @@
 import { DateTimeInput } from '@/components/ui/date-time-input';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
+import { LessonStaffSection } from '@/features/lesson-staff/LessonStaffSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ux/EmptyState';
@@ -44,7 +44,6 @@ import {
   TEACHER_TONE_CLASS,
   attendancePercentTone,
   getInitials,
-  teacherPercent,
   type TeacherAttendanceDraft,
   type TeacherLesson,
   type TeacherStudent,
@@ -64,7 +63,6 @@ export interface AttendanceLessonDialogProps {
   hasDivergingNotes: boolean;
   onNoteChange: (value: string) => void;
   onToggleStudent: (studentId: number, status: AttendanceStatus) => void;
-  onSetAll: (status: AttendanceStatus) => void;
   onSave: () => void;
   canSave: boolean;
   isSaving: boolean;
@@ -86,9 +84,7 @@ export interface AttendanceLessonDialogProps {
   onConfirmReschedule: () => void;
   rescheduleConfirmOpen: boolean;
   onRescheduleConfirmOpenChange: (open: boolean) => void;
-  bulkConfirmStatus: AttendanceStatus | null;
-  onBulkConfirmChange: (status: AttendanceStatus | null) => void;
-  onRequestSetAll: (status: AttendanceStatus) => void;
+  onStaffPendingChange?: (pending: boolean) => void;
 }
 
 /**
@@ -131,10 +127,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     onConfirmReschedule,
     rescheduleConfirmOpen,
     onRescheduleConfirmOpenChange,
-    bulkConfirmStatus,
-    onBulkConfirmChange,
-    onRequestSetAll,
-    onSetAll,
+    onStaffPendingChange,
   } = props;
 
   const { t, language } = useTranslation();
@@ -142,20 +135,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
   const [noteOverwriteConfirmOpen, setNoteOverwriteConfirmOpen] = useState(false);
-
-  const summary = useMemo(() => {
-    let marked = 0;
-    let present = 0;
-    let absent = 0;
-    for (const student of students) {
-      const status = draft[student.id];
-      if (!status) continue;
-      marked += 1;
-      if (status === 'present') present += 1;
-      else absent += 1;
-    }
-    return { total: students.length, marked, present, absent };
-  }, [draft, students]);
 
   const firstUnmarkedIndex = students.findIndex((student) => draft[student.id] === undefined);
 
@@ -231,7 +210,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     }
   }, [focusRow, mutationPending, onToggleStudent, students]);
 
-  const unmarkedCount = Math.max(summary.total - summary.marked, 0);
+  const unmarkedCount = students.filter(student => !draft[student.id]).length;
   const blocking = (() => {
     if (!lesson) return null;
     if (lesson.status === 'scheduled' && !lessonHasStarted) {
@@ -308,6 +287,9 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+            {lesson ? <LessonStaffSection key={lesson.id} lessonId={lesson.id}
+              editable={['scheduled', 'conducted'].includes(lesson.status)} disabled={mutationPending}
+              onPendingChange={onStaffPendingChange} /> : null}
             {isRosterPending ? (
               <div className="space-y-3">
                 <Skeleton className="h-20 w-full rounded-xl" />
@@ -337,56 +319,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
             {!isRosterPending && !isRosterError && students.length > 0 ? (
               <>
-                <div className={cn('space-y-3 rounded-xl border border-border/60 bg-muted/20', TEACHER_CARD_PADDING)}>
-                  <div
-                    className="flex flex-wrap items-center gap-2 text-xs font-medium"
-                    aria-live="polite"
-                  >
-                    <Badge variant="outline" className="rounded-lg border-border/60 bg-background px-3 py-1 font-semibold tabular-nums">
-                      {t('attendanceMarkedOf')
-                        .replace('{marked}', String(summary.marked))
-                        .replace('{total}', String(summary.total))}
-                    </Badge>
-                    <Badge variant="outline" className={cn('rounded-lg border px-3 py-1 font-semibold tabular-nums', TEACHER_TONE_CLASS.success)}>
-                      {t('attendancePresentCount').replace('{count}', String(summary.present))}
-                    </Badge>
-                    <Badge variant="outline" className={cn('rounded-lg border px-3 py-1 font-semibold tabular-nums', TEACHER_TONE_CLASS.danger)}>
-                      {t('attendanceAbsentCount').replace('{count}', String(summary.absent))}
-                    </Badge>
-                  </div>
-
-                  <Progress
-                    value={teacherPercent(summary.marked, summary.total)}
-                    className="h-2"
-                    aria-label={t('attendanceMarkedOf')
-                      .replace('{marked}', String(summary.marked))
-                      .replace('{total}', String(summary.total))}
-                  />
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={cn('min-h-11 rounded-lg text-xs font-medium', TEACHER_TONE_CLASS.success)}
-                      disabled={mutationPending}
-                      onClick={() => onRequestSetAll('present')}
-                    >
-                      <CheckCircle2 className="mr-1.5 size-4" />
-                      {t('allPresent')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={cn('min-h-11 rounded-lg text-xs font-medium', TEACHER_TONE_CLASS.danger)}
-                      disabled={mutationPending}
-                      onClick={() => onRequestSetAll('absent')}
-                    >
-                      <XCircle className="mr-1.5 size-4" />
-                      {t('allAbsent')}
-                    </Button>
-                  </div>
-                </div>
-
                 <div className="space-y-2.5">
                   <h3 className="px-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     {t('groupStudentsCount').replace('{count}', String(students.length))}
@@ -636,33 +568,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
               disabled={mutationPending || !canSave}
               onClick={() => {
                 if (!mutationPending && canSave) onSave();
-              }}
-            >
-              {t('confirmAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={bulkConfirmStatus !== null} onOpenChange={(next) => { if (!next) onBulkConfirmChange(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-5 text-amber-500" />
-              {t('bulkAttendanceConfirmTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('bulkAttendanceConfirmDesc')
-                .replace('{marked}', String(summary.marked))
-                .replace('{total}', String(summary.total))}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => onBulkConfirmChange(null)}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (bulkConfirmStatus) onSetAll(bulkConfirmStatus);
-                onBulkConfirmChange(null);
               }}
             >
               {t('confirmAction')}

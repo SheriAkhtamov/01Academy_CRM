@@ -5,7 +5,7 @@ import { academySchools, academyRooms } from './academy-resources';
 export { academySchools, academyRooms } from './academy-resources';
 import type { MessageAttachment } from '@shared/contracts/messages';
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, check, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, bigint, boolean, timestamp, varchar, jsonb, date, index, uniqueIndex, primaryKey, check, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { ACADEMY_MODULES, type AcademyAccessModule, type AcademyModule } from "../../../shared/academy";
@@ -590,6 +590,16 @@ export const academyLessons = pgTable("academy_lessons", {
   schoolIdx: index("academy_lessons_school_idx").on(table.schoolId),
   roomIdx: index("academy_lessons_room_idx").on(table.roomId),
   teacherIdx: index("academy_lessons_teacher_idx").on(table.teacherId),
+}));
+
+export const academyLessonAssistants = pgTable('academy_lesson_assistants', {
+  lessonId: integer('lesson_id').notNull().references(() => academyLessons.id, { onDelete: 'cascade' }),
+  teacherId: integer('teacher_id').notNull().references(() => academyTeachers.id, { onDelete: 'cascade' }),
+  assignedBy: integer('assigned_by').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  pk: primaryKey({ columns: [table.lessonId, table.teacherId] }),
+  teacherIdx: index('academy_lesson_assistants_teacher_idx').on(table.teacherId, table.lessonId),
 }));
 
 export const { academyDemoLessons, academyDemoLessonParticipants } = createAcademyDemoTables({

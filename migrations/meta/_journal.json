@@ -1121,6 +1121,13 @@
       "when": 1791889606164,
       "tag": "0159_student_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1791889606165,
+      "tag": "0160_lesson_assistants",
+      "breakpoints": true
     }
   ]
 }

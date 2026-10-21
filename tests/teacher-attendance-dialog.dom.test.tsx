@@ -6,7 +6,14 @@ import {
   AttendanceLessonDialog,
   type AttendanceLessonDialogProps,
 } from '../client/src/components/ux/teacher/AttendanceLessonDialog';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { i18n, translations } from '../client/src/lib/i18n';
+
+const clients: QueryClient[] = [];
+vi.mock('../client/src/features/lesson-staff/api', () => ({
+  lessonStaffQueryKey: (id: number) => ['/api/academy/lessons', id, 'staff'],
+  lessonStaffApi: { get: async () => ({ teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] }) },
+}));
 
 function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) {
   const props: AttendanceLessonDialogProps = {
@@ -27,7 +34,6 @@ function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) 
     hasDivergingNotes: false,
     onNoteChange: vi.fn(),
     onToggleStudent: vi.fn(),
-    onSetAll: vi.fn(),
     onSave: vi.fn(),
     canSave: true,
     isSaving: false,
@@ -49,17 +55,17 @@ function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) 
     onConfirmReschedule: vi.fn(),
     rescheduleConfirmOpen: false,
     onRescheduleConfirmOpenChange: vi.fn(),
-    bulkConfirmStatus: null,
-    onBulkConfirmChange: vi.fn(),
-    onRequestSetAll: vi.fn(),
     ...overrides,
   };
-  const result = render(<AttendanceLessonDialog {...props} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  clients.push(client);
+  const view = () => <QueryClientProvider client={client}><AttendanceLessonDialog {...props} /></QueryClientProvider>;
+  const result = render(view());
   return {
     props,
     update: (changes: Partial<AttendanceLessonDialogProps>) => {
       Object.assign(props, changes);
-      result.rerender(<AttendanceLessonDialog {...props} />);
+      result.rerender(view());
     },
   };
 }
@@ -69,11 +75,22 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
+  clients.splice(0).forEach(client => client.clear());
   // Finish Radix focus restoration while this jsdom document is still active.
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
 describe('teacher attendance dialog', () => {
+  it('shows the lesson teacher instead of the bulk attendance controls', async () => {
+    renderAttendance();
+    expect(await screen.findByText('Main teacher')).toBeTruthy();
+    expect(screen.getByRole('button', { name: translations.lessonAssistantAdd.en })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'All present' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'All absent' })).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByText(/Marked:|Present:|Absent:/)).toBeNull();
+  });
+
   it('saves marks directly when existing student notes are untouched', async () => {
     const user = userEvent.setup();
     const { props } = renderAttendance({ hasDivergingNotes: true });

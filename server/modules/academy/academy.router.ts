@@ -33,6 +33,7 @@ import { registerSchoolArchiveRoutes } from './school-archive.router';
 import { registerResourceArchiveRoutes } from './resource-archive.router';
 import { registerCourseMaterialFileRoutes } from './course-material-files.router';
 import { registerStudentContractRoutes } from './student-contracts.router';
+import { registerLessonStaffRoutes } from './lesson-staff.router';
 
 const router = Router();
 router.use(requireAuth);
@@ -70,6 +71,7 @@ registerSchoolArchiveRoutes(router);
 registerResourceArchiveRoutes(router);
 registerCourseMaterialFileRoutes(router);
 registerStudentContractRoutes(router);
+registerLessonStaffRoutes(router);
 registerAcademyModuleRoutes(router);
 registerGroupManagementRoutes(router);
 registerAcademyLeadRoutes(router);

@@ -263,7 +263,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isRescheduleConfirmOpen, setRescheduleConfirmOpen] = useState(false);
-  const [bulkConfirmStatus, setBulkConfirmStatus] = useState<'present' | 'absent' | null>(null);
+  const [staffMutationPending, setStaffMutationPending] = useState(false);
   const [pendingLessonSwitch, setPendingLessonSwitch] = useState<string | null>(null);
   const [pendingDialogClose, setPendingDialogClose] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -639,7 +639,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     setRescheduleReason('');
     setIsRescheduleOpen(false);
     setRescheduleConfirmOpen(false);
-    setBulkConfirmStatus(null);
   }, [selectedLessonId]);
 
   const selectedLessonStudents = useMemo(
@@ -730,7 +729,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     && Number.isFinite(rescheduleTimestamp)
     && rescheduleReason.trim(),
   );
-  const lessonMutationPending = saveAttendance.isPending || rescheduleLesson.isPending;
+  const lessonMutationPending = saveAttendance.isPending || rescheduleLesson.isPending || staffMutationPending;
 
   const selectedGroup = useMemo(() => {
     const groupId = Number(groupParam);
@@ -785,29 +784,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     attendanceDraftDirty.current = true;
     setAttendanceDraft((previous) => ({ ...previous, [studentId]: status }));
   }, [lessonMutationPending]);
-
-  const handleSetAllAttendance = useCallback((status: 'present' | 'absent') => {
-    if (lessonMutationPending) return;
-    attendanceDraftDirty.current = true;
-    const update: TeacherAttendanceDraft = {};
-    selectedLessonStudents.forEach((student) => {
-      update[student.id] = status;
-    });
-    setAttendanceDraft(update);
-  }, [lessonMutationPending, selectedLessonStudents]);
-
-  /* Overwriting fourteen hand-made marks is a destructive action, so it asks
-     first — but only when there is something to lose. */
-  const handleRequestSetAll = useCallback((status: 'present' | 'absent') => {
-    const hasMarks = selectedLessonStudents.some(
-      (student) => attendanceDraft[student.id] !== undefined,
-    );
-    if (!hasMarks) {
-      handleSetAllAttendance(status);
-      return;
-    }
-    setBulkConfirmStatus(status);
-  }, [attendanceDraft, handleSetAllAttendance, selectedLessonStudents]);
 
   const handleSaveAttendance = useCallback(() => {
     if (!selectedLessonDetails || !canSaveAttendance || lessonMutationPending) return;
@@ -875,7 +851,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   }, [lessonMutationPending, openAttendanceForLesson, selectedLessonId]);
 
   const handleDialogCloseRequest = useCallback((open: boolean) => {
-    if (open) return;
+    if (open || lessonMutationPending) return;
     if (attendanceDraftDirty.current) {
       setPendingDialogClose(true);
       return;
@@ -883,24 +859,25 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: null });
-  }, [replaceParams]);
+  }, [lessonMutationPending, replaceParams]);
 
   const confirmDialogClose = useCallback(() => {
+    if (lessonMutationPending) return;
     setPendingDialogClose(false);
     writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: null });
-  }, [replaceParams]);
+  }, [lessonMutationPending, replaceParams]);
 
   const confirmLessonSwitch = useCallback(() => {
-    if (!pendingLessonSwitch) return;
+    if (!pendingLessonSwitch || lessonMutationPending) return;
     writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: pendingLessonSwitch });
     setPendingLessonSwitch(null);
-  }, [pendingLessonSwitch, replaceParams]);
+  }, [lessonMutationPending, pendingLessonSwitch, replaceParams]);
 
   // Protect against accidental page close with unsaved attendance data
   useEffect(() => {
@@ -1133,8 +1110,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
               setAttendanceNote(value);
             }}
             onToggleStudent={handleToggleAttendance}
-            onSetAll={handleSetAllAttendance}
-            onRequestSetAll={handleRequestSetAll}
             onSave={handleSaveAttendance}
             canSave={canSaveAttendance}
             isSaving={saveAttendance.isPending}
@@ -1156,8 +1131,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             onConfirmReschedule={handleRescheduleLesson}
             rescheduleConfirmOpen={isRescheduleConfirmOpen}
             onRescheduleConfirmOpenChange={setRescheduleConfirmOpen}
-            bulkConfirmStatus={bulkConfirmStatus}
-            onBulkConfirmChange={setBulkConfirmStatus}
+            onStaffPendingChange={setStaffMutationPending}
           />
           <DemoLessonDetailsDialog
             context="teacher"

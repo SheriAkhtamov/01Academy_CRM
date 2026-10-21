@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Router } from 'wouter';
 import { memoryLocation } from 'wouter/memory-location';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +61,7 @@ beforeEach(() => {
       demos = [{ ...demos[0], status: payload.status }];
       return demos[0];
     }
+    if (url === '/api/academy/lessons/17/staff') return { teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [] };
     if (url === '/api/academy/lessons/17/attendance-roster') return { lesson: regularLesson, students: [], attendance: [] };
     if (url === '/api/academy/lessons/17/reschedule' && method === 'POST') {
       regularLesson = { ...regularLesson, scheduledAt: payload.scheduledAt, status: 'scheduled' };
@@ -140,6 +142,31 @@ describe('teacher demo attendance', () => {
     fireEvent.click(await screen.findByTestId('attendance-calendar-lesson-17'));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('GET', '/api/academy/lessons/17/attendance-roster'));
     expect(screen.queryByRole('dialog', { name: translations.demoLesson.en })).toBeNull();
+  });
+
+  it('keeps the lesson modal open while an assistant assignment is saving', async () => {
+    const user = userEvent.setup();
+    const existing = apiMock.getMockImplementation()!;
+    let finish!: (value: unknown) => void;
+    const staff = { teacher: { id: 4, fullName: 'Main teacher' }, assistants: [], teachers: [{ id: 5, fullName: 'Assistant teacher' }] };
+    apiMock.mockImplementation((method, url, payload) => {
+      if (url === '/api/academy/lessons/17/staff') return Promise.resolve(staff);
+      if (url === '/api/academy/lessons/17/assistants' && method === 'POST') return new Promise(resolve => { finish = resolve; });
+      return existing(method, url, payload);
+    });
+    mount('/teacher-module/attendance?lesson=17');
+    const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
+    await user.click(await within(dialog).findByRole('button', { name: translations.lessonAssistantAdd.en }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Assistant teacher' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('POST', '/api/academy/lessons/17/assistants', { teacherId: 5 }));
+    await user.keyboard('{Escape}');
+    const close = within(dialog).getByRole('button', { name: translations.close.en });
+    fireEvent.click(close);
+    expect(screen.getByRole('dialog', { name: regularLesson.topic })).toBeTruthy();
+    await act(async () => finish({ ...staff, assistants: [staff.teachers[0]] }));
+    expect(await within(dialog).findByText('Assistant teacher')).toBeTruthy();
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it.each([

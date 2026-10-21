@@ -1281,7 +1281,7 @@ export function LeadDetailSheet({
                               )}
                             />
                             <FormItem>
-                              <div className="flex items-center justify-between gap-2"><FormLabel>{t('responsibleManager')}</FormLabel>{canTransferLeads ? <EmployeeCardButton userId={lead.managerId} name={lead.managerName} /> : null}</div>
+                              {canTransferLeads ? <div className="flex items-center justify-between gap-2"><FormLabel>{t('responsibleManager')}</FormLabel><EmployeeCardButton userId={lead.managerId} name={lead.managerName} /></div> : <FormLabel>{t('responsibleManager')}</FormLabel>}
                               {canTransferLeads ? <Select
                                 value={lead.managerId ? String(lead.managerId) : undefined}
                                 onValueChange={(value) => {

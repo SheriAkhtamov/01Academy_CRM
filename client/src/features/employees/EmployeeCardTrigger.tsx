@@ -15,14 +15,14 @@ export function EmployeeCardButton({ userId, name }: { userId?: number | null; n
     onClick={event => { event.preventDefault(); event.stopPropagation(); open(userId, event.currentTarget); }}><ContactRound className="size-4" /></Button>;
 }
 
-export function EmployeeCardTrigger({ userId, name, interactive = true, children, className }: {
-  userId?: number | null; name?: string | null; interactive?: boolean; children: ReactNode; className?: string;
+export function EmployeeCardTrigger({ userId, name, interactive = true, children, className, title }: {
+  userId?: number | null; name?: string | null; interactive?: boolean; children: ReactNode; className?: string; title?: string;
 }) {
   const open = useEmployeeCard();
   const nested = useContext(NestedControlContext);
   const { t } = useTranslation();
-  if (!open || nested || !interactive || !userId) return <span className={className}>{children}</span>;
-  return <button type="button" className={cn('rounded text-left align-middle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
+  if (!open || nested || !interactive || !userId) return <span className={className} title={title}>{children}</span>;
+  return <button type="button" title={title} className={cn('rounded text-left align-middle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
     aria-label={t('openEmployeeCardName', { name: name || t('user') })} aria-haspopup="dialog"
     onPointerDown={event => event.stopPropagation()}
     onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}

@@ -21,6 +21,7 @@ export function TaskCardPeople({ creator, assignee, className, miniMode = false 
             {people.map(({ role, user, name }, index) => (
                 <EmployeeCardTrigger userId={user?.id} name={name} interactive={!miniMode}
                     key={index}
+                    title={`${role}: ${name}`}
                     className={cn(
                         'grid min-w-0 grid-cols-[1.5rem_5.5rem_minmax(0,1fr)] items-center gap-x-2 leading-tight',
                         miniMode ? 'text-xs' : 'text-[11px]',

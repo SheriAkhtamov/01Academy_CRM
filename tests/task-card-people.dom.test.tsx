@@ -7,6 +7,7 @@ import { TaskCardPeople } from '../client/src/components/ux/board/TaskCardPeople
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
 import { i18n } from '../client/src/lib/i18n';
 import type { TaskSummary, UserMini } from '../client/src/lib/boardTypes';
+import { EmployeeCardContext } from '../client/src/features/employees/employee-card-context';
 
 const author: UserMini = { id: 7, fullName: 'Anna Karimova', position: null, module: 'sales' };
 const assignee: UserMini = { id: 8, fullName: 'Sheri Akhtamov', position: null, module: 'administration' };
@@ -34,7 +35,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const renderCard = (overrides: Partial<TaskSummary> = {}, onClick = vi.fn(), onPointerDown = vi.fn()) => {
-  render(<TooltipProvider><TaskCard task={task(overrides)} onClick={onClick} dragProps={{ 'aria-roledescription': 'draggable', onPointerDown }} /></TooltipProvider>);
+  render(<EmployeeCardContext.Provider value={vi.fn()}><TooltipProvider><TaskCard task={task(overrides)} onClick={onClick} dragProps={{ 'aria-roledescription': 'draggable', onPointerDown }} /></TooltipProvider></EmployeeCardContext.Provider>);
   return { card: screen.getByText('Prepare contract').closest('button')!, onClick, onPointerDown };
 };
 

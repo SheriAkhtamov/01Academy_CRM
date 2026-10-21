@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { UnreadTaskCommentDot } from './UnreadTaskCommentDot';
 import { TaskCardPeople } from './TaskCardPeople';
+import { NestedControlContext } from '@/lib/nested-control-context';
 import {
     PRIORITY_META,
     TASK_COLOR_META,
@@ -103,7 +104,7 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                         ) : null}
                     </div>
                 ) : null}
-                <TaskCardPeople creator={task.creator} assignee={task.assignee} />
+                <NestedControlContext.Provider value={true}><TaskCardPeople creator={task.creator} assignee={task.assignee} /></NestedControlContext.Provider>
             </div>
         </button>
     );

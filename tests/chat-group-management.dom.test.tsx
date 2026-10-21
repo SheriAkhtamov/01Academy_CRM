@@ -72,7 +72,7 @@ it('opens the roster from the group title and shows participant and message phot
   const roster = within(dialog).getByRole('list', { name: i18n.t('chatGroupParticipants') });
   expect(within(roster).getByText('Me')).toBeTruthy(); expect(within(roster).getByText('Alice')).toBeTruthy();
   expect(within(roster).getByText('Teacher')).toBeTruthy();
-  expect((await within(roster).findByRole('img', { name: 'Alice' })).getAttribute('src')).toBe(avatarUrl);
+  await waitFor(() => expect(within(roster).getByText('Alice').closest('li')?.querySelector('img')?.getAttribute('src')).toBe(avatarUrl));
   expect(within(dialog).getByText(i18n.t('chatGroupOwner'))).toBeTruthy();
 });
 

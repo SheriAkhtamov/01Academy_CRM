@@ -19,11 +19,12 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
   const client = useQueryClient();
   const [removing, setRemoving] = useState<LessonStaffTeacher | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const staff = useQuery({ queryKey: lessonStaffQueryKey(lessonId), queryFn: () => lessonStaffApi.get(lessonId) });
+  const staff = useQuery({ queryKey: lessonStaffQueryKey(lessonId), queryFn: () => lessonStaffApi.get(lessonId), staleTime: 0 });
   const mutation = useMutation({
     mutationFn: ({ teacherId, remove }: { teacherId: number; remove: boolean }) => (
       remove ? lessonStaffApi.remove(lessonId, teacherId) : lessonStaffApi.add(lessonId, teacherId)
     ),
+    onMutate: () => client.cancelQueries({ queryKey: lessonStaffQueryKey(lessonId) }),
     onSuccess: data => {
       client.setQueryData(lessonStaffQueryKey(lessonId), data);
       setRemoving(null);

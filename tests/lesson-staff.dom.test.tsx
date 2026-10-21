@@ -81,6 +81,16 @@ it('confirms removing an assistant and retains the assignment on cancel', async 
   expect(screen.getByText(main.fullName)).toBeTruthy();
 });
 
+it('refreshes colleague assignments when reopening with a warm application cache', async () => {
+  const view = mount();
+  await screen.findByText(main.fullName);
+  view.unmount();
+  staff = { ...staff, assistants: [assistants[1]] };
+  mount();
+  expect(await screen.findByText(assistants[1].fullName)).toBeTruthy();
+  expect(api.get).toHaveBeenCalledTimes(2);
+});
+
 it('keeps a failed removal in its confirmation and allows retry', async () => {
   staff = { ...staff, assistants: [assistants[0]] };
   api.remove.mockRejectedValueOnce(new Error(i18n.t('lessonStaffSaveFailed')));

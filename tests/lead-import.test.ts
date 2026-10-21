@@ -12,6 +12,7 @@ import {
   buildLeadImportComment,
   importLeadRecords,
   normalizeLeadImportPhone,
+  leadImportSource,
 } from '../server/services/lead-import';
 
 describe('lead import normalization', () => {
@@ -23,6 +24,25 @@ describe('lead import normalization', () => {
     expect(normalizeLeadImportPhone('p:+998 90 123 45 67')).toBe('+998901234567');
     expect(normalizeLeadImportPhone('90 123 45 67')).toBe('+998901234567');
     expect(normalizeLeadImportPhone('+99338036603')).toBe('+99338036603');
+  });
+
+  it.each(['fb', 'facebook', 'FACEBOOK'])('classifies %s as Facebook without changing Instagram sources', async (platform) => {
+    expect(leadImportSource(platform)).toEqual({
+      code: 'meta_lead_ads_facebook', name: 'Meta Lead Ads · Facebook', channel: 'facebook',
+    });
+    const query = vi.fn(async (sql: string, _params?: unknown[]) => {
+      if (sql.includes('RETURNING id') && sql.includes('academy_lead_sources')) return { rows: [{ id: 9 }], rowCount: 1 };
+      if (sql.includes('FROM academy_integration_funnel_settings')) return { rows: [{ id: 3 }], rowCount: 1 };
+      if (sql.includes('INSERT INTO academy_leads')) return { rows: [{ id: 42 }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const pool = { connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }) } as any;
+    await importLeadRecords(pool, [{ externalId: 'fb-123', phone: '+998901234567', platform }], { provider: 'meta_lead_ads_live' });
+    const source = query.mock.calls.find(([sql]) => sql.includes('INSERT INTO academy_lead_sources'));
+    expect(source?.[1]).toEqual(['meta_lead_ads_facebook', 'Meta Lead Ads · Facebook', 'facebook']);
+    const lead = query.mock.calls.find(([sql]) => sql.includes('INSERT INTO academy_leads'));
+    expect(lead?.[1]?.[7]).toBe('facebook');
+    expect(leadImportSource('ig').channel).toBe('instagram');
   });
 
   it('rejects malformed Uzbekistan and test phone values', () => {

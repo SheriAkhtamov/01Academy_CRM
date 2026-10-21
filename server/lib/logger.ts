@@ -2,9 +2,9 @@ import winston from 'winston';
 import fs from 'fs';
 import path from 'path';
 import { isProductionEnvironment } from '../config';
+import { redactLogValue } from './log-redaction';
 
 const logsDir = path.resolve(process.cwd(), 'logs');
-const SENSITIVE_KEY = /(?:authorization|cookie|credential|password|passwd|secret|token|api[_-]?key|auth[_-]?key)/i;
 const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
 
 if (!fs.existsSync(logsDir)) {
@@ -20,44 +20,9 @@ try {
   // Runtime logging still works when a bind-mounted directory disallows chmod.
 }
 
-const sanitizeString = (value: string) => value
-  .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
-  .replace(
-    /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^:\s/"']+:)[^@\s/"']+(@)/gi,
-    '$1[REDACTED]$2',
-  )
-  .replace(
-    /([?&](?:access_token|auth_key|client_secret|code|password|secret|token)=)[^&\s]+/gi,
-    '$1[REDACTED]',
-  );
-
-const redactValue = (
-  value: unknown,
-  key = '',
-  depth = 0,
-  seen = new WeakSet<object>(),
-): unknown => {
-  if (SENSITIVE_KEY.test(key)) return '[REDACTED]';
-  if (typeof value === 'string') return sanitizeString(value);
-  if (value === null || typeof value !== 'object' || depth >= 6) return value;
-  if (seen.has(value)) return '[CIRCULAR]';
-  seen.add(value);
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactValue(entry, '', depth + 1, seen));
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([entryKey, entryValue]) => [
-      entryKey,
-      redactValue(entryValue, entryKey, depth + 1, seen),
-    ]),
-  );
-};
-
 const redactSecrets = winston.format((info) => {
   for (const key of Object.keys(info)) {
-    info[key] = redactValue(info[key], key);
+    info[key] = redactLogValue(info[key], key);
   }
   return info;
 });

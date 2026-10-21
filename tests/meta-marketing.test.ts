@@ -312,8 +312,8 @@ describe('Meta CRM stage events', () => {
   });
 
   it('surfaces the actionable half of a Meta error, not just "Invalid parameter"', () => {
-    const service = read('../server/services/meta-marketing.ts');
-    expect(service).toContain('cleanText(error.error_user_msg, 900)');
+    const service = read('../server/services/meta-graph.ts');
+    expect(service).toContain('error.error_user_msg');
   });
 
   it('keeps arbitrary sales labels out of integration conversion configuration', () => {

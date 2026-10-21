@@ -86,6 +86,9 @@ export const startScheduler = () => {
   cron.schedule("*/5 * * * *", async () => {
     try {
       const result = await syncRecentMetaLeadAds(24);
+      if (!result.skipped) logger.info('[scheduler] Meta Lead Ads fallback sync completed', {
+        forms: result.forms, failedForms: result.failedForms, records: result.records, summary: result.summary,
+      });
       const imported = result.summary.created + result.summary.merged + result.summary.mergedArchived;
       if (!result.skipped && imported > 0) {
         logger.info(`[scheduler] recovered ${imported} Meta Lead Ads submissions`);

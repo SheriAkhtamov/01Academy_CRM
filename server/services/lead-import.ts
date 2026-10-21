@@ -58,6 +58,17 @@ type LeadImportOptions = {
 
 const text = (value: unknown) => String(value ?? '').trim();
 
+export const leadImportSource = (platform: unknown, options: Pick<LeadImportOptions, 'sourceCode' | 'sourceName'> = {}) => {
+  const channel = /^(fb|facebook)$/i.test(text(platform)) ? 'facebook' : 'instagram';
+  const code = options.sourceCode ?? 'meta_lead_ads';
+  const name = options.sourceName ?? 'Meta Lead Ads';
+  return {
+    channel,
+    code: channel === 'facebook' ? `${code}_facebook` : code,
+    name: channel === 'facebook' ? `${name} · Facebook` : name,
+  };
+};
+
 export const normalizeLeadImportPhone = (value: unknown): string | null => {
   const raw = text(value).replace(/^p:/i, '').trim();
   let digits = raw.replace(/\D/g, '');
@@ -216,20 +227,7 @@ export const importLeadRecords = async (
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`lead-import:${provider}`]);
-    const source = await client.query<{ id: number }>(
-      `INSERT INTO academy_lead_sources
-         (code, name, channel, is_system, is_active, updated_at)
-       VALUES ($1, $2, 'instagram', true, true, NOW())
-       ON CONFLICT (code) DO UPDATE
-       SET name = EXCLUDED.name,
-           channel = EXCLUDED.channel,
-           is_system = true,
-           is_active = true,
-           updated_at = NOW()
-       RETURNING id`,
-      [options.sourceCode ?? 'meta_lead_ads', options.sourceName ?? 'Meta Lead Ads'],
-    );
-    const sourceId = source.rows[0].id;
+    const sourceIds = new Map<string, number>();
     const funnelId = await resolveLeadFunnelId(client, 'meta');
 
     for (const record of records) {
@@ -283,6 +281,22 @@ export const importLeadRecords = async (
       let matchedLead = phone ? await findLeadByPhone(client, phone) : null;
       let outcome: 'created' | 'merged' | 'merged_archived';
       if (!matchedLead) {
+        const source = leadImportSource(record.platform, options);
+        let sourceId = sourceIds.get(source.code);
+        if (sourceId === undefined) {
+          const result = await client.query<{ id: number }>(
+            `INSERT INTO academy_lead_sources
+               (code, name, channel, is_system, is_active, updated_at)
+             VALUES ($1, $2, $3, true, true, NOW())
+             ON CONFLICT (code) DO UPDATE
+             SET name = EXCLUDED.name, channel = EXCLUDED.channel,
+                 is_system = true, is_active = true, updated_at = NOW()
+             RETURNING id`,
+            [source.code, source.name, source.channel],
+          );
+          sourceId = result.rows[0].id;
+          sourceIds.set(source.code, sourceId);
+        }
         const contactName = text(record.contactName)
           || (phone ? `Новый контакт ${phone}` : 'Новый контакт');
         const created = await client.query<{ id: number }>(
@@ -290,9 +304,9 @@ export const importLeadRecords = async (
              contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
              language, languages, comment, first_contact_channel, created_at, updated_at
           )
-           VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), '', ARRAY[]::text[], $6, 'instagram', $7, NOW())
+           VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), '', ARRAY[]::text[], $6, $8, $7, NOW())
            RETURNING id`,
-          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment || null, commentCreatedAt],
+          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment || null, commentCreatedAt, source.channel],
         );
         matchedLead = { id: created.rows[0].id, isArchived: false };
         await client.query(

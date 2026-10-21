@@ -17,6 +17,7 @@ try {
     ? await importMetaLeadAdsByIds(leadgenIds)
     : await importHistoricalMetaLeadAds();
   console.log(JSON.stringify(result));
+  if ('failedForms' in result && result.failedForms > 0) process.exitCode = 1;
 } finally {
   await pool.end();
 }

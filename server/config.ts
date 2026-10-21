@@ -72,6 +72,8 @@ export interface AppConfig {
       webhookAppSecret?: string;
       leadWebhookVerifyToken?: string;
       adAccountId?: string;
+      adAccountIds?: string[];
+      marketingPageId?: string;
       businessId?: string;
       datasetId?: string;
       pageId?: string;
@@ -397,6 +399,17 @@ export const validateConfig = (config: AppConfig) => {
   }
   if (metaAds?.apiVersion && !/^v\d+\.\d+$/.test(metaAds.apiVersion.trim())) {
     throw new Error('integrations.metaAds.apiVersion must look like v25.0');
+  }
+  if (metaAds?.adAccountIds !== undefined && (
+    !Array.isArray(metaAds.adAccountIds) || metaAds.adAccountIds.length > 20
+    || metaAds.adAccountIds.some((id) => typeof id !== 'string' || !/^(?:act_)?\d{5,30}$/.test(id.trim()))
+  )) {
+    throw new Error('integrations.metaAds.adAccountIds must contain at most 20 numeric account IDs');
+  }
+  if (metaAds?.marketingPageId !== undefined && (
+    typeof metaAds.marketingPageId !== 'string' || !/^\d{5,30}$/.test(metaAds.marketingPageId.trim())
+  )) {
+    throw new Error('integrations.metaAds.marketingPageId must be a numeric Page ID');
   }
   if (metaAds?.usdToUzsRate !== undefined) {
     const rate = Number(metaAds.usdToUzsRate);

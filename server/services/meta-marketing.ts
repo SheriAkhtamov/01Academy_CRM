@@ -3,9 +3,8 @@ import type { PoolClient } from 'pg';
 import { appConfig } from '../config';
 import { pool } from '../db';
 import { logger } from '../lib/logger';
+import { fetchMetaGraphJson } from './meta-graph';
 
-const META_FETCH_TIMEOUT_MS = 20_000;
-const META_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const META_MAX_ATTEMPTS = 8;
 const META_GRAPH_ORIGIN = 'https://graph.facebook.com';
 
@@ -151,10 +150,14 @@ export const extractMetaReferral = (event: unknown): MetaReferral | null => {
 const metaConfig = () => {
   const config = appConfig.integrations?.metaAds;
   const legacyAccessToken = config?.accessToken?.trim() ?? '';
+  const adAccountIds = [...new Set([config?.adAccountId, ...(config?.adAccountIds ?? [])]
+    .map((id) => id?.trim().replace(/^act_/, '') ?? '').filter(Boolean))];
   return {
     marketingAccessToken: config?.marketingAccessToken?.trim() || legacyAccessToken,
     capiAccessToken: config?.capiAccessToken?.trim() || legacyAccessToken,
     adAccountId: config?.adAccountId?.trim().replace(/^act_/, '') ?? '',
+    adAccountIds,
+    marketingPageId: config?.marketingPageId?.trim() ?? '',
     businessId: config?.businessId?.trim() ?? '',
     datasetId: config?.datasetId?.trim() ?? '',
     pageId: config?.pageId?.trim() ?? '',
@@ -168,10 +171,11 @@ const metaConfig = () => {
 export const getMetaMarketingIntegrationConfig = () => {
   const config = metaConfig();
   return {
-    attributionConfigured: Boolean(config.marketingAccessToken && config.adAccountId),
+    attributionConfigured: Boolean(config.marketingAccessToken && config.adAccountIds.length),
     capiConfigured: Boolean(config.capiAccessToken && config.datasetId),
     accessTokenConfigured: Boolean(config.marketingAccessToken || config.capiAccessToken),
     adAccountId: config.adAccountId || null,
+    adAccountIds: config.adAccountIds,
     businessId: config.businessId || null,
     datasetId: config.datasetId || null,
     pageId: config.pageId || null,
@@ -199,44 +203,7 @@ const fetchMetaJson = async <T>(
 ): Promise<T> => {
   const config = metaConfig();
   const url = new URL(`${META_GRAPH_ORIGIN}/${config.apiVersion}/${path.replace(/^\/+/, '')}`);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), META_FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      ...init,
-      redirect: 'error',
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init.headers ?? {}),
-      },
-    });
-    const body = await response.text();
-    if (Buffer.byteLength(body, 'utf8') > META_MAX_RESPONSE_BYTES) {
-      throw new Error('Meta API response is too large');
-    }
-    let parsed: any = {};
-    if (body) {
-      try {
-        parsed = JSON.parse(body);
-      } catch {
-        throw new Error('Meta API returned invalid JSON');
-      }
-    }
-    if (!response.ok || parsed?.error) {
-      const error = parsed?.error ?? {};
-      const message = [
-        cleanText(error.message, 500) ?? `Meta API request failed (${response.status})`,
-        cleanText(error.error_user_msg, 900),
-      ].filter(Boolean).join(' — ');
-      throw new Error(message);
-    }
-    return parsed as T;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchMetaGraphJson<T>(url, accessToken, init);
 };
 
 const firstText = (...values: unknown[]) => {
@@ -448,6 +415,7 @@ const enrichMetaAttribution = async (row: MetaAttributionRow) => {
 
 const META_AD_CATALOG_FIELDS = [
   'id',
+  'account_id',
   'name',
   'effective_status',
   'created_time',
@@ -498,9 +466,8 @@ export const mapMetaAdToCatalogRow = (ad: JsonObject) => {
  * Pulls every ad in the account into `meta_ads`. Without it the marketing table can
  * only ever list ads that already produced a lead, which hides the ones that flopped.
  */
-export const syncMetaAdCatalog = async () => {
+const syncMetaAdCatalogForAccount = async (adAccountId: string) => {
   const config = metaConfig();
-  if (!config.marketingAccessToken || !config.adAccountId) return { synced: 0, skipped: true };
 
   const visitedCursors = new Set<string>();
   let after: string | null = null;
@@ -510,11 +477,12 @@ export const syncMetaAdCatalog = async () => {
     const params = new URLSearchParams({ fields: META_AD_CATALOG_FIELDS, limit: '100' });
     if (after) params.set('after', after);
     const response = await fetchMetaJson<JsonObject>(
-      `act_${encodeURIComponent(config.adAccountId)}/ads?${params.toString()}`,
+      `act_${encodeURIComponent(adAccountId)}/ads?${params.toString()}`,
     );
     const rows = Array.isArray(response.data) ? response.data : [];
     for (const raw of rows) {
       if (!isPlainObject(raw)) continue;
+      if (config.marketingPageId && metaAdPageId(raw) !== config.marketingPageId) continue;
       const ad = mapMetaAdToCatalogRow(raw);
       if (!ad.adId) continue;
       await pool.query(
@@ -547,7 +515,7 @@ export const syncMetaAdCatalog = async () => {
           ad.adId, ad.adName, ad.adsetId, ad.adsetName, ad.campaignId, ad.campaignName,
           ad.creativeId, ad.creativeName, ad.creativeTitle, ad.creativeBody, ad.mediaType,
           ad.hookName, ad.thumbnailUrl, ad.sourceUrl, ad.effectiveStatus, ad.adCreatedTime,
-          JSON.stringify(raw),
+          JSON.stringify({ ...raw, account_id: adAccountId }),
         ],
       );
       synced += 1;
@@ -560,9 +528,36 @@ export const syncMetaAdCatalog = async () => {
     after = nextCursor;
   }
 
-  logger.info('Meta ad catalog synced', { synced });
-  return { synced, skipped: false };
+  logger.info('Meta ad catalog synced', { adAccountId, synced });
+  return synced;
 };
+
+const metaAdPageId = (ad: JsonObject) => cleanText(
+  ad.creative?.object_story_spec?.page_id
+    ?? ad.creative?.effective_object_story_id?.split('_')[0]
+    ?? ad.creative?.object_story_id?.split('_')[0],
+  120,
+);
+
+const syncMetaAccounts = async (operation: string, sync: (accountId: string) => Promise<number>) => {
+  const config = metaConfig();
+  if (!config.marketingAccessToken || !config.adAccountIds.length) {
+    return { synced: 0, skipped: true, failedAccounts: [] as string[] };
+  }
+  let synced = 0;
+  const failedAccounts: string[] = [];
+  for (const adAccountId of config.adAccountIds) {
+    try {
+      synced += await sync(adAccountId);
+    } catch (error) {
+      failedAccounts.push(adAccountId);
+      logger.error('Meta account sync failed', { operation, adAccountId, error });
+    }
+  }
+  return { synced, skipped: false, failedAccounts };
+};
+
+export const syncMetaAdCatalog = () => syncMetaAccounts('catalog', syncMetaAdCatalogForAccount);
 
 const META_INSIGHTS_MAX_PAGES = 200;
 const META_INSIGHTS_DEFAULT_DAYS = 14;
@@ -584,9 +579,19 @@ const insightsSpend = (value: unknown) => {
  * Daily spend per ad. Stored per day so any reporting range sums locally instead of
  * refetching. Meta keeps adjusting recent days, hence the rolling re-sync window.
  */
-export const syncMetaAdInsights = async (days = META_INSIGHTS_DEFAULT_DAYS) => {
+const syncMetaAdInsightsForAccount = async (adAccountId: string, days: number) => {
   const config = metaConfig();
-  if (!config.marketingAccessToken || !config.adAccountId) return { synced: 0, skipped: true };
+  // Shared agency accounts can contain unrelated brands. Only ads in the
+  // explicitly selected Page's catalog may contribute spend to this CRM.
+  const scopedAds = config.marketingPageId ? new Set((await pool.query<{ ad_id: string }>(
+    `SELECT ad_id FROM meta_ads
+     WHERE raw_payload->>'account_id' = $1
+       AND COALESCE(raw_payload#>>'{creative,object_story_spec,page_id}',
+         split_part(raw_payload#>>'{creative,effective_object_story_id}', '_', 1),
+         split_part(raw_payload#>>'{creative,object_story_id}', '_', 1)) = $2`,
+    [adAccountId, config.marketingPageId],
+  )).rows.map((row) => row.ad_id)) : null;
+  if (scopedAds && !scopedAds.size) return 0;
 
   const until = new Date();
   const since = new Date(until.getTime() - Math.max(1, days) * 24 * 60 * 60 * 1000);
@@ -606,7 +611,7 @@ export const syncMetaAdInsights = async (days = META_INSIGHTS_DEFAULT_DAYS) => {
     });
     if (after) params.set('after', after);
     const response = await fetchMetaJson<JsonObject>(
-      `act_${encodeURIComponent(config.adAccountId)}/insights?${params.toString()}`,
+      `act_${encodeURIComponent(adAccountId)}/insights?${params.toString()}`,
     );
 
     const rows = Array.isArray(response.data) ? response.data : [];
@@ -615,6 +620,7 @@ export const syncMetaAdInsights = async (days = META_INSIGHTS_DEFAULT_DAYS) => {
       const adId = cleanText(raw.ad_id, 120);
       const statDate = cleanText(raw.date_start, 20);
       if (!adId || !statDate) continue;
+      if (scopedAds && !scopedAds.has(adId)) continue;
       await pool.query(
         `INSERT INTO meta_ad_insights
            (ad_id, stat_date, spend, impressions, clicks, reach, currency, synced_at, updated_at)
@@ -647,9 +653,13 @@ export const syncMetaAdInsights = async (days = META_INSIGHTS_DEFAULT_DAYS) => {
     after = nextCursor;
   }
 
-  logger.info('Meta ad insights synced', { synced, days });
-  return { synced, skipped: false };
+  logger.info('Meta ad insights synced', { adAccountId, synced, days });
+  return synced;
 };
+
+export const syncMetaAdInsights = (days = META_INSIGHTS_DEFAULT_DAYS) => syncMetaAccounts(
+  'insights', (adAccountId) => syncMetaAdInsightsForAccount(adAccountId, days),
+);
 
 /** First run has nothing stored, so it reaches back far enough to cover past campaigns. */
 export const syncMetaAdInsightsForSchedule = async () => {
@@ -712,7 +722,7 @@ const claimMetaAttributions = async (limit: number): Promise<MetaAttributionRow[
 
 export const processMetaAttributionEnrichment = async (limit = 20) => {
   const config = metaConfig();
-  if (!config.marketingAccessToken || !config.adAccountId) return 0;
+  if (!config.marketingAccessToken || !config.adAccountIds.length) return 0;
   const rows = await claimMetaAttributions(limit);
   for (const row of rows) {
     try {

@@ -12,6 +12,7 @@ const days = Number.isFinite(requestedDays) ? Math.max(1, Math.min(Math.floor(re
 try {
   const catalog = await syncMetaAdCatalog();
   const insights = await syncMetaAdInsights(days);
+  if (catalog.failedAccounts.length || insights.failedAccounts.length) process.exitCode = 1;
   const { rows: summaryRows } = await pool.query(
     `SELECT COUNT(*)::int AS insight_rows,
             COALESCE(SUM(spend), 0)::float8 AS spend,

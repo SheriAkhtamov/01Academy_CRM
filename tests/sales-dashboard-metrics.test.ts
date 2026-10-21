@@ -85,7 +85,6 @@ describe('sales dashboard operational metrics', () => {
   it('lets a counter hand the operator off to the work behind it', () => {
     expect(overviewKpiGrid).toContain('onNavigate(tile.target!)');
     expect(overviewKpiGrid).toContain("t('openInPipeline')");
-    expect(overviewKpiGrid).toContain("t('openInStudents')");
     expect(salesDashboard).toContain('onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}');
   });
 

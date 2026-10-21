@@ -61,7 +61,6 @@ describe('module navigation naming', () => {
         'Архив лидов',
         'Расписание занятий',
         'Группы',
-        'Мои клиенты',
         'Договоры',
         'Входящие',
         'Журнал звонков',
@@ -89,6 +88,7 @@ describe('module navigation naming', () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/sales/contracts');
+    expect(hrefs).not.toContain('/sales/clients');
     expect(hrefs).toContain('/teacher-module/schedule');
     expect(hrefs).toContain('/marketing-module/meta-attribution');
     expect(hrefs).toContain('/marketing-module/meta-events');

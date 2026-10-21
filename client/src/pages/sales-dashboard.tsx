@@ -29,8 +29,6 @@ import type { TranslationKey } from '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import { toast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { EmptyState } from '@/components/ux/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -43,7 +41,6 @@ import {
 } from '@/components/ui/form';
 import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DialogFooter,
@@ -53,7 +50,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { DataTable } from '@/components/ux/DataTable';
 import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadCallDialog } from '@/components/ux/lead/LeadCallDialog';
 import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
@@ -61,7 +57,6 @@ import { leadMatchesFilters } from '@/lib/leadFilters';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
-import { StudentPaymentAmounts } from '@/components/ux/student/StudentPaymentAmounts';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { SalesOverviewPeriodFilter } from '@/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '@/features/sales/useSalesReportingRange';
@@ -83,7 +78,6 @@ import {
   getAssignedModules,
   hasLeadershipAccess,
   LEAD_ARCHIVE_REASONS,
-  TARGET_ATTENDANCE_PERCENT,
 } from '@shared/academy';
 import {
   Archive,
@@ -94,7 +88,7 @@ import {
 import type { LeadTagView } from '@shared/lead-tags';
 import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
-type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule' | 'students';
+type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 type QuickAction = 'payment' | 'call' | 'message';
 
@@ -202,7 +196,6 @@ const SALES_SECTION_PATHS: Record<SalesSection, string> = {
   pipeline: '/sales/pipeline',
   archive: '/sales/archive',
   schedule: '/sales/schedule',
-  students: '/sales/clients',
 };
 
 function ArchiveLeadDialog({
@@ -331,7 +324,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [, setLocation] = useLocation();
   const routeSearch = useSearch();
   const pagePath = SALES_SECTION_PATHS[section];
-  const riskFilter = new URLSearchParams(routeSearch).get('risk');
   const requestedOverviewManagerId = new URLSearchParams(routeSearch).get('manager');
   const requestedSalesFunnelId = new URLSearchParams(routeSearch).get('funnel');
 
@@ -448,24 +440,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!data?.students) return [];
     return data.students;
   }, [data?.students]);
-
-  const studentsForCurrentRisk = useMemo(() => {
-    if (riskFilter === 'overdue') {
-      const now = new Date();
-      return myStudents.filter((student) => student.paymentStatus === 'overdue'
-        || Boolean(student.nextPaymentAt && new Date(student.nextPaymentAt) < now));
-    }
-    if (riskFilter === 'low-attendance') {
-      return myStudents.filter((student) => (
-        student.riskFlags?.includes('attendance_below_70')
-        || (
-          Number(student.attendancePercent || 0) > 0
-          && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT
-        )
-      ));
-    }
-    return myStudents;
-  }, [myStudents, riskFilter]);
 
   const myPayments = useMemo<any[]>(() => {
     if (!data?.payments) return [];
@@ -758,14 +732,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     }
   }, [replaceSalesParams]);
 
-  const openStudent = useCallback((student: Student) => {
-    requestNavigation(() => {
-      setSelectedStudent(student);
-      setStudentSheetOpen(true);
-      replaceSalesParams({ student: String(student.id), lead: null }, { push: true });
-    });
-  }, [replaceSalesParams]);
-
   const handleStudentSheetState = useCallback((open: boolean) => {
     setStudentSheetOpen(open);
     if (!open) {
@@ -905,9 +871,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     pipeline: t(moduleSectionLabelKey('sales', 'pipeline')),
     archive: t(moduleSectionLabelKey('sales', 'archive')),
     schedule: t(moduleSectionLabelKey('sales', 'schedule')),
-    students: isAdministrationModule ? t('allClients') : t('myStudents'),
   };
-  const ownsContentScroll = ['pipeline', 'archive', 'schedule', 'students'].includes(section);
+  const ownsContentScroll = ['pipeline', 'archive', 'schedule'].includes(section);
   return (
     <ModulePage contained={contained} className={contained ? undefined : 'overflow-x-clip'}>
       <PageHeader
@@ -1039,35 +1004,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         />
       ) : null}
 
-      {section === 'students' ? (
-        <StudentsTab
-          t={t}
-          myStudents={studentsForCurrentRisk}
-          dateTime={dateTime}
-          data={data}
-          selectedStudent={selectedStudent}
-          studentSheetOpen={studentSheetOpen}
-          openStudent={openStudent}
-          openLead={openLead}
-          onStudentSheetOpenChange={handleStudentSheetState}
-          onUpdateStudentStatus={isAdministrationModule
-            ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
-            : undefined}
-          onAddStudentGroup={isAdministrationModule
-            ? (id, groupId, isPrimary) => addStudentGroup.mutateAsync({ id, groupId, isPrimary })
-            : undefined}
-          onRemoveStudentGroup={isAdministrationModule
-            ? (id, groupId) => removeStudentGroup.mutateAsync({ id, groupId })
-            : undefined}
-          title={riskFilter === 'overdue'
-            ? ceoCopy.student.overdueStudents
-            : riskFilter === 'low-attendance'
-              ? ceoCopy.student.lowAttendanceStudents
-              : undefined}
-          showManager={isAdministrationModule}
-        />
-      ) : null}
-
       </ModulePageBody>
 
       <ArchiveLeadDialog
@@ -1151,12 +1087,29 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       <AssignLeadToSelfDialog
         open={Boolean(leadClaimAction.lead)}
         leadName={leadClaimAction.lead?.contactName}
-        description={t('leadClaimRequiredDescription')}
         confirmLabel={t('assignToMeAndContinue')}
         isPending={leadClaimAction.isPending}
         confirmDisabled={!user?.id}
         onOpenChange={(nextOpen) => { if (!nextOpen) leadClaimAction.close(); }}
         onConfirm={leadClaimAction.confirm}
+      />
+      <StudentDetailDialog
+        student={myStudents.find(student => student.id === selectedStudent?.id) ?? selectedStudent}
+        open={studentSheetOpen}
+        onOpenChange={handleStudentSheetState}
+        onOpenLead={leadId => openLead(leadId)}
+        onRecordPayment={(leadId, studentId) => openLead(leadId, 'payment', studentId)}
+        onUpdateStatus={isAdministrationModule
+          ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
+          : undefined}
+        onAddGroup={isAdministrationModule
+          ? (id, groupId, isPrimary) => addStudentGroup.mutateAsync({ id, groupId, isPrimary })
+          : undefined}
+        onRemoveGroup={isAdministrationModule
+          ? (id, groupId) => removeStudentGroup.mutateAsync({ id, groupId })
+          : undefined}
+        data={{ groups: data.groups }}
+        dateTime={dateTime}
       />
       <LeadDetailSheet
         leadId={selectedLeadId}
@@ -1189,156 +1142,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     </ModulePage>
   );
 }
-// ---- Sub-components for tabs ----
-
-export function StudentsTab({
-  t,
-  myStudents,
-  dateTime,
-  data,
-  selectedStudent,
-  studentSheetOpen,
-  openStudent,
-  openLead,
-  onStudentSheetOpenChange,
-  onUpdateStudentStatus,
-  onAddStudentGroup,
-  onRemoveStudentGroup,
-  title,
-  showManager,
-}: {
-  t: (key: TranslationKey) => string;
-  myStudents: Student[];
-  dateTime: (v: string | null | undefined) => string;
-  data: any;
-  selectedStudent: Student | null;
-  studentSheetOpen: boolean;
-  openStudent: (student: Student) => void;
-  openLead: (leadId: number, tab?: LeadSheetTab, studentId?: number) => void;
-  onStudentSheetOpenChange: (open: boolean) => void;
-  onUpdateStudentStatus?: (id: number, status: string, exitReason?: string) => Promise<unknown>;
-  onAddStudentGroup?: (id: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
-  onRemoveStudentGroup?: (id: number, groupId: number) => Promise<unknown>;
-  title?: string;
-  showManager: boolean;
-}) {
-  const columns = [
-    {
-      key: 'studentName',
-      header: t('student'),
-      sortable: true,
-      accessor: (student: Student) => student.studentName || student.contactName,
-      render: (student: Student) => (
-        <div>
-          <div className="font-medium text-foreground">{student.studentName || student.contactName}</div>
-          <div className="text-xs text-muted-foreground">{student.phone}</div>
-        </div>
-      ),
-    },
-    {
-      key: 'groupId',
-      header: t('group'),
-      sortable: true,
-      accessor: (student: Student) => student.groupNames?.join(', ') || student.groupName,
-      render: (student: Student) => (
-        <span className="line-clamp-2 text-muted-foreground">
-          {student.groupNames?.join(', ') || student.groupName || t('noGroup')}
-        </span>
-      ),
-    },
-    {
-      key: 'courseId',
-      header: t('course'),
-      sortable: true,
-      accessor: (student: Student) => student.courseName,
-      render: (student: Student) => <span className="text-muted-foreground">{student.courseName || t('noCourse')}</span>,
-    },
-    ...(showManager ? [{
-      key: 'managerName',
-      header: t('manager'),
-      sortable: true,
-      accessor: (student: Student) => student.managerName || t('noData'),
-      render: (student: Student) => <EmployeeIdentity userId={student.managerId} name={student.managerName || t('noData')} className="text-muted-foreground" />,
-    }] : []),
-    {
-      key: 'attendancePercent',
-      header: t('attendanceLabel'),
-      sortable: true,
-      accessor: (student: Student) => student.attendancePercent,
-      render: (student: Student) => (
-        <div className="w-28">
-          <div className="flex justify-between text-xs mb-1">
-            <span className="tabular-nums text-muted-foreground">{student.attendancePercent}%</span>
-          </div>
-          <Progress aria-label={t('attendanceLabel')} value={student.attendancePercent} />
-        </div>
-      ),
-    },
-    {
-      key: 'progressPercent',
-      header: t('progressLabel'),
-      sortable: true,
-      accessor: (student: Student) => student.progressPercent,
-      render: (student: Student) => (
-        <div className="w-28">
-          <div className="flex justify-between text-xs mb-1">
-            <span className="tabular-nums text-muted-foreground">{student.progressPercent}%</span>
-          </div>
-          <Progress aria-label={t('progressLabel')} value={student.progressPercent} />
-        </div>
-      ),
-    },
-    {
-      key: 'paidAmountUzs',
-      header: t('paidOfExpected'),
-      sortable: true,
-      accessor: (student: Student) => student.paidAmountUzs ?? 0,
-      render: (student: Student) => (
-        <StudentPaymentAmounts paidAmountUzs={student.paidAmountUzs} expectedPaymentUzs={student.expectedPaymentUzs} />
-      ),
-    },
-  ];
-
-  return (
-    <div className="h-full min-h-0">
-      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-        {title ? (
-          <CardHeader className="shrink-0 pb-4">
-            <CardTitle>{title}</CardTitle>
-          </CardHeader>
-        ) : null}
-        <CardContent className="min-h-0 flex-1 p-0">
-          <DataTable
-            rootClassName="flex h-full min-h-0 flex-col"
-            className="min-h-0 flex-1 overflow-auto"
-            columns={columns}
-            data={myStudents}
-            keyExtractor={(student: Student) => `student-${student.id}`}
-            emptyState={
-              <div className="p-8">
-                <EmptyState title={t('noClientsYet')} icon={UserCheck} />
-              </div>
-            }
-            onRowClick={openStudent}
-          />
-        </CardContent>
-      </Card>
-      <StudentDetailDialog
-        student={myStudents.find((student) => student.id === selectedStudent?.id) ?? selectedStudent}
-        open={studentSheetOpen}
-        onOpenChange={onStudentSheetOpenChange}
-        onOpenLead={(leadId) => openLead(leadId)}
-        onRecordPayment={(leadId, studentId) => openLead(leadId, 'payment', studentId)}
-        onUpdateStatus={onUpdateStudentStatus}
-        onAddGroup={onAddStudentGroup}
-        onRemoveGroup={onRemoveStudentGroup}
-        data={{ groups: data.groups }}
-        dateTime={dateTime}
-      />
-    </div>
-  );
-}
-
 // ---- Lead Form Component ----
 
 export function LeadForm({

@@ -53,7 +53,7 @@ describe('search destinations respect assigned modules', () => {
   it('keeps sales links available for an administrator with the sales module', async () => {
     const result = await search(['administration', 'sales']);
     expect(result.find((row) => row.entityType === 'lead')?.href).toBe('/sales/pipeline?lead=1');
-    expect(result.find((row) => row.entityType === 'student')?.href).toBe('/sales/clients?student=2');
+    expect(result.find((row) => row.entityType === 'student')?.href).toBe('/sales?student=2');
     expect(result.some((row) => row.href.startsWith('/teacher-module'))).toBe(false);
   });
 });

@@ -869,7 +869,7 @@ router.get('/search', async (req, res) => {
 
     if (isLeadershipActor) {
       await pushLeads(`TRUE`, [], '/sales/pipeline');
-      await pushStudents(`TRUE`, [], '/sales/clients');
+      await pushStudents(`TRUE`, [], '/sales');
       await pushGroups(`TRUE`, [], '/teacher-module/groups');
       await pushCourses('/teacher-module/groups');
       if (remaining('source') > 0 && assignedModules.includes('marketing')) {
@@ -910,7 +910,7 @@ router.get('/search', async (req, res) => {
     } else {
       if (assignedModules.includes('sales')) {
         await pushLeads(`(l.manager_id = $1 OR l.manager_id IS NULL)`, [req.user!.id], '/sales/pipeline');
-        await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales/clients');
+        await pushStudents(`st.manager_id = $1`, [req.user!.id], '/sales');
       }
       if (assignedModules.includes('teacher')) {
         const teacherId = await resolveTeacherId(req.user!.id);

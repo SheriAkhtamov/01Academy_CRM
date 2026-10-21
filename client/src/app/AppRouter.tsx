@@ -180,11 +180,6 @@ export function AppRouter() {
         <Route path="/sales/groups" children={
           <ModuleGuard module="sales"><GroupsPage /></ModuleGuard>
         } />
-        <Route path="/sales/clients" children={
-          <ModuleGuard module="sales">
-            <SalesDashboard section="students" />
-          </ModuleGuard>
-        } />
         <Route path="/sales/tasks" children={<Redirect to="/tasks" />} />
         <Route path="/sales/contracts" children={
           <ModuleGuard module="sales"><ContractsPage /></ModuleGuard>

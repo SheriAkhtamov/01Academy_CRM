@@ -66,11 +66,21 @@ function ContractsDirectoryContent({ accountId, enabled }: { accountId: number; 
           </tr></thead>
           <tbody className="divide-y">{rows.map(({ contract, student }) => {
             const name = student.studentName || student.contactName;
-            return <tr key={contract.id} className="align-middle hover:bg-muted/20">
+            return <tr key={contract.id} role="button" tabIndex={0} aria-haspopup="dialog"
+              aria-label={t('studentContractsOpenStudent').replace('{name}', name)}
+              className="cursor-pointer align-middle hover:bg-muted/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              onClick={event => {
+                if (event.target instanceof Element && event.target.closest('a')) return;
+                setSelected(student);
+              }}
+              onKeyDown={event => {
+                if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                setSelected(student);
+              }}>
               <td className="max-w-64 break-words px-4 py-3 font-medium">{contract.number}</td>
               <td className="max-w-72 px-4 py-3">
-                <Button variant="link" className="h-auto min-h-11 justify-start whitespace-normal p-0 text-left"
-                  aria-label={t('studentContractsOpenStudent').replace('{name}', name)} onClick={() => setSelected(student)}>{name}</Button>
+                <span className="font-medium">{name}</span>
               </td>
               <td className="whitespace-nowrap px-4 py-3">{student.phone || t('noData')}</td>
               <td className="whitespace-nowrap px-4 py-3">{dateTime(contract.createdAt)}</td>
@@ -87,7 +97,7 @@ function ContractsDirectoryContent({ accountId, enabled }: { accountId: number; 
         onPageChange={page => updateQuery({ page })} onPageSizeChange={pageSize => updateQuery({ pageSize, page: 1 })} />
     </div>}
 
-    <StudentDetailDialog student={selected} open={enabled && Boolean(selected)} dateTime={dateTime}
+    <StudentDetailDialog student={selected} open={enabled && Boolean(selected)} initialTab="contract" dateTime={dateTime}
       onOpenChange={open => {
         if (open) return;
         setSelected(null);

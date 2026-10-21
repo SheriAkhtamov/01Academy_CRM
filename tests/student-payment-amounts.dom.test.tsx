@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { i18n } from '../client/src/lib/i18n';
 import { StudentPaymentAmounts } from '../client/src/components/ux/student/StudentPaymentAmounts';
-import { StudentsTab } from '../client/src/pages/sales-dashboard';
-
-vi.mock('../client/src/components/ux/StudentDetailDialog', () => ({ StudentDetailDialog: () => null }));
 
 beforeEach(() => { i18n.setLanguage('ru'); });
 afterEach(cleanup);
@@ -33,31 +30,4 @@ describe('student payment amounts', () => {
     expect(view.container.textContent).toBe('300,000 of 1,000,000 UZS');
   });
 
-  it('uses individual amounts in the client roster even when the old status says paid', () => {
-    const openStudent = vi.fn();
-    const students = [
-      { id: 1, studentName: 'First child', contactName: 'Parent', phone: null, status: 'trial',
-        attendancePercent: 0, progressPercent: 0, createdAt: '2026-10-05', paymentStatus: 'paid',
-        nextPaymentAt: '2020-01-01', paidAmountUzs: 0, expectedPaymentUzs: 1_000_000 },
-      { id: 2, studentName: 'Second child', contactName: 'Parent', phone: null, status: 'studying',
-        attendancePercent: 0, progressPercent: 0, createdAt: '2026-10-05', paymentStatus: 'pending',
-        paidAmountUzs: 300_000, expectedPaymentUzs: 500_000 },
-    ];
-    render(<StudentsTab t={(key) => i18n.t(key)} myStudents={students} dateTime={(value) => value ?? ''}
-      data={{ groups: [] }} selectedStudent={null} studentSheetOpen={false} openStudent={openStudent}
-      openLead={vi.fn()} onStudentSheetOpenChange={vi.fn()} title={i18n.t('allClients')} showManager />);
-    const first = screen.getByText('First child').closest('tr')!;
-    const second = screen.getByText('Second child').closest('tr')!;
-    expect(normalizedText(first.textContent)).toContain('0 из 1 000 000 сум');
-    expect(normalizedText(second.textContent)).toContain('300 000 из 500 000 сум');
-    expect(screen.queryByText(i18n.t('paymentStatusPaid'))).toBeNull();
-    const sortButton = screen.getByRole('button', { name: /Оплачено \/ ожидается/ });
-    expect(sortButton).toBeTruthy();
-    fireEvent.click(within(first).getByText(/0 из/));
-    expect(openStudent).toHaveBeenCalledWith(students[0]);
-    fireEvent.click(sortButton);
-    expect(Array.from(screen.getByRole('table').querySelectorAll('tbody tr')).map((row) => row.textContent)).toEqual([first.textContent, second.textContent]);
-    fireEvent.click(sortButton);
-    expect(Array.from(screen.getByRole('table').querySelectorAll('tbody tr')).map((row) => row.textContent)).toEqual([second.textContent, first.textContent]);
-  });
 });

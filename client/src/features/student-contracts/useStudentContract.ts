@@ -33,10 +33,12 @@ export function useStudentContract({
   studentId,
   leadId,
   open,
+  enabled = true,
 }: {
   studentId?: number;
   leadId: number;
   open: boolean;
+  enabled?: boolean;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -81,7 +83,7 @@ export function useStudentContract({
       if (activeIdentity.current === identity) setDraftRecord({ identity, id: null });
       return null;
     },
-    enabled: open && shouldLoad,
+    enabled: open && enabled && shouldLoad,
     staleTime: 0,
     retry: false,
   });

@@ -44,7 +44,7 @@ export interface SalesOverviewStats {
 }
 
 /** Where a KPI tile hands the operator off to. */
-export type SalesOverviewNavTarget = 'pipeline' | 'students';
+export type SalesOverviewNavTarget = 'pipeline';
 
 export interface SalesOverviewPayment {
   amountUzs?: number | string | null;

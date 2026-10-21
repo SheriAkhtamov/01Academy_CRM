@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, BookOpen, CheckCircle2, CreditCard, FolderOpen, Phone, UserRound, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, BookOpen, CheckCircle2, CreditCard, FileSignature, FolderOpen, Phone, UserRound, ShieldCheck } from 'lucide-react';
 import type { StudentProfileStudent } from '@shared/contracts/student-profile';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -17,11 +17,12 @@ import { StudentPortfolioTab } from './student/StudentPortfolioTab';
 import { StudentLearningSection, StudentAttendanceSection, StudentPaymentsSection } from './student/StudentProfileSections';
 import { useStudentManagement, type StudentManagementProps } from './student/useStudentManagement';
 import { useAuth } from '@/hooks/useAuth';
-import { hasLeadershipAccess } from '@shared/academy';
+import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
 import { StudentPortalAccessTab } from '@/features/portal-access/StudentPortalAccessTab';
+import { StudentContractTab } from '@/features/student-contracts/StudentContractTab';
 
-type StudentDetailTab = 'learning' | 'attendance' | 'portfolio' | 'payments' | 'access';
+type StudentDetailTab = 'learning' | 'attendance' | 'portfolio' | 'payments' | 'contract' | 'access';
 type StudentDetailDialogProps = Pick<StudentManagementProps, 'onUpdateStatus' | 'onAddGroup' | 'onRemoveGroup'> & {
   student: StudentProfileStudent | null;
   open: boolean;
@@ -50,12 +51,16 @@ export function StudentDetailDialog({
 }: StudentDetailDialogProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const canManageContract = context !== 'teacher' && getAssignedModules(user).some(module =>
+    ['administration', 'sales', 'marketing'].includes(module));
+  const initialVisibleTab = initialTab === 'contract' && !canManageContract ? 'learning' : initialTab;
   const queryClient = useQueryClient();
   const onlinePbxCall = useOnlinePbxCall();
   const [heldStudent, setHeldStudent] = useState(student);
-  const [activeTab, setActiveTab] = useState<StudentDetailTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<StudentDetailTab>(initialVisibleTab);
   const [projectDraft, setProjectDraft] = useState({ dirty: false, pending: false });
   const [accessDraft, setAccessDraft] = useState({ dirty: false, pending: false });
+  const [contractDraft, setContractDraft] = useState({ dirty: false, pending: false });
   const selectedStudent = student ?? heldStudent;
   const studentId = selectedStudent?.id;
 
@@ -90,8 +95,8 @@ export function StudentDetailDialog({
   const guard = useUnsavedChangesGuard({
     open,
     onOpenChange,
-    isDirty: management.isDirty || projectDraft.dirty || accessDraft.dirty,
-    isPending: management.isPending || projectDraft.pending || accessDraft.pending,
+    isDirty: management.isDirty || projectDraft.dirty || accessDraft.dirty || contractDraft.dirty,
+    isPending: management.isPending || projectDraft.pending || accessDraft.pending || contractDraft.pending,
   });
   const onProjectDraftChange = useCallback(
     (dirty: boolean, pending: boolean) =>
@@ -107,14 +112,19 @@ export function StudentDetailDialog({
       ),
     [],
   );
+  const onContractDraftChange = useCallback(
+    (dirty: boolean, pending: boolean) =>
+      setContractDraft(current => current.dirty === dirty && current.pending === pending ? current : { dirty, pending }),
+    [],
+  );
 
   useEffect(() => {
     if (student) setHeldStudent(student);
   }, [student]);
   useEffect(() => {
-    if (open) setActiveTab(initialTab);
+    if (open) setActiveTab(initialVisibleTab);
     setProjectDraft({ dirty: false, pending: false });
-  }, [open, initialTab, studentId]);
+  }, [open, initialVisibleTab, studentId]);
 
   if (!currentStudent) return null;
 
@@ -151,8 +161,10 @@ export function StudentDetailDialog({
     { value: 'attendance', label: t('attendanceTab'), icon: CheckCircle2 },
     { value: 'portfolio', label: t('portfolio'), icon: FolderOpen },
     { value: 'payments', label: t('navPayments'), icon: CreditCard },
+    { value: 'contract', label: t('studentContract'), icon: FileSignature },
   ] as const;
-  const visibleTabs = context === 'teacher' ? tabs.filter((tab) => tab.value !== 'payments') : tabs;
+  const visibleTabs = tabs.filter(tab => (context !== 'teacher' || tab.value !== 'payments')
+    && (canManageContract || tab.value !== 'contract'));
   const canManageAccess = context !== 'teacher' && Boolean(user) && capabilities.data?.canManageAccess === true;
   const showAccess = canManageAccess && capabilities.data?.portalEnabled;
 
@@ -232,17 +244,15 @@ export function StudentDetailDialog({
           onValueChange={(value) => setActiveTab(value as StudentDetailTab)}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="shrink-0 border-b bg-muted/10 px-4 py-2 sm:px-5">
+          <div className="shrink-0 overflow-x-auto border-b bg-muted/10 px-4 py-2 sm:px-5">
             <TabsList
-              className={`grid h-auto w-full gap-1 bg-muted/60 p-0.5 ${
-                context === 'teacher' ? 'grid-cols-3' : showAccess ? 'grid-cols-5' : 'grid-cols-4'
-              }`}
+              className="flex h-auto w-max min-w-full gap-1 bg-muted/60 p-0.5"
             >
               {visibleTabs.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
-                  className="h-7 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
+                  className="h-7 flex-1 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
                 >
                   <Icon className="hidden size-3.5 shrink-0 min-[420px]:block" />
                   {label}
@@ -251,7 +261,7 @@ export function StudentDetailDialog({
               {showAccess ? (
                 <TabsTrigger
                   value="access"
-                  className="h-7 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
+                  className="h-7 flex-1 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
                 >
                   <ShieldCheck className="hidden size-3.5 shrink-0 min-[420px]:block" />
                   {t('lmsStaffAccess')}
@@ -320,6 +330,12 @@ export function StudentDetailDialog({
                   enabled={open}
                   onDraftChange={onAccessDraftChange}
                 />
+              </TabsContent>
+            ) : null}
+            {canManageContract ? (
+              <TabsContent value="contract" className="mt-0" forceMount hidden={activeTab !== 'contract'}>
+                <StudentContractTab key={`${user?.id}:${currentStudent.id}`} studentId={currentStudent.id}
+                  leadId={leadId} open={open} active={activeTab === 'contract'} onDraftChange={onContractDraftChange} />
               </TabsContent>
             ) : null}
           </div>

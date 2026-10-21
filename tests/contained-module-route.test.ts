@@ -7,7 +7,7 @@ describe('isContainedModuleRoute', () => {
     '/sales/pipeline?lead=42',
     '/sales/archive',
     '/sales/schedule',
-    '/sales/clients',
+    '/sales/contracts',
     '/sales/tasks',
     '/sales/messages',
     '/sales/calls',
@@ -43,6 +43,7 @@ describe('isContainedModuleRoute', () => {
 
   it.each([
     '/sales',
+    '/sales/clients',
     '/marketing-module',
     '/finance',
     '/admin',

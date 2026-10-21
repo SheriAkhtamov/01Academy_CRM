@@ -5,7 +5,6 @@ import { useTranslation } from '@/hooks/useTranslation';
 import {
   canAccessAcademyModule,
   hasFinanceAccess,
-  hasLeadershipAccess,
   type AcademyAccessModule,
   type AcademyModule,
 } from '@shared/academy';
@@ -120,9 +119,7 @@ export default function Sidebar({ onClose, isOpen }: { onClose?: () => void; isO
         id: module,
         label: t(definition.nameKey),
         items: definition.items.filter((item) => (!['learning','learning-reports'].includes(item.id) || learningCapabilities?.learningEnabled) && (!['learning-settings','learning-access','learning-representatives'].includes(item.id) || learningCapabilities?.portalEnabled)).map((item) => ({
-          name: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
-            ? 'allClients'
-            : item.labelKey),
+          name: t(item.labelKey),
           href: item.href,
           icon: item.icon,
           ...(module === 'sales' && item.id === 'calls'

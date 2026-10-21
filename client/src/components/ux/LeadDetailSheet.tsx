@@ -1788,7 +1788,7 @@ export function LeadDetailSheet({
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmingSelfClaim ? t('leadAssignmentRequired') : t('confirmLeadTransfer')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmingSelfClaim ? t('leadClaimRequiredDescription') : t('confirmLeadTransferDescription')
+              {confirmingSelfClaim ? lead?.contactName : t('confirmLeadTransferDescription')
                 .replace('{manager}', managers.find((manager) => manager.id === pendingManagerId)?.fullName ?? '')}
             </AlertDialogDescription>
           </AlertDialogHeader>

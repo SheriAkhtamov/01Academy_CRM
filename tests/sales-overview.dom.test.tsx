@@ -167,7 +167,7 @@ describe('unified sales overview', () => {
     mount();
     await screen.findByRole('button', { name: translations.salesAllMetrics.en });
     expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('150000')).toBeTruthy();
-    expect(within(screen.getByRole('button', { name: translations.openInStudents.en })).getByText('2')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByText('2')).toBeTruthy();
     expect(screen.queryByText(translations.paidCustomersForPeriod.en)).toBeNull();
   });
 

@@ -22,7 +22,7 @@ export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange,
       chart: null },
     { title: t('demoStudentsModalTitle'), value: metrics?.demoAttendees, target: undefined, action: onOpenDemoStudents,
       chart: <SalesDailySparkChart points={attendedDaily} title={t('demoStudentsModalTitle')} formatValue={(value) => number.format(value)} kind="bars" compact className="text-cyan-600 dark:text-cyan-400" /> },
-    { title: t('salesPaymentsCount'), value: paidDaily.reduce((sum, point) => sum + point.value, 0), target: 'students' as const, action: undefined,
+    { title: t('salesPaymentsCount'), value: paidDaily.reduce((sum, point) => sum + point.value, 0), target: null, action: undefined,
       chart: <SalesDailySparkChart points={paidDaily} title={t('salesPaymentsCount')} formatValue={(value) => number.format(value)} kind="bars" compact className="text-emerald-600 dark:text-emerald-400" /> },
     { title: t('repeatCallLeads'), value: metrics?.repeatCallLeads, target: null, action: undefined,
       chart: <SalesRepeatCallsChart distribution={metrics?.repeatCallDistribution} /> },
@@ -40,9 +40,7 @@ export function SalesOverviewKpiGrid({ metrics, stats, payments, reportingRange,
       };
       const ariaLabel = tile.action
         ? t('demoStudentsModalTitle')
-        : tile.target === 'students'
-          ? t('openInStudents')
-          : t('openInPipeline');
+        : t('openInPipeline');
 
       return <section key={tile.title} className="grid min-w-0 grid-cols-1 items-center gap-3 border-b border-border/40 py-6 min-[420px]:grid-cols-[minmax(85px,0.65fr)_minmax(0,1.4fr)] min-[420px]:gap-5" aria-label={tile.title}>
         {isClickable ? <button type="button" className="group w-full rounded text-left outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring" onClick={handleClick} aria-label={ariaLabel} aria-haspopup={tile.action ? 'dialog' : undefined}>{body}</button> : <div>{body}</div>}

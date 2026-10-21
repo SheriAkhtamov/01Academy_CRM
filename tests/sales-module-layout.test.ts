@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const dataTable = read('../client/src/components/ux/DataTable.tsx');
 const salesDashboard = read('../client/src/pages/sales-dashboard.tsx');
+const archiveTab = read('../client/src/features/sales/ui/ArchiveTab.tsx');
 const messages = read('../client/src/pages/sales/InstagramMessagesPage.tsx');
 
 const clientRoot = fileURLToPath(new URL('../client/src', import.meta.url));
@@ -46,15 +47,8 @@ describe('sales module layout', () => {
   it('keeps the archived lead rows scrollable inside their card', () => {
     expect(dataTable).toContain('rootClassName?: string;');
     expect(dataTable).toContain('<div className={cn(rootClassName)} aria-busy={isLoading}>');
-    expect(salesDashboard).toContain('rootClassName="flex h-full min-h-0 flex-col"');
-    expect(salesDashboard).toContain('className="min-h-0 flex-1 overflow-auto"');
-  });
-
-  it('keeps the client roster scrollable instead of clipping it against the card', () => {
-    const studentsTab = salesDashboard.slice(salesDashboard.indexOf('function StudentsTab('));
-    expect(studentsTab).toContain('rootClassName="flex h-full min-h-0 flex-col"');
-    expect(studentsTab).toContain('className="min-h-0 flex-1 overflow-auto"');
-    expect(studentsTab).not.toContain('className="h-full overflow-auto"');
+    expect(archiveTab).toContain('rootClassName="flex h-full min-h-0 flex-col"');
+    expect(archiveTab).toContain('className="min-h-0 flex-1 overflow-auto"');
   });
 
   it('anchors every height-constrained DataTable to a flex-column root', () => {

@@ -98,9 +98,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         return items.map((item) => ({
           id: `nav-${module}-${item.id}`,
           type: t(definition.nameKey),
-          title: t(module === 'sales' && item.id === 'clients' && hasLeadershipAccess(user)
-            ? 'allClients'
-            : item.labelKey),
+          title: t(item.labelKey),
           href: item.href,
           icon: item.icon,
         }));

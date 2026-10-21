@@ -92,28 +92,41 @@ export class StudentContractService {
       : `l.id IS NOT NULL AND (l.manager_id=$2 OR (l.manager_id IS NULL
           AND (l.funnel_id IS NULL OR l.funnel_id=ANY($3::int[]))))`;
     const values = unrestricted ? [input.q] : [input.q, actor.userId, actor.salesWorkflow?.assignedFunnelIds ?? []];
-    const from = `FROM academy_student_contracts c
-      JOIN academy_students s ON s.id=c.student_id
+    const from = `FROM academy_students s
+      LEFT JOIN academy_student_contracts c ON c.student_id=s.id
       LEFT JOIN academy_leads l ON l.id=s.lead_id
-      WHERE (${visibility}) AND ($1='' OR position(lower($1) in
+      LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object('id',g.id,'name',g.name)
+          ORDER BY membership.is_primary DESC,g.name,g.id) AS groups
+        FROM academy_student_group_enrollments membership
+        JOIN academy_groups g ON g.id=membership.group_id
+        WHERE membership.student_id=s.id AND membership.status='active'
+      ) enrollment ON TRUE
+      WHERE (${visibility}) AND (c.id IS NOT NULL OR enrollment.groups IS NOT NULL)
+        AND ($1='' OR position(lower($1) in
         lower(concat_ws(' ',c.number,s.student_name,s.contact_name,s.phone)))>0)`;
-    const total = await queryOne(`SELECT count(*)::int AS total ${from}`, values);
-    const page = Math.min(input.page, Math.max(1, Math.ceil(Number(total!.total) / input.pageSize)));
-    const rows = await query(`SELECT c.*,s.updated_at AS student_updated_at,json_build_object(
+    const totals = await queryOne(`SELECT count(*)::int AS total,
+      count(c.id)::int AS created, count(*) FILTER (WHERE c.id IS NULL)::int AS missing ${from}`, values);
+    const counts = { all: Number(totals!.total), created: Number(totals!.created), missing: Number(totals!.missing) };
+    const total = counts[input.status];
+    const page = Math.min(input.page, Math.max(1, Math.ceil(total / input.pageSize)));
+    const statusFilter = input.status === "all" ? "" : input.status === "created" ? "AND c.id IS NOT NULL" : "AND c.id IS NULL";
+    const rows = await query(`SELECT c.*,enrollment.groups,s.updated_at AS student_updated_at,json_build_object(
         'id',s.id,'studentName',s.student_name,'contactName',s.contact_name,
         'phone',s.phone,'status',s.status,'leadId',s.lead_id) AS student
-      ${from} ORDER BY c.created_at DESC,c.id DESC
+      ${from} ${statusFilter} ORDER BY c.created_at DESC NULLS LAST,s.updated_at DESC,s.id DESC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
     [...values, input.pageSize, (page - 1) * input.pageSize]);
     return {
       items: rows.map(row => ({
-        contract: present(row),
+        contract: row.id ? present(row) : null,
+        groups: row.groups ?? [],
         student: {
           ...row.student,
           updatedAt: row.studentUpdatedAt ? new Date(row.studentUpdatedAt).toISOString() : undefined,
         },
       })),
-      total: Number(total!.total), page, pageSize: input.pageSize,
+      total, counts, page, pageSize: input.pageSize,
     };
   }
 

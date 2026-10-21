@@ -16,7 +16,7 @@ export const studentContractsApi = {
     return blob;
   },
   list: (query: StudentContractListQuery) => {
-    const parameters = new URLSearchParams({ q: query.q, page: String(query.page), pageSize: String(query.pageSize) });
+    const parameters = new URLSearchParams({ q: query.q, status: query.status, page: String(query.page), pageSize: String(query.pageSize) });
     return apiRequest('GET', `/api/academy/student-contracts?${parameters}`) as Promise<StudentContractList>;
   },
   forStudent: (studentId: number) => (

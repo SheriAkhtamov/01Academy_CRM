@@ -60,9 +60,11 @@ describe("student contract HTTP boundary", () => {
     expect(response.status).toBe(200);
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(response.body).toEqual(page);
-    expect(service.list).toHaveBeenCalledWith(expect.objectContaining({ userId: 7 }), { q: "А-07/01", page: 1, pageSize: 25 });
+    expect(service.list).toHaveBeenCalledWith(expect.objectContaining({ userId: 7 }), { q: "А-07/01", status: "all", page: 1, pageSize: 25 });
+    await request(app).get("/student-contracts").query({ status: "missing", page: 2 });
+    expect(service.list).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 7 }), { q: "", status: "missing", page: 2, pageSize: 25 });
     service.list.mockClear();
-    for (const query of [{ page: 0 }, { pageSize: 101 }, { q: "a".repeat(121) }, { page: "invalid" }]) {
+    for (const query of [{ page: 0 }, { pageSize: 101 }, { q: "a".repeat(121) }, { page: "invalid" }, { status: "invalid" }, { status: ["created", "missing"] }]) {
       expect((await request(app).get("/student-contracts").query(query)).status).toBe(400);
     }
     expect(service.list).not.toHaveBeenCalled();

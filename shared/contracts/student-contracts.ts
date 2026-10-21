@@ -33,12 +33,18 @@ export type StudentContract = {
 
 export const studentContractListQuerySchema = z.object({
   q: z.string().trim().max(120).default(""),
+  status: z.enum(["all", "created", "missing"]).default("all"),
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 export type StudentContractListQuery = z.infer<typeof studentContractListQuerySchema>;
 export type StudentContractList = {
-  items: { contract: StudentContract; student: StudentProfileStudent }[];
+  items: {
+    contract: StudentContract | null;
+    student: StudentProfileStudent;
+    groups: { id: number; name: string }[];
+  }[];
+  counts: Record<StudentContractListQuery["status"], number>;
   total: number;
   page: number;
   pageSize: number;

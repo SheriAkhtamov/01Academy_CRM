@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContractsDirectory } from '../client/src/features/student-contracts/ContractsDirectory';
@@ -10,8 +10,8 @@ import { i18n } from '../client/src/lib/i18n';
 import { allowNavigation } from '../client/src/lib/navigationGuard';
 import { summarizeStudentProfile } from '../shared/contracts/student-profile';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), forStudent: vi.fn(), profile: vi.fn(), user: { id: 7, module: 'sales', modules: ['sales'] } }));
-vi.mock('../client/src/features/student-contracts/api', () => ({ studentContractsApi: { list: mocks.list, forStudent: mocks.forStudent } }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), forStudent: vi.fn(), create: vi.fn(), profile: vi.fn(), user: { id: 7, module: 'sales', modules: ['sales'] } }));
+vi.mock('../client/src/features/student-contracts/api', () => ({ studentContractsApi: { list: mocks.list, forStudent: mocks.forStudent, create: mocks.create } }));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: { profile: mocks.profile } }));
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => ({ isPending: false, startCall: vi.fn() }) }));
@@ -23,7 +23,8 @@ const student = { id: 42, studentName: 'Марсель', contactName: 'Роди�
 const contract = { id: 'contract-id', studentId: student.id, number: 'А-07/01', version: 1,
   file: { name: 'Договор.pdf', mime: 'application/pdf', size: 100, downloadUrl: '/api/academy/student-contracts/contract-id/file' },
   createdAt: '2026-10-20T12:00:00Z', updatedAt: '2026-10-20T12:00:00Z' };
-const page = { items: [{ contract, student }], total: 30, page: 1, pageSize: 25 };
+const groups = [{ id: 31, name: 'CYP-VC-GRP-26-0001' }, { id: 32, name: 'ONL-VC-GRP-26-0002' }];
+const page = { items: [{ contract, student, groups }], counts: { all: 30, created: 25, missing: 5 }, total: 30, page: 1, pageSize: 25 };
 let client: QueryClient;
 const mount = (element = <ContractsDirectory />) => render(<QueryClientProvider client={client}>{element}</QueryClientProvider>);
 
@@ -67,7 +68,7 @@ describe('student contracts directory', () => {
     mount(); await screen.findByText(contract.number);
     const row = screen.getByRole('button', { name: 'Открыть ученика: Марсель' });
     const target = cell === 'number' ? screen.getByText(contract.number)
-      : cell === 'phone' ? screen.getByText(student.phone) : row.querySelectorAll('td')[3];
+      : cell === 'phone' ? screen.getByText(student.phone) : row.querySelectorAll('td')[4];
     await userEvent.click(target);
     expect(await screen.findByRole('dialog', { name: 'Марсель' })).toBeTruthy();
   });
@@ -92,10 +93,51 @@ describe('student contracts directory', () => {
   it('searches by the submitted text and resets pagination', async () => {
     mount(); await screen.findByText(contract.number);
     await userEvent.click(screen.getByRole('button', { name: i18n.t('nextPage') }));
-    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: '', page: 2, pageSize: 25 }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: '', status: 'all', page: 2, pageSize: 25 }));
     fireEvent.change(screen.getByLabelText(i18n.t('studentContractsSearch')), { target: { value: ' А-07/01 ' } });
     await userEvent.click(screen.getByRole('button', { name: i18n.t('search') }));
-    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: 'А-07/01', page: 1, pageSize: 25 }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: 'А-07/01', status: 'all', page: 1, pageSize: 25 }));
+  });
+
+  it('filters on the server, retains the submitted search, resets pagination and displays each status count', async () => {
+    mount(); await screen.findByText(contract.number);
+    expect(within(screen.getByRole('tab', { name: 'Без договора' })).getByText('5')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('nextPage') }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: '', status: 'all', page: 2, pageSize: 25 }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Без договора' }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: '', status: 'missing', page: 1, pageSize: 25 }));
+    fireEvent.change(screen.getByLabelText(i18n.t('studentContractsSearch')), { target: { value: ' Марсель ' } });
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('search') }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: 'Марсель', status: 'missing', page: 1, pageSize: 25 }));
+    await userEvent.click(screen.getByRole('tab', { name: 'С договором' }));
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ q: 'Марсель', status: 'created', page: 1, pageSize: 25 }));
+  });
+
+  it('opens an enrolled student without a contract and removes the row after creating a contract in the modal', async () => {
+    let created = false;
+    mocks.forStudent.mockImplementation(async () => created ? { ...contract, file: null } : null);
+    mocks.create.mockImplementation(async () => { created = true; return { ...contract, file: null }; });
+    mocks.list.mockImplementation(async query => ({
+      ...page, counts: { all: 1, created: Number(created), missing: Number(!created) }, total: query.status === 'missing' && created ? 0 : 1,
+      items: query.status === 'missing' && created ? [] : [{ student, groups, contract: created ? { ...contract, file: null } : null }],
+    }));
+    mount();
+    expect(await screen.findByText(i18n.t('studentContractsNotCreated'))).toBeTruthy();
+    expect(screen.getByText(groups[0].name)).toBeTruthy();
+    expect(screen.getByText(groups[1].name)).toBeTruthy();
+    expect(screen.queryByText(i18n.t('studentContractsNoFile'))).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: 'Без договора' }));
+    await screen.findByText(i18n.t('studentContractsNotCreated'));
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть ученика: Марсель' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Марсель' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: i18n.t('studentContractCreate') }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(student.id));
+    await waitFor(() => expect((within(dialog).getByLabelText(i18n.t('studentContractNumber')) as HTMLInputElement).value).toBe(contract.number));
+    await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('close') }));
+    expect(await screen.findByText(i18n.t('studentContractsMissingEmpty'))).toBeTruthy();
+    await userEvent.click(screen.getByRole('tab', { name: 'С договором' }));
+    expect(await screen.findByText(contract.number)).toBeTruthy();
+    expect(screen.getByText(i18n.t('studentContractsNoFile'))).toBeTruthy();
   });
 
   it('keeps a short empty state and retries a failed request without exposing server details', async () => {

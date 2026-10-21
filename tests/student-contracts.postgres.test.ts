@@ -40,6 +40,7 @@ import { StudentContractService, attachStudentContractDraft } from "../server/mo
 import { actorContextFrom } from "../server/modules/leads/domain/actor-context";
 import { withTransaction } from "../server/modules/academy/academy-core";
 import { LocalResourceFileStore } from "../server/modules/portal-resources/infrastructure/file-store";
+import type { StudentContractListQuery } from "../shared/contracts/student-contracts";
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `student_contracts_${randomUUID().replace(/-/g, "")}`;
@@ -63,9 +64,13 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
       CREATE TABLE academy_leads(id integer PRIMARY KEY,manager_id integer,funnel_id integer,is_archived boolean DEFAULT false);
       CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer REFERENCES academy_leads(id),
         student_name text,contact_name text DEFAULT 'Contact',phone text,status text DEFAULT 'studying',updated_at timestamptz DEFAULT now());
+      CREATE TABLE academy_groups(id integer PRIMARY KEY,name text NOT NULL);
+      CREATE TABLE academy_student_group_enrollments(student_id integer REFERENCES academy_students(id),
+        group_id integer REFERENCES academy_groups(id),status text NOT NULL,is_primary boolean DEFAULT false);
       INSERT INTO users VALUES(7),(8),(9);
-      INSERT INTO academy_leads(id,manager_id) VALUES(11,7),(12,8);
-      INSERT INTO academy_students(id,lead_id) VALUES(21,11),(22,11),(23,12),(24,NULL);
+      INSERT INTO academy_leads(id,manager_id,funnel_id) VALUES(11,7,NULL),(12,8,NULL),(13,NULL,5);
+      INSERT INTO academy_students(id,lead_id) VALUES(21,11),(22,11),(23,12),(24,NULL),(25,11),(26,11),(27,13);
+      INSERT INTO academy_groups(id,name) VALUES(31,'CYP-VC-GRP-26-0001'),(32,'ONL-VC-GRP-26-0002');
     `);
     await mocks.pool.query(await fs.readFile("migrations/0159_student_contracts.sql", "utf8"));
     directory = await fs.mkdtemp(path.join(os.tmpdir(), "student-contract-test-"));
@@ -74,6 +79,7 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     await mocks.pool.query("TRUNCATE academy_student_contracts");
+    await mocks.pool.query("TRUNCATE academy_student_group_enrollments");
     await mocks.pool.query("ALTER SEQUENCE academy_student_contract_number_seq RESTART WITH 1");
   });
   afterAll(async () => {
@@ -96,8 +102,8 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     await service.create(administrator, { studentId: 24 });
     const historical = await service.changeNumber(manager, owned.id, owned.version, "А-07/01");
     await mocks.pool.query("UPDATE academy_students SET student_name='Марсель',phone='+998901234567' WHERE id=21");
-    const list = (actor = manager, q = "", page = 1, pageSize = 25) => service.list(actor, { q, page, pageSize });
-    expect((await list()).items.map(row => row.contract.id)).toEqual([owned.id]);
+    const list = (actor = manager, q = "", page = 1, pageSize = 25) => service.list(actor, { q, status: "all", page, pageSize });
+    expect((await list()).items.map(row => row.contract?.id)).toEqual([owned.id]);
     const result = await list(manager, "а-07/01");
     expect(result.items).toMatchObject([{ contract: { id: historical.id, file: null }, student: { id: 21, studentName: "Марсель" } }]);
     expect(result.items[0].contract).not.toHaveProperty("fileKey");
@@ -112,7 +118,7 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     await mocks.pool.query("UPDATE academy_leads SET manager_id=NULL,funnel_id=5 WHERE id=12");
     try {
       expect((await list()).total).toBe(1);
-      expect((await list({ ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).items.map(row => row.contract.id)).toContain(other.id);
+      expect((await list({ ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).items.map(row => row.contract?.id)).toContain(other.id);
       await mocks.pool.query("UPDATE academy_leads SET funnel_id=NULL WHERE id=12");
       expect((await list()).total).toBe(2);
       await service.cancel(manager, historical.id, historical.version);
@@ -121,6 +127,35 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
       await mocks.pool.query("UPDATE academy_leads SET manager_id=8,funnel_id=NULL WHERE id=12");
       await mocks.pool.query("UPDATE academy_students SET student_name=NULL,phone=NULL WHERE id=21");
     }
+  });
+  it("filters enrolled students without contracts, counts each student once and applies the same visibility to rows and counts", async () => {
+    await mocks.pool.query(`INSERT INTO academy_student_group_enrollments(student_id,group_id,status,is_primary) VALUES
+      (21,31,'active',true),(22,31,'active',false),(22,32,'active',true),
+      (23,31,'active',true),(24,31,'active',true),(25,31,'withdrawn',false),
+      (26,31,'completed',false),(27,31,'active',true)`);
+    const existing = await service.create(manager, { studentId: 21 });
+    await service.create(manager, { leadId: 11 });
+    const list = (status: StudentContractListQuery["status"] = "all", actor = manager, q = "", page = 1, pageSize = 25) =>
+      service.list(actor, { q, status, page, pageSize });
+    expect(await list()).toMatchObject({ total: 2, counts: { all: 2, created: 1, missing: 1 } });
+    expect((await list("created")).items).toMatchObject([{ student: { id: 21 }, contract: { id: existing.id, file: null } }]);
+    expect(await list("missing")).toMatchObject({ total: 1, items: [{ student: { id: 22 }, contract: null, groups: [
+      { id: 32, name: "ONL-VC-GRP-26-0002" }, { id: 31, name: "CYP-VC-GRP-26-0001" },
+    ] }] });
+    expect(await list("missing", administrator)).toMatchObject({ total: 4, counts: { all: 5, created: 1, missing: 4 } });
+    expect(await list("missing", actorContextFrom({ id: 9, modules: ["marketing"] }))).toMatchObject({ total: 3, counts: { all: 4, created: 1, missing: 3 } });
+    expect(await list("missing", { ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).toMatchObject({ total: 2, counts: { all: 3, created: 1, missing: 2 } });
+    expect(await list("all", manager, "", 999, 1)).toMatchObject({ total: 2, page: 2, items: [{ student: { id: 22 }, contract: null }] });
+    expect(await list("missing", manager, existing.number)).toMatchObject({ total: 0, counts: { all: 1, created: 1, missing: 0 } });
+    expect(await list("all", manager, "%")).toMatchObject({ total: 0, counts: { all: 0, created: 0, missing: 0 } });
+    const created = await service.create(manager, { studentId: 22 });
+    expect(await list("missing")).toMatchObject({ total: 0, counts: { all: 2, created: 2, missing: 0 } });
+    await service.cancel(manager, created.id, created.version);
+    expect(await list("missing")).toMatchObject({ total: 1, counts: { all: 2, created: 1, missing: 1 } });
+    await mocks.pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn' WHERE student_id=22");
+    expect(await list("missing")).toMatchObject({ total: 0, counts: { all: 1, created: 1, missing: 0 } });
+    await service.create(manager, { studentId: 25 });
+    expect((await list("created")).items.map(row => row.student.id).sort()).toEqual([21, 25]);
   });
   it("generates unique numbers concurrently and skips existing imported generated-style numbers", async () => {
     const first = await service.create(manager, { studentId: 21 });

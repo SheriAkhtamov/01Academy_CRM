@@ -10,10 +10,11 @@ it('sends contract search and pagination with authenticated requests', async () 
   const response = { items: [], total: 0, page: 2, pageSize: 25 };
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetch);
-  await expect(studentContractsApi.list({ q: 'А-07/01 +998', page: 2, pageSize: 25 })).resolves.toEqual(response);
+  await expect(studentContractsApi.list({ q: 'А-07/01 +998', status: 'missing', page: 2, pageSize: 25 })).resolves.toEqual(response);
   const [url, options] = fetch.mock.calls[0];
   const parameters = new URL(url, 'http://localhost').searchParams;
   expect(parameters.get('q')).toBe('А-07/01 +998');
+  expect(parameters.get('status')).toBe('missing');
   expect(parameters.get('page')).toBe('2');
   expect(parameters.get('pageSize')).toBe('25');
   expect(options).toMatchObject({ method: 'GET', credentials: 'include' });

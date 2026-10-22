@@ -4,7 +4,7 @@ import { createNotification, createTask, query, queryOne, type Row } from "./aca
 const absenceTaskTitle = "3 пропуска подряд: позвонить родителю";
 
 /** The task is about the pupil: resolve it only after every active group is clear. */
-export async function reconcileStudentAbsenceTask(student: Row, fallbackResponsibleId: number) {
+export async function reconcileStudentAbsenceTask(student: Row, currentGroupId: number, fallbackResponsibleId: number) {
   const risks = await query<{ groupId: number }>(
     `SELECT membership.group_id
     FROM academy_student_group_enrollments membership
@@ -35,7 +35,8 @@ export async function reconcileStudentAbsenceTask(student: Row, fallbackResponsi
     );
     return;
   }
-  if (existingTask) return;
+  // A new call follows the current group's streak, not an unrelated attendance edit.
+  if (existingTask || !risks.some(risk => Number(risk.groupId) === currentGroupId)) return;
   const responsibleId = student.managerId ?? fallbackResponsibleId;
   await createTask(absenceTaskTitle, {
     responsibleId,

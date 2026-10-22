@@ -168,6 +168,12 @@ describe.skipIf(!databaseUrl)("student learning synchronization across CRM group
     expect((await pool.query("SELECT status,responsible_id FROM academy_tasks")).rows).toEqual([{ status: "new", responsible_id: 1 }]);
     expect(mocks.createNotification).toHaveBeenCalledOnce();
   });
+  it("does not repeat a completed parent call after attendance in an unrelated group", async () => {
+    await pool.query("UPDATE academy_tasks SET status='done' WHERE id=70");
+    expect((await mark(10)).status).toBe(200);
+    expect((await pool.query("SELECT id,status FROM academy_tasks ORDER BY id")).rows).toEqual([{ id: 70, status: "done" }]);
+    expect(mocks.createNotification).not.toHaveBeenCalled();
+  });
   it("uses each group's own marks in rosters and every active group in risk calculations", async () => {
     await pool.query(`UPDATE academy_attendance SET status='present';
       INSERT INTO academy_lessons(id,group_id,status,scheduled_at,duration_minutes) VALUES(31,30,'conducted',now()-interval '4 days',60),(32,30,'conducted',now()-interval '3 days',60),(33,30,'conducted',now()-interval '2 days',60);

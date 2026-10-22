@@ -535,7 +535,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       }
       if (requestedLessonStatus === 'conducted') {
         for (const item of normalizedItems) {
-          await reconcileStudentAbsenceTask(studentsById.get(item.studentId)!, req.user!.id);
+          await reconcileStudentAbsenceTask(studentsById.get(item.studentId)!, Number(lesson.groupId), req.user!.id);
         }
       }
 

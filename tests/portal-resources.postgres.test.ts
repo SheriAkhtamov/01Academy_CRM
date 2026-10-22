@@ -15,8 +15,10 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PortalResourceService } from '../server/modules/portal-resources/application/resource-service';
 import { PostgresPortalResourceRepository } from '../server/modules/portal-resources/infrastructure/postgres-repository';
+import { reportProjectSnapshots } from '../server/modules/portal-resources/infrastructure/project-repository';
+import { portalResourcesApi } from '../client/src/features/portal-app/resources-api';
 import { createResourceTokenCodec,LocalResourceFileStore } from '../server/modules/portal-resources/infrastructure/file-store';
-import { portalProjectSchema, portalShareSchema } from '@shared/contracts/portal-resources';
+import { portalProjectSchema, portalShareSchema, type PortalProjectInput } from '@shared/contracts/portal-resources';
 import type { PortalActorContext } from '../server/modules/portal-identity';
 
 const databaseUrl = process.env.PORTAL_TEST_DATABASE_URL;
@@ -35,6 +37,20 @@ const finance = { userId: 3, modules: ['finance'], isLeadership: false };
 const project = (changes = {}) => portalProjectSchema.parse({ title: 'Project', description: 'Private description', runId: 1, version: 0, ...changes });
 const share = (version: number, changes = {}) => portalShareSchema.parse({ projectVersion: version, displayName: 'Chosen name', includeDescription: false, includeReview: false, fileIds: [], consent: true, ...changes });
 const publicToken = (url: string | null) => url!.split('/').at(-1)!;
+async function acceptedProjectSource(mime = 'text/plain') {
+  store.inspect.mockResolvedValueOnce({...inspectedFile(),mime});
+  const file = await service.upload(self, '/tmp/source-upload', mime === 'image/png' ? 'original.png' : 'original.txt', 1);
+  await pool.query("UPDATE lms_files SET state='ready' WHERE id=$1", [file.id]);
+  const assignment = (await pool.query("INSERT INTO lms_assignments(run_id,state,created_by) VALUES(1,'published',1) RETURNING id")).rows[0];
+  const version = (await pool.query(`INSERT INTO lms_assignment_versions(assignment_id,version,title,body,required,allowed_answers,grading_mode)
+    VALUES($1,1,'Original work','Task',true,'["text","link","file"]','acceptance') RETURNING id`, [assignment.id])).rows[0];
+  const recipient = (await pool.query(`INSERT INTO lms_assignment_recipients(assignment_id,assignment_version_id,enrollment_id,student_id,opens_at,status)
+    VALUES($1,$2,1,1,now()-interval '1 day','accepted') RETURNING id`, [assignment.id,version.id])).rows[0];
+  const submission = (await pool.query(`INSERT INTO lms_submissions(recipient_id,assignment_version_id,account_id,attempt_number,text,links,file_ids,idempotency_key,late)
+    VALUES($1,$2,1,1,'Original submission','["https://example.com/reviewed"]',$3::jsonb,$4,false) RETURNING id`, [recipient.id,version.id,JSON.stringify([file.id]),randomUUID()])).rows[0];
+  await pool.query("INSERT INTO lms_reviews(submission_id,decision,comment,reviewer_id) VALUES($1,'accepted','Accepted original work',1)", [submission.id]);
+  return (await service.projectSource(self,Number(submission.id)))!;
+}
 
 describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snapshots', () => {
   beforeAll(async () => {
@@ -54,7 +70,8 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer,student_id integer,status text);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY,student_id integer,title text,group_id integer,course_id integer,url text,file_url text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,period text,paid_at timestamptz,due_at timestamptz,paid_until timestamptz,created_at timestamptz DEFAULT now());`);
-    for (const file of ['0134_portal_identity','0135_lms_learning','0136_portal_resources']) await pool.query(readFileSync(`migrations/${file}.sql`,'utf8'));
+    await pool.query('CREATE TABLE academy_leads(id serial PRIMARY KEY)');
+    for (const file of ['0134_portal_identity','0135_lms_learning','0136_portal_resources','0138_manual_portal_credentials']) await pool.query(readFileSync(`migrations/${file}.sql`,'utf8'));
     repository = new PostgresPortalResourceRepository(pool, async () => true);
     service = new PortalResourceService(repository, store, createResourceTokenCodec(randomBytes(32).toString('base64')), { appUrl: 'https://academy.example', publicPortfolioEnabled: () => shareEnabled });
   });
@@ -204,9 +221,118 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     const reply = await service.staffFinanceReply(finance,question.id,'Confirmed','1b02a913-6d38-4563-a40c-125d1fc8e77b');
     expect(reply).toMatchObject({status:'answered',messages:[{author:'account'},{author:'staff',body:'Confirmed'}]});
     await service.staffFinanceReply(finance,question.id,'Confirmed','1b02a913-6d38-4563-a40c-125d1fc8e77b');
-    expect((await pool.query('SELECT account_id,link_id,channel FROM lms_resource_outbox ORDER BY channel')).rows).toEqual([{account_id:'2',link_id:'2',channel:'email'},{account_id:'2',link_id:'2',channel:'in_app'}]);
+    expect((await service.financeQuestion(adult,question.id)).messages).toHaveLength(2);
+    await expect(service.staffFinanceReply(finance,question.id,'Changed reply','1b02a913-6d38-4563-a40c-125d1fc8e77b')).rejects.toMatchObject({ code:'portalVersionConflict' });
+    expect((await pool.query('SELECT account_id,link_id,channel FROM lms_resource_outbox ORDER BY channel')).rows).toEqual([{account_id:'2',link_id:'2',channel:'in_app'}]);
     await pool.query("UPDATE portal_student_links SET status='revoked' WHERE id=2");
     await expect(service.financeQuestion(adult,question.id)).rejects.toMatchObject({ code:'portalAccessDenied' });
+  });
+  it('validates the actual client archive version and preserves newer work and publications after a stale deletion', async () => {
+    const original = await service.saveProject(adult,null,project({title:'Original'}));
+    const latest = await service.saveProject(adult,original.id,project({version:original.version,title:'Latest work'}));
+    const published = await service.createShare(adult,latest.id,share(latest.version));
+    const app = express();
+    app.use(express.json());
+    app.use('/api/portal',createPortalResourceRouter(service,{actor:async()=>adult,account:async()=>adult.portalAccountId},(_request,_response,next)=>next()));
+    const forwarded = vi.fn(async(url:string,init:RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      expect(init.method).toBe('DELETE');
+      const response = await request(app).delete(url).send(body);
+      return new Response(JSON.stringify(response.body),{status:response.status,headers:{'Content-Type':'application/json'}});
+    });
+    vi.stubGlobal('fetch',forwarded);
+    try {
+      await expect(portalResourcesApi.archiveProject(2,original.id,original.version)).rejects.toMatchObject({status:409,code:'portalVersionConflict'});
+      expect(JSON.parse(forwarded.mock.calls[0][1].body as string)).toEqual({version:original.version});
+      expect(await service.project(adult,original.id)).toMatchObject({title:'Latest work',version:latest.version,archivedAt:null});
+      expect(await service.publicProject(publicToken(published.publicUrl))).toMatchObject({title:'Latest work'});
+      for (const body of [{},{version:0},{version:1.5},{version:'1'}])
+        await request(app).delete(`/api/portal/subjects/2/projects/${original.id}`).send(body).expect(400);
+      expect(await portalResourcesApi.archiveProject(2,original.id,latest.version)).toEqual({success:true});
+      await expect(service.project(adult,original.id)).rejects.toMatchObject({code:'portalNotFound'});
+      await expect(service.publicProject(publicToken(published.publicUrl))).rejects.toMatchObject({code:'portalNotFound'});
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('does not archive work through a revoked or read-only portal link', async () => {
+    const saved = await service.saveProject(self,null,project());
+    await expect(service.archiveProject({...self,permissions:['learning.read']},saved.id,saved.version)).rejects.toMatchObject({code:'portalAccessDenied'});
+    await pool.query("UPDATE portal_student_links SET status='revoked' WHERE id=1");
+    await expect(service.archiveProject(self,saved.id,saved.version)).rejects.toMatchObject({code:'portalAccessDenied'});
+    expect((await pool.query('SELECT archived_at FROM academy_portfolio_projects WHERE id=$1',[saved.id])).rows[0].archived_at).toBeNull();
+  });
+  it.each<[string, Partial<PortalProjectInput>]>([
+    ['title',{title:'Replacement title'}],
+    ['description',{description:'Unreviewed replacement'}],
+    ['links',{links:['https://example.com/replacement']}],
+    ['files',{fileIds:[]}],
+  ])('requires a fresh teacher review when a student replaces reviewed %s', async (_field,changes) => {
+    const seed = await acceptedProjectSource();
+    const original = await service.saveProject(self,null,seed);
+    await service.reviewProject(teacher,original.id,original.version,'Excellent original work');
+    const reviewed = await service.project(self,original.id);
+    const unchanged = await service.saveProject(self,original.id,{...seed,version:reviewed.version});
+    expect(unchanged.teacherReview).toBe('Excellent original work');
+    expect(unchanged.sourceSubmissionId).toBe(seed.sourceSubmissionId);
+    const edited = await service.saveProject(self,original.id,{...seed,...changes,version:unchanged.version});
+    expect(edited).toMatchObject({teacherReview:null,sourceSubmissionId:null});
+    expect((await pool.query('SELECT reviewed_by FROM academy_portfolio_projects WHERE id=$1',[original.id])).rows[0].reviewed_by).toBeNull();
+    expect(await service.staffProjects(teacher,1,1,true)).toEqual([]);
+    await expect(reportProjectSnapshots(pool,teacher,1,1,[original.id])).rejects.toMatchObject({code:'portalNotFound'});
+    const relinked = await service.saveProject(self,original.id,{...seed,...changes,version:edited.version});
+    expect(relinked.sourceSubmissionId).toBeNull();
+    expect(await service.staffProjects(teacher,1,1,true)).toEqual([]);
+    await service.reviewProject(teacher,relinked.id,relinked.version,'Reviewed replacement');
+    expect(await reportProjectSnapshots(pool,teacher,1,1,[relinked.id])).toEqual([expect.objectContaining({review:'Reviewed replacement'})]);
+  });
+  it('verifies an exact accepted-source copy but never a replacement created with the accepted source ID', async () => {
+    const seed = await acceptedProjectSource();
+    const exact = await service.saveProject(self,null,seed);
+    expect((await service.staffProjects(teacher,1,1,true)).map(item=>item.id)).toEqual([exact.id]);
+    expect(await reportProjectSnapshots(pool,teacher,1,1,[exact.id])).toEqual([expect.objectContaining({title:seed.title,description:seed.description})]);
+    const replacement = await service.saveProject(self,null,{...seed,description:'Different submitted content'});
+    expect(replacement.sourceSubmissionId).toBeNull();
+    await expect(reportProjectSnapshots(pool,teacher,1,1,[replacement.id])).rejects.toMatchObject({code:'portalNotFound'});
+    // Historical rows with a retained source ID must not regain verification on reads.
+    await pool.query('UPDATE academy_portfolio_projects SET source_submission_id=$2 WHERE id=$1',[replacement.id,seed.sourceSubmissionId]);
+    expect((await service.staffProjects(teacher,1,1,true)).map(item=>item.id)).toEqual([exact.id]);
+    await expect(reportProjectSnapshots(pool,teacher,1,1,[replacement.id])).rejects.toMatchObject({code:'portalNotFound'});
+  });
+  it('requires a project review for a cover even when every submitted content field still matches', async () => {
+    const seed = await acceptedProjectSource('image/png');
+    const original = await service.saveProject(self,null,seed);
+    await service.reviewProject(teacher,original.id,original.version,'Reviewed without a cover');
+    const reviewed = await service.project(self,original.id);
+    const withCover = {...seed,coverFileId:seed.fileIds[0],version:reviewed.version};
+    const edited = await service.saveProject(self,original.id,withCover);
+    expect(edited).toMatchObject({teacherReview:null,sourceSubmissionId:null,coverFileId:seed.fileIds[0]});
+    const relinked = await service.saveProject(self,original.id,{...withCover,version:edited.version});
+    expect(relinked.sourceSubmissionId).toBeNull();
+    const created = await service.saveProject(self,null,{...withCover,version:0});
+    expect(created.sourceSubmissionId).toBeNull();
+    expect(await service.staffProjects(teacher,1,1,true)).toEqual([]);
+    await expect(reportProjectSnapshots(pool,teacher,1,1,[edited.id])).rejects.toMatchObject({code:'portalNotFound'});
+    // Retained source IDs on historical cover projects cannot bypass the read policy.
+    await pool.query('UPDATE academy_portfolio_projects SET source_submission_id=$2 WHERE id=$1',[edited.id,seed.sourceSubmissionId]);
+    expect(await service.staffProjects(teacher,1,1,true)).toEqual([]);
+    await expect(reportProjectSnapshots(pool,teacher,1,1,[edited.id])).rejects.toMatchObject({code:'portalNotFound'});
+    await service.reviewProject(teacher,edited.id,relinked.version,'Reviewed with a cover');
+    expect(await reportProjectSnapshots(pool,teacher,1,1,[edited.id])).toEqual([expect.objectContaining({review:'Reviewed with a cover'})]);
+  });
+  it('serializes review and archive against concurrent saves with the same project version', async () => {
+    for (const competing of ['review','archive'] as const) {
+      const saved = await service.saveProject(self,null,project());
+      const results = await Promise.allSettled([
+        service.saveProject(self,saved.id,project({version:saved.version,title:'Changed concurrently'})),
+        competing === 'review'
+          ? service.reviewProject(teacher,saved.id,saved.version,'Concurrent review')
+          : service.archiveProject(self,saved.id,saved.version),
+      ]);
+      expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1);
+      expect(results.find(result=>result.status==='rejected')).toMatchObject({reason:{code:'portalVersionConflict'}});
+      const current = (await pool.query('SELECT portal_version,title,teacher_review,archived_at FROM academy_portfolio_projects WHERE id=$1',[saved.id])).rows[0];
+      expect(current.portal_version).toBe(saved.version+1);
+      if (results[0].status === 'fulfilled') expect(current).toMatchObject({title:'Changed concurrently',teacher_review:null,archived_at:null});
+    }
   });
   it('persists immutable same-course comparisons, checks authorship and rejects conflicting selection', async () => {
     const first=await service.saveProject(self,null,project({title:'First'})),latest=await service.saveProject(self,null,project({title:'Latest'}));
@@ -471,7 +597,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     const file=await service.upload(self,'/tmp/valid-upload','work.txt',1);
     await pool.query("UPDATE lms_files SET state='ready' WHERE id=$1",[file.id]);
     const saved=await service.saveProject(self,null,project({fileIds:[file.id]}));
-    await service.archiveProject(self,saved.id);
+    await service.archiveProject(self,saved.id,saved.version);
     await pool.query("UPDATE lms_files SET attached_at=NULL,created_at=now()-interval '10 years',size_bytes=11*1024*1024 WHERE id=$1",[file.id]);
     expect(await service.fileStatus(self,file.id)).toMatchObject({id:file.id,size:11*1024*1024});
     expect(await repository.cleanupFiles()).toEqual([]);

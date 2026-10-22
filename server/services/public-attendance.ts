@@ -3,6 +3,7 @@ import type { PublicAttendanceBulkMark, PublicAttendanceGroup, PublicAttendanceL
 import { ACADEMY_SCHEDULING_ADVISORY_LOCK, query, queryOne, withTransaction, type Row } from '../modules/academy/academy-core';
 import { getLessonRoster } from '../modules/academy/academy-route-support';
 import { recalculateStudentMetrics } from '../modules/academy/academy-leads';
+import { reconcileStudentAbsenceTask } from '../modules/academy/student-absence-task';
 import { loadPublicAttendanceReport } from './public-attendance-report';
 
 export interface PublicAttendanceSettings {
@@ -106,20 +107,34 @@ const audit = async (action: string, entityType: string, entityId: number | null
 
 // A later lesson can collect marks while an earlier lesson is incomplete.
 // Once that earlier roster is filled, complete consecutive filled lessons in order.
+type AttendanceChanges = Map<number, { student: Row; newAbsenceLessonIds: Set<number> }>;
+const recordChange = (changes: AttendanceChanges, student: Row, newAbsenceLessonId?: number) => {
+  const change = changes.get(Number(student.id)) ?? { student, newAbsenceLessonIds: new Set<number>() };
+  if (newAbsenceLessonId !== undefined) change.newAbsenceLessonIds.add(newAbsenceLessonId);
+  changes.set(Number(student.id), change);
+};
+const reconcileChanges = async (groupId: number, changes: AttendanceChanges) => {
+  for (const [studentId, change] of [...changes].sort(([left], [right]) => left - right)) {
+    await reconcileStudentAbsenceTask(change.student, groupId, null, [...change.newAbsenceLessonIds]);
+    await recalculateStudentMetrics(studentId);
+  }
+};
 const completeFilledLessons = async (groupId: number) => {
-  const changedStudents = new Set<number>();
+  const changedStudents: AttendanceChanges = new Map();
   const pending = await query(`SELECT * FROM academy_lessons WHERE group_id = $1 AND status = 'scheduled'
     AND scheduled_at <= NOW() ORDER BY scheduled_at, id FOR UPDATE`, [groupId]);
   for (const lesson of pending) {
     const roster = await getLessonRoster(groupId, lesson.scheduledAt);
-    const marked = await query(`SELECT student_id FROM academy_attendance WHERE lesson_id = $1`, [lesson.id]);
+    const marked = await query(`SELECT student_id,status FROM academy_attendance WHERE lesson_id = $1`, [lesson.id]);
     const ids = new Set(marked.map((row) => Number(row.studentId)));
     if (roster.length === 0 || roster.some((student) => !ids.has(Number(student.id)))) break;
     await query(`UPDATE academy_lessons SET status = 'conducted', updated_at = NOW() WHERE id = $1`, [lesson.id]);
     await query(`INSERT INTO academy_lesson_status_history (lesson_id, from_status, to_status, changed_by)
       VALUES ($1, 'scheduled', 'conducted', NULL)`, [lesson.id]);
     await audit('PUBLIC_ATTENDANCE_LESSON_COMPLETED', 'academy_lesson', Number(lesson.id), lesson, { ...lesson, status: 'conducted' });
-    roster.forEach((student) => changedStudents.add(Number(student.id)));
+    const statuses = new Map(marked.map(mark => [Number(mark.studentId), mark.status]));
+    roster.forEach((student) => recordChange(changedStudents, student,
+      statuses.get(Number(student.id)) === 'absent' ? Number(lesson.id) : undefined));
   }
   return changedStudents;
 };
@@ -175,8 +190,9 @@ export const publicAttendanceService: PublicAttendanceService = {
     await audit(input.status === null ? 'PUBLIC_ATTENDANCE_CLEARED' : 'PUBLIC_ATTENDANCE_MARKED', 'academy_attendance',
       Number(saved?.id ?? current?.id) || null, current ?? null, { lessonId, studentId: input.studentId, status: input.status });
     const changed = await completeFilledLessons(Number(lesson.groupId));
-    changed.add(input.studentId);
-    for (const studentId of [...changed].sort((a, b) => a - b)) await recalculateStudentMetrics(studentId);
+    recordChange(changed, students.find(student => Number(student.id) === input.studentId)!,
+      input.status === 'absent' && current?.status !== 'absent' ? lessonId : undefined);
+    await reconcileChanges(Number(lesson.groupId), changed);
     return readRoster(await getScopedLesson(lessonId, groupIds));
   }),
   // "Mark the rest" fills only the students who are still unmarked when the write
@@ -185,7 +201,7 @@ export const publicAttendanceService: PublicAttendanceService = {
     await query(`SELECT pg_advisory_xact_lock($1)`, [ACADEMY_SCHEDULING_ADVISORY_LOCK]);
     const lesson = await getScopedLesson(lessonId, groupIds);
     if (!canMarkLesson(lesson)) throw new PublicAttendanceError('publicAttendanceLessonNotStarted', 409);
-    const roster = new Set((await getLessonRoster(Number(lesson.groupId), lesson.scheduledAt, true)).map((student) => Number(student.id)));
+    const roster = new Map((await getLessonRoster(Number(lesson.groupId), lesson.scheduledAt, true)).map((student) => [Number(student.id), student]));
     if (input.studentIds.some((studentId) => !roster.has(studentId))) throw new PublicAttendanceError('publicAttendanceNotFound', 404);
     const inserted = await query(`INSERT INTO academy_attendance (lesson_id, student_id, status, marked_by)
       SELECT $1, student_id, $3, NULL FROM unnest($2::int[]) AS student_id
@@ -195,8 +211,9 @@ export const publicAttendanceService: PublicAttendanceService = {
         { lessonId, studentId: Number(row.studentId), status: input.status });
     }
     const changed = await completeFilledLessons(Number(lesson.groupId));
-    inserted.forEach((row) => changed.add(Number(row.studentId)));
-    for (const studentId of [...changed].sort((a, b) => a - b)) await recalculateStudentMetrics(studentId);
+    inserted.forEach((row) => recordChange(changed, roster.get(Number(row.studentId))!,
+      row.status === 'absent' ? lessonId : undefined));
+    await reconcileChanges(Number(lesson.groupId), changed);
     return readRoster(await getScopedLesson(lessonId, groupIds));
   }),
 };

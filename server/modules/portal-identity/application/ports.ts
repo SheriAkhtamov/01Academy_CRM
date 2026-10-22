@@ -104,6 +104,7 @@ export interface PortalRepository {
   getInvitationByHash(hash: string, lock?: boolean): Promise<PortalInvitation | null>;
   getInvitationByKey(key: string): Promise<PortalInvitation | null>;
   listInvitations(linkId: number): Promise<PortalInvitation[]>;
+  hasConfirmedRepresentativeAccess(linkId: number): Promise<boolean>;
   createInvitation(invitation: Omit<PortalInvitation, "id">): Promise<PortalInvitation>;
   updateInvitation(
     id: number,

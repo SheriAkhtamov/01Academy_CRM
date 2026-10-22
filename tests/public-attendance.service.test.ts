@@ -1,9 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), queryOne: vi.fn(), roster: vi.fn(), metrics: vi.fn() }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), queryOne: vi.fn(), roster: vi.fn(), metrics: vi.fn(), reconcileAbsence: vi.fn() }));
 vi.mock('../server/modules/academy/academy-core', () => ({ query: mocks.query, queryOne: mocks.queryOne, withTransaction: (fn: () => Promise<unknown>) => fn(), ACADEMY_SCHEDULING_ADVISORY_LOCK: 7315001 }));
 vi.mock('../server/modules/academy/academy-route-support', () => ({ getLessonRoster: mocks.roster }));
 vi.mock('../server/modules/academy/academy-leads', () => ({ recalculateStudentMetrics: mocks.metrics }));
+vi.mock('../server/modules/academy/student-absence-task', () => ({ reconcileStudentAbsenceTask: mocks.reconcileAbsence }));
 import { publicAttendanceService } from '../server/services/public-attendance';
 const lesson = { id: 455, groupId: 55, lessonNumber: 1, scheduledAt: new Date('2026-09-23T04:00:00Z'), durationMinutes: 120, status: 'conducted' };
 const students = [{ id: 328, studentName: 'Adham Zokirov', contactName: 'Adham Zokirov', phone: 'private-phone', managerId: 6 }];
@@ -68,7 +69,7 @@ it('keeps later lessons pending while a previous lesson has an incomplete roster
   mocks.queryOne.mockImplementation(async (sql: string) => sql.includes('SELECT lesson.*') ? target : sql.includes('INSERT INTO academy_attendance') ? { id: 12, status: 'present' } : undefined);
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.includes("status = 'scheduled'")) return [previous, target];
-    if (sql.includes('SELECT student_id FROM academy_attendance')) return [{ studentId: 328 }];
+    if (sql.includes('SELECT student_id,status FROM academy_attendance')) return [{ studentId: 328, status: 'present' }];
     return [];
   });
   await publicAttendanceService.mark(455, [55], { studentId: 328, status: 'present', expectedRevision: null });
@@ -82,13 +83,14 @@ it('completes consecutively filled lessons in order and recalculates every affec
   mocks.queryOne.mockImplementation(async (sql: string) => sql.includes('SELECT lesson.*') ? first : sql.includes('INSERT INTO academy_attendance') ? { id: 12, status: 'present' } : undefined);
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.includes("status = 'scheduled'")) return [first, next];
-    if (sql.includes('SELECT student_id FROM academy_attendance')) return [{ studentId: 328 }, { studentId: 329 }];
+    if (sql.includes('SELECT student_id,status FROM academy_attendance')) return [{ studentId: 328, status: 'present' }, { studentId: 329, status: 'absent' }];
     return [];
   });
   await publicAttendanceService.mark(455, [55], { studentId: 328, status: 'present', expectedRevision: null });
   const completed = mocks.query.mock.calls.filter(([sql]) => sql.includes('UPDATE academy_lessons'));
   expect(completed.map(([, values]) => values[0])).toEqual([455, 456]);
   expect(mocks.metrics.mock.calls.map(([id]) => id)).toEqual([328, 329]);
+  expect(mocks.reconcileAbsence).toHaveBeenCalledWith(expect.objectContaining({id:329}),55,null,[455,456]);
 });
 
 it('marks the rest of a lesson in one write without touching students who already have a mark', async () => {

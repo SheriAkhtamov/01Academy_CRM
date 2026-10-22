@@ -1541,6 +1541,9 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('FROM academy_students student') && sql.includes('FOR UPDATE OF student')) {
         return { rows: [{ id: 5, group_id: 20, manager_id: 1 }] };
       }
+      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 5, group_id: 20, manager_id: 1 }] };
+      }
       if (sql.includes('INSERT INTO academy_attendance')) {
         return { rows: [{ lesson_id: 10, student_id: 5, status: values[2] }] };
       }

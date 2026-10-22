@@ -147,6 +147,12 @@ export class MemoryPortalRepository implements PortalRepository {
       [...this.invitations.values()].filter((value) => value.linkId === linkId),
     );
   }
+  async hasConfirmedRepresentativeAccess(linkId: number) {
+    const link = this.links.get(linkId);
+    return Boolean(link && this.audits.some(event => event.actorKind === "staff"
+      && event.action === "REPRESENTATIVE_ACCESS_CONFIRMED" && event.studentId === link.studentId
+      && event.details.linkId === linkId && event.details.accountId === link.accountId));
+  }
   async createInvitation(invitation: Omit<PortalInvitation, "id">) {
     const value = { ...invitation, id: this.next() };
     this.invitations.set(value.id, clone(value));

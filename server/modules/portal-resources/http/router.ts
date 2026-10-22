@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type RequestHandler } from 'expres
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import {
-  portalProjectSchema, portalShareSchema, portalShareApprovalSchema, portalProjectReviewSchema,
+  portalProjectSchema, portalProjectArchiveSchema, portalShareSchema, portalShareApprovalSchema, portalProjectReviewSchema,
   portalNotificationPreferencesSchema, portalPaymentAllocationSchema,
   portalFinanceQuestionSchema,portalFinanceMessageSchema,
   portalProjectComparisonSchema,
@@ -49,7 +49,7 @@ export function createPortalResourceRouter(service: PortalResourceService, resol
   router.get('/subjects/:linkId/projects/source/:submissionId', handler(async (request, response) => response.json(await service.projectSource(await actor(request), id(request.params.submissionId)))));
   router.get('/subjects/:linkId/projects/:id', handler(async (request, response) => response.json(await service.project(await actor(request), id(request.params.id)))));
   router.patch('/subjects/:linkId/projects/:id', handler(async (request, response) => response.json(await service.saveProject(await actor(request), id(request.params.id), portalProjectSchema.parse(request.body)))));
-  router.delete('/subjects/:linkId/projects/:id', handler(async (request, response) => { await service.archiveProject(await actor(request), id(request.params.id)); response.json({ success: true }); }));
+  router.delete('/subjects/:linkId/projects/:id', handler(async (request, response) => { const input = portalProjectArchiveSchema.parse(request.body); await service.archiveProject(await actor(request), id(request.params.id), input.version); response.json({ success: true }); }));
   router.post('/subjects/:linkId/projects/:id/shares', handler(async (request, response) => response.status(201).json(await service.createShare(await actor(request), id(request.params.id), portalShareSchema.parse(request.body)))));
   router.get('/subjects/:linkId/shares/:id', handler(async (request, response) => response.json(await service.share(await actor(request), id(request.params.id)))));
   router.post('/subjects/:linkId/shares/:id/approve', handler(async (request, response) => { const input = portalShareApprovalSchema.parse(request.body); response.json(await service.approveShare(await actor(request), id(request.params.id), input.version, input.approved)); }));

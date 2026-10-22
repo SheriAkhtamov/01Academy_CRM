@@ -19,9 +19,9 @@ beforeEach(() => {
     if (sql.includes('FROM academy_attendance')) return [
       { lessonId: 1, studentId: 1, status: 'present' }, { lessonId: 1, studentId: 2, status: 'absent' },
       { lessonId: 2, studentId: 1, status: 'absent' }, { lessonId: 3, studentId: 1, status: 'present' },
-      // A historical mark for somebody outside this lesson's roster is not counted.
+      // A real historical mark survives changes to the reconstructed roster.
       { lessonId: 2, studentId: 2, status: 'present' },
-    ];
+    ].map(mark => ({...mark,studentName:`Student ${mark.studentId}`,contactName:`Student ${mark.studentId}`}));
     if (sql.includes('lead.comment')) return [{ id: 1, comment: 'Организация: Bank\nprivate comment' }];
     return [];
   });
@@ -34,9 +34,9 @@ beforeEach(() => {
 
 it('counts actual historical rosters across streams, separates unmarked students, and deduplicates total students', async () => {
   const result = await loadPublicAttendanceReport([55, 56, 57], {});
-  expect(result.totals).toEqual({ present: 2, absent: 2, unmarked: 1, lessonCount: 3, studentCount: 3 });
+  expect(result.totals).toEqual({ present: 3, absent: 2, unmarked: 1, lessonCount: 3, studentCount: 3 });
   expect(result.groups.map(({ id, name, lessonCount, present, absent, unmarked, students }) => ({ id, name, lessonCount, present, absent, unmarked, studentCount: students.length }))).toEqual([
-    { id: 55, name: 'Поток 1', lessonCount: 2, present: 1, absent: 2, unmarked: 0, studentCount: 2 },
+    { id: 55, name: 'Поток 1', lessonCount: 2, present: 2, absent: 2, unmarked: 0, studentCount: 2 },
     { id: 56, name: 'Поток 2', lessonCount: 1, present: 1, absent: 0, unmarked: 1, studentCount: 2 },
     { id: 57, name: 'Поток 3', lessonCount: 0, present: 0, absent: 0, unmarked: 0, studentCount: 0 },
   ]);

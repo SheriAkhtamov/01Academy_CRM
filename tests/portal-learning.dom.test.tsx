@@ -3083,6 +3083,51 @@ it("updates an open lesson Dialog after a timetable refresh and closes it when t
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it.each(["course", "material"])("keeps the lesson enrollment when opening its %s from the timetable Dialog", async (destination) => {
+  history.replaceState(null, "", "/student-module/schedule");
+  const scheduledAt = new Date(+new Date(portalWeekRange(0).from) + 10 * 3600000).toISOString();
+  mocks.schedule.mockResolvedValue([{
+    id: 1,
+    lessonId: 1,
+    runId: 2,
+    enrollmentId: 31,
+    courseName: "Repeated course",
+    groupName: "Shared group",
+    topic: "Historical lesson",
+    scheduledAt,
+    endsAt: new Date(+new Date(scheduledAt) + 3600000).toISOString(),
+    durationMinutes: 60,
+    status: "conducted",
+    teacherName: null,
+    schoolName: null,
+    roomName: null,
+    format: "offline",
+    meetingUrl: null,
+    attendance: "present",
+    updatedAt: null,
+    materials: [{
+      id: 12,
+      publicationId: 12,
+      enrollmentId: 31,
+      runId: 2,
+      unitId: 7,
+      title: "Historical publication",
+    }],
+    assignments: [],
+  }]);
+  mount(<PortalSchedule />);
+  await userEvent.click(await screen.findByText("Historical lesson"));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", {
+    name: destination === "material" ? "Historical publication" : i18n.t("portalMaterial"),
+  }));
+  expect(window.location.pathname).toBe(
+    destination === "material" ? "/student-module/courses/2/materials/12" : "/student-module/courses/2",
+  );
+  expect(new URLSearchParams(window.location.search).get("enrollmentId")).toBe("31");
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
 it("updates a payment already open in a Dialog when its confirmation arrives", async () => {
   const payment = {
     id: 88, amountUzs: 500000, status: "pending", method: "card", type: "full", period: null,

@@ -18,10 +18,19 @@ export async function loadPublicAttendanceReport(groupIds: number[], period: Pub
       ORDER BY lesson.scheduled_at, lesson.id`, [groupIds, period.from ?? null, period.to ?? null]),
   ]);
   const marks = lessons.length ? await query(
-    `SELECT lesson_id, student_id, status FROM academy_attendance WHERE lesson_id = ANY($1::int[])`,
+    `SELECT mark.lesson_id,mark.student_id,mark.status,student.student_name,student.contact_name
+     FROM academy_attendance mark JOIN academy_students student ON student.id=mark.student_id
+     WHERE mark.lesson_id = ANY($1::int[])`,
     [lessons.map((lesson) => Number(lesson.id))],
   ) : [];
   const byMark = new Map(marks.map((mark) => [`${mark.lessonId}:${mark.studentId}`, mark.status]));
+  const markedStudents = new Map<number, Map<number, { id: number; studentName: string; contactName: string }>>();
+  for (const mark of marks) {
+    if (!['present', 'absent'].includes(mark.status)) continue;
+    const students = markedStudents.get(Number(mark.lessonId)) ?? new Map();
+    students.set(Number(mark.studentId), { id: Number(mark.studentId), studentName: mark.studentName, contactName: mark.contactName });
+    markedStudents.set(Number(mark.lessonId), students);
+  }
   const byGroup = new Map<number, PublicAttendanceReportGroup>(groups.map((group) => [Number(group.id), {
     id: Number(group.id), name: String(group.name).replace(/^[A-Z0-9]+-[A-Z0-9]+-(?:GRP|IND)-\d{2}-\d+\s*[—-]\s*/, ''),
     lessonCount: 0, students: [], ...emptyCounts(),
@@ -41,7 +50,9 @@ export async function loadPublicAttendanceReport(groupIds: number[], period: Pub
       group.lessonCount += 1;
       const students = studentsByGroup.get(groupId) ?? new Map<number, PublicAttendanceReportStudent>();
       studentsByGroup.set(groupId, students);
-      for (const row of rosters[index]) {
+      const historicalStudents = new Map(rosters[index].map(row => [Number(row.id), row]));
+      for (const [id, row] of markedStudents.get(Number(lesson.id)) ?? []) historicalStudents.set(id, row);
+      for (const row of historicalStudents.values()) {
         const id = Number(row.id);
         studentIds.add(id);
         const student = students.get(id) ?? {

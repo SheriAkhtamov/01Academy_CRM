@@ -314,6 +314,20 @@ export class PostgresPortalRepository implements PortalRepository {
       [linkId],
     );
   }
+  async hasConfirmedRepresentativeAccess(linkId: number) {
+    const result = await this.one<{ confirmed: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM portal_student_links link
+        JOIN portal_access_audit audit ON audit.student_id=link.student_id
+        WHERE link.id=$1 AND link.kind='representative'
+          AND audit.actor_kind='staff' AND audit.action='REPRESENTATIVE_ACCESS_CONFIRMED'
+          AND audit.details->>'linkId'=link.id::text
+          AND audit.details->>'accountId'=link.account_id::text
+      ) AS confirmed`,
+      [linkId],
+    );
+    return result?.confirmed === true;
+  }
   async createInvitation(invitation: Omit<PortalInvitation, "id">) {
     return this.insert<PortalInvitation>("portal_invitations", invitation);
   }

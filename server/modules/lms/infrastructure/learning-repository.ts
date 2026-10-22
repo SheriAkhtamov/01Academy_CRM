@@ -485,7 +485,10 @@ export class PgLearningRepository {
   ): Promise<LmsScheduleDto[]> {
     const schedule = await listRows<LmsScheduleDto>(
       this.pool,
-      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,binding.unit_id,EXISTS(SELECT 1 FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id) AS rescheduled,(SELECT change.previous_scheduled_at FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id ORDER BY change.id DESC LIMIT 1) AS previous_scheduled_at,course.name AS course_name,g.name AS group_name,lesson.topic,lesson.scheduled_at,(lesson.scheduled_at + lesson.duration_minutes * interval '1 minute') AS ends_at,lesson.duration_minutes,lesson.status,(SELECT teacher.full_name FROM academy_teachers teacher WHERE teacher.id=COALESCE(lesson.teacher_id,g.teacher_id)) AS teacher_name,(SELECT school.name FROM academy_schools school WHERE school.id=lesson.school_id) AS school_name,(SELECT room.name FROM academy_rooms room WHERE room.id=lesson.room_id) AS room_name,COALESCE(binding.format,run.format) AS format,CASE WHEN COALESCE(binding.format,run.format)='online' THEN COALESCE(binding.meeting_url,run.meeting_url) ELSE NULL END AS meeting_url,(SELECT mark.status FROM academy_attendance mark WHERE mark.lesson_id=lesson.id AND mark.student_id=$1) AS attendance,lesson.updated_at FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_lesson_bindings binding ON binding.lesson_id=lesson.id AND binding.run_id=run.id WHERE lesson.scheduled_at>=$2::timestamptz AND lesson.scheduled_at<$3::timestamptz AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at))
+      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,enrollment.id AS enrollment_id,binding.unit_id,EXISTS(SELECT 1 FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id) AS rescheduled,(SELECT change.previous_scheduled_at FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id ORDER BY change.id DESC LIMIT 1) AS previous_scheduled_at,course.name AS course_name,g.name AS group_name,lesson.topic,lesson.scheduled_at,(lesson.scheduled_at + lesson.duration_minutes * interval '1 minute') AS ends_at,lesson.duration_minutes,lesson.status,(SELECT teacher.full_name FROM academy_teachers teacher WHERE teacher.id=COALESCE(lesson.teacher_id,g.teacher_id)) AS teacher_name,(SELECT school.name FROM academy_schools school WHERE school.id=lesson.school_id) AS school_name,(SELECT room.name FROM academy_rooms room WHERE room.id=lesson.room_id) AS room_name,COALESCE(binding.format,run.format) AS format,CASE WHEN COALESCE(binding.format,run.format)='online' THEN COALESCE(binding.meeting_url,run.meeting_url) ELSE NULL END AS meeting_url,(SELECT mark.status FROM academy_attendance mark WHERE mark.lesson_id=lesson.id AND mark.student_id=$1) AS attendance,lesson.updated_at
+      FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_lesson_bindings binding ON binding.lesson_id=lesson.id AND binding.run_id=run.id
+      JOIN LATERAL(SELECT enrollment.id FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at) ORDER BY enrollment.enrolled_at DESC,enrollment.id DESC LIMIT 1) enrollment ON true
+      WHERE lesson.scheduled_at>=$2::timestamptz AND lesson.scheduled_at<$3::timestamptz
       AND (lesson.status='conducted' OR (NOT g.is_archived AND g.status<>'frozen'))
       AND (EXISTS(SELECT 1 FROM academy_attendance recorded_mark WHERE recorded_mark.lesson_id=lesson.id AND recorded_mark.student_id=$1)
         OR ${studentWasStudyingSql("$1", "lesson.scheduled_at")})
@@ -505,12 +508,13 @@ export class PgLearningRepository {
     const assignments = await rows<{
       runId: number;
       unitId: number | null;
+      enrollmentId: number;
       recipientId: number;
       title: string;
       status: import("@shared/contracts/lms").LmsAssignmentStatus;
     }>(
       this.pool,
-      `SELECT assignment.run_id,assignment.unit_id,recipient.id AS recipient_id,version.title,recipient.status FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN academy_student_group_enrollments enrollment ON enrollment.id=recipient.enrollment_id WHERE ${enrollmentVisibilitySql("enrollment", "recipient.opens_at")} AND recipient.opens_at<=now() AND recipient.status<>'cancelled'`,
+      `SELECT assignment.run_id,assignment.unit_id,recipient.enrollment_id,recipient.id AS recipient_id,version.title,recipient.status FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN academy_student_group_enrollments enrollment ON enrollment.id=recipient.enrollment_id WHERE ${enrollmentVisibilitySql("enrollment", "recipient.opens_at")} AND recipient.opens_at<=now() AND recipient.status<>'cancelled'`,
       [actor.studentId],
     );
     return schedule.map((lesson) => ({
@@ -520,13 +524,15 @@ export class PgLearningRepository {
         : null,
       materials: materials.filter(
         (material) =>
-          material.runId === lesson.runId && material.unitId === lesson.unitId,
+          material.runId === lesson.runId && material.unitId === lesson.unitId
+          && material.enrollmentId === lesson.enrollmentId,
       ),
       assignments: assignments
         .filter(
           (assignment) =>
             assignment.runId === lesson.runId &&
-            assignment.unitId === lesson.unitId,
+            assignment.unitId === lesson.unitId &&
+            assignment.enrollmentId === lesson.enrollmentId,
         )
         .map(({ recipientId, title, status }) => ({
           recipientId,
@@ -1309,7 +1315,7 @@ export class PgLearningRepository {
       );
       const missing = await one<{ count: number }>(
         sql,
-        `SELECT COUNT(*)::int AS count FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE unit.course_version_id=$1 AND run.id=$2 AND unit.required AND ${runUnitSelectionSql()} AND NOT EXISTS(SELECT 1 FROM lms_materials material JOIN lms_material_publications publication ON publication.material_id=material.id JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id WHERE material.unit_id=unit.id AND material.run_id=$2 AND material.state='published' AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND enrollment.student_id=$3)`,
+        `SELECT COUNT(*)::int AS count FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id WHERE unit.course_version_id=$1 AND run.id=$2 AND unit.required AND ${runUnitSelectionSql()} AND NOT EXISTS(SELECT 1 FROM lms_materials material JOIN lms_material_publications publication ON publication.material_id=material.id JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id WHERE material.unit_id=unit.id AND material.run_id=$2 AND material.state='published' AND publication.publish_at<=now() AND publication.revoked_at IS NULL AND enrollment.student_id=$3 AND publication.publish_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR publication.publish_at<enrollment.ended_at))`,
         [run!.courseVersionId, runId, studentId],
       );
       const progress = await this.progress(
@@ -1322,8 +1328,8 @@ export class PgLearningRepository {
       const pending = await one<{ count: number }>(
         sql,
         `SELECT (
-        (SELECT COUNT(*) FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND version.required AND recipient.status NOT IN('accepted','excused','cancelled')) +
-        (SELECT COUNT(*) FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required AND recipient.status='assigned' AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed)))::int AS count`,
+        (SELECT COUNT(*) FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND version.required AND ${recipientEnrollmentVisibilitySql()} AND recipient.status NOT IN('accepted','excused','cancelled')) +
+        (SELECT COUNT(*) FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required AND ${recipientEnrollmentVisibilitySql()} AND recipient.status='assigned' AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed)))::int AS count`,
         [studentId, runId],
       );
       if (
@@ -1390,12 +1396,12 @@ export class PgLearningRepository {
   ) {
     const assignments = await rows<{ id: number }>(
       sql,
-      "SELECT recipient.id FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND version.required ORDER BY recipient.id",
+      `SELECT recipient.id FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND version.required AND ${recipientEnrollmentVisibilitySql()} ORDER BY recipient.id`,
       [studentId, runId],
     );
     const quizzes = await rows<{ id: number }>(
       sql,
-      "SELECT recipient.id FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required ORDER BY recipient.id",
+      `SELECT recipient.id FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required AND ${recipientEnrollmentVisibilitySql()} ORDER BY recipient.id`,
       [studentId, runId],
     );
     return {
@@ -1429,8 +1435,8 @@ export class PgLearningRepository {
     const pending = await one<{ count: number }>(
       sql,
       `SELECT (
-        (SELECT COUNT(*) FROM unnest($1::bigint[]) required(id) LEFT JOIN lms_assignment_recipients recipient ON recipient.id=required.id WHERE recipient.id IS NULL OR recipient.status NOT IN('accepted','excused','cancelled')) +
-        (SELECT COUNT(*) FROM unnest($2::bigint[]) required(id) LEFT JOIN lms_quiz_recipients recipient ON recipient.id=required.id WHERE recipient.id IS NULL OR (recipient.status='assigned' AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed))))::int AS count`,
+        (SELECT COUNT(*) FROM unnest($1::bigint[]) required(id) LEFT JOIN lms_assignment_recipients recipient ON recipient.id=required.id WHERE recipient.id IS NULL OR (${recipientEnrollmentVisibilitySql()} AND recipient.status NOT IN('accepted','excused','cancelled'))) +
+        (SELECT COUNT(*) FROM unnest($2::bigint[]) required(id) LEFT JOIN lms_quiz_recipients recipient ON recipient.id=required.id WHERE recipient.id IS NULL OR (${recipientEnrollmentVisibilitySql()} AND recipient.status='assigned' AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed))))::int AS count`,
       [snapshot.assignmentRecipientIds, snapshot.quizRecipientIds],
     );
     if (!pending!.count) {

@@ -80,7 +80,10 @@ export class PgEngagementRepository {
     await this.syncMakeup(actor.studentId);
     const plans = await listRows<Omit<LmsMakeupDto, "materials">>(
       this.pool,
-      `SELECT plan.id,plan.lesson_id,plan.run_id,lesson.topic,lesson.scheduled_at,plan.status,plan.due_at,plan.recipient_id,plan.quiz_recipient_id FROM lms_makeup_plans plan JOIN academy_lessons lesson ON lesson.id=plan.lesson_id WHERE plan.student_id=$1 AND lesson.status<>'cancelled' ORDER BY lesson.scheduled_at DESC`,
+      `SELECT plan.id,plan.lesson_id,plan.run_id,enrollment.id AS enrollment_id,lesson.topic,lesson.scheduled_at,plan.status,plan.due_at,plan.recipient_id,plan.quiz_recipient_id
+      FROM lms_makeup_plans plan JOIN academy_lessons lesson ON lesson.id=plan.lesson_id
+      JOIN LATERAL(SELECT enrollment.id FROM academy_student_group_enrollments enrollment WHERE enrollment.student_id=plan.student_id AND enrollment.group_id=lesson.group_id AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at) ORDER BY enrollment.enrolled_at DESC,enrollment.id DESC LIMIT 1) enrollment ON true
+      WHERE plan.student_id=$1 AND lesson.status<>'cancelled' ORDER BY lesson.scheduled_at DESC`,
       [actor.studentId],
       page,
       page ? await this.learning.enabledRunIds(actor.studentId) : undefined,
@@ -104,6 +107,7 @@ export class PgEngagementRepository {
       materials: materials.filter(
         (material) =>
           material.runId === plan.runId &&
+          material.enrollmentId === plan.enrollmentId &&
           material.unitId ===
             bindings.find((binding) => binding.lessonId === plan.lessonId)
               ?.unitId,

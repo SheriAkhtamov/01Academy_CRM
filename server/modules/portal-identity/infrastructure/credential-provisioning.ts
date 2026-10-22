@@ -52,30 +52,45 @@ export class PortalCredentialProvisioning {
   async runOnce(signal?: AbortSignal) {
     const result = { prepared: 0 };
     if (!this.options.enabled() || signal?.aborted) return result;
-    const eligible = (await this.pool.query<{ id: number }>(`SELECT student.id FROM academy_students student
-      JOIN academy_leads lead ON lead.id=student.lead_id
-      WHERE NOT EXISTS(SELECT 1 FROM portal_student_links link WHERE link.student_id=student.id AND link.kind='self')
-      ORDER BY student.id LIMIT 25`)).rows;
-    for (const row of eligible) {
-      if (!this.options.enabled() || signal?.aborted) break;
-      const password = this.crypto.randomToken().slice(0, 20);
-      const hash = await this.crypto.hashPassword(password);
-      if (!this.options.enabled() || signal?.aborted) break;
-      const sql = await this.pool.connect();
-      try {
-        await sql.query('BEGIN');
-        const student = await credentialStudent(sql, row.id);
-        if (!await this.options.enabledForStudent(student.id, student.groups)) { await sql.query('ROLLBACK'); continue; }
-        const existed = await existingStudentCredential(sql, student.id);
-        await this.ensureDraft(sql, student, password, hash);
-        if (signal?.aborted || !this.options.enabled()) throw new Error('LMS_JOB_LEASE_LOST');
-        await sql.query('COMMIT');
-        if (!existed) result.prepared++;
-      } catch (error) {
-        await sql.query('ROLLBACK');
-        if (error instanceof PortalError && error.code === 'portalInvitationsDisabled') break;
-        throw error;
-      } finally { sql.release(); }
+    let afterStudentId = 0;
+    // Advance through skipped students as well as prepared accounts. A disabled
+    // prefix must not consume the next run's entire preparation window again.
+    while (result.prepared < 25 && this.options.enabled() && !signal?.aborted) {
+      const eligible = (await this.pool.query<{ id: number; groups: number[] }>(
+        `SELECT student.id,ARRAY(SELECT group_id FROM academy_student_group_enrollments
+          WHERE student_id=student.id) AS groups FROM academy_students student
+        JOIN academy_leads lead ON lead.id=student.lead_id
+        WHERE student.id>$1
+          AND NOT EXISTS(SELECT 1 FROM portal_student_links link WHERE link.student_id=student.id AND link.kind='self')
+          AND EXISTS(SELECT 1 FROM lms_feature_flags flag WHERE flag.key='invitations' AND flag.enabled
+            AND (flag.all_groups OR flag.group_ids && ARRAY(SELECT group_id FROM academy_student_group_enrollments WHERE student_id=student.id)))
+        ORDER BY student.id LIMIT 25`,
+        [afterStudentId],
+      )).rows;
+      if (!eligible.length) break;
+      for (const row of eligible) {
+        afterStudentId = row.id;
+        if (result.prepared >= 25 || !this.options.enabled() || signal?.aborted) break;
+        if (!await this.options.enabledForStudent(row.id, row.groups)) continue;
+        const password = this.crypto.randomToken().slice(0, 20);
+        const hash = await this.crypto.hashPassword(password);
+        if (!this.options.enabled() || signal?.aborted) break;
+        const sql = await this.pool.connect();
+        try {
+          await sql.query('BEGIN');
+          const student = await credentialStudent(sql, row.id);
+          if (!await this.options.enabledForStudent(student.id, student.groups)) { await sql.query('ROLLBACK'); continue; }
+          const existed = await existingStudentCredential(sql, student.id);
+          await this.ensureDraft(sql, student, password, hash);
+          if (signal?.aborted || !this.options.enabled()) throw new Error('LMS_JOB_LEASE_LOST');
+          await sql.query('COMMIT');
+          if (!existed) result.prepared++;
+        } catch (error) {
+          await sql.query('ROLLBACK');
+          if (error instanceof PortalError && error.code === 'portalInvitationsDisabled') continue;
+          throw error;
+        } finally { sql.release(); }
+      }
     }
     return result;
   }

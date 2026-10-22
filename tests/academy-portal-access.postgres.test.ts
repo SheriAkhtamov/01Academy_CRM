@@ -62,6 +62,44 @@ describe.skipIf(!databaseUrl)('Academy lead access, local credentials and retire
     const encrypted = (await pool.query('SELECT encrypted_password FROM portal_initial_credentials')).rows;
     expect(encrypted.every(row => !row.encrypted_password.includes('password'))).toBe(true);
   });
+  it('restores manually issued parent access after the adult student consents again', async () => {
+    await repository.provisioning.runOnce();
+    const representative = await service.chooseLeadRole(staff, 2, parent());
+    const child = (await pool.query("SELECT account.id,account.auth_version FROM portal_accounts account JOIN portal_student_links link ON link.account_id=account.id WHERE link.student_id=2 AND link.kind='self'")).rows[0];
+    const credentials = await service.showCredentials(staff, 2, child.id, child.auth_version);
+    const session = await identity.login(credentials.account.login, credentials.password!, 'child-consent');
+    expect(await identity.listSubjects(representative.account.id)).toHaveLength(1);
+    await identity.classifyStudent(staff, 2, 'adult', 'in_person', null);
+    const link = (await identity.ownRepresentatives(session.id))[0];
+    expect(link.status).toBe('suspended');
+    await identity.representativeConsent(session.id, link.linkId, link.permissions, true);
+    expect((await identity.ownRepresentatives(session.id))[0].status).toBe('active');
+    expect(await identity.listSubjects(representative.account.id)).toHaveLength(1);
+    expect((await pool.query('SELECT count(*)::int AS count FROM portal_invitations')).rows[0].count).toBe(0);
+    await pool.query("UPDATE portal_accounts SET status='suspended' WHERE id=$1", [representative.account.id]);
+    await expect(identity.representativeConsent(session.id, link.linkId, link.permissions, true)).rejects.toMatchObject({code:'portalAccountUnavailable'});
+    await identity.representativeConsent(session.id, link.linkId, link.permissions, false);
+    await expect(identity.representativeConsent(session.id, link.linkId, link.permissions, true)).rejects.toMatchObject({code:'portalLinkNotFound'});
+  });
+  it('prepares eligible accounts beyond a disabled callback prefix without duplicates on concurrent runs', async () => {
+    await pool.query("INSERT INTO academy_students(id,lead_id,student_name,contact_name,phone,manager_id) SELECT n,2,'Child '||n,'Parent','shared-phone',1 FROM generate_series(3,26) n");
+    const rollout = new PostgresAcademyPortalAccessRepository(pool, crypto, key, {
+      enabled: () => true, enabledForStudent: id => id === 26,
+    });
+    const results = await Promise.all([rollout.provisioning.runOnce(), rollout.provisioning.runOnce()]);
+    expect(results.reduce((sum,result) => sum + result.prepared,0)).toBe(1);
+    expect(await rollout.provisioning.runOnce()).toEqual({prepared:0});
+    expect((await pool.query("SELECT student_id FROM portal_student_links WHERE kind='self'")).rows).toEqual([{student_id:26}]);
+  });
+  it('applies group rollout before batching and retains the account preparation limit', async () => {
+    await pool.query("INSERT INTO academy_students(id,lead_id,student_name,contact_name,phone,manager_id) SELECT n,2,'Child '||n,'Parent','shared-phone',1 FROM generate_series(3,26) n; INSERT INTO academy_groups(id) VALUES(7); INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at) VALUES(26,7,now()); UPDATE lms_feature_flags SET all_groups=false,group_ids='{7}' WHERE key='invitations'");
+    expect(await repository.provisioning.runOnce()).toEqual({prepared:1});
+    expect((await pool.query("SELECT student_id FROM portal_student_links WHERE kind='self'")).rows).toEqual([{student_id:26}]);
+    await pool.query("TRUNCATE portal_accounts CASCADE; UPDATE lms_feature_flags SET all_groups=true WHERE key='invitations'");
+    expect(await repository.provisioning.runOnce()).toEqual({prepared:25});
+    expect(await repository.provisioning.runOnce()).toEqual({prepared:1});
+    expect(await repository.provisioning.runOnce()).toEqual({prepared:0});
+  });
   it('reuses the student account for an explicit adult self role and erases the initial password after successful login', async () => {
     await repository.provisioning.runOnce();
     const result = await service.chooseLeadRole(staff, 1, { role: 'self', studentId: 1 });

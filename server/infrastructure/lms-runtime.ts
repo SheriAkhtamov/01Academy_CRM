@@ -39,7 +39,7 @@ import {
   PostgresPortalResourceRepository,
   authorizeLmsFiles,
 } from "../modules/portal-resources/infrastructure/postgres-repository";
-import { reportProjectSnapshots } from "../modules/portal-resources/infrastructure/project-repository";
+import { reportProjectSnapshots, verifiedProjectSourceSql } from "../modules/portal-resources/infrastructure/project-repository";
 import {
   LocalResourceFileStore,
   createResourceTokenCodec,
@@ -278,8 +278,8 @@ export function createLearningRuntime(
       afterReview: async (sql, actor, event) => {
         const accepted = (
           await sql.query(
-            `SELECT project.id FROM academy_portfolio_projects project JOIN lms_submissions submission ON submission.id=project.source_submission_id WHERE project.student_id=$1 AND project.lms_run_id=$2 AND project.archived_at IS NULL AND submission.withdrawn_at IS NULL
-        AND EXISTS(SELECT 1 FROM lms_reviews review WHERE review.submission_id=submission.id AND review.decision='accepted' AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id)) LIMIT 1`,
+            `SELECT project.id FROM academy_portfolio_projects project WHERE project.student_id=$1 AND project.lms_run_id=$2 AND project.archived_at IS NULL
+        AND ${verifiedProjectSourceSql()} LIMIT 1`,
             [event.studentId, event.runId],
           )
         ).rows[0];

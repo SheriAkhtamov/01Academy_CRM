@@ -15,6 +15,7 @@ export const portalProjectSchema = z.object({
   coverFileId: id.nullable().default(null), version: z.number().int().nonnegative(), idempotencyKey: z.string().uuid().optional(),
 }).strict();
 export type PortalProjectInput = z.infer<typeof portalProjectSchema>;
+export const portalProjectArchiveSchema = z.object({ version: z.number().int().positive() }).strict();
 export const portalShareSchema = z.object({
   projectVersion: z.number().int().positive(), displayName: z.string().trim().min(1).max(100),
   includeDescription: z.boolean(), includeReview: z.boolean(), fileIds: z.array(id).max(5),

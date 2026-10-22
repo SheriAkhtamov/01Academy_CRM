@@ -13,6 +13,20 @@ const projectColumns = `project.id,project.student_id,project.title,project.desc
 const projectJoins = `FROM academy_portfolio_projects project LEFT JOIN lms_group_runs run ON run.id=project.lms_run_id
   LEFT JOIN academy_groups g ON g.id=COALESCE(run.group_id,project.group_id) LEFT JOIN academy_courses course ON course.id=COALESCE(g.course_id,project.course_id)`;
 const shareColumns = `share.*, project.student_id,project.lms_run_id AS run_id`;
+// A source reference is provenance only when its reviewed content still matches.
+// Submissions have no cover; choosing one requires a separate project review.
+export const verifiedProjectSourceSql = (project = 'project') => `EXISTS(
+  SELECT 1 FROM lms_submissions submission
+  JOIN lms_assignment_versions source_version ON source_version.id=submission.assignment_version_id
+  JOIN lms_assignment_recipients recipient ON recipient.id=submission.recipient_id
+  JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id
+  WHERE submission.id=${project}.source_submission_id AND recipient.student_id=${project}.student_id
+    AND assignment.run_id=${project}.lms_run_id AND submission.withdrawn_at IS NULL
+    AND ${project}.title=source_version.title AND ${project}.description=submission.text
+    AND ${project}.links=submission.links AND ${project}.file_ids=submission.file_ids
+    AND ${project}.cover_file_id IS NULL
+    AND EXISTS(SELECT 1 FROM lms_reviews review WHERE review.submission_id=submission.id AND review.decision='accepted'
+      AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id)))`;
 export const fileDto = (file: { id: number; name: string; mime: string; sizeBytes: number; state: ResourceFile['state']; storageKey: string; ownerAccountId: number | null; ownerUserId: number | null; studentId: number | null; runId: number | null; createdAt: string; rejectionCode: string | null; courseId?: number | null; purpose?: 'learning' | 'course_material' }): ResourceFile => ({
   ...file, size: file.sizeBytes, downloadUrl: file.state === 'ready' ? `/api/portal/files/${file.id}/download` : null,
 });
@@ -89,7 +103,7 @@ export class ProjectRepository {
   async staffProjectComparison(actor:ResourceStaffActor,studentId:number,runId:number) { await this.comparisonStaffScope(actor,studentId,runId); return this.projectComparison(studentId,runId); }
   async staffProjects(actor:ResourceStaffActor,studentId:number,runId:number,verified=false) {
     await this.comparisonStaffScope(actor,studentId,runId);
-    return decorate(this.pool,await resourceRows<ProjectRow>(this.pool,`SELECT ${projectColumns} ${projectJoins} WHERE project.student_id=$1 AND project.lms_run_id=$2 AND project.archived_at IS NULL AND (NOT $3 OR project.teacher_review IS NOT NULL OR EXISTS(SELECT 1 FROM lms_reviews review JOIN lms_submissions submission ON submission.id=review.submission_id WHERE submission.id=project.source_submission_id AND submission.withdrawn_at IS NULL AND review.decision='accepted' AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id))) ORDER BY project.id DESC LIMIT 100`,[studentId,runId,verified]));
+    return decorate(this.pool,await resourceRows<ProjectRow>(this.pool,`SELECT ${projectColumns} ${projectJoins} WHERE project.student_id=$1 AND project.lms_run_id=$2 AND project.archived_at IS NULL AND (NOT $3 OR project.teacher_review IS NOT NULL OR ${verifiedProjectSourceSql()}) ORDER BY project.id DESC LIMIT 100`,[studentId,runId,verified]));
   }
   async saveStaffProjectComparison(actor:ResourceStaffActor,studentId:number,input:PortalProjectComparisonInput) {
     if (input.runId === null) throw new PortalResourceError('portalInvalidData');
@@ -125,26 +139,47 @@ export class ProjectRepository {
         if (!await resourceOne(sql, 'SELECT id FROM academy_portfolio_projects WHERE id=$1 AND student_id=$2 AND archived_at IS NULL', [receipt.entityId, actor.studentId])) throw new PortalResourceError('portalNotFound', 404);
         return receipt.entityId;
       }
+      const existing = projectId === null ? null : await resourceOne<ProjectRow>(sql,
+        `SELECT ${projectColumns} ${projectJoins} WHERE project.id=$1 AND project.student_id=$2 FOR UPDATE OF project`, [projectId, actor.studentId]);
+      if (projectId !== null && !existing) throw new PortalResourceError('portalNotFound', 404);
+      if (existing) {
+        if (existing.archivedAt) throw new PortalResourceError('portalVersionConflict', 409);
+        requireResourceVersion(existing.version, input.version);
+        await this.requireEnabledRun(existing.runId, sql);
+      }
       if (input.runId && !await resourceOne(sql, `SELECT run.id FROM lms_group_runs run JOIN academy_student_group_enrollments enrollment ON enrollment.group_id=run.group_id WHERE run.id=$1 AND enrollment.student_id=$2`, [input.runId, actor.studentId])) throw new PortalResourceError('portalNotFound', 404);
-      if (input.sourceSubmissionId && !await resourceOne(sql, `SELECT submission.id FROM lms_submissions submission JOIN lms_assignment_recipients recipient ON recipient.id=submission.recipient_id
-        JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE submission.id=$1 AND recipient.student_id=$2 AND submission.withdrawn_at IS NULL
-        AND ($3::bigint IS NULL OR assignment.run_id=$3) AND EXISTS(SELECT 1 FROM lms_reviews review WHERE review.submission_id=submission.id AND review.decision='accepted'
-        AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id))`, [input.sourceSubmissionId, actor.studentId, input.runId])) throw new PortalResourceError('portalNotFound', 404);
+      let sourceSubmissionId = input.sourceSubmissionId;
+      if (sourceSubmissionId) {
+        const source = await resourceOne<{ title: string; text: string; links: string[]; fileIds: number[]; runId: number }>(sql,
+          `SELECT version.title,submission.text,submission.links,submission.file_ids,assignment.run_id
+          FROM lms_submissions submission JOIN lms_assignment_recipients recipient ON recipient.id=submission.recipient_id
+          JOIN lms_assignment_versions version ON version.id=submission.assignment_version_id
+          JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE submission.id=$1 AND recipient.student_id=$2 AND submission.withdrawn_at IS NULL
+          AND ($3::bigint IS NULL OR assignment.run_id=$3) AND EXISTS(SELECT 1 FROM lms_reviews review WHERE review.submission_id=submission.id AND review.decision='accepted'
+          AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id))`, [sourceSubmissionId, actor.studentId, input.runId]);
+        if (!source) throw new PortalResourceError('portalNotFound', 404);
+        if (input.coverFileId !== null || source.title !== input.title || source.text !== input.description || source.runId !== input.runId
+          || JSON.stringify(source.links) !== JSON.stringify(input.links) || JSON.stringify(source.fileIds) !== JSON.stringify(input.fileIds)) sourceSubmissionId = null;
+      }
       const fileIds = [...new Set([...input.fileIds, ...(input.coverFileId ? [input.coverFileId] : [])])];
       const files = await filesByIds(sql, fileIds);
       if (files.length !== fileIds.length || files.some((file) => file.state !== 'ready' || file.studentId !== actor.studentId || file.ownerAccountId !== actor.portalAccountId || (file.runId!==null && input.runId!==null && file.runId!==input.runId))) throw new PortalResourceError('portalFileNotReady', 409);
       if (input.coverFileId && !files.some((file) => file.id === input.coverFileId && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime))) throw new PortalResourceError('portalInvalidData');
-      const values = [input.title, input.description, input.runId, input.sourceSubmissionId, JSON.stringify(input.links), JSON.stringify(input.fileIds), input.coverFileId];
+      const contentChanged = existing !== null && (existing.title !== input.title || existing.description !== input.description
+        || existing.runId !== input.runId || existing.sourceSubmissionId !== sourceSubmissionId || existing.coverFileId !== input.coverFileId
+        || JSON.stringify(existing.links) !== JSON.stringify(input.links) || JSON.stringify(existing.fileIds) !== JSON.stringify(input.fileIds));
+      const values = [input.title, input.description, input.runId, sourceSubmissionId, JSON.stringify(input.links), JSON.stringify(input.fileIds), input.coverFileId];
       const record = projectId === null
         ? await resourceOne<{ id: number }>(sql, `INSERT INTO academy_portfolio_projects(student_id,title,description,lms_run_id,source_submission_id,links,file_ids,cover_file_id,group_id,course_id,url,portal_created)
           VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,(SELECT group_id FROM lms_group_runs WHERE id=$4),(SELECT g.course_id FROM lms_group_runs run JOIN academy_groups g ON g.id=run.group_id WHERE run.id=$4),$9,true) RETURNING id`, [actor.studentId, ...values, input.links[0] ?? null])
         : await resourceOne<{ id: number }>(sql, `UPDATE academy_portfolio_projects SET title=$1,description=$2,lms_run_id=$3,source_submission_id=$4,links=$5::jsonb,file_ids=$6::jsonb,cover_file_id=$7,portal_version=portal_version+1,updated_at=now(),url=$11,portal_created=true,
+          teacher_review=CASE WHEN $12::boolean THEN NULL ELSE teacher_review END,reviewed_by=CASE WHEN $12::boolean THEN NULL ELSE reviewed_by END,
           group_id=COALESCE((SELECT group_id FROM lms_group_runs WHERE id=$3),group_id),course_id=COALESCE((SELECT g.course_id FROM lms_group_runs run JOIN academy_groups g ON g.id=run.group_id WHERE run.id=$3),course_id)
-          WHERE id=$8 AND student_id=$9 AND portal_version=$10 AND archived_at IS NULL RETURNING id`, [...values, projectId, actor.studentId, input.version, input.links[0] ?? null]);
+          WHERE id=$8 AND student_id=$9 AND portal_version=$10 AND archived_at IS NULL RETURNING id`, [...values, projectId, actor.studentId, input.version, input.links[0] ?? null, contentChanged]);
       if (!record) throw new PortalResourceError('portalVersionConflict', 409);
       await sql.query('UPDATE lms_files SET attached_at=COALESCE(attached_at,now()),run_id=COALESCE(run_id,$2) WHERE id=ANY($1::bigint[])', [fileIds,input.runId]);
       await resourceAudit(sql, actor, projectId === null ? 'project.created' : 'project.updated', 'project', record.id, receipt.changes);
-      if (input.sourceSubmissionId && input.runId) await this.verifiedProject?.(sql,actor.studentId,input.runId,record.id);
+      if (sourceSubmissionId && input.runId) await this.verifiedProject?.(sql,actor.studentId,input.runId,record.id);
       return record.id;
     });
     return (await this.project(actor, savedId))!;
@@ -157,12 +192,14 @@ export class ProjectRepository {
       AND EXISTS(SELECT 1 FROM lms_reviews review WHERE review.submission_id=submission.id AND review.decision='accepted' AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id))`, [submissionId, actor.studentId]);
     return source && await this.runEnabled(source.runId) ? { title: source.title, description: source.text, runId: source.runId, sourceSubmissionId: submissionId, links: source.links, fileIds: source.fileIds, coverFileId: null, version: 0 } : null;
   }
-  async archiveProject(actor: PortalActorContext, projectId: number) {
-    if (!await this.project(actor, projectId)) throw new PortalResourceError('portalNotFound', 404);
+  async archiveProject(actor: PortalActorContext, projectId: number, version: number) {
     await resourceTransaction(this.pool, async (sql) => {
       await checkResourceLink(sql, actor, 'portfolio.edit');
-      const project = await resourceOne(sql, `UPDATE academy_portfolio_projects SET archived_at=now(),portal_created=true,portal_version=portal_version+1 WHERE id=$1 AND student_id=$2 AND archived_at IS NULL RETURNING id`, [projectId, actor.studentId]);
-      if (!project) throw new PortalResourceError('portalNotFound', 404);
+      const existing = await resourceOne<{ runId: number | null }>(sql, 'SELECT lms_run_id AS run_id FROM academy_portfolio_projects WHERE id=$1 AND student_id=$2 AND archived_at IS NULL FOR UPDATE', [projectId, actor.studentId]);
+      if (!existing) throw new PortalResourceError('portalNotFound', 404);
+      await this.requireEnabledRun(existing.runId, sql);
+      const project = await resourceOne(sql, `UPDATE academy_portfolio_projects SET archived_at=now(),portal_created=true,portal_version=portal_version+1 WHERE id=$1 AND student_id=$2 AND portal_version=$3 AND archived_at IS NULL RETURNING id`, [projectId, actor.studentId, version]);
+      if (!project) throw new PortalResourceError('portalVersionConflict', 409);
       await sql.query("UPDATE lms_portfolio_shares SET status='revoked',revoked_at=now(),version=version+1 WHERE project_id=$1 AND status<>'revoked'", [projectId]);
       await resourceAudit(sql, actor, 'project.archived', 'project', projectId);
     });
@@ -269,7 +306,7 @@ export class ProjectRepository {
 export async function reportProjectSnapshots(sql:ResourceSql,_actor:ResourceStaffActor,runId:number,studentId:number,ids:number[]) {
   if(!ids.length)return [];
   const projects = await resourceRows<ProjectRow>(sql,`SELECT ${projectColumns} ${projectJoins} WHERE project.id=ANY($1::integer[]) AND project.student_id=$2 AND project.lms_run_id=$3 AND project.archived_at IS NULL
-    AND (project.teacher_review IS NOT NULL OR EXISTS(SELECT 1 FROM lms_reviews review JOIN lms_submissions submission ON submission.id=review.submission_id WHERE submission.id=project.source_submission_id AND submission.withdrawn_at IS NULL AND review.decision='accepted' AND review.id=(SELECT max(latest.id) FROM lms_reviews latest WHERE latest.submission_id=submission.id)))`,[ids,studentId,runId]);
+    AND (project.teacher_review IS NOT NULL OR ${verifiedProjectSourceSql()})`,[ids,studentId,runId]);
   if(projects.length!==new Set(ids).size)throw new PortalResourceError('portalNotFound',404);
   for(const project of projects){const files=await filesByIds(sql,project.fileIds);if(files.length!==project.fileIds.length || files.some(file => file.state!=='ready'))throw new PortalResourceError('portalFileNotReady',409);}
   return projects.map(project=>({id:project.id,title:project.title,description:project.description,fileIds:project.fileIds,links:project.links,review:project.teacherReview ?? ''}));

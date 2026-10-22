@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { enrollmentCourseHref, enrollmentMaterialHref } from "./enrollment-period";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -299,7 +300,7 @@ export function PortalSchedule() {
                               guarded(() => {
                                 setSelectedId(null);
                                 navigate(
-                                  `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
+                                  enrollmentMaterialHref(selected.runId, material.publicationId, selected.enrollmentId ?? material.enrollmentId),
                                 );
                               })
                             }
@@ -352,7 +353,7 @@ export function PortalSchedule() {
                       onClick={() =>
                         guarded(() => {
                           setSelectedId(null);
-                          navigate(`/learn/courses/${selected.runId}`);
+                          navigate(enrollmentCourseHref(selected.runId, selected.enrollmentId));
                         })
                       }
                     >

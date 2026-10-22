@@ -27,7 +27,7 @@ export interface PortalResourceRepository {
   staffProjectComparison(actor:ResourceStaffActor,studentId:number,runId:number):Promise<ComparisonRecord|null>;
   staffProjects(actor:ResourceStaffActor,studentId:number,runId:number,verified?:boolean):Promise<PortalProjectDto[]>;
   saveStaffProjectComparison(actor:ResourceStaffActor,studentId:number,input:PortalProjectComparisonInput):Promise<ComparisonRecord>;
-  archiveProject(actor: PortalActorContext, projectId: number): Promise<void>;
+  archiveProject(actor: PortalActorContext, projectId: number, version: number): Promise<void>;
   createShare(actor: PortalActorContext, projectId: number, input: PortalShareInput, tokenHash: string, tokenEnvelope: string): Promise<ShareRecord>;
   share(actor: PortalActorContext, shareId: number): Promise<ShareRecord | null>;
   approveShare(actor: PortalActorContext, shareId: number, version: number, approved: boolean): Promise<ShareRecord>;

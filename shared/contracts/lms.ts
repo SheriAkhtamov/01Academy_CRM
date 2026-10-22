@@ -507,6 +507,7 @@ export type LmsAssignmentDetailDto = LmsAssignmentDto & {
   comments: LmsCommentDto[];
 };
 export type LmsScheduleDto = {
+  enrollmentId?: number;
   rescheduled?: boolean;
   previousScheduledAt?: string | null;
   unitId?: number | null;
@@ -587,6 +588,7 @@ export type LmsQuizAttemptDto = {
     | null;
 };
 export type LmsMakeupDto = {
+  enrollmentId?: number;
   quizRecipientId: number | null;
   id: number;
   lessonId: number;

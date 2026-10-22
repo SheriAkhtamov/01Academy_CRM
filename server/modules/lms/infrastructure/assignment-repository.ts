@@ -20,6 +20,7 @@ import {
   LmsError,
   requireVersion,
   requireAssignmentOpen,
+  revisionClosesAt,
   type LmsStaffActor,
 } from "../domain/policy";
 import {
@@ -749,13 +750,17 @@ export class PgAssignmentRepository {
               input.reason ?? null,
             ],
           );
+          const dueAt = input.dueAt === undefined ? recipient.dueAt : input.dueAt;
+          const closesAt = input.decision === "revision_required"
+            ? revisionClosesAt(recipient.closesAt, dueAt, new Date())
+            : recipient.closesAt;
           await sql.query(
-            "UPDATE lms_assignment_recipients SET status=$2,version=version+1,due_at=CASE WHEN $3::boolean THEN $4::timestamptz ELSE due_at END WHERE id=$1",
+            "UPDATE lms_assignment_recipients SET status=$2,version=version+1,due_at=$3,closes_at=$4 WHERE id=$1",
             [
               row.recipientId,
               input.decision,
-              input.dueAt !== undefined,
-              input.dueAt ?? null,
+              dueAt,
+              closesAt,
             ],
           );
           await recordEvent(
@@ -765,7 +770,7 @@ export class PgAssignmentRepository {
             `assignment_${input.decision}`,
             review!.id,
             `review:${review!.id}`,
-            { submissionId },
+            { submissionId, dueAt, closesAt },
           );
           await recordStaffAudit(
             sql,
@@ -775,7 +780,7 @@ export class PgAssignmentRepository {
             review!.id,
             priorReview ? "correct" : "review",
             priorReview,
-            { ...input, id: review!.id, submissionId },
+            { ...input, id: review!.id, submissionId, dueAt, closesAt, previousClosesAt: recipient.closesAt },
             input.reason,
           );
           if (input.decision === "accepted")
@@ -1010,9 +1015,10 @@ export class PgAssignmentRepository {
         status: string;
         studentId: number;
         opensAt: string;
+        closesAt: string | null;
       }>(
         sql,
-        "SELECT assignment.run_id,recipient.version,recipient.status,recipient.student_id,recipient.opens_at FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE recipient.id=$1 FOR UPDATE OF recipient",
+        "SELECT assignment.run_id,recipient.version,recipient.status,recipient.student_id,recipient.opens_at,recipient.closes_at FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE recipient.id=$1 FOR UPDATE OF recipient",
         [recipientId],
       );
       if (!row) throw new LmsError("lmsNotFound", 404);
@@ -1027,9 +1033,10 @@ export class PgAssignmentRepository {
         throw new LmsError("lmsReviewStateConflict", 409);
       if (input.dueAt && +new Date(input.dueAt) < +new Date(row.opensAt))
         throw new LmsError("lmsDatesInvalid");
+      const closesAt = revisionClosesAt(row.closesAt, input.dueAt, new Date());
       await sql.query(
-        "UPDATE lms_assignment_recipients SET status='revision_required',version=version+1,due_at=$2,reason=$3 WHERE id=$1",
-        [recipientId, input.dueAt, input.reason],
+        "UPDATE lms_assignment_recipients SET status='revision_required',version=version+1,due_at=$2,reason=$3,closes_at=$4 WHERE id=$1",
+        [recipientId, input.dueAt, input.reason, closesAt],
       );
       await recordEvent(
         sql,
@@ -1038,7 +1045,7 @@ export class PgAssignmentRepository {
         "assignment_revision_required",
         recipientId,
         `assignment-reopened:${recipientId}:${input.version}`,
-        { reason: input.reason },
+        { reason: input.reason, dueAt: input.dueAt, closesAt },
       );
       await recordStaffAudit(
         sql,
@@ -1052,6 +1059,7 @@ export class PgAssignmentRepository {
           ...row,
           status: "revision_required",
           dueAt: input.dueAt,
+          closesAt,
           version: input.version + 1,
         },
         input.reason,

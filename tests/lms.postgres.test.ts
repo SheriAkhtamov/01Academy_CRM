@@ -214,6 +214,235 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
     await expect(learning.course(actor, runId, 2)).rejects.toMatchObject({ code: "lmsNotFound" });
     await expect(learning.course(stranger, runId, 1)).rejects.toMatchObject({ code: "lmsNotFound" });
   });
+  it("keeps schedule and makeup attachments inside the lesson's enrollment period", async () => {
+    const oldOpen = new Date(Date.now() - 3 * 3600000).toISOString();
+    const endedAt = new Date(Date.now() - 2 * 3600000).toISOString();
+    const enrolledAt = new Date(Date.now() - 3600000).toISOString();
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({
+      runId, unitId: 1, title: "Historical material", body: "Old content", publishAt: oldOpen,
+    }));
+    await assignments.create(teacher, lmsAssignmentSchema.parse({
+      runId, unitId: 1, title: "Historical assignment", body: "Answer",
+      dueAt: null, opensAt: oldOpen, recipientEnrollmentIds: [1],
+    }));
+    await pool.query(
+      "UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=$1 WHERE id=1",
+      [endedAt],
+    );
+    const enrollmentId = Number((await pool.query(
+      "INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at) VALUES(1,1,$1) RETURNING id",
+      [enrolledAt],
+    )).rows[0].id);
+    const newOpen = new Date(Date.now() - 1800000).toISOString();
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({
+      runId, unitId: 1, title: "Current material", body: "New content", publishAt: newOpen,
+    }));
+    await assignments.create(teacher, lmsAssignmentSchema.parse({
+      runId, unitId: 1, title: "Current assignment", body: "Answer",
+      dueAt: null, opensAt: newOpen, recipientEnrollmentIds: [enrollmentId],
+    }));
+    const newLessons = (await pool.query(
+      "INSERT INTO academy_lessons(group_id,lesson_number,topic,scheduled_at,status) VALUES(1,2,'At enrollment end',$1,'conducted'),(1,3,'At new enrollment start',$2,'conducted') RETURNING id,topic",
+      [endedAt, enrolledAt],
+    )).rows;
+    for (const lesson of newLessons)
+      await learning.bindLesson(teacher, runId, lesson.id, { unitId: 1, format: null, meetingUrl: null });
+    await pool.query(
+      "INSERT INTO academy_attendance(lesson_id,student_id,status) VALUES(1,1,'absent'),($1,1,'absent'),($2,1,'absent')",
+      [newLessons[0].id, newLessons[1].id],
+    );
+    const timetable = await learning.schedule(
+      actor,
+      new Date(Date.now() - 2 * 86400000).toISOString(),
+      future(),
+    );
+    expect(timetable.map(lesson => ({
+      enrollmentId: lesson.enrollmentId,
+      topic: lesson.topic,
+      materials: lesson.materials?.map(material => material.title),
+      assignments: lesson.assignments?.map(assignment => assignment.title),
+    }))).toEqual([
+      { enrollmentId: 1, topic: "Topic", materials: ["Historical material"], assignments: ["Historical assignment"] },
+      { enrollmentId, topic: "At new enrollment start", materials: ["Current material"], assignments: ["Current assignment"] },
+    ]);
+    const makeup = await engagement.makeup(actor);
+    expect(makeup.map(plan => ({
+      enrollmentId: plan.enrollmentId,
+      topic: plan.topic,
+      materials: plan.materials.map(material => material.title),
+    }))).toEqual([
+      { enrollmentId, topic: "At new enrollment start", materials: ["Current material"] },
+      { enrollmentId: 1, topic: "Topic", materials: ["Historical material"] },
+    ]);
+  });
+  it.each(["assignment", "quiz"])("completes a course without inaccessible post-enrollment %s requirements", async (kind) => {
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({
+      runId, unitId: 1, title: "Studied topic", body: "Content",
+      publishAt: new Date(Date.now() - 3 * 3600000).toISOString(),
+    }));
+    const endedAt = open();
+    if (kind === "assignment")
+      await assignments.create(teacher, lmsAssignmentSchema.parse({
+        runId, title: "Opens at enrollment end", body: "Answer", required: true,
+        dueAt: null, opensAt: endedAt, recipientEnrollmentIds: [1],
+      }));
+    else
+      await quizzes.create(teacher, { ...quizInput(), opensAt: endedAt });
+    await expect(learning.completeCourse(teacher, runId, 1, "Not yet ready"))
+      .rejects.toMatchObject({ code: "lmsCourseIncomplete" });
+    await pool.query(
+      "UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=$1 WHERE id=1",
+      [endedAt],
+    );
+    expect((await assignments.list(actor)).items).toEqual([]);
+    expect(await quizzes.list(actor)).toEqual([]);
+    expect(await learning.progress(actor, runId)).toMatchObject({
+      assignments: { completed: 0, total: 0 }, quizzes: { completed: 0, total: 0 },
+    });
+    await expect(learning.completeCourse(teacher, runId, 1, "Completed attended topics"))
+      .resolves.toMatchObject({ completed: true });
+    const event = (await pool.query(
+      "SELECT data FROM lms_learning_events WHERE type='course_completed'",
+    )).rows[0];
+    expect(event.data).toMatchObject({ assignmentRecipientIds: [], quizRecipientIds: [] });
+    expect((await engagement.achievements(actor)).find(award => award.title === "lmsAchievementCourseCompleted"))
+      .toMatchObject({ revokedAt: null });
+  });
+  it.each(["assignment", "quiz"])("still blocks completion on future required %s work inside active enrollment", async (kind) => {
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({
+      runId, unitId: 1, title: "Studied topic", body: "Content", publishAt: open(),
+    }));
+    if (kind === "assignment")
+      await assignments.create(teacher, lmsAssignmentSchema.parse({
+        runId, title: "Future requirement", body: "Answer", dueAt: null,
+        opensAt: future(), recipientEnrollmentIds: [1],
+      }));
+    else
+      await quizzes.create(teacher, { ...quizInput(), opensAt: future(), closesAt: null });
+    await expect(learning.completeCourse(teacher, runId, 1, "Not yet ready"))
+      .rejects.toMatchObject({ code: "lmsCourseIncomplete" });
+  });
+  it.each([
+    ["reopen", "future"], ["reopen", "none"], ["reopen", "overdue"],
+    ["late review", "future"], ["late review", "none"], ["late review", "overdue"],
+  ] as const)("restores only the revised recipient after hard closure (%s, %s due date)", async (mode, dueKind) => {
+    const otherEnrollmentId = Number((await pool.query(
+      "INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at) VALUES(2,1,now()-interval '30 days') RETURNING id",
+    )).rows[0].id);
+    const closesAt = new Date(Date.now() + 3600000).toISOString();
+    await assignments.create(teacher, lmsAssignmentSchema.parse({
+      runId, title: "Deadline practice", body: "Answer", opensAt: open(),
+      dueAt: null, closesAt, recipientEnrollmentIds: [1, otherEnrollmentId],
+    }));
+    const recipient = (await assignments.list(actor)).items[0];
+    const otherRecipient = (await assignments.list(stranger)).items[0];
+    const receipt = await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "First answer", links: [], fileIds: [], idempotencyKey: "revision-original-answer",
+    }) as { id: number; version: number };
+    const accepted = mode === "reopen"
+      ? await assignments.review(teacher, receipt.id, {
+          version: receipt.version, decision: "accepted", comment: "Accepted", criterionScores: {},
+        })
+      : undefined;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(+new Date(closesAt) + 3600000));
+    try {
+      const dueAt = dueKind === "future" ? future() : dueKind === "none" ? null : open();
+      if (accepted)
+        await assignments.reopen(teacher, recipient.id, {
+          version: accepted.version, dueAt, reason: "Please revise the result",
+        });
+      else {
+        const reviewInput = {
+          idempotencyKey: "late-revision-review", version: receipt.version,
+          decision: "revision_required" as const, comment: "Please revise", dueAt, criterionScores: {},
+        };
+        const first = await assignments.review(teacher, receipt.id, reviewInput);
+        expect(await assignments.review(teacher, receipt.id, reviewInput)).toEqual(first);
+      }
+      const revised = await assignments.detail(actor, recipient.id);
+      expect(revised).toMatchObject({
+        status: "revision_required", dueAt, closesAt: dueKind === "future" ? dueAt : null,
+      });
+      await assignments.saveDraft(actor, recipient.id, {
+        version: 0, text: "Revised answer", links: [], fileIds: [],
+      });
+      await expect(assignments.submit(actor, recipient.id, {
+        assignmentVersionId: recipient.assignmentVersionId, draftVersion: 1,
+        text: "Revised answer", links: [], fileIds: [], idempotencyKey: "revision-second-answer",
+      })).resolves.toMatchObject({ status: "submitted", attemptNumber: 2 });
+      expect((await assignments.detail(stranger, otherRecipient.id)).closesAt).toBe(closesAt);
+      await expect(assignments.saveDraft(stranger, otherRecipient.id, {
+        version: 0, text: "Ordinary closed assignment", links: [], fileIds: [],
+      })).rejects.toMatchObject({ code: "lmsAssignmentClosed" });
+      const events = (await pool.query(
+        "SELECT data FROM lms_learning_events WHERE type='assignment_revision_required'",
+      )).rows;
+      expect(events).toHaveLength(1);
+      expect(events[0].data).toMatchObject({ dueAt, closesAt: revised.closesAt });
+      const audits = (await pool.query(
+        "SELECT new_value FROM lms_learning_audit WHERE (entity_type='review' AND new_value->>'decision'='revision_required') OR (entity_type='assignment_recipient' AND action='reopen')",
+      )).rows;
+      expect(audits).toHaveLength(1);
+      expect(audits[0].new_value).toMatchObject({ closesAt: revised.closesAt });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("keeps an unexpired hard closure when a teacher requests revision", async () => {
+    const closesAt = future();
+    await assignments.create(teacher, lmsAssignmentSchema.parse({
+      runId, title: "Open practice", body: "Answer", opensAt: open(), dueAt: null,
+      closesAt, recipientEnrollmentIds: [1],
+    }));
+    const recipient = (await assignments.list(actor)).items[0];
+    const receipt = await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "First answer", links: [], fileIds: [], idempotencyKey: "unexpired-original-answer",
+    }) as { id: number; version: number };
+    await assignments.review(teacher, receipt.id, {
+      version: receipt.version, decision: "revision_required", comment: "Please revise",
+      dueAt: null, criterionScores: {},
+    });
+    expect((await assignments.detail(actor, recipient.id)).closesAt).toBe(closesAt);
+  });
+  it.each(["review", "reopen"])("keeps a later revision due date usable beyond an unexpired hard close (%s)", async (mode) => {
+    const closesAt = new Date(Date.now() + 3600000).toISOString();
+    const dueAt = new Date(Date.now() + 3 * 3600000).toISOString();
+    await assignments.create(teacher, lmsAssignmentSchema.parse({
+      runId, title: "Extended revision", body: "Answer", opensAt: open(), dueAt: null,
+      closesAt, recipientEnrollmentIds: [1],
+    }));
+    const recipient = (await assignments.list(actor)).items[0];
+    const receipt = await assignments.submit(actor, recipient.id, {
+      assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+      text: "First answer", links: [], fileIds: [], idempotencyKey: "extended-revision-original",
+    }) as { id: number; version: number };
+    if (mode === "reopen") {
+      const accepted = await assignments.review(teacher, receipt.id, {
+        version: receipt.version, decision: "accepted", comment: "Accepted", criterionScores: {},
+      });
+      await assignments.reopen(teacher, recipient.id, {
+        version: accepted.version, dueAt, reason: "Extended revision deadline",
+      });
+    } else
+      await assignments.review(teacher, receipt.id, {
+        version: receipt.version, decision: "revision_required", comment: "Please revise",
+        dueAt, criterionScores: {},
+      });
+    expect((await assignments.detail(actor, recipient.id)).closesAt).toBe(dueAt);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(+new Date(closesAt) + 3600000));
+    try {
+      await expect(assignments.submit(actor, recipient.id, {
+        assignmentVersionId: recipient.assignmentVersionId, draftVersion: 0,
+        text: "Answer after former hard close", links: [], fileIds: [], idempotencyKey: "extended-revision-answer",
+      })).resolves.toMatchObject({ status: "submitted", attemptNumber: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("excludes work that opens after withdrawal from every progress total", async () => {
     await assignments.create(teacher, lmsAssignmentSchema.parse({ runId, title: "Published later", body: "Answer", required: true, dueAt: future(), opensAt: open(), recipientEnrollmentIds: [1] }));
     await pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=now()-interval '2 hours' WHERE id=1");

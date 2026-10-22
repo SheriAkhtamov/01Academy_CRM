@@ -96,3 +96,14 @@ export const requireAssignmentOpen = (
   )
     throw new LmsError("lmsAssignmentClosed", 409);
 };
+
+/** An explicit revision restores access; an overdue due date stays a soft deadline. */
+export const revisionClosesAt = (
+  closesAt: string | null,
+  dueAt: string | null,
+  now: Date,
+) => {
+  if (!closesAt) return closesAt;
+  if (dueAt && +new Date(dueAt) > Math.max(+new Date(closesAt), +now)) return dueAt;
+  return +new Date(closesAt) > +now ? closesAt : null;
+};

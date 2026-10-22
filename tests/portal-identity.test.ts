@@ -261,6 +261,27 @@ describe("portal identity security and explicit relationships", () => {
       service.resolveActor(parent.id, result.linkId, "finance.read"),
     ).rejects.toMatchObject({ status: 403 });
   });
+  it("keeps an unaccepted invitation pending even when its account is active and the adult consents", async () => {
+    const { session: self } = await invite("adult.self");
+    const account = await repository.createAccount({
+      login: "existing.parent", fullName: "Existing parent", email: null, phone: null,
+      locale: "en", status: "active", passwordHash: "unused-hash", authVersion: 1,
+    });
+    const invitation = await service.createInvitation(staff, 1, portalInvitationCreateSchema.parse({
+      kind: "representative", accountId: account.id, relationship: "parent", permissions: ["learning.read"],
+      verificationMethod: "in_person", verificationBasis: "Relationship verified", idempotencyKey: crypto.randomUUID(),
+    }));
+    expect(await repository.getLink(invitation.linkId)).toMatchObject({status:"pending",verifiedBy:staff.staffId});
+    await service.representativeConsent(self.id, invitation.linkId, ["learning.read"], true);
+    expect((await repository.getLink(invitation.linkId))?.status).toBe("pending");
+    expect(await service.listSubjects(account.id)).toEqual([]);
+    for (const status of ["suspended", "archived"] as const) {
+      await repository.updateAccount(account.id, {status});
+      await expect(service.representativeConsent(self.id, invitation.linkId, ["learning.read"], true))
+        .rejects.toMatchObject({code:"portalAccountUnavailable",status:409});
+      expect((await repository.getLink(invitation.linkId))?.status).toBe("pending");
+    }
+  });
   it("suspends prior parental permissions when minor status changes to adult", async () => {
     const { session, result } = await invite(
       "parent.login",

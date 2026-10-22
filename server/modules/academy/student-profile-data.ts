@@ -136,7 +136,8 @@ export async function loadAuthorizedStudent(
         `SELECT teacher.id FROM academy_teachers teacher
     JOIN academy_groups g ON g.teacher_id = teacher.id
     JOIN academy_student_group_enrollments membership ON membership.group_id = g.id
-    WHERE teacher.user_id = $1 AND membership.student_id = $2 AND membership.status = 'active' LIMIT 1`,
+    WHERE teacher.user_id = $1 AND teacher.status = 'active'
+      AND membership.student_id = $2 AND membership.status = 'active' LIMIT 1`,
         [req.user!.id, id],
       )
     : null;

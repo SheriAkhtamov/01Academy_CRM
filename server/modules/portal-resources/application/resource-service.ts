@@ -91,7 +91,7 @@ export class PortalResourceService {
     if ((id === null && input.version !== 0) || (id !== null && input.version < 1)) throw new PortalResourceError('portalVersionConflict', 409);
     return this.presentProject(await this.repository.saveProject(actor, id, input), actor);
   }
-  async archiveProject(actor: PortalActorContext, id: number) { requireResourcePermission(actor, 'portfolio.edit', true); await this.repository.archiveProject(actor, id); }
+  async archiveProject(actor: PortalActorContext, id: number, version: number) { requireResourcePermission(actor, 'portfolio.edit', true); await this.repository.archiveProject(actor, id, version); }
   async createShare(actor: PortalActorContext, projectId: number, input: PortalShareInput) {
     requireShareCreation(actor);
     if (!await this.options.publicPortfolioEnabled(actor.studentId)) throw new PortalResourceError('portalSharingUnavailable', 409);

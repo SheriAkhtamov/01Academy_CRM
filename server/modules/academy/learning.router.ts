@@ -488,6 +488,11 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         throw Object.assign(new Error('attendanceIncomplete'), { statusCode: 409 });
       }
 
+      const previousMarks = await query<{ studentId: number; status: string }>(
+        "SELECT student_id,status FROM academy_attendance WHERE lesson_id=$1 FOR UPDATE",
+        [lessonId],
+      );
+      const previousStatus = new Map(previousMarks.map(mark => [Number(mark.studentId), mark.status]));
       const saved: Row[] = [];
       for (const item of normalizedItems) {
         const rows = await query(
@@ -535,7 +540,10 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       }
       if (requestedLessonStatus === 'conducted') {
         for (const item of normalizedItems) {
-          await reconcileStudentAbsenceTask(studentsById.get(item.studentId)!, Number(lesson.groupId), req.user!.id);
+          const newAbsence = item.status === 'absent'
+            && (previousStatus.get(item.studentId) !== 'absent' || lesson.status !== 'conducted');
+          await reconcileStudentAbsenceTask(studentsById.get(item.studentId)!, Number(lesson.groupId), req.user!.id,
+            newAbsence ? [lessonId] : []);
         }
       }
 

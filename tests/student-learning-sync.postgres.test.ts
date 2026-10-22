@@ -120,11 +120,16 @@ describe.skipIf(!databaseUrl)("student learning synchronization across CRM group
     mocks.runAutomations.mockResolvedValue([]);
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: "own_leads" });
     await pool.query(`
-      CREATE TABLE academy_students(id integer PRIMARY KEY,group_id integer,manager_id integer,status text,student_name text,enrolled_at timestamptz,created_at timestamptz,updated_at timestamptz DEFAULT now(),attendance_percent integer,progress_percent integer,risk_flags jsonb);
+      CREATE TABLE users(id integer PRIMARY KEY,module text,is_active boolean,is_archived boolean);
+      CREATE TABLE user_modules(user_id integer,module text);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY,comment text);
+      CREATE TABLE audit_logs(id serial PRIMARY KEY,action text,entity_type text,entity_id integer,old_values jsonb,new_values jsonb);
+      CREATE TABLE academy_lesson_status_history(id serial PRIMARY KEY,lesson_id integer,from_status text,to_status text,changed_by integer);
+      CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,group_id integer,manager_id integer,status text,student_name text,contact_name text,enrolled_at timestamptz,created_at timestamptz,updated_at timestamptz DEFAULT now(),attendance_percent integer,progress_percent integer,risk_flags jsonb);
       CREATE TABLE academy_courses(id integer PRIMARY KEY,lesson_count integer);
-      CREATE TABLE academy_groups(id integer PRIMARY KEY,course_id integer,teacher_id integer,lesson_count integer);
+      CREATE TABLE academy_groups(id integer PRIMARY KEY,course_id integer,teacher_id integer,lesson_count integer,is_archived boolean DEFAULT false,name text DEFAULT 'Group');
       CREATE TABLE academy_teachers(id integer PRIMARY KEY,user_id integer,status text);
-      CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,teacher_id integer,status text,scheduled_at timestamptz,duration_minutes integer,updated_at timestamptz DEFAULT now());
+      CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,teacher_id integer,lesson_number integer DEFAULT 1,status text,scheduled_at timestamptz,duration_minutes integer,updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer,student_id integer,status text,project_url text,note text,marked_by integer,updated_at timestamptz DEFAULT now(),UNIQUE(lesson_id,student_id));
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,status text,enrolled_at timestamptz,ended_at timestamptz);
       CREATE TABLE academy_student_transfers(id serial PRIMARY KEY,student_id integer,from_group_id integer,to_group_id integer,created_at timestamptz);
@@ -138,6 +143,7 @@ describe.skipIf(!databaseUrl)("student learning synchronization across CRM group
       .map(row => `"${schema}"."${row.tablename}"`).join(",");
     await pool.query(`TRUNCATE ${tables} RESTART IDENTITY`);
     await pool.query(`
+      INSERT INTO users VALUES(1,'administration',true,false),(2,'sales',false,false);
       INSERT INTO academy_students(id,group_id,manager_id,status,student_name,enrolled_at,created_at) VALUES(5,20,1,'studying','Learner',now()-interval '30 days',now()-interval '30 days');
       INSERT INTO academy_courses(id,lesson_count) VALUES(1,10);
       INSERT INTO academy_groups(id,course_id,teacher_id,lesson_count) VALUES(20,1,1,10),(30,1,2,10);
@@ -173,6 +179,62 @@ describe.skipIf(!databaseUrl)("student learning synchronization across CRM group
     expect((await mark(10)).status).toBe(200);
     expect((await pool.query("SELECT id,status FROM academy_tasks ORDER BY id")).rows).toEqual([{ id: 70, status: "done" }]);
     expect(mocks.createNotification).not.toHaveBeenCalled();
+  });
+  it.each([19,23])("does not repeat a completed call after editing older or unchanged attendance (%s)", async lessonId => {
+    await pool.query("UPDATE academy_tasks SET status='done',completed_at=now() WHERE id=70; INSERT INTO academy_lessons(id,group_id,status,scheduled_at,duration_minutes) VALUES(19,20,'conducted',now()-interval '10 days',60)");
+    expect((await mark(lessonId, lessonId === 23 ? 'absent' : 'present')).status).toBe(200);
+    expect((await pool.query("SELECT status FROM academy_tasks")).rows).toEqual([{status:'done'}]);
+    expect(mocks.createNotification).not.toHaveBeenCalled();
+  });
+  it("creates one new call for a new absence after the previous call was completed", async () => {
+    await pool.query("UPDATE academy_tasks SET status='done',completed_at=now() WHERE id=70; INSERT INTO academy_lessons(id,group_id,status,scheduled_at,duration_minutes) VALUES(24,20,'conducted',now()-interval '1 hour',60)");
+    expect((await mark(24, 'absent')).status).toBe(200);
+    expect((await mark(24, 'absent')).status).toBe(200);
+    expect((await pool.query("SELECT status FROM academy_tasks ORDER BY id")).rows).toEqual([{status:'new'},{status:'done'}]);
+    expect(mocks.createNotification).toHaveBeenCalledOnce();
+  });
+  it("synchronizes creation and closure of absence calls through the public journal", async () => {
+    await pool.query("DELETE FROM academy_tasks; DELETE FROM academy_attendance WHERE lesson_id=23");
+    const { publicAttendanceService } = await import('../server/services/public-attendance');
+    await publicAttendanceService.mark(23,[20],{studentId:5,status:'absent',expectedRevision:null});
+    expect((await pool.query('SELECT status FROM academy_tasks')).rows).toEqual([{status:'new'}]);
+    const revision = (await pool.query("SELECT updated_at::text AS revision FROM academy_attendance WHERE lesson_id=23 AND student_id=5")).rows[0].revision;
+    await publicAttendanceService.mark(23,[20],{studentId:5,status:'present',expectedRevision:revision});
+    expect((await pool.query('SELECT status FROM academy_tasks')).rows).toEqual([{status:'done'}]);
+    expect(mocks.createNotification).toHaveBeenCalledOnce();
+  });
+  it("creates one absence call from bulk marking and does not repeat it on a bulk retry", async () => {
+    await pool.query("DELETE FROM academy_tasks; DELETE FROM academy_attendance WHERE lesson_id=23");
+    const { publicAttendanceService } = await import('../server/services/public-attendance');
+    await publicAttendanceService.markMany(23,[20],{studentIds:[5],status:'absent'});
+    expect((await pool.query('SELECT status FROM academy_tasks')).rows).toEqual([{status:'new'}]);
+    await pool.query("UPDATE academy_tasks SET status='done',completed_at=now()");
+    await publicAttendanceService.markMany(23,[20],{studentIds:[5],status:'absent'});
+    expect((await pool.query('SELECT status FROM academy_tasks')).rows).toEqual([{status:'done'}]);
+    expect(mocks.createNotification).toHaveBeenCalledOnce();
+  });
+  it("reconciles absences in previously filled lessons when public marking completes them in order", async () => {
+    await pool.query("DELETE FROM academy_tasks; DELETE FROM academy_attendance WHERE lesson_id=21; UPDATE academy_lessons SET status='scheduled' WHERE group_id=20");
+    const { publicAttendanceService } = await import('../server/services/public-attendance');
+    await publicAttendanceService.mark(21,[20],{studentId:5,status:'absent',expectedRevision:null});
+    expect((await pool.query("SELECT status FROM academy_lessons WHERE group_id=20")).rows.every(row => row.status==='conducted')).toBe(true);
+    expect((await pool.query('SELECT status FROM academy_tasks')).rows).toEqual([{status:'new'}]);
+    expect(mocks.createNotification).toHaveBeenCalledOnce();
+  });
+  it.each([null,2])("assigns public absence calls to active leadership when the manager is unavailable (%s)", async managerId => {
+    await pool.query("DELETE FROM academy_tasks; DELETE FROM academy_attendance WHERE lesson_id=23");
+    await pool.query("UPDATE academy_students SET manager_id=$1 WHERE id=5",[managerId]);
+    const { publicAttendanceService } = await import('../server/services/public-attendance');
+    await publicAttendanceService.mark(23,[20],{studentId:5,status:'absent',expectedRevision:null});
+    expect((await pool.query('SELECT responsible_id FROM academy_tasks')).rows).toEqual([{responsible_id:1}]);
+    expect(mocks.createNotification).toHaveBeenCalledWith(expect.objectContaining({userId:1}));
+  });
+  it("retains real historical marks in public reports without adding paused unmarked students or foreign groups", async () => {
+    await pool.query("INSERT INTO academy_students(id,group_id,status,student_name,enrolled_at,created_at) VALUES(6,20,'paused','Other pupil',now()-interval '30 days',now()-interval '30 days'); INSERT INTO academy_student_group_enrollments(student_id,group_id,status,enrolled_at) VALUES(6,20,'active',now()-interval '30 days'); INSERT INTO academy_student_status_history(student_id,to_status,created_at) VALUES(5,'paused',now()-interval '20 days'),(6,'paused',now()-interval '20 days'); UPDATE academy_students SET status='paused' WHERE id=5; INSERT INTO academy_attendance(lesson_id,student_id,status) VALUES(10,6,'present')");
+    const { publicAttendanceService } = await import('../server/services/public-attendance');
+    const report = await publicAttendanceService.report([20],{});
+    expect(report.totals).toMatchObject({studentCount:1,present:0,absent:3,unmarked:0});
+    expect(report.groups[0].students).toEqual([{id:5,name:'Learner',organization:null,present:0,absent:3,unmarked:0}]);
   });
   it("uses each group's own marks in rosters and every active group in risk calculations", async () => {
     await pool.query(`UPDATE academy_attendance SET status='present';

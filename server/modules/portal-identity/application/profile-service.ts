@@ -117,7 +117,13 @@ export class PortalProfileService {
       const candidate = await repository.getLink(linkId);
       if (!candidate) throw new PortalError("portalLinkNotFound", 404);
       const student = await repository.getStudent(candidate.studentId, true);
+      // Either adult may also represent the other. Use one account lock order
+      // before session validation so reciprocal consents cannot lock A→B/B→A.
+      const accounts = new Map<number, PortalAccount | null>();
+      for (const id of [...new Set([account.id, candidate.accountId])].sort((left, right) => left - right))
+        accounts.set(id, await repository.getAccount(id, true));
       await requireCurrentPortalSession(repository, authenticated, this.now(), true);
+      const representativeAccount = accounts.get(candidate.accountId);
       const link = await repository.getLink(linkId, true);
       if (!link || link.kind !== "representative" || link.status === "revoked")
         throw new PortalError("portalLinkNotFound", 404);
@@ -126,6 +132,8 @@ export class PortalProfileService {
       );
       if (!student || student.classification !== "adult" || !self)
         throw new PortalError("portalAccessDenied", 403);
+      if (approved && (!representativeAccount || ["suspended", "archived"].includes(representativeAccount.status)))
+        throw new PortalError("portalAccountUnavailable", 409);
       if (
         permissions.length !== link.permissions.length ||
         !permissions.every((permission) => link.permissions.includes(permission))
@@ -135,6 +143,7 @@ export class PortalProfileService {
       const invitationAccepted = (await repository.listInvitations(link.id)).some(
         (invitation) => invitation.status === "accepted",
       );
+      const accessActivated = invitationAccepted || await repository.hasConfirmedRepresentativeAccess(link.id);
       if (approved)
         await repository.createConsent({
           linkId: link.id,
@@ -146,7 +155,7 @@ export class PortalProfileService {
           createdAt: this.now(),
         });
       await repository.updateLink(link.id, {
-        status: approved ? (invitationAccepted ? "active" : "pending") : "revoked",
+        status: approved ? (accessActivated && representativeAccount?.status === "active" ? "active" : "pending") : "revoked",
       });
       if (!approved) await repository.revokeInvitations({ linkId }, this.now());
       await repository.audit({

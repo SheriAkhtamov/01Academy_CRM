@@ -1,6 +1,9 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { EmployeeCardButton } from '@/features/employees/EmployeeCardTrigger';
-import { forwardRef, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import type { FieldErrors } from 'react-hook-form';
+import type { GroupValues } from '@/lib/academyResourceSchemas';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   CalendarClock,
   CalendarRange,
@@ -43,34 +46,13 @@ const SCHEDULE_ERROR_KEYS = {
 const CAPACITY_PRESETS = [6, 8, 10, 12, 15] as const;
 const DURATION_PRESETS = [60, 90, 120] as const;
 
-const EditorSection = forwardRef<
-  HTMLFieldSetElement,
-  { title?: string; icon?: ReactNode; badge?: ReactNode; className?: string; children: ReactNode }
->(({ title, icon, badge, className, children }, ref) => (
-  <fieldset
-    ref={ref}
-    className={cn(
-      'min-w-0 space-y-4 rounded-xl border border-border/80 bg-card p-4 shadow-2xs sm:p-5',
-      className,
-    )}
-  >
-    {title ? (
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-3">
-        <div className="flex items-center gap-2.5">
-          {icon ? (
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
-              {icon}
-            </span>
-          ) : null}
-          <legend className="text-sm font-semibold tracking-tight text-foreground">{title}</legend>
-        </div>
-        {badge ? <div className="flex flex-wrap items-center gap-1.5">{badge}</div> : null}
-      </div>
-    ) : null}
-    {children}
-  </fieldset>
-));
-EditorSection.displayName = 'EditorSection';
+type EditorSectionId = 'identity' | 'place' | 'schedule' | 'dates';
+const FIELD_SECTIONS: Partial<Record<keyof GroupValues, EditorSectionId>> = {
+  name: 'identity', nameSuffix: 'identity', deliveryMode: 'identity', trainingType: 'identity',
+  status: 'identity', maxStudents: 'identity', courseId: 'place', schoolId: 'place',
+  roomId: 'place', teacherId: 'place', selectedCourseLessonIds: 'dates', lessonCount: 'dates',
+  lessonDurationMinutes: 'dates', startDate: 'dates', endDate: 'dates',
+};
 
 function QuickNumberPresets({
   options,
@@ -157,7 +139,32 @@ export function GroupEditorDialog(props: GroupEditorProps) {
     selectedCourse, updateSelectedCourse, updateSelectedLessons,
   } = useGroupEditor(props);
   const teacherConflictLabel = useTeacherConflictLabel()(selectedTeacherConflict);
-  const scheduleRef = useRef<HTMLFieldSetElement>(null);
+  const scheduleRef = useRef<HTMLElement>(null);
+  const [openSections, setOpenSections] = useState<Record<EditorSectionId, boolean>>({
+    identity: true, place: false, schedule: false, dates: false,
+  });
+  useEffect(() => {
+    if (open) setOpenSections({ identity: true, place: false, schedule: false, dates: false });
+  }, [open, editingGroup?.id]);
+  const setSectionOpen = (section: EditorSectionId, expanded: boolean) => {
+    setOpenSections((current) => ({ ...current, [section]: expanded }));
+  };
+  const revealField = (field: keyof GroupValues) => {
+    const section = FIELD_SECTIONS[field];
+    if (section) setSectionOpen(section, true);
+    window.requestAnimationFrame(() => groupForm.setFocus(field === 'name' && autoNaming ? 'nameSuffix' : field));
+  };
+  const revealErrors = (errors: FieldErrors<GroupValues>) => {
+    const fields = (Object.keys(FIELD_SECTIONS) as (keyof GroupValues)[]).filter((field) => errors[field]);
+    setOpenSections((current) => {
+      const next = { ...current };
+      fields.forEach((field) => { const section = FIELD_SECTIONS[field]; if (section) next[section] = true; });
+      return next;
+    });
+    const firstField = fields.find((field) => field !== 'name' || !autoNaming || Boolean(groupCode)) ?? fields[0];
+    if (firstField) revealField(firstField);
+    return fields.length > 0;
+  };
   const dayNames = [t('monday'), t('tuesday'), t('wednesday'), t('thursday'), t('friday'), t('saturday'), t('sunday')];
   const shortDayNames = useMemo(() => [t('mondayShort'), t('tuesdayShort'), t('wednesdayShort'), t('thursdayShort'),
     t('fridayShort'), t('saturdayShort'), t('sundayShort')], [t]);
@@ -166,6 +173,10 @@ export function GroupEditorDialog(props: GroupEditorProps) {
   }).format(new Date(`${key}T00:00:00Z`));
 
   const watchedStatus = groupForm.watch('status');
+  const watchedName = groupForm.watch('name');
+  const watchedTeacherId = groupForm.watch('teacherId');
+  const selectedTeacher = groupTeachers.find((teacher) => String(teacher.id) === watchedTeacherId);
+  const selectedSchool = schools.find((school) => String(school.id) === selectedGroupSchoolId);
   const watchedMaxStudents = Number(groupForm.watch('maxStudents')) || 0;
   const watchedRoomId = groupForm.watch('roomId');
   const watchedLessonCount = Number(groupForm.watch('lessonCount')) || 0;
@@ -199,10 +210,18 @@ export function GroupEditorDialog(props: GroupEditorProps) {
 
   /* A missing schedule used to surface only as a toast after "Save"; now it
      sits under the schedule itself, which scrolls into view. */
-  const showScheduleError = () => {
+  const showScheduleError = (focus = true) => {
     const problem = getGroupScheduleValidationError(groupSchedule);
     setScheduleError(problem);
-    if (problem) scheduleRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (problem) {
+      setSectionOpen('schedule', true);
+      if (focus) window.requestAnimationFrame(() => {
+        scheduleRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const invalidTime = scheduleRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+        const firstDay = scheduleRef.current?.querySelector<HTMLElement>('[role="checkbox"]');
+        (invalidTime ?? firstDay)?.focus();
+      });
+    }
     return problem;
   };
 
@@ -215,8 +234,8 @@ export function GroupEditorDialog(props: GroupEditorProps) {
 
   return <>
       <Dialog open={open} onOpenChange={(nextOpen) => { if (!saveGroup.isPending) groupGuard.handleOpenChange(nextOpen); }}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/80 bg-card/80 px-4 py-3.5 pr-12 text-left sm:px-6">
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header shrink-0 pr-12 text-left">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20" aria-hidden="true">
@@ -240,6 +259,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
           </DialogHeader>
           <Form {...groupForm}>
             <form
+              noValidate
               className="flex min-h-0 flex-1 flex-col"
               onKeyDown={handleFormKeyDown}
               onSubmit={groupForm.handleSubmit((values) => {
@@ -259,29 +279,28 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                   groupForm.setError('endDate', {
                     type: 'scheduleRange',
                     message: t('groupDateRangeTooShort').replace('{date}', formattedDate),
-                  }, { shouldFocus: true });
+                  });
+                  revealField('endDate');
                   return;
                 }
                 submitGroupValues(values);
-              }, () => { showScheduleError(); })}
+                const errors = Object.fromEntries((Object.keys(FIELD_SECTIONS) as (keyof GroupValues)[])
+                  .map((field) => [field, groupForm.getFieldState(field).error])) as FieldErrors<GroupValues>;
+                revealErrors(errors);
+              }, (errors) => { showScheduleError(!revealErrors(errors)); })}
             >
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain bg-muted/15 px-4 py-4 sm:px-6 sm:py-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-start">
-                <EditorSection
-                  title={t('group')}
-                  icon={<UsersRound className="size-4" />}
-                  className="lg:col-start-1 lg:row-start-1"
-                  badge={watchedMaxStudents > 0 ? (
-                    <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                      {t('groupRoomCapacity').replace('{count}', String(watchedMaxStudents))}
-                    </span>
-                  ) : null}
+              <div className="compact-modal-body min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain">
+                <CompactModalSection disabled={saveGroup.isPending} contentClassName="space-y-3"
+                  title={t('group')} icon={UsersRound} tone="sky"
+                  open={openSections.identity} onOpenChange={(expanded) => setSectionOpen('identity', expanded)}
+                  summary={[watchedName, watchedMaxStudents > 0 ? t('groupRoomCapacity').replace('{count}', String(watchedMaxStudents)) : ''].filter(Boolean).join(' · ')}
                 >
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <GroupIdentityFields code={groupCode} error={groupCodeError} pending={!editingGroup && codeCatalogue.isFetching}
                       editing={Boolean(editingGroup)} coded={autoNaming}
                       onRetry={!editingGroup && codeCatalogue.isError ? () => { void codeCatalogue.refetch(); } : undefined} />
                   </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <GroupStatusField />
                     <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                       <FormItem>
@@ -298,29 +317,20 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       </FormItem>
                     )} />
                   </div>
-                </EditorSection>
+                </CompactModalSection>
 
-                <EditorSection
-                  title={t('groupEditorPlaceSection')}
-                  icon={<GraduationCap className="size-4" />}
-                  className="lg:col-start-1 lg:row-start-2"
-                  badge={selectedRoom ? (
-                    <span className={cn(
-                      'rounded-md px-2 py-0.5 text-xs font-medium tabular-nums',
-                      roomCapacityExceeded
-                        ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-                        : 'bg-muted text-muted-foreground',
-                    )}>
-                      {selectedRoom.name} · {t('groupRoomCapacity').replace('{count}', String(selectedRoom.capacity))}
-                    </span>
-                  ) : null}
+                <CompactModalSection disabled={saveGroup.isPending} contentClassName="space-y-3"
+                  title={t('groupEditorPlaceSection')} icon={GraduationCap} tone="teal"
+                  open={openSections.place} onOpenChange={(expanded) => setSectionOpen('place', expanded)}
+                  summary={[selectedCourse?.name, selectedSchool?.name, selectedRoom?.name,
+                    selectedTeacher?.fullName || (watchedTeacherId === String(editingGroup?.teacherId) ? editingGroup?.teacherName : '')].filter(Boolean).join(' · ')}
                 >
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <FormField control={groupForm.control} name="courseId" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('course')}</FormLabel>
                         <Select value={field.value} onValueChange={updateSelectedCourse}>
-                          <FormControl><SelectTrigger><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
+                          <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectCourse')} /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
                               {courses.filter((course) => course.isActive !== false || course.id === editingGroup?.courseId).map((course) => (
@@ -339,7 +349,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                           field.onChange(value);
                           if (value !== selectedGroupSchoolId) groupForm.setValue('roomId', '');
                         }}>
-                          <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
+                          <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
                               {schools.filter((school) => school.isActive !== false || school.id === editingGroup?.schoolId).map((school) => (
@@ -355,7 +365,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       <FormItem>
                         <FormLabel required>{t('room')}</FormLabel>
                         <Select value={field.value} onValueChange={field.onChange} disabled={!selectedGroupSchoolId}>
-                          <FormControl><SelectTrigger><SelectValue placeholder={t('roomRequired')} /></SelectTrigger></FormControl>
+                          <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('roomRequired')} /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectGroup>
                               {groupRooms.map((room) => (
@@ -413,24 +423,15 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       </FormItem>
                     )} />
                   </div>
-                </EditorSection>
+                </CompactModalSection>
 
-                <EditorSection
-                  ref={scheduleRef}
-                  title={t('schedule')}
-                  icon={<CalendarClock className="size-4" />}
-                  className="lg:col-start-2 lg:row-start-1 lg:row-span-3"
-                  badge={groupSchedule.length > 0 ? (
-                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary">
-                      {t('groupScheduleWeeklySummary')
-                        .replace('{days}', String(groupSchedule.length))
-                        .replace('{hours}', weeklyHours)}
-                    </span>
-                  ) : (
-                    <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      {t('groupsWithoutSchedule')}
-                    </span>
-                  )}
+                <CompactModalSection disabled={saveGroup.isPending} contentClassName="space-y-3"
+                  ref={scheduleRef} title={t('schedule')} icon={CalendarClock} tone="violet"
+                  open={openSections.schedule} onOpenChange={(expanded) => setSectionOpen('schedule', expanded)}
+                  summary={scheduleSummaryText || t('groupsWithoutSchedule')}
+                  actions={groupSchedule.length > 0 ? <span className="whitespace-nowrap pr-3 text-xs font-medium tabular-nums text-violet-800 dark:text-violet-200">
+                    {t('groupScheduleWeeklySummary').replace('{days}', String(groupSchedule.length)).replace('{hours}', weeklyHours)}
+                  </span> : undefined}
                 >
                   <WeekScheduleEditor
                     value={groupSchedule}
@@ -448,28 +449,18 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                   {roomClashes.length > 0 ? (
                     <ClashNotice title={t('roomOccupied')} clashes={roomClashes} shortDayNames={shortDayNames} />
                   ) : null}
-                </EditorSection>
+                </CompactModalSection>
 
-                <EditorSection
-                  title={t('groupEditorDatesSection')}
-                  icon={<CalendarRange className="size-4" />}
-                  className="lg:col-start-1 lg:row-start-3"
-                  badge={
-                    <>
-                      {watchedLessonCount > 0 ? (
-                        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                          {t('groupTotalHoursSummary').replace('{hours}', totalCourseHours)}
-                        </span>
-                      ) : null}
-                      {selectedGroupStartDate && watchedEndDate ? (
-                        <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-primary">
-                          {shortDate(selectedGroupStartDate)} – {shortDate(watchedEndDate)}
-                        </span>
-                      ) : null}
-                    </>
-                  }
+                <CompactModalSection disabled={saveGroup.isPending} contentClassName="space-y-3"
+                  title={t('groupEditorDatesSection')} icon={CalendarRange} tone="amber"
+                  open={openSections.dates} onOpenChange={(expanded) => setSectionOpen('dates', expanded)}
+                  summary={[
+                    selectedGroupStartDate && watchedEndDate ? `${shortDate(selectedGroupStartDate)} – ${shortDate(watchedEndDate)}` : '',
+                    watchedLessonCount > 0 ? t('groupLessonPlanValue').replace('{count}', String(watchedLessonCount)).replace('{minutes}', String(watchedDuration)) : '',
+                    watchedLessonCount > 0 ? t('groupTotalHoursSummary').replace('{hours}', totalCourseHours) : '',
+                  ].filter(Boolean).join(' · ')}
                 >
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <FormField control={groupForm.control} name="selectedCourseLessonIds" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('groupCourseLessons')}</FormLabel>
@@ -527,11 +518,11 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       </FormItem>
                     )} />
                   </div>
-                </EditorSection>
+                </CompactModalSection>
 
               </div>
 
-              <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-border/80 bg-card/95 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="compact-modal-footer flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="hidden min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground sm:flex">
                   {scheduleSummaryText ? (
                     <span className="truncate rounded-md border border-border/70 bg-muted/40 px-2 py-1 font-medium text-foreground">
@@ -567,7 +558,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
         values={futureGroupStartValues}
         isPending={saveGroup.isPending}
         onDismiss={() => setFutureGroupStartValues(null)}
-        onReturnToStartDate={() => window.requestAnimationFrame(() => groupForm.setFocus('startDate'))}
+        onReturnToStartDate={() => revealField('startDate')}
         onStatusChange={(status) => groupForm.setValue('status', status)}
         onSave={(values) => saveGroup.mutate(values)}
       />

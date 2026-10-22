@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoLessonDetailsDialog } from '../client/src/components/ux/DemoLessonDetailsDialog';
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
@@ -99,7 +99,7 @@ describe('demo no-show reason dialog', () => {
     }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('saves the selected structured reason only after the main confirmation', async () => {
+  it('keeps the structured reason through folding and saves only after the main confirmation', async () => {
     renderDialog();
     await chooseNoShow();
 
@@ -110,6 +110,13 @@ describe('demo no-show reason dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Подтвердить|Confirm/i }));
 
     expect(apiMocks.saveAttendance).not.toHaveBeenCalled();
+    const attendanceSection = screen.getByRole('button', { name: /^Посещение демо$|^Demo attendance$/i });
+    fireEvent.click(attendanceSection);
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByRole('status').textContent).toMatch(/Несохранённые изменения|Unsaved changes/i);
+    fireEvent.click(attendanceSection);
+    expect(screen.getByRole('combobox').textContent).toMatch(/Не пришёл|Did not attend/i);
+    fireEvent.click(attendanceSection);
     fireEvent.click(screen.getByRole('button', { name: /Сохранить посещение|Save demo attendance/i }));
 
     await waitFor(() => expect(apiMocks.saveAttendance).toHaveBeenCalledWith(5, {
@@ -121,6 +128,31 @@ describe('demo no-show reason dialog', () => {
         noShowReasonNote: 'Перезвонили родителю',
       }],
     }));
+  });
+
+  it('locks the attendance draft during saving while sections remain navigable', async () => {
+    let finishSave!: (value: DemoLesson) => void;
+    apiMocks.saveAttendance.mockImplementation(() => new Promise<DemoLesson>((resolve) => {
+      finishSave = resolve;
+    }));
+    renderDialog();
+
+    const attendanceInput = screen.getByRole('combobox');
+    fireEvent.keyDown(attendanceInput, { key: 'ArrowDown' });
+    fireEvent.click(await screen.findByRole('option', { name: /Был на демо|Attended/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Сохранить посещение|Save demo attendance/i }));
+
+    await waitFor(() => expect(apiMocks.saveAttendance).toHaveBeenCalledOnce());
+    expect((attendanceInput.closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true);
+    const attendanceSection = screen.getByRole('button', { name: /^Посещение демо$|^Demo attendance$/i });
+    fireEvent.click(attendanceSection);
+    expect(attendanceSection.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(attendanceSection);
+    expect(attendanceSection.getAttribute('aria-expanded')).toBe('true');
+    expect((screen.getByRole('button', { name: /Сохранение|Saving/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => finishSave(demo));
+    await waitFor(() => expect((attendanceInput.closest('fieldset') as HTMLFieldSetElement).disabled).toBe(false));
   });
 
   it('keeps owned participants editable when a future demo also contains another manager\'s student', async () => {

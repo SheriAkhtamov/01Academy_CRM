@@ -5,12 +5,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarPlus2,
-  CircleAlert,
+  BookOpen,
+  MessageSquare,
   Clock3,
   LoaderCircle,
 } from 'lucide-react';
 import type { DemoLessonMutation } from '@shared/contracts/demo-lessons';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -292,7 +293,7 @@ export function DemoLessonDialog({
         queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.availability }),
         queryClient.invalidateQueries({ queryKey: demoLessonQueryKeys.resourceAvailability }),
       ]);
-      toast({ title: t('demoLessonCreated')});
+      toast({ title: t('demoLessonCreated') });
       onOpenChange(false);
       onCreated?.(demo);
     },
@@ -322,162 +323,157 @@ export function DemoLessonDialog({
       if (createDemo.isPending) return;
       demoGuard.handleOpenChange(nextOpen);
     }}>
-      <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b px-6 py-4">
+      <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0">
+        <DialogHeader className="compact-modal-header">
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 data-icon="inline-start" />
             {t('createDemoLesson')}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="demo-format">{t('demoFormat')}</Label>
-            <Select value={format} onValueChange={(value) => handleFormatChange(value as 'offline' | 'online')}>
-              <SelectTrigger id="demo-format"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="offline">{t('offline')}</SelectItem>
-                <SelectItem value="online">{t('online')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="demo-school">{t('school')}</Label>
-            <Select value={schoolId} onValueChange={handleSchoolChange}>
-              <SelectTrigger id="demo-school"><SelectValue placeholder={t('selectSchool')} /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {schools.filter((school) => school.isActive !== false).map((school) => (
-                    <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="demo-course">{t('course')}</Label>
-            <Select value={courseId} onValueChange={handleCourseChange}>
-              <SelectTrigger id="demo-course"><SelectValue placeholder={t('selectCourse')} /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="space-y-4 rounded-xl border border-border p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            <Clock3 data-icon="inline-start" />{t('demoScheduleDetails')}
-          </p>
-          <div className="grid grid-cols-tile gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="demo-date">{t('dateColumn')}</Label>
-              <Input
-                id="demo-date"
-                type="date"
-                min={academyToday()}
-                value={demoDate}
-                onChange={(event) => setDemoDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="demo-time">{t('time')}</Label>
-              <TimePicker
-                id="demo-time"
-                step={900}
-                value={demoTime}
-                onValueChange={(value) => setDemoTime(value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="demo-duration">{t('demoDurationMinutes')}</Label>
-              <Input
-                id="demo-duration"
-                type="number"
-                min={15}
-                max={480}
-                step={15}
-                value={durationMinutes}
-                onChange={(event) => setDurationMinutes(event.target.value)}
-                aria-invalid={durationOutOfRange}
-                aria-describedby={durationOutOfRange ? 'demo-duration-error' : undefined}
-              />
-              {durationOutOfRange ? (
-                <p id="demo-duration-error" role="alert" className="text-sm text-destructive">{t('demoDurationInvalid')}</p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2"><Label htmlFor="demo-teacher">{t('teacher')}</Label><EmployeeCardButton userId={selectedTeacher?.userId} name={selectedTeacher?.fullName} /></div>
-              <Select value={teacherId} onValueChange={setTeacherId} disabled={!resourceAvailability.data}>
-                <SelectTrigger id="demo-teacher"><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger>
-                <SelectContent>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={String(teacher.id)} textValue={teacher.fullName} disabled={!teacher.available}>
-                      <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />{teacher.available ? '' : ` · ${unavailableLabel(teacher.reason)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {format === 'offline' ? (
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="demo-room">{t('room')}</Label>
-                <Select value={roomId} onValueChange={setRoomId} disabled={!resourceAvailability.data}>
-                  <SelectTrigger id="demo-room"><SelectValue placeholder={t('selectDemoRoom')} /></SelectTrigger>
+        <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+          <CompactModalSection title={t('demoScheduleDetails')} icon={BookOpen} tone="sky" collapsible={false} disabled={createDemo.isPending}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-format">{t('demoFormat')}</Label>
+                <Select value={format} onValueChange={(value) => handleFormatChange(value as 'offline' | 'online')}>
+                  <SelectTrigger id="demo-format"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {rooms.map((room) => (
-                      <SelectItem key={room.id} value={String(room.id)} disabled={!room.available}>
-                        {room.name}
-                        {room.available ? '' : ` · ${unavailableLabel(room.reason)}`}
+                    <SelectItem value="offline">{t('offline')}</SelectItem>
+                    <SelectItem value="online">{t('online')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-school">{t('school')}</Label>
+                <Select value={schoolId} onValueChange={handleSchoolChange}>
+                  <SelectTrigger id="demo-school"><SelectValue placeholder={t('selectSchool')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {schools.filter((school) => school.isActive !== false).map((school) => (
+                        <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-course">{t('course')}</Label>
+                <Select value={courseId} onValueChange={handleCourseChange}>
+                  <SelectTrigger id="demo-course"><SelectValue placeholder={t('selectCourse')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {courses.map((course) => (
+                        <SelectItem key={course.id} value={String(course.id)}>{course.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+          </CompactModalSection>
+
+          <CompactModalSection title={t('schedule')} icon={Clock3} tone="violet" collapsible={false} disabled={createDemo.isPending} contentClassName="space-y-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-date">{t('dateColumn')}</Label>
+                <Input
+                  id="demo-date"
+                  type="date"
+                  min={academyToday()}
+                  value={demoDate}
+                  onChange={(event) => setDemoDate(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-time">{t('time')}</Label>
+                <TimePicker
+                  id="demo-time"
+                  step={900}
+                  value={demoTime}
+                  onValueChange={(value) => setDemoTime(value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="demo-duration">{t('demoDurationMinutes')}</Label>
+                <Input
+                  id="demo-duration"
+                  type="number"
+                  min={15}
+                  max={480}
+                  step={15}
+                  value={durationMinutes}
+                  onChange={(event) => setDurationMinutes(event.target.value)}
+                  aria-invalid={durationOutOfRange}
+                  aria-describedby={durationOutOfRange ? 'demo-duration-error' : undefined}
+                />
+                {durationOutOfRange ? (
+                  <p id="demo-duration-error" role="alert" className="text-sm text-destructive">{t('demoDurationInvalid')}</p>
+                ) : null}
+              </div>
+              <div className="col-span-2 space-y-1.5 sm:col-span-1">
+                <div className="flex items-center justify-between gap-2"><Label htmlFor="demo-teacher">{t('teacher')}</Label><EmployeeCardButton userId={selectedTeacher?.userId} name={selectedTeacher?.fullName} /></div>
+                <Select value={teacherId} onValueChange={setTeacherId} disabled={!resourceAvailability.data}>
+                  <SelectTrigger id="demo-teacher"><SelectValue placeholder={t('selectTeacher')} /></SelectTrigger>
+                  <SelectContent>
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={String(teacher.id)} textValue={teacher.fullName} disabled={!teacher.available}>
+                        <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />{teacher.available ? '' : ` · ${unavailableLabel(teacher.reason)}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-            ) : null}
-          </div>
+              {format === 'offline' ? (
+                <div className="col-span-2 space-y-1.5">
+                  <Label htmlFor="demo-room">{t('room')}</Label>
+                  <Select value={roomId} onValueChange={setRoomId} disabled={!resourceAvailability.data}>
+                    <SelectTrigger id="demo-room"><SelectValue placeholder={t('selectDemoRoom')} /></SelectTrigger>
+                    <SelectContent>
+                      {rooms.map((room) => (
+                        <SelectItem key={room.id} value={String(room.id)} disabled={!room.available}>
+                          {room.name}
+                          {room.available ? '' : ` · ${unavailableLabel(room.reason)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+            </div>
 
-          <div aria-live="polite">
-            {!availabilityRequest ? null : resourceAvailability.isFetching ? (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />{t('checkingAvailability')}
-              </p>
-            ) : resourceAvailability.isError ? (
-              <Alert variant="destructive">
-                <CircleAlert />
-                <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-                  <span>{resourceAvailability.error.message}</span>
+            <div aria-live="polite">
+              {!availabilityRequest ? null : resourceAvailability.isFetching ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" />{t('checkingAvailability')}
+                </p>
+              ) : resourceAvailability.isError ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
                   <Button type="button" size="sm" variant="outline" onClick={() => resourceAvailability.refetch()}>
                     {t('retry')}
                   </Button>
-                </AlertDescription>
-              </Alert>
-            ) : conflictMessage ? (
-              <Alert variant="destructive">
-                <CircleAlert />
-                <AlertDescription>{conflictMessage}</AlertDescription>
-              </Alert>
-            ) : null}
-          </div>
+                </div>
+              ) : conflictMessage ? (
+                <p role="alert" className="text-sm text-destructive">{conflictMessage}</p>
+              ) : null}
+            </div>
+          </CompactModalSection>
+
+          <CompactModalSection title={t('comment')} summary={notes.trim()} icon={MessageSquare} tone="amber" disabled={createDemo.isPending}>
+            <Label className="sr-only" htmlFor="demo-notes">{t('comment')}</Label>
+            <Textarea
+              id="demo-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              maxLength={2_000}
+              rows={3}
+            />
+          </CompactModalSection>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="demo-notes">{t('comment')}</Label>
-          <Textarea
-            id="demo-notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            maxLength={2_000}
-          />
-        </div>
-        </div>
-
-        <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+        <DialogFooter className="compact-modal-footer">
           <Button type="button" variant="outline" onClick={() => demoGuard.handleOpenChange(false)} disabled={createDemo.isPending}>
             {t('cancel')}
           </Button>

@@ -1,6 +1,7 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, Loader2, Search, Users, UsersRound } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, GraduationCap, Loader2, Search, Users, UsersRound } from 'lucide-react';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -280,11 +281,11 @@ export function TeacherGroupsSection({
   const progressLabel = t('lessonsConductedCount')
     .replace('{conducted}', String(conducted))
     .replace('{total}', String(total));
-  const studentsContent=<div className="border-t border-border/70 pt-4">
-    <h4 className="mb-3 text-sm font-semibold">{t('groupStudentsCount').replace('{count}',String(groupStudents.length))}</h4>
-    <DataTable columns={studentColumns} data={groupStudents} keyExtractor={row=>String(row.id)} onRowClick={onOpenStudent}
-      emptyState={<EmptyState icon={Users} title={t('noStudents')}/>}/>
-  </div>;
+  const studentsContent = <CompactModalSection key={`students-${detailGroup?.id}`} title={t('students')}
+    icon={UsersRound} tone="teal" count={groupStudents.length} defaultOpen>
+    <DataTable columns={studentColumns} data={groupStudents} keyExtractor={(row) => String(row.id)} onRowClick={onOpenStudent}
+      emptyState={<EmptyState icon={Users} title={t('noStudents')} />} />
+  </CompactModalSection>;
 
   return (
     <div className="space-y-4">
@@ -462,10 +463,10 @@ export function TeacherGroupsSection({
       <Sheet open={detailGroup !== null && !studentProfileOpen} onOpenChange={(open) => {
         if (!open) onSelectGroup(null);
       }}>
-        <SheetContent className={cn('flex w-full flex-col gap-0 overflow-hidden p-0',learningEnabled?'sm:max-w-5xl':'sm:max-w-xl')}>
+        <SheetContent className={cn('compact-modal flex w-full flex-col gap-0 overflow-hidden p-0',learningEnabled?'sm:max-w-5xl':'sm:max-w-xl')}>
           {detailGroup ? (
             <>
-              <SheetHeader className="gap-1 border-b border-border/70 px-5 py-4">
+              <SheetHeader className="compact-modal-header gap-1 text-left">
                 <SheetTitle className="flex flex-wrap items-center gap-2 pr-8 text-lg">
                   <span className="min-w-0 truncate">{detailGroup.name}</span>
                   <GroupStatusBadge status={detailGroup.status} />
@@ -486,36 +487,32 @@ export function TeacherGroupsSection({
                 </SheetDescription>
               </SheetHeader>
 
-              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-40 flex-1">
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span className="text-muted-foreground">{t('lessonProgress')}</span>
-                      <span className="font-medium tabular-nums text-foreground">{progressLabel}</span>
-                    </div>
-                    <Progress
-                      value={teacherPercent(conducted, total)}
-                      aria-label={`${t('lessonProgress')} — ${progressLabel}`}
-                    />
-                  </div>
-                  <GroupArchiveAction
-                    group={detailGroup}
-                    isPending={archivePendingGroupId === detailGroup.id}
-                    onArchive={setArchiveTarget}
-                    onRestore={setRestoreTarget}
-                  />
-                </div>
+              <div className="compact-modal-body min-h-0 flex-1 space-y-2.5 overflow-y-auto">
+                <CompactModalSection title={t('lessonProgress')} icon={GraduationCap} tone="sky" collapsible={false}
+                  summary={progressLabel}>
+                  <Progress className="h-2" value={teacherPercent(conducted, total)}
+                    aria-label={`${t('lessonProgress')} — ${progressLabel}`} />
+                </CompactModalSection>
 
-                {detailGroup.schedule && detailGroup.schedule.length > 0 ? (
-                  <ScheduleBadges
-                    schedule={detailGroup.schedule}
-                    dayNames={dayNamesFull}
-                    unknownLabel={t('weekdayNotSpecified')}
-                  />
-                ) : null}
+                <CompactModalSection key={`schedule-${detailGroup.id}`} title={t('schedule')}
+                  icon={CalendarClock} tone="violet"
+                  summary={detailGroup.schedule?.length
+                    ? detailGroup.schedule.map((item) => {
+                      const day = weekdayIndexFromDayOfWeek(Number(item.dayOfWeek));
+                      return `${day == null ? t('weekdayNotSpecified') : dayNames[day]} ${formatGroupScheduleTime(item)}`;
+                    }).join(' · ')
+                    : t('groupsWithoutSchedule')}>
+                  {detailGroup.schedule?.length ? <ScheduleBadges schedule={detailGroup.schedule}
+                    dayNames={dayNamesFull} unknownLabel={t('weekdayNotSpecified')} />
+                    : <p className="text-sm text-muted-foreground">{t('groupsWithoutSchedule')}</p>}
+                </CompactModalSection>
 
-                {learningEnabled ? <LearningGroupTabs key={detailGroup.id} groupId={detailGroup.id} enabled>{studentsContent}</LearningGroupTabs>:studentsContent}
+                {learningEnabled ? <LearningGroupTabs key={detailGroup.id} groupId={detailGroup.id} enabled>{studentsContent}</LearningGroupTabs> : studentsContent}
               </div>
+              {detailGroup.isArchived || canArchiveGroup(detailGroup) ? <div className="compact-modal-footer flex justify-end">
+                <GroupArchiveAction group={detailGroup} isPending={archivePendingGroupId === detailGroup.id}
+                  onArchive={setArchiveTarget} onRestore={setRestoreTarget} className="min-h-9" />
+              </div> : null}
             </>
           ) : null}
         </SheetContent>

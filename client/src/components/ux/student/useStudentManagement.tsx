@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Plus, Star, Trash2 } from 'lucide-react';
+import { GraduationCap, Plus, Star, Trash2 } from 'lucide-react';
 import type { StudentProfileStudent, StudentLearningGroup } from '@shared/contracts/student-profile';
 import { createStudentStatusDraft, reconcileStudentStatusDraft, studentStatusIsDirty } from '@/lib/studentStatusDraft';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -7,6 +7,7 @@ import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 
 export type StudentGroupOption = { id: number; name: string; status: string };
 export type StudentManagementProps = {
@@ -107,15 +108,19 @@ export function useStudentManagement({
   const available = availableGroups.filter((group) => !enrolled.has(group.id) && ['open', 'in_progress'].includes(group.status));
 
   const statusControl = onUpdateStatus ? (
-    <section className="space-y-2 rounded-lg border bg-muted/15 px-3 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-foreground">{copy.learningStatus}</span>
-        {dirty ? (
-          <Badge variant="outline" role="status" className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground">
-            {t('unsavedChangesTitle')}
-          </Badge>
-        ) : null}
-      </div>
+    <CompactModalSection
+      title={copy.learningStatus}
+      summary={statusLabel(workspace.status)}
+      icon={GraduationCap}
+      tone="violet"
+      defaultOpen
+      actions={dirty ? (
+        <Badge variant="outline" role="status" className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground">
+          {t('unsavedChangesTitle')}
+        </Badge>
+      ) : null}
+      contentClassName="space-y-2"
+    >
       {workspace.incoming ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2 text-xs">
           <div className="min-w-0">
@@ -203,7 +208,7 @@ export function useStudentManagement({
           {saving ? copy.saving : copy.saveStatus}
         </Button>
       </div>
-    </section>
+    </CompactModalSection>
   ) : null;
 
   const groupAdditionControl =

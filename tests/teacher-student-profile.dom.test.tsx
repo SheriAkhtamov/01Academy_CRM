@@ -48,7 +48,7 @@ describe('opening a student from a teacher group', () => {
     if (keyboard) { row.focus(); fireEvent.keyDown(row, { key: 'Enter' }); } else fireEvent.click(row);
     const dialog = await screen.findByRole('dialog', { name: 'Rayhan' });
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('GET', '/api/academy/students/321/profile?context=teacher'));
-    expect(within(dialog).getByText('Vibe Coding')).toBeTruthy();
+    expect(within(dialog).getByRole('heading', { name: 'Vibe Coding', level: 4 })).toBeTruthy();
     expect(within(dialog).getAllByRole('tab')).toHaveLength(3);
     expect(within(dialog).queryByRole('tab', { name: translations.navPayments.en })).toBeNull();
     expect(screen.getByTestId('route-search').textContent).toContain('group=54');

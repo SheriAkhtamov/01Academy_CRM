@@ -48,6 +48,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   */
   const [endDateFollowsSchedule, setEndDateFollowsSchedule] = useState(true);
   const groupForm = useForm<GroupValues>({
+    shouldFocusError: false,
     resolver: zodResolver(useMemo(() => createGroupSchema(t, Boolean(editingGroup && !editingGroup.teacherId)), [t, editingGroup])),
     defaultValues: {
       name: '',
@@ -230,7 +231,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       if (values.selectedCourseLessonIds.some((id) => !availableIds.has(id))) {
         groupForm.setError('selectedCourseLessonIds', {
           type: 'courseLesson', message: t('groupCourseLessonsUnavailable'),
-        }, { shouldFocus: true });
+        });
         return;
       }
     }
@@ -245,7 +246,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         || values.endDate !== academyDateInputValue(editingGroup.endDate)
         || JSON.stringify(groupSchedule) !== JSON.stringify(groupScheduleBaseline);
       if (planChanged) {
-        groupForm.setError('teacherId', { type: 'required', message: t('teacherRequired') }, { shouldFocus: true });
+        groupForm.setError('teacherId', { type: 'required', message: t('teacherRequired') });
         return;
       }
     }

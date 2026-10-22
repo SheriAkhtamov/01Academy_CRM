@@ -21,6 +21,7 @@ import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
 import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
 import { StudentPortalAccessTab } from '@/features/portal-access/StudentPortalAccessTab';
 import { StudentContractTab } from '@/features/student-contracts/StudentContractTab';
+import './compact-modal.css';
 
 type StudentDetailTab = 'learning' | 'attendance' | 'portfolio' | 'payments' | 'contract' | 'access';
 type StudentDetailDialogProps = Pick<StudentManagementProps, 'onUpdateStatus' | 'onAddGroup' | 'onRemoveGroup'> & {
@@ -172,9 +173,9 @@ export function StudentDetailDialog({
     <Sheet open={open} onOpenChange={guard.handleOpenChange}>
       <SheetContent
         side="right"
-        className="flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-2xl"
+        className="compact-modal flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-2xl"
       >
-        <SheetHeader className="shrink-0 space-y-2.5 border-b bg-muted/15 px-4 pb-3 pt-3.5 text-left sm:px-5">
+        <SheetHeader data-topographic="header" className="compact-modal-header shrink-0 space-y-2.5 border-b px-4 py-3 text-left sm:px-5">
           <div className="flex items-start gap-2.5 pr-8">
             <Avatar className="size-9 shrink-0 ring-1 ring-border">
               <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
@@ -244,15 +245,15 @@ export function StudentDetailDialog({
           onValueChange={(value) => setActiveTab(value as StudentDetailTab)}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="shrink-0 overflow-x-auto border-b bg-muted/10 px-4 py-2 sm:px-5">
+          <div className="shrink-0 overflow-x-auto border-b bg-background px-4 sm:px-5">
             <TabsList
-              className="flex h-auto w-max min-w-full gap-1 bg-muted/60 p-0.5"
+              className="compact-modal-tabs flex h-auto w-max min-w-full gap-1"
             >
               {visibleTabs.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
-                  className="h-7 flex-1 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
+                  className="compact-modal-tab flex-1 gap-1 px-1.5 text-xs font-medium sm:px-2.5"
                 >
                   <Icon className="hidden size-3.5 shrink-0 min-[420px]:block" />
                   {label}
@@ -261,7 +262,7 @@ export function StudentDetailDialog({
               {showAccess ? (
                 <TabsTrigger
                   value="access"
-                  className="h-7 flex-1 gap-1 px-1.5 text-[11px] font-medium sm:px-2.5 sm:text-xs"
+                  className="compact-modal-tab flex-1 gap-1 px-1.5 text-xs font-medium sm:px-2.5"
                 >
                   <ShieldCheck className="hidden size-3.5 shrink-0 min-[420px]:block" />
                   {t('lmsStaffAccess')}
@@ -270,7 +271,7 @@ export function StudentDetailDialog({
             </TabsList>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+          <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
             {profileQuery.isError ? (
               <div
                 role="alert"
@@ -335,7 +336,7 @@ export function StudentDetailDialog({
             {canManageContract ? (
               <TabsContent value="contract" className="mt-0" forceMount hidden={activeTab !== 'contract'}>
                 <StudentContractTab key={`${user?.id}:${currentStudent.id}`} studentId={currentStudent.id}
-                  leadId={leadId} open={open} active={activeTab === 'contract'} onDraftChange={onContractDraftChange} />
+                  leadId={leadId} open={open} active={activeTab === 'contract'} compact onDraftChange={onContractDraftChange} />
               </TabsContent>
             ) : null}
           </div>

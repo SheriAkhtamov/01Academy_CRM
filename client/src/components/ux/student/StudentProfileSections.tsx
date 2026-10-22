@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { BookOpen, CalendarDays, CheckCircle2, CreditCard, XCircle } from 'lucide-react';
+import { BookOpen, CalendarDays, CheckCircle2, CreditCard, Users, XCircle } from 'lucide-react';
 import type { StudentProfile, StudentProfileStudent } from '@shared/contracts/student-profile';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyNumber } from '@/lib/localeFormat';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import type { StudentManagementControls } from './useStudentManagement';
 
 export function StudentLearningSection({
@@ -27,7 +28,8 @@ export function StudentLearningSection({
   return (
     <div className="space-y-3">
       <dl
-        className={`grid gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs ${
+        data-topographic="card"
+        className={`grid gap-3 rounded-lg border border-sky-600/20 border-l-[3px] border-l-sky-600 bg-sky-500/10 px-3 py-2.5 text-xs ${
           teaching ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
         }`}
       >
@@ -57,18 +59,16 @@ export function StudentLearningSection({
 
       {management.statusControl}
 
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-xs font-semibold text-foreground">{t('studentGroups')}</h3>
-            {profile ? (
-              <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
-                {groupCount}
-              </Badge>
-            ) : null}
-          </div>
-          {management.groupAdditionControl}
-        </div>
+      <CompactModalSection
+        title={t('studentGroups')}
+        summary={profile?.groups.map((group) => group.courseName || group.groupName).join(' · ') || t('noGroup')}
+        icon={Users}
+        tone="teal"
+        count={profile ? groupCount : undefined}
+        defaultOpen
+        contentClassName="space-y-2"
+      >
+        {management.groupAdditionControl}
 
         {profile?.groups.length ? (
           <div className="space-y-2">
@@ -77,10 +77,10 @@ export function StudentLearningSection({
                 ? Math.min(100, Math.round((group.completedLessons / group.totalLessons) * 100))
                 : null;
               return (
-                <article key={group.groupId} className="space-y-2.5 rounded-lg border bg-card p-3">
+                <article key={group.groupId} className="space-y-2.5 rounded-lg border border-teal-600/20 bg-card p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-1 items-start gap-2.5">
-                      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-teal-600/10 text-teal-700 dark:text-teal-300">
                         <BookOpen className="size-3.5" />
                       </span>
                       <div className="min-w-0 flex-1">
@@ -103,7 +103,7 @@ export function StudentLearningSection({
                     {management.renderGroupActions(group)}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5 rounded-md bg-muted/30 px-2.5 py-1.5 text-center">
+                  <div className="grid grid-cols-3 gap-1.5 rounded-md bg-teal-600/5 px-2.5 py-1.5 text-center">
                     <Count label={t('studentLessonsCompleted')} value={group.completedLessons} />
                     <Count label={t('studentLessonsRemaining')} value={group.remainingLessons} />
                     <Count label={t('studentLessonsTotal')} value={group.totalLessons} />
@@ -139,7 +139,7 @@ export function StudentLearningSection({
             {t('noGroup')}
           </p>
         ) : null}
-      </section>
+      </CompactModalSection>
     </div>
   );
 }
@@ -153,8 +153,8 @@ export function StudentAttendanceSection({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-center">
+    <CompactModalSection title={t('attendanceTab')} icon={CalendarDays} tone="teal" collapsible={false} contentClassName="space-y-3">
+      <div className="grid grid-cols-3 gap-2 rounded-lg border border-teal-600/15 bg-teal-600/5 px-3 py-2 text-center">
         <Count label={t('studentLessonsAttended')} value={profile.summary.attended} />
         <Count label={t('studentLessonsMissed')} value={profile.summary.missed} />
         <Count label={t('studentAttendanceUnmarked')} value={profile.summary.unmarked} />
@@ -207,7 +207,7 @@ export function StudentAttendanceSection({
           {t('studentNoAttendance')}
         </p>
       )}
-    </div>
+    </CompactModalSection>
   );
 }
 
@@ -235,9 +235,9 @@ export function StudentPaymentsSection({
     })[value] ?? t('payment');
 
   return (
-    <div className="space-y-3">
+    <CompactModalSection title={t('navPayments')} icon={CreditCard} tone="amber" collapsible={false} contentClassName="space-y-3">
       <dl
-        className={`grid gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs ${
+        className={`grid gap-2 rounded-lg border border-amber-600/15 bg-amber-600/5 px-3 py-2 text-xs ${
           profile.summary.refunded > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
         }`}
       >
@@ -252,7 +252,7 @@ export function StudentPaymentsSection({
         <div className="divide-y rounded-lg border bg-card">
           {profile.payments.map((payment) => (
             <div key={payment.id} className="flex flex-wrap items-start gap-2.5 px-3 py-2">
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted">
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-amber-600/10">
                 <CreditCard className="size-3.5 text-muted-foreground" />
               </span>
               <div className="min-w-0 flex-1">
@@ -293,7 +293,7 @@ export function StudentPaymentsSection({
           {t('noPayments')}
         </p>
       )}
-    </div>
+    </CompactModalSection>
   );
 }
 

@@ -60,7 +60,7 @@ describe('new student detail dialog', () => {
     await screen.findByText('Current parent');
     expect(screen.getByRole('dialog', { name: 'Child' })).toBeTruthy();
     expect(screen.getAllByRole('tab')).toHaveLength(4);
-    expect(screen.getByText('Vibe Coding')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Vibe Coding', level: 4 })).toBeTruthy();
     expect(screen.getAllByText('11').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: i18n.t('openLead') }));
     expect( callbacks.onOpenLead).toHaveBeenCalledWith(12);
@@ -85,6 +85,23 @@ describe('new student detail dialog', () => {
     const callbacks = show(); await screen.findByText('Current parent');
     fireEvent.click(screen.getByRole('button', { name: i18n.t('recordAnotherPayment') }));
     expect(callbacks.onRecordPayment).toHaveBeenCalledWith(12, 321);
+  });
+  it('retains an edited status when its section is folded with the keyboard', async () => {
+    const user = userEvent.setup();
+    const onUpdateStatus = vi.fn();
+    show({ onUpdateStatus });
+    await screen.findByText('Current parent');
+    const disclosure = screen.getByRole('button', { name: i18n.t('studentLearningStatus') });
+    const status = screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement;
+    fireEvent.change(status, { target: { value: 'paused' } });
+    disclosure.focus();
+    await user.keyboard(' ');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('combobox', { name: i18n.t('status') })).toBe(status);
+    expect(status.value).toBe('paused');
+    expect(onUpdateStatus).not.toHaveBeenCalled();
   });
   it('shows individual attendance marks and unpaid payment history', async () => {
     const user = userEvent.setup(); show(); await screen.findByText('Current parent');

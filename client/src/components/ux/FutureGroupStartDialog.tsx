@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { CalendarClock } from 'lucide-react';
+import '@/components/ux/compact-modal.css';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -52,16 +54,19 @@ export function FutureGroupStartDialog<T extends FutureGroupValues>({
     <Dialog open={Boolean(values)} onOpenChange={(open) => {
       if (!open && !isPending) onDismiss();
     }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('futureGroupStartTitle')}</DialogTitle>
-          <DialogDescription>
-            {formattedStartDate
-              ? t('futureGroupStartDescription').replace('{date}', formattedStartDate)
-              : ''}
+      <DialogContent className="compact-modal max-w-lg gap-0 overflow-hidden p-0">
+        <DialogHeader className="compact-modal-header border-l-4 border-l-amber-700 !bg-amber-50 pr-12 text-left dark:!bg-amber-950/40">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-700 text-white" aria-hidden="true">
+              <CalendarClock className="size-4" />
+            </span>
+            {t('futureGroupStartTitle')}
+          </DialogTitle>
+          <DialogDescription className="pt-1 text-sm text-foreground">
+            {formattedStartDate ? t('futureGroupStartDescription').replace('{date}', formattedStartDate) : ''}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        <div className="compact-modal-footer flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button type="button" variant="outline" disabled={isPending} onClick={() => {
             onDismiss();
             onReturnToStartDate();

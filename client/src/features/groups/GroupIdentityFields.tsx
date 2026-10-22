@@ -33,7 +33,7 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
     <FormField control={form.control} name="deliveryMode" render={({ field }) => <FormItem>
       <FormLabel required={coded}>{t('groupDeliveryFormat')}</FormLabel>
       <Select value={coded ? field.value : ''} onValueChange={field.onChange} disabled={editing}>
-        <FormControl><SelectTrigger><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
+        <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
         <SelectContent>
           <SelectItem value="offline">
             <span className="inline-flex items-center gap-2">
@@ -56,7 +56,7 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
         field.onChange(value);
         if (value === 'IND') form.setValue('maxStudents', 1, { shouldDirty: true });
       }} disabled={editing}>
-        <FormControl><SelectTrigger><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
+        <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('groupIdentityUnspecified')} /></SelectTrigger></FormControl>
         <SelectContent>
           <SelectItem value="GRP">
             <span className="inline-flex items-center gap-2">

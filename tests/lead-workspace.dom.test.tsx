@@ -364,6 +364,7 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
     const dialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
     await within(dialog).findByRole('button', { name: i18n.t('studentContractCreate') });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('studentLearning') }));
     const amount = within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement;
     expect(amount.value.replace(/\D/g, '')).toBe('100000');
     fireEvent.change(amount, { target: { value: '250000' } });
@@ -389,12 +390,16 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('students') }));
     await user.click(screen.getByRole('button', { name: i18n.t('createStudent') }));
     const dialog = screen.getByRole('dialog', { name: i18n.t('createStudent') });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('studentLearning') }));
     const amount = within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement;
     expect(amount.value).toBe('');
     fireEvent.change(within(dialog).getByRole('textbox', { name: i18n.t('studentName') }), { target: { value: 'New student' } });
     fireEvent.change(amount, { target: { value: '400000' } });
     await user.click(within(dialog).getByRole('button', { name: i18n.t('createAndAddAnotherStudent') }));
     await waitFor(() => expect(amount.value).toBe(''));
+    expect(within(dialog).getByRole('button', { name: i18n.t('studentLearning') }).getAttribute('aria-expanded')).toBe('false');
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('studentLearning') }));
+    expect((within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement).value).toBe('');
     expect(requests[0]).toMatchObject({ url: '/api/academy/leads/15/students', method: 'POST', body: {
       studentName: 'New student', expectedPaymentUzs: 400_000,
     } });
@@ -412,6 +417,7 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getAllByRole('button', { name: i18n.t('edit') })[0]);
     const studentDialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
     await within(studentDialog).findByRole('button', { name: i18n.t('studentContractCreate') });
+    await user.click(within(studentDialog).getByRole('button', { name: i18n.t('studentLearning') }));
     fireEvent.change(within(studentDialog).getByRole('textbox', { name: i18n.t('expectedPayment') }), { target: { value: '350000' } });
     await user.click(within(studentDialog).getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('editStudent') })).toBeNull());
@@ -419,6 +425,7 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getAllByRole('button', { name: i18n.t('edit') })[1]);
     const siblingDialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
     await within(siblingDialog).findByRole('button', { name: i18n.t('studentContractCreate') });
+    await user.click(within(siblingDialog).getByRole('button', { name: i18n.t('studentLearning') }));
     expect((within(siblingDialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement).value.replace(/\D/g, '')).toBe('200000');
     await user.click(within(siblingDialog).getByRole('button', { name: i18n.t('cancel') }));
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('payment')) }));

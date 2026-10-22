@@ -182,7 +182,7 @@ describe('demo outcome and rescheduling dialogs', () => {
     fireEvent.change(within(rescheduleDialog).getByLabelText(/Время|Time/i), {
       target: { value: '10:30' },
     });
-    fireEvent.change(within(rescheduleDialog).getByLabelText(/Причина переноса|Reason for rescheduling/i), {
+    fireEvent.change(within(rescheduleDialog).getByRole('textbox', { name: /Причина переноса|Reason for rescheduling/i }), {
       target: { value: 'По просьбе родителя' },
     });
     fireEvent.click(within(rescheduleDialog).getByRole('button', {

@@ -1,0 +1,110 @@
+/* Opt-in modal density and colour; shared primitives keep their defaults. */
+.compact-modal {
+  @apply gap-0;
+}
+
+.compact-modal .compact-modal-header {
+  @apply shrink-0 space-y-1 border-b border-border-strong bg-muted/70 py-3 pl-3 pr-12 text-left sm:pl-5 sm:pr-14;
+}
+
+.compact-modal .compact-modal-body {
+  @apply min-h-0 bg-slate-200/70 p-3 dark:bg-slate-950/60 sm:p-4;
+}
+
+.compact-modal .compact-modal-footer {
+  @apply shrink-0 gap-2 border-t border-border/70 bg-card px-3 py-2 sm:px-5;
+}
+
+.compact-modal .compact-modal-footer > button {
+  @apply min-h-8 rounded-md text-xs shadow-none hover:translate-y-0 hover:shadow-none;
+  height: auto;
+}
+
+.compact-modal :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), textarea, button[role='combobox']) {
+  @apply rounded-md border-border-strong bg-background shadow-none;
+}
+
+.compact-modal :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), button[role='combobox']) {
+  @apply h-9 min-h-9;
+}
+
+.compact-modal :is(input, textarea, button[role='combobox'])[aria-invalid='true'] {
+  @apply border-destructive bg-destructive/5;
+}
+
+.compact-modal label[for] {
+  @apply text-xs;
+}
+
+.compact-modal button {
+  @apply shadow-none hover:translate-y-0 hover:shadow-none;
+}
+
+.compact-modal .compact-modal-tabs {
+  @apply h-10 rounded-none bg-transparent p-0;
+}
+
+.compact-modal .compact-modal-tab {
+  @apply h-10 rounded-none text-xs text-muted-foreground data-[state=active]:text-primary sm:text-sm;
+}
+
+.compact-section {
+  --compact-section-accent: #0284c7;
+  @apply min-w-0 overflow-hidden rounded-lg border border-border-strong bg-card;
+  border-left: 3px solid var(--compact-section-accent);
+}
+
+.compact-section[data-tone='teal'] {
+  --compact-section-accent: #0d9488;
+}
+
+.compact-section[data-tone='violet'] {
+  --compact-section-accent: #7c3aed;
+}
+
+.compact-section[data-tone='amber'] {
+  --compact-section-accent: #b45309;
+}
+
+.compact-section-header {
+  @apply flex flex-wrap items-center gap-x-2;
+  background-color: color-mix(in srgb, var(--compact-section-accent) 14%, var(--card));
+}
+
+.compact-section-trigger,
+.compact-section-heading {
+  @apply flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left text-foreground;
+}
+
+.compact-section-trigger {
+  @apply transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring;
+}
+
+.compact-section-trigger:hover {
+  background-color: color-mix(in srgb, var(--compact-section-accent) 8%, transparent);
+}
+
+.compact-section-actions {
+  @apply flex max-w-full flex-wrap items-center gap-1.5 px-3 py-2;
+}
+
+.compact-section[data-expanded='true'] > .compact-section-header {
+  @apply border-b border-border/70;
+}
+
+.compact-section-icon {
+  @apply flex size-7 shrink-0 items-center justify-center rounded-md text-white;
+  background-color: var(--compact-section-accent);
+}
+
+.compact-section-count {
+  @apply inline-flex min-w-5 items-center justify-center rounded-md bg-card/70 px-1 text-[11px] font-semibold tabular-nums;
+}
+
+.compact-section-content {
+  @apply p-3;
+}
+
+.compact-section-content[hidden] {
+  display: none;
+}

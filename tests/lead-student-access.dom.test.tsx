@@ -56,6 +56,43 @@ beforeEach(() => {
 afterEach(() => { cleanup(); for (const client of clients.splice(0)) client.clear(); });
 
 describe('Lead conversion learner and portal access choices', () => {
+  it('keeps the enrollment draft when folded and requires confirmation before discarding student fields', async () => {
+    show();
+    enterName('Draft learner');
+    const disclosure = screen.getByRole('button', { name: i18n.t('studentLearning') });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(disclosure);
+    const amount = screen.getByLabelText(i18n.t('expectedPayment')) as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '750000' } });
+    fireEvent.click(disclosure);
+    expect(amount.closest('fieldset')?.hidden).toBe(true);
+    fireEvent.click(disclosure);
+    expect(amount.value.replace(/\D/g, '')).toBe('750000');
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('cancel') }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(mocks.close).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('keepEditing') }));
+    expect((screen.getByLabelText('Student Name') as HTMLInputElement).value).toBe('Draft learner');
+    expect(amount.value.replace(/\D/g, '')).toBe('750000');
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('close') }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('discardChanges') }));
+    await waitFor(() => expect(mocks.close).toHaveBeenCalledWith(false));
+    expect(mocks.createStudent).not.toHaveBeenCalled();
+  });
+  it('reveals and focuses an invalid payment in a folded enrollment section', async () => {
+    show();
+    enterName('Learner');
+    const disclosure = screen.getByRole('button', { name: i18n.t('studentLearning') });
+    fireEvent.click(disclosure);
+    const amount = screen.getByLabelText(i18n.t('expectedPayment')) as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '999999999999' } });
+    fireEvent.click(disclosure);
+    save();
+    await waitFor(() => expect(disclosure.getAttribute('aria-expanded')).toBe('true'));
+    await waitFor(() => expect(document.activeElement).toBe(amount));
+    expect(amount.getAttribute('aria-invalid')).toBe('true');
+    expect(mocks.createStudent).not.toHaveBeenCalled();
+  });
   it('preserves the old creation payload and form when the portal is disabled', async () => {
     show(); expect(screen.queryByRole('group', { name: 'Who will study?' })).toBeNull();
     enterName('Independent learner'); save();

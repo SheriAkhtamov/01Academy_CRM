@@ -19,12 +19,12 @@ import { studentsApi } from "@/features/students/api";
 import { useTranslation } from "@/hooks/useTranslation";
 import { toast } from "@/hooks/use-toast";
 import { localizeApiErrorMessage } from "@/lib/queryClient";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CompactModalSection } from "@/components/ux/CompactModalSection";
 
 export function StudentPortfolioTab({
   studentId,
@@ -114,30 +114,29 @@ export function StudentPortfolioTab({
     });
   };
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-xs font-semibold">{t("portfolio")}</h3>
-          <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
-            {projects.length}
-          </Badge>
-        </div>
-        {!readOnly ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-2.5 text-xs"
-            disabled={adding || loading}
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="size-3.5" data-icon="inline-start" />
-            {t("studentProjectAdd")}
-          </Button>
-        ) : null}
-      </div>
+    <CompactModalSection
+      title={t("portfolio")}
+      icon={FolderOpen}
+      tone="violet"
+      count={projects.length}
+      collapsible={false}
+      contentClassName="space-y-3"
+      actions={!readOnly ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-xs"
+          disabled={adding || loading}
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="size-3.5" data-icon="inline-start" />
+          {t("studentProjectAdd")}
+        </Button>
+      ) : null}
+    >
       {adding ? (
         <form
-          className="space-y-2.5 rounded-lg border bg-muted/20 p-3"
+          className="space-y-2.5 rounded-lg border border-violet-500/20 bg-violet-500/5 p-3"
           onSubmit={(event) => {
             event.preventDefault();
             if (!save.isPending) submit();
@@ -290,7 +289,7 @@ export function StudentPortfolioTab({
               key={project.id}
               className="flex flex-wrap items-center gap-2.5 px-3 py-2"
             >
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-violet-500/10 text-violet-700 dark:text-violet-300">
                 {project.fileUrl ? (
                   <File className="size-3.5" />
                 ) : (
@@ -370,6 +369,6 @@ export function StudentPortfolioTab({
           ))}
         </div>
       )}
-    </div>
+    </CompactModalSection>
   );
 }

@@ -6,6 +6,9 @@ import {
   ArrowUpRight,
   CalendarClock,
   Copy,
+  ClipboardList,
+  History,
+  MessageSquare,
   LoaderCircle,
   MapPin,
   Pencil,
@@ -21,6 +24,7 @@ import {
 } from '@shared/contracts/demo-lessons';
 import type { VoiceReminderProgressStatus } from '@shared/contracts/voice-reminders';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -158,11 +162,13 @@ export function DemoLessonDetailsDialog({
   const [teacherDraftId, setTeacherDraftId] = useState('');
   const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
   const [copyingReport, setCopyingReport] = useState(false);
-  const draftIdentity = demo ? JSON.stringify({ ...demo, participants: demo.participants.map(({
-    reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt,
-    reminderDeliveryStatus: _reminderDeliveryStatus, reminderDeliveredAt: _reminderDeliveredAt,
-    reminderProgressStatus: _reminderProgressStatus, ...participant
-  }) => participant) }) : null;
+  const draftIdentity = demo ? JSON.stringify({
+    ...demo, participants: demo.participants.map(({
+      reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt,
+      reminderDeliveryStatus: _reminderDeliveryStatus, reminderDeliveredAt: _reminderDeliveredAt,
+      reminderProgressStatus: _reminderProgressStatus, ...participant
+    }) => participant)
+  }) : null;
   const draftIdentityRef = useRef<string | null>(null);
 
   const teacherOptions = useQuery({
@@ -417,6 +423,10 @@ export function DemoLessonDetailsDialog({
     markDirty(participantId);
   };
 
+  const isMutating = saveAttendance.isPending || cancelDemo.isPending
+    || finalizeDemo.isPending || rescheduleDemo.isPending
+    || changeDemoTeacher.isPending || removeParticipant.isPending;
+
   if (!demo) return null;
   const scheduledAt = new Date(demo.scheduledAt);
   const canEditAttendance = demo.status !== 'cancelled'
@@ -505,157 +515,162 @@ export function DemoLessonDetailsDialog({
           unsavedGuard.handleOpenChange(nextOpen);
         }
       }}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
+        <DialogContent className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t('demoLesson')}</DialogTitle>
             <DialogDescription>{demo.courseName ?? t('noCourse')}</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
-          <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
-            <div className="flex items-start gap-3">
-              <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">{formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                <p className="text-xs text-muted-foreground">{demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}</p>
+          <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={t('schedule')} icon={CalendarClock} tone="violet" collapsible={false}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex items-start gap-3">
+                  <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-xs text-muted-foreground">{demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <MapPin className="mt-0.5 size-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{demo.format === 'online' ? t('online') : demo.schoolName}</p>
+                    <p className="text-xs text-muted-foreground">{demo.format === 'online' ? t('demoOnlineLocation') : demo.roomName}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div>
+                    <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
+                    <p className="text-xs text-muted-foreground">{t('teacher')}</p>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <MapPin className="mt-0.5 size-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">{demo.format === 'online' ? t('online') : demo.schoolName}</p>
-                <p className="text-xs text-muted-foreground">{demo.format === 'online' ? t('demoOnlineLocation') : demo.roomName}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div>
-                <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
-                <p className="text-xs text-muted-foreground">{t('teacher')}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <UsersRound className="mt-0.5 size-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">{demo.participants.length}</p>
-                <p className="text-xs text-muted-foreground">{t('demoParticipants')}</p>
-              </div>
-            </div>
-          </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">{t('demoAttendance')}</h3>
-              <Badge variant={demo.status === 'cancelled' || demo.status === 'not_conducted'
-                ? 'destructive'
-                : 'secondary'}>
-                {demo.status === 'scheduled'
-                  ? t('demoStatusScheduled')
-                  : demo.status === 'completed'
-                    ? t('demoStatusCompleted')
-                    : demo.status === 'not_conducted'
-                      ? t('demoStatusNotConducted')
-                      : t('demoStatusCancelled')}
-              </Badge>
-            </div>
-            <div className="space-y-2">
-              {demo.participants.map((participant) => {
-                // The server blanks both names on a lead this user may not open,
-                // so a nameless participant must stay unclickable.
-                const primaryName = participant.studentName || participant.contactName;
-                const secondaryName = participant.studentName && participant.contactName
-                  ? participant.contactName
-                  : null;
-                const canEditParticipantAttendance = canEditAttendance
-                  && participant.canManage !== false;
-                const reminderProgressLabel = participant.reminderProgressStatus
-                  ? reminderProgressLabels[participant.reminderProgressStatus]
-                  : null;
+            </CompactModalSection>
 
-                return (
-                  <div key={participant.id} className="relative grid grid-cols-1 items-center gap-3 rounded-lg border border-border p-3 pr-12 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:pr-3">
-                    {onOpenLead && participant.leadId && primaryName ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenLead(Number(participant.leadId))}
-                        aria-label={`${t('openLead')}: ${primaryName}`}
-                        className="group -m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium underline-offset-4 group-hover:underline">
-                            {primaryName}
+            <CompactModalSection
+              title={t('demoAttendance')}
+              icon={UsersRound}
+              tone="teal"
+              count={demo.participants.length}
+              summary={t('demoAttendanceProgress')
+                .replace('{marked}', String(demo.participants.filter((participant) => attendance[participant.id] === 'attended' || attendance[participant.id] === 'no_show').length))
+                .replace('{total}', String(demo.participants.length))}
+              defaultOpen
+              disabled={isMutating}
+              actions={(
+                <Badge variant={demo.status === 'cancelled' || demo.status === 'not_conducted'
+                  ? 'destructive'
+                  : 'secondary'}>
+                  {demo.status === 'scheduled'
+                    ? t('demoStatusScheduled')
+                    : demo.status === 'completed'
+                      ? t('demoStatusCompleted')
+                      : demo.status === 'not_conducted'
+                        ? t('demoStatusNotConducted')
+                        : t('demoStatusCancelled')}
+                </Badge>
+              )}
+            >
+              <div className="space-y-1.5">
+                {demo.participants.map((participant) => {
+                  // The server blanks both names on a lead this user may not open,
+                  // so a nameless participant must stay unclickable.
+                  const primaryName = participant.studentName || participant.contactName;
+                  const secondaryName = participant.studentName && participant.contactName
+                    ? participant.contactName
+                    : null;
+                  const canEditParticipantAttendance = canEditAttendance
+                    && participant.canManage !== false;
+                  const reminderProgressLabel = participant.reminderProgressStatus
+                    ? reminderProgressLabels[participant.reminderProgressStatus]
+                    : null;
+
+                  return (
+                    <div key={participant.id} className="relative grid grid-cols-1 items-center gap-2 rounded-md border border-border-strong bg-background p-2.5 pr-11 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:pr-2.5">
+                      {onOpenLead && participant.leadId && primaryName ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenLead(Number(participant.leadId))}
+                          aria-label={`${t('openLead')}: ${primaryName}`}
+                          className="group -m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium underline-offset-4 group-hover:underline">
+                              {primaryName}
+                            </span>
+                            {secondaryName ? (
+                              <span className="block truncate text-xs text-muted-foreground">{secondaryName}</span>
+                            ) : null}
                           </span>
+                          <ArrowUpRight
+                            aria-hidden="true"
+                            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                          />
+                        </button>
+                      ) : (
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {primaryName || t('restrictedLead')}
+                          </p>
                           {secondaryName ? (
-                            <span className="block truncate text-xs text-muted-foreground">{secondaryName}</span>
-                          ) : null}
-                        </span>
-                        <ArrowUpRight
-                          aria-hidden="true"
-                          className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
-                        />
-                      </button>
-                    ) : (
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {primaryName || t('restrictedLead')}
-                        </p>
-                        {secondaryName ? (
-                          <p className="truncate text-xs text-muted-foreground">{secondaryName}</p>
-                        ) : null}
-                      </div>
-                    )}
-                    <div className="space-y-1.5">
-                      <Label className="sr-only" htmlFor={`demo-attendance-${participant.id}`}>
-                        {t('demoAttendance')}
-                      </Label>
-                      <Select
-                        value={attendance[participant.id] || ''}
-                        onValueChange={(value) => changeAttendance(
-                          participant.id,
-                          value as 'attended' | 'no_show',
-                        )}
-                        disabled={!canEditParticipantAttendance}
-                      >
-                        <SelectTrigger id={`demo-attendance-${participant.id}`}>
-                          <SelectValue placeholder={t('selectAttendanceResult')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="attended">{t('demoParticipantAttended')}</SelectItem>
-                          <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {participant.reminderResponse === 'yes' || participant.reminderResponse === 'no' ? (
-                        <Badge variant={participant.reminderResponse === 'yes' ? 'success' : 'secondary'}>
-                          {t(participant.reminderResponse === 'yes' ? 'voiceRemindersResponseYes' : 'voiceRemindersResponseNo')}
-                        </Badge>
-                      ) : participant.reminderDeliveryStatus === 'delivered_no_response' ? (
-                        <Badge variant="secondary" className="max-w-full whitespace-normal">{t('voiceRemindersDeliveredNoResponse')}</Badge>
-                      ) : reminderProgressLabel ? (
-                        <Badge variant="secondary" className="max-w-full whitespace-normal">{t(reminderProgressLabel)}</Badge>
-                      ) : null}
-                      {attendance[participant.id] === 'no_show' ? (
-                        <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">
-                          <span className="min-w-0 truncate">
-                            {noShowReasons[participant.id]
-                              ? noShowReasonLabels[noShowReasons[participant.id].code]
-                              : t('demoNoShowReasonMissing')}
-                          </span>
-                          {canEditParticipantAttendance ? (
-                            <button
-                              type="button"
-                              className="inline-flex shrink-0 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => openNoShowReason(participant.id)}
-                              aria-label={t('editDemoNoShowReason')}
-                            >
-                              <Pencil aria-hidden="true" className="size-3" />
-                              {t('edit')}
-                            </button>
+                            <p className="truncate text-xs text-muted-foreground">{secondaryName}</p>
                           ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                    {context === 'sales' && demo.status === 'scheduled'
-                      && participant.canManage !== false
-                      && ['invited', 'confirmed'].includes(participant.status) ? (
+                      )}
+                      <div className="space-y-1.5">
+                        <Label className="sr-only" htmlFor={`demo-attendance-${participant.id}`}>
+                          {t('demoAttendance')}
+                        </Label>
+                        <Select
+                          value={attendance[participant.id] || ''}
+                          onValueChange={(value) => changeAttendance(
+                            participant.id,
+                            value as 'attended' | 'no_show',
+                          )}
+                          disabled={!canEditParticipantAttendance}
+                        >
+                          <SelectTrigger id={`demo-attendance-${participant.id}`}>
+                            <SelectValue placeholder={t('selectAttendanceResult')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="attended">{t('demoParticipantAttended')}</SelectItem>
+                            <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {participant.reminderResponse === 'yes' || participant.reminderResponse === 'no' ? (
+                          <Badge variant={participant.reminderResponse === 'yes' ? 'success' : 'secondary'}>
+                            {t(participant.reminderResponse === 'yes' ? 'voiceRemindersResponseYes' : 'voiceRemindersResponseNo')}
+                          </Badge>
+                        ) : participant.reminderDeliveryStatus === 'delivered_no_response' ? (
+                          <Badge variant="secondary" className="max-w-full whitespace-normal">{t('voiceRemindersDeliveredNoResponse')}</Badge>
+                        ) : reminderProgressLabel ? (
+                          <Badge variant="secondary" className="max-w-full whitespace-normal">{t(reminderProgressLabel)}</Badge>
+                        ) : null}
+                        {attendance[participant.id] === 'no_show' ? (
+                          <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">
+                            <span className="min-w-0 truncate">
+                              {noShowReasons[participant.id]
+                                ? noShowReasonLabels[noShowReasons[participant.id].code]
+                                : t('demoNoShowReasonMissing')}
+                            </span>
+                            {canEditParticipantAttendance ? (
+                              <button
+                                type="button"
+                                className="inline-flex shrink-0 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                onClick={() => openNoShowReason(participant.id)}
+                                aria-label={t('editDemoNoShowReason')}
+                              >
+                                <Pencil aria-hidden="true" className="size-3" />
+                                {t('edit')}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      {context === 'sales' && demo.status === 'scheduled'
+                        && participant.canManage !== false
+                        && ['invited', 'confirmed'].includes(participant.status) ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -671,104 +686,108 @@ export function DemoLessonDetailsDialog({
                           <X aria-hidden="true" className="size-4" />
                         </Button>
                       ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {demo.notes ? (
-            <div className="rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">{demo.notes}</div>
-          ) : null}
-
-          {demo.status === 'not_conducted' && demo.notConductedReasonCode ? (
-            <div className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-              <p className="font-medium">{t('demoNotConductedReason')}</p>
-              <p className="text-muted-foreground">
-                {notConductedReasonLabels[demo.notConductedReasonCode]}
-                {demo.notConductedReasonNote ? ` — ${demo.notConductedReasonNote}` : ''}
-              </p>
-            </div>
-          ) : null}
-
-          {demo.lastRescheduledFrom && demo.lastRescheduleReason ? (
-            <div className="space-y-1 rounded-lg bg-muted/60 p-3 text-sm">
-              <p className="font-medium">{t('demoLastReschedule')}</p>
-              <p className="text-muted-foreground">
-                {formatAcademyDate(demo.lastRescheduledFrom, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                {' · '}
-                {demo.lastRescheduleReason}
-              </p>
-            </div>
-          ) : null}
-
-          {canManageScheduledDemo || context === 'sales' ? (
-            <div className="space-y-3 rounded-xl border border-border p-4">
-              <p className="text-sm font-semibold">{t('demoLessonActions')}</p>
-              <div className="flex flex-wrap gap-2">
-                {context === 'sales' ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-auto min-h-10 max-w-full whitespace-normal"
-                    disabled={demo.participants.length === 0 || copyingReport}
-                    onClick={copyDemoReport}
-                  >
-                    {copyingReport
-                      ? <LoaderCircle aria-hidden="true" className="mr-2 size-4 shrink-0 animate-spin" />
-                      : <Copy aria-hidden="true" className="mr-2 size-4 shrink-0" />}
-                    {t('copyDemoReport')}
-                  </Button>
-                ) : null}
-                {canManageScheduledDemo ? (
-                  <>
-                    {context === 'sales' ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setTeacherDraftId(String(demo.teacherId));
-                            setChangeTeacherOpen(true);
-                          }}
-                        >
-                          {t('changeDemoTeacher')}
-                        </Button>
-                        <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
-                          {t('rescheduleDemoLesson')}
-                        </Button>
-                      </>
-                    ) : null}
-                    <Button
-                      type="button"
-                      disabled={!canMarkConducted || finalizeDemo.isPending}
-                      onClick={() => setConductedConfirmOpen(true)}
-                    >
-                      {t('markDemoConducted')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={finalizeDemo.isPending}
-                      onClick={() => setNotConductedOpen(true)}
-                    >
-                      {t('markDemoNotConducted')}
-                    </Button>
-                    {context === 'sales' ? (
-                      <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
-                        {t('cancelDemoLesson')}
-                      </Button>
-                    ) : null}
-                  </>
-                ) : null}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          ) : null}
+            </CompactModalSection>
+
+            {demo.notes ? (
+              <CompactModalSection title={t('comment')} summary={demo.notes} icon={MessageSquare} tone="amber">
+                <p className="whitespace-pre-wrap break-words text-sm">{demo.notes}</p>
+              </CompactModalSection>
+            ) : null}
+
+            {demo.status === 'not_conducted' && demo.notConductedReasonCode ? (
+              <CompactModalSection title={t('demoNotConductedReason')} icon={ClipboardList} tone="amber" collapsible={false}>
+                <p className="break-words text-sm">
+                  {notConductedReasonLabels[demo.notConductedReasonCode]}
+                  {demo.notConductedReasonNote ? ` — ${demo.notConductedReasonNote}` : ''}
+                </p>
+              </CompactModalSection>
+            ) : null}
+
+            {demo.lastRescheduledFrom && demo.lastRescheduleReason ? (
+              <CompactModalSection title={t('demoLastReschedule')} summary={demo.lastRescheduleReason} icon={History} tone="violet">
+                <p className="break-words text-sm">
+                  {formatAcademyDate(demo.lastRescheduledFrom, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {' · '}
+                  {demo.lastRescheduleReason}
+                </p>
+              </CompactModalSection>
+            ) : null}
+
+            {canManageScheduledDemo || context === 'sales' ? (
+              <CompactModalSection title={t('demoLessonActions')} icon={ClipboardList} tone="sky" collapsible={false} disabled={isMutating}>
+                <div className="flex flex-wrap gap-2 [&_button]:h-auto [&_button]:min-h-8 [&_button]:px-2.5 [&_button]:py-1.5 [&_button]:text-xs">
+                  {context === 'sales' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="max-w-full whitespace-normal"
+                      disabled={demo.participants.length === 0 || copyingReport}
+                      onClick={copyDemoReport}
+                    >
+                      {copyingReport
+                        ? <LoaderCircle aria-hidden="true" className="mr-2 size-4 shrink-0 animate-spin" />
+                        : <Copy aria-hidden="true" className="mr-2 size-4 shrink-0" />}
+                      {t('copyDemoReport')}
+                    </Button>
+                  ) : null}
+                  {canManageScheduledDemo ? (
+                    <>
+                      {context === 'sales' ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setTeacherDraftId(String(demo.teacherId));
+                              setChangeTeacherOpen(true);
+                            }}
+                          >
+                            {t('changeDemoTeacher')}
+                          </Button>
+                          <Button type="button" variant="outline" onClick={() => setRescheduleOpen(true)}>
+                            {t('rescheduleDemoLesson')}
+                          </Button>
+                        </>
+                      ) : null}
+                      <Button
+                        type="button"
+                        disabled={!canMarkConducted || finalizeDemo.isPending}
+                        onClick={() => setConductedConfirmOpen(true)}
+                      >
+                        {t('markDemoConducted')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={finalizeDemo.isPending}
+                        onClick={() => setNotConductedOpen(true)}
+                      >
+                        {t('markDemoNotConducted')}
+                      </Button>
+                      {context === 'sales' ? (
+                        <Button type="button" variant="destructive" onClick={() => setCancelOpen(true)}>
+                          {t('cancelDemoLesson')}
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+                {canManageScheduledDemo && !canMarkConducted ? (
+                  <p role="status" className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+                    {!attendanceComplete ? t('demoAttendanceIncomplete') : t('unsavedAttendanceTitle')}
+                  </p>
+                ) : null}
+              </CompactModalSection>
+            ) : null}
           </div>
 
-          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+          <DialogFooter className="compact-modal-footer">
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button type="button" variant="outline" disabled={saveAttendance.isPending} onClick={() => unsavedGuard.handleOpenChange(false)}>
+              <Button type="button" variant="outline" disabled={isMutating} onClick={() => unsavedGuard.handleOpenChange(false)}>
                 {t('close')}
               </Button>
               {canEditAttendance && demo.participants.some((participant) => (
@@ -776,7 +795,7 @@ export function DemoLessonDetailsDialog({
               )) ? (
                 <Button
                   type="button"
-                  disabled={dirtyParticipantIds.size === 0 || saveAttendance.isPending}
+                  disabled={dirtyParticipantIds.size === 0 || isMutating}
                   onClick={() => saveAttendance.mutate()}
                 >
                   {saveAttendance.isPending ? t('saving') : t('saveAttendance')}
@@ -790,64 +809,67 @@ export function DemoLessonDetailsDialog({
       <Dialog open={reasonParticipantId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen) closeNoShowReason();
       }}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[minmax(0,1fr)] overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             confirmNoShowReason();
           }} className="flex min-h-0 flex-1 flex-col">
-            <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <DialogHeader className="compact-modal-header">
               <DialogTitle>{t('demoNoShowReasonTitle')}</DialogTitle>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
-            <div className="rounded-lg bg-muted/60 px-3 py-2 text-sm font-medium">
-              {reasonParticipant?.studentName
-                || reasonParticipant?.contactName
-                || t('restrictedLead')}
-            </div>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+              <CompactModalSection
+                title={t('demoNoShowReason')}
+                summary={reasonParticipant?.studentName || reasonParticipant?.contactName || t('restrictedLead')}
+                icon={ClipboardList}
+                tone="amber"
+                collapsible={false}
+                contentClassName="space-y-3"
+              >
+                <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <legend className="sr-only">{t('demoNoShowReason')}</legend>
+                  {availableReasonCodes.map((code) => (
+                    <label
+                      key={code}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-sm leading-5 transition-colors',
+                        reasonCode === code
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border-strong hover:bg-amber-500/5',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="demo-no-show-reason"
+                        value={code}
+                        checked={reasonCode === code}
+                        onChange={() => setReasonCode(code)}
+                        className="size-4 accent-primary"
+                      />
+                      <span>{noShowReasonLabels[code]}</span>
+                    </label>
+                  ))}
+                </fieldset>
 
-            <fieldset className="space-y-2">
-              <legend className="mb-2 text-sm font-medium">{t('demoNoShowReason')}</legend>
-              {availableReasonCodes.map((code) => (
-                <label
-                  key={code}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors',
-                    reasonCode === code
-                      ? 'border-primary bg-primary/10 text-foreground'
-                      : 'border-border hover:bg-muted/60',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="demo-no-show-reason"
-                    value={code}
-                    checked={reasonCode === code}
-                    onChange={() => setReasonCode(code)}
-                    className="size-4 accent-primary"
+                <div className="space-y-1.5">
+                  <Label htmlFor="demo-no-show-reason-note">
+                    {reasonCode === 'other'
+                      ? t('demoNoShowReasonCommentRequired')
+                      : t('demoNoShowReasonComment')}
+                  </Label>
+                  <Textarea
+                    id="demo-no-show-reason-note"
+                    value={reasonNote}
+                    onChange={(event) => setReasonNote(event.target.value)}
+                    maxLength={500}
+                    rows={2}
                   />
-                  <span>{noShowReasonLabels[code]}</span>
-                </label>
-              ))}
-            </fieldset>
-
-            <div className="space-y-2">
-              <Label htmlFor="demo-no-show-reason-note">
-                {reasonCode === 'other'
-                  ? t('demoNoShowReasonCommentRequired')
-                  : t('demoNoShowReasonComment')}
-              </Label>
-              <Textarea
-                id="demo-no-show-reason-note"
-                value={reasonNote}
-                onChange={(event) => setReasonNote(event.target.value)}
-                maxLength={500}
-                rows={3}
-              />
-            </div>
+                </div>
+              </CompactModalSection>
             </div>
 
-            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+            <DialogFooter className="compact-modal-footer">
               <Button type="button" variant="outline" onClick={closeNoShowReason}>
                 {t('back')}
               </Button>
@@ -865,12 +887,12 @@ export function DemoLessonDetailsDialog({
       <AlertDialog open={conductedConfirmOpen} onOpenChange={(nextOpen) => {
         if (!finalizeDemo.isPending) setConductedConfirmOpen(nextOpen);
       }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
+          <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('markDemoConductedTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('markDemoConductedDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={finalizeDemo.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={!canMarkConducted || finalizeDemo.isPending}
@@ -885,19 +907,19 @@ export function DemoLessonDetailsDialog({
       <AlertDialog open={participantToRemove !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen && !removeParticipant.isPending) setParticipantToRemove(null);
       }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
+          <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('removeDemoParticipantTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t('removeDemoParticipantDescription').replace(
                 '{name}',
                 participantToRemove?.studentName
-                  || participantToRemove?.contactName
-                  || t('restrictedLead'),
+                || participantToRemove?.contactName
+                || t('restrictedLead'),
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={removeParticipant.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -915,7 +937,7 @@ export function DemoLessonDetailsDialog({
       <Dialog open={notConductedOpen} onOpenChange={(nextOpen) => {
         if (!finalizeDemo.isPending) setNotConductedOpen(nextOpen);
       }}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+        <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[minmax(0,1fr)] overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (!notConductedReasonCode || !notConductedReasonValid) return;
@@ -925,56 +947,58 @@ export function DemoLessonDetailsDialog({
               reasonNote: notConductedReasonNote.trim() || null,
             });
           }} className="flex min-h-0 flex-1 flex-col">
-            <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <DialogHeader className="compact-modal-header">
               <DialogTitle>{t('markDemoNotConductedTitle')}</DialogTitle>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-4">
-            <fieldset className="space-y-2">
-              <legend className="mb-2 text-sm font-medium">{t('demoNotConductedReason')}</legend>
-              {DEMO_NOT_CONDUCTED_REASON_CODES
-                .filter((code) => demo.format !== 'online' || code !== 'room_unavailable')
-                .map((code) => (
-                  <label
-                    key={code}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors',
-                      notConductedReasonCode === code
-                        ? 'border-primary bg-primary/10 text-foreground'
-                        : 'border-border hover:bg-muted/60',
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="demo-not-conducted-reason"
-                      value={code}
-                      checked={notConductedReasonCode === code}
-                      onChange={() => setNotConductedReasonCode(code)}
-                      className="size-4 accent-primary"
-                    />
-                    <span>{notConductedReasonLabels[code]}</span>
-                  </label>
-                ))}
-            </fieldset>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+              <CompactModalSection title={t('demoNotConductedReason')} icon={ClipboardList} tone="amber" collapsible={false} disabled={finalizeDemo.isPending} contentClassName="space-y-3">
+                <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <legend className="sr-only">{t('demoNotConductedReason')}</legend>
+                  {DEMO_NOT_CONDUCTED_REASON_CODES
+                    .filter((code) => demo.format !== 'online' || code !== 'room_unavailable')
+                    .map((code) => (
+                      <label
+                        key={code}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-sm leading-5 transition-colors',
+                          notConductedReasonCode === code
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border-strong hover:bg-amber-500/5',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="demo-not-conducted-reason"
+                          value={code}
+                          checked={notConductedReasonCode === code}
+                          onChange={() => setNotConductedReasonCode(code)}
+                          className="size-4 accent-primary"
+                        />
+                        <span>{notConductedReasonLabels[code]}</span>
+                      </label>
+                    ))}
+                </fieldset>
 
-            <div className="space-y-2">
-              <Label htmlFor="demo-not-conducted-note">
-                {notConductedReasonCode === 'other'
-                  ? t('demoNoShowReasonCommentRequired')
-                  : t('demoNoShowReasonComment')}
-              </Label>
-              <Textarea
-                id="demo-not-conducted-note"
-                value={notConductedReasonNote}
-                onChange={(event) => setNotConductedReasonNote(event.target.value)}
-                maxLength={500}
-                rows={3}
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="demo-not-conducted-note">
+                    {notConductedReasonCode === 'other'
+                      ? t('demoNoShowReasonCommentRequired')
+                      : t('demoNoShowReasonComment')}
+                  </Label>
+                  <Textarea
+                    id="demo-not-conducted-note"
+                    value={notConductedReasonNote}
+                    onChange={(event) => setNotConductedReasonNote(event.target.value)}
+                    maxLength={500}
+                    rows={2}
+                  />
+                </div>
+              </CompactModalSection>
             </div>
 
-            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
-              <Button type="button" variant="outline" onClick={() => setNotConductedOpen(false)}>
+            <DialogFooter className="compact-modal-footer">
+              <Button type="button" variant="outline" disabled={finalizeDemo.isPending} onClick={() => setNotConductedOpen(false)}>
                 {t('back')}
               </Button>
               <Button type="submit" disabled={!notConductedReasonValid || finalizeDemo.isPending}>
@@ -988,91 +1012,98 @@ export function DemoLessonDetailsDialog({
       <Dialog open={changeTeacherOpen} onOpenChange={(nextOpen) => {
         if (!changeDemoTeacher.isPending) setChangeTeacherOpen(nextOpen);
       }}>
-        <DialogContent aria-describedby={undefined} className="max-w-lg">
+        <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[minmax(0,1fr)] overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (teacherSelectionValid) changeDemoTeacher.mutate();
-          }} className="space-y-5">
-            <DialogHeader>
+          }} className="flex min-h-0 flex-col">
+            <DialogHeader className="compact-modal-header">
               <DialogTitle>{t('changeDemoTeacher')}</DialogTitle>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
-              <div className="flex items-start gap-3">
-                <div className="min-w-0">
-                  <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
-                  <p className="text-xs text-muted-foreground">{t('teacher')}</p>
+            <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+              <CompactModalSection title={t('schedule')} icon={CalendarClock} tone="violet" collapsible={false}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0">
+                      <EmployeeIdentity userId={demo.teacherUserId} name={demo.teacherName} className="text-sm font-medium" avatarClassName="size-8" />
+                      <p className="text-xs text-muted-foreground">{t('teacher')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">
+                        {formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">
-                    {formatAcademyDate(scheduledAt, language, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {demo.durationMinutes} {t('minuteShort')} · {t('academyTimeZoneLabel')}
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="demo-change-teacher">{t('teacher')}</Label>
-              <Select
-                value={teacherDraftId}
-                onValueChange={setTeacherDraftId}
-                disabled={!teacherOptions.data || teacherOptions.isFetching}
-              >
-                <SelectTrigger id="demo-change-teacher">
-                  <SelectValue placeholder={t('selectTeacher')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {teacherOptions.data?.map((teacher) => (
-                    <SelectItem
-                      key={teacher.id}
-                      value={String(teacher.id)}
-                      textValue={teacher.fullName}
-                      disabled={!teacher.available}
-                    >
-                      <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />
-                      {teacher.available
-                        ? ''
-                        : ` · ${unavailableTeacherLabel(teacher.reason)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div aria-live="polite">
-              {teacherOptions.isFetching ? (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <LoaderCircle className="size-4 animate-spin" />
-                  {t('checkingAvailability')}
-                </p>
-              ) : teacherOptions.isError ? (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => teacherOptions.refetch()}
+              </CompactModalSection>
+              <CompactModalSection title={t('teacher')} icon={UsersRound} tone="teal" collapsible={false} disabled={changeDemoTeacher.isPending} contentClassName="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="demo-change-teacher">{t('teacher')}</Label>
+                  <Select
+                    value={teacherDraftId}
+                    onValueChange={setTeacherDraftId}
+                    disabled={!teacherOptions.data || teacherOptions.isFetching}
                   >
-                    {t('retry')}
-                  </Button>
+                    <SelectTrigger id="demo-change-teacher">
+                      <SelectValue placeholder={t('selectTeacher')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teacherOptions.data?.map((teacher) => (
+                        <SelectItem
+                          key={teacher.id}
+                          value={String(teacher.id)}
+                          textValue={teacher.fullName}
+                          disabled={!teacher.available}
+                        >
+                          <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} />
+                          {teacher.available
+                            ? ''
+                            : ` · ${unavailableTeacherLabel(teacher.reason)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ) : selectedTeacherOption && !selectedTeacherOption.available ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {selectedTeacherOption.reason === 'inactive'
-                    ? t('teacherNotActive')
-                    : t('demoTeacherBusy')}
-                </p>
-              ) : null}
+
+                <div aria-live="polite">
+                  {teacherOptions.isFetching ? (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <LoaderCircle className="size-4 animate-spin" />
+                      {t('checkingAvailability')}
+                    </p>
+                  ) : teacherOptions.isError ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => teacherOptions.refetch()}
+                      >
+                        {t('retry')}
+                      </Button>
+                    </div>
+                  ) : selectedTeacherOption && !selectedTeacherOption.available ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {selectedTeacherOption.reason === 'inactive'
+                        ? t('teacherNotActive')
+                        : t('demoTeacherBusy')}
+                    </p>
+                  ) : null}
+                </div>
+
+              </CompactModalSection>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"
@@ -1099,52 +1130,56 @@ export function DemoLessonDetailsDialog({
       <Dialog open={rescheduleOpen} onOpenChange={(nextOpen) => {
         if (!rescheduleDemo.isPending) setRescheduleOpen(nextOpen);
       }}>
-        <DialogContent aria-describedby={undefined} className="max-w-lg">
+        <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[minmax(0,1fr)] overflow-hidden p-0">
           <form onSubmit={(event) => {
             event.preventDefault();
             if (rescheduleIsValid) rescheduleDemo.mutate();
-          }} className="space-y-5">
-            <DialogHeader>
+          }} className="flex min-h-0 flex-col">
+            <DialogHeader className="compact-modal-header">
               <DialogTitle>{t('rescheduleDemoLessonTitle')}</DialogTitle>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="demo-reschedule-date">{t('dateColumn')}</Label>
-                <Input
-                  id="demo-reschedule-date"
-                  type="date"
-                  min={academyToday()}
-                  value={rescheduleDate}
-                  onChange={(event) => setRescheduleDate(event.target.value)}
+            <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+              <CompactModalSection title={t('schedule')} icon={CalendarClock} tone="violet" collapsible={false} disabled={rescheduleDemo.isPending}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="demo-reschedule-date">{t('dateColumn')}</Label>
+                    <Input
+                      id="demo-reschedule-date"
+                      type="date"
+                      min={academyToday()}
+                      value={rescheduleDate}
+                      onChange={(event) => setRescheduleDate(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="demo-reschedule-time">{t('time')}</Label>
+                    <TimePicker
+                      id="demo-reschedule-time"
+                      value={rescheduleTime}
+                      onValueChange={(value) => setRescheduleTime(value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+              </CompactModalSection>
+              <CompactModalSection title={t('demoRescheduleReason')} icon={MessageSquare} tone="amber" collapsible={false} disabled={rescheduleDemo.isPending}>
+                <Label className="sr-only" htmlFor="demo-reschedule-reason">{t('demoRescheduleReason')}</Label>
+                <Textarea
+                  id="demo-reschedule-reason"
+                  value={rescheduleReason}
+                  onChange={(event) => setRescheduleReason(event.target.value)}
+                  maxLength={500}
+                  rows={3}
                   required
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="demo-reschedule-time">{t('time')}</Label>
-                <TimePicker
-                  id="demo-reschedule-time"
-                  value={rescheduleTime}
-                  onValueChange={(value) => setRescheduleTime(value)}
-                  required
-                />
-              </div>
+              </CompactModalSection>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="demo-reschedule-reason">{t('demoRescheduleReason')}</Label>
-              <Textarea
-                id="demo-reschedule-reason"
-                value={rescheduleReason}
-                onChange={(event) => setRescheduleReason(event.target.value)}
-                maxLength={500}
-                rows={3}
-                required
-              />
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setRescheduleOpen(false)}>
+            <DialogFooter className="compact-modal-footer">
+              <Button type="button" variant="outline" disabled={rescheduleDemo.isPending} onClick={() => setRescheduleOpen(false)}>
                 {t('back')}
               </Button>
               <Button type="submit" disabled={!rescheduleIsValid || rescheduleDemo.isPending}>
@@ -1158,15 +1193,16 @@ export function DemoLessonDetailsDialog({
       <AlertDialog open={cancelOpen} onOpenChange={(nextOpen) => {
         if (!cancelDemo.isPending) setCancelOpen(nextOpen);
       }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
+        <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
+          <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('cancelDemoLessonTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('cancelDemoLessonDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-2">
+          <div className="compact-modal-body space-y-1.5">
             <Label htmlFor="demo-cancel-reason">{t('cancellationReason')}</Label>
             <Input
               id="demo-cancel-reason"
+              disabled={cancelDemo.isPending}
               value={cancelReason}
               onChange={(event) => setCancelReason(event.target.value)}
               onKeyDown={submitOnEnter(() => cancelDemo.mutate(), {
@@ -1175,7 +1211,7 @@ export function DemoLessonDetailsDialog({
               maxLength={500}
             />
           </div>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={cancelDemo.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

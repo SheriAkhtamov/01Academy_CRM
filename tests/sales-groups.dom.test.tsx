@@ -57,6 +57,12 @@ const mount = (search = '') => {
 const scopeButton = (archive: boolean) => within(screen.getByRole('group', { name: i18n.t('groupListView') }))
   .getByRole('button', { name: new RegExp(archive ? i18n.t('taskArchive') : i18n.t('groupCurrentShort')) });
 const rowOf = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
+const expandEditor = async (dialog: HTMLElement) => {
+  for (const key of ['groupEditorPlaceSection', 'schedule', 'groupEditorDatesSection'] as const) {
+    const trigger = within(dialog).getByRole('button', { name: i18n.t(key) });
+    if (trigger.getAttribute('aria-expanded') === 'false') await userEvent.click(trigger);
+  }
+};
 
 it('keeps seat counts on rows while searching and resetting the list', async () => {
   mount(); await screen.findByText('Python morning');
@@ -99,6 +105,7 @@ it('opens a read-only view from the row and edits from there', async () => {
   expect(within(view).queryByRole('textbox')).toBeNull();
   await userEvent.click(within(view).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') });
   await userEvent.clear(name); await userEvent.type(name, 'Python evening');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
@@ -129,6 +136,7 @@ it('creates a group from the same editor, shows schedule problems in place and f
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await expandEditor(dialog);
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), 'New group');
   for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark'], ['room', '101']] as const) {
     await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
@@ -147,7 +155,7 @@ it('creates a group from the same editor, shows schedule problems in place and f
   expect(await within(dialog).findByText(i18n.t('teacherRequired'))).toBeTruthy();
   const teacher = within(dialog).getByRole('combobox', { name: i18n.t('teacher') });
   expect(teacher.textContent).toBe(i18n.t('selectTeacher'));
-  expect(document.activeElement).toBe(teacher);
+  await waitFor(() => expect(document.activeElement).toBe(teacher));
   await userEvent.click(teacher);
   expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Teacher']);
   await userEvent.click(screen.getByRole('option', { name: 'Teacher' }));
@@ -163,6 +171,7 @@ it('says which field is wrong instead of a generic error', async () => {
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await expandEditor(dialog);
   // An empty form can be submitted: it then marks course, branch, room and start date.
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('createGroup') }));
   await waitFor(() => expect(within(dialog).getAllByText(i18n.t('fieldRequired')).length).toBeGreaterThanOrEqual(4));
@@ -187,6 +196,7 @@ it('edits noncontiguous course lessons without closing the checklist and derives
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   expect(within(dialog).queryByRole('spinbutton', { name: i18n.t('lessonsCount') })).toBeNull();
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('groupCourseLessons') }));
   expect(screen.getByText('Foundations')).toBeTruthy();
@@ -208,6 +218,7 @@ it('replaces lesson choices when changing the course and rejects an empty select
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('course') }));
   await userEvent.click(screen.getByRole('option', { name: 'AI Kids' }));
   const picker = within(dialog).getByRole('button', { name: i18n.t('groupCourseLessons') });
@@ -234,6 +245,7 @@ it('warns about a busy room and a busy teacher before saving and keeps a typed e
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await expandEditor(dialog);
   for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
     await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
     await userEvent.click(screen.getByRole('option', { name: new RegExp(option) }));
@@ -318,6 +330,7 @@ it('shows a historical assigned teacher in the editor without offering that empl
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   const teacher = within(dialog).getByRole('combobox', { name: i18n.t('teacher') });
   expect(teacher.textContent).toBe('Archived teacher');
   await userEvent.click(teacher);
@@ -338,9 +351,10 @@ it.each(['create', 'coded', 'legacy'] as const)('keeps the same sections and ide
   if (mode === 'create') await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   else await userEvent.click(within(rowOf(mode === 'coded' ? 'Coded group' : 'Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t(mode === 'create' ? 'createGroup' : 'editGroup') });
+  await expandEditor(dialog);
   const sections = within(dialog).getAllByRole('group');
-  expect(sections.map((section) => section.querySelector('legend')?.textContent))
-    .toEqual([i18n.t('group'), i18n.t('groupEditorPlaceSection'), i18n.t('schedule'), i18n.t('groupEditorDatesSection')]);
+  expect(sections).toEqual((['group', 'groupEditorPlaceSection', 'schedule', 'groupEditorDatesSection'] as const)
+    .map((key) => within(dialog).getByRole('group', { name: i18n.t(key) })));
   expect(Array.from(sections[0].querySelectorAll('label')).map((label) => label.textContent?.replace('*', '').trim()))
     .toEqual((['groupDeliveryFormat', 'groupTrainingType', 'groupName', 'status', 'groupCapacity'] as const).map((key) => i18n.t(key)));
   expect(Array.from(sections[1].querySelectorAll('label')).map((label) => label.textContent?.replace('*', '').trim()))
@@ -368,6 +382,7 @@ it('keeps legacy unassigned metadata editable without generating identity or ass
   mount(); await screen.findByText('No teacher');
   await userEvent.click(within(rowOf('No teacher')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   expect(within(dialog).getByRole('combobox', { name: i18n.t('teacher') }).textContent).toBe(i18n.t('selectTeacher'));
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' changed');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
@@ -383,12 +398,13 @@ it('requires a manual teacher for a legacy plan change but allows reverting that
   mount(); await screen.findByText('No teacher');
   await userEvent.click(within(rowOf('No teacher')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   const duration = within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') });
   fireEvent.change(duration, { target: { value: '90' } });
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
   expect(await within(dialog).findByText(i18n.t('teacherRequired'))).toBeTruthy();
   expect(apiRequest).not.toHaveBeenCalled();
-  expect(document.activeElement).toBe(within(dialog).getByRole('combobox', { name: i18n.t('teacher') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole('combobox', { name: i18n.t('teacher') })));
   fireEvent.change(duration, { target: { value: '60' } });
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' metadata');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
@@ -403,10 +419,22 @@ it('disables saving and cancellation while the group save is pending', async () 
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('groupName') }), ' pending');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
   const saving = await within(dialog).findByRole('button', { name: i18n.t('saving') }) as HTMLButtonElement;
   expect(saving.disabled).toBe(true);
+  const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
+  const monday = within(dialog).getByRole('checkbox', { name: i18n.t('monday') });
+  expect(name.matches(':disabled')).toBe(true);
+  expect(monday.matches(':disabled')).toBe(true);
+  await userEvent.type(name, ' lost draft');
+  await userEvent.click(monday);
+  expect(name.value).toBe('Python morning pending');
+  expect(monday.getAttribute('aria-checked')).toBe('true');
+  const dates = within(dialog).getByRole('button', { name: i18n.t('groupEditorDatesSection') });
+  await userEvent.click(dates);
+  expect(dates.getAttribute('aria-expanded')).toBe('false');
   expect((within(dialog).getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
   await userEvent.keyboard('{Escape}');
   expect(screen.getByRole('dialog', { name: i18n.t('editGroup') })).toBeTruthy();
@@ -424,6 +452,7 @@ it('retains explicit manual assignment through the existing future-start confirm
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t('status') }));
   await userEvent.click(screen.getByRole('option', { name: i18n.t('groupStatusInProgress') }));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
@@ -441,6 +470,7 @@ it('retries a failed group code load inside the dialog and keeps entered values'
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await expandEditor(dialog);
   await within(dialog).findByRole('alert');
   const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
   await userEvent.type(name, 'Morning class');
@@ -465,6 +495,7 @@ it('blocks creation when a cached group code catalogue fails to refresh', async 
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  await expandEditor(dialog);
   for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
     await userEvent.click(within(dialog).getByRole('combobox', { name: i18n.t(label) }));
     await userEvent.click(screen.getByRole('option', { name: option }));
@@ -571,6 +602,7 @@ it('asks before discarding edits and keeps entered values when cancellation is d
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
   const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') });
   await userEvent.type(name, ' changed');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
@@ -609,6 +641,7 @@ it('updates the protected name when course, delivery and training type change', 
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
   const dialog = screen.getByRole('dialog');
+  await expandEditor(dialog);
   const name = within(dialog).getByRole('textbox', { name: i18n.t('groupName') }) as HTMLInputElement;
   await userEvent.type(name, 'Morning class');
   for (const [label, option] of [['course', 'Python'], ['school', 'Cyberpark']] as const) {
@@ -641,6 +674,7 @@ it('applies quick presets, warns when group capacity exceeds room capacity and s
   mount(); await screen.findByText('Python morning');
   await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await expandEditor(dialog);
 
   // Room 101 has capacity 12; picking 15 seats via the quick preset triggers the capacity warning.
   await userEvent.click(within(dialog).getByRole('button', { name: '15' }));
@@ -658,4 +692,97 @@ it('applies quick presets, warns when group capacity exceeds room capacity and s
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('PATCH', '/api/academy/groups/1', expect.objectContaining({
     maxStudents: 8, lessonDurationMinutes: 90,
   })));
+});
+
+it('keeps folded group fields mounted and restores their draft after keyboard expansion', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  const dates = within(dialog).getByRole('button', { name: i18n.t('groupEditorDatesSection') });
+  expect(dates.getAttribute('aria-expanded')).toBe('false');
+  expect(within(dialog).queryByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') })).toBeNull();
+  dates.focus(); await userEvent.keyboard('{Enter}');
+  const duration = within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') });
+  fireEvent.change(duration, { target: { value: '90' } });
+  await userEvent.click(dates);
+  expect(duration.isConnected).toBe(true);
+  dates.focus(); await userEvent.keyboard(' ');
+  expect((within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') }) as HTMLInputElement).value).toBe('90');
+});
+
+it('opens every invalid folded section and focuses the first required field', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('createGroup') });
+  expect(within(dialog).queryByRole('combobox', { name: i18n.t('course') })).toBeNull();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('createGroup') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole('combobox', { name: i18n.t('course') })));
+  for (const key of ['groupEditorPlaceSection', 'schedule', 'groupEditorDatesSection'] as const) {
+    expect(within(dialog).getByRole('button', { name: i18n.t(key) }).getAttribute('aria-expanded')).toBe('true');
+  }
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('opens the folded schedule and focuses its first day when the rest of the form is valid', async () => {
+  currentConfiguration = { ...configuration, groups: [{ ...group, schedule: [] }] };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole('checkbox', { name: i18n.t('monday') })));
+  expect(within(dialog).getByText(i18n.t('groupScheduleRequired'))).toBeTruthy();
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('returns from future-start confirmation to the expanded start-date section', async () => {
+  currentConfiguration = { ...configuration, groups: [{ ...group, status: 'in_progress', startDate: '2099-01-05', endDate: '2099-12-28' }] };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  const confirmation = await screen.findByRole('dialog', { name: i18n.t('futureGroupStartTitle') });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('changeStartDate') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByLabelText(new RegExp(i18n.t('startDate')))));
+  expect(within(dialog).getByRole('button', { name: i18n.t('groupEditorDatesSection') }).getAttribute('aria-expanded')).toBe('true');
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('reveals the teacher section for a lesson-plan change in an unassigned group', async () => {
+  mount(); await screen.findByText('No teacher');
+  await userEvent.click(within(rowOf('No teacher')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('groupEditorDatesSection') }));
+  fireEvent.change(within(dialog).getByRole('spinbutton', { name: i18n.t('lessonDurationMinutes') }), { target: { value: '90' } });
+  expect(within(dialog).queryByRole('combobox', { name: i18n.t('teacher') })).toBeNull();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole('combobox', { name: i18n.t('teacher') })));
+  expect(within(dialog).getByText(i18n.t('teacherRequired'))).toBeTruthy();
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('reveals and focuses an invalid end date after the dates section was folded', async () => {
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  const dates = within(dialog).getByRole('button', { name: i18n.t('groupEditorDatesSection') });
+  await userEvent.click(dates);
+  const endDate = within(dialog).getByLabelText(new RegExp(i18n.t('endDate')));
+  fireEvent.change(endDate, { target: { value: '2026-10-13' } });
+  await userEvent.click(dates);
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(document.activeElement).toBe(endDate));
+  expect(dates.getAttribute('aria-expanded')).toBe('true');
+  expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('focuses an invalid time instead of an unrelated day when unfolding a broken schedule', async () => {
+  currentConfiguration = { ...configuration, groups: [{ ...group,
+    schedule: [{ dayOfWeek: 3, startTime: '11:00', endTime: '10:00', schoolId: 1 }],
+  }] };
+  mount(); await screen.findByText('Python morning');
+  await userEvent.click(within(rowOf('Python morning')).getByRole('button', { name: i18n.t('editGroup') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('editGroup') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByLabelText(`${i18n.t('wednesday')}: ${i18n.t('start')}`)));
+  expect(apiRequest).not.toHaveBeenCalled();
 });

@@ -5,7 +5,6 @@ import {
   ArrowUp,
   BookOpen,
   ChevronDown,
-  ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   Copy,
@@ -34,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   createCurriculumBlock,
   createCurriculumLesson,
@@ -68,14 +68,14 @@ function CurriculumField({ path, label, children, required = true }: {
   return (
     <div className="space-y-1.5">
       {label ? (
-        <Label htmlFor={id} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <Label htmlFor={id} className="text-xs font-medium text-foreground">
           {label}
           {required ? <span aria-hidden="true" className="ml-1 text-destructive">*</span> : null}
         </Label>
       ) : null}
       {children?.({ id, name: path, 'aria-invalid': Boolean(message), 'aria-describedby': message ? `${id}-error` : undefined })}
       {message ? (
-        <p id={`${id}-error`} role="alert" className="text-sm font-medium text-destructive">
+        <p id={`${id}-error`} role="alert" tabIndex={-1} data-curriculum-error className="text-sm font-medium text-destructive">
           {Object.prototype.hasOwnProperty.call(translations, message) ? t(message as TranslationKey) : message}
         </p>
       ) : null}
@@ -94,7 +94,7 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label, disab
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-lg border bg-background/90 p-0.5 shadow-sm">
+    <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border-strong bg-background/90 p-0.5">
       {onDuplicate ? (
         <Button
           type="button"
@@ -188,7 +188,7 @@ function CurriculumMaterialCard({
 
   return (
     <section
-      className="space-y-3 rounded-xl border bg-muted/15 p-3.5 transition-colors hover:border-border/90"
+      className="space-y-2.5 rounded-md border border-border-strong bg-muted/25 p-2.5"
       aria-label={materialLabel}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -196,7 +196,7 @@ function CurriculumMaterialCard({
           <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg border', style.tint)}>
             <TypeIcon className="size-3.5" aria-hidden="true" />
           </span>
-          <h6 className="truncate text-sm font-semibold">
+          <h6 className="min-w-0 break-words text-xs font-semibold">
             {material.title || t('courseMaterialNumber', { number: materialIndex + 1 })}
           </h6>
         </div>
@@ -209,90 +209,92 @@ function CurriculumMaterialCard({
           onDelete={onDelete}
         />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="sm:col-span-2">
-          <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.title`} label={t('courseMaterialTitle')}>
+      <fieldset disabled={disabled} className="min-w-0 space-y-2.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.title`} label={t('courseMaterialTitle')}>
+              {(attributes) => (
+                <Input
+                  {...attributes}
+                  value={material.title}
+                  onChange={(event) => onUpdate({ title: event.target.value })}
+                  maxLength={255}
+                  className="bg-background"
+                />
+              )}
+            </CurriculumField>
+          </div>
+          <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.type`} label={t('courseMaterialType')}>
             {(attributes) => (
-              <Input
-                {...attributes}
-                value={material.title}
-                onChange={(event) => onUpdate({ title: event.target.value })}
-                maxLength={255}
-                className="bg-background"
-              />
+              <Select
+                value={material.type}
+                disabled={typeSelectDisabled}
+                onValueChange={(type: CourseCurriculumMaterial['type']) => {
+                  if (material.file && type !== 'file') {
+                    onRequestTypeChange(type);
+                    return;
+                  }
+                  const shouldClearTextContent =
+                    material.type === 'text' &&
+                    type !== 'text' &&
+                    material.content.length > 0 &&
+                    !material.content.trim().startsWith('https://');
+                  onUpdate(shouldClearTextContent ? { type, content: '' } : { type });
+                }}
+              >
+                <SelectTrigger {...attributes} disabled={typeSelectDisabled} className="bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {materialOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </CurriculumField>
         </div>
-        <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.type`} label={t('courseMaterialType')}>
-          {(attributes) => (
-            <Select
-              value={material.type}
-              disabled={typeSelectDisabled}
-              onValueChange={(type: CourseCurriculumMaterial['type']) => {
-                if (material.file && type !== 'file') {
-                  onRequestTypeChange(type);
-                  return;
-                }
-                const shouldClearTextContent =
-                  material.type === 'text' &&
-                  type !== 'text' &&
-                  material.content.length > 0 &&
-                  !material.content.trim().startsWith('https://');
-                onUpdate(shouldClearTextContent ? { type, content: '' } : { type });
-              }}
-            >
-              <SelectTrigger {...attributes} disabled={typeSelectDisabled} className="bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {materialOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </CurriculumField>
-      </div>
-      {material.type === 'file' ? (
-        <>
-          <CourseMaterialFileUpload
-            materialId={material.id}
-            file={material.file}
-            onBusyChange={onUploadBusyChange}
-            disabled={disabled}
-            onUploaded={onUploadedFile}
-          />
-          <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.file`} />
-        </>
-      ) : null}
-      {material.file && material.type === 'file' ? null : (
-        <CurriculumField
-          path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.content`}
-          label={material.type === 'text' ? t('courseMaterialContent') : t('courseMaterialUrl')}
-          required={material.type !== 'file'}
-        >
-          {(attributes) => material.type === 'text' ? (
-            <Textarea
-              {...attributes}
-              value={material.content}
-              onChange={(event) => onUpdate({ content: event.target.value })}
-              rows={3}
-              className="bg-background"
+        {material.type === 'file' ? (
+          <>
+            <CourseMaterialFileUpload
+              materialId={material.id}
+              file={material.file}
+              onBusyChange={onUploadBusyChange}
+              disabled={disabled}
+              onUploaded={onUploadedFile}
             />
-          ) : (
-            <Input
-              {...attributes}
-              value={material.content}
-              onChange={(event) => onUpdate({ content: event.target.value })}
-              type="url"
-              placeholder="https://"
-              className="bg-background font-mono text-sm"
-            />
-          )}
-        </CurriculumField>
-      )}
+            <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.file`} />
+          </>
+        ) : null}
+        {material.file && material.type === 'file' ? null : (
+          <CurriculumField
+            path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials.${materialIndex}.content`}
+            label={material.type === 'text' ? t('courseMaterialContent') : t('courseMaterialUrl')}
+            required={material.type !== 'file'}
+          >
+            {(attributes) => material.type === 'text' ? (
+              <Textarea
+                {...attributes}
+                value={material.content}
+                onChange={(event) => onUpdate({ content: event.target.value })}
+                rows={3}
+                className="bg-background"
+              />
+            ) : (
+              <Input
+                {...attributes}
+                value={material.content}
+                onChange={(event) => onUpdate({ content: event.target.value })}
+                type="url"
+                placeholder="https://"
+                className="bg-background font-mono text-sm"
+              />
+            )}
+          </CurriculumField>
+        )}
+      </fieldset>
       <span className="sr-only" data-block-id={blockId} data-lesson-id={lessonId} />
     </section>
   );
@@ -304,7 +306,7 @@ function CurriculumLessonCard({
   lesson,
   lessonIndex,
   collapsed,
-  lessonUploading,
+  parentExpanded,
   uploadingMaterialIds,
   onToggleCollapse,
   materialOptions,
@@ -324,7 +326,7 @@ function CurriculumLessonCard({
   lesson: CourseCurriculumLesson;
   lessonIndex: number;
   collapsed: boolean;
-  lessonUploading: boolean;
+  parentExpanded: boolean;
   uploadingMaterialIds: ReadonlySet<string>;
   onToggleCollapse: () => void;
   materialOptions: Array<{ value: CourseCurriculumMaterial['type']; label: string }>;
@@ -341,36 +343,36 @@ function CurriculumLessonCard({
 }) {
   const { t } = useTranslation();
   const lessonLabel = lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 });
+  const contentId = useId();
+  // Defer unopened lessons, then keep their file uploads and retry state mounted.
+  const [contentMounted, setContentMounted] = useState(!collapsed && parentExpanded);
+  useEffect(() => {
+    if (!collapsed && parentExpanded) setContentMounted(true);
+  }, [collapsed, parentExpanded]);
 
   return (
     <section
-      className="min-w-0 rounded-xl border bg-background shadow-sm transition-all hover:border-primary/30"
+      className="min-w-0 overflow-hidden rounded-lg border border-border-strong bg-background"
       aria-label={lessonLabel}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/10 px-3.5 py-2.5 sm:px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7 shrink-0 text-muted-foreground"
-            disabled={lessonUploading}
-            aria-label={`${collapsed ? t('courseExpandSection') : t('courseCollapseSection')}: ${lessonLabel}`}
-            aria-expanded={!collapsed}
-            onClick={onToggleCollapse}
-          >
-            {collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-          </Button>
-          <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-primary/10 px-2 font-mono text-xs font-semibold text-primary">
+      <div className="flex flex-wrap items-center gap-1 border-b border-border/70 bg-violet-500/10 p-1.5">
+        <button
+          type="button"
+          className="flex min-h-9 min-w-0 flex-[1_1_12rem] items-center gap-2 rounded-md px-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${collapsed ? t('courseExpandSection') : t('courseCollapseSection')}: ${lessonLabel}`}
+          aria-expanded={!collapsed}
+          aria-controls={contentId}
+          onClick={onToggleCollapse}
+        >
+          <ChevronDown className={cn('size-4 shrink-0 text-violet-600 transition-transform', !collapsed && 'rotate-180')} aria-hidden="true" />
+          <span className="shrink-0 rounded bg-violet-500/10 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-violet-700 dark:text-violet-300">
             {blockIndex + 1}.{lessonIndex + 1}
           </span>
-          <h5 className="truncate text-sm font-semibold">
-            {lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 })}
-          </h5>
-          <Badge variant="secondary" className="ml-auto shrink-0 text-xs font-normal sm:ml-1">
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{lessonLabel}</span>
+          <Badge variant="secondary" className="shrink-0 text-[11px] font-normal">
             {t('courseMaterialsStat', { count: lesson.materials.length })}
           </Badge>
-        </div>
+        </button>
         <ItemActions
           index={lessonIndex}
           count={block.lessons.length}
@@ -381,57 +383,62 @@ function CurriculumLessonCard({
           onDelete={onDeleteLesson}
         />
       </div>
-      {!collapsed ? (
-        <div className="space-y-4 p-3.5 sm:p-4">
-          <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.title`} label={t('courseLessonTitle')}>
-            {(attributes) => (
-              <Input
-                {...attributes}
-                value={lesson.title}
-                onChange={(event) => onUpdateLesson({ title: event.target.value })}
-                maxLength={255}
-              />
-            )}
-          </CurriculumField>
-          <div className="space-y-3">
-            {lesson.materials.map((material, materialIndex) => {
-              const materialLabel = material.title || t('courseMaterialNumber', { number: materialIndex + 1 });
-              return (
-                <CurriculumMaterialCard
-                  key={material.id}
-                  blockId={block.id}
-                  blockIndex={blockIndex}
-                  lessonId={lesson.id}
-                  lessonIndex={lessonIndex}
-                  material={material}
-                  materialIndex={materialIndex}
-                  materialCount={lesson.materials.length}
-                  materialOptions={materialOptions}
-                  disabled={disabled}
-                  isUploading={uploadingMaterialIds.has(material.id)}
-                  onUploadBusyChange={onUploadBusyChange}
-                  onUpdate={(updates) => onUpdateMaterial(materialIndex, updates)}
-                  onUploadedFile={(file) => onUploadedMaterialFile(material.id, file)}
-                  onRequestTypeChange={(type) => onRequestTypeChange(material.id, type)}
-                  onMove={(direction) => onUpdateLesson({ materials: moveCurriculumItem(lesson.materials, materialIndex, direction) })}
-                  onDelete={() => onDeleteMaterial(material.id, materialLabel)}
-                />
-              );
-            })}
-            <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials`} />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-dashed"
-              onClick={() => onUpdateLesson({ materials: [...lesson.materials, createCurriculumMaterial()] }, { validate: false })}
-            >
-              <Plus className="mr-1.5 size-4" />
-              {t('courseAddMaterial')}
-            </Button>
+      <div id={contentId} hidden={collapsed}>
+        {contentMounted ? (
+          <div className="space-y-2.5 p-2.5">
+            <fieldset disabled={disabled}>
+              <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.title`} label={t('courseLessonTitle')}>
+                {(attributes) => (
+                  <Input
+                    {...attributes}
+                    value={lesson.title}
+                    onChange={(event) => onUpdateLesson({ title: event.target.value })}
+                    maxLength={255}
+                  />
+                )}
+              </CurriculumField>
+            </fieldset>
+            <div className="space-y-2.5">
+              {lesson.materials.map((material, materialIndex) => {
+                const materialLabel = material.title || t('courseMaterialNumber', { number: materialIndex + 1 });
+                return (
+                  <CurriculumMaterialCard
+                    key={material.id}
+                    blockId={block.id}
+                    blockIndex={blockIndex}
+                    lessonId={lesson.id}
+                    lessonIndex={lessonIndex}
+                    material={material}
+                    materialIndex={materialIndex}
+                    materialCount={lesson.materials.length}
+                    materialOptions={materialOptions}
+                    disabled={disabled}
+                    isUploading={uploadingMaterialIds.has(material.id)}
+                    onUploadBusyChange={onUploadBusyChange}
+                    onUpdate={(updates) => onUpdateMaterial(materialIndex, updates)}
+                    onUploadedFile={(file) => onUploadedMaterialFile(material.id, file)}
+                    onRequestTypeChange={(type) => onRequestTypeChange(material.id, type)}
+                    onMove={(direction) => onUpdateLesson({ materials: moveCurriculumItem(lesson.materials, materialIndex, direction) })}
+                    onDelete={() => onDeleteMaterial(material.id, materialLabel)}
+                  />
+                );
+              })}
+              <CurriculumField path={`program.blocks.${blockIndex}.lessons.${lessonIndex}.materials`} />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-dashed text-xs"
+                disabled={disabled}
+                onClick={() => onUpdateLesson({ materials: [...lesson.materials, createCurriculumMaterial()] }, { validate: false })}
+              >
+                <Plus className="mr-1.5 size-4" />
+                {t('courseAddMaterial')}
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -440,18 +447,21 @@ export function CourseCurriculumEditor({
   unavailable = false,
   onUploadBusyChange,
   disabled = false,
-  focusBlockRequest = null,
 }: {
   unavailable?: boolean;
   onUploadBusyChange: (id: string, busy: boolean) => void;
   disabled?: boolean;
-  focusBlockRequest?: { blockId: string; seq: number } | null;
 }) {
   const { t } = useTranslation();
   const form = useFormContext<CourseValues>();
   const program = useWatch({ control: form.control, name: 'program' });
   const { submitCount, isSubmitted, errors } = form.formState;
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set(
+    form.getValues('program').blocks.flatMap((block, index) => [
+      ...(index > 0 ? [block.id] : []),
+      ...block.lessons.slice(1).map((lesson) => lesson.id),
+    ]),
+  ));
   const [uploadingMaterialIds, setUploadingMaterialIds] = useState<Set<string>>(() => new Set());
   const [deleteTarget, setDeleteTarget] = useState<{
     blockId: string;
@@ -508,21 +518,6 @@ export function CourseCurriculumEditor({
     });
   }, [form, submitCount]);
 
-  useEffect(() => {
-    if (!focusBlockRequest) return;
-    setCollapsedIds((prev) => {
-      if (!prev.has(focusBlockRequest.blockId)) return prev;
-      const next = new Set(prev);
-      next.delete(focusBlockRequest.blockId);
-      return next;
-    });
-    const frameId = requestAnimationFrame(() => {
-      const element = document.getElementById(`course-block-${focusBlockRequest.blockId}`);
-      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [focusBlockRequest]);
-
   const toggleCollapsed = (id: string) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev);
@@ -543,17 +538,7 @@ export function CourseCurriculumEditor({
       setCollapsedIds(new Set());
       return;
     }
-    const next = new Set<string>();
-    program.blocks.forEach((block) => {
-      const blockUploading = block.lessons.some((lesson) =>
-        lesson.materials.some((material) => uploadingMaterialIds.has(material.id)),
-      );
-      if (!blockUploading) next.add(block.id);
-      block.lessons.forEach((lesson) => {
-        const lessonUploading = lesson.materials.some((material) => uploadingMaterialIds.has(material.id));
-        if (!lessonUploading) next.add(lesson.id);
-      });
-    });
+    const next = new Set(allCollapsibleIds);
     setCollapsedIds(next);
   };
 
@@ -608,7 +593,7 @@ export function CourseCurriculumEditor({
   };
 
   const confirmDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || disabled) return;
     const { blockId, lessonId, materialId } = deleteTarget;
     const deletedCollapseIds = new Set<string>();
     const blocks = program.blocks.flatMap((block) => {
@@ -643,55 +628,44 @@ export function CourseCurriculumEditor({
 
   if (unavailable) {
     return (
-      <section className="mt-4 space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-5 sm:mt-6" aria-label={t('courseCurriculum')}>
-        <h3 className="text-base font-semibold">{t('courseCurriculum')}</h3>
+      <CompactModalSection title={t('courseCurriculum')} icon={BookOpen} tone="violet" collapsible={false}>
         <p role="alert" className="text-sm font-medium text-destructive">{t('courseCurriculumLoadFailed')}</p>
-      </section>
+      </CompactModalSection>
     );
   }
 
   return (
-    <section className="space-y-4" aria-label={t('courseCurriculum')}>
-      <div className="sticky top-0 z-10 -mx-4 bg-background/95 px-4 pt-4 pb-3 backdrop-blur sm:-mx-6 sm:px-6 sm:pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background px-4 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <BookOpen className="size-4" aria-hidden="true" />
-            </span>
-            <h3 className="text-base font-semibold">{t('courseCurriculum')}</h3>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {program.blocks.length > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleCollapseAll}
-              >
-                {allCollapsed ? (
-                  <ChevronsUpDown className="mr-1.5 size-4" aria-hidden="true" />
-                ) : (
-                  <ChevronsDownUp className="mr-1.5 size-4" aria-hidden="true" />
-                )}
-                {allCollapsed ? t('courseExpandAll') : t('courseCollapseAll')}
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
-              onClick={() => change({ ...program, blocks: [...program.blocks, createCurriculumBlock()] }, { validate: false })}
-            >
-              <Plus className="mr-1.5 size-4" />
-              {t('courseAddBlock')}
+    <CompactModalSection
+      title={t('courseCurriculum')}
+      icon={BookOpen}
+      tone="violet"
+      collapsible={false}
+      count={program.blocks.length}
+      contentClassName="space-y-2.5"
+      actions={(
+        <>
+          {program.blocks.length > 0 ? (
+            <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={toggleCollapseAll}>
+              {allCollapsed ? <ChevronsUpDown className="mr-1.5 size-3.5" aria-hidden="true" /> : <ChevronsDownUp className="mr-1.5 size-3.5" aria-hidden="true" />}
+              {allCollapsed ? t('courseExpandAll') : t('courseCollapseAll')}
             </Button>
-          </div>
-        </div>
-      </div>
-
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 bg-background text-xs"
+            disabled={disabled}
+            onClick={() => change({ ...program, blocks: [...program.blocks, createCurriculumBlock()] }, { validate: false })}
+          >
+            <Plus className="mr-1.5 size-3.5" aria-hidden="true" />
+            {t('courseAddBlock')}
+          </Button>
+        </>
+      )}
+    >
       {program.blocks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed bg-muted/15 px-6 py-12 text-center">
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong bg-muted/25 px-4 py-5 text-center">
           <span className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <Layers className="size-5" aria-hidden="true" />
           </span>
@@ -701,41 +675,18 @@ export function CourseCurriculumEditor({
 
       {program.blocks.map((block, blockIndex) => {
         const blockLabel = block.title || t('courseBlockNumber', { number: blockIndex + 1 });
-        const blockUploading = block.lessons.some((lesson) =>
-          lesson.materials.some((material) => uploadingMaterialIds.has(material.id)),
-        );
-        const blockCollapsed = !blockUploading && collapsedIds.has(block.id);
+        const blockCollapsed = collapsedIds.has(block.id);
         return (
-          <section
+          <CompactModalSection
             key={block.id}
-            id={`course-block-${block.id}`}
-            className="scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-l-4 border-l-primary/70 bg-muted/15 shadow-sm transition-all"
-            aria-label={blockLabel}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
-              <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0 text-muted-foreground"
-                  disabled={blockUploading}
-                  aria-label={`${blockCollapsed ? t('courseExpandSection') : t('courseCollapseSection')}: ${blockLabel}`}
-                  aria-expanded={!blockCollapsed}
-                  onClick={() => toggleCollapsed(block.id)}
-                >
-                  {blockCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                </Button>
-                <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md bg-primary px-2 font-mono text-xs font-bold text-primary-foreground">
-                  {String(blockIndex + 1).padStart(2, '0')}
-                </span>
-                <h4 className="truncate font-semibold">
-                  {block.title || t('courseBlockNumber', { number: blockIndex + 1 })}
-                </h4>
-                <Badge variant="secondary" className="ml-auto shrink-0 text-xs font-normal sm:ml-1">
-                  {t('courseLessonsStat', { count: block.lessons.length })}
-                </Badge>
-              </div>
+            title={blockLabel}
+            summary={t('courseLessonsStat', { count: block.lessons.length })}
+            icon={Layers}
+            tone="teal"
+            open={!blockCollapsed}
+            onOpenChange={() => toggleCollapsed(block.id)}
+            contentClassName="space-y-2.5"
+            actions={(
               <ItemActions
                 index={blockIndex}
                 count={program.blocks.length}
@@ -748,96 +699,93 @@ export function CourseCurriculumEditor({
                 onMove={(direction) => change({ ...program, blocks: moveCurriculumItem(program.blocks, blockIndex, direction) })}
                 onDelete={() => setDeleteTarget({ blockId: block.id, name: blockLabel })}
               />
-            </div>
-
-            {!blockCollapsed ? (
-              <div className="space-y-4 p-3.5 sm:p-4">
-                <CurriculumField path={`program.blocks.${blockIndex}.title`} label={t('courseBlockTitle')}>
-                  {(attributes) => (
-                    <Input
-                      {...attributes}
-                      value={block.title}
-                      onChange={(event) => updateBlock(blockIndex, { title: event.target.value })}
-                      maxLength={255}
-                      className="bg-background"
-                    />
-                  )}
-                </CurriculumField>
-
-                <div className="space-y-3 border-l-2 border-primary/20 pl-3 sm:pl-4">
-                  {block.lessons.map((lesson, lessonIndex) => {
-                    const lessonUploading = lesson.materials.some((material) => uploadingMaterialIds.has(material.id));
-                    return (
-                      <CurriculumLessonCard
-                        key={lesson.id}
-                        block={block}
-                        blockIndex={blockIndex}
-                        lesson={lesson}
-                        lessonIndex={lessonIndex}
-                        collapsed={!lessonUploading && collapsedIds.has(lesson.id)}
-                        lessonUploading={lessonUploading}
-                        uploadingMaterialIds={uploadingMaterialIds}
-                        onToggleCollapse={() => toggleCollapsed(lesson.id)}
-                        materialOptions={materialOptions}
-                        disabled={disabled}
-                        onUploadBusyChange={handleUploadBusyChange}
-                        onUpdateLesson={(updates, options) => updateLesson(blockIndex, lessonIndex, updates, options)}
-                        onUpdateMaterial={(materialIndex, updates) => updateMaterial(blockIndex, lessonIndex, materialIndex, updates)}
-                        onUploadedMaterialFile={(materialId, file) => {
-                          const current = form.getValues('program').blocks.find((item) => item.id === block.id)?.lessons
-                            .find((item) => item.id === lesson.id)?.materials.find((item) => item.id === materialId);
-                          if (current?.type === 'file') {
-                            updateMaterialById(block.id, lesson.id, materialId, {
-                              file,
-                              content: '',
-                              title: current.title || file.name,
-                            });
-                          }
-                        }}
-                        onRequestTypeChange={(materialId, type) => setTypeChange({
-                          blockId: block.id,
-                          lessonId: lesson.id,
-                          materialId,
-                          type,
-                        })}
-                        onDuplicateLesson={() => updateBlock(blockIndex, {
-                          lessons: insertCurriculumItemAfter(block.lessons, lessonIndex, duplicateCurriculumLesson(lesson)),
-                        })}
-                        onMoveLesson={(direction) => updateBlock(blockIndex, {
-                          lessons: moveCurriculumItem(block.lessons, lessonIndex, direction),
-                        })}
-                        onDeleteLesson={() => setDeleteTarget({
-                          blockId: block.id,
-                          lessonId: lesson.id,
-                          name: lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 }),
-                        })}
-                        onDeleteMaterial={(materialId, name) => setDeleteTarget({
-                          blockId: block.id,
-                          lessonId: lesson.id,
-                          materialId,
-                          name,
-                        })}
-                      />
-                    );
-                  })}
-                  <CurriculumField path={`program.blocks.${blockIndex}.lessons`} />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-center border-dashed bg-background/70 hover:bg-background"
-                    onClick={() => {
-                      updateBlock(blockIndex, { lessons: [...block.lessons, createCurriculumLesson()] }, { validate: false });
-                      form.clearErrors(`program.blocks.${blockIndex}.lessons`);
+            )}
+          >
+            <fieldset disabled={disabled}>
+              <CurriculumField path={`program.blocks.${blockIndex}.title`} label={t('courseBlockTitle')}>
+                {(attributes) => (
+                  <Input
+                    {...attributes}
+                    value={block.title}
+                    onChange={(event) => updateBlock(blockIndex, { title: event.target.value })}
+                    maxLength={255}
+                    className="bg-background"
+                  />
+                )}
+              </CurriculumField>
+            </fieldset>
+            <div className="space-y-2.5">
+              {block.lessons.map((lesson, lessonIndex) => {
+                return (
+                  <CurriculumLessonCard
+                    key={lesson.id}
+                    block={block}
+                    blockIndex={blockIndex}
+                    lesson={lesson}
+                    lessonIndex={lessonIndex}
+                    collapsed={collapsedIds.has(lesson.id)}
+                    parentExpanded={!blockCollapsed}
+                    uploadingMaterialIds={uploadingMaterialIds}
+                    onToggleCollapse={() => toggleCollapsed(lesson.id)}
+                    materialOptions={materialOptions}
+                    disabled={disabled}
+                    onUploadBusyChange={handleUploadBusyChange}
+                    onUpdateLesson={(updates, options) => updateLesson(blockIndex, lessonIndex, updates, options)}
+                    onUpdateMaterial={(materialIndex, updates) => updateMaterial(blockIndex, lessonIndex, materialIndex, updates)}
+                    onUploadedMaterialFile={(materialId, file) => {
+                      const current = form.getValues('program').blocks.find((item) => item.id === block.id)?.lessons
+                        .find((item) => item.id === lesson.id)?.materials.find((item) => item.id === materialId);
+                      if (current?.type === 'file') {
+                        updateMaterialById(block.id, lesson.id, materialId, {
+                          file,
+                          content: '',
+                          title: current.title || file.name,
+                        });
+                      }
                     }}
-                  >
-                    <Plus className="mr-1.5 size-4" />
-                    {t('courseAddLesson')}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </section>
+                    onRequestTypeChange={(materialId, type) => setTypeChange({
+                      blockId: block.id,
+                      lessonId: lesson.id,
+                      materialId,
+                      type,
+                    })}
+                    onDuplicateLesson={() => updateBlock(blockIndex, {
+                      lessons: insertCurriculumItemAfter(block.lessons, lessonIndex, duplicateCurriculumLesson(lesson)),
+                    })}
+                    onMoveLesson={(direction) => updateBlock(blockIndex, {
+                      lessons: moveCurriculumItem(block.lessons, lessonIndex, direction),
+                    })}
+                    onDeleteLesson={() => setDeleteTarget({
+                      blockId: block.id,
+                      lessonId: lesson.id,
+                      name: lesson.title || t('courseLessonNumber', { number: lessonIndex + 1 }),
+                    })}
+                    onDeleteMaterial={(materialId, name) => setDeleteTarget({
+                      blockId: block.id,
+                      lessonId: lesson.id,
+                      materialId,
+                      name,
+                    })}
+                  />
+                );
+              })}
+              <CurriculumField path={`program.blocks.${blockIndex}.lessons`} />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 w-full justify-center border-dashed bg-background text-xs"
+                disabled={disabled}
+                onClick={() => {
+                  updateBlock(blockIndex, { lessons: [...block.lessons, createCurriculumLesson()] }, { validate: false });
+                  form.clearErrors(`program.blocks.${blockIndex}.lessons`);
+                }}
+              >
+                <Plus className="mr-1.5 size-4" />
+                {t('courseAddLesson')}
+              </Button>
+            </div>
+          </CompactModalSection>
         );
       })}
       <CurriculumField path="program.blocks" />
@@ -859,7 +807,7 @@ export function CourseCurriculumEditor({
         confirmLabel={t('courseRemoveMaterialFile')}
         variant="destructive"
         onConfirm={() => {
-          if (typeChange) {
+          if (typeChange && !disabled) {
             updateMaterialById(typeChange.blockId, typeChange.lessonId, typeChange.materialId, {
               type: typeChange.type,
               file: undefined,
@@ -869,6 +817,6 @@ export function CourseCurriculumEditor({
           setTypeChange(null);
         }}
       />
-    </section>
+    </CompactModalSection>
   );
 }

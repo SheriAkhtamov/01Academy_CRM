@@ -38,7 +38,7 @@ export function TaskFilePicker({ files, onChange, disabled, uploaded, activeFile
       <Paperclip className="mr-2 size-4" />{t('attachFile')}
     </Button>
     <ul className="space-y-2">
-      {files.map((file) => <li key={`${file.name}:${file.size}:${file.lastModified}`} className="flex min-w-0 items-center gap-2 rounded-lg border p-2">
+      {files.map((file) => <li key={`${file.name}:${file.size}:${file.lastModified}`} className="flex min-w-0 items-center gap-2 rounded-md border border-border-strong bg-background p-2">
         {isPhotoAttachment(file.name) ? <TaskPhotoPreview file={file} name={file.name} /> : <Paperclip className="size-5 shrink-0" />}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm" title={file.name}>{file.name}</p>
@@ -52,7 +52,7 @@ export function TaskFilePicker({ files, onChange, disabled, uploaded, activeFile
     <AlertDialog open={removing !== null} onOpenChange={(open) => { if (!open) setRemoving(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader><AlertDialogTitle>{t('delete')}</AlertDialogTitle><AlertDialogDescription>{removing?.name}</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel>{t('cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => { onChange(files.filter((file) => file !== removing)); setRemoving(null); }}>{t('delete')}</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogFooter><AlertDialogCancel>{t('cancel')}</AlertDialogCancel><AlertDialogAction disabled={disabled} onClick={() => { if (disabled) return; onChange(files.filter((file) => file !== removing)); setRemoving(null); }}>{t('delete')}</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </section>;

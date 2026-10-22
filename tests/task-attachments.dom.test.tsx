@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateTaskDialog } from '../client/src/components/ux/board/CreateTaskDialog';
 import { TaskDetailSheet } from '../client/src/components/ux/board/TaskDetailSheet';
 import { i18n } from '../client/src/lib/i18n';
-import type { TaskDetail, UserMini } from '../client/src/lib/boardTypes';
+import { formatBoardDateTime, type TaskDetail, type UserMini } from '../client/src/lib/boardTypes';
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), upload: vi.fn(), toast: vi.fn(), user: { id: 7, module: 'sales', modules: ['sales'] } }));
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: mocks.api }));
@@ -286,7 +286,7 @@ describe('miniapp task progress', () => {
 });
 
 describe('task drafts and pending submissions', () => {
-  const setupTask = () => {
+  const setupTask = (users: UserMini[] = [employee]) => {
     const task: TaskDetail = { id: 100, boardId: 1, title: 'Task', description: null, status: 'todo', priority: 'normal', color: null,
       position: 0, creatorId: 7, assigneeId: 7, creator: employee, assignee: employee, leadId: null, lead: null,
       dueAt: null, acceptedAt: null, acceptedBy: null, createdAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T10:00:00Z',
@@ -295,7 +295,7 @@ describe('task drafts and pending submissions', () => {
     client.setQueryData(['/api/board/tasks/100'], task);
     const close = vi.fn();
     mocks.api.mockResolvedValue(task);
-    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={[employee]} />, client));
+    render(provider(<TaskDetailSheet taskId={100} open onOpenChange={close} users={users} />, client));
     return { close, task };
   };
   it('submits one comment and preserves text typed while that request is pending', async () => {
@@ -326,5 +326,93 @@ describe('task drafts and pending submissions', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('cancel') }));
     await screen.findByRole('alertdialog');
     expect(close).not.toHaveBeenCalled();
+  });
+  it('preserves folded edit fields and prevents changes while saving without blocking section navigation', async () => {
+    setupTask();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+    const description = screen.getByRole('textbox', { name: i18n.t('description') });
+    await user.type(description, 'Edited details');
+    const toggle = screen.getByRole('button', { name: i18n.t('description') });
+    await user.click(toggle);
+    expect(description.isConnected).toBe(true);
+    expect(screen.queryByRole('textbox', { name: i18n.t('description') })).toBeNull();
+    mocks.api.mockReturnValue(new Promise(() => undefined));
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/board/tasks/100', expect.objectContaining({ description: 'Edited details' })));
+    expect(screen.getByRole('textbox', { name: i18n.t('taskTitle') }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('textbox', { name: i18n.t('time') }).matches(':disabled')).toBe(true);
+    await user.click(toggle);
+    expect(screen.getByRole('textbox', { name: i18n.t('description') })).toBe(description);
+    expect(description.matches(':disabled')).toBe(true);
+    expect((description as HTMLTextAreaElement).value).toBe('Edited details');
+  });
+
+  it('summarizes the current assignee and deadline draft when edit fields are folded', async () => {
+    const colleague = { ...employee, id: 8, fullName: 'New assignee' };
+    setupTask([employee, colleague]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+    await user.click(screen.getByRole('combobox', { name: i18n.t('assigneeLabel') }));
+    await user.click(screen.getByRole('option', { name: colleague.fullName }));
+    fireEvent.change(screen.getByLabelText(i18n.t('dueDateLabel'), { selector: 'input' }), { target: { value: '2026-11-10' } });
+    const toggle = screen.getByRole('button', { name: i18n.t('taskDetails') });
+    await user.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain(colleague.fullName);
+    expect(toggle.textContent).toContain(formatBoardDateTime('2026-11-09T19:00:00Z', 'en'));
+    expect(toggle.textContent).not.toContain(i18n.t('noDueDate'));
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+
+  it('focuses an empty edited title without submitting a request', async () => {
+    setupTask();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
+    const title = screen.getByRole('textbox', { name: i18n.t('taskTitle') });
+    await user.clear(title);
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    expect(document.activeElement).toBe(title);
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: i18n.t('titleRequired') }));
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+});
+
+describe('compact task sections', () => {
+  it.each([false, true])('keeps optional fields mounted when folded and preserves the submitted draft (miniapp: %s)', async (miniMode) => {
+    const user = userEvent.setup();
+    render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[employee]} currentUser={employee} canAssignUsers miniMode={miniMode} />));
+    const toggle = screen.getByRole('button', { name: i18n.t('miniTaskOptionalFields') });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await user.type(screen.getByRole('textbox', { name: i18n.t('taskTitle') }), 'Prepare course');
+    await user.click(toggle);
+    const description = screen.getByRole('textbox', { name: i18n.t('description') });
+    await user.type(description, 'Keep this draft');
+    await user.click(screen.getByRole('radio', { name: i18n.t('taskColorViolet') }));
+    await user.click(toggle);
+    expect(description.isConnected).toBe(true);
+    expect(screen.queryByRole('textbox', { name: i18n.t('description') })).toBeNull();
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('textbox', { name: i18n.t('description') })).toBe(description);
+    expect((description as HTMLTextAreaElement).value).toBe('Keep this draft');
+    await user.click(screen.getByRole('button', { name: i18n.t('createTask') }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/board/tasks', expect.objectContaining({ description: 'Keep this draft', color: 'violet' })));
+  });
+
+  it('locks pending creation including the time picker but leaves section navigation available', async () => {
+    mocks.api.mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    render(provider(<CreateTaskDialog open onOpenChange={vi.fn()} users={[employee]} currentUser={employee} canAssignUsers />));
+    await user.type(screen.getByRole('textbox', { name: i18n.t('taskTitle') }), 'Pending task');
+    await user.click(screen.getByRole('button', { name: i18n.t('createTask') }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledOnce());
+    expect(screen.getByRole('textbox', { name: i18n.t('taskTitle') }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('textbox', { name: i18n.t('time') }).matches(':disabled')).toBe(true);
+    const toggle = screen.getByRole('button', { name: i18n.t('miniTaskOptionalFields') });
+    expect(toggle.matches(':disabled')).toBe(false);
+    await user.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('textbox', { name: i18n.t('description') }).matches(':disabled')).toBe(true);
   });
 });

@@ -24,6 +24,7 @@ interface ScheduleAgendaListProps {
   groupIndexById: Map<number, number>;
   onSelectEvent: (event: SalesScheduleEvent) => void;
   emptyState?: ReactNode;
+  showDayHeading?: boolean;
 }
 
 const dateKey = (day: Date) => (
@@ -44,6 +45,7 @@ export function ScheduleAgendaList({
   groupIndexById,
   onSelectEvent,
   emptyState,
+  showDayHeading = true,
 }: ScheduleAgendaListProps) {
   const { t } = useTranslation();
   const populatedDays = days.filter((day) => (eventsByDate.get(dateKey(day))?.length ?? 0) > 0);
@@ -62,7 +64,7 @@ export function ScheduleAgendaList({
 
         return (
           <section key={dateKey(day)}>
-            <h3 className={cn(
+            {showDayHeading ? <h3 className={cn(
               'sticky top-0 z-10 flex items-center gap-2 border-y border-border bg-muted/70 px-4 py-1.5 text-xs font-semibold capitalize backdrop-blur-sm',
               today ? 'text-primary' : 'text-muted-foreground',
             )}>
@@ -74,7 +76,7 @@ export function ScheduleAgendaList({
               </span>
               {format(day, 'EEEE, d MMMM', { locale })}
               <span className="ml-auto font-medium tabular-nums">{dayEvents.length}</span>
-            </h3>
+            </h3> : null}
 
             <ul className="divide-y divide-border/60">
               {dayEvents.map((event) => {

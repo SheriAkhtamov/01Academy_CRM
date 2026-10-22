@@ -1,4 +1,5 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import type { Locale } from 'date-fns';
 import {
   BookOpen,
@@ -47,36 +48,46 @@ export function ScheduleEventDialog({
     {
       key: 'time',
       icon: Clock3,
+      label: t('time'),
       value: `${formatCalendarMinutes(event.startMinutes)}–${formatCalendarMinutes(event.endMinutes)}`,
     },
-    {
+    ...(event.courseName ? [{
       key: 'course',
       icon: BookOpen,
-      value: event.topic || event.courseName || t('lessonColumn'),
-    },
+      label: t('course'),
+      value: event.courseName,
+    }] : []),
+    ...(event.topic ? [{
+      key: 'topic',
+      icon: BookOpen,
+      label: t('lessonTopic'),
+      value: event.topic,
+    }] : []),
     {
       key: 'teacher',
       icon: UserRoundCheck,
-      value: <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} />,
+      label: t('teacher'),
+      value: <EmployeeIdentity userId={event.teacherUserId} name={event.teacherName || t('notAssigned')} wrapName />,
     },
-    ...(event.schoolName ? [{ key: 'school', icon: MapPin, value: event.schoolName }] : []),
-    ...(event.roomName ? [{ key: 'room', icon: MapPin, value: event.roomName }] : []),
+    ...(event.schoolName ? [{ key: 'school', icon: MapPin, label: t('school'), value: event.schoolName }] : []),
+    ...(event.roomName ? [{ key: 'room', icon: MapPin, label: t('room'), value: event.roomName }] : []),
     ...(event.availableSeats !== null && event.availableSeats !== undefined
       ? [{
           key: 'seats',
           icon: UserRoundCheck,
-          value: `${event.availableSeats}/${event.maxStudents ?? 12} ${t('seatsAvailable')}`,
+          label: t('seatsAvailable'),
+          value: `${event.availableSeats}/${event.maxStudents ?? 12}`,
         }]
       : []),
   ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
-        <div className="h-1.5 w-full" style={{ backgroundColor: tone.solid }} aria-hidden="true" />
-        <DialogHeader className="px-6 pb-3 pt-5">
-          <DialogTitle className="text-lg">{event.groupName}</DialogTitle>
-          <DialogDescription className="flex items-center gap-1.5 capitalize">
+      <DialogContent className="compact-modal flex max-w-md flex-col overflow-hidden p-0">
+        <div className="h-1 w-full shrink-0" style={{ backgroundColor: tone.solid }} aria-hidden="true" />
+        <DialogHeader className="compact-modal-header">
+          <DialogTitle className="text-base leading-6">{event.groupName}</DialogTitle>
+          <DialogDescription className="flex items-center gap-1.5 text-xs capitalize">
             <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
             {academyDateTimeFormat(language, {
               weekday: 'long',
@@ -87,15 +98,21 @@ export function ScheduleEventDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <dl className="flex flex-col gap-2.5 px-6 pb-5">
-          {rows.map((row) => (
-            <div key={row.key} className="flex items-center gap-2.5 text-sm">
-              {row.key !== 'teacher' ? <row.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
-              <dd className="min-w-0 truncate text-foreground">{row.value}</dd>
-            </div>
-          ))}
-
-        </dl>
+        <div className="compact-modal-body overflow-y-auto">
+          <CompactModalSection title={t('lessonColumn')} icon={CalendarDays} tone="sky" collapsible={false}>
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+              {rows.map((row) => (
+                <div key={row.key} className="min-w-0 space-y-1">
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <row.icon className="size-3.5 shrink-0" aria-hidden="true" />
+                    {row.label}
+                  </dt>
+                  <dd className="break-words text-sm font-medium text-foreground">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </CompactModalSection>
+        </div>
       </DialogContent>
     </Dialog>
   );

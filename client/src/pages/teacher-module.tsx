@@ -724,6 +724,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     && (selectedLessonDetails.status === 'conducted' || selectedLessonHasStarted),
   );
   const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
+  const rescheduleDraftDirty = Boolean(rescheduleAt || rescheduleReason);
   const rescheduleTimestamp = parsedRescheduleAt?.getTime() ?? Number.NaN;
   const canRescheduleLesson = Boolean(
     selectedLessonDetails?.canManageLesson !== false
@@ -845,23 +846,23 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const handleLessonSelect = useCallback((lessonId: string) => {
     if (lessonMutationPending || lessonId === selectedLessonId) return;
-    if (selectedLessonId && attendanceDraftDirty.current) {
+    if (selectedLessonId && (attendanceDraftDirty.current || rescheduleDraftDirty)) {
       setPendingLessonSwitch(lessonId);
       return;
     }
     openAttendanceForLesson(lessonId);
-  }, [lessonMutationPending, openAttendanceForLesson, selectedLessonId]);
+  }, [lessonMutationPending, openAttendanceForLesson, rescheduleDraftDirty, selectedLessonId]);
 
   const handleDialogCloseRequest = useCallback((open: boolean) => {
     if (open || lessonMutationPending) return;
-    if (attendanceDraftDirty.current) {
+    if (attendanceDraftDirty.current || rescheduleDraftDirty) {
       setPendingDialogClose(true);
       return;
     }
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
     replaceParams({ lesson: null });
-  }, [lessonMutationPending, replaceParams]);
+  }, [lessonMutationPending, replaceParams, rescheduleDraftDirty]);
 
   const confirmDialogClose = useCallback(() => {
     if (lessonMutationPending) return;
@@ -881,15 +882,15 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     setPendingLessonSwitch(null);
   }, [lessonMutationPending, pendingLessonSwitch, replaceParams]);
 
-  // Protect against accidental page close with unsaved attendance data
+  // Protect both attendance and a pending lesson move from accidental page close.
   useEffect(() => {
     if (section !== 'attendance') return undefined;
     const handler = (event: BeforeUnloadEvent) => {
-      if (attendanceDraftDirty.current) event.preventDefault();
+      if (attendanceDraftDirty.current || rescheduleDraftDirty) event.preventDefault();
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [section]);
+  }, [rescheduleDraftDirty, section]);
 
   /* The page frame — title and section navigation — is rendered by
      the same tree in every state. Errors and loading used to replace it and
@@ -1059,7 +1060,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                   <AlertTriangle className="size-5 text-amber-500" />
                   {t('unsavedAttendanceTitle')}
                 </AlertDialogTitle>
-                <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
+                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingLessonSwitch(null)}>
@@ -1082,7 +1083,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                   <AlertTriangle className="size-5 text-amber-500" />
                   {t('unsavedAttendanceTitle')}
                 </AlertDialogTitle>
-                <AlertDialogDescription>{t('unsavedAttendanceDesc')}</AlertDialogDescription>
+                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingDialogClose(false)}>

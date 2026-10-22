@@ -225,6 +225,35 @@ describe('teacher demo attendance', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('protects a reschedule draft on collapse, close, and page unload without attendance edits', async () => {
+    mount('/teacher-module/attendance?lesson=17');
+    const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
+    const toggle = await within(dialog).findByRole('button', { name: translations.lessonRescheduling.en });
+    fireEvent.click(toggle);
+    const reason = within(dialog).getByLabelText(translations.rescheduleReason.en) as HTMLInputElement;
+    fireEvent.change(reason, { target: { value: 'Move to a different room' } });
+    fireEvent.click(toggle);
+    expect(reason.closest('fieldset')?.hidden).toBe(true);
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    fireEvent.click(within(dialog).getByRole('button', { name: translations.close.en }));
+    const confirmation = await screen.findByRole('alertdialog', { name: translations.unsavedAttendanceTitle.en });
+    expect(within(confirmation).getByText(translations.unsavedChangesDescription.en)).toBeTruthy();
+    fireEvent.click(within(confirmation).getByRole('button', { name: translations.keepEditing.en }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    fireEvent.click(toggle);
+    expect(within(dialog).getByLabelText(translations.rescheduleReason.en)).toBe(reason);
+    expect(reason.value).toBe('Move to a different room');
+    fireEvent.click(within(dialog).getByRole('button', { name: translations.close.en }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: translations.discardChanges.en }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByTestId('attendance-calendar-lesson-17'));
+    const reopened = await screen.findByRole('dialog', { name: regularLesson.topic });
+    fireEvent.click(await within(reopened).findByRole('button', { name: translations.lessonRescheduling.en }));
+    expect((within(reopened).getByLabelText(translations.rescheduleReason.en) as HTMLInputElement).value).toBe('');
+  });
+
   it.each([
     { status: 'scheduled', date: '2026-09-15T11:00', expectedAt: '2026-09-15T06:00:00.000Z', period: 'a past day' },
     { status: 'scheduled', date: '2026-09-16T10:00', expectedAt: '2026-09-16T05:00:00.000Z', period: 'earlier today' },

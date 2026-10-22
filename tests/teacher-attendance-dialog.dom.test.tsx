@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -117,7 +117,7 @@ describe('teacher attendance dialog', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(props.onSave).not.toHaveBeenCalled();
     expect(props.onNoteChange).not.toHaveBeenCalled();
-    expect((screen.getByLabelText(translations.lessonNoteLabel.en) as HTMLTextAreaElement).value).toBe('Shared note');
+    expect((screen.getByLabelText(translations.lessonNoteLabel.en, { selector: 'textarea' }) as HTMLTextAreaElement).value).toBe('Shared note');
 
     await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
     confirmation = await screen.findByRole('alertdialog', { name: translations.lessonNoteOverwriteTitle.en });
@@ -147,5 +147,59 @@ describe('teacher attendance dialog', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(await screen.findByRole('dialog', { name: 'Loops' })).toBeTruthy();
     expect(props.onSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps comment and reschedule fields mounted while their sections are folded', async () => {
+    const user = userEvent.setup();
+    const { props, update } = renderAttendance({ rescheduleAt: '2026-10-22T10:00', rescheduleReason: 'Room change' });
+    const comment = screen.getByLabelText(translations.lessonNoteLabel.en, { selector: 'textarea' }) as HTMLTextAreaElement;
+    const reason = screen.getByLabelText(translations.rescheduleReason.en) as HTMLInputElement;
+    expect(comment.closest('fieldset')?.hidden).toBe(true);
+    expect(reason.closest('fieldset')?.hidden).toBe(true);
+    await user.click(screen.getByRole('button', { name: translations.lessonNoteLabel.en }));
+    fireEvent.change(comment, { target: { value: 'Updated comment' } });
+    expect(props.onNoteChange).toHaveBeenCalledWith('Updated comment');
+    update({ note: 'Updated comment' });
+    await user.click(screen.getByRole('button', { name: translations.lessonNoteLabel.en }));
+    await user.click(screen.getByRole('button', { name: translations.lessonNoteLabel.en }));
+    expect(screen.getByLabelText(translations.lessonNoteLabel.en, { selector: 'textarea' })).toBe(comment);
+    expect(comment.value).toBe('Updated comment');
+    update({ rescheduleOpen: true });
+    expect(screen.getByLabelText(translations.rescheduleReason.en)).toBe(reason);
+    expect(reason.value).toBe('Room change');
+    update({ rescheduleOpen: false });
+    expect(reason.closest('fieldset')?.hidden).toBe(true);
+    expect(reason.value).toBe('Room change');
+  });
+
+  it('allows folding during saves but blocks edits and roster keyboard mutations', async () => {
+    const user = userEvent.setup();
+    const { props } = renderAttendance({ mutationPending: true });
+    await user.click(screen.getByRole('button', { name: translations.lessonNoteLabel.en }));
+    const comment = screen.getByLabelText(translations.lessonNoteLabel.en, { selector: 'textarea' }) as HTMLTextAreaElement;
+    expect(comment.closest('fieldset')?.hidden).toBe(false);
+    expect(comment.disabled).toBe(true);
+    await user.type(comment, 'ignored');
+    expect(props.onNoteChange).not.toHaveBeenCalled();
+    const row = screen.getByTestId('attendance-student-row-1');
+    row.focus();
+    fireEvent.keyDown(row, { code: 'KeyA' });
+    expect(props.onToggleStudent).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: translations.lessonNoteLabel.en }));
+    expect(comment.closest('fieldset')?.hidden).toBe(true);
+  });
+
+  it('keeps keyboard marking and jumping to the first unmarked student available', async () => {
+    const user = userEvent.setup();
+    const { props } = renderAttendance();
+    const first = screen.getByTestId('attendance-student-row-1');
+    first.focus();
+    fireEvent.keyDown(first, { code: 'KeyA' });
+    expect(props.onToggleStudent).toHaveBeenCalledWith(1, 'absent');
+    expect(document.activeElement).toBe(screen.getByTestId('attendance-student-row-2'));
+    await user.click(screen.getByRole('button', { name: translations.goToUnmarkedStudent.en }));
+    expect(document.activeElement).toBe(screen.getByTestId('attendance-student-row-3'));
+    fireEvent.keyDown(document.activeElement!, { code: 'KeyP', metaKey: true });
+    expect(props.onToggleStudent).toHaveBeenCalledTimes(1);
   });
 });

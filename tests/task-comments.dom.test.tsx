@@ -126,3 +126,26 @@ it('marks completed tasks awaiting acceptance even without comments and removes 
   view.rerender(<TooltipProvider><TaskCard task={{ ...summary, status: 'accepted' }} /></TooltipProvider>);
   expect(screen.queryByRole('img', { name: i18n.t('taskAwaitingAcceptance') })).toBeNull();
 });
+
+it.each(['ru', 'en'] as const)('localizes unknown activity and status codes in %s', async (language) => {
+  i18n.setLanguage(language);
+  task.activity = [
+    { id: 1, taskId: task.id, type: 'internal_future_event', fromValue: null, toValue: null, meta: null, actor: creator, createdAt: task.createdAt },
+    { id: 2, taskId: task.id, type: 'status_changed', fromValue: 'todo', toValue: 'internal_future_status', meta: null, actor: creator, createdAt: task.createdAt },
+  ];
+  const user = setup();
+  await user.click(screen.getByRole('tab', { name: i18n.t('activityTab') }));
+  expect(screen.getByText(i18n.t('taskUpdated'), { exact: false })).toBeTruthy();
+  expect(screen.getByText(`${i18n.t('activityMovedTo')} ${i18n.t('taskStatusUnknown')}`, { exact: false })).toBeTruthy();
+  expect(screen.queryByText(/internal_future_/)).toBeNull();
+});
+
+it('selects and focuses an attachment notification even without an explicit tab', async () => {
+  task.attachments = [{ id: 20, taskId: task.id, fileName: 'file.pdf', originalName: 'Report.pdf', mimeType: 'application/pdf', size: 1024,
+    createdAt: task.createdAt, uploadedBy: assignee }];
+  client.setQueryData(['/api/board/tasks/100'], task);
+  render(<QueryClientProvider client={client}><TaskDetailSheet taskId={100} open onOpenChange={vi.fn()} users={[creator, assignee]} focusAttachmentId={20} /></QueryClientProvider>);
+  await waitFor(() => expect(document.activeElement?.getAttribute('data-task-target')).toBe('attachment-20'));
+  expect(screen.getByRole('tab', { name: /Вложения/ }).getAttribute('aria-selected')).toBe('true');
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+});

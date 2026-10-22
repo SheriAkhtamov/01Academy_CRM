@@ -1,12 +1,13 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2, UserRound, X } from 'lucide-react';
+import { Loader2, Plus, UserRound, Users, X } from 'lucide-react';
 import type { LessonStaffTeacher } from '@shared/contracts/lesson-staff';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { useTranslation } from '@/hooks/useTranslation';
 import { lessonStaffApi, lessonStaffQueryKey } from './api';
 
@@ -21,7 +22,6 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
   onPendingChange?: (pending: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const id = useId();
   const client = useQueryClient();
   const [removing, setRemoving] = useState<LessonStaffTeacher | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -48,11 +48,8 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
   const error = mutation.error?.message || t('lessonStaffSaveFailed');
 
   return (
-    <section aria-labelledby={`${id}-title`} className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+    <CompactModalSection title={t('teacher')} icon={UserRound} tone="sky" collapsible={false} contentClassName="space-y-2.5">
       <div>
-        <h3 id={`${id}-title`} className="mb-1 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-          <UserRound className="size-4" aria-hidden="true" />{t('teacher')}
-        </h3>
         {staff.isPending ? <div role="status" aria-label={t('loading')}><Loader2 className="size-4 animate-spin" /></div>
           : staff.data ? <p className="text-sm font-semibold">{staff.data.teacher
             ? <LessonTeacherIdentity teacher={staff.data.teacher} /> : t('lessonTeacherUnassigned')}</p> : null}
@@ -64,29 +61,36 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
         </div>
       ) : null}
       {staff.data ? (
-        <div className="space-y-2 border-t border-border/60 pt-3">
+        <div className="space-y-2 border-t border-border/60 pt-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-semibold text-muted-foreground">{t('lessonAssistants')}</h4>
             {canManage ? (
               <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
                 <DialogTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="min-h-11 gap-2" disabled={busy}>
-                    {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-                    {t('lessonAssistantAdd')}<ChevronDown className="size-4" aria-hidden="true" />
+                  <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 rounded-md text-xs" disabled={busy}>
+                    {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" aria-hidden="true" />}
+                    {t('lessonAssistantAdd')}
                   </Button>
                 </DialogTrigger>
-                <DialogContent aria-describedby={undefined} className="max-w-md">
-                  <DialogHeader><DialogTitle>{t('lessonAssistants')}</DialogTitle></DialogHeader>
-                  <div className="space-y-3">
-                  {staff.data.teachers.length ? staff.data.teachers.map(teacher => (
-                    <div key={teacher.id} className="flex items-center gap-3">
-                      <Checkbox checked={selected.has(teacher.id)} disabled={busy} aria-label={teacher.fullName} onCheckedChange={checked => {
-                        if (checked) change(teacher.id, false);
-                        else { setMenuOpen(false); mutation.reset(); setRemoving(teacher); }
-                      }} />
-                      <LessonTeacherIdentity teacher={teacher} />
-                    </div>
-                  )) : <p className="p-2 text-sm">{t('noTeachers')}</p>}
+                <DialogContent aria-describedby={undefined} className="compact-modal flex max-w-md flex-col overflow-hidden p-0">
+                  <DialogHeader className="compact-modal-header">
+                    <DialogTitle className="text-base leading-6">{t('lessonAssistants')}</DialogTitle>
+                  </DialogHeader>
+                  <div className="compact-modal-body space-y-2 overflow-y-auto">
+                    <CompactModalSection title={t('lessonAssistantAdd')} icon={Users} tone="violet" collapsible={false} contentClassName="space-y-1.5">
+                      {staff.data.teachers.length ? staff.data.teachers.map(teacher => (
+                        <div key={teacher.id} className={selected.has(teacher.id)
+                          ? 'flex items-center gap-2.5 rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-2'
+                          : 'flex items-center gap-2.5 rounded-md border border-border-strong bg-background px-2.5 py-2'}>
+                          <Checkbox checked={selected.has(teacher.id)} disabled={busy} aria-label={teacher.fullName} onCheckedChange={checked => {
+                            if (checked) change(teacher.id, false);
+                            else { setMenuOpen(false); mutation.reset(); setRemoving(teacher); }
+                          }} />
+                          <LessonTeacherIdentity teacher={teacher} />
+                        </div>
+                      )) : <p className="text-sm">{t('noTeachers')}</p>}
+                    </CompactModalSection>
+                    {mutation.isError && !removing ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
                   </div>
                 </DialogContent>
               </Dialog>
@@ -94,9 +98,9 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
           </div>
           <div className="flex flex-wrap gap-2">
             {staff.data.assistants.length ? staff.data.assistants.map(teacher => (
-              <span key={teacher.id} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border bg-background py-1 pl-3 pr-1 text-sm">
+              <span key={teacher.id} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-strong bg-background py-1 pl-2 pr-1 text-xs">
                 <LessonTeacherIdentity teacher={teacher} />
-                {canManage ? <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={busy}
+                {canManage ? <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" disabled={busy}
                   aria-label={t('lessonAssistantRemoveName', { name: teacher.fullName })}
                   onClick={() => { mutation.reset(); setRemoving(teacher); }}><X className="size-4" /></Button> : null}
               </span>
@@ -104,11 +108,11 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
           </div>
         </div>
       ) : null}
-      {mutation.isError && !removing ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {mutation.isError && !removing && !menuOpen ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       <ConfirmDialog open={Boolean(removing)} onOpenChange={open => { if (!open && !pending) setRemoving(null); }}
         title={t('lessonAssistantRemoveTitle')} description={removing?.fullName ?? ''}
         confirmLabel={t('lessonAssistantRemove')} variant="destructive" isPending={pending} keepOpenOnConfirm
         error={mutation.isError ? error : undefined} onConfirm={() => { if (removing) change(removing.id, true); }} />
-    </section>
+    </CompactModalSection>
   );
 }

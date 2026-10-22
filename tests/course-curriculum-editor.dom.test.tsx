@@ -19,16 +19,17 @@ const initialProgram: CourseCurriculum = {
   }],
 };
 
-function Editor({ program = { version: 1, blocks: [] }, onSubmit = vi.fn(), editing = false }: {
+function Editor({ program = { version: 1, blocks: [] }, onSubmit = vi.fn(), editing = false, saving = false }: {
   program?: CourseCurriculum;
   onSubmit?: (values: CourseValues) => void;
   editing?: boolean;
+  saving?: boolean;
 }) {
   const form = useForm<CourseValues>({
     resolver: zodResolver(createCourseSchema(key => i18n.t(key))),
     defaultValues: { name: 'Programming', ageCategory: '12+', description: '', isActive: true, program },
   });
-  return <CourseEditorDialog open onOpenChange={vi.fn()} form={form} editing={editing} saving={false} onSubmit={onSubmit} />;
+  return <CourseEditorDialog open onOpenChange={vi.fn()} form={form} editing={editing} saving={saving} onSubmit={onSubmit} />;
 }
 
 beforeEach(() => {
@@ -128,7 +129,7 @@ it('supports quick age category presets, collapse/expand controls, and duplicati
   expect((screen.getByLabelText(i18n.t('ageCategory'), { exact: false }) as HTMLInputElement).value).toBe('14–17');
 
   fireEvent.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
-  expect(screen.queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: i18n.t('courseExpandAll') }));
   expect(screen.getByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeTruthy();
 
@@ -156,7 +157,7 @@ it('does not show premature errors when adding empty blocks, lessons, or materia
   expect(screen.queryAllByRole('alert')).toHaveLength(0);
 
   fireEvent.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
-  expect(screen.queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
   expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
@@ -164,11 +165,11 @@ it('does not show premature errors when adding empty blocks, lessons, or materia
 
   const validBlock = screen.getByRole('region', { name: 'Foundations' });
   const invalidBlock = screen.getByRole('region', { name: i18n.t('courseBlockNumber', { number: 2 }) });
-  expect(within(validBlock).queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  expect(within(validBlock).queryByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeNull();
   expect(within(invalidBlock).getByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeTruthy();
 
-  fireEvent.click(within(invalidBlock).getByRole('button', { name: `${i18n.t('courseCollapseSection')}: ${i18n.t('courseBlockNumber', { number: 2 })}` }));
-  expect(within(invalidBlock).queryByLabelText(i18n.t('courseBlockTitle'), { exact: false })).toBeNull();
+  fireEvent.click(within(invalidBlock).getByRole('button', { name: i18n.t('courseBlockNumber', { number: 2 }) }));
+  expect(within(invalidBlock).queryByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeNull();
 });
 
 it.each([false, true])('saves a course without a price field (editing: %s)', async (editing) => {
@@ -181,4 +182,55 @@ it.each([false, true])('saves a course without a price field (editing: %s)', asy
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   expect(saved.mock.calls[0][0]).not.toHaveProperty('basePriceUzs');
   expect(saved.mock.calls[0][0]).toMatchObject({ name: 'Programming', program: initialProgram });
+});
+
+
+it('opens collapsed parameters before focusing an invalid required field and retains its draft', async () => {
+  render(<Editor program={initialProgram} />);
+  const name = screen.getByRole('textbox', { name: i18n.t('courseName') });
+  fireEvent.change(name, { target: { value: '' } });
+  const parameters = screen.getByRole('button', { name: i18n.t('courseBasicParameters') });
+  fireEvent.click(parameters);
+  expect(name.closest('[hidden]')).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+  await waitFor(() => expect(document.activeElement).toBe(name));
+  expect(parameters.getAttribute('aria-expanded')).toBe('true');
+  expect(name.closest('[hidden]')).toBeNull();
+});
+
+it('mounts and opens an invalid lesson in a collapsed block before focusing its field', async () => {
+  const program: CourseCurriculum = { ...initialProgram, blocks: [
+    initialProgram.blocks[0],
+    { id: 'closed-block', title: 'Advanced', lessons: [{ id: 'closed-lesson', title: '', materials: [] }] },
+  ] };
+  render(<Editor program={program} />);
+  const block = screen.getByRole('button', { name: 'Advanced' });
+  expect(block.getAttribute('aria-expanded')).toBe('false');
+  expect(within(screen.getByRole('region', { name: 'Advanced' })).queryByLabelText(i18n.t('courseLessonTitle'), { exact: false })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+  const invalidBlock = screen.getByRole('region', { name: 'Advanced' });
+  await waitFor(() => {
+    const invalidTitle = within(invalidBlock).getByRole('textbox', { name: i18n.t('courseLessonTitle') });
+    expect(document.activeElement).toBe(invalidTitle);
+    expect(invalidTitle.closest('[hidden]')).toBeNull();
+  });
+  expect(block.getAttribute('aria-expanded')).toBe('true');
+});
+
+it('keeps section navigation available while saving and blocks edits and structural actions', async () => {
+  const user = userEvent.setup();
+  render(<Editor program={initialProgram} saving />);
+  const parameters = screen.getByRole('button', { name: i18n.t('courseBasicParameters') });
+  await user.click(parameters);
+  await user.keyboard('{Enter}');
+  expect(parameters.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('textbox', { name: i18n.t('courseName') }).matches(':disabled')).toBe(true);
+  expect(screen.getByRole('textbox', { name: i18n.t('courseBlockTitle') }).matches(':disabled')).toBe(true);
+  expect(screen.getByRole('textbox', { name: i18n.t('courseMaterialTitle') }).matches(':disabled')).toBe(true);
+  expect((screen.getByRole('button', { name: i18n.t('courseAddBlock') }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: `${i18n.t('delete')}: Foundations` }) as HTMLButtonElement).disabled).toBe(true);
+  await user.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
+  expect(screen.queryByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeNull();
+  await user.click(screen.getByRole('button', { name: i18n.t('courseExpandAll') }));
+  expect(screen.getByRole('textbox', { name: i18n.t('courseBlockTitle') })).toBeTruthy();
 });

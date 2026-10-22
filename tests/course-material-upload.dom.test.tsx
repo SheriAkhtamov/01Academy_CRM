@@ -317,3 +317,42 @@ it('shows the localized lesson error for six attached files and accepts five aft
   expect(saved.mock.calls[0][0].program.blocks[0].lessons[0].materials.map((material: { file: { id: number } }) => material.file.id))
     .toEqual([100, 101, 102, 103, 104]);
 });
+
+
+it('retains a failed upload and retries the same file after folding its lesson and block', async () => {
+  files.upload.mockRejectedValueOnce(new Error('courseFileUploadFailed'));
+  render(<Editor />);
+  const file = selectedFile();
+  pick(file);
+  expect(await screen.findByText(i18n.t('courseFileUploadFailed'))).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: `${i18n.t('courseCollapseSection')}: First lesson` }));
+  fireEvent.click(screen.getByRole('button', { name: 'First block' }));
+  expect(screen.queryByRole('button', { name: i18n.t('retry') })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'First block' }));
+  fireEvent.click(screen.getByRole('button', { name: `${i18n.t('courseExpandSection')}: First lesson` }));
+  expect(screen.getByRole('alert').textContent).toBe(i18n.t('courseFileUploadFailed'));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('retry') }));
+  await screen.findByText('workbook.pdf');
+  expect(files.upload).toHaveBeenCalledTimes(2);
+  expect(files.upload.mock.calls[1][0]).toBe(file);
+});
+
+it('keeps an active upload alive while the curriculum is folded and restores the uploaded file', async () => {
+  const pending = deferred<PortalFileDto>();
+  files.upload.mockReturnValueOnce(pending.promise);
+  const saved = vi.fn();
+  render(<Editor onSubmit={saved} />);
+  pick(selectedFile());
+  await waitFor(() => expect(files.upload).toHaveBeenCalledOnce());
+  const signal = files.upload.mock.calls[0][1] as AbortSignal;
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseCollapseAll') }));
+  expect(signal.aborted).toBe(false);
+  expect(screen.queryByRole('button', { name: i18n.t('courseUploadMaterialFile') })).toBeNull();
+  expect((screen.getByRole('button', { name: i18n.t('save') }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => pending.resolve(attachment()));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('courseExpandAll') }));
+  expect(screen.getByRole('link', { name: 'workbook.pdf' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  expect(saved.mock.calls[0][0].program.blocks[0].lessons[0].materials[0].file).toEqual(reference(attachment()));
+});

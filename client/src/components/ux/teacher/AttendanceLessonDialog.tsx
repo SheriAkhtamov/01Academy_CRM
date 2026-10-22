@@ -1,13 +1,14 @@
 import { DateTimeInput } from '@/components/ui/date-time-input';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
   Calendar,
   CheckCircle2,
-  ChevronDown,
   ClipboardCheck,
-  Clock3,  Loader2,
+  Clock3,
+  Loader2,
+  MessageSquare,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -36,11 +37,11 @@ import { LessonStaffSection } from '@/features/lesson-staff/LessonStaffSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ux/EmptyState';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { LessonStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import {
-  TEACHER_CARD_PADDING,
   TEACHER_TONE_CLASS,
   attendancePercentTone,
   getInitials,
@@ -90,8 +91,8 @@ export interface AttendanceLessonDialogProps {
 /**
  * A checklist a teacher works through standing at a whiteboard, usually on a
  * phone. Three things drive the layout: the modal is a flex column so the save
- * button can never be pushed off-screen by a long topic or a warning banner;
- * every control clears 44px; and the roster answers arrow keys plus P/A so a
+ * button can never be pushed off-screen by a long topic; attendance controls
+ * stay easy to tap, and the roster answers arrow keys plus P/A so a
  * group of fifteen can be marked without touching the screen at all.
  */
 export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
@@ -131,7 +132,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   } = props;
 
   const { t, language } = useTranslation();
-  const rescheduleBodyId = useId();
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
   const [noteOverwriteConfirmOpen, setNoteOverwriteConfirmOpen] = useState(false);
@@ -233,13 +233,13 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-3rem)]">
-          <DialogHeader className="shrink-0 space-y-2 border-b border-border/60 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-4 pl-4 pr-12 text-left sm:pl-6 sm:pr-14">
-            <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                <ClipboardCheck className="size-6" />
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] max-w-3xl flex-col overflow-hidden p-0 sm:w-[calc(100vw-3rem)]">
+          <DialogHeader className="compact-modal-header">
+            <div className="flex items-start gap-2.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+                <ClipboardCheck className="size-5" aria-hidden="true" />
               </span>
-              <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge
                     variant="outline"
@@ -249,7 +249,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   </Badge>
                   {lesson ? <LessonStatusBadge status={lesson.status} /> : null}
                 </div>
-                <DialogTitle className="text-lg font-bold tracking-tight sm:text-xl">
+                <DialogTitle className="text-base font-semibold leading-6">
                   {lessonTitle}
                 </DialogTitle>
                 <DialogDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -286,29 +286,26 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+          <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto">
             {lesson ? <LessonStaffSection key={lesson.id} lessonId={lesson.id}
               editable={['scheduled', 'conducted'].includes(lesson.status)} disabled={mutationPending}
               onPendingChange={onStaffPendingChange} /> : null}
             {isRosterPending ? (
-              <div className="space-y-3">
-                <Skeleton className="h-20 w-full rounded-xl" />
-                <Skeleton className="h-16 w-full rounded-xl" />
-                <Skeleton className="h-16 w-full rounded-xl" />
-                <Skeleton className="h-16 w-full rounded-xl" />
+              <div className="space-y-2">
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-14 w-full rounded-lg" />
+                <Skeleton className="h-14 w-full rounded-lg" />
+                <Skeleton className="h-14 w-full rounded-lg" />
               </div>
             ) : null}
 
             {isRosterError ? (
-              <div className={cn('rounded-xl border border-destructive/30 bg-destructive/5 text-center', TEACHER_CARD_PADDING)}>
-                <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-                  <AlertTriangle className="size-6" />
-                </span>
-                <p className="text-base font-semibold text-destructive">{t('attendanceRosterLoadFailed')}</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-card p-3">
+                <p role="alert" className="text-sm font-medium text-destructive">{t('attendanceRosterLoadFailed')}</p>
                 <Button
                   type="button"
                   variant="outline"
-                  className="mt-4 min-h-11 rounded-lg px-5"
+                  className="h-8 rounded-md text-xs"
                   disabled={mutationPending}
                   onClick={onRetryRoster}
                 >
@@ -319,13 +316,9 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
             {!isRosterPending && !isRosterError && students.length > 0 ? (
               <>
-                <div className="space-y-2.5">
-                  <h3 className="px-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    {t('groupStudentsCount').replace('{count}', String(students.length))}
-                  </h3>
-
+                <CompactModalSection title={t('attendanceChecklist')} icon={ClipboardCheck} tone="teal" count={students.length} collapsible={false}>
                   <ul
-                    className="space-y-2.5"
+                    className="space-y-1.5"
                     aria-label={t('groupStudentsCount').replace('{count}', String(students.length))}
                     onKeyDown={handleRosterKeyDown}
                     onFocus={handleRosterFocus}
@@ -350,28 +343,28 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                           aria-label={`${name}. ${statusLabel}`}
                           ref={(element) => { rowRefs.current[index] = element; }}
                           className={cn(
-                            'flex flex-col gap-3 rounded-xl border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between',
+                            'flex flex-col gap-2 rounded-lg border px-3 py-2 transition-colors sm:flex-row sm:items-center sm:justify-between',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             status === 'present' && 'border-emerald-500/40 bg-emerald-500/[0.06]',
                             status === 'absent' && 'border-rose-500/40 bg-rose-500/[0.06]',
-                            !status && 'border-border/60 bg-card',
+                            !status && 'border-border-strong bg-background',
                           )}
                         >
-                          <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-2.5">
                             <span className={cn(
-                              'flex size-10 shrink-0 items-center justify-center rounded-xl border text-xs font-bold',
+                              'flex size-8 shrink-0 items-center justify-center rounded-md border text-xs font-semibold',
                               status === 'present' && TEACHER_TONE_CLASS.success,
                               status === 'absent' && TEACHER_TONE_CLASS.danger,
                               !status && TEACHER_TONE_CLASS.accent,
                             )}>
                               {getInitials(name)}
                             </span>
-                            <div className="min-w-0 space-y-1">
+                            <div className="min-w-0 space-y-0.5">
                               <p className="break-words text-sm font-semibold leading-tight text-foreground">
                                 {name}
                               </p>
                               <span className={cn(
-                                'inline-flex items-center rounded-md border px-1.5 py-0.5 text-xs font-medium tabular-nums',
+                                'inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium tabular-nums',
                                 TEACHER_TONE_CLASS[attendancePercentTone(percent)],
                               )}>
                                 {t('attendanceRateShort').replace('{percent}', String(percent))}
@@ -379,7 +372,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                             </div>
                           </div>
 
-                          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                          <div className="flex shrink-0 items-center gap-1.5">
                             <Button
                               type="button"
                               variant="outline"
@@ -388,7 +381,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                               onClick={() => onToggleStudent(student.id, 'present')}
                               aria-pressed={status === 'present'}
                               className={cn(
-                                'min-h-11 flex-1 rounded-lg text-xs font-semibold sm:flex-none',
+                                'min-h-11 flex-1 rounded-md px-3 text-xs font-semibold sm:h-9 sm:min-h-9 sm:flex-none',
                                 status === 'present'
                                   ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600/90 hover:text-white'
                                   : 'border-border/80 text-muted-foreground',
@@ -405,7 +398,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                               onClick={() => onToggleStudent(student.id, 'absent')}
                               aria-pressed={status === 'absent'}
                               className={cn(
-                                'min-h-11 flex-1 rounded-lg text-xs font-semibold sm:flex-none',
+                                'min-h-11 flex-1 rounded-md px-3 text-xs font-semibold sm:h-9 sm:min-h-9 sm:flex-none',
                                 status === 'absent'
                                   ? 'border-rose-600 bg-rose-600 text-white hover:bg-rose-600/90 hover:text-white'
                                   : 'border-border/80 text-muted-foreground',
@@ -419,26 +412,24 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                       );
                     })}
                   </ul>
-                </div>
+                </CompactModalSection>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="attendance-note" className="text-xs font-semibold text-muted-foreground">
-                    {t('lessonNoteLabel')}
-                  </Label>
+                <CompactModalSection title={t('lessonNoteLabel')} icon={MessageSquare} tone="violet" summary={note} disabled={mutationPending}>
+                  <Label htmlFor="attendance-note" className="sr-only">{t('lessonNoteLabel')}</Label>
                   <Textarea
                     id="attendance-note"
                     value={note}
                     disabled={mutationPending}
                     onChange={(event) => onNoteChange(event.target.value)}
                     rows={2}
-                    className="rounded-xl text-sm"
+                    className="min-h-20 text-sm"
                   />
-                </div>
+                </CompactModalSection>
               </>
             ) : null}
 
             {!isRosterPending && !isRosterError && students.length === 0 && lesson ? (
-              <div className={cn('rounded-xl border border-dashed border-border/80 bg-muted/10', TEACHER_CARD_PADDING)}>
+              <div className="rounded-lg border border-border-strong bg-card p-3">
                 <EmptyState
                   icon={Users}
                   className="py-4"
@@ -449,74 +440,56 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
             {!isRosterPending && !isRosterError && lesson && lesson.canManageLesson !== false
               && (lesson.status === 'scheduled' || lesson.status === 'conducted') ? (
-              <div className={cn('space-y-3 rounded-xl border', TEACHER_CARD_PADDING, TEACHER_TONE_CLASS.warning)}>
-                <button
-                  type="button"
-                  aria-expanded={rescheduleOpen}
-                  aria-controls={rescheduleBodyId}
-                  onClick={() => onRescheduleOpenChange(!rescheduleOpen)}
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="flex size-8 items-center justify-center rounded-lg bg-amber-500/15">
-                      <Calendar className="size-4" />
-                    </span>
-                    <span>
-                      <span className="block text-xs font-bold text-foreground">{t('lessonRescheduling')}</span>
-                    </span>
-                  </span>
-                  <ChevronDown className={cn('size-4 shrink-0 transition-transform', rescheduleOpen && 'rotate-180')} />
-                </button>
-
-                {rescheduleOpen ? (
-                  <div id={rescheduleBodyId} className="space-y-3 border-t border-amber-500/20 pt-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="reschedule-at" className="text-xs font-medium text-muted-foreground">
-                          {t('newLessonDate')}
-                        </Label>
-                        <DateTimeInput
-                          id="reschedule-at"
-                          value={rescheduleAt}
-                          disabled={mutationPending}
-                          onValueChange={(value) => onRescheduleAtChange(value)}
-                          className="h-11 rounded-lg text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="reschedule-reason" className="text-xs font-medium text-muted-foreground">
-                          {t('rescheduleReason')}
-                        </Label>
-                        <Input
-                          id="reschedule-reason"
-                          value={rescheduleReason}
-                          maxLength={500}
-                          disabled={mutationPending}
-                          onChange={(event) => onRescheduleReasonChange(event.target.value)}
-                          className="h-11 rounded-lg text-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 rounded-lg text-xs font-medium"
-                        onClick={() => onRescheduleConfirmOpenChange(true)}
-                        disabled={!canReschedule || mutationPending}
-                      >
-                        <Calendar className="mr-1.5 size-4" />
-                        {isRescheduling ? t('saving') : t('rescheduleLesson')}
-                      </Button>
-                    </div>
+              <CompactModalSection
+                title={t('lessonRescheduling')}
+                icon={Calendar}
+                tone="amber"
+                open={rescheduleOpen}
+                onOpenChange={onRescheduleOpenChange}
+                disabled={mutationPending}
+                contentClassName="space-y-3"
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reschedule-at" className="font-medium">{t('newLessonDate')}</Label>
+                    <DateTimeInput
+                      id="reschedule-at"
+                      value={rescheduleAt}
+                      disabled={mutationPending}
+                      onValueChange={onRescheduleAtChange}
+                      className="text-sm"
+                    />
                   </div>
-                ) : null}
-              </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reschedule-reason" className="font-medium">{t('rescheduleReason')}</Label>
+                    <Input
+                      id="reschedule-reason"
+                      value={rescheduleReason}
+                      maxLength={500}
+                      disabled={mutationPending}
+                      onChange={(event) => onRescheduleReasonChange(event.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 rounded-md text-xs font-medium"
+                    onClick={() => onRescheduleConfirmOpenChange(true)}
+                    disabled={!canReschedule || mutationPending}
+                  >
+                    <Calendar className="mr-1.5 size-3.5" />
+                    {isRescheduling ? t('saving') : t('rescheduleLesson')}
+                  </Button>
+                </div>
+              </CompactModalSection>
             ) : null}
           </div>
 
           {!isRosterPending && !isRosterError && students.length > 0 ? (
-            <div className="shrink-0 space-y-3 border-t border-border/60 bg-background/95 p-4 backdrop-blur-md sm:p-6">
+            <div className="compact-modal-footer space-y-2">
               {blocking ? (
                 <div
                   className="flex items-center gap-2 text-xs"
@@ -528,7 +501,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="min-h-11 shrink-0 rounded-lg bg-background text-xs"
+                      className="h-8 shrink-0 rounded-md bg-background text-xs"
                       onClick={() => focusRow(firstUnmarkedIndex)}
                     >
                       {t('goToUnmarkedStudent')}
@@ -538,7 +511,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
               ) : null}
 
               <Button
-                className="h-12 w-full rounded-xl bg-gradient-to-r from-[var(--brand-gradient-from)] to-[var(--brand-gradient-to)] text-sm font-bold shadow-md shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.99]"
+                className="min-h-9 w-full rounded-md py-2 text-sm font-semibold"
                 onClick={() => {
                   if (hasDivergingNotes && noteDirty) setNoteOverwriteConfirmOpen(true);
                   else onSave();

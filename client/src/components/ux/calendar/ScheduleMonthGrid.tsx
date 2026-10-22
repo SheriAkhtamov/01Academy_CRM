@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { format, isSameDay, isSameMonth } from 'date-fns';
 import type { Locale } from 'date-fns';
+import { CalendarDays } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { ScheduleAgendaList } from '@/components/ux/calendar/ScheduleAgendaList';
 import {
   calendarToneAt,
@@ -156,28 +158,38 @@ export function ScheduleMonthGrid({
         </div>
       </div>
       <Dialog open={expandedDay !== null} onOpenChange={(open) => { if (!open) setExpandedDay(null); }}>
-        <DialogContent className="flex max-h-[90dvh] max-w-3xl flex-col overflow-hidden" aria-describedby={undefined}
+        <DialogContent className="compact-modal flex max-h-[90dvh] max-w-3xl flex-col overflow-hidden p-0" aria-describedby={undefined}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             overflowTrigger.current?.focus();
           }}>
-          <DialogHeader className="pr-8">
-            <DialogTitle>{t('schedule')}</DialogTitle>
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle className="text-base leading-6">{t('schedule')}</DialogTitle>
           </DialogHeader>
           {expandedDay ? (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <ScheduleAgendaList
-                days={[expandedDay]}
-                eventsByDate={eventsByDate}
-                now={now}
-                locale={locale}
-                groupIndexById={groupIndexById}
-                onSelectEvent={(event) => {
-                  overflowTrigger.current = null;
-                  setExpandedDay(null);
-                  onSelectEvent(event);
-                }}
-              />
+            <div className="compact-modal-body flex-1 overflow-y-auto">
+              <CompactModalSection
+                title={format(expandedDay, 'EEEE, d MMMM', { locale })}
+                icon={CalendarDays}
+                tone="teal"
+                collapsible={false}
+                count={eventsByDate.get(dateKey(expandedDay))?.length ?? 0}
+                contentClassName="p-0"
+              >
+                <ScheduleAgendaList
+                  days={[expandedDay]}
+                  showDayHeading={false}
+                  eventsByDate={eventsByDate}
+                  now={now}
+                  locale={locale}
+                  groupIndexById={groupIndexById}
+                  onSelectEvent={(event) => {
+                    overflowTrigger.current = null;
+                    setExpandedDay(null);
+                    onSelectEvent(event);
+                  }}
+                />
+              </CompactModalSection>
             </div>
           ) : null}
         </DialogContent>

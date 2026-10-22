@@ -126,7 +126,7 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
   return (
     <div
       className={cn(
-        'space-y-3 rounded-xl border-2 border-dashed p-3.5 transition-all',
+        'space-y-2 rounded-md border border-dashed p-2.5 transition-colors',
         dragging
           ? 'border-primary bg-primary/5 ring-2 ring-primary/15'
           : file
@@ -149,10 +149,10 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
         disabled={pending || disabled}
         onChange={(event) => { select(event.target.files?.[0]); event.target.value = ''; }}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         {file ? (
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <FileCheck2 className="size-4" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
@@ -174,6 +174,7 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
             type="button"
             variant={file ? 'outline' : 'secondary'}
             size="sm"
+            className="h-8 text-xs"
             disabled={pending || disabled}
             onClick={() => input.current?.click()}
           >
@@ -181,13 +182,13 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
             {t(file ? 'courseReplaceMaterialFile' : 'courseUploadMaterialFile')}
           </Button>
           {pending ? (
-            <Button type="button" variant="ghost" size="sm" onClick={cancel}>
+            <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" disabled={disabled} onClick={cancel}>
               <X className="mr-1 size-3.5" aria-hidden="true" />
               {t('cancel')}
             </Button>
           ) : null}
           {retryFile && !pending ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => { void upload(retryFile); }}>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" disabled={disabled} onClick={() => { void upload(retryFile); }}>
               <RotateCcw className="mr-1.5 size-3.5" aria-hidden="true" />
               {t('retry')}
             </Button>

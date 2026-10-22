@@ -2,7 +2,8 @@ import { DateTimeInput } from '@/components/ui/date-time-input';
 import { BoardUserAvatar, BoardUserIdentity } from './BoardUserAvatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { ClipboardList, Loader2, Paperclip } from 'lucide-react';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
     DialogFooter,
     Dialog,
@@ -34,7 +35,7 @@ import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { attachmentErrorKey } from '@/lib/attachments';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
     AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { PRIORITY_ORDER, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
+import { PRIORITY_ORDER, TASK_COLOR_META, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
 import { useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 
@@ -185,7 +186,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             toast({ title: t('taskDueDateInPast'), variant: 'destructive' });
             return;
         }
-        if (miniMode && files.length) setOptionalOpen(true);
+        if (files.length) setOptionalOpen(true);
         submitting.current = true; setAttempted(true); mutation.mutate();
     };
 
@@ -234,21 +235,24 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
             <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={dueAt === tomorrowDue} className={cn('rounded-full', dueAt === tomorrowDue && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt(tomorrowDue)}>{t('adminTomorrow')}</Button>
             <Button type="button" size="sm" variant="outline" disabled={attempted || mutation.isPending} aria-pressed={!dueAt} className={cn('rounded-full', !dueAt && 'border-primary bg-primary/10 text-primary')} onClick={() => setDueAt('')}>{t('noDueDate')}</Button>
         </div> : null}
-        <DateTimeInput id="create-task-due" min={`${academyToday()}T00:00`} value={dueAt} onValueChange={(value) => setDueAt(value)} />
+        <DateTimeInput disabled={attempted || mutation.isPending} id="create-task-due" min={`${academyToday()}T00:00`} value={dueAt} onValueChange={(value) => setDueAt(value)} />
     </div>;
 
     return (
         <><Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent data-mini-task-create={miniMode || undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
-                <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <DialogContent data-mini-task-create={miniMode || undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col overflow-hidden p-0">
+                <DialogHeader className="compact-modal-header">
                     <DialogTitle>{t('addTask')}</DialogTitle>
                     <DialogDescription className="sr-only">{t('addTask')}</DialogDescription>
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                    <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4', miniMode ? 'mini-task-create-body' : 'space-y-4')}>
-                    <fieldset disabled={attempted || mutation.isPending} className={cn('min-w-0', miniMode ? 'mini-task-create-fields' : 'space-y-4')}>
-                    <div className="space-y-1.5">
+                    <div className={cn('compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain', miniMode && 'mini-task-create-body')}>
+                    <CompactModalSection title={t('taskDetails')} icon={ClipboardList} tone="sky" collapsible={false}
+                        disabled={attempted || mutation.isPending} sectionId="task-create-main"
+                        contentClassName={cn('grid grid-cols-1 gap-3 sm:grid-cols-2', miniMode && 'mini-task-create-fields')}>
+
+                    <div className="space-y-1.5 sm:col-span-2">
                         <Label htmlFor="create-task-title" className="text-xs text-muted-foreground">{t('taskTitle')} <span aria-hidden="true" className="select-none text-destructive">*</span></Label>
                         <Input
                             id="create-task-title"
@@ -259,31 +263,23 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                         />
                     </div>
 
-                    {miniMode ? <>
-                        {assigneeField}
-                        {priorityField}
-                        {dueField}
-                    </> : <>
+                    {assigneeField}
+                    {priorityField}
+                    <div className="sm:col-span-2">{dueField}</div>
+                    </CompactModalSection>
+                    <CompactModalSection title={t('miniTaskOptionalFields')} icon={Paperclip} tone="violet"
+                        open={optionalOpen} onOpenChange={setOptionalOpen} disabled={attempted || mutation.isPending}
+                        count={files.length || undefined} sectionId="task-create-extra"
+                        summary={[description.trim().split('\n')[0], color ? t(TASK_COLOR_META[color].labelKey) : ''].filter(Boolean).join(' · ')} contentClassName="space-y-3">
                         {descriptionField}
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">{priorityField}{assigneeField}</div>
-                        {dueField}
                         <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
-                    </>}
-                    </fieldset>
-                    {miniMode ? <div className="space-y-3">
-                        <Button type="button" variant="outline" className="w-full justify-between" aria-expanded={optionalOpen} aria-controls="mini-task-optional-fields" disabled={mutation.isPending} onClick={() => setOptionalOpen((value) => !value)}>
-                            {t('miniTaskOptionalFields')}<ChevronDown className={cn('size-4 transition-transform', optionalOpen && 'rotate-180')} />
-                        </Button>
-                        {optionalOpen ? <div id="mini-task-optional-fields" className="space-y-4 rounded-lg border border-border p-3">
-                            {descriptionField}
-                            <TaskColorPicker value={color} onChange={setColor} disabled={attempted || mutation.isPending} />
-                            <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
-                        </div> : null}
-                    </div> : <TaskFilePicker files={files} onChange={setFiles} disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />}
+                        <TaskFilePicker files={files} onChange={(nextFiles) => { setFiles(nextFiles); if (nextFiles.length) setOptionalOpen(true); }}
+                            disabled={attempted || mutation.isPending} uploaded={uploaded} activeFile={activeFile} percent={percent} />
+                    </CompactModalSection>
                     {mutation.isError && attempted ? <p role="alert" className="text-sm text-destructive">{createdTaskId.current === null ? t('taskSaveIncomplete') : t('taskAttachmentPartialFailure')}</p> : null}
                     </div>
 
-                    <DialogFooter className={cn('flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4', miniMode && 'mini-task-create-footer')}>
+                    <DialogFooter className={cn('compact-modal-footer flex justify-end', miniMode && 'mini-task-create-footer')}>
                         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={mutation.isPending}>
                             {t('cancel')}
                         </Button>

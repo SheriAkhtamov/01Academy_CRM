@@ -38,7 +38,7 @@ export function LeadWorkspaceHeader({
   const { t } = useTranslation();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   return (
-    <SheetHeader data-topographic={undefined} className="max-h-[42dvh] shrink-0 space-y-4 overflow-y-auto border-b border-border/70 bg-card px-4 pb-4 pt-5 text-left sm:px-7 sm:pt-6">
+    <SheetHeader className="max-h-[42dvh] shrink-0 space-y-4 overflow-y-auto border-b border-border/70 bg-card px-4 pb-4 pt-5 text-left sm:px-7 sm:pt-6">
       <div className="flex items-start gap-3 pr-10 sm:gap-4">
         <Avatar className="size-12 shrink-0 rounded-2xl border border-primary/10 sm:size-14">
           <AvatarFallback className="rounded-2xl bg-primary/5 text-lg font-semibold text-primary">{getInitials(lead.contactName)}</AvatarFallback>

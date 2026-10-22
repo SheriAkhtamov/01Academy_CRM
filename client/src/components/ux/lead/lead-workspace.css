@@ -1,8 +1,4 @@
 /* A restrained surface system scoped to the lead's modal workspace. */
-.lead-workspace [data-topographic]::before {
-  display: none;
-}
-
 .lead-workspace > button:last-child {
   @apply right-4 top-5 grid size-8 place-items-center rounded-lg border border-border/70 bg-card text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground sm:right-6 sm:top-6;
 }

@@ -164,6 +164,77 @@ describe('voice reminder settings and test calls', () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+  it('preserves the selected recording and playback node when its section is folded', async () => {
+    const { user } = await renderDialog();
+    await openRecordings(user);
+    const recording = screen.getByRole('region', { name: 'Opening recording' });
+    const input = within(recording).getByLabelText('Opening recording', { selector: 'input' }) as HTMLInputElement;
+    const file = new File(['audio-data'], 'folded-intro.wav', { type: 'audio/wav' });
+    await user.upload(input, file);
+    const playback = within(recording).getByLabelText('Play the selected recording');
+    const toggle = within(recording).getByRole('button', { name: 'Opening recording' });
+    await user.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(input.files?.[0]).toBe(file);
+    expect(input.isConnected).toBe(true);
+    await user.click(toggle);
+    expect(within(recording).getByLabelText('Play the selected recording')).toBe(playback);
+    expect(input.files?.[0]).toBe(file);
+    expect(mocks.uploadAudio).not.toHaveBeenCalled();
+  });
+
+  it.each([500, 403, 404])('handles a cached %s refresh while recording and settings drafts exist', async status => {
+    const { user, client } = await renderDialog();
+    fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '120' } });
+    await openRecordings(user);
+    const opening = screen.getByRole('region', { name: 'Opening recording' });
+    const input = within(opening).getByLabelText('Opening recording', { selector: 'input' }) as HTMLInputElement;
+    const file = new File(['draft-audio'], 'access-draft.wav', { type: 'audio/wav' });
+    await user.upload(input, file);
+    mocks.getSnapshot.mockRejectedValue(Object.assign(new Error('Request rejected'), { status }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['/api/academy/voice-reminders'], exact: true }); });
+    if (status === 500) {
+      expect(input.isConnected).toBe(true);
+      expect(input.files?.[0]).toBe(file);
+      await user.click(screen.getByRole('tab', { name: 'Settings' }));
+      expect((screen.getByLabelText('Minutes before the demo') as HTMLInputElement).value).toBe('120');
+    } else {
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      act(() => client.setQueryData(['/api/academy/voice-reminders'], makeSnapshot()));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.body.textContent).not.toContain('access-draft.wav');
+    }
+  });
+
+  it.each([403, 404])('ignores a late upload that replaces the cached snapshot after %s', async status => {
+    const { user, client } = await renderDialog();
+    await openRecordings(user);
+    const opening = within(screen.getByRole('region', { name: 'Opening recording' }));
+    await user.upload(opening.getByLabelText('Opening recording', { selector: 'input' }), new File(['draft'], 'pending-audio.wav', { type: 'audio/wav' }));
+    await user.click(opening.getByRole('button', { name: 'Upload recording' }));
+    const upload = deferred<VoiceReminderSnapshot>();
+    mocks.uploadAudio.mockReturnValue(upload.promise);
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Replace recording' }));
+    await act(async () => {
+      await client.fetchQuery({ queryKey: ['/api/academy/voice-reminders'], queryFn: () => Promise.reject(Object.assign(new Error('Access revoked'), { status })), retry: false }).catch(() => undefined);
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    await act(async () => upload.resolve(makeSnapshot()));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it.each([403, 404])('closes all voice forms after a %s save rejection', async status => {
+    const { user } = await renderDialog();
+    fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '90' } });
+    mocks.saveSettings.mockRejectedValue(Object.assign(new Error('Access revoked'), { status }));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
   it('saves enabled reminders with two parallel calls and the selected retry settings', async () => {
     const { user } = await renderDialog();
     expect(screen.getByRole('dialog', { name: 'Voice reminders' })).toBeTruthy();

@@ -69,7 +69,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
   const setDraft = (next: Partial<Draft>) => setDrafts((current) => ({ ...current, [group.id]: { ...(current[group.id] ?? EMPTY_DRAFT), ...next } }));
   const submit = () => { if (!send.isPending && (draft.text.trim() || draft.files.length)) send.mutate({ groupId: group.id, ...draft }); };
   return <div className="flex min-h-0 flex-1 flex-col">
-    <button type="button" className="flex w-full items-center gap-3 border-b p-4 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <button type="button" className="flex w-full shrink-0 items-center gap-3 border-b bg-teal-50/60 p-3 text-left dark:bg-teal-950/20 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => setDetailsOpen(true)} aria-haspopup="dialog" aria-label={t('chatGroupDetails')}>
       <ChatGroupAvatar group={group} className="size-10 shrink-0" /><div className="min-w-0 flex-1">
       <h3 className="truncate font-medium">{group.name}</h3><p className="text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</p>
@@ -90,7 +90,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
       {!query.isLoading && !query.isError && query.data?.length===0 ? <p className="py-8 text-center text-sm text-muted-foreground">{t('noMessagesYet')}</p> : null}
       <div ref={bottom} aria-hidden="true" />
     </div></ScrollArea>
-    <div className="border-t p-4">
+    <div className="compact-modal-footer shrink-0">
       <ChatFileDrafts files={draft.files} disabled={send.isPending} onRemove={(file) => setDraft({ files: draft.files.filter((item) => item!==file) })} />
       <input ref={fileInput} type="file" multiple className="sr-only" aria-label={t('attachmentsLabel')} disabled={send.isPending} onChange={(event) => {
         const added = Array.from(event.target.files ?? []); event.target.value='';
@@ -99,13 +99,13 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
         setDraft({ files: [...draft.files,...added] });
       }} />
       <div className="flex gap-2"><Button variant="outline" size="icon" aria-label={t('attachFile')} disabled={send.isPending} onClick={() => fileInput.current?.click()}><Paperclip className="size-4" /></Button>
-        <Input className="min-w-0 flex-1" placeholder={t('typeMessage')} value={draft.text} maxLength={10_000} onChange={(event) => setDraft({ text: event.target.value })} onKeyDown={(event) => {
+        <Input className="min-w-0 flex-1" aria-label={t('message')} placeholder={t('message')} value={draft.text} maxLength={10_000} onChange={(event) => setDraft({ text: event.target.value })} onKeyDown={(event) => {
           if (event.key==='Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }
         }} />
         <Button size="icon" aria-label={t('send')} disabled={send.isPending || (!draft.text.trim() && draft.files.length===0)} onClick={submit}>{send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
       </div>
     </div>
-    {detailsOpen ? <ChatGroupDetailsDialog group={group} onClose={() => setDetailsOpen(false)} onLeft={() => {
+    {detailsOpen ? <ChatGroupDetailsDialog key={`${user?.id ?? ''}:${group.id}`} group={group} onClose={() => setDetailsOpen(false)} onLeft={() => {
       setDetailsOpen(false);
       setDrafts((current) => { const { [group.id]: _removed, ...remaining } = current; return remaining; });
     }} /> : null}

@@ -77,6 +77,7 @@ describe('employee plain login forms', () => {
     expect(login.disabled).toBe(false); expect(login.checkValidity()).toBe(true);
     expect(login.autocomplete).toBe('username'); expect(login.placeholder).toBe('');
     setField('fullName', 'Renamed employee');
+    await userEvent.click(dialog.getByRole('button', { name: i18n.t('employeeContactsSection') }));
     fireEvent.change(dialog.getByRole('textbox', { name: i18n.t('phone') }), { target: { value: '+7 (999) 123-45-67' } });
     await userEvent.click(dialog.getByRole('button', { name: i18n.t('updateUser') }));
     await waitFor(() => expect(writes).toHaveLength(1));

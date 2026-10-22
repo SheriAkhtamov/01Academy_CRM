@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -28,12 +30,14 @@ const FEATURE_LABELS = {
  */
 export function MotionSettingsPanel() {
   const { t } = useTranslation();
+  const [confirmReset, setConfirmReset] = useState(false);
   const { preferences, setPreference, resetPreferences } = useMotionPreferences();
   const isDefault = MOTION_FEATURES.every((feature) => preferences[feature])
     && preferences.enabled === DEFAULT_MOTION_PREFERENCES.enabled;
 
   return (
-    <div className="rounded-xl border border-border/70 p-4">
+    <>
+    <div>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <Label htmlFor="motion-enabled" className="flex items-center gap-2 text-sm font-semibold">
@@ -76,11 +80,21 @@ export function MotionSettingsPanel() {
           variant="ghost"
           size="sm"
           className="mt-3 h-8 px-2 text-xs"
-          onClick={resetPreferences}
+          onClick={() => setConfirmReset(true)}
         >
           {t('motionResetDefaults')}
         </Button>
       )}
     </div>
+    <ConfirmDialog
+      compact
+      open={confirmReset}
+      onOpenChange={setConfirmReset}
+      title={t('motionResetConfirmTitle')}
+      description={t('motionResetConfirmBody')}
+      confirmLabel={t('motionResetDefaults')}
+      onConfirm={resetPreferences}
+    />
+    </>
   );
 }

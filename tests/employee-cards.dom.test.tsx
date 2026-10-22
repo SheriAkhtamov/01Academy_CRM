@@ -142,7 +142,7 @@ it('opens employee search results as cards without leaving the current page', as
     ? { items: [{ id: 'user-20', userId: 20, entityType: 'user', title: profile.fullName, href: '/employees?employee=20' }], hasMore: false } : profile);
   function Search() { const [open, setOpen] = useState(true); return <CommandPalette open={open} onOpenChange={setOpen} />; }
   const view = mount(<Search />);
-  await userEvent.type(screen.getByPlaceholderText(i18n.t('commandPalettePlaceholder')), 'Sam');
+  await userEvent.type(screen.getByRole('combobox', { name: i18n.t('search') }), 'Sam');
   await userEvent.click(await screen.findByText(profile.fullName));
   expect(await within(await card()).findByText(profile.fullName)).toBeTruthy();
   expect(view.location.history.at(-1)).toBe('/teacher-module/attendance');

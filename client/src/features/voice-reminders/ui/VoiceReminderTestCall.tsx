@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Loader2, Phone } from 'lucide-react';
 import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { Badge } from '@/components/ui/badge';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,7 +49,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
       : call.job ? statusKeys[call.job.status] : null;
   const submitDisabled = disabled || call.isSending || testCallIsActive(call.job)
     || (!call.intent && (call.current.isPending || call.current.isError));
-  return <section className="space-y-4" aria-label={t('voiceRemindersTestCall')}>
+  return <CompactModalSection title={t('voiceRemindersTestCall')} icon={Phone} tone="sky" collapsible={false} contentClassName="space-y-3">
     <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={(event) => {
       event.preventDefault();
       void call.send(audioAvailable, disabled, confirmationAudioMissing ? 'voiceReminderConfirmationAudioRequired' : 'voiceReminderAudioRequired');
@@ -80,7 +81,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
       <p role="alert" className="text-sm text-destructive">{t('voiceRemindersTestLoadFailed')}</p>
       {!call.intent ? <Button type="button" variant="outline" onClick={() => call.current.refetch()}>{t('retry')}</Button> : null}
     </div> : null}
-  </section>;
+  </CompactModalSection>;
 }
 
 export function VoiceReminderTestCall(props: Omit<Parameters<typeof TestCallForm>[0], 'actorId'>) {

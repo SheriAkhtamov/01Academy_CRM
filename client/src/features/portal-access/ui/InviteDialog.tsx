@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Check, Copy, UserRound, UsersRound } from "lucide-react";
+import { Check, Copy, KeyRound, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { z } from "zod";
 import {
   portalInvitationCreateSchema,
@@ -30,6 +30,7 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+import { CompactModalSection } from "@/components/ux/CompactModalSection";
 import { Badge } from "@/components/ui/badge";
 import {
   UnsavedChangesDialog,
@@ -59,6 +60,12 @@ export function InviteDialog({
 }) {
   const { t, language } = useTranslation();
   const { toast } = useToast();
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const session = useRef({ open, epoch: 0 });
+  if (session.current.open !== open) session.current = { open, epoch: session.current.epoch + 1 };
+  useEffect(() => { session.current.open = open; return () => { session.current.open = false; }; }, [open]);
+  const seeded = useRef(-1);
+  const submitting = useRef(false);
   const [step, setStep] = useState(0);
   const [kind, setKind] = useState<"self" | "representative">("self");
   const [accountMode, setAccountMode] = useState<"new" | "existing">("new");
@@ -115,7 +122,11 @@ export function InviteDialog({
   const resetInvitation = controls.invitation.reset;
   const resetLookup = controls.lookup.reset;
   useEffect(() => {
-    if (!open) return;
+    if (!open || seeded.current === session.current.epoch) return;
+    seeded.current = session.current.epoch;
+    setContactsOpen(false);
+    setRelationship("parent");
+    setPermissions(["learning.read", "attendance.read", "feedback.read", "communication.create"]);
     setStep(0);
     setKind(initialKind);
     setAccountMode("new");
@@ -143,6 +154,7 @@ export function InviteDialog({
   }, [open, dirty, pending, onDraftChange]);
   const focusError = (values: Record<string, string>) => {
     setErrors(values);
+    if (values.email || values.contacts) setContactsOpen(true);
     requestAnimationFrame(() =>
       document
         .getElementById(`portal-invite-${Object.keys(values)[0]}`)
@@ -175,15 +187,19 @@ export function InviteDialog({
     return next;
   };
   const checkContacts = async (advance: boolean) => {
+    if (pending || !session.current.open) return;
+    const epoch = session.current.epoch;
+    setContactsOpen(true);
     const fingerprint = contactFingerprint;
     setErrors({});
     try {
       const matches = await controls.checkContacts.mutateAsync({ email: email.trim().toLowerCase() || null, phone: phone.trim() || null });
+      if (!session.current.open || session.current.epoch !== epoch) return;
       if (contactFingerprintRef.current !== fingerprint) { setErrors({ contacts: t("lmsAccessContactsChanged") }); return; }
       setContactMatches({ ...matches, fingerprint });
       setSeparateAccountConfirmed(false);
       if (advance && !matches.items.length && !matches.additionalMatches) setStep((current) => current + 1);
-    } catch { setErrors({ contacts: t("lmsAccessContactCheckFailed") }); }
+    } catch { if (session.current.open && session.current.epoch === epoch) setErrors({ contacts: t("lmsAccessContactCheckFailed") }); }
   };
   const chooseContactAccount = (account: PortalContactMatch) => {
     if (!account.canUse) return;
@@ -202,11 +218,13 @@ export function InviteDialog({
     setErrors({});
     if (step === 1 && accountMode === "new" && (email.trim() || phone.trim())) {
       if (!currentMatches) { await checkContacts(true); return; }
-      if (hasMatches && !separateAccountConfirmed) { setErrors({ contacts: t("lmsAccessContactCheckRequired") }); return; }
+      if (hasMatches && !separateAccountConfirmed) { focusError({ contacts: t("lmsAccessContactCheckRequired") }); return; }
     }
     setStep((current) => current + 1);
   };
   const lookup = async () => {
+    if (pending || !session.current.open) return;
+    const epoch = session.current.epoch;
     const identifier = login.trim().toLowerCase();
     setErrors({});
     setFound(null);
@@ -215,15 +233,16 @@ export function InviteDialog({
       const account = await controls.lookup.mutateAsync(
         identifier,
       );
-      if (loginRef.current.trim().toLowerCase() !== identifier) return;
+      if (!session.current.open || session.current.epoch !== epoch || loginRef.current.trim().toLowerCase() !== identifier) return;
       setFound(account);
       setLookupDone(true);
     } catch {
-      setErrors({ login: t("lmsStaffLoadFailed") });
+      if (session.current.open && session.current.epoch === epoch) setErrors({ login: t("lmsStaffLoadFailed") });
     }
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (pending || submitting.current || !session.current.open) return;
     if (step < 3) {
       await next();
       return;
@@ -262,26 +281,28 @@ export function InviteDialog({
       setErrors({ form: t("lmsStaffSaveFailed") });
       return;
     }
+    const epoch = session.current.epoch;
+    submitting.current = true;
     try {
-      setResult(
-        await controls.invitation.mutateAsync(
-          parsed.data as PortalInvitationCreateCommand,
-        ),
-      );
+      const created = await controls.invitation.mutateAsync(parsed.data as PortalInvitationCreateCommand);
+      if (!session.current.open || session.current.epoch !== epoch) return;
+      setResult(created);
       setErrors({});
     } catch (error) {
-      setErrors({
-        form: error instanceof Error ? error.message : t("lmsStaffSaveFailed"),
-      });
-    }
+      if (!session.current.open || session.current.epoch !== epoch) return;
+      setErrors({ form: error instanceof Error ? error.message : t("lmsStaffSaveFailed") });
+    } finally { submitting.current = false; }
   };
   const copy = async () => {
+    if (!result?.activationUrl) return;
+    const epoch = session.current.epoch;
     try {
       await navigator.clipboard.writeText(result!.activationUrl!);
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setCopied(true);
       toast({ title: t("lmsStaffCopied") });
     } catch {
-      setErrors({ form: t("lmsStaffSaveFailed") });
+      if (session.current.open && session.current.epoch === epoch) setErrors({ form: t("lmsStaffSaveFailed") });
     }
   };
   const titles = [
@@ -293,15 +314,17 @@ export function InviteDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-xl flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>
               {result ? t("lmsStaffInvitationReady") : t("lmsStaffInvite")}
             </DialogTitle>
-            <DialogDescription>{studentName}</DialogDescription>
           </DialogHeader>
           {result ? (
-            <div className="space-y-4">
+            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{studentName}</DialogDescription>
+            <CompactModalSection title={t('lmsAccessAccountStep')} icon={Check} tone="teal" collapsible={false} contentClassName="space-y-3">
               <div>
                 <p className="text-sm text-muted-foreground">
                   {t("lmsAccessExpires")}
@@ -347,14 +370,18 @@ export function InviteDialog({
                   {errors.form}
                 </p>
               )}
-              <DialogFooter>
+            </CompactModalSection>
+            </div>
+              <DialogFooter className="compact-modal-footer">
                 <Button onClick={() => onOpenChange(false)}>
                   {t("lmsAccessFinish")}
                 </Button>
               </DialogFooter>
             </div>
           ) : (
-            <form onSubmit={submit} className="space-y-5">
+            <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col" aria-busy={pending}>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{studentName}</DialogDescription>
               <ol
                 className="grid grid-cols-4 gap-2"
                 aria-label={t("lmsStaffInvite")}
@@ -370,11 +397,11 @@ export function InviteDialog({
                 ))}
               </ol>
               {step === 0 ? (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <CompactModalSection title={t('lmsAccessRecipientStep')} icon={UserRound} tone="sky" collapsible={false} disabled={pending} contentClassName="grid gap-3 sm:grid-cols-2">
                   <Button
                     type="button"
                     variant={kind === "self" ? "default" : "outline"}
-                    className="h-auto min-h-24 flex-col gap-3 whitespace-normal"
+                    className="h-auto min-h-16 flex-col gap-2 whitespace-normal"
                     onClick={() => {
                       setKind("self");
                       setFullName(studentName);
@@ -387,7 +414,7 @@ export function InviteDialog({
                     id="portal-invite-kind"
                     type="button"
                     variant={kind === "representative" ? "default" : "outline"}
-                    className="h-auto min-h-24 flex-col gap-3 whitespace-normal"
+                    className="h-auto min-h-16 flex-col gap-2 whitespace-normal"
                     onClick={() => {
                       setKind("representative");
                       setFullName("");
@@ -405,10 +432,10 @@ export function InviteDialog({
                       {t("lmsAccessVerificationRequired")}
                     </p>
                   ) : null}
-                </div>
+                </CompactModalSection>
               ) : null}
               {step === 1 ? (
-                <div className="space-y-4">
+                <CompactModalSection title={t('lmsAccessAccountStep')} icon={KeyRound} tone="teal" collapsible={false} disabled={pending} contentClassName="space-y-3">
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -493,6 +520,7 @@ export function InviteDialog({
                           aria-invalid={Boolean(errors.fullName)}
                         />
                       </Field>
+                      <CompactModalSection title={t('employeeContactsSection')} icon={UserRound} tone="sky" open={contactsOpen} onOpenChange={setContactsOpen} disabled={pending} summary={[email, phone].filter(Boolean).join(' · ')} contentClassName="space-y-3">
                       <Field
                         id="email"
                         label={t("lmsStaffEmail")}
@@ -544,19 +572,21 @@ export function InviteDialog({
                           {errors.contacts ? <p role="alert" className="text-sm text-destructive">{errors.contacts}</p> : null}
                         </div>
                       ) : null}
+                      </CompactModalSection>
                     </>
                   )}
-                </div>
+                </CompactModalSection>
               ) : null}
               {step === 2 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {kind === "representative" ? (
-                    <>
+                    <CompactModalSection title={t('lmsStaffPermissions')} icon={ShieldCheck} tone="violet" collapsible={false} disabled={pending} contentClassName="space-y-3">
                       <Label htmlFor="portal-invite-relationship">
                         {t("lmsStaffRelationship")}
                       </Label>
                       <Select
                         value={relationship}
+                        disabled={pending}
                         onValueChange={(value) =>
                           setRelationship(value as typeof relationship)
                         }
@@ -591,6 +621,7 @@ export function InviteDialog({
                           classification={classification}
                           value={permissions}
                           onChange={setPermissions}
+                          disabled={pending}
                         />
                         {errors.permissions ? (
                           <p role="alert" className="text-sm text-destructive">
@@ -603,6 +634,7 @@ export function InviteDialog({
                           <Checkbox
                             id="portal-invite-consent"
                             checked={consent}
+                            disabled={pending}
                             onCheckedChange={(value) =>
                               setConsent(value === true)
                             }
@@ -615,8 +647,9 @@ export function InviteDialog({
                           </Label>
                         </div>
                       ) : null}
-                    </>
+                    </CompactModalSection>
                   ) : null}
+                  <CompactModalSection title={t('accessVerificationSection')} icon={ShieldCheck} tone="amber" collapsible={false} disabled={pending} contentClassName="space-y-3">
                   <Field
                     id="method"
                     label={t("lmsStaffVerification")}
@@ -643,10 +676,11 @@ export function InviteDialog({
                       aria-invalid={Boolean(errors.basis)}
                     />
                   </Field>
+                  </CompactModalSection>
                 </div>
               ) : null}
               {step === 3 ? (
-                <div className="space-y-4">
+                <CompactModalSection title={t(kind === 'self' ? 'lmsStaffForStudent' : 'lmsStaffForRepresentative')} icon={Check} tone="sky" collapsible={false} disabled={pending} contentClassName="space-y-3">
                   <div className="rounded-lg border p-4">
                     <p className="font-medium">
                       {accountMode === "new" ? fullName : found?.fullName}
@@ -654,11 +688,7 @@ export function InviteDialog({
                     <p className="text-sm text-muted-foreground">
                       {accountMode === "new" ? login : found?.login}
                     </p>
-                    <p className="mt-3 text-sm">
-                      {kind === "self"
-                        ? t("lmsStaffForStudent")
-                        : t("lmsStaffForRepresentative")}
-                    </p>
+
                     {kind === "representative" ? (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {permissions.map((permission) => (
@@ -676,14 +706,15 @@ export function InviteDialog({
                       {errors.email}
                     </p>
                   ) : null}
-                </div>
+                </CompactModalSection>
               ) : null}
               {errors.form ? (
                 <p role="alert" className="text-sm text-destructive">
                   {errors.form}
                 </p>
               ) : null}
-              <DialogFooter className="gap-2">
+            </div>
+              <DialogFooter className="compact-modal-footer">
                 <Button
                   type="button"
                   variant="outline"

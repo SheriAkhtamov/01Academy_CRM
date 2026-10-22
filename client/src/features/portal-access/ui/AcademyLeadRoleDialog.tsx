@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { GraduationCap, UsersRound } from 'lucide-react';
+import { GraduationCap, UsersRound, ShieldCheck } from 'lucide-react';
 import type { LearningModule } from '@shared/platform-routes';
 import type { AcademyPortalCredentialResult, AcademyPortalLead, AcademyPortalLeadRole } from '@shared/contracts/academy-portal-access';
 import { useTranslation } from '@/hooks/useTranslation';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,12 +16,15 @@ import { academyPortalApi, academyPortalError } from '../academy-api';
 
 type Classification = 'adult' | 'minor' | '';
 type Validation = { target: string; message: string };
-const selectClassName = 'min-h-11 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50';
+const selectClassName = 'h-9 min-h-9 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50';
 
 export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
   lead: AcademyPortalLead; onClose: () => void; onGranted: (result: AcademyPortalCredentialResult, module: LearningModule) => void;
 }) {
   const { t } = useTranslation();
+  const active = useRef(true);
+  const granting = useRef(false);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [role, setRole] = useState<'self' | 'representative' | ''>(lead.role ?? '');
   const [studentId, setStudentId] = useState(lead.students.length === 1 ? String(lead.students[0].id) : '');
   const [selected, setSelected] = useState(lead.students.map(student => student.id));
@@ -33,8 +37,9 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
   const [validation, setValidation] = useState<Validation | null>(null);
   const mutation = useMutation({
     gcTime: 0,
+    onSettled: () => { granting.current = false; },
     mutationFn: (command: AcademyPortalLeadRole) => academyPortalApi.role(lead.id, command),
-    onSuccess: (result, command) => onGranted(result, command.role === 'representative' ? 'parent' : 'student'),
+    onSuccess: (result, command) => { if (active.current) onGranted(result, command.role === 'representative' ? 'parent' : 'student'); },
   });
   const dirty = role !== (lead.role ?? '') || studentId !== (lead.students.length === 1 ? String(lead.students[0].id) : '')
     || confirmed || relationship !== 'parent' || selected.length !== lead.students.length || Object.values(consents).some(Boolean)
@@ -45,12 +50,18 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
     document.getElementById(target)?.focus();
   };
   const clearValidation = () => { setValidation(null); mutation.reset(); };
+  const grant = (command: AcademyPortalLeadRole) => {
+    if (granting.current || mutation.isPending) return;
+    granting.current = true;
+    mutation.mutate(command);
+  };
+  const close = (open: boolean) => { if (!granting.current) guard.handleOpenChange(open); };
   const submit = () => {
-    if (mutation.isPending) return;
+    if (granting.current || mutation.isPending) return;
     clearValidation();
     if (role === 'self') {
       if (!studentId) { reject('academy-self-student', t('academyAccessChooseStudent')); return; }
-      mutation.mutate({ role, studentId: Number(studentId) });
+      grant({ role, studentId: Number(studentId) });
       return;
     }
     if (role !== 'representative') { reject('academy-role-self', t('academyAccessRoleChoose')); return; }
@@ -60,7 +71,7 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
     if (!confirmed) { reject('academy-relationship-confirmed', t('academyAccessRelationshipConfirmed')); return; }
     const missingConsent = selected.find(id => classification[id] === 'adult' && !consents[id]);
     if (missingConsent !== undefined) { reject(`academy-consent-${missingConsent}`, t('portalAdultConsentRequired')); return; }
-    mutation.mutate({
+    grant({
       role, relationship, relationshipConfirmed: true,
       students: selected.map(id => ({ studentId: id, classification: classification[id] as 'adult' | 'minor', adultConsent: Boolean(consents[id]) })),
     });
@@ -71,16 +82,17 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
   });
 
   return <>
-    <Dialog open onOpenChange={guard.handleOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-xl">
-        <DialogHeader className="shrink-0 px-6 pt-6 pr-12">
+    <Dialog open onOpenChange={close}>
+      <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="compact-modal-header">
           <DialogTitle>{t(lead.role === 'representative' ? 'academyAccessAddStudents' : 'academyAccessIssue')}</DialogTitle>
-          <DialogDescription className="break-words">{lead.name}</DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={event => { event.preventDefault(); submit(); }}>
-          <div className="space-y-5 overflow-y-auto p-6">
+          <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{lead.name}</DialogDescription>
+            <CompactModalSection title={t('academyAccessRole')} icon={GraduationCap} tone="sky" collapsible={false} disabled={mutation.isPending}>
             <fieldset className="space-y-3">
-              <legend className="text-sm font-medium">{t('academyAccessRole')}</legend>
+              <legend className="sr-only">{t('academyAccessRole')}</legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 {(['self', 'representative'] as const).map(value => {
                   const Icon = value === 'self' ? GraduationCap : UsersRound;
@@ -98,16 +110,17 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
                 })}
               </div>
             </fieldset>
-            {role === 'self' && <div className="space-y-2">
+            </CompactModalSection>
+            {role === 'self' && <CompactModalSection title={t('student')} icon={GraduationCap} tone="teal" collapsible={false} disabled={mutation.isPending} contentClassName="space-y-2">
               <Label htmlFor="academy-self-student">{t('academyAccessChooseStudent')}</Label>
               <select id="academy-self-student" className={selectClassName} value={studentId} disabled={mutation.isPending}
                 {...invalidProps('academy-self-student')} onChange={event => { setStudentId(event.target.value); clearValidation(); }}>
                 <option value="">{t('academyAccessChooseStudent')}</option>
                 {lead.students.map(student => <option key={student.id} value={student.id}>{student.name}</option>)}
               </select>
-            </div>}
+            </CompactModalSection>}
             {role === 'representative' && <>
-              <div className="space-y-2">
+              <CompactModalSection title={t('lmsStaffRelationship')} icon={UsersRound} tone="teal" collapsible={false} disabled={mutation.isPending} contentClassName="space-y-2">
                 <Label htmlFor="academy-parent-relationship">{t('lmsStaffRelationship')}</Label>
                 <select id="academy-parent-relationship" className={selectClassName} value={relationship} disabled={mutation.isPending}
                   onChange={event => { setRelationship(event.target.value as typeof relationship); clearValidation(); }}>
@@ -116,13 +129,12 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
                   <option value="payer">{t('lmsStaffPayer')}</option>
                   <option value="other">{t('lmsStaffOther')}</option>
                 </select>
-              </div>
-              <fieldset className="space-y-3">
-                <legend className="mb-3 text-sm font-medium">{t('academyAccessSelectedStudents').replace('{count}', String(selected.length))}</legend>
+              </CompactModalSection>
+              <CompactModalSection title={t('academyAccessSelectedStudents').replace('{count}', String(selected.length))} icon={UsersRound} tone="violet" collapsible={false} disabled={mutation.isPending} contentClassName="space-y-3">
                 {lead.students.map(student => {
                   const included = selected.includes(student.id);
                   return <div key={student.id} className={cn('overflow-hidden rounded-lg border', included && 'border-primary/30')}>
-                    <label className="flex min-h-12 cursor-pointer flex-wrap items-center gap-3 p-4 font-medium">
+                    <label className="flex min-h-12 cursor-pointer flex-wrap items-center gap-3 p-3 font-medium">
                       <Checkbox id={`academy-student-${student.id}`} checked={included} disabled={mutation.isPending} {...invalidProps(`academy-student-${student.id}`)}
                         onCheckedChange={checked => {
                           setSelected(current => checked === true ? [...new Set([...current, student.id])] : current.filter(id => id !== student.id));
@@ -131,7 +143,7 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
                       <span className="min-w-0 flex-1 break-words">{student.name}</span>
                       {student.classification !== 'unverified' && <Badge variant="secondary" className="shrink-0">{t(student.classification === 'minor' ? 'lmsStaffMinor' : 'lmsStaffAdult')}</Badge>}
                     </label>
-                    {included && (student.classification === 'unverified' || classification[student.id] === 'adult') && <div className="space-y-3 border-t bg-muted/20 p-4">
+                    {included && (student.classification === 'unverified' || classification[student.id] === 'adult') && <div className="space-y-3 border-t bg-muted/20 p-3">
                       {student.classification === 'unverified' && <div className="space-y-2">
                         <Label htmlFor={`academy-age-${student.id}`}>{t('academyAccessAge')}</Label>
                         <select id={`academy-age-${student.id}`} className={selectClassName} value={classification[student.id]} disabled={mutation.isPending}
@@ -155,17 +167,19 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
                     </div>}
                   </div>;
                 })}
-              </fieldset>
-              <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-4 text-sm">
+              </CompactModalSection>
+              <CompactModalSection title={t('accessVerificationSection')} icon={ShieldCheck} tone="amber" collapsible={false} disabled={mutation.isPending}>
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
                 <Checkbox id="academy-relationship-confirmed" className="mt-0.5" checked={confirmed} disabled={mutation.isPending}
                   {...invalidProps('academy-relationship-confirmed')} onCheckedChange={checked => { setConfirmed(checked === true); clearValidation(); }} />
                 {t('academyAccessRelationshipConfirmed')}
               </label>
+              </CompactModalSection>
             </>}
             {(validation || mutation.error) && <p id="academy-role-error" role="alert" className="text-sm text-destructive">{validation?.message || t(academyPortalError(mutation.error))}</p>}
           </div>
-          <DialogFooter className="shrink-0 border-t bg-background p-4">
-            <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => guard.handleOpenChange(false)}>{t('cancel')}</Button>
+          <DialogFooter className="compact-modal-footer">
+            <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => close(false)}>{t('cancel')}</Button>
             <Button type="submit" disabled={mutation.isPending || !role}>{t(mutation.isPending ? 'loading' : 'academyAccessIssue')}</Button>
           </DialogFooter>
         </form>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { i18n } from '../client/src/lib/i18n';
@@ -172,5 +172,36 @@ it('drops the open group and cached messages after membership disappears from th
   groups = []; await client.invalidateQueries({ queryKey: chatGroupKeys.all });
   await waitFor(() => expect(screen.queryByText('Hello team')).toBeNull());
   expect(screen.queryByRole('button', { name: i18n.t('chatGroupDetails') })).toBeNull();
+  expect(client.getQueryData(chatGroupKeys.messages(10))).toBeUndefined();
+});
+
+
+it('keeps a newly opened group dialog when leaving the previous group finishes late', async () => {
+  mocks.actor = { id: 2, fullName: 'Alice' };
+  const nextGroup = { ...group, id: 20, name: 'Designers' };
+  groups = [group, nextGroup];
+  client.setQueryData(chatGroupKeys.all, groups);
+  const fallback = mocks.api.getMockImplementation()!;
+  let finishLeave!: (result: unknown) => void;
+  mocks.api.mockImplementation((method, path, data) => {
+    if (method === 'POST' && path === '/api/chat-groups/10/leave') return new Promise((resolve) => { finishLeave = resolve; });
+    if (method === 'GET' && path === '/api/chat-groups/20') return Promise.resolve({ ...nextGroup, participants, canManage: false });
+    return fallback(method, path, data);
+  });
+  const user = userEvent.setup();
+  const view = render(<QueryClientProvider client={client}><GroupChatThread group={group} /></QueryClientProvider>);
+  const oldDialog = await openDetails(user);
+  await user.click(await within(oldDialog).findByRole('button', { name: i18n.t('chatGroupLeave') }));
+  const confirmation = screen.getByRole('alertdialog', { name: i18n.t('chatGroupLeave') });
+  await user.click(within(confirmation).getByRole('button', { name: i18n.t('chatGroupLeave') }));
+  await waitFor(() => expect(finishLeave).toBeTypeOf('function'));
+  view.rerender(<QueryClientProvider client={client}><GroupChatThread group={nextGroup} /></QueryClientProvider>);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Teachers' })).toBeNull());
+  await user.click(screen.getByRole('button', { name: i18n.t('chatGroupDetails') }));
+  const newDialog = await screen.findByRole('dialog', { name: 'Designers' });
+  groups = [nextGroup];
+  await act(async () => finishLeave({ success: true }));
+  expect(screen.getByRole('dialog', { name: 'Designers' })).toBe(newDialog);
+  expect(client.getQueryData<ChatGroupDto[]>(chatGroupKeys.all)?.map(({ id }) => id)).toEqual([20]);
   expect(client.getQueryData(chatGroupKeys.messages(10))).toBeUndefined();
 });

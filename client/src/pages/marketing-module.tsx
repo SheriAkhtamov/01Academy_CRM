@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { DataTable } from '@/components/ux/DataTable';
 import { MarketingAnalyticsCharts } from '@/components/ux/analytics/MarketingAnalyticsCharts';
 import { MetaAttributionSection } from '@/components/marketing/MetaAttributionSection';
@@ -25,6 +26,7 @@ import { StaggerGroup, StaggerItem } from '@/components/ux/motion';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -392,15 +394,25 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
       </ModulePageBody>
 
       <Dialog open={Boolean(selectedSource)} onOpenChange={(open) => { if (!open) closeSource(); }}>
-        <DialogContent aria-describedby={undefined}>
-          <DialogHeader><DialogTitle>{selectedSource?.name || t('leadSources')}</DialogTitle></DialogHeader>
-          {selectedSource ? <dl className="grid grid-cols-2 gap-3 text-sm">
-            <dt>{t('channel')}</dt><dd>{selectedSource.channel || t('noData')}</dd>
-            <dt>{t('campaign')}</dt><dd>{selectedSource.campaignName || t('noData')}</dd>
-            <dt>{t('navLeads')}</dt><dd>{selectedSourceMetrics?.leads ?? 0}</dd>
-            <dt>{t('marketingPaidStudents')}</dt><dd>{selectedSourceMetrics?.paidStudents ?? 0}</dd>
-          </dl> : null}
-          <Button variant="outline" onClick={closeSource}>{t('close')}</Button>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header"><DialogTitle className="line-clamp-2">{selectedSource?.name || t('leadSources')}</DialogTitle></DialogHeader>
+          <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+            {selectedSource ? <>
+              <CompactModalSection title={t('leadSources')} icon={Megaphone} tone="sky" collapsible={false}>
+                <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 text-sm">
+                  <dt className="text-muted-foreground">{t('channel')}</dt><dd className="break-words">{selectedSource.channel || t('noData')}</dd>
+                  <dt className="text-muted-foreground">{t('campaign')}</dt><dd className="break-words">{selectedSource.campaignName || t('noData')}</dd>
+                </dl>
+              </CompactModalSection>
+              <CompactModalSection title={t('navLeads')} icon={Users} tone="teal" collapsible={false}>
+                <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-sm">
+                  <dt>{t('navLeads')}</dt><dd className="font-semibold tabular-nums">{selectedSourceMetrics?.leads ?? 0}</dd>
+                  <dt>{t('marketingPaidStudents')}</dt><dd className="font-semibold tabular-nums">{selectedSourceMetrics?.paidStudents ?? 0}</dd>
+                </dl>
+              </CompactModalSection>
+            </> : null}
+          </div>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" onClick={closeSource}>{t('cancel')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </ModulePage>

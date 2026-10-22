@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,7 +23,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Loader2 } from 'lucide-react';
+import { UserPlus, Loader2, KeyRound } from 'lucide-react';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 
 interface AddAccountModalProps {
   open: boolean;
@@ -35,6 +37,11 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
   const { addAccount, isAdding } = useAccounts();
   const { toast } = useToast();
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
+  const session = useRef({ open, epoch: 0 });
+  if (session.current.open !== open) session.current = { open, epoch: session.current.epoch + 1 };
+  useEffect(() => { session.current.open = open; return () => { session.current.open = false; }; }, [open]);
 
   const formSchema = z.object({
     login: z.string().min(1, t('loginOrEmailRequired')),
@@ -49,49 +56,69 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
     },
   });
 
+  const pending = isAdding || submitting || form.formState.isSubmitting;
+
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
+    if (inFlight.current || !open) return;
+    inFlight.current = true;
+    setSubmitting(true);
+    const epoch = session.current.epoch;
     setError('');
     try {
       await addAccount(data.login, data.password);
+      if (!session.current.open || session.current.epoch !== epoch) return;
       toast({
         title: t('accountAdded'),
       });
       form.reset();
       onOpenChange(false);
     } catch (err: any) {
+      if (!session.current.open || session.current.epoch !== epoch) return;
       const message = typeof err?.message === 'string' && err.message.trim()
         ? localizeApiErrorMessage(err.message, err.status ?? 0)
         : t('addAccountFailed');
       setError(message);
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
     }
   };
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) {
-      form.reset();
-      setError('');
-    }
-    onOpenChange(next);
-  };
+  const values = form.watch();
+  const guard = useUnsavedChangesGuard({
+    open,
+    isDirty: Boolean(values.login || values.password),
+    isPending: pending,
+    onOpenChange: (next) => {
+      if (!next) { form.reset(); setError(''); }
+      onOpenChange(next);
+    },
+  });
+  useEffect(() => {
+    if (!open) { form.reset(); setError(''); }
+  }, [open, form]);
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent aria-describedby={undefined} className="sm:max-w-md">
-        <DialogHeader>
+    <>
+    <Dialog open={open} onOpenChange={guard.handleOpenChange}>
+      <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className="compact-modal-header">
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
             {t('addAccount')}
           </DialogTitle>
         </DialogHeader>
 
-        {error && (
-          <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={event => {
+            const epoch = session.current.epoch;
+            void form.handleSubmit(data => {
+              if (session.current.open && session.current.epoch === epoch) return onSubmit(data);
+            })(event);
+          }} className="flex min-h-0 flex-1 flex-col">
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={t('portalSecurityNotifications')} icon={KeyRound} tone="sky" collapsible={false} disabled={pending} contentClassName="space-y-3">
+            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
             <FormField
               control={form.control}
               name="login"
@@ -101,6 +128,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
                   <FormControl>
                     <Input
                       {...field}
+                      autoComplete="username"
                       onChange={(e) => {
                         setError('');
                         field.onChange(e);
@@ -121,7 +149,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder={t('password')}
+                      autoComplete="current-password"
                       {...field}
                       onChange={(e) => {
                         setError('');
@@ -134,17 +162,19 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
               )}
             />
 
-            <DialogFooter className="flex justify-end gap-2 pt-2">
+            </CompactModalSection>
+            </div>
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => handleOpenChange(false)}
-                disabled={isAdding}
+                onClick={() => guard.handleOpenChange(false)}
+                disabled={pending}
               >
                 {t('cancel')}
               </Button>
-              <Button type="submit" disabled={isAdding}>
-                {isAdding ? (
+              <Button type="submit" disabled={pending}>
+                {pending ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <UserPlus className="h-4 w-4 mr-2" />
@@ -156,5 +186,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
         </Form>
       </DialogContent>
     </Dialog>
+    <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
+    </>
   );
 }

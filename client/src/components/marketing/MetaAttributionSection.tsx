@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
@@ -19,8 +19,9 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { DataTable } from '@/components/ux/DataTable';
 import {
   metaMarketingApi,
@@ -116,18 +117,41 @@ function CreativeThumbnail({ row, label }: { row: MetaCreativeRow; label: string
   );
 }
 
+const accessUnavailable = (error: unknown) => {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 403 || status === 404;
+};
+
 export function MetaAttributionSection({ reportingQuery }: { reportingQuery: string }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
+  const access = useRef({ key: reportingQuery, allowed: true, epoch: 0 });
+  const [, renderAccess] = useState(0);
+  if (access.current.key !== reportingQuery) access.current = { key: reportingQuery, allowed: access.current.allowed, epoch: access.current.epoch + 1 };
   const [selected, setSelected] = useState<MetaCreativeRow | null>(null);
   const [selectedLeadsCreative, setSelectedLeadsCreative] = useState<MetaCreativeRow | null>(null);
+  const deniedLeads = useRef(new Set<string>());
+  const [checkingLeads, setCheckingLeads] = useState<string | null>(null);
   const [onlyWithLeads, setOnlyWithLeads] = useState(false);
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const queryKey = [...metaMarketingQueryKeys.attribution, reportingQuery];
   const { data, isLoading, isError, error, refetch } = useQuery<MetaAttributionData>({
     queryKey,
-    queryFn: () => metaMarketingApi.attribution(reportingQuery),
-    placeholderData: (previous) => previous,
+    queryFn: async () => {
+      const epoch = access.current.epoch;
+      try {
+        const result = await metaMarketingApi.attribution(reportingQuery);
+        if (access.current.key === reportingQuery && access.current.epoch === epoch) access.current.allowed = true;
+        return result;
+      } catch (readError) {
+        if (accessUnavailable(readError) && access.current.key === reportingQuery && access.current.epoch === epoch) {
+          access.current.allowed = false;
+          access.current.epoch += 1;
+        }
+        throw readError;
+      }
+    },
+    placeholderData: (previous) => access.current.allowed ? previous : undefined,
     refetchInterval: 5 * 60 * 1_000,
   });
   const attributedLeads = useQuery<MetaAttributionLeadsData>({
@@ -142,13 +166,59 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     ),
     enabled: Boolean(selectedLeadsCreative),
   });
+  if (accessUnavailable(error) && access.current.allowed) {
+    access.current.allowed = false;
+    access.current.epoch += 1;
+  }
+  const unavailable = !access.current.allowed;
+  const selectedLeadsKey = `${reportingQuery}:${selectedLeadsCreative?.attributionKey ?? ''}`;
+  if (selectedLeadsCreative && accessUnavailable(attributedLeads.error)) deniedLeads.current.add(selectedLeadsKey);
+  const leadsUnavailable = accessUnavailable(attributedLeads.error) || deniedLeads.current.has(selectedLeadsKey);
+  useEffect(() => {
+    if (unavailable) { setSelected(null); setSelectedLeadsCreative(null); }
+    else if (leadsUnavailable) setSelectedLeadsCreative(null);
+  }, [unavailable, leadsUnavailable]);
+  const retryRead = async () => {
+    const key = access.current.key;
+    const epoch = access.current.epoch;
+    const result = await refetch();
+    if (result.isSuccess && access.current.key === key && access.current.epoch === epoch) {
+      access.current.allowed = true;
+      renderAccess(value => value + 1);
+    }
+  };
+  const openLeads = async (row: MetaCreativeRow) => {
+    const key = `${reportingQuery}:${row.attributionKey}`;
+    if (!access.current.allowed || checkingLeads) return;
+    if (!deniedLeads.current.has(key)) { setSelectedLeadsCreative(row); return; }
+    const epoch = access.current.epoch;
+    setCheckingLeads(key);
+    try {
+      await queryClient.fetchQuery({
+        queryKey: [...metaMarketingQueryKeys.attributionLeads, reportingQuery, row.attributionKey],
+        queryFn: () => metaMarketingApi.attributionLeads(reportingQuery, row.attributionKey),
+        staleTime: 0,
+      });
+      if (!access.current.allowed || access.current.key !== reportingQuery || access.current.epoch !== epoch) return;
+      deniedLeads.current.delete(key);
+      setSelectedLeadsCreative(row);
+    } catch { /* A denied creative stays closed until a successful read. */ }
+    finally { setCheckingLeads(null); }
+  };
   const syncCatalog = useMutation({
     mutationFn: metaMarketingApi.syncCatalog,
     onSuccess: async () => {
+      if (!access.current.allowed) return;
       toast({ title: t('metaCatalogSynced') });
       await queryClient.invalidateQueries({ queryKey: metaMarketingQueryKeys.attribution });
     },
-    onError: () => toast({ title: t('error'), variant: 'destructive' }),
+    onError: (syncError: unknown) => {
+      if (accessUnavailable(syncError)) {
+        access.current.allowed = false;
+        access.current.epoch += 1;
+        renderAccess(value => value + 1);
+      } else if (access.current.allowed) toast({ title: t('error'), variant: 'destructive' });
+    },
   });
   const visibleCreatives = useMemo(
     () => (onlyWithLeads ? (data?.creatives ?? []).filter((row) => row.leads > 0) : data?.creatives ?? []),
@@ -271,8 +341,9 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
           className="inline-flex min-w-8 items-center justify-center rounded-md px-2 py-1 font-semibold text-primary underline decoration-primary/30 underline-offset-4 transition-colors hover:bg-primary/10 hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={(event) => {
             event.stopPropagation();
-            setSelectedLeadsCreative(row);
+            void openLeads(row);
           }}
+          disabled={checkingLeads === `${reportingQuery}:${row.attributionKey}`}
           aria-label={`${t('metaViewAttributedLeads')}: ${row.leads}`}
         >
           {row.leads}
@@ -324,13 +395,13 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     },
   ];
 
-  if (isError) {
+  if (unavailable || (isError && !data)) {
     return (
       <Alert variant="destructive">
         <AlertTitle>{t('failedToLoadData')}</AlertTitle>
         <AlertDescription className="flex items-center justify-between gap-4">
           <span>{t('failedToLoadData')}</span>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>{t('retry')}</Button>
+          <Button variant="outline" size="sm" onClick={() => void retryRead()}>{t('retry')}</Button>
         </AlertDescription>
       </Alert>
     );
@@ -413,54 +484,58 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
       </Card>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{selected ? creativeDisplayTitle(selected) || t('metaDetails') : t('metaDetails')}</DialogTitle>
-          </DialogHeader>
-          {selected ? (
-            <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/20 p-3">
-              <CreativeThumbnail row={selected} label={formatLabel(selected.mediaType)} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-foreground">{selected.adName || selected.adId || t('noData')}</p>
-                <p className="truncate text-xs text-muted-foreground">{selected.campaignName || t('noData')}</p>
-              </div>
-              <Badge variant="outline" className="shrink-0">{formatLabel(selected.mediaType)}</Badge>
-            </div>
-          ) : null}
-          {selected ? (
-            <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
-              <Detail label={t('metaAd')} value={selected.adName} />
-              <Detail label={t('creativeFormat')} value={formatLabel(selected.mediaType)} />
-              <Detail label={t('metaCampaign')} value={selected.campaignName} />
-              <Detail label={t('metaAdSet')} value={selected.adsetName} />
-              <Detail label={t('metaCreative')} value={selected.creativeName} />
-              <Detail label={t('metaPublication')} value={selected.sourceUrl} href={selected.sourceUrl} />
-              <Detail label={t('utmTags')} value={[
-                selected.utmSource && `utm_source=${selected.utmSource}`,
-                selected.utmMedium && `utm_medium=${selected.utmMedium}`,
-                selected.utmCampaign && `utm_campaign=${selected.utmCampaign}`,
-                selected.utmContent && `utm_content=${selected.utmContent}`,
-                selected.utmTerm && `utm_term=${selected.utmTerm}`,
-              ].filter(Boolean).join('\n')} />
-              <Detail label={t('metaCapturedPeriod')} value={`${dateTime(selected.firstCapturedAt)} — ${dateTime(selected.lastCapturedAt)}`} />
-              <Detail label={t('utmSourceType')} value={selected.utmDerived ? t('metaDerivedUtm') : t('metaDeclaredUtm')} />
-            </div>
-          ) : null}
+        <DialogContent className="compact-modal flex max-h-[90dvh] max-w-2xl flex-col overflow-hidden p-0" aria-describedby={undefined}>
+          <DialogHeader className="compact-modal-header"><DialogTitle>{t('metaDetails')}</DialogTitle></DialogHeader>
+          <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
+            {selected ? <>
+              <CompactModalSection key={`${selected.attributionKey}-creative`} title={t('metaAdPublication')} icon={Clapperboard} tone="sky" collapsible={false}>
+                <div className="flex items-center gap-3">
+                  <CreativeThumbnail row={selected} label={formatLabel(selected.mediaType)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-semibold">{creativeDisplayTitle(selected) || t('noData')}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatLabel(selected.mediaType)}</p>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <Detail label={t('metaAd')} value={selected.adName} />
+                  <Detail label={t('metaPublication')} value={selected.sourceUrl} href={selected.sourceUrl} />
+                </div>
+              </CompactModalSection>
+              <CompactModalSection key={`${selected.attributionKey}-campaign`} title={t('metaCampaign')} summary={selected.campaignName || t('noData')} icon={Layers} tone="teal" contentClassName="grid gap-2 sm:grid-cols-2">
+                <Detail label={t('metaCampaign')} value={selected.campaignName} />
+                <Detail label={t('metaAdSet')} value={selected.adsetName} />
+                <Detail label={t('metaCreative')} value={selected.creativeName} />
+                <Detail label={t('metaCapturedPeriod')} value={`${dateTime(selected.firstCapturedAt)} — ${dateTime(selected.lastCapturedAt)}`} />
+              </CompactModalSection>
+              <CompactModalSection key={`${selected.attributionKey}-utm`} title={t('utmTags')} icon={Newspaper} tone="violet" contentClassName="space-y-2">
+                <Detail label={t('utmTags')} value={[
+                  selected.utmSource && `utm_source=${selected.utmSource}`,
+                  selected.utmMedium && `utm_medium=${selected.utmMedium}`,
+                  selected.utmCampaign && `utm_campaign=${selected.utmCampaign}`,
+                  selected.utmContent && `utm_content=${selected.utmContent}`,
+                  selected.utmTerm && `utm_term=${selected.utmTerm}`,
+                ].filter(Boolean).join('\n')} />
+                <Detail label={t('utmSourceType')} value={selected.utmDerived ? t('metaDerivedUtm') : t('metaDeclaredUtm')} />
+              </CompactModalSection>
+            </> : null}
+          </div>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" onClick={() => setSelected(null)}>{t('cancel')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog
-        open={Boolean(selectedLeadsCreative)}
+        open={Boolean(selectedLeadsCreative) && !leadsUnavailable}
         onOpenChange={(open) => !open && setSelectedLeadsCreative(null)}
       >
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[85dvh]">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 pb-4 pt-6 pr-12">
+        <DialogContent className="compact-modal flex max-h-[90dvh] max-w-3xl flex-col overflow-hidden p-0" aria-describedby={undefined}>
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t('metaAttributedLeads')}</DialogTitle>
-            <DialogDescription>{selectedLeadsCreative?.hookName || selectedLeadsCreative?.adName}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6">
+          <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
             {selectedLeadsCreative ? (
-              <div className="mb-4 grid grid-cols-3 gap-2 pt-1">
+              <CompactModalSection key={`${selectedLeadsCreative.attributionKey}-metrics`} title={t('metaAdPublication')} summary={selectedLeadsCreative.hookName || selectedLeadsCreative.adName} icon={Wallet} tone="sky" collapsible={false}>
+                <p className="mb-2 break-words text-sm font-medium">{selectedLeadsCreative.hookName || selectedLeadsCreative.adName || t('noData')}</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   <p className="text-xs font-medium text-muted-foreground">{t('metaAttributedLeads')}</p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{selectedLeadsCreative.leads}</p>
@@ -473,15 +548,17 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
                   <p className="text-xs font-medium text-muted-foreground">{t('metaCostPerLead')}</p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{spendMoney(selectedLeadsCreative.costPerLead)}</p>
                 </div>
-              </div>
+                </div>
+              </CompactModalSection>
             ) : null}
+            <CompactModalSection key={`${selectedLeadsCreative?.attributionKey}-leads`} title={t('metaAttributedLeads')} icon={Users} tone="teal" collapsible={false}>
             {attributedLeads.isLoading ? (
               <div className="space-y-3 py-2">
                 <Skeleton className="h-20 w-full" />
                 <Skeleton className="h-20 w-full" />
                 <Skeleton className="h-20 w-full" />
               </div>
-            ) : attributedLeads.isError ? (
+            ) : attributedLeads.isError && !attributedLeads.data ? (
               <Alert variant="destructive" className="my-2">
                 <AlertTitle>{t('failedToLoadData')}</AlertTitle>
                 <AlertDescription className="flex items-center justify-between gap-3">
@@ -501,7 +578,9 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
                 <p className="mt-3 text-sm font-medium text-foreground">{t('metaNoAttributedLeads')}</p>
               </div>
             )}
+            </CompactModalSection>
           </div>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" onClick={() => setSelectedLeadsCreative(null)}>{t('cancel')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -556,7 +635,7 @@ function AttributedLeadRow({
 function Detail({ label, value, href }: { label: string; value?: string | null; href?: string | null }) {
   const { t } = useTranslation();
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+    <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       {href ? (
         <Button asChild variant="link" className="mt-1 h-auto justify-start p-0">

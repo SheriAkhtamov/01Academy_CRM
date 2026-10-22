@@ -4,6 +4,7 @@ import { useLocation } from 'wouter';
 import { searchAcademy } from '@/features/search/api';
 import { academySearchTypes, type AcademySearchType } from '@shared/contracts/academy-search';
 import { formatUserModule } from '@/lib/auth';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CommandDialog,
@@ -209,13 +210,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     && searchError;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      shouldFilter={false}
+      title={t('search')}
+      contentClassName="compact-modal max-w-2xl"
+      commandClassName="min-h-0 [&_[cmdk-input]]:h-10 [&_[cmdk-item]]:py-2"
+    >
+      <div data-topographic="header" className="compact-modal-header [&_[cmdk-input-wrapper]]:border-0 [&_[cmdk-input-wrapper]]:px-0">
       <CommandInput
-        placeholder={t('commandPalettePlaceholder')}
+        placeholder={t('search')}
+        aria-label={t('search')}
         value={search}
         onValueChange={setSearch}
       />
-      <div className="border-b p-2">
+      </div>
+      <div className="compact-modal-body shrink-0 border-b !pb-0">
+        <CompactModalSection title={t('searchEntityType')} icon={Search} tone="sky" collapsible={false} contentClassName="!p-2">
         <Select value={searchType} onValueChange={(value) => setSearchType(value as AcademySearchType | 'all')}>
           <SelectTrigger aria-label={t('searchEntityType')} className="h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -223,8 +235,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {availableTypes.map((type) => <SelectItem key={type} value={type}>{labelForEntity(type)}</SelectItem>)}
           </SelectContent>
         </Select>
+        </CompactModalSection>
       </div>
-      <CommandList>
+      <CommandList className="compact-modal-body space-y-3 max-h-[min(480px,60dvh)]">
         {!normalizedSearch && (
           <CommandEmpty className="py-8 text-center">
             <Search className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
@@ -252,7 +265,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </div>
         )}
         {showNavigation && (
-          <CommandGroup heading={t('navigation')}>
+          <CompactModalSection title={t('navigation')} icon={Layers3} tone="violet" collapsible={false} contentClassName="!p-1">
+          <CommandGroup>
             {filteredNavigation.map((item) => {
               const Icon = item.icon;
               return (
@@ -271,10 +285,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               );
             })}
           </CommandGroup>
+          </CompactModalSection>
         )}
         {showNavigation && showEntities && <CommandSeparator />}
         {showEntities && (
-          <CommandGroup heading={t('searchResults')}>
+          <CompactModalSection title={t('searchResults')} icon={Search} tone="teal" collapsible={false} count={filteredEntities.length} contentClassName="!p-1">
+          <CommandGroup>
             {filteredEntities.map((item) => {
               const Icon = item.icon;
               return (
@@ -301,6 +317,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               );
             })}
           </CommandGroup>
+          </CompactModalSection>
         )}
         {normalizedSearch.length >= 2 && searchQuery.hasNextPage ? (
           <CommandItem value="load-more-results" disabled={searchQuery.isFetchingNextPage} onSelect={() => void searchQuery.fetchNextPage()}>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -404,5 +405,84 @@ describe("contact match warnings inside the invitation modal", () => {
     expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("fixture@example.invalid");
     expect(screen.queryByText("private server error")).toBeNull(); next();
     expect(await screen.findByLabelText("Verification method")).toBeTruthy();
+  });
+});
+
+
+describe("portal access dialog refresh boundaries", () => {
+  const mountSession = (studentId = 42, staffAccountId = 7) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const tree = (nextStudent = studentId, nextStaff = staffAccountId) => <QueryClientProvider client={client}>
+      <StudentPortalAccessTab studentId={nextStudent} studentName="Student One" staffAccountId={nextStaff} canManageAccess />
+    </QueryClientProvider>;
+    return { ...render(tree()), client, tree };
+  };
+
+  it("keeps an invitation draft when a background refresh fails and closes it after access is denied", async () => {
+    const view = mountSession();
+    await openInvitation();
+    next();
+    fireEvent.change(screen.getByLabelText("Login"), { target: { value: "preserved.student" } });
+    mocks.get.mockRejectedValue(new Error("Temporary failure"));
+    await act(async () => { await view.client.invalidateQueries({ queryKey: ["staff-portal-access", 7, 42] }); });
+    expect(screen.getByRole("dialog", { name: "Invite" })).toBeTruthy();
+    expect((screen.getByLabelText("Login") as HTMLInputElement).value).toBe("preserved.student");
+    mocks.get.mockRejectedValue(Object.assign(new Error("Access denied"), { status: 403 }));
+    await act(async () => { await view.client.invalidateQueries({ queryKey: ["staff-portal-access", 7, 42] }); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    view.client.clear();
+  });
+
+  it("preserves optional contact fields through folding and reveals an invalid email before focusing", async () => {
+    renderAccess();
+    await openInvitation();
+    next();
+    fireEvent.change(screen.getByLabelText("Login"), { target: { value: "student.login" } });
+    const contacts = screen.getByRole("button", { name: "Contacts" });
+    fireEvent.click(contacts);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "invalid-address" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "998901234567" } });
+    fireEvent.click(contacts);
+    expect(contacts.getAttribute("aria-expanded")).toBe("false");
+    next();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Email")));
+    expect(contacts.getAttribute("aria-expanded")).toBe("true");
+    expect((screen.getByLabelText("Phone") as HTMLInputElement).value).toBe("998901234567");
+    expect(mocks.invite).not.toHaveBeenCalled();
+  });
+
+  it("discards account lookup results from a previous student session", async () => {
+    let resolve!: (value: { id: number; login: string; fullName: string; status: string }) => void;
+    mocks.lookup.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const view = mountSession();
+    await openInvitation();
+    fireEvent.click(screen.getByRole("button", { name: "Parent or representative" }));
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "Existing account" }));
+    fireEvent.change(screen.getByLabelText("Login"), { target: { value: "parent.login" } });
+    fireEvent.click(screen.getByRole("button", { name: "Find account" }));
+    await waitFor(() => expect(mocks.lookup).toHaveBeenCalledWith(42, "parent.login"));
+    mocks.get.mockResolvedValue({ ...data, studentId: 43 });
+    view.rerender(view.tree(43, 7));
+    await openInvitation();
+    fireEvent.click(screen.getByRole("button", { name: "Parent or representative" }));
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "Existing account" }));
+    fireEvent.change(screen.getByLabelText("Login"), { target: { value: "parent.login" } });
+    await act(async () => resolve({ id: 9, login: "parent.login", fullName: "Old parent result", status: "active" }));
+    expect(screen.queryByText("Old parent result")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Invite" })).toBeTruthy();
+    view.client.clear();
+  });
+
+  it("closes the credential reset form if its access link is removed during refresh", async () => {
+    const view = mountSession();
+    fireEvent.click(await screen.findByRole("button", { name: "Reset sign-in" }));
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "UnsavedStrongPassword" } });
+    mocks.get.mockResolvedValue({ ...data, links: [] });
+    await act(async () => { await view.client.invalidateQueries({ queryKey: ["staff-portal-access", 7, 42] }); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.recover).not.toHaveBeenCalled();
+    view.client.clear();
   });
 });

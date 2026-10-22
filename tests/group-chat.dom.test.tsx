@@ -41,7 +41,7 @@ describe('group chat creation and messaging',()=>{
     await user.click(screen.getByRole('button',{name:'Create group'}));
     await screen.findByRole('heading',{name:'Teachers'});
     expect(mocks.api).toHaveBeenCalledWith('POST','/api/chat-groups',{name:'Teachers',participantIds:[2,3]});
-    await user.type(screen.getByPlaceholderText('Type a message...'),'Hello team');
+    await user.type(screen.getByRole('textbox', {name:'Message'}),'Hello team');
     await user.click(screen.getByRole('button',{name:'Send'}));
     await screen.findByText('Hello team');
     expect(mocks.api).toHaveBeenCalledWith('POST','/api/chat-groups/10/messages',{content:'Hello team'});
@@ -52,7 +52,7 @@ describe('group chat creation and messaging',()=>{
     await user.click(screen.getByRole('button',{name:'New chat'}));
     await user.click(screen.getByRole('menuitem',{name:'New direct chat'}));
     await user.click(await screen.findByRole('button',{name:'Alice'}));
-    await screen.findByPlaceholderText('Type a message...');
+    await screen.findByRole('textbox', {name:'Message'});
     expect(mocks.api.mock.calls.some(([method,path])=>method==='POST'&&path==='/api/chat-groups')).toBe(false);
   });
 });

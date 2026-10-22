@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, FileText, X } from 'lucide-react';
 import { safeChatAttachment } from '@shared/chat-media';
 import type { MessageAttachment } from '@shared/contracts/messages';
 import { useTranslation } from '@/hooks/useTranslation';
 import { resolveLocale } from '@/lib/localeFormat';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import '@/components/ux/compact-modal.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const sizeLabel = (size: number, language: string) => new Intl.NumberFormat(resolveLocale(language), {
@@ -31,9 +33,9 @@ export function ChatMessageAttachments({ attachments }: { attachments: MessageAt
       </div>)}
     </div>
     <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
-      <DialogContent className="sm:max-w-4xl" aria-describedby={undefined}>
-        <DialogHeader><DialogTitle className="break-all pr-6">{preview?.name || t('attachmentPreview')}</DialogTitle></DialogHeader>
-        {preview ? <img src={preview.url} alt={preview.name} className="max-h-[75dvh] w-full object-contain" /> : null}
+      <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-4xl" aria-describedby={undefined}>
+        <DialogHeader className="compact-modal-header"><DialogTitle className="break-all text-base leading-6">{preview?.name || t('attachmentPreview')}</DialogTitle></DialogHeader>
+        {preview ? <div className="compact-modal-body min-h-0 overflow-y-auto"><img src={preview.url} alt={preview.name} className="max-h-[75dvh] w-full object-contain" /></div> : null}
       </DialogContent>
     </Dialog>
   </>;
@@ -41,6 +43,9 @@ export function ChatMessageAttachments({ attachments }: { attachments: MessageAt
 
 export function ChatFileDrafts({ files, onRemove, disabled }: { files: File[]; onRemove: (file: File) => void; disabled: boolean }) {
   const { t, language } = useTranslation();
+  const [remove, setRemove] = useState<File | null>(null);
+  const removeTrigger = useRef<HTMLButtonElement | null>(null);
+  const container = useRef<HTMLDivElement>(null);
   const [previews, setPreviews] = useState<Array<{ file: File; url: string }>>([]);
   useEffect(() => {
     const selected = files.filter((file) => /^(image\/(png|jpeg|gif|webp|avif)|video\/(mp4|webm|quicktime))$/.test(file.type))
@@ -48,14 +53,30 @@ export function ChatFileDrafts({ files, onRemove, disabled }: { files: File[]; o
     setPreviews(selected);
     return () => selected.forEach(({ url }) => URL.revokeObjectURL(url));
   }, [files]);
-  return <div className="mb-2 max-h-48 space-y-2 overflow-y-auto" aria-label={t('attachmentsLabel')}>
+  return <>
+  <div ref={container} className="mb-2 max-h-32 space-y-2 overflow-y-auto" aria-label={t('attachmentsLabel')}>
     {files.map((file, index) => {
       const preview = previews.find((item) => item.file === file);
       return <div key={`${file.name}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/30 p-2">
         {preview && file.type.startsWith('image/') ? <img src={preview.url} alt={file.name} className="size-12 rounded object-cover" /> : <FileText className="size-6 shrink-0 text-muted-foreground" />}
         <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{file.name}</p><p className="text-xs text-muted-foreground">{sizeLabel(file.size, language)}</p></div>
-        <Button type="button" variant="ghost" size="icon" disabled={disabled} onClick={() => onRemove(file)} aria-label={t('removeMessageFile').replace('{name}', file.name)}><X className="size-4" /></Button>
+        <Button type="button" variant="ghost" size="icon" disabled={disabled} onClick={(event) => { removeTrigger.current = event.currentTarget; setRemove(file); }} aria-label={t('removeMessageFile').replace('{name}', file.name)}><X className="size-4" /></Button>
       </div>;
     })}
-  </div>;
+  </div>
+  <ConfirmDialog compact open={Boolean(remove && files.includes(remove))} onOpenChange={(open) => { if (!open) setRemove(null); }}
+    title={t('removeMessageFileTitle')} description={t('removeMessageFileConfirm', { name: remove?.name ?? '' })}
+    confirmLabel={t('delete')} variant="destructive" isPending={disabled}
+    onCloseAutoFocus={(event) => {
+      event.preventDefault();
+      const target = removeTrigger.current;
+      if (target?.isConnected) target.focus();
+      else container.current?.parentElement?.querySelector<HTMLInputElement>('input:not([type="file"])')?.focus();
+    }}
+    onConfirm={() => {
+      if (disabled || !remove || !files.includes(remove)) return;
+      onRemove(remove);
+      setRemove(null);
+    }} />
+  </>;
 }

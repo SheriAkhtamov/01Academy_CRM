@@ -35,28 +35,28 @@ export function PermissionChecklist({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="space-y-3">
+    <div className="grid gap-2 sm:grid-cols-2">
       {REPRESENTATIVE_PERMISSIONS.filter(
         (permission) =>
           permission !== "child_credentials.manage" ||
           classification === "minor",
       ).map((permission) => (
-        <div key={permission} className="flex items-center gap-3">
+        <div key={permission} className="flex min-h-10 items-center gap-2 rounded-md border border-border/70 bg-background p-2">
           <Checkbox
             id={`${idPrefix}-${permission}`}
             checked={value.includes(permission)}
             disabled={disabled}
             onCheckedChange={(checked) =>
               onChange(
-                checked
-                  ? [...value, permission]
+                checked === true
+                  ? [...new Set([...value, permission])]
                   : value.filter((item) => item !== permission),
               )
             }
           />
           <Label
             htmlFor={`${idPrefix}-${permission}`}
-            className="cursor-pointer text-sm leading-5"
+            className="min-w-0 flex-1 cursor-pointer text-xs leading-5"
           >
             {t(permissionLabels[permission])}
           </Label>

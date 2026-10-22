@@ -5,11 +5,13 @@ import { CHAT_MEDIA_CATEGORIES, type ChatMediaCatalog, type ChatMediaCategory, t
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { CompactModalSection, type CompactModalTone } from '@/components/ux/CompactModalSection';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { ChatMessageAttachments } from './ChatAttachments';
 
 export const chatMediaLabels = { photos: 'chatGroupPhotos', videos: 'chatGroupVideos', audio: 'chatGroupAudio', files: 'chatGroupFiles', links: 'chatGroupLinks', gifs: 'chatGroupGifs' } as const;
+const mediaTones: Record<ChatMediaCategory, CompactModalTone> = { photos: 'sky', videos: 'violet', audio: 'teal', files: 'amber', links: 'sky', gifs: 'violet' };
 export const chatMediaIcons = { photos: ImageIcon, videos: Video, audio: Music, files: FileText, links: Link, gifs: Play };
 export function ChatGroupMediaDialog({ catalog, initialCategory, onClose }: { catalog: ChatMediaCatalog; initialCategory: ChatMediaCategory; onClose: () => void }) {
   const { t, language } = useTranslation();
@@ -25,13 +27,14 @@ export function ChatGroupMediaDialog({ catalog, initialCategory, onClose }: { ca
   const move = (step: number) => { const next = images[imageIndex + step]; if (next) { setPreview(next); viewer.current?.focus(); } };
   return <>
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col overflow-hidden sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{t('chatGroupMedia')}</DialogTitle></DialogHeader>
-        <Tabs value={category} onValueChange={(value) => setCategory(value as ChatMediaCategory)} className="flex min-h-0 flex-1 flex-col gap-2">
-          <TabsList className="w-full shrink-0" indicator="underline">{CHAT_MEDIA_CATEGORIES.map((key) => <TabsTrigger key={key} value={key} aria-label={`${t(chatMediaLabels[key])} ${catalog[key].length}`}>
+      <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="compact-modal-header"><DialogTitle className="text-base leading-6">{t('chatGroupMedia')}</DialogTitle></DialogHeader>
+        <Tabs value={category} onValueChange={(value) => setCategory(value as ChatMediaCategory)} className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 overflow-x-auto border-b px-3"><TabsList className="compact-modal-tabs w-max min-w-full justify-start" indicator="underline">{CHAT_MEDIA_CATEGORIES.map((key) => <TabsTrigger key={key} value={key} className="compact-modal-tab shrink-0" aria-label={`${t(chatMediaLabels[key])} ${catalog[key].length}`}>
             {t(chatMediaLabels[key])}<span className="ml-1.5 text-xs tabular-nums">{catalog[key].length}</span>
-          </TabsTrigger>)}</TabsList>
-          {CHAT_MEDIA_CATEGORIES.map((key) => <TabsContent key={key} value={key} className="min-h-0 overflow-y-auto">
+          </TabsTrigger>)}</TabsList></div>
+          {CHAT_MEDIA_CATEGORIES.map((key) => <TabsContent key={key} value={key} className="compact-modal-body m-0 min-h-0 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={t(chatMediaLabels[key])} icon={chatMediaIcons[key]} tone={mediaTones[key]} count={catalog[key].length} collapsible={false}>
             {catalog[key].length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('chatGroupMediaEmpty')}</p> : key === 'links' ? <ul className="space-y-3">
               {catalog.links.map((item) => <li key={`${item.messageId}-${item.url}`} className="space-y-1 rounded-lg border p-3">
                 <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-start gap-3 break-all text-sm text-primary hover:underline"><Link className="mt-0.5 size-4 shrink-0" />{item.url}</a>
@@ -48,21 +51,24 @@ export function ChatGroupMediaDialog({ catalog, initialCategory, onClose }: { ca
                 <ChatMessageAttachments attachments={[item.file]} />{caption(item)}
               </li>)}
             </ul>}
+            </CompactModalSection>
           </TabsContent>)}
         </Tabs>
       </DialogContent>
     </Dialog>
     <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(undefined); }}>
-      <DialogContent ref={viewer} tabIndex={-1} aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-4xl" onOpenAutoFocus={(event) => { event.preventDefault(); viewer.current?.focus(); }}
-        onKeyDown={(event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); move(-1); } if (event.key === 'ArrowRight') { event.preventDefault(); move(1); } }}>
-        <DialogHeader><DialogTitle className="break-all pr-6">{preview?.file.name ?? t('attachmentPreview')}</DialogTitle></DialogHeader>
+      <DialogContent ref={viewer} tabIndex={-1} aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-4xl" onOpenAutoFocus={(event) => { event.preventDefault(); viewer.current?.focus(); }}
+        onKeyDown={(event) => {
+          if ((event.target as HTMLElement).closest('video, audio, input, textarea, [contenteditable="true"]')) return;
+          if (event.key === 'ArrowLeft') { event.preventDefault(); move(-1); } if (event.key === 'ArrowRight') { event.preventDefault(); move(1); } }}>
+        <DialogHeader className="compact-modal-header"><DialogTitle className="break-all text-base leading-6">{preview?.file.name ?? t('attachmentPreview')}</DialogTitle></DialogHeader>
         {preview ? <>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto">
             {failed.includes(preview.file.id) ? <p role="alert" className="py-8 text-center text-sm text-destructive">{t('attachmentDownloadFailed')}</p>
               : preview.file.mimeType.startsWith('video/') ? <video key={preview.file.id} src={preview.file.url} controls playsInline preload="metadata" aria-label={preview.file.name} className="max-h-[65dvh] w-full" onError={() => setFailed((current) => [...current, preview.file.id])} /> : <img src={preview.file.url} alt={preview.file.name} className="max-h-[65dvh] w-full object-contain" onError={() => setFailed((current) => [...current, preview.file.id])} />}
           </div>
-          {caption(preview)}
-          <div className="flex shrink-0 items-center justify-between gap-2">
+          <div className="px-3 py-2 sm:px-4">{caption(preview)}</div>
+          <div className="compact-modal-footer flex items-center justify-between gap-2">
             <Button variant="outline" size="icon" aria-label={t('chatGroupPreviousMedia')} disabled={imageIndex <= 0} onClick={() => move(-1)}><ChevronLeft className="size-4" /></Button>
             <span className="text-sm tabular-nums">{imageIndex + 1} / {images.length}</span>
             <Button asChild variant="outline" size="icon" aria-label={t('download')}><a href={`${preview.file.url}?download=1`} aria-label={t('download')}><Download className="size-4" /></a></Button>

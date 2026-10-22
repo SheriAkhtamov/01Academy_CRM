@@ -1,5 +1,5 @@
 import { ChatGroupAvatar } from './chat/ChatGroupAvatar';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import '@/components/ux/compact-modal.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -319,21 +319,21 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
       <SheetContent aria-describedby={undefined}
         side="right"
         showOverlay={false}
-        className="w-[min(960px,calc(100vw-1rem))] max-w-none p-0 sm:max-w-2xl lg:max-w-4xl"
+        className="compact-modal flex h-dvh min-h-0 w-[min(960px,calc(100vw-1rem))] max-w-none flex-col overflow-hidden p-0 sm:max-w-2xl lg:max-w-4xl"
         onInteractOutside={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
       >
-        <SheetHeader className="border-b border-border p-5 pr-12">
-          <SheetTitle className="flex items-center gap-2">
-            <MessageCircle />
+        <SheetHeader className="compact-modal-header">
+          <SheetTitle className="flex items-center gap-2 text-base leading-6">
+            <MessageCircle className="size-4" />
             {t('employeeChat')}
           </SheetTitle>
         </SheetHeader>
 
-        <div className="flex h-[calc(100dvh-101px)] min-h-0">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Employee List */}
-          <div className="flex w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
-            <div className="border-b border-border p-3 sm:p-4">
+          <div className="flex min-h-0 w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
+            <div className="shrink-0 border-b border-border bg-sky-50/60 p-3 dark:bg-sky-950/20">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="hidden font-medium text-foreground sm:block">{t('employees')}</h3>
                 <DropdownMenu><DropdownMenuTrigger asChild>
@@ -414,9 +414,9 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     <p className="text-sm">{t('loading')}</p>
                   </div>
                 )}
-                {(searchQuery.trim() ? employeesError : conversationsError) ? <Alert variant="destructive"><AlertDescription>
+                {(searchQuery.trim() ? employeesError : conversationsError) ? <div role="alert" className="text-sm text-destructive">
                   {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void (searchQuery.trim() ? refetchEmployees() : refetchConversations())}>{t('retry')}</Button>
-                </AlertDescription></Alert> : null}
+                </div> : null}
                 {filteredEmployees.length === 0 && !groupsQuery.data?.some((group) => group.name.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())) && !conversationsLoading && !(searchQuery.trim() ? employeesError : conversationsError) && (
                   <div className="py-8 text-center text-muted-foreground">
                     <User className="mx-auto mb-2 size-8 opacity-40" />
@@ -430,12 +430,12 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           </div>
 
           {/* Chat Area */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <GroupChatThread group={selectedGroup} />
             {selectedGroup ? null : selectedEmployee ? (
               <>
                 {/* Chat Header */}
-                <div className="border-b border-border bg-muted/40 p-4">
+                <div className="shrink-0 border-b border-border bg-teal-50/60 p-3 dark:bg-teal-950/20">
                   <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <EmployeeIdentity userId={selectedEmployee.id} name={selectedEmployee.fullName} avatarUrl={selectedEmployee.avatarUrl} className="font-medium text-foreground" avatarClassName="size-8 text-xs" />
@@ -457,14 +457,14 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 </div>
 
                 {/* Messages */}
-                <ScrollArea className="flex-1 p-4">
+                <ScrollArea className="min-h-0 flex-1 p-3 sm:p-4">
                   <div className="flex flex-col gap-4">
-                    {readErrorFor === selectedEmployeeId ? <Alert variant="destructive"><AlertDescription>
+                    {readErrorFor === selectedEmployeeId ? <div role="alert" className="text-sm text-destructive">
                       {t('messageReadFailed')} <Button variant="outline" size="sm" disabled={markConversationRead.isPending} onClick={() => markConversationRead.mutate(selectedEmployeeId!)}>{t('retryMarkRead')}</Button>
-                    </AlertDescription></Alert> : null}
-                    {messagesError ? <Alert variant="destructive"><AlertDescription>
+                    </div> : null}
+                    {messagesError ? <div role="alert" className="text-sm text-destructive">
                       {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void refetchMessages()}>{t('retry')}</Button>
-                    </AlertDescription></Alert> : null}
+                    </div> : null}
                     {messagesLoading ? (
                       <div className="text-center py-8 text-muted-foreground">
                         <p className="text-sm">{t('loadingMessages')}</p>
@@ -520,7 +520,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 </ScrollArea>
 
                 {/* Message Input */}
-                <div className="border-t border-border/70 p-4">
+                <div className="compact-modal-footer shrink-0">
                   {selectedFiles.length > 0 ? <ChatFileDrafts files={selectedFiles} disabled={sendMessageMutation.isPending} onRemove={(file) => {
                     if (!selectedEmployeeId) return;
                     setFilesByEmployee((current) => ({ ...current, [selectedEmployeeId]: (current[selectedEmployeeId] ?? []).filter((item) => item !== file) }));
@@ -532,11 +532,11 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                     <Button type="button" variant="outline" size="icon" aria-label={t('attachFile')} disabled={sendMessageMutation.isPending} onClick={() => fileInputRef.current?.click()}><Paperclip className="size-4" /></Button>
                     <Input
                       className="min-w-0 flex-1"
-                      placeholder={t('typeMessage')}
+                      aria-label={t('message')} placeholder={t('message')}
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           handleSendMessage();
                         }
@@ -554,10 +554,10 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="min-h-0 flex-1 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  <p className="text-lg font-medium mb-2 text-foreground">{t('selectEmployee')}</p>
+                  <p className="text-lg font-medium mb-2 text-foreground">{t('chatNotSelected')}</p>
                 </div>
               </div>
             )}

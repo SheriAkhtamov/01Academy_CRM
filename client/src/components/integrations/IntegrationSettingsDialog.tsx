@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { KeyRound, Link2, Loader2, Settings2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -48,20 +50,34 @@ const integrationFields = (t: (key: TranslationKey) => string): Record<Integrati
   ],
 });
 
+const accessUnavailable = (error: unknown) => {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 403 || status === 404;
+};
+
 const requiredSecrets = new Set([
   'botToken', 'appSecret', 'verifyToken', 'marketingAccessToken',
   'capiAccessToken', 'leadAccessToken', 'webhookAppSecret',
   'leadWebhookVerifyToken', 'authKey', 'webhookSecret',
 ]);
 
-export function IntegrationSettingsDialog({
-  provider, siteDomain, onOpenChange, onInstagramConnect,
-}: {
+interface IntegrationSettingsDialogProps {
   provider: IntegrationType | null;
   siteDomain?: string | null;
   onOpenChange: (open: boolean) => void;
   onInstagramConnect: () => void;
-}) {
+  instagramConnectPending?: boolean;
+}
+
+export function IntegrationSettingsDialog(props: IntegrationSettingsDialogProps) {
+  return props.provider ? (
+    <IntegrationSettingsForm key={`${props.provider}:${props.siteDomain ?? ''}`} {...props} provider={props.provider} />
+  ) : null;
+}
+
+function IntegrationSettingsForm({
+  provider, siteDomain, onOpenChange, onInstagramConnect, instagramConnectPending = false,
+}: Omit<IntegrationSettingsDialogProps, 'provider'> & { provider: IntegrationType }) {
   const { t } = useTranslation();
   const fields = useMemo(() => integrationFields(t), [t]);
   const titles: Record<IntegrationType, string> = {
@@ -69,157 +85,239 @@ export function IntegrationSettingsDialog({
     instagram: t('instagramIntegration'), meta: t('metaIntegration'), onlinepbx: t('onlinePbxIntegration'),
   };
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [baseline, setBaseline] = useState<Record<string, string>>({});
   const [issuedToken, setIssuedToken] = useState('');
   const [issuedDomain, setIssuedDomain] = useState('');
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
+  const [additionalOpen, setAdditionalOpen] = useState(false);
+  const initialized = useRef(false);
+  const active = useRef(true);
+  const allowed = useRef(true);
+  const notified = useRef(false);
+  const [revoked, setRevoked] = useState(false);
+  const requestLocked = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const settings = useQuery<SafeIntegrationSettings>({
     queryKey: ['/api/academy/integrations/settings', provider],
-    queryFn: () => getIntegrationSettings(provider!),
-    enabled: Boolean(provider),
+    queryFn: () => getIntegrationSettings(provider),
   });
+  const unavailable = revoked || accessUnavailable(settings.error);
+  if (unavailable) allowed.current = false;
   useEffect(() => {
-    if (!provider || !settings.data) return;
+    if (!unavailable || notified.current) return;
+    notified.current = true;
+    setDraft({});
+    setBaseline({});
     setIssuedToken('');
     setIssuedDomain('');
-    setDraft(Object.fromEntries(fields[provider].map((field) => [
+    setRotateConfirmOpen(false);
+    onOpenChange(false);
+  }, [unavailable, onOpenChange]);
+  useEffect(() => {
+    if (!allowed.current || !settings.data || initialized.current) return;
+    initialized.current = true;
+    const initial = Object.fromEntries(fields[provider].map((field) => [
       field.name,
       field.secret ? '' : field.name === 'domain' && provider === 'website'
         ? siteDomain ?? ''
         : String(settings.data?.[field.name] ?? ''),
-    ])));
+    ]));
+    setDraft(initial);
+    setBaseline(initial);
   }, [provider, settings.data, siteDomain, fields]);
 
   const save = useMutation({
-    mutationFn: () => saveIntegrationSettings(provider!, draft),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
-      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/settings', provider] });
+    mutationFn: (snapshot: Record<string, string>) => saveIntegrationSettings(provider, snapshot),
+    onSuccess: async (_result, snapshot) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/settings', provider] }),
+      ]);
+      if (!active.current || !allowed.current) return;
+      setBaseline(snapshot);
+      setDraft(snapshot);
       toast({ title: t('integrationSaved') });
       if (provider !== 'instagram') onOpenChange(false);
     },
-    onError: (error: Error) => toast({
-      title: t('integrationSaveFailed'), description: error.message, variant: 'destructive',
-    }),
+    onError: (error: unknown) => {
+      if (accessUnavailable(error)) {
+        allowed.current = false;
+        setRevoked(true);
+        return;
+      }
+      if (active.current && allowed.current) toast({ title: t('integrationSaveFailed'), variant: 'destructive' });
+    },
+    onSettled: () => { requestLocked.current = false; },
   });
 
   const issueToken = useMutation({
-    mutationFn: () => issueWebsiteToken(draft.domain ?? ''),
+    mutationFn: (domain: string) => issueWebsiteToken(domain),
     onSuccess: async ({ domain, token }) => {
+      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
+      if (!active.current || !allowed.current) return;
       setIssuedDomain(domain);
       setIssuedToken(token);
-      setDraft((current) => ({ ...current, domain }));
-      await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
+      const next = { ...draft, domain };
+      setDraft(next);
+      setBaseline(next);
+      setRotateConfirmOpen(false);
       toast({ title: t('integrationWebsiteTokenIssued') });
     },
-    onError: (error: Error) => toast({
-      title: t('integrationSaveFailed'), description: error.message, variant: 'destructive',
-    }),
+    onError: (error: unknown) => {
+      if (accessUnavailable(error)) {
+        allowed.current = false;
+        setRevoked(true);
+        return;
+      }
+      if (active.current && allowed.current) toast({ title: t('integrationSaveFailed'), variant: 'destructive' });
+    },
+    onSettled: () => { requestLocked.current = false; },
   });
-
-  if (!provider) return null;
+  const pending = save.isPending || issueToken.isPending || instagramConnectPending;
+  const requestWebsiteToken = () => {
+    if (!allowed.current || pending || requestLocked.current) return;
+    requestLocked.current = true;
+    issueToken.mutate(draft.domain ?? '');
+  };
+  const requestSave = () => {
+    if (!allowed.current || pending || requestLocked.current) return;
+    requestLocked.current = true;
+    save.mutate({ ...draft });
+  };
+  const guard = useUnsavedChangesGuard({
+    open: allowed.current,
+    isDirty: JSON.stringify(draft) !== JSON.stringify(baseline),
+    isPending: pending,
+    onOpenChange,
+  });
   const safe = settings.data;
   const websiteDomain = (draft.domain ?? '').trim().toLowerCase().replace(/^https:\/\//, '').replace(/^www\./, '');
   const tokenConfiguredDomains = Array.isArray(safe?.tokenConfiguredDomains) ? safe.tokenConfiguredDomains : [];
   const websiteTokenConfigured = provider === 'website' && (
     tokenConfiguredDomains.includes(websiteDomain) || issuedDomain === websiteDomain
   );
+  const connectionFields = fields[provider].filter((field) => field.required);
+  const accessFields = fields[provider].filter((field) => field.secret && requiredSecrets.has(field.name));
+  const additionalFields = fields[provider].filter((field) => !field.required && !accessFields.includes(field));
+  const renderField = (field: Field) => (
+    <div key={field.name} className="min-w-0 space-y-1.5">
+      <Label htmlFor={`integration-${field.name}`}>{field.label}</Label>
+      <Input
+        id={`integration-${field.name}`}
+        type={field.secret ? 'password' : field.name === 'usdToUzsRate' ? 'number' : 'text'}
+        min={field.name === 'usdToUzsRate' ? 0 : undefined}
+        step={field.name === 'usdToUzsRate' ? 'any' : undefined}
+        autoComplete="off"
+        value={draft[field.name] ?? ''}
+        onChange={(event) => {
+          if (provider === 'website' && field.name === 'domain') {
+            setIssuedToken('');
+            setIssuedDomain('');
+          }
+          setDraft((current) => ({ ...current, [field.name]: event.target.value }));
+        }}
+        onInvalid={(event) => {
+          if (!additionalFields.includes(field)) return;
+          if (!additionalOpen) event.preventDefault();
+          setAdditionalOpen(true);
+          const input = event.currentTarget;
+          requestAnimationFrame(() => input.focus());
+        }}
+        required={field.required || (field.secret && requiredSecrets.has(field.name)
+          && !safe?.[`${field.name}Configured`])}
+      />
+    </div>
+  );
+  if (!allowed.current) return null;
   return (
     <>
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{titles[provider]}</DialogTitle>
-        </DialogHeader>
-        {settings.isLoading ? <Skeleton className="h-48 w-full" /> : settings.isError ? (
-          <Button variant="outline" onClick={() => settings.refetch()}>{t('retry')}</Button>
-        ) : (
-          <form onSubmit={(event) => {
-            event.preventDefault();
-            if (provider === 'website') {
-              if (!websiteTokenConfigured) issueToken.mutate();
-            } else save.mutate();
-          }} className="space-y-4">
-            {fields[provider].map((field) => (
-              <div key={field.name} className="space-y-1.5">
-                <Label htmlFor={`integration-${field.name}`}>{field.label}</Label>
-                <Input
-                  id={`integration-${field.name}`}
-                  type={field.secret ? 'password' : field.name === 'usdToUzsRate' ? 'number' : 'text'}
-                  min={field.name === 'usdToUzsRate' ? 0 : undefined}
-                  step={field.name === 'usdToUzsRate' ? 'any' : undefined}
-                  autoComplete="off"
-                  value={draft[field.name] ?? ''}
-                  onChange={(event) => {
-                    if (provider === 'website' && field.name === 'domain') {
-                      setIssuedToken('');
-                      setIssuedDomain('');
-                    }
-                    setDraft((current) => ({ ...current, [field.name]: event.target.value }));
-                  }}
-                  required={field.required || (field.secret && requiredSecrets.has(field.name)
-                    && !safe?.[`${field.name}Configured`])}
-                />
+      <Dialog open onOpenChange={(open) => { if (!requestLocked.current) guard.handleOpenChange(open); }}>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle>{titles[provider]}</DialogTitle>
+          </DialogHeader>
+          {settings.isLoading ? <div className="compact-modal-body"><Skeleton className="h-48 w-full" /></div> : settings.isError && !settings.data ? (
+            <div className="compact-modal-body"><Button variant="outline" disabled={settings.isFetching} onClick={() => settings.refetch()}>{t('retry')}</Button></div>
+          ) : (
+            <form onSubmit={(event) => {
+              event.preventDefault();
+              if (pending) return;
+              if (provider === 'website') {
+                if (!websiteTokenConfigured) requestWebsiteToken();
+              } else requestSave();
+            }} className="flex min-h-0 flex-1 flex-col">
+              <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                {connectionFields.length ? (
+                  <CompactModalSection title={t('integrationConnectionSection')} icon={Link2} tone="sky" collapsible={false} disabled={pending} contentClassName="grid gap-3 sm:grid-cols-2">
+                    {connectionFields.map(renderField)}
+                  </CompactModalSection>
+                ) : null}
+                {accessFields.length ? (
+                  <CompactModalSection title={t('integrationAccessSection')} icon={KeyRound} tone="teal" collapsible={false} disabled={pending} contentClassName="grid gap-3 sm:grid-cols-2">
+                    {accessFields.map(renderField)}
+                  </CompactModalSection>
+                ) : null}
+                {additionalFields.length ? (
+                  <CompactModalSection title={t('integrationAdditionalSection')} icon={Settings2} tone="violet" open={additionalOpen} onOpenChange={setAdditionalOpen} disabled={pending} contentClassName="grid gap-3 sm:grid-cols-2">
+                    {additionalFields.map(renderField)}
+                  </CompactModalSection>
+                ) : null}
+                {provider === 'website' && issuedToken ? (
+                  <CompactModalSection title={t('integrationWebsiteToken')} icon={ShieldCheck} tone="teal" collapsible={false} contentClassName="space-y-2">
+                    <Label htmlFor="integration-website-issued-token">{t('integrationWebsiteToken')}</Label>
+                    <Input id="integration-website-issued-token" readOnly value={issuedToken} className="font-mono" />
+                    <Button type="button" variant="outline" disabled={pending} onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(issuedToken);
+                        toast({ title: t('integrationWebsiteTokenCopied') });
+                      } catch {
+                        toast({ title: t('error'), variant: 'destructive' });
+                      }
+                    }}>{t('integrationWebsiteCopyToken')}</Button>
+                  </CompactModalSection>
+                ) : null}
+                {safe && ((provider === 'instagram' && (safe.callbackUrl || safe.webhookUrl)) || ((provider === 'meta' || provider === 'onlinepbx') && safe.webhookUrl)) ? (
+                  <CompactModalSection title={t('integrationAddressesSection')} icon={Link2} tone="amber" contentClassName="space-y-3">
+                    {provider === 'instagram' && safe.callbackUrl ? <div className="space-y-1"><p className="text-xs font-medium">{t('integrationCallbackUrl')}</p><p className="break-all select-all text-sm">{safe.callbackUrl}</p></div> : null}
+                    {safe.webhookUrl ? <div className="space-y-1"><p className="text-xs font-medium">{t('integrationWebhookUrl')}</p><p className="break-all select-all text-sm">{safe.webhookUrl}</p></div> : null}
+                  </CompactModalSection>
+                ) : null}
               </div>
-            ))}
-            {provider === 'website' && issuedToken ? (
-              <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <Label htmlFor="integration-website-issued-token">{t('integrationWebsiteToken')}</Label>
-                <Input id="integration-website-issued-token" readOnly value={issuedToken} className="font-mono" />
-                <Button type="button" variant="outline" onClick={async () => {
-                  await navigator.clipboard.writeText(issuedToken);
-                  toast({ title: t('integrationWebsiteTokenCopied') });
-                }}>{t('integrationWebsiteCopyToken')}</Button>
-              </div>
-            ) : null}
-            {provider === 'instagram' && safe ? (
-              <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <p>{t('integrationCallbackUrl')}: <span className="break-all select-all">{safe.callbackUrl}</span></p>
-                <p>{t('integrationWebhookUrl')}: <span className="break-all select-all">{safe.webhookUrl}</span></p>
-              </div>
-            ) : null}
-            {provider === 'meta' && safe?.webhookUrl ? (
-              <div className="rounded-lg border p-3 text-sm">
-                {t('integrationWebhookUrl')}: <span className="break-all select-all">{safe.webhookUrl}</span>
-              </div>
-            ) : null}
-            {provider === 'onlinepbx' && safe?.webhookUrl ? (
-              <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <p>{t('integrationWebhookUrl')}: <span className="break-all select-all">{safe.webhookUrl}</span></p>
-              </div>
-            ) : null}
-            <DialogFooter className="gap-2">
-              {provider === 'instagram' && safe?.appSecretConfigured ? (
-                <Button type="button" variant="outline" onClick={onInstagramConnect}>
-                  {t('loginWithInstagram')}
-                </Button>
-              ) : null}
-              {provider === 'website' && websiteTokenConfigured ? (
-                <Button type="button" variant="outline" disabled={issueToken.isPending} onClick={() => setRotateConfirmOpen(true)}>
-                  {t('integrationWebsiteRotateToken')}
-                </Button>
-              ) : (
-                <Button type="submit" disabled={save.isPending || issueToken.isPending}>
-                  {(save.isPending || issueToken.isPending) && <Loader2 className="animate-spin" data-icon="inline-start" />}
-                  {provider === 'website' ? t('integrationWebsiteCreateToken') : t('save')}
-                </Button>
-              )}
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
-    <AlertDialog open={rotateConfirmOpen} onOpenChange={setRotateConfirmOpen}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('integrationWebsiteRotateTitle')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('integrationWebsiteRotateDescription')}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction onClick={() => issueToken.mutate()}>{t('integrationWebsiteRotateToken')}</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+              <DialogFooter className="compact-modal-footer">
+                <Button type="button" variant="outline" disabled={pending} onClick={() => { if (!requestLocked.current) guard.handleOpenChange(false); }}>{t('cancel')}</Button>
+                {provider === 'instagram' && safe?.appSecretConfigured ? (
+                  <Button type="button" variant="outline" disabled={pending} onClick={() => guard.requestAction(onInstagramConnect)}>{t('loginWithInstagram')}</Button>
+                ) : null}
+                {provider === 'website' && websiteTokenConfigured ? (
+                  <Button type="button" disabled={pending} onClick={() => setRotateConfirmOpen(true)}>{t('integrationWebsiteRotateToken')}</Button>
+                ) : (
+                  <Button type="submit" disabled={pending}>
+                    {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                    {provider === 'website' ? t('integrationWebsiteCreateToken') : t('save')}
+                  </Button>
+                )}
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={rotateConfirmOpen} onOpenChange={(open) => { if (!pending && !requestLocked.current) setRotateConfirmOpen(open); }}>
+        <AlertDialogContent className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0">
+          <AlertDialogHeader data-topographic="header" className="compact-modal-header"><AlertDialogTitle>{t('integrationWebsiteRotateTitle')}</AlertDialogTitle></AlertDialogHeader>
+          <div className="compact-modal-body overflow-y-auto"><AlertDialogDescription>{t('integrationWebsiteRotateDescription')}</AlertDialogDescription></div>
+          <AlertDialogFooter className="compact-modal-footer">
+            <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} onClick={(event) => {
+              event.preventDefault();
+              requestWebsiteToken();
+            }}>{t('integrationWebsiteRotateToken')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
     </>
   );
 }

@@ -1,4 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { KeyRound, ShieldCheck, UserRound } from "lucide-react";
+import { CompactModalSection } from "@/components/ux/CompactModalSection";
 import {
   portalPasswordSchema,
   type PortalAccessLinkDto,
@@ -41,6 +43,15 @@ import {
 import type { StudentPortalAccessControls } from "../queries";
 import { PermissionChecklist } from "./PermissionChecklist";
 
+function useDialogSession(open: boolean, target: string | number | null) {
+  const session = useRef({ open, target, epoch: 0 });
+  if (session.current.open !== open || session.current.target !== target) {
+    session.current = { open, target, epoch: session.current.epoch + 1 };
+  }
+  useEffect(() => { session.current.open = open; return () => { session.current.open = false; session.current.epoch += 1; }; }, [open]);
+  return session;
+}
+
 type CommonProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,6 +70,9 @@ export function ClassificationDialog({
   studentName: string;
 } & CommonProps) {
   const { t } = useTranslation();
+  const session = useDialogSession(open, "classification");
+  const seeded = useRef(-1);
+  const saving = useRef(false);
   const [value, setValue] = useState(classification);
   const [method, setMethod] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -73,20 +87,22 @@ export function ClassificationDialog({
     onOpenChange,
   });
   useEffect(() => {
-    if (open) {
+    if (open && seeded.current !== session.current.epoch) {
+      seeded.current = session.current.epoch;
       setValue(classification);
       setMethod("");
       setBirthDate("");
       setErrors({});
       setConfirm(false);
     }
-  }, [open, classification]);
+  }, [open, classification, session]);
   useEffect(() => {
     onDraftChange?.(open && dirty, open && pending);
     return () => onDraftChange?.(false, false);
   }, [open, dirty, pending, onDraftChange]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (pending) return;
     if (method.trim().length < 3) {
       setErrors({ method: t("lmsAccessFieldRequired") });
       document.getElementById("portal-classification-method")?.focus();
@@ -96,35 +112,45 @@ export function ClassificationDialog({
     setConfirm(true);
   };
   const save = async () => {
+    if (saving.current || pending || !open) return;
+    saving.current = true;
+    const epoch = session.current.epoch;
     try {
       await controls.classification.mutateAsync({
         classification: value,
         verificationMethod: method.trim(),
         verifiedBirthDate: birthDate || null,
       });
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setConfirm(false);
       onOpenChange(false);
     } catch (error) {
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setErrors({
         form: error instanceof Error ? error.message : t("lmsStaffSaveFailed"),
       });
+    } finally {
+      saving.current = false;
     }
   };
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t("lmsAccessConfirmIdentity")}</DialogTitle>
-            <DialogDescription>{studentName}</DialogDescription>
           </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col" aria-busy={pending}>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{studentName}</DialogDescription>
+            <CompactModalSection title={t('lmsStaffClassification')} icon={UserRound} tone="sky" collapsible={false} disabled={pending} contentClassName="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="portal-classification-status">
                 {t("lmsStaffClassification")}
               </Label>
               <Select
                 value={value}
+                disabled={pending}
                 onValueChange={(next) => setValue(next as PortalClassification)}
               >
                 <SelectTrigger id="portal-classification-status">
@@ -170,7 +196,9 @@ export function ClassificationDialog({
                 </p>
               ) : null}
             </div>
-            <DialogFooter>
+            </CompactModalSection>
+            </div>
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"
@@ -220,6 +248,9 @@ export function PermissionEditDialog({
   link: PortalAccessLinkDto | null;
 } & CommonProps) {
   const { t } = useTranslation();
+  const session = useDialogSession(open, link?.id ?? null);
+  const seeded = useRef(-1);
+  const saving = useRef(false);
   const [permissions, setPermissions] = useState<PortalPermission[]>([]);
   const [method, setMethod] = useState("");
   const [basis, setBasis] = useState("");
@@ -237,7 +268,8 @@ export function PermissionEditDialog({
     onOpenChange,
   });
   useEffect(() => {
-    if (open) {
+    if (open && seeded.current !== session.current.epoch) {
+      seeded.current = session.current.epoch;
       setPermissions(link?.permissions ?? []);
       setMethod("");
       setBasis("");
@@ -245,13 +277,14 @@ export function PermissionEditDialog({
       setErrors({});
       setConfirm(false);
     }
-  }, [open, link]);
+  }, [open, link, session]);
   useEffect(() => {
     onDraftChange?.(open && dirty, open && pending);
     return () => onDraftChange?.(false, false);
   }, [open, dirty, pending, onDraftChange]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (pending) return;
     const next: Record<string, string> = {};
     if (!permissions.length) next.permissions = t("lmsAccessChoosePermissions");
     if (method.trim().length < 3) next.method = t("lmsAccessFieldRequired");
@@ -264,7 +297,9 @@ export function PermissionEditDialog({
     setConfirm(true);
   };
   const save = async () => {
-    if (!link) return;
+    if (!link || saving.current || pending || !open) return;
+    saving.current = true;
+    const epoch = session.current.epoch;
     try {
       await controls.permissions.mutateAsync({
         linkId: link.id,
@@ -276,36 +311,41 @@ export function PermissionEditDialog({
             ? { method: "in_person", confirmed: true }
             : undefined,
       });
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setConfirm(false);
       onOpenChange(false);
     } catch (error) {
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setErrors({
         form: error instanceof Error ? error.message : t("lmsStaffSaveFailed"),
       });
+    } finally {
+      saving.current = false;
     }
   };
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t("lmsAccessEditPermissions")}</DialogTitle>
-            <DialogDescription>{link?.account.fullName}</DialogDescription>
           </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col" aria-busy={pending}>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{link?.account.fullName}</DialogDescription>
+            <CompactModalSection title={t('lmsStaffPermissions')} icon={ShieldCheck} tone="sky" collapsible={false} disabled={pending}>
             <fieldset
               id="portal-edit-permissions"
               tabIndex={-1}
               className="space-y-3"
             >
-              <legend className="mb-3 text-sm font-medium">
-                {t("lmsStaffPermissions")}
-              </legend>
+
               <PermissionChecklist
                 value={permissions}
                 onChange={setPermissions}
                 classification={classification}
                 idPrefix="portal-edit"
+                disabled={pending}
               />
               {errors.permissions ? (
                 <p role="alert" className="text-sm text-destructive">
@@ -313,10 +353,13 @@ export function PermissionEditDialog({
                 </p>
               ) : null}
             </fieldset>
+            </CompactModalSection>
+            <CompactModalSection title={t('accessVerificationSection')} icon={ShieldCheck} tone="amber" collapsible={false} disabled={pending} contentClassName="space-y-3">
             {classification === "adult" ? (
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="portal-edit-consent"
+                  disabled={pending}
                   checked={consent}
                   onCheckedChange={(value) => setConsent(value === true)}
                 />
@@ -357,7 +400,9 @@ export function PermissionEditDialog({
                 </p>
               ) : null}
             </div>
-            <DialogFooter>
+            </CompactModalSection>
+            </div>
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"
@@ -399,6 +444,9 @@ export function StaffRecoveryDialog({
   onDraftChange,
 }: { link: PortalAccessLinkDto | null } & CommonProps) {
   const { t } = useTranslation();
+  const session = useDialogSession(open, link?.id ?? null);
+  const seeded = useRef(-1);
+  const saving = useRef(false);
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [method, setMethod] = useState("");
@@ -414,7 +462,8 @@ export function StaffRecoveryDialog({
     onOpenChange,
   });
   useEffect(() => {
-    if (open) {
+    if (open && seeded.current !== session.current.epoch) {
+      seeded.current = session.current.epoch;
       setPassword("");
       setRepeat("");
       setMethod("");
@@ -422,13 +471,14 @@ export function StaffRecoveryDialog({
       setErrors({});
       setConfirm(false);
     }
-  }, [open, link]);
+  }, [open, link, session]);
   useEffect(() => {
     onDraftChange?.(open && dirty, open && pending);
     return () => onDraftChange?.(false, false);
   }, [open, dirty, pending, onDraftChange]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (pending) return;
     const next: Record<string, string> = {};
     if (!portalPasswordSchema.safeParse(password).success)
       next.password = t("lmsAccessPasswordRequirements");
@@ -445,7 +495,9 @@ export function StaffRecoveryDialog({
     setConfirm(true);
   };
   const save = async () => {
-    if (!link) return;
+    if (!link || saving.current || pending || !open) return;
+    saving.current = true;
+    const epoch = session.current.epoch;
     try {
       await controls.recovery.mutateAsync({
         accountId: link.account.id,
@@ -453,25 +505,31 @@ export function StaffRecoveryDialog({
         verificationMethod: method.trim(),
         verificationBasis: basis.trim(),
       });
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setPassword("");
       setRepeat("");
       setConfirm(false);
       onOpenChange(false);
     } catch (error) {
+      if (!session.current.open || session.current.epoch !== epoch) return;
       setErrors({
         form: error instanceof Error ? error.message : t("lmsStaffSaveFailed"),
       });
+    } finally {
+      saving.current = false;
     }
   };
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t("lmsAccessReset")}</DialogTitle>
-            <DialogDescription>{link?.account.fullName}</DialogDescription>
           </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col" aria-busy={pending}>
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <DialogDescription className="break-words">{link?.account.fullName}</DialogDescription>
+            <CompactModalSection title={t('portalSecurityNotifications')} icon={KeyRound} tone="violet" collapsible={false} disabled={pending} contentClassName="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="portal-recovery-password">
                 {t("lmsAccessNewPassword")}
@@ -508,6 +566,8 @@ export function StaffRecoveryDialog({
                 </p>
               ) : null}
             </div>
+            </CompactModalSection>
+            <CompactModalSection title={t('accessVerificationSection')} icon={ShieldCheck} tone="amber" collapsible={false} disabled={pending} contentClassName="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="portal-recovery-method">
                 {t("lmsStaffVerification")}
@@ -542,7 +602,9 @@ export function StaffRecoveryDialog({
                 </p>
               ) : null}
             </div>
-            <DialogFooter>
+            </CompactModalSection>
+            </div>
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"
@@ -603,17 +665,19 @@ export function AccessConfirmation({
         if (!pending) onOpenChange(value);
       }}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
+      <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0">
+        <AlertDialogHeader className="compact-modal-header">
           <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
+        <AlertDialogDescription className="break-words">{description}</AlertDialogDescription>
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         ) : null}
-        <AlertDialogFooter>
+        </div>
+        <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={pending}>
             {t("lmsStaffCancel")}
           </AlertDialogCancel>

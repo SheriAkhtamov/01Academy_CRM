@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyRound, ShieldCheck, UserPlus } from "lucide-react";
 import type { PortalAccessLinkDto } from "@shared/contracts/portal-identity";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -49,7 +49,14 @@ export type StudentPortalAccessTabProps = {
   onDraftChange?: (dirty: boolean, pending: boolean) => void;
   initialInvitationKind?: "self" | "representative";
 };
-export function StudentPortalAccessTab({
+export function StudentPortalAccessTab(props: StudentPortalAccessTabProps) {
+  return <StudentPortalAccessSession
+    key={`${props.studentId}:${props.staffAccountId ?? 0}:${props.enabled ?? true}:${props.canManageAccess}`}
+    {...props}
+  />;
+}
+
+function StudentPortalAccessSession({
   studentId,
   studentName,
   staffAccountId = 0,
@@ -65,6 +72,8 @@ export function StudentPortalAccessTab({
     staffAccountId,
     enabled && canManageAccess,
   );
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [classificationOpen, setClassificationOpen] = useState(false);
   const [editing, setEditing] = useState<PortalAccessLinkDto | null>(null);
@@ -117,6 +126,28 @@ export function StudentPortalAccessTab({
     controls.accountStatus.isPending,
     onDraftChange,
   ]);
+  const errorStatus = (controls.query.error as { status?: number } | null)?.status;
+  const unavailable = errorStatus === 401 || errorStatus === 403 || errorStatus === 404;
+  useEffect(() => {
+    if (!unavailable) return;
+    setInviteOpen(false);
+    setClassificationOpen(false);
+    setEditing(null);
+    setResetting(null);
+    setRevoking(null);
+    setStatusTarget(null);
+    setDrafts({});
+  }, [unavailable]);
+  useEffect(() => {
+    const currentData = controls.query.data;
+    if (!currentData || controls.query.isError) return;
+    const available = (target: PortalAccessLinkDto | null) => !target
+      || currentData.links.some(link => link.id === target.id && link.status !== "revoked");
+    if (!available(editing)) setEditing(null);
+    if (!available(resetting)) setResetting(null);
+    if (!available(revoking)) setRevoking(null);
+    if (!available(statusTarget)) setStatusTarget(null);
+  }, [controls.query.data, controls.query.isError, editing, resetting, revoking, statusTarget]);
   if (!enabled || !canManageAccess) return null;
   if (controls.query.isPending)
     return (
@@ -125,15 +156,15 @@ export function StudentPortalAccessTab({
         <Skeleton className="h-24 w-full rounded-lg" />
       </div>
     );
-  if (controls.query.isError)
-    return (
+  const queryError = controls.query.isError ? (
       <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs">
         <p>{t("lmsStaffLoadFailed")}</p>
         <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" onClick={() => void controls.query.refetch()}>
           {t("lmsStaffRetry")}
         </Button>
       </div>
-    );
+    ) : null;
+  if (unavailable || !controls.query.data) return queryError;
   const data = controls.query.data;
   if (!data) return null;
   const classificationLabel = {
@@ -147,22 +178,24 @@ export function StudentPortalAccessTab({
       timeZone: "Asia/Tashkent",
     }).format(new Date(value));
   const revoke = async () => {
-    if (!revoking) return;
+    if (!revoking || controls.revoke.isPending) return;
     try {
       await controls.revoke.mutateAsync(revoking.id);
+      if (!active.current) return;
       setRevoking(null);
     } catch {
       /* The confirmation keeps the operation error visible. */
     }
   };
   const updateStatus = async () => {
-    if (!statusTarget) return;
+    if (!statusTarget || controls.accountStatus.isPending) return;
     try {
       await controls.accountStatus.mutateAsync({
         accountId: statusTarget.account.id,
         status:
           statusTarget.account.status === "suspended" ? "active" : "suspended",
       });
+      if (!active.current) return;
       setStatusTarget(null);
     } catch {
       /* The confirmation keeps the error visible. */
@@ -170,6 +203,7 @@ export function StudentPortalAccessTab({
   };
   return (
     <div className="space-y-3">
+      {queryError}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">

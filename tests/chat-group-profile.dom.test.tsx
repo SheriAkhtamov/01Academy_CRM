@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ChatGroupDetailsDto, GroupMessageDto } from '../shared/contracts/chat-groups';
 import type { MessageAttachment } from '../shared/contracts/messages';
+import { chatGroupKeys } from '../client/src/features/messages/chat-groups-api';
 import { i18n } from '../client/src/lib/i18n';
 const mocks = vi.hoisted(() => ({ api: vi.fn(), fetch: vi.fn() }));
 vi.mock('../client/src/lib/queryClient', async () => ({ ...await vi.importActual('../client/src/lib/queryClient'), apiRequest: mocks.api }));
@@ -146,4 +147,69 @@ it('preserves the edited profile after a failed save without exposing server det
   await within(dialog).findByText(i18n.t('chatGroupUpdateFailed'));
   expect((input as HTMLInputElement).value).toBe('Retry team'); expect(within(dialog).queryByText('SQL internal detail')).toBeNull();
   expect(group.name).toBe('Team');
+});
+
+
+it('leaves video arrow keys with native playback controls', async () => {
+  messages[0].attachments.push(attachment('e', 'video/mp4'), attachment('f', 'video/mp4'));
+  const user = userEvent.setup(); mount();
+  await user.click(await screen.findByRole('button', { name: 'Videos 2' }));
+  const library = screen.getByRole('dialog', { name: i18n.t('chatGroupMedia') });
+  await user.click(within(library).getByRole('button', { name: `${i18n.t('attachmentPreview')}: e.png` }));
+  const viewer = screen.getByRole('dialog', { name: 'e.png' });
+  const video = within(viewer).getByLabelText('e.png');
+  expect(fireEvent.keyDown(video, { key: 'ArrowRight' })).toBe(true);
+  expect(screen.getByRole('dialog', { name: 'e.png' })).toBeTruthy();
+  expect(fireEvent.keyDown(viewer, { key: 'ArrowRight' })).toBe(false);
+  expect(screen.getByRole('dialog', { name: 'f.png' })).toBeTruthy();
+});
+
+
+it('preserves the staged group name and photo through a transient background refresh failure', async () => {
+  const fallback = mocks.api.getMockImplementation()!;
+  let backgroundFailure = false;
+  mocks.api.mockImplementation((method, url, data) => method === 'GET' && url === '/api/chat-groups/4' && backgroundFailure
+    ? Promise.reject(Object.assign(new Error('temporary'), { status: 500 })) : fallback(method, url, data));
+  const user = userEvent.setup(); mount(); const dialog = await manage(user);
+  const name = within(dialog).getByLabelText(i18n.t('groupName')) as HTMLInputElement;
+  await user.clear(name); await user.type(name, 'Unsaved group');
+  await user.upload(within(dialog).getByLabelText(i18n.t('chatGroupPhoto'), { selector: 'input' }), new File(['raw'], 'draft.png', { type: 'image/png' }));
+  await user.click(within(screen.getByRole('dialog', { name: i18n.t('chatGroupCropPhoto') })).getByRole('button', { name: i18n.t('applyPhotoCrop') }));
+  backgroundFailure = true;
+  await act(async () => { await client.invalidateQueries({ queryKey: chatGroupKeys.detail(4) }); });
+  await waitFor(() => expect(client.getQueryState(chatGroupKeys.detail(4))?.status).toBe('error'));
+  expect(screen.getByRole('dialog', { name: i18n.t('chatGroupManage') })).toBe(dialog);
+  expect(name.value).toBe('Unsaved group');
+  expect(within(dialog).getByRole('img', { name: i18n.t('chatGroupPhoto') }).getAttribute('src')).toBe('blob:group-photo');
+  backgroundFailure = false;
+  await act(async () => { await client.invalidateQueries({ queryKey: chatGroupKeys.detail(4) }); });
+  expect(within(dialog).getByLabelText(i18n.t('groupName'))).toBe(name);
+  expect(name.value).toBe('Unsaved group');
+  expect(mutations()).toHaveLength(0);
+});
+
+it.each([403, 404])('closes cached group management after a confirmed access failure (%s)', async (status) => {
+  const fallback = mocks.api.getMockImplementation()!;
+  let denied = false;
+  mocks.api.mockImplementation((method, url, data) => method === 'GET' && url === '/api/chat-groups/4' && denied
+    ? Promise.reject(Object.assign(new Error('private server detail'), { status })) : fallback(method, url, data));
+  const user = userEvent.setup(); mount(); const dialog = await manage(user);
+  await user.type(within(dialog).getByLabelText(i18n.t('groupName')), ' draft');
+  denied = true;
+  await act(async () => { await client.invalidateQueries({ queryKey: chatGroupKeys.detail(4) }); });
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('chatGroupManage') })).toBeNull());
+  expect(screen.queryByRole('button', { name: i18n.t('chatGroupManage') })).toBeNull();
+  expect(screen.queryByRole('button', { name: i18n.t('chatGroupAddParticipants') })).toBeNull();
+  expect(screen.queryByText('private server detail')).toBeNull();
+  expect(mutations()).toHaveLength(0);
+});
+
+it('closes editing when a refreshed group removes management permission', async () => {
+  const user = userEvent.setup(); mount(); const dialog = await manage(user);
+  await user.type(within(dialog).getByLabelText(i18n.t('groupName')), ' draft');
+  group.canManage = false;
+  await act(async () => { await client.invalidateQueries({ queryKey: chatGroupKeys.detail(4) }); });
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('chatGroupManage') })).toBeNull());
+  expect(screen.queryByRole('button', { name: i18n.t('chatGroupManage') })).toBeNull();
+  expect(mutations()).toHaveLength(0);
 });

@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,7 +37,8 @@ import {
 import { MotionSettingsPanel } from '@/components/ux/motion';
 import { UserPhotoPicker } from '@/features/employees/UserPhotoPicker';
 import { withUserPhoto } from '@/features/employees/user-photo-api';
-import { User, Briefcase, Phone, Save, KeyRound } from 'lucide-react';
+import { User, Briefcase, Phone, Save, KeyRound, Sparkles } from 'lucide-react';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 
 const createSettingsSchema = (
   t: (key: TranslationKey) => string,
@@ -151,8 +152,17 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { user, setUser } = useAuth();
+  const saving = React.useRef(false);
   const [photo, setPhoto] = React.useState<File | null>(null);
+  const [contactsOpen, setContactsOpen] = React.useState(false);
+  const [securityOpen, setSecurityOpen] = React.useState(false);
+  const [animationsOpen, setAnimationsOpen] = React.useState(false);
+  const session = React.useRef({ open: false, userId: user?.id, epoch: 0 });
+  if (session.current.open !== open || session.current.userId !== user?.id) {
+    session.current = { open, userId: user?.id, epoch: session.current.epoch + 1 };
+  }
   const { t } = useTranslation();
+  React.useEffect(() => { session.current.open = open; return () => { session.current.open = false; }; }, [open]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const settingsSchema = React.useMemo(
@@ -163,17 +173,14 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const form = useForm<z.infer<typeof settingsSchema>>({
     resolver: zodResolver(settingsSchema),
     defaultValues: buildSettingsValues(user),
+    shouldFocusError: false,
   });
   const [baselineValues, setBaselineValues] = React.useState(() => buildSettingsValues(user));
   const seededAccount = React.useRef<{ open: boolean; userId: number | null }>({ open: false, userId: null });
   // Subscribing to the values, not to `formState.isDirty` — see
   // `hasSettingsChanges` for why the flag answers the wrong question here.
   const currentValues = form.watch();
-  const settingsDialogGuard = useUnsavedChangesGuard({
-    open,
-    isDirty: hasSettingsChanges(currentValues, baselineValues) || Boolean(photo),
-    onOpenChange: (nextOpen) => { if (!nextOpen) setPhoto(null); onOpenChange(nextOpen); },
-  });
+
 
   React.useEffect(() => {
     if (!open) {
@@ -189,6 +196,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       form.reset(nextBaseline);
       setBaselineValues(nextBaseline);
       setPhoto(null);
+      setContactsOpen(false);
+      setSecurityOpen(false);
+      setAnimationsOpen(false);
     } else if (!photo
       && !hasSettingsChanges(form.getValues(), baselineValues)
       && hasSettingsChanges(nextBaseline, baselineValues)) {
@@ -198,8 +208,8 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   }, [user, open, form, baselineValues, photo]);
 
   const updateProfileMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof settingsSchema>) => {
-      if (!user?.id) {
+    mutationFn: async ({ data, accountId, email, photo: submittedPhoto, epoch }: { data: SettingsFormValues; accountId: number | undefined; email: string; photo: File | null; epoch: number }) => {
+      if (!accountId) {
         throw new Error(t('authenticationRequired'));
       }
 
@@ -210,7 +220,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         ...profileData
       } = data;
       const normalizedEmail = profileData.email.trim().toLowerCase();
-      const credentialsChanged = normalizedEmail !== user.email.trim().toLowerCase()
+      const credentialsChanged = normalizedEmail !== email.trim().toLowerCase()
         || Boolean(newPassword || confirmNewPassword);
       const result = await apiRequest('PUT', '/api/auth/me/settings', withUserPhoto({
         fullName: profileData.fullName.trim(),
@@ -218,11 +228,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         position: profileData.position.trim(),
         phone: profileData.phone?.trim() || null,
         ...(credentialsChanged ? { currentPassword, newPassword, confirmNewPassword } : {}),
-      }, photo));
+      }, submittedPhoto));
 
-      return result.user ?? result;
+      return { updatedUser: result.user ?? result, epoch, accountId };
     },
-    onSuccess: (updatedUser) => {
+    onSuccess: ({ updatedUser, epoch, accountId }) => {
+      if (!session.current.open || session.current.epoch !== epoch || session.current.userId !== accountId) return;
       setPhoto(null);
       setUser(updatedUser);
       queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
@@ -236,7 +247,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       });
       onOpenChange(false);
     },
-    onError: (error: any) => {
+    onSettled: () => { saving.current = false; },
+    onError: (error: any, variables) => {
+      if (!session.current.open || session.current.epoch !== variables.epoch || session.current.userId !== variables.accountId) return;
       toast({
         title: t('error'),
         description: error.message || t('updateFailed'),
@@ -245,15 +258,30 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     },
   });
 
+  const settingsDialogGuard = useUnsavedChangesGuard({
+    open,
+    isDirty: hasSettingsChanges(currentValues, baselineValues) || Boolean(photo),
+    isPending: updateProfileMutation.isPending || form.formState.isSubmitting,
+    onOpenChange: (nextOpen) => { if (!nextOpen) setPhoto(null); onOpenChange(nextOpen); },
+  });
   const onSubmit = (data: z.infer<typeof settingsSchema>) => {
-    updateProfileMutation.mutate(data);
+    if (!session.current.open || saving.current || updateProfileMutation.isPending) return;
+    saving.current = true;
+    updateProfileMutation.mutate({ data, accountId: user?.id, email: user?.email ?? '', photo, epoch: session.current.epoch });
+  };
+  const onInvalid = (errors: FieldErrors<SettingsFormValues>) => {
+    const first = Object.keys(errors)[0] as keyof SettingsFormValues | undefined;
+    if (!first) return;
+    if (first === 'phone' || first === 'position') setContactsOpen(true);
+    if (['currentPassword', 'newPassword', 'confirmNewPassword'].includes(first)) setSecurityOpen(true);
+    requestAnimationFrame(() => form.setFocus(first));
   };
 
   return (
     <>
       <Dialog open={open} onOpenChange={settingsDialogGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0" aria-describedby={undefined}>
-        <DialogHeader className="shrink-0 border-b px-6 py-4">
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden p-0" aria-describedby={undefined}>
+        <DialogHeader className="compact-modal-header">
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
             {t('accountSettings')}
@@ -261,10 +289,17 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
-            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-6 py-4">
+          <form onSubmit={event => {
+            const epoch = session.current.epoch;
+            void form.handleSubmit(
+              data => { if (session.current.open && session.current.epoch === epoch) onSubmit(data); },
+              errors => { if (session.current.open && session.current.epoch === epoch) onInvalid(errors); },
+            )(event);
+          }} className="flex min-h-0 flex-1 flex-col" autoComplete="off">
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={t('employeeProfileSection')} icon={User} tone="sky" collapsible={false} disabled={updateProfileMutation.isPending} contentClassName="space-y-3">
             <UserPhotoPicker photo={photo} onChange={setPhoto} currentPhotoUrl={user?.avatarUrl} fullName={currentValues.fullName} disabled={updateProfileMutation.isPending} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {/* Full Name */}
               <FormField
                 control={form.control}
@@ -294,13 +329,20 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       {t('loginLabel')}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} type="text" autoComplete="username" />
+                      <Input {...field} type="text" autoComplete="username" onChange={event => { field.onChange(event); if (event.target.value.trim().toLowerCase() !== (user?.email ?? '').trim().toLowerCase()) setSecurityOpen(true); }} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">{t('currentModule')}</span>
+              <span className="font-medium">{formatUserModule(user?.module || 'sales', t)}</span>
+            </div>
+            </CompactModalSection>
+            <CompactModalSection title={t('employeeContactsSection')} icon={Phone} tone="teal" open={contactsOpen} onOpenChange={setContactsOpen} disabled={updateProfileMutation.isPending} summary={[currentValues.position, currentValues.phone].filter(Boolean).join(' · ')} contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {/* Position */}
               <FormField
                 control={form.control}
@@ -345,14 +387,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 )}
               />
 
-            </div>
+            </CompactModalSection>
 
-            <div className="rounded-xl border border-border/70 p-4">
-              <div className="mb-4 flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-slate-500" />
-                <h3 className="text-sm font-semibold text-slate-900">{t('changePassword')}</h3>
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <CompactModalSection title={t('portalSecurityNotifications')} icon={KeyRound} tone="violet" open={securityOpen} onOpenChange={setSecurityOpen} disabled={updateProfileMutation.isPending}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="currentPassword"
@@ -364,7 +402,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                           {...field}
                           type="password"
                           autoComplete="current-password"
-                          placeholder={t('currentPassword')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -382,7 +419,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                           {...field}
                           type="password"
                           autoComplete="new-password"
-                          placeholder={t('newPassword')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -400,7 +436,6 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                           {...field}
                           type="password"
                           autoComplete="new-password"
-                          placeholder={t('confirmNewPassword')}
                         />
                       </FormControl>
                       <FormMessage />
@@ -408,24 +443,15 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                   )}
                 />
               </div>
+            </CompactModalSection>
+
+            {/* Device-local switches apply immediately, outside the profile save. */}
+            <CompactModalSection title={t('interfaceAnimations')} icon={Sparkles} tone="amber" open={animationsOpen} onOpenChange={setAnimationsOpen}>
+              <MotionSettingsPanel />
+            </CompactModalSection>
             </div>
 
-            {/*
-              Device-local, so it sits outside the save flow: the switches take
-              effect the moment they are flipped and never travel to the server.
-            */}
-            <MotionSettingsPanel />
-
-            {/* Current module info */}
-            <div className="rounded-xl border border-border/70 bg-muted/60 p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">{t('currentModule')}</h3>
-              <p className="text-slate-700 font-medium">
-                {formatUserModule(user?.module || 'sales', t)}
-              </p>
-            </div>
-            </div>
-
-            <DialogFooter className="flex shrink-0 items-center justify-end gap-3 border-t bg-background/95 px-6 py-4">
+            <DialogFooter className="compact-modal-footer">
               <Button
                 type="button"
                 variant="outline"

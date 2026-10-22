@@ -1,5 +1,5 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { AUTH_SESSION_QUERY_KEY } from '@shared/auth';
@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ux/PageHeader';
@@ -136,6 +136,11 @@ interface OnlinePbxRoutingDraft {
   };
 }
 
+const accessUnavailable = (error: unknown) => {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 403 || status === 404;
+};
+
 const emptyOnlinePbxDraft: OnlinePbxRoutingDraft = {
   primaryManagerId: null,
   assignments: [],
@@ -190,6 +195,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     username?: string | null;
   } | null>(null);
   const [onlinePbxSettingsOpen, setOnlinePbxSettingsOpen] = useState(false);
+  const routingInitialized = useRef(false);
+  const routingSubmitLocked = useRef(false);
+  const routingSession = useRef({ epoch: 0, allowed: true });
+  const [routingDenied, setRoutingDenied] = useState(false);
+  const instagramDisconnectLocked = useRef(false);
   const [voiceRemindersOpen, setVoiceRemindersOpen] = useState(false);
   const [integrationCatalogOpen, setIntegrationCatalogOpen] = useState(false);
   const [settingsProvider, setSettingsProvider] = useState<IntegrationType | null>(null);
@@ -223,6 +233,18 @@ export default function AcademyPage({ section }: AcademyPageProps) {
     staleTime: 0,
   });
 
+  const routingUnavailable = routingDenied || accessUnavailable(onlinePbxRouting.error);
+  if (routingUnavailable) routingSession.current.allowed = false;
+  useEffect(() => {
+    if (!routingUnavailable) return;
+    setOnlinePbxSettingsOpen(false);
+    setOnlinePbxRoutingDraft(emptyOnlinePbxDraft);
+    setNewManagerId('');
+    setNewExtension('');
+    setRemoveManagerTarget(null);
+  }, [routingUnavailable]);
+  useEffect(() => () => { routingSession.current.allowed = false; }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('instagram');
@@ -242,7 +264,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
   }, [t]);
 
   useEffect(() => {
-    if (!onlinePbxRouting.data) return;
+    if (!onlinePbxSettingsOpen) {
+      routingInitialized.current = false;
+      return;
+    }
+    if (!routingSession.current.allowed || !onlinePbxRouting.data || routingInitialized.current) return;
+    routingInitialized.current = true;
     setOnlinePbxRoutingDraft({
       primaryManagerId: onlinePbxRouting.data.primaryManagerId,
       assignments: onlinePbxRouting.data.assignments.map((assignment) => ({
@@ -257,13 +284,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         ?? onlinePbxRouting.data.extensions[0]?.extension
         ?? '',
     );
-  }, [
-    onlinePbxSettingsOpen,
-    onlinePbxRouting.data?.primaryManagerId,
-    onlinePbxRouting.data?.assignments,
-    onlinePbxRouting.data?.extensions,
-    onlinePbxRouting.data?.forwarding,
-  ]);
+  }, [onlinePbxSettingsOpen, onlinePbxRouting.data]);
 
   const startInstagramConnection = useMutation({
     mutationFn: () => apiRequest('POST', '/api/instagram/oauth/start'),
@@ -290,19 +311,20 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       await queryClient.invalidateQueries({ queryKey: ['/api/academy/integrations/status'] });
       toast({ title: t('instagramAccountDisconnected') });
     },
-    onError: (error: Error) => {
+    onSettled: () => { instagramDisconnectLocked.current = false; },
+    onError: () => {
       toast({
         title: t('instagramDisconnectFailed'),
-        description: error.message,
         variant: 'destructive',
       });
     },
   });
 
   const updateOnlinePbxRouting = useMutation({
-    mutationFn: (settings: OnlinePbxRoutingDraft) =>
+    mutationFn: ({ settings }: { settings: OnlinePbxRoutingDraft; epoch: number }) =>
       apiRequest('PUT', '/api/telephony/routing', settings) as Promise<OnlinePbxRoutingSettings>,
-    onSuccess: (settings) => {
+    onSuccess: (settings, { epoch }) => {
+      if (!routingSession.current.allowed || routingSession.current.epoch !== epoch) return;
       queryClient.setQueryData(['/api/telephony/routing'], settings);
       void queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
       setOnlinePbxRoutingDraft({
@@ -321,10 +343,16 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         variant: settings.synchronized === false ? 'destructive' : undefined,
       });
     },
-    onError: (error: Error) => {
+    onSettled: () => { routingSubmitLocked.current = false; },
+    onError: (error: unknown, { epoch }) => {
+      if (routingSession.current.epoch !== epoch || !routingSession.current.allowed) return;
+      if (accessUnavailable(error)) {
+        routingSession.current.allowed = false;
+        setRoutingDenied(true);
+        return;
+      }
       toast({
         title: t('onlinePbxRoutingUpdateFailed'),
-        description: error.message,
         variant: 'destructive',
       });
     },
@@ -375,8 +403,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
 
   // Closing the PBX settings with unsaved edits asks for confirmation.
   const onlinePbxGuard = useUnsavedChangesGuard({
-    open: onlinePbxSettingsOpen,
-    isDirty: routingSettingsChanged,
+    open: onlinePbxSettingsOpen && !routingUnavailable,
+    isDirty: routingSettingsChanged || Boolean(newManagerId),
+    isPending: updateOnlinePbxRouting.isPending,
     onOpenChange: setOnlinePbxSettingsOpen,
   });
 
@@ -544,7 +573,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       <>
                         <Button
                           variant="outline"
-                          onClick={() => setOnlinePbxSettingsOpen(true)}
+                          onClick={() => {
+                            routingSession.current = { epoch: routingSession.current.epoch + 1, allowed: true };
+                            setRoutingDenied(false);
+                            setOnlinePbxSettingsOpen(true);
+                          }}
                           disabled={!integration.connected}
                         >
                           <Settings2 data-icon="inline-start" />
@@ -594,11 +627,12 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       </div>
 
       <Dialog open={integrationCatalogOpen} onOpenChange={setIntegrationCatalogOpen}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t('integrationCatalogTitle')}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-2">
+          <div className="compact-modal-body overflow-y-auto">
+          <CompactModalSection title={t('navIntegrations')} icon={Plug} tone="sky" collapsible={false} contentClassName="grid gap-2">
             {([
               ['telegram_tasks', Send], ['instagram', Camera], ['meta', RadioTower],
               ['website', Globe2], ['onlinepbx', PhoneCall],
@@ -613,7 +647,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 <span>{integrationCopy({ provider }, t).title}</span>
               </Button>
             ))}
+          </CompactModalSection>
           </div>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" onClick={() => setIntegrationCatalogOpen(false)}>{t('cancel')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <IntegrationSettingsDialog
@@ -621,14 +657,16 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         siteDomain={settingsSiteDomain}
         onOpenChange={(open) => { if (!open) setSettingsProvider(null); }}
         onInstagramConnect={() => startInstagramConnection.mutate()}
+        instagramConnectPending={startInstagramConnection.isPending}
       />
 
-      <Dialog open={onlinePbxSettingsOpen} onOpenChange={onlinePbxGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="overflow-hidden sm:max-w-3xl">
-          <DialogHeader>
+      <Dialog open={onlinePbxSettingsOpen && !routingUnavailable && routingSession.current.allowed} onOpenChange={(open) => { if (!routingSubmitLocked.current) onlinePbxGuard.handleOpenChange(open); }}>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t('onlinePbxSettingsTitle')}</DialogTitle>
           </DialogHeader>
 
+          <div className="compact-modal-body flex-1 overflow-y-auto overscroll-contain">
           {onlinePbxRouting.isLoading ? (
             <div className="flex flex-col gap-3 py-4">
               {Array.from({ length: 3 }).map((_, index) => (
@@ -641,17 +679,16 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 </div>
               ))}
             </div>
-          ) : onlinePbxRouting.isError ? (
-            <p role="alert" className="text-sm text-destructive">{t('onlinePbxRoutingLoadFailed')}</p>
+          ) : onlinePbxRouting.isError && !onlinePbxRouting.data ? (
+            <div className="space-y-3"><p role="alert" className="text-sm text-destructive">{t('onlinePbxRoutingLoadFailed')}</p><Button variant="outline" disabled={onlinePbxRouting.isFetching} onClick={() => onlinePbxRouting.refetch()}>{t('retry')}</Button></div>
           ) : (
-            <div className="max-h-[68dvh] overflow-y-auto overscroll-contain pr-4">
-              <div className="flex flex-col gap-3">
-                <h3 className="font-semibold">{t('onlinePbxManagersBlockTitle')}</h3>
+            <div className="space-y-3">
+              <CompactModalSection title={t('onlinePbxManagersBlockTitle')} icon={PhoneCall} tone="sky" collapsible={false} disabled={updateOnlinePbxRouting.isPending} contentClassName="space-y-3">
 
-                <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                   <div className="space-y-2">
                     <Label htmlFor="onlinepbx-manager">{t('onlinePbxChooseManager')}</Label>
-                    <Select value={newManagerId} onValueChange={setNewManagerId}>
+                    <Select value={newManagerId} onValueChange={setNewManagerId} disabled={updateOnlinePbxRouting.isPending}>
                       <SelectTrigger id="onlinepbx-manager">
                         <SelectValue placeholder={t('onlinePbxChooseManager')} />
                       </SelectTrigger>
@@ -666,7 +703,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="onlinepbx-extension">{t('onlinePbxExistingExtension')}</Label>
-                    <Select value={newExtension} onValueChange={setNewExtension}>
+                    <Select value={newExtension} onValueChange={setNewExtension} disabled={updateOnlinePbxRouting.isPending}>
                       <SelectTrigger id="onlinepbx-extension">
                         <SelectValue placeholder={t('onlinePbxExistingExtension')} />
                       </SelectTrigger>
@@ -710,7 +747,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                     return (
                       <div
                         key={assignment.managerId}
-                        className="rounded-xl border bg-background p-4"
+                        className="rounded-lg border bg-background p-3"
                       >
                         <div className="flex flex-col gap-4 md:flex-row md:items-center">
                           <div className="min-w-0 flex-1">
@@ -744,6 +781,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                               {t('onlinePbxExistingExtension')}
                             </Label>
                             <Select
+                              disabled={updateOnlinePbxRouting.isPending}
                               value={assignment.extension}
                               onValueChange={(extension) => {
                                 setOnlinePbxRoutingDraft((current) => ({
@@ -817,17 +855,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   <p className="text-sm">{t('onlinePbxNoAssignments')}</p>
                 ) : null}
 
-                <Separator className="my-2" />
-
-                <section className="space-y-4 rounded-xl border p-4">
+              </CompactModalSection>
+              <CompactModalSection title={t('onlinePbxForwardingTitle')} icon={PhoneForwarded} tone="teal" defaultOpen disabled={updateOnlinePbxRouting.isPending} contentClassName="space-y-3">
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="flex items-center gap-2 font-semibold">
-                        <PhoneForwarded className="size-4" />
-                        {t('onlinePbxForwardingTitle')}
-                      </h3>
-                    </div>
+                    <Label htmlFor="onlinepbx-forwarding-enabled">{t('onlinePbxForwardingEnabled')}</Label>
                     <Switch
+                      id="onlinepbx-forwarding-enabled"
+                      disabled={updateOnlinePbxRouting.isPending}
                       checked={onlinePbxRoutingDraft.forwarding.enabled}
                       onCheckedChange={(enabled) => {
                         setOnlinePbxRoutingDraft((current) => ({
@@ -856,22 +890,27 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                       }}
                     />
                   </div>
-                </section>
-              </div>
+              </CompactModalSection>
             </div>
           )}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="compact-modal-footer">
             <Button
               type="button"
               variant="outline"
-              onClick={() => onlinePbxGuard.handleOpenChange(false)}
+              onClick={() => { if (!routingSubmitLocked.current) onlinePbxGuard.handleOpenChange(false); }}
+              disabled={updateOnlinePbxRouting.isPending}
             >
               {t('close')}
             </Button>
             <Button
               type="button"
-              onClick={() => updateOnlinePbxRouting.mutate(onlinePbxRoutingDraft)}
+              onClick={() => {
+                if (!routingSession.current.allowed || updateOnlinePbxRouting.isPending || routingSubmitLocked.current) return;
+                routingSubmitLocked.current = true;
+                updateOnlinePbxRouting.mutate({ settings: onlinePbxRoutingDraft, epoch: routingSession.current.epoch });
+              }}
               disabled={
                 !onlinePbxIntegration?.connected
                 || onlinePbxRouting.isLoading
@@ -896,7 +935,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
       <VoiceRemindersDialog open={voiceRemindersOpen} onOpenChange={setVoiceRemindersOpen} />
 
       <ConfirmDialog
-        open={Boolean(removeManagerTarget)}
+        open={Boolean(removeManagerTarget) && !routingUnavailable}
         onOpenChange={(open) => !open && setRemoveManagerTarget(null)}
         title={t('onlinePbxRemoveManagerTitle')}
         description={removeManagerTarget
@@ -910,17 +949,20 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           }
         }}
         variant="destructive"
+        compact
       />
 
       <UnsavedChangesDialog
-        open={onlinePbxGuard.confirmationOpen}
+        open={onlinePbxGuard.confirmationOpen && !routingUnavailable}
         onOpenChange={onlinePbxGuard.setConfirmationOpen}
         onDiscard={onlinePbxGuard.discardChanges}
       />
 
       <ConfirmDialog
         open={Boolean(instagramDisconnectTarget)}
-        onOpenChange={(open) => !open && setInstagramDisconnectTarget(null)}
+        onOpenChange={(open) => { if (!open && !disconnectInstagram.isPending && !instagramDisconnectLocked.current) setInstagramDisconnectTarget(null); }}
+        isPending={disconnectInstagram.isPending}
+        keepOpenOnConfirm
         title={t('disconnectInstagramTitle')}
         description={instagramDisconnectTarget?.username
           ? `${t('disconnectInstagramDescription')} @${instagramDisconnectTarget.username}`
@@ -928,11 +970,13 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         confirmLabel={t('disconnectInstagram')}
         cancelLabel={t('cancel')}
         onConfirm={() => {
-          if (instagramDisconnectTarget) {
+          if (instagramDisconnectTarget && !disconnectInstagram.isPending && !instagramDisconnectLocked.current) {
+            instagramDisconnectLocked.current = true;
             disconnectInstagram.mutate(instagramDisconnectTarget.id);
           }
         }}
         variant="destructive"
+        compact
       />
     </ModulePage>
   );

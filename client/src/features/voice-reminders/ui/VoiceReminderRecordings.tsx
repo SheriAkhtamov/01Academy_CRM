@@ -1,7 +1,8 @@
 import { TimePicker } from '@/components/ui/time-picker';
 import { useEffect, useRef, useState } from 'react';
-import { Upload } from 'lucide-react';
+import { Clock3, Headphones, Upload, Volume2 } from 'lucide-react';
 import type { VoiceReminderAudio, VoiceReminderAudioLibrary, VoiceReminderKind, VoiceReminderLanguage } from '@shared/contracts/voice-reminders';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,7 +79,7 @@ function PartRecording({ part, recording, file, disabled, confirmationEnabled, l
   const playLabel = playbackLabels[part];
   useEffect(() => { if (!file && input.current) input.current.value = ''; }, [file]);
   return (
-    <section className="space-y-3 rounded-lg border p-4" aria-label={t(label)}>
+    <CompactModalSection title={t(label)} summary={file?.name || recording?.fileName ? `${t('voiceRemindersAudio')}: ${file?.name || recording?.fileName}` : undefined} icon={Volume2} tone={part === 'intro' || part === 'dayBeforeIntro' ? 'sky' : part === 'outro' ? 'teal' : 'violet'} defaultOpen disabled={disabled} contentClassName="space-y-2">
       <Label htmlFor={`voice-reminders-${part}`}>{t(label)}</Label>
       {recording ? <>
         <p className="break-all text-sm">{recording.fileName}</p>
@@ -92,7 +93,7 @@ function PartRecording({ part, recording, file, disabled, confirmationEnabled, l
       <Button type="button" variant="outline" disabled={!file || disabled} onClick={onUpload}>
         <Upload data-icon="inline-start" />{t('voiceRemindersUploadAudio')}
       </Button>
-    </section>
+    </CompactModalSection>
   );
 }
 
@@ -127,7 +128,7 @@ function ClockRecordings({ unit, entries, draft, disabled, language, onValue, on
   const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => { if (!draft.file && fileInput.current) fileInput.current.value = ''; }, [draft.file]);
   const options = unit === 'time' ? [] : Array.from({ length: unit === 'hour' ? 24 : 60 }, (_, value) => String(value).padStart(2, '0'));
-  return <section className="space-y-3 rounded-lg border p-4" aria-label={t(libraryLabels[unit])}>
+  return <CompactModalSection title={t(libraryLabels[unit])} count={entries.length} icon={Clock3} tone="teal" defaultOpen disabled={disabled} contentClassName="space-y-3">
     <form className="grid items-end gap-3 sm:grid-cols-[8rem_1fr_auto]" noValidate onSubmit={(event) => {
       event.preventDefault();
       if (draft.file) onUpload(voiceReminderUnitTarget(unit, draft.value), draft.file);
@@ -175,7 +176,7 @@ function ClockRecordings({ unit, entries, draft, disabled, language, onValue, on
         </div></TableCell>
       </TableRow>)}</TableBody>
     </Table> : <p className="text-sm">{t(emptyLabels[unit])}</p>}
-  </section>;
+  </CompactModalSection>;
 }
 
 export function VoiceReminderRecordings({ library, draft, disabled, confirmationEnabled, language, onLanguage, onValue, onFile, onUpload, onRemove, onPreviewError }: {
@@ -205,10 +206,10 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
     minute: library.minutes.map(({ minute, audio }) => ({ value: minute, audio })),
     time: library.times.map(({ time, audio }) => ({ value: time, audio })),
   };
-  return <div className="space-y-5">
+  return <div className="space-y-3">
     <VoiceReminderLanguageSelect id="voice-reminders-recordings-language" value={language}
       disabled={disabled} onChange={onLanguage} />
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid items-start gap-3 sm:grid-cols-2">
       {(['intro', 'dayBeforeIntro', 'outro', 'confirmationYes', 'confirmationNo', 'responseRetry'] as const).map((part) => <PartRecording key={`${language}:${part}`}
         part={part} recording={library[part] ?? null} file={draft[part]} disabled={disabled} confirmationEnabled={confirmationEnabled} language={language}
         onFile={(file, input) => onFile(part, file, input)}
@@ -228,13 +229,13 @@ export function VoiceReminderRecordings({ library, draft, disabled, confirmation
         </TabsContent>
       ))}
     </Tabs>
-    <section className="space-y-3 rounded-lg border p-4" aria-label={t('voiceRemindersFullPreview')}>
+    <CompactModalSection title={t('voiceRemindersFullPreview')} icon={Headphones} tone="amber" defaultOpen disabled={disabled} contentClassName="space-y-3">
       <VoiceReminderKindSelect id="voice-reminders-preview-kind" value={previewKind}
         disabled={disabled} onChange={setPreviewKind} />
       <Label htmlFor="voice-reminders-preview-time">{t('voiceRemindersFullPreview')}</Label>
       <TimePicker id="voice-reminders-preview-time" aria-label={t('voiceRemindersPreviewTime')} step={60} value={previewTime} onValueChange={(value) => setPreviewTime(value)} disabled={disabled} />
       {previewUrl ? <audio key={previewUrl} controls preload="none" className="w-full"
         aria-label={t('voiceRemindersPlayFullPreview')} src={previewUrl} onError={onPreviewError} /> : null}
-    </section>
+    </CompactModalSection>
   </div>;
 }

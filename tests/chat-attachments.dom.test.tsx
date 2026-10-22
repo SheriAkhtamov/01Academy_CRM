@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '../client/src/lib/i18n';
@@ -100,7 +100,7 @@ describe('employee chat files and presence', () => {
     await mount(); const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /Bob/ }));
     await user.upload(input(), new File(['Bob file'], 'bob.pdf'));
-    await user.type(screen.getByPlaceholderText(i18n.t('typeMessage')), 'Bob draft');
+    await user.type(screen.getByPlaceholderText(i18n.t('message')), 'Bob draft');
     await user.click(screen.getByRole('button', { name: /Alice/ }));
     await user.upload(input(), new File(['Alice file'], 'alice.pdf'));
     delaySend = true; await user.click(screen.getByRole('button', { name: i18n.t('send') }));
@@ -108,8 +108,25 @@ describe('employee chat files and presence', () => {
     await user.click(screen.getByRole('button', { name: /Bob/ }));
     await act(async () => pendingSend!({ id: 20, senderId: 1, receiverId: 2, content: '', isRead: false, createdAt: '2026-10-06T00:00:00Z', attachments: [] }));
     expect(screen.getByText('bob.pdf')).toBeTruthy();
-    expect((screen.getByPlaceholderText(i18n.t('typeMessage')) as HTMLInputElement).value).toBe('Bob draft');
+    expect((screen.getByPlaceholderText(i18n.t('message')) as HTMLInputElement).value).toBe('Bob draft');
     await user.click(screen.getByRole('button', { name: /Alice/ }));
     expect(screen.queryByText('alice.pdf')).toBeNull();
   });
+});
+
+
+it('confirms removing a draft file and restores the draft when removal is cancelled', async () => {
+  await mount(); const user = userEvent.setup();
+  await user.upload(input(), new File(['document'], 'keep.pdf', { type: 'application/pdf' }));
+  const remove = screen.getByRole('button', { name: i18n.t('removeMessageFile', { name: 'keep.pdf' }) });
+  await user.click(remove);
+  let confirm = screen.getByRole('alertdialog', { name: i18n.t('removeMessageFileTitle') });
+  await user.click(within(confirm).getByRole('button', { name: i18n.t('cancel') }));
+  expect(screen.getByText('keep.pdf')).toBeTruthy();
+  expect(document.activeElement).toBe(remove);
+  await user.click(remove);
+  confirm = screen.getByRole('alertdialog', { name: i18n.t('removeMessageFileTitle') });
+  await user.click(within(confirm).getByRole('button', { name: i18n.t('delete') }));
+  expect(screen.queryByText('keep.pdf')).toBeNull();
+  expect(posts()).toHaveLength(0);
 });

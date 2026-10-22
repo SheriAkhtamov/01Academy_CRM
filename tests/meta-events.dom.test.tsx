@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MetaEventsSection } from '../client/src/components/marketing/MetaEventsSection';
 import { MetaIntegrationDialog } from '../client/src/components/marketing/MetaIntegrationDialog';
@@ -68,10 +68,65 @@ describe('Meta creation events', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('blocks synchronous duplicate retries and dismissal until the request settles', async () => {
+    mount(event());
+    fireEvent.click(await screen.findByText('Real new lead'));
+    let finish!: (result: unknown) => void;
+    mocks.api.mockImplementation((method: string) => method === 'POST'
+      ? new Promise((resolve) => { finish = resolve; }) : Promise.resolve({ summary: {}, events: [] }));
+    const dialog = screen.getByRole('dialog');
+    const retry = within(dialog).getByRole('button', { name: i18n.t('retrySend') });
+    await act(async () => { fireEvent.click(retry); fireEvent.click(retry); });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(mocks.api.mock.calls.filter(([method]) => method === 'POST')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    await act(async () => finish({}));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('keeps integration status in a modal and omits former stage event configuration', () => {
     render(<MetaIntegrationDialog open onOpenChange={vi.fn()} integration={{ attributionConfigured: true, capiConfigured: true }} />);
     const dialog = screen.getByRole('dialog', { name: i18n.t('metaConnection') });
     expect(within(dialog).getAllByText(i18n.t('metaConfigured'))).toHaveLength(2);
     expect(within(dialog).queryByText('Events available in Ads Manager')).toBeNull();
   });
+  it.each([500, 403, 404])('handles a cached %s event refresh while details are open', async status => {
+    mount(event());
+    fireEvent.click(await screen.findByText('Real new lead'));
+    const dialog = screen.getByRole('dialog');
+    mocks.api.mockRejectedValue(Object.assign(new Error('Request rejected'), { status }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['/api/academy/modules/marketing/meta-events'], exact: false }); });
+    if (status === 500) expect(screen.getByRole('dialog')).toBe(dialog);
+    else {
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(screen.queryByText('Real new lead')).toBeNull();
+      act(() => client.setQueryData(['/api/academy/modules/marketing/meta-events', 'from=2026-10-08&to=2026-10-08'], { summary: {}, events: [event()], integration: {} }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByText('Real new lead')).toBeNull();
+    }
+  });
+
+  it.each([403, 404])('removes event details after a %s retry rejection', async status => {
+    mount(event());
+    fireEvent.click(await screen.findByText('Real new lead'));
+    mocks.api.mockRejectedValue(Object.assign(new Error('Access revoked'), { status }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: i18n.t('retrySend') }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Real new lead')).toBeNull();
+  });
+
+  it('does not carry denied placeholder rows into another reporting period', async () => {
+    const view = mount(event());
+    await screen.findByText('Real new lead');
+    mocks.api.mockRejectedValue(Object.assign(new Error('Access revoked'), { status: 403 }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['/api/academy/modules/marketing/meta-events'], exact: false }); });
+    let finish!: (value: MetaEventsData) => void;
+    mocks.api.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    view.rerender(<QueryClientProvider client={client}><MetaEventsSection reportingQuery="from=2026-10-09&to=2026-10-09" /></QueryClientProvider>);
+    expect(screen.queryByText('Real new lead')).toBeNull();
+    await waitFor(() => expect(typeof finish).toBe('function'));
+    await act(async () => finish({ summary: { total: 1, pending: 1, sent: 0, failed: 0, deliveryRate: 0 }, events: [event({ contactName: 'Authorized new period' })], integration: {} }));
+    expect(await screen.findByText('Authorized new period')).toBeTruthy();
+  });
+
 });

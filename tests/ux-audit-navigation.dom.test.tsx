@@ -69,7 +69,7 @@ it('shows an error rather than an empty notification list after a failed request
 it('shows record search failures even when a navigation destination matches', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ error: 'failedToLoadData' }, 500));
   mount(<CommandPalette open onOpenChange={vi.fn()} />);
-  fireEvent.change(screen.getByPlaceholderText(i18n.t('commandPalettePlaceholder')), { target: { value: i18n.t('employees') } });
+  fireEvent.change(screen.getByRole('combobox', { name: i18n.t('search') }), { target: { value: i18n.t('employees') } });
   expect(await screen.findByText(i18n.t('navigation'))).toBeTruthy();
   await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy(), { timeout: 3000 });
 });
@@ -98,4 +98,26 @@ it('formats employee chat time on the academy clock across midnight', async () =
   fireEvent.click(await screen.findByRole('button', { name: /Colleague/ }));
   await screen.findByText('Hello');
   expect(screen.getByText(/04:30/)).toBeTruthy();
+});
+
+it('keeps arrow-key result selection and Enter navigation inside the coloured search sections', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({
+    items: [
+      { id: 'student-41', entityType: 'student', title: 'Jasper First', href: '/sales-module/students?student=41' },
+      { id: 'student-42', entityType: 'student', title: 'Jasper Second', href: '/sales-module/students?student=42' },
+    ],
+    hasMore: false,
+  }));
+  const onOpenChange = vi.fn();
+  mount(<CommandPalette open onOpenChange={onOpenChange} />);
+  const search = screen.getByRole('combobox', { name: i18n.t('search') });
+  fireEvent.change(search, { target: { value: 'Jasper' } });
+  await screen.findByText('Jasper Second');
+  await waitFor(() => expect(screen.getByRole('option', { name: /Jasper First/ }).getAttribute('aria-selected')).toBe('true'));
+  fireEvent.keyDown(search, { key: 'ArrowDown' });
+  expect(screen.getByRole('option', { name: /Jasper Second/ }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.keyDown(search, { key: 'Enter' });
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect(location.pathname).toBe('/sales-module/students');
+  expect(location.search).toBe('?student=42');
 });

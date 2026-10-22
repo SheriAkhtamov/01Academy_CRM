@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
@@ -63,12 +63,33 @@ const recordingDraftDirty = (recording: VoiceReminderRecordingDraft) => Boolean(
   || recording.hour.file || recording.minute.file || recording.time.file || recording.time.value,
 );
 
+const accessUnavailable = (error: unknown) => {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 403 || status === 404;
+};
+
 export function VoiceRemindersDialog({ open, onOpenChange }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { snapshot, saveSettings, uploadAudio, removeRecording, pending: configurationPending } = useVoiceReminders(open);
+  const session = useRef({ open, allowed: true, epoch: 0 });
+  const [, renderAccess] = useState(0);
+  if (session.current.open !== open) {
+    session.current = { open, allowed: open ? true : session.current.allowed, epoch: session.current.epoch + 1 };
+  }
+  useEffect(() => { session.current.open = open; return () => { session.current.open = false; }; }, [open]);
+  const { snapshot, saveSettings, uploadAudio, removeRecording, pending: configurationPending } = useVoiceReminders(open && session.current.allowed);
+  if (accessUnavailable(snapshot.error)) session.current.allowed = false;
+  const unavailable = open && !session.current.allowed;
+  const currentSession = (epoch: number) => session.current.open && session.current.allowed && session.current.epoch === epoch;
+  const rejectAccess = (error: unknown, epoch: number) => {
+    if (!currentSession(epoch) || !accessUnavailable(error)) return false;
+    session.current.allowed = false;
+    renderAccess(value => value + 1);
+    return true;
+  };
+  useEffect(() => { if (unavailable) onOpenChange(false); }, [unavailable, onOpenChange]);
   const [draft, setDraft] = useState<VoiceReminderSettingsInput | null>(null);
   const [savedSettings, setSavedSettings] = useState('');
   const [recordings, setRecordings] = useState(emptyRecordingDrafts);
@@ -81,11 +102,12 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   const pending = configurationPending || testPending;
   const dirty = Boolean(Object.values(recordings).some(recordingDraftDirty)
     || (draft && JSON.stringify(draft) !== savedSettings));
-  const guard = useUnsavedChangesGuard({ open, isDirty: dirty, isPending: pending, onOpenChange });
+  const guard = useUnsavedChangesGuard({ open: open && !unavailable, isDirty: dirty, isPending: pending, onOpenChange });
 
   useEffect(() => {
-    if (!open) {
+    if (!open || unavailable) {
       setDraft(null);
+      setSavedSettings('');
       setRecordings(emptyRecordingDrafts());
       setRecordingLanguage('ru');
       setErrorKey(null);
@@ -102,10 +124,11 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
         setSavedSettings(serialized);
       }
     }
-  }, [draft, open, savedSettings, snapshot.data]);
+  }, [draft, open, unavailable, savedSettings, snapshot.data]);
 
   const save = async () => {
-    if (!draft || !snapshot.data) return;
+    if (!session.current.allowed || !open || !draft || !snapshot.data) return;
+    const epoch = session.current.epoch;
     const validation = voiceReminderSettingsSchema.safeParse(draft);
     if (!validation.success) {
       setErrorKey(validation.error.issues.some((issue) => issue.message === 'voiceReminderInvalidDayBeforeHours')
@@ -137,11 +160,13 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     setErrorKey(null);
     try {
       const result = await saveSettings.mutateAsync(draft);
+      if (!currentSession(epoch)) return;
       const settings = editableSettings(result.settings);
       setDraft(settings);
       setSavedSettings(JSON.stringify(settings));
       toast({ title: t('voiceRemindersSaved') });
     } catch (error) {
+      if (rejectAccess(error, epoch) || !currentSession(epoch)) return;
       setErrorKey(mutationErrorKey(error, 'voiceReminderSaveFailed'));
     }
   };
@@ -169,9 +194,12 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   };
 
   const upload = async (selection: VoiceReminderAudioUpload) => {
+    if (!session.current.allowed || !open) return;
+    const epoch = session.current.epoch;
     setErrorKey(null);
     try {
       await uploadAudio.mutateAsync(selection);
+      if (!currentSession(epoch)) return;
       setRecordings((current) => {
         const language = selection.language ?? 'ru';
         const selectedDraft = current[language];
@@ -186,6 +214,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       setReplacement(null);
       toast({ title: t('voiceRemindersAudioSaved') });
     } catch (error) {
+      if (rejectAccess(error, epoch) || !currentSession(epoch)) return;
       const key = mutationErrorKey(error, 'voiceRemindersUploadFailed');
       if (key === 'voiceReminderAudioChanged') setReplacement(null);
       setErrorKey(key);
@@ -193,7 +222,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   };
 
   const requestUpload = (target: VoiceReminderAudioTarget, file: File) => {
-    if (!snapshot.data || pending) return;
+    if (!session.current.allowed || !snapshot.data || pending) return;
     setErrorKey(null);
     const library = voiceReminderLibraryForLanguage(snapshot.data.settings, recordingLanguage);
     let existing;
@@ -212,12 +241,15 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
   };
 
   const deleteRecording = async () => {
-    if (!removal || pending) return;
+    if (!session.current.allowed || !removal || pending) return;
+    const epoch = session.current.epoch;
     setErrorKey(null);
     try {
       await removeRecording.mutateAsync(removal);
+      if (!currentSession(epoch)) return;
       setRemoval(null);
     } catch (error) {
+      if (rejectAccess(error, epoch) || !currentSession(epoch)) return;
       const key = mutationErrorKey(error, 'voiceRemindersDeleteFailed');
       if (key === 'voiceReminderAudioChanged') setRemoval(null);
       setErrorKey(key);
@@ -228,16 +260,18 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
     ? 'voiceRemindersReady' : snapshot.data?.readiness.code === 'audio_missing'
       ? 'voiceRemindersNoAudio' : 'voiceRemindersUnavailable';
 
+  if (unavailable) return null;
   return (
     <>
       <Dialog open={open} onOpenChange={guard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="compact-modal-header">
             <DialogTitle>{t('voiceRemindersTitle')}</DialogTitle>
           </DialogHeader>
+          <div className="compact-modal-body flex-1 overflow-y-auto overscroll-contain">
           {snapshot.isLoading || (!draft && !snapshot.isError) ? (
             <Skeleton className="h-72 w-full" />
-          ) : snapshot.isError ? (
+          ) : snapshot.isError && !snapshot.data ? (
             <div className="space-y-3">
               <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
               <Button variant="outline" onClick={() => snapshot.refetch()}>{t('retry')}</Button>
@@ -245,10 +279,10 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
           ) : snapshot.data && draft ? (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <TabsList>
-                  <TabsTrigger value="settings">{t('settings')}</TabsTrigger>
-                  <TabsTrigger value="recordings">{t('voiceRemindersRecordings')}</TabsTrigger>
-                  <TabsTrigger value="test-call">{t('voiceRemindersTestCall')}</TabsTrigger>
+                <TabsList className="compact-modal-tabs">
+                  <TabsTrigger className="compact-modal-tab" value="settings">{t('settings')}</TabsTrigger>
+                  <TabsTrigger className="compact-modal-tab" value="recordings">{t('voiceRemindersRecordings')}</TabsTrigger>
+                  <TabsTrigger className="compact-modal-tab" value="test-call">{t('voiceRemindersTestCall')}</TabsTrigger>
                 </TabsList>
                 <Badge variant={snapshot.data.readiness.ready ? 'success' : 'secondary'}>
                   {t(readinessKey)}
@@ -286,7 +320,8 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
             </Tabs>
           ) : null}
           {errorKey ? <p role="alert" className="text-sm text-destructive">{t(errorKey)}</p> : null}
-          <DialogFooter>
+          </div>
+          <DialogFooter className="compact-modal-footer">
             <Button type="button" variant="outline" onClick={() => guard.handleOpenChange(false)} disabled={pending}>
               {t('cancel')}
             </Button>
@@ -303,7 +338,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
       <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen}
         onDiscard={guard.discardChanges} />
       <ConfirmDialog
-        open={Boolean(replacement)} onOpenChange={(next) => { if (!next) { setReplacement(null); setErrorKey(null); } }}
+        compact open={Boolean(replacement)} onOpenChange={(next) => { if (!next && !pending) { setReplacement(null); setErrorKey(null); } }}
         title={t('voiceRemindersReplaceAudioTitle')}
         description={t('voiceRemindersReplaceAudioDescription')}
         confirmLabel={t('voiceRemindersReplaceAudio')}
@@ -311,7 +346,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
         error={errorKey ? t(errorKey) : undefined}
       />
       <ConfirmDialog
-        open={removal !== null} onOpenChange={(next) => { if (!next) { setRemoval(null); setErrorKey(null); } }}
+        compact open={removal !== null} onOpenChange={(next) => { if (!next && !pending) { setRemoval(null); setErrorKey(null); } }}
         title={t('voiceRemindersDeleteRecordingTitle')}
         description={t('voiceRemindersDeleteRecordingDescription', { value: removal ? voiceReminderUnitSelection(removal.target).value : '' })}
         confirmLabel={t('delete')} variant="destructive"

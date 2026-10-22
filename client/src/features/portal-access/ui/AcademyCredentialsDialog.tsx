@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Copy, Eye, EyeOff, Pencil, WandSparkles } from 'lucide-react';
+import { Copy, Eye, EyeOff, KeyRound, Pencil, WandSparkles } from 'lucide-react';
 import { platformLoginHref, type LearningModule } from '@shared/platform-routes';
 import { academyPortalCredentialChangeSchema, type AcademyPortalAccount, type AcademyPortalCredentialChange, type AcademyPortalCredentialResult } from '@shared/contracts/academy-portal-access';
 import { useTranslation } from '@/hooks/useTranslation';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,9 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
   onClose: () => void; onChanged: () => void;
 }) {
   const { t } = useTranslation();
+  const active = useRef(true);
+  const changing = useRef(false);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [result, setResult] = useState<AcademyPortalCredentialResult | undefined>(initial);
   const [editing, setEditing] = useState(false);
   const [login, setLogin] = useState(account.login);
@@ -36,12 +40,14 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
   const show = useMutation({
     gcTime: 0,
     mutationFn: () => academyPortalApi.show(leadId, account.id, account.version),
-    onSuccess: data => { setResult(data); setLogin(data.account.login); onChanged(); },
+    onSuccess: data => { if (!active.current) return; setResult(data); setLogin(data.account.login); onChanged(); },
   });
   const change = useMutation({
     gcTime: 0,
+    onSettled: () => { changing.current = false; },
     mutationFn: (command: AcademyPortalCredentialChange) => academyPortalApi.change(leadId, account.id, command),
     onSuccess: data => {
+      if (!active.current) return;
       setResult(data);
       setLogin(data.account.login);
       setPassword('');
@@ -112,24 +118,28 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
     if (!result?.password) return;
     try {
       await navigator.clipboard.writeText(`${signInLink}\n${t('portalIdentifier')}: ${result.account.login}\n${t('portalPassword')}: ${result.password}`);
-      setNotice(t('academyAccessCredentialsCopied'));
-    } catch { setNotice(t('copyFailed')); }
+      if (active.current) setNotice(t('academyAccessCredentialsCopied'));
+    } catch { if (active.current) setNotice(t('copyFailed')); }
   };
 
   return <>
     <Dialog open onOpenChange={guard.handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader className="pr-6">
-          <DialogTitle>{t('academyAccessAccountTitle').replace('{name}', current.fullName)}</DialogTitle>
+      <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="compact-modal-header">
+          <DialogTitle>{t('lmsAccessAccountStep')}</DialogTitle>
           <DialogDescription>{t(module === 'parent' ? 'parentModule' : 'studentModule')}</DialogDescription>
         </DialogHeader>
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={event => { event.preventDefault(); submit(); }}>
+        <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+        <p className="break-words text-sm font-medium">{t('academyAccessAccountTitle').replace('{name}', current.fullName)}</p>
+        <CompactModalSection title={t('portalSecurityNotifications')} icon={KeyRound} tone="sky" collapsible={false} contentClassName="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <AcademyAccessStatus status={current.status} />
           {!editing && result && <Button type="button" variant="ghost" size="sm" className="h-auto min-h-10 max-w-full gap-2 whitespace-normal text-left" disabled={pending} onClick={() => startEditing()}>
             <Pencil className="size-4" aria-hidden="true" />{t('academyAccessChangeCredentials')}
           </Button>}
         </div>
-        <form className="space-y-5" onSubmit={event => { event.preventDefault(); submit(); }}>
+
           {!editing && <div className="space-y-2">
             <Label htmlFor="academy-credential-link">{t('academyAccessSignInLink')}</Label>
             <Input id="academy-credential-link" readOnly value={signInLink} className="text-sm" />
@@ -171,7 +181,9 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
             {show.error && <Button type="button" variant="outline" disabled={show.isPending} onClick={() => show.mutate()}>{t('retry')}</Button>}
           </div>}
           {notice && <p role="status" className="text-sm">{notice}</p>}
-          <DialogFooter className="border-t pt-4">
+        </CompactModalSection>
+        </div>
+          <DialogFooter className="compact-modal-footer">
             <Button type="button" variant="outline" disabled={pending} onClick={editing ? cancelEditing : () => guard.handleOpenChange(false)}>{t(editing ? 'cancel' : 'close')}</Button>
             {editing ? <Button type="submit" disabled={pending || !dirty}>{t('save')}</Button> : result?.password && (
               <Button type="button" className="gap-2" onClick={() => void copy()}><Copy className="size-4" aria-hidden="true" />{t('academyAccessCopyCredentials')}</Button>
@@ -180,16 +192,22 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
         </form>
       </DialogContent>
     </Dialog>
-    <AlertDialog open={Boolean(confirmation)} onOpenChange={open => { if (!open && !change.isPending) setConfirmation(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
+    <AlertDialog open={Boolean(confirmation)} onOpenChange={open => { if (!open && !change.isPending && !changing.current) setConfirmation(null); }}>
+      <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0">
+        <AlertDialogHeader className="compact-modal-header">
           <AlertDialogTitle>{t('academyAccessConfirmChangeTitle')}</AlertDialogTitle>
-          <AlertDialogDescription>{t(confirmation?.password || confirmation?.generatePassword ? 'academyAccessConfirmPasswordChangeBody' : 'academyAccessConfirmChangeBody').replace('{name}', current.fullName)}</AlertDialogDescription>
         </AlertDialogHeader>
+        <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
+          <AlertDialogDescription className="break-words">{t(confirmation?.password || confirmation?.generatePassword ? 'academyAccessConfirmPasswordChangeBody' : 'academyAccessConfirmChangeBody').replace('{name}', current.fullName)}</AlertDialogDescription>
         {change.error && <p role="alert" className="text-sm text-destructive">{t(academyPortalError(change.error))}</p>}
-        <AlertDialogFooter>
+        </div>
+        <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={change.isPending}>{t('cancel')}</AlertDialogCancel>
-          <Button type="button" disabled={change.isPending} onClick={() => { if (confirmation) change.mutate(confirmation); }}>{t(change.isPending ? 'loading' : 'save')}</Button>
+          <Button type="button" disabled={change.isPending} onClick={() => {
+            if (!confirmation || change.isPending || changing.current) return;
+            changing.current = true;
+            change.mutate(confirmation);
+          }}>{t(change.isPending ? 'loading' : 'save')}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

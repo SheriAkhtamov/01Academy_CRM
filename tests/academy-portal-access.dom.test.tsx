@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AcademyCredentialsDialog } from '../client/src/features/portal-access/ui/AcademyCredentialsDialog';
 import { AcademyLeadRoleDialog } from '../client/src/features/portal-access/ui/AcademyLeadRoleDialog';
@@ -257,4 +257,34 @@ it('does not submit credential changes from the read-only view', () => {
   expect(screen.queryByRole('alertdialog')).toBeNull();
   expect(screen.queryByRole('alert')).toBeNull();
   expect(mocks.change).not.toHaveBeenCalled();
+});
+
+
+it('suppresses repeated credential changes before pending state renders', async () => {
+  let resolve!: (value: { account: typeof account; password: string }) => void;
+  mocks.change.mockImplementation(() => new Promise(done => { resolve = done; }));
+  render(<QueryClientProvider client={client}><AcademyCredentialsDialog leadId={1} module="student" account={account}
+    initial={{ account, password: 'InitialPassword123!' }} onClose={vi.fn()} onChanged={vi.fn()} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('academyAccessChangeCredentials') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('academyAccessGeneratePassword') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('save') }));
+  const save = within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('save') });
+  act(() => { fireEvent.click(save); fireEvent.click(save); });
+  await waitFor(() => expect(mocks.change).toHaveBeenCalledTimes(1));
+  await act(async () => resolve({ account: { ...account, version: 2 }, password: 'GeneratedPassword123!' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+});
+
+it('issues a selected role once when the form is submitted twice in one event batch', async () => {
+  let resolve!: (value: { account: typeof account; password: string }) => void;
+  mocks.role.mockImplementation(() => new Promise(done => { resolve = done; }));
+  const onGranted = vi.fn();
+  render(<QueryClientProvider client={client}><AcademyLeadRoleDialog lead={lead} onClose={vi.fn()} onGranted={onGranted} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole('radio', { name: i18n.t('academyAccessRoleSelf') }));
+  const form = screen.getByRole('dialog').querySelector('form')!;
+  act(() => { fireEvent.submit(form); fireEvent.submit(form); });
+  await waitFor(() => expect(mocks.role).toHaveBeenCalledTimes(1));
+  await act(async () => resolve({ account, password: 'InitialPassword123!' }));
+  expect(onGranted).toHaveBeenCalledTimes(1);
+  expect(onGranted).toHaveBeenCalledWith({ account, password: 'InitialPassword123!' }, 'student');
 });

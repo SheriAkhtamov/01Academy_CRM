@@ -31,6 +31,7 @@ export function ChatGroupPhotoPicker({ groupId, currentPhotoUrl, photo, removed,
   const hasPhoto = Boolean(photo || current);
   const disabled = pending || loading;
   const cropCurrent = async () => {
+    if (disabled) return;
     if (photo) { setCrop(photo); return; }
     if (!current || disabled) return;
     setLoading(true); setError('');
@@ -39,10 +40,9 @@ export function ChatGroupPhotoPicker({ groupId, currentPhotoUrl, photo, removed,
     finally { if (alive.current) setLoading(false); }
   };
   return <div className="space-y-3">
-    <p className="text-sm font-medium">{t('chatGroupPhoto')}</p>
     <div className="flex flex-wrap items-center gap-4">
-      <Avatar className="size-24 shrink-0"><AvatarImage src={preview ?? current} alt={t('chatGroupPhoto')} className="object-cover" />
-        <AvatarFallback className="bg-primary/10 text-primary"><Camera className="size-8" /></AvatarFallback></Avatar>
+      <Avatar className="size-16 shrink-0"><AvatarImage src={preview ?? current} alt={t('chatGroupPhoto')} className="object-cover" />
+        <AvatarFallback className="bg-primary/10 text-primary"><Camera className="size-6" /></AvatarFallback></Avatar>
       <div className="flex min-w-0 flex-1 flex-wrap gap-2">
         <Button ref={trigger} type="button" size="sm" variant="outline" disabled={disabled} onClick={() => input.current?.click()}>{t(hasPhoto ? 'chatGroupReplacePhoto' : 'chatGroupChoosePhoto')}</Button>
         {hasPhoto ? <>
@@ -62,7 +62,7 @@ export function ChatGroupPhotoPicker({ groupId, currentPhotoUrl, photo, removed,
     {crop ? <UserPhotoCropDialog file={crop} titleKey="chatGroupCropPhoto" disabled={pending}
       onApply={(file) => { onPhoto(file); setCrop(undefined); }} onCancel={() => setCrop(undefined)}
       onCloseAutoFocus={(event) => { event.preventDefault(); trigger.current?.focus(); }} /> : null}
-    <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={t('chatGroupRemovePhoto')} description={t('chatGroupRemovePhotoConfirm')}
+    <ConfirmDialog compact open={confirm} isPending={disabled} onOpenChange={setConfirm} title={t('chatGroupRemovePhoto')} description={t('chatGroupRemovePhotoConfirm')}
       confirmLabel={t('delete')} variant="destructive" onConfirm={() => { setError(''); onRemove(); setConfirm(false); }} />
   </div>;
 }

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { KeyRound, Link2, Loader2, Settings2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import {
+  AlertDialogBody, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
@@ -304,10 +305,14 @@ function IntegrationSettingsForm({
           )}
         </DialogContent>
       </Dialog>
-      <AlertDialog open={rotateConfirmOpen} onOpenChange={(open) => { if (!pending && !requestLocked.current) setRotateConfirmOpen(open); }}>
+      <AlertDialog open={rotateConfirmOpen} onOpenChange={(open) => { if (!pending && !requestLocked.current) setRotateConfirmOpen(open); }} pending={pending}>
         <AlertDialogContent className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0">
-          <AlertDialogHeader data-topographic="header" className="compact-modal-header"><AlertDialogTitle>{t('integrationWebsiteRotateTitle')}</AlertDialogTitle></AlertDialogHeader>
-          <div className="compact-modal-body overflow-y-auto"><AlertDialogDescription>{t('integrationWebsiteRotateDescription')}</AlertDialogDescription></div>
+          <AlertDialogHeader data-topographic="header" className="compact-modal-header">
+            <AlertDialogTitle>{t('integrationWebsiteRotateTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <><AlertDialogDescription>{t('integrationWebsiteRotateDescription')}</AlertDialogDescription></>
+          </AlertDialogBody>
           <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction disabled={pending} onClick={(event) => {

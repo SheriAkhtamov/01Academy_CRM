@@ -25,6 +25,7 @@ import {
 import { portalIdentityApi } from "../portal-app/api";
 import {
   AlertDialog,
+  AlertDialogBody,
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription,
@@ -660,6 +661,7 @@ function PortalRepresentatives() {
     status: string;
   } | null>(null);
   const [password, setPassword] = useState("");
+  const confirming = useRef(false);
   const action = useMutation({
     mutationFn: async () => {
       await portalIdentityApi.reauthenticate(password);
@@ -747,6 +749,7 @@ function PortalRepresentatives() {
       </CardContent>
       <AlertDialog
         open={Boolean(selected)}
+        pending={action.isPending}
         onOpenChange={(open) => {
           if (!open && !action.isPending) {
             setSelected(null);
@@ -763,43 +766,43 @@ function PortalRepresentatives() {
                   : "portalCurrentAccess",
               )}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {selected?.fullName}
-            </AlertDialogDescription>
           </AlertDialogHeader>
-          {selected?.status === "active" && (
-            <p>{t("portalRevokeAccessDescription")}</p>
-          )}
-          <p className="text-sm">
-            {selected?.permissions
-              .map((permission) => t(permissionKeys[permission]))
-              .join(" · ")}
-          </p>
           <form
-            className="space-y-3"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
             onSubmit={(event) => {
               event.preventDefault();
-              action.mutate();
+              if (action.isPending || confirming.current || !selected) return;
+              confirming.current = true;
+              action.mutate(undefined, { onSettled: () => { confirming.current = false; } });
             }}
           >
-            <fieldset disabled={action.isPending} className="min-w-0 space-y-3">
-              <Label htmlFor="consent-password">
-                {t("portalVerifyPassword")}
-              </Label>
-              <Input
-                id="consent-password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-              {action.error && (
-                <p role="alert" className="text-destructive">
-                  {message(action.error, "portalSaveError")}
+            <fieldset disabled={action.isPending} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <AlertDialogBody>
+                <AlertDialogDescription>{selected?.fullName}</AlertDialogDescription>
+                {selected?.status === "active" && <p>{t("portalRevokeAccessDescription")}</p>}
+                <p className="text-sm">
+                  {selected?.permissions.map((permission) => t(permissionKeys[permission])).join(" · ")}
                 </p>
-              )}
-              <AlertDialogFooter className="border-t border-border/70 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="consent-password">
+                    {t("portalVerifyPassword")}
+                  </Label>
+                  <Input
+                    id="consent-password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  {action.error && (
+                    <p role="alert" className="text-destructive">
+                      {message(action.error, "portalSaveError")}
+                    </p>
+                  )}
+                </div>
+              </AlertDialogBody>
+              <AlertDialogFooter>
                 <AlertDialogCancel type="button" disabled={action.isPending}>
                   {t("portalCancel")}
                 </AlertDialogCancel>

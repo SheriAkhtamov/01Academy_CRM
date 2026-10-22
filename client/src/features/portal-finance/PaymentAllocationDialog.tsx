@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
+  AlertDialogBody,
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
@@ -103,10 +104,14 @@ function AllocationForm({ context, onClose, money }: {
       </DialogContent>
     </Dialog>
     <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
-    <AlertDialog open={confirm} onOpenChange={open => { if (!save.isPending) setConfirm(open); }}>
+    <AlertDialog open={confirm} onOpenChange={open => { if (!save.isPending) setConfirm(open); }} pending={save.isPending}>
       <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
-        <AlertDialogHeader className="compact-modal-header"><AlertDialogTitle>{t('lmsPaymentAllocationConfirm')}</AlertDialogTitle></AlertDialogHeader>
-        <AlertDialogDescription className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain break-words text-foreground">{baseline.students.filter(student => Number(amounts[student.id] || 0) > 0).map(student => `${student.name}: ${money(Number(amounts[student.id]))}`).join('; ')}</AlertDialogDescription>
+        <AlertDialogHeader className="compact-modal-header">
+          <AlertDialogTitle>{t('lmsPaymentAllocationConfirm')}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
+          <AlertDialogDescription>{baseline.students.filter(student => Number(amounts[student.id] || 0) > 0).map(student => `${student.name}: ${money(Number(amounts[student.id]))}`).join('; ')}</AlertDialogDescription>
+        </AlertDialogBody>
         <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={save.isPending}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction disabled={save.isPending} onClick={event => { event.preventDefault(); setConfirm(false); save.mutate(); }}>{t('save')}</AlertDialogAction>

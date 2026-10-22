@@ -8,6 +8,7 @@ interface UseUnsavedChangesGuardOptions {
   isDirty: boolean;
   isPending?: boolean;
   onOpenChange: (open: boolean) => void;
+  onDiscard?: () => void;
 }
 
 export function useUnsavedChangesGuard({
@@ -15,15 +16,24 @@ export function useUnsavedChangesGuard({
   isDirty,
   isPending = false,
   onOpenChange,
+  onDiscard,
 }: UseUnsavedChangesGuardOptions) {
-  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [confirmationOpen, updateConfirmationOpen] = useState(false);
   const pendingAction = useRef<(() => void) | null>(null);
+  const current = useRef({ open, isPending, onDiscard });
+  current.current = { open, isPending, onDiscard };
+
+  const setConfirmationOpen = useCallback((nextOpen: boolean) => {
+    if (current.current.isPending) return;
+    if (!nextOpen) pendingAction.current = null;
+    updateConfirmationOpen(nextOpen && current.current.open);
+  }, []);
 
   const requestAction = useCallback((action: () => void) => {
     if (open && isPending) return;
     if (open && isDirty) {
       pendingAction.current = action;
-      setConfirmationOpen(true);
+      updateConfirmationOpen(true);
     } else allowNavigation(action);
   }, [open, isDirty, isPending]);
 
@@ -33,7 +43,7 @@ export function useUnsavedChangesGuard({
     // keeping; a dirty flag left behind by a previous session must not block it.
     if (!nextOpen && open && isDirty) {
       pendingAction.current = () => onOpenChange(false);
-      setConfirmationOpen(true);
+      updateConfirmationOpen(true);
       return;
     }
 
@@ -41,15 +51,20 @@ export function useUnsavedChangesGuard({
   }, [isDirty, isPending, onOpenChange, open]);
 
   const discardChanges = useCallback(() => {
-    setConfirmationOpen(false);
+    if (!current.current.open || current.current.isPending || !pendingAction.current) return;
+    updateConfirmationOpen(false);
     const action = pendingAction.current;
     pendingAction.current = null;
-    allowNavigation(() => action ? action() : onOpenChange(false));
-  }, [onOpenChange]);
+    current.current.onDiscard?.();
+    allowNavigation(action);
+  }, []);
 
   // The confirmation must never outlive the dialog it guards.
   useEffect(() => {
-    if (!open) setConfirmationOpen(false);
+    if (!open) {
+      pendingAction.current = null;
+      updateConfirmationOpen(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -82,12 +97,14 @@ interface UnsavedChangesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDiscard: () => void;
+  isPending?: boolean;
 }
 
 export function UnsavedChangesDialog({
   open,
   onOpenChange,
   onDiscard,
+  isPending = false,
 }: UnsavedChangesDialogProps) {
   const { t } = useTranslation();
 
@@ -100,6 +117,7 @@ export function UnsavedChangesDialog({
       confirmLabel={t('discardChanges')}
       cancelLabel={t('keepEditing')}
       onConfirm={onDiscard}
+      isPending={isPending}
       variant="destructive"
     />
   );

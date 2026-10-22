@@ -1,16 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Archive, RotateCcw, Search, X } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -119,7 +110,7 @@ export function ArchiveTab({
   archiveReasonName: (code: string | null | undefined) => string;
   dateTime: (v: string | null | undefined) => string;
   onLeadClick: (lead: ArchivedLead) => void;
-  onRestore: (leadId: number, statusCode: string) => void;
+  onRestore: (leadId: number, statusCode: string) => void | Promise<unknown>;
   isPending: boolean;
 }) {
   const [search, setSearch] = useStickyState('sales.archive.search', '');
@@ -369,33 +360,19 @@ export function ArchiveTab({
         />
       </CardContent>
 
-      <AlertDialog open={restoreTarget !== null} onOpenChange={(open) => {
-        if (!open) setRestoreTarget(null);
-      }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('confirmRestoreLeadTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('confirmRestoreLeadDescription')
-                .replace('{lead}', restoreTarget?.lead.contactName ?? '')
-                .replace('{stage}', restoreTarget ? leadStatusName(restoreTarget.statusCode) : '')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                if (restoreTarget) onRestore(restoreTarget.lead.id, restoreTarget.statusCode);
-                setRestoreTarget(null);
-              }}
-            >
-              {t('restoreLead')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => { if (!open) setRestoreTarget(null); }}
+        title={t('confirmRestoreLeadTitle')}
+        description={t('confirmRestoreLeadDescription')
+          .replace('{lead}', restoreTarget?.lead.contactName ?? '')
+          .replace('{stage}', restoreTarget ? leadStatusName(restoreTarget.statusCode) : '')}
+        confirmLabel={t('restoreLead')}
+        isPending={isPending}
+        onConfirm={() => {
+          if (restoreTarget) return onRestore(restoreTarget.lead.id, restoreTarget.statusCode);
+        }}
+      />
     </Card>
   );
 }

@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -1060,8 +1061,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                   <AlertTriangle className="size-5 text-amber-500" />
                   {t('unsavedAttendanceTitle')}
                 </AlertDialogTitle>
-                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
+              <AlertDialogBody>
+                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
+              </AlertDialogBody>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingLessonSwitch(null)}>
                   {t('keepEditing')}
@@ -1083,8 +1086,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
                   <AlertTriangle className="size-5 text-amber-500" />
                   {t('unsavedAttendanceTitle')}
                 </AlertDialogTitle>
-                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
+              <AlertDialogBody>
+                <AlertDialogDescription>{t(rescheduleDraftDirty ? 'unsavedChangesDescription' : 'unsavedAttendanceDesc')}</AlertDialogDescription>
+              </AlertDialogBody>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setPendingDialogClose(false)}>
                   {t('keepEditing')}

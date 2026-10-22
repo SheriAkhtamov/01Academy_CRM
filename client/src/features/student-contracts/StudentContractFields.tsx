@@ -217,6 +217,7 @@ export function StudentContractFields({
       )}
       <ConfirmDialog
         open={Boolean(confirmation)}
+        target={contract?.number}
         onOpenChange={(next) => {
           if (!next) setConfirmation(null);
         }}
@@ -242,7 +243,7 @@ export function StudentContractFields({
               : t('studentContractReplaceFile')
         }
         cancelLabel={t('keepEditing')}
-        onConfirm={() => void confirm()}
+        onConfirm={confirm}
         variant={confirmation?.kind === 'cancel' ? 'destructive' : 'default'}
         isPending={controls.isPending}
         keepOpenOnConfirm

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { Check, Paperclip, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+import {
+  AlertDialogBody, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
@@ -51,7 +52,12 @@ export function TaskFilePicker({ files, onChange, disabled, uploaded, activeFile
     </ul>
     <AlertDialog open={removing !== null} onOpenChange={(open) => { if (!open) setRemoving(null); }}>
       <AlertDialogContent>
-        <AlertDialogHeader><AlertDialogTitle>{t('delete')}</AlertDialogTitle><AlertDialogDescription>{removing?.name}</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('delete')}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
+          <AlertDialogDescription>{removing?.name}</AlertDialogDescription>
+        </AlertDialogBody>
         <AlertDialogFooter><AlertDialogCancel>{t('cancel')}</AlertDialogCancel><AlertDialogAction disabled={disabled} onClick={() => { if (disabled) return; onChange(files.filter((file) => file !== removing)); setRemoving(null); }}>{t('delete')}</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

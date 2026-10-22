@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,7 +16,6 @@ import {
   getAssignedModules,
   type AcademyAccessModule,
 } from '@shared/academy';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +29,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -49,6 +47,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { ModulePage } from '@/components/ux/ModulePage';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -56,25 +56,13 @@ import { formatUserModule } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { SYSTEM_MANAGEMENT_NAVIGATION_ITEMS } from '@/lib/moduleNavigation';
 import { messageQueryKeys } from '@/features/messages/api';
-import { sendEmployeeBroadcast } from '@/features/employee-broadcast/api';
+import { listBroadcastEmployees, sendEmployeeBroadcast, type BroadcastEmployee } from '@/features/employee-broadcast/api';
 
 type SystemManagementSection = 'overview' | 'employee-notifications';
 type BroadcastChannel = EmployeeBroadcastRequest['channel'];
 
 interface SystemManagementPageProps {
   section?: SystemManagementSection;
-}
-
-interface BroadcastEmployee {
-  id: number;
-  fullName: string;
-  avatarUrl?: string | null;
-  email?: string | null;
-  position?: string | null;
-  module: string;
-  modules?: AcademyAccessModule[] | null;
-  isActive?: boolean | null;
-  isArchived?: boolean | null;
 }
 
 function SystemManagementOverview() {
@@ -128,15 +116,73 @@ function EmployeeNotificationsPage() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [notificationTitle, setNotificationTitle] = useState('');
   const [content, setContent] = useState('');
+  const [composeError, setComposeError] = useState('');
+  const [invalidField, setInvalidField] = useState('');
+  const active = useRef(true);
+  const submitLock = useRef(false);
+  const actorScope = useRef({ id: user?.id, epoch: 0 });
+  const [accessRevoked, setAccessRevoked] = useState(false);
+  const accessEpoch = useRef(0);
+  const [authorizedActorId, setAuthorizedActorId] = useState(user?.id);
+  if (actorScope.current.id !== user?.id) {
+    actorScope.current = { id: user?.id, epoch: actorScope.current.epoch + 1 };
+    accessEpoch.current += 1;
+  }
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
+  useEffect(() => {
+    setComposeOpen(false);
+    setSelectedRecipientIds(new Set());
+    setNotificationTitle('');
+    setContent('');
+    setComposeError('');
+    setInvalidField('');
+    if (actorScope.current.epoch > 0) {
+      const actorId = actorScope.current.id;
+      const epoch = accessEpoch.current;
+      // A pending first load has no cache and would otherwise be deduplicated
+      // into the previous actor's request instead of revalidating this actor.
+      void queryClient.cancelQueries({ queryKey: ['/api/users'], exact: true }).then(() => {
+        if (active.current && epoch === accessEpoch.current && actorId === actorScope.current.id) {
+          void queryClient.invalidateQueries({ queryKey: ['/api/users'], exact: true });
+        }
+      });
+    }
+  }, [queryClient, user?.id]);
 
   const employeesQuery = useQuery<BroadcastEmployee[]>({
     queryKey: ['/api/users'],
+    queryFn: async () => {
+      const epoch = accessEpoch.current;
+      const actorId = actorScope.current.id;
+      try {
+        const result = await listBroadcastEmployees();
+        if (active.current && epoch === accessEpoch.current && actorId === actorScope.current.id) {
+          setAccessRevoked(false);
+          setAuthorizedActorId(actorId);
+        }
+        return result;
+      } catch (failure) {
+        if (active.current && epoch === accessEpoch.current && actorId === actorScope.current.id
+          && [401, 403, 404].includes((failure as { status?: number })?.status ?? 0)) {
+          accessEpoch.current += 1;
+          setAccessRevoked(true);
+        }
+        throw failure;
+      }
+    },
   });
+  const accessLost = authorizedActorId !== user?.id || accessRevoked
+    || [401, 403, 404].includes((employeesQuery.error as { status?: number } | null)?.status ?? 0);
   const employees = useMemo(() => (employeesQuery.data ?? []).filter((employee) => (
+    !accessLost
+    &&
     (channel === 'notification' || employee.id !== user?.id)
     && employee.isActive === true
     && employee.isArchived !== true
-  )), [channel, employeesQuery.data, user?.id]);
+  )), [accessLost, channel, employeesQuery.data, user?.id]);
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee])),
     [employees],
@@ -146,6 +192,18 @@ function EmployeeNotificationsPage() {
       .map((id) => employeesById.get(id))
       .filter((employee): employee is BroadcastEmployee => Boolean(employee))
   ), [employeesById, selectedRecipientIds]);
+  const selectedSignature = selectedEmployees.map((employee) => employee.id).sort((a, b) => a - b).join(',');
+  const currentRecipients = useRef(selectedSignature);
+  currentRecipients.current = selectedSignature;
+  useEffect(() => {
+    if (!accessLost) return;
+    actorScope.current.epoch += 1;
+    setComposeOpen(false);
+    setSelectedRecipientIds(new Set());
+    setNotificationTitle('');
+    setContent('');
+    setComposeError('');
+  }, [accessLost]);
   const filteredEmployees = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase();
     return employees.filter((employee) => {
@@ -165,8 +223,13 @@ function EmployeeNotificationsPage() {
     && selectedFilteredCount === filteredEmployees.length;
 
   const sendMutation = useMutation({
-    mutationFn: sendEmployeeBroadcast,
-    onSuccess: (result, broadcast) => {
+    mutationFn: ({ broadcast }: { broadcast: EmployeeBroadcastRequest; epoch: number }) => sendEmployeeBroadcast(broadcast),
+    onSuccess: (result, { broadcast, epoch }) => {
+      if (!active.current || epoch !== actorScope.current.epoch) return;
+      if ([...broadcast.recipientIds].sort((a, b) => a - b).join(',') !== currentRecipients.current) {
+        setComposeError(t('employeeBroadcastRecipientsUnavailable'));
+        return;
+      }
       if (result.channel === 'message') {
         queryClient.invalidateQueries({ queryKey: messageQueryKeys.conversations });
       } else if (user && broadcast.recipientIds.includes(user.id)) {
@@ -182,12 +245,28 @@ function EmployeeNotificationsPage() {
       setNotificationTitle('');
       setContent('');
     },
-    onError: (error: Error) => {
-      toast({
-        title: t('employeeBroadcastFailedTitle'),
-        description: error.message,
-        variant: 'destructive',
-      });
+    onError: (failure, { epoch }) => {
+      if (!active.current || epoch !== actorScope.current.epoch) return;
+      if ([401, 403, 404].includes((failure as { status?: number })?.status ?? 0)) {
+        accessEpoch.current += 1;
+        setAccessRevoked(true);
+      } else setComposeError(t('employeeBroadcastFailedTitle'));
+    },
+    onSettled: () => { submitLock.current = false; },
+  });
+
+  const composeGuard = useUnsavedChangesGuard({
+    open: composeOpen && !accessLost,
+    isDirty: Boolean(notificationTitle || content),
+    isPending: sendMutation.isPending,
+    onOpenChange: (open) => {
+      setComposeOpen(open);
+      if (!open) {
+        setNotificationTitle('');
+        setContent('');
+        setComposeError('');
+        setInvalidField('');
+      }
     },
   });
 
@@ -211,19 +290,27 @@ function EmployeeNotificationsPage() {
     });
   };
 
-  const canSubmit = selectedEmployees.length > 0
-    && content.trim().length > 0
-    && (channel === 'message' || notificationTitle.trim().length > 0);
-
   const submitBroadcast = () => {
-    if (!canSubmit || sendMutation.isPending) return;
+    if (submitLock.current || sendMutation.isPending || selectedEmployees.length === 0) return;
+    const field = channel === 'notification' && !notificationTitle.trim()
+      ? 'employee-broadcast-title' : !content.trim() ? 'employee-broadcast-content' : '';
+    if (field) {
+      setInvalidField(field);
+      setComposeError(t(field === 'employee-broadcast-title' ? 'broadcastTitleRequired' : 'broadcastContentRequired'));
+      document.getElementById(field)?.focus();
+      return;
+    }
+    setComposeError('');
+    setInvalidField('');
     const common = {
       recipientIds: selectedEmployees.map((employee) => employee.id),
       content: content.trim(),
     };
-    sendMutation.mutate(channel === 'notification'
+    const broadcast: EmployeeBroadcastRequest = channel === 'notification'
       ? { channel, ...common, title: notificationTitle.trim() }
-      : { channel, ...common });
+      : { channel, ...common };
+    submitLock.current = true;
+    sendMutation.mutate({ broadcast, epoch: actorScope.current.epoch });
   };
 
   return (
@@ -272,11 +359,9 @@ function EmployeeNotificationsPage() {
           </CardHeader>
 
           <CardContent>
-            {employeesQuery.isError ? (
-              <Alert variant="destructive">
-                <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-                <AlertDescription className="mt-3 flex items-center justify-between gap-3">
-                  <span>{t('employeeListLoadError')}</span>
+            {employeesQuery.isError || accessLost ? (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-3 text-sm text-destructive">
+                  <span>{t('failedToLoadData')}</span>
                   <Button
                     type="button"
                     variant="outline"
@@ -286,8 +371,7 @@ function EmployeeNotificationsPage() {
                   >
                     {t('retry')}
                   </Button>
-                </AlertDescription>
-              </Alert>
+              </div>
             ) : employeesQuery.isLoading ? (
               <div className="space-y-2">
                 {Array.from({ length: 6 }, (_, index) => (
@@ -423,7 +507,7 @@ function EmployeeNotificationsPage() {
             type="button"
             className="w-full"
             disabled={selectedEmployees.length === 0}
-            onClick={() => setComposeOpen(true)}
+            onClick={() => { setComposeError(''); setInvalidField(''); setComposeOpen(true); }}
           >
             <Send className="size-4" />
             {t('composeEmployeeBroadcast')}
@@ -432,76 +516,78 @@ function EmployeeNotificationsPage() {
       </div>
 
       <Dialog
-        open={composeOpen}
-        onOpenChange={(open) => {
-          if (!sendMutation.isPending) setComposeOpen(open);
-        }}
+        open={composeOpen && !accessLost}
+        onOpenChange={composeGuard.handleOpenChange}
       >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+          <DialogHeader data-topographic="card" className="compact-modal-header">
             <DialogTitle>
               {channel === 'notification' ? t('composeSystemNotification') : t('composePersonalMessage')}
             </DialogTitle>
-            <DialogDescription>
-              {t('selectedEmployeesCount')
-                .replace('{count}', String(selectedEmployees.length))}
-            </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2" aria-label={t('selectedRecipients')}>
-              {selectedEmployees.slice(0, 4).map((employee) => (
-                <Badge key={employee.id} variant="secondary"><EmployeeIdentity userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} avatarClassName="size-5 text-[9px]" /></Badge>
-              ))}
-              {selectedEmployees.length > 4 ? (
-                <Badge variant="outline">
-                  {t('moreEventsCount').replace('{count}', String(selectedEmployees.length - 4))}
-                </Badge>
+          <form
+            className="flex min-h-0 flex-1 flex-col"
+            onSubmit={(event) => { event.preventDefault(); submitBroadcast(); }}
+            onChange={() => { setComposeError(''); setInvalidField(''); }}
+          >
+            <div className="compact-modal-body min-h-0 overflow-y-auto overscroll-contain space-y-3">
+              <CompactModalSection title={t('message')} icon={channel === 'notification' ? BellRing : MessageCircle} tone="sky" collapsible={false} disabled={sendMutation.isPending} contentClassName="space-y-3">
+              {channel === 'notification' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="employee-broadcast-title">{t('notificationTitle')}</Label>
+                  <Input
+                    id="employee-broadcast-title"
+                    value={notificationTitle}
+                    onChange={(event) => setNotificationTitle(event.target.value)}
+                    maxLength={255}
+                    disabled={sendMutation.isPending}
+                    aria-invalid={invalidField === 'employee-broadcast-title'}
+                    aria-describedby={invalidField === 'employee-broadcast-title' ? 'broadcast-compose-error' : undefined}
+                    autoFocus
+                  />
+                </div>
               ) : null}
-            </div>
 
-            {channel === 'notification' ? (
               <div className="space-y-2">
-                <Label htmlFor="employee-broadcast-title">{t('notificationTitle')}</Label>
-                <Input
-                  id="employee-broadcast-title"
-                  value={notificationTitle}
-                  onChange={(event) => setNotificationTitle(event.target.value)}
-                  maxLength={255}
-                  autoFocus
+                <Label htmlFor="employee-broadcast-content">{t('message')}</Label>
+                <Textarea
+                  id="employee-broadcast-content"
+                  value={content}
+                  onChange={(event) => setContent(event.target.value)}
+                  maxLength={10_000}
+                  rows={7}
+                  disabled={sendMutation.isPending}
+                  aria-invalid={invalidField === 'employee-broadcast-content'}
+                  aria-describedby={invalidField === 'employee-broadcast-content' ? 'broadcast-compose-error' : undefined}
+                  autoFocus={channel === 'message'}
                 />
               </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <Label htmlFor="employee-broadcast-content">{t('message')}</Label>
-              <Textarea
-                id="employee-broadcast-content"
-                value={content}
-                onChange={(event) => setContent(event.target.value)}
-                maxLength={10_000}
-                rows={7}
-                autoFocus={channel === 'message'}
-              />
+              </CompactModalSection>
+              <CompactModalSection key={String(composeOpen)} title={t('selectedRecipients')} icon={Users} tone="teal" count={selectedEmployees.length} summary={selectedEmployees.map((employee) => employee.fullName).join(', ')}>
+                <div className="flex flex-wrap gap-2 [overflow-wrap:anywhere]" role="group" aria-label={t('selectedRecipients')}>
+                  {selectedEmployees.map((employee) => <Badge key={employee.id} variant="secondary" className="max-w-full whitespace-normal"><EmployeeIdentity interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} avatarClassName="size-5 text-[9px]" /></Badge>)}
+                </div>
+              </CompactModalSection>
+              {composeError ? <p id="broadcast-compose-error" role="alert" className="text-sm text-destructive">{composeError}</p> : null}
             </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setComposeOpen(false)}
-              disabled={sendMutation.isPending}
-            >
-              {t('cancel')}
-            </Button>
-            <Button type="button" onClick={submitBroadcast} disabled={!canSubmit || sendMutation.isPending}>
-              {sendMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              {t('sendToSelectedEmployees').replace('{count}', String(selectedEmployees.length))}
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="compact-modal-footer">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => composeGuard.handleOpenChange(false)}
+                disabled={sendMutation.isPending}
+              >
+                {t('cancel')}
+              </Button>
+              <Button type="submit" disabled={selectedEmployees.length === 0 || sendMutation.isPending}>
+                {sendMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {t('sendToSelectedEmployees').replace('{count}', String(selectedEmployees.length))}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
+      <UnsavedChangesDialog open={composeGuard.confirmationOpen && !accessLost} onOpenChange={composeGuard.setConfirmationOpen} onDiscard={composeGuard.discardChanges} isPending={sendMutation.isPending} />
     </ModulePage>
   );
 }

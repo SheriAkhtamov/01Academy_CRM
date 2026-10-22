@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Dialog, DialogContent, DialogTitle } from '../client/src/components/ui/dialog';
 import {
   AlertDialog,
+  AlertDialogBody,
   AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
   AlertDialogTitle,
 } from '../client/src/components/ui/alert-dialog';
 import { CreateTaskDialog } from '../client/src/components/ux/board/CreateTaskDialog';
@@ -36,14 +40,18 @@ describe('dialog viewport clipping', () => {
     render(
       <AlertDialog open>
         <AlertDialogContent>
-          <AlertDialogTitle>Test</AlertDialogTitle>
+          <AlertDialogHeader><AlertDialogTitle>Test</AlertDialogTitle></AlertDialogHeader>
+          <AlertDialogBody><AlertDialogDescription>Confirmation details</AlertDialogDescription></AlertDialogBody>
+          <AlertDialogFooter><button>Confirm</button></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>,
     );
 
     const classes = screen.getByRole('alertdialog').className;
     expect(classes).toContain('max-h-[calc(100dvh-2rem)]');
-    expect(classes).toContain('overflow-y-auto');
+    expect(classes).toContain('overflow-hidden');
+    expect(screen.getByText('Confirmation details').closest('.compact-modal-body')?.className).toContain('overflow-y-auto');
+    expect(screen.getByRole('button', { name: 'Confirm' }).closest('.compact-modal-body')).toBeNull();
   });
 
   it('lets a dialog that scrolls its own body opt out of both defaults', () => {

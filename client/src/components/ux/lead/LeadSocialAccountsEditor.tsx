@@ -17,6 +17,7 @@ import type { TranslationKey } from '@/lib/i18n';
 import { LeadChannelLinks } from '@/components/ux/LeadChannelLinks';
 import { LeadChannelBrandIcon } from './LeadChannelBrandIcon';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -372,12 +373,15 @@ export function LeadSocialAccountsEditor({
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
         if (!open && !deleteAccount.isPending) setDeleteTarget(null);
-      }}>
+      }} pending={deleteAccount.isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('deleteSocialAccountTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('deleteSocialAccountDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
+          <AlertDialogBody>
+            <p className="text-sm font-semibold [overflow-wrap:anywhere]">{deleteTarget?.displayName || deleteTarget?.handle || deleteTarget?.profileUrl}</p>
+            <AlertDialogDescription>{t('deleteSocialAccountDescription')}</AlertDialogDescription>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteAccount.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

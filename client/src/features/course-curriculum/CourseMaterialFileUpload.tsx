@@ -213,6 +213,7 @@ export function CourseMaterialFileUpload({ materialId, file, onUploaded, onBusyC
         open={replacement !== null}
         onOpenChange={(open) => { if (!open) setReplacement(null); }}
         title={t('courseReplaceMaterialFile')}
+        target={[file?.name, replacement?.name].filter(Boolean).join(' → ')}
         description={t('courseReplaceMaterialFileConfirm')}
         confirmLabel={t('courseReplaceMaterialFile')}
         onConfirm={() => {

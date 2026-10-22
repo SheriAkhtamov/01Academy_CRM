@@ -26,6 +26,7 @@ import type { VoiceReminderProgressStatus } from '@shared/contracts/voice-remind
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -150,6 +151,7 @@ export function DemoLessonDetailsDialog({
   const [reasonNote, setReasonNote] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const cancelSubmitting = useRef(false);
   const [conductedConfirmOpen, setConductedConfirmOpen] = useState(false);
   const [notConductedOpen, setNotConductedOpen] = useState(false);
   const [notConductedReasonCode, setNotConductedReasonCode] = useState<DemoNotConductedReasonCode | ''>('');
@@ -291,7 +293,14 @@ export function DemoLessonDetailsDialog({
       description: error.message,
       variant: 'destructive',
     }),
+    onSettled: () => { cancelSubmitting.current = false; },
   });
+
+  const confirmCancellation = () => {
+    if (!open || !demo || !cancelReason.trim() || cancelDemo.isPending || cancelSubmitting.current) return;
+    cancelSubmitting.current = true;
+    cancelDemo.mutate();
+  };
 
   const finalizeDemo = useMutation({
     mutationFn: (payload: DemoLessonOutcome) => attendanceApi.outcome(Number(demo?.id), payload),
@@ -886,17 +895,19 @@ export function DemoLessonDetailsDialog({
 
       <AlertDialog open={conductedConfirmOpen} onOpenChange={(nextOpen) => {
         if (!finalizeDemo.isPending) setConductedConfirmOpen(nextOpen);
-      }}>
+      }} pending={finalizeDemo.isPending}>
         <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
           <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('markDemoConductedTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('markDemoConductedDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>{t('markDemoConductedDescription')}</AlertDialogDescription>
+          </AlertDialogBody>
           <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={finalizeDemo.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={!canMarkConducted || finalizeDemo.isPending}
-              onClick={() => finalizeDemo.mutate({ status: 'completed' })}
+              onClick={(event) => { event.preventDefault(); finalizeDemo.mutate({ status: 'completed' }); }}
             >
               {finalizeDemo.isPending ? t('saving') : t('markDemoConducted')}
             </AlertDialogAction>
@@ -906,10 +917,12 @@ export function DemoLessonDetailsDialog({
 
       <AlertDialog open={participantToRemove !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen && !removeParticipant.isPending) setParticipantToRemove(null);
-      }}>
+      }} pending={removeParticipant.isPending}>
         <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
           <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('removeDemoParticipantTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('removeDemoParticipantDescription').replace(
                 '{name}',
@@ -918,13 +931,14 @@ export function DemoLessonDetailsDialog({
                 || t('restrictedLead'),
               )}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={removeParticipant.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={!participantToRemove || removeParticipant.isPending}
-              onClick={() => {
+              onClick={(event) => {
+                event.preventDefault();
                 if (participantToRemove) removeParticipant.mutate(participantToRemove.id);
               }}
             >
@@ -1192,31 +1206,33 @@ export function DemoLessonDetailsDialog({
 
       <AlertDialog open={cancelOpen} onOpenChange={(nextOpen) => {
         if (!cancelDemo.isPending) setCancelOpen(nextOpen);
-      }}>
+      }} pending={cancelDemo.isPending}>
         <AlertDialogContent className="compact-modal gap-0 overflow-hidden p-0">
           <AlertDialogHeader className="compact-modal-header" data-topographic="header">
             <AlertDialogTitle>{t('cancelDemoLessonTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('cancelDemoLessonDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="compact-modal-body space-y-1.5">
-            <Label htmlFor="demo-cancel-reason">{t('cancellationReason')}</Label>
-            <Input
-              id="demo-cancel-reason"
-              disabled={cancelDemo.isPending}
-              value={cancelReason}
-              onChange={(event) => setCancelReason(event.target.value)}
-              onKeyDown={submitOnEnter(() => cancelDemo.mutate(), {
-                disabled: !cancelReason.trim() || cancelDemo.isPending,
-              })}
-              maxLength={500}
-            />
-          </div>
+          <AlertDialogBody>
+            <AlertDialogDescription>{t('cancelDemoLessonDescription')}</AlertDialogDescription>
+            <>
+              <Label htmlFor="demo-cancel-reason">{t('cancellationReason')}</Label>
+              <Input
+                id="demo-cancel-reason"
+                disabled={cancelDemo.isPending}
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                onKeyDown={submitOnEnter(confirmCancellation, {
+                  disabled: !cancelReason.trim() || cancelDemo.isPending,
+                })}
+                maxLength={500}
+              />
+            </>
+          </AlertDialogBody>
           <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={cancelDemo.isPending}>{t('back')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={!cancelReason.trim() || cancelDemo.isPending}
-              onClick={() => cancelDemo.mutate()}
+              onClick={(event) => { event.preventDefault(); confirmCancellation(); }}
             >
               {cancelDemo.isPending ? t('saving') : t('cancelDemoLesson')}
             </AlertDialogAction>

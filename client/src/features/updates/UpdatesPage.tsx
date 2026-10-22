@@ -24,10 +24,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -57,6 +57,7 @@ export default function UpdatesPage() {
       : null;
 
   const [publishOpen, setPublishOpen] = useState(false);
+  const [publishActorId, setPublishActorId] = useState<number | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [readIds, setReadIds] = useState<number[]>(() => getReadPostIds());
@@ -189,7 +190,7 @@ export default function UpdatesPage() {
       <PageHeader
         title={t('whatsNew')}
         actions={hasLeadershipAccess(user) ? (
-          <Button onClick={() => setPublishOpen(true)}>
+            <Button onClick={() => { setPublishActorId(user?.id); setPublishOpen(true); }}>
             <Plus data-icon="inline-start" />
             {t('updatesNewPost')}
           </Button>
@@ -426,10 +427,16 @@ export default function UpdatesPage() {
           if (!open) setQuickViewPost(null);
         }}
       >
-        <DialogContent className="max-h-[85dvh] max-w-3xl overflow-y-auto">
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-3xl flex-col overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
           {quickViewPost ? (
             <>
-              <DialogHeader className="space-y-2 text-left">
+              <DialogHeader data-topographic="card" className="compact-modal-header space-y-2 text-left">
+                <DialogTitle>{t('updatesQuickView')}</DialogTitle>
+              </DialogHeader>
+
+              {/* The article content scrolls together, including long titles and summaries. */}
+              <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]">
+                <header className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <time className="text-xs text-muted-foreground" dateTime={quickViewPost.publishedAt}>
                     {formatReleaseDate(quickViewPost.publishedAt, locale)}
@@ -440,23 +447,15 @@ export default function UpdatesPage() {
                     {t('updatesReadingTime', { count: calculateReadingTime(quickViewPost, locale) })}
                   </span>
                 </div>
-                <DialogTitle className="text-xl sm:text-2xl font-bold">
+                <h3 className="break-words text-xl sm:text-2xl font-bold [overflow-wrap:anywhere]">
                   {quickViewPost.content.title[locale]}
-                </DialogTitle>
-                <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                </h3>
+                <p className="break-words text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
                   {quickViewPost.content.summary[locale]}
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* Sections list inside quick view */}
-              <div className="space-y-6 py-2">
+                </p>
+                </header>
                 {quickViewPost.content.sections.map((section, idx) => (
-                  <div key={idx} className="space-y-3">
-                    {section.heading ? (
-                      <h3 className="font-semibold text-foreground text-base">
-                        {section.heading[locale]}
-                      </h3>
-                    ) : null}
+                  <CompactModalSection key={idx} title={section.heading?.[locale] || `${t('updatesSection')} ${idx + 1}`} tone={idx % 2 === 0 ? 'sky' : 'teal'} collapsible={false} contentClassName="space-y-3">
                     {section.paragraphs.map((p, pIdx) => (
                       <p key={pIdx} className="text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
                         {p[locale]}
@@ -483,11 +482,11 @@ export default function UpdatesPage() {
                         ) : null}
                       </figure>
                     ) : null}
-                  </div>
+                  </CompactModalSection>
                 ))}
               </div>
 
-              <DialogFooter className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+              <DialogFooter className="compact-modal-footer flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Button asChild variant="default" size="sm">
                     <Link href={`/updates?post=${quickViewPost.id}`} onClick={() => setQuickViewPost(null)}>
@@ -505,8 +504,9 @@ export default function UpdatesPage() {
         </DialogContent>
       </Dialog>
 
-      {publishOpen ? (
+      {publishOpen && publishActorId === user?.id && hasLeadershipAccess(user) ? (
         <PublishUpdateDialog
+          key={user?.id}
           onClose={() => setPublishOpen(false)}
           onPublished={(id) => {
             setPublishOpen(false);

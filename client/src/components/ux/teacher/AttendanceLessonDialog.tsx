@@ -13,6 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -533,8 +534,10 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('lessonNoteOverwriteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('lessonNoteOverwriteConfirm')}</AlertDialogDescription>
           </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>{t('lessonNoteOverwriteConfirm')}</AlertDialogDescription>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -549,13 +552,15 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={rescheduleConfirmOpen} onOpenChange={onRescheduleConfirmOpenChange}>
+      <AlertDialog open={rescheduleConfirmOpen} onOpenChange={onRescheduleConfirmOpenChange} pending={isRescheduling}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="size-5 text-amber-500" />
               {t('rescheduleConfirmTitle')}
             </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('rescheduleConfirmDesc')
                 .replace('{from}', lesson
@@ -575,12 +580,12 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                   })
                   : '')}
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          {lesson?.status === 'conducted' ? (
-            <p className="text-sm text-destructive">
-              {t('rescheduleConductedWarning')}
-            </p>
-          ) : null}
+            {lesson?.status === 'conducted' ? (
+              <p className="text-sm text-destructive">
+                {t('rescheduleConductedWarning')}
+              </p>
+            ) : null}
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isRescheduling}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

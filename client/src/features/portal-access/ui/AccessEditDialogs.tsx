@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogContent,
   AlertDialogHeader,
@@ -664,19 +665,21 @@ export function AccessConfirmation({
       onOpenChange={(value) => {
         if (!pending) onOpenChange(value);
       }}
-    >
+     pending={pending}>
       <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0">
         <AlertDialogHeader className="compact-modal-header">
           <AlertDialogTitle>{title}</AlertDialogTitle>
         </AlertDialogHeader>
-        <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
-        <AlertDialogDescription className="break-words">{description}</AlertDialogDescription>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        </div>
+        <AlertDialogBody>
+          <>
+          <AlertDialogDescription className="break-words">{description}</AlertDialogDescription>
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          </>
+        </AlertDialogBody>
         <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={pending}>
             {t("lmsStaffCancel")}

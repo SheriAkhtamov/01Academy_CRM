@@ -8,6 +8,7 @@ import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
@@ -124,7 +125,7 @@ export function LeadArchiveActions({
           ?? restoreStatuses[0]?.code ?? '');
       }
       setOpen(nextOpen);
-    }}>
+    }} pending={mutation.isPending}>
       <AlertDialogTrigger asChild>
         <Button
           type="button"
@@ -141,6 +142,8 @@ export function LeadArchiveActions({
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>{isArchived ? t('confirmRestoreLeadTitle') : t('archiveLead')}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
           <AlertDialogDescription>
             {isArchived
               ? restoreStatus
@@ -150,53 +153,51 @@ export function LeadArchiveActions({
                 : t('restoreLeadNoStages')
               : lead.contactName}
           </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {isArchived ? (
-          <div className="space-y-2">
-            <Label htmlFor={`${fieldId}-stage`}>{t('restoreToStage')}</Label>
-            <Select value={restoreStatus} onValueChange={setRestoreStatus} disabled={mutation.isPending || !restoreStatuses.length}>
-              <SelectTrigger id={`${fieldId}-stage`}><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {restoreStatuses.map((status) => (
-                  <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {needsManager ? (
-              <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
-            ) : null}
+          {isArchived ? (
             <div className="space-y-2">
-              <Label htmlFor={`${fieldId}-reason`}>{t('archiveReason')}</Label>
-              <Select value={reason} onValueChange={setReason} disabled={mutation.isPending}>
-                <SelectTrigger id={`${fieldId}-reason`}>
-                  <SelectValue placeholder={t('chooseArchiveReason')} />
-                </SelectTrigger>
+              <Label htmlFor={`${fieldId}-stage`}>{t('restoreToStage')}</Label>
+              <Select value={restoreStatus} onValueChange={setRestoreStatus} disabled={mutation.isPending || !restoreStatuses.length}>
+                <SelectTrigger id={`${fieldId}-stage`}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {LEAD_ARCHIVE_REASONS.map((option) => (
-                    <SelectItem key={option.code} value={option.code}>{t(option.translationKey)}</SelectItem>
+                  {restoreStatuses.map((status) => (
+                    <SelectItem key={status.code} value={status.code}>{leadStatusName(status.code)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            {reason === 'other' ? (
+          ) : (
+            <div className="space-y-4">
+              {needsManager ? (
+                <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
+              ) : null}
               <div className="space-y-2">
-                <Label htmlFor={`${fieldId}-custom-reason`}>{t('archiveCustomReason')}</Label>
-                <Input
-                  id={`${fieldId}-custom-reason`}
-                  value={customReason}
-                  onChange={(event) => setCustomReason(event.target.value)}
-                  maxLength={80}
-                  disabled={mutation.isPending}
-                />
+                <Label htmlFor={`${fieldId}-reason`}>{t('archiveReason')}</Label>
+                <Select value={reason} onValueChange={setReason} disabled={mutation.isPending}>
+                  <SelectTrigger id={`${fieldId}-reason`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEAD_ARCHIVE_REASONS.map((option) => (
+                      <SelectItem key={option.code} value={option.code}>{t(option.translationKey)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ) : null}
-          </div>
-        )}
-
+              {reason === 'other' ? (
+                <div className="space-y-2">
+                  <Label htmlFor={`${fieldId}-custom-reason`}>{t('archiveCustomReason')}</Label>
+                  <Input
+                    id={`${fieldId}-custom-reason`}
+                    value={customReason}
+                    onChange={(event) => setCustomReason(event.target.value)}
+                    maxLength={80}
+                    disabled={mutation.isPending}
+                  />
+                </div>
+              ) : null}
+            </div>
+          )}
+        </AlertDialogBody>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={mutation.isPending}>{t('cancel')}</AlertDialogCancel>
           <Button

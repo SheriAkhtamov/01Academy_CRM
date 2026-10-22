@@ -11,6 +11,7 @@ import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -532,10 +533,12 @@ export function LeadAssignmentContent() {
         </Card>
       </div>
 
-      <AlertDialog open={bulkConfirmationOpen} onOpenChange={setBulkConfirmationOpen}>
+      <AlertDialog open={bulkConfirmationOpen} onOpenChange={setBulkConfirmationOpen} pending={bulkAssign.isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmBulkAssignment')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('confirmBulkAssignmentDescription')
                 .replace('{count}', String(selectedLeadIds.size))
@@ -544,7 +547,7 @@ export function LeadAssignmentContent() {
                   managers.find((manager) => String(manager.id) === bulkManagerId)?.fullName ?? '',
                 )}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={bulkAssign.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -562,10 +565,12 @@ export function LeadAssignmentContent() {
 
       <AlertDialog open={Boolean(reassignTarget)} onOpenChange={(open) => {
         if (!open) setReassignTarget(null);
-      }}>
+      }} pending={assignLead.isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmLeadTransfer')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('confirmLeadTransferDescription')
                 .replace('{lead}', reassignTarget?.lead.contactName ?? '')
@@ -574,7 +579,7 @@ export function LeadAssignmentContent() {
                   managers.find((manager) => manager.id === reassignTarget?.managerId)?.fullName ?? '',
                 )}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={assignLead.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -594,14 +599,16 @@ export function LeadAssignmentContent() {
 
       <AlertDialog open={Boolean(deleteLeadTarget)} onOpenChange={(open) => {
         if (!open) setDeleteLeadTarget(null);
-      }}>
+      }} pending={deleteLead.isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmDeleteLead')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('confirmDeleteLeadDescription').replace('{lead}', deleteLeadTarget?.contactName ?? '')}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteLead.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

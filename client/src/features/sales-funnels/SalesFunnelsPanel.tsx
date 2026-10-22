@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -487,10 +488,12 @@ export function SalesFunnelsPanel() {
           setDeleteTarget(null);
           setTransferTargetId('');
         }}
-      >
+        pending={deleteFunnel.isPending}>
         <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0">
           <AlertDialogHeader className="compact-modal-header">
             <AlertDialogTitle className="text-base leading-6">{t('salesFunnelDeleteTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {deleteTarget
                 ? (deleteNeedsTransfer
@@ -499,30 +502,30 @@ export function SalesFunnelsPanel() {
                   .replace('{name}', deleteTarget.name)
                 : ''}
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteNeedsTransfer ? (
-            <div className="compact-modal-body min-h-0 overflow-y-auto overscroll-contain">
-              <CompactModalSection title={t('salesFunnelTransferTarget')} icon={GitBranch} tone="amber" collapsible={false} disabled={deleteFunnel.isPending} sectionId="funnel-transfer">
-                {activeTransferTargets.length > 0 ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="sales-funnel-transfer">{t('salesFunnelTransferTarget')}</Label>
-                    <Select value={transferTargetId} onValueChange={setTransferTargetId} disabled={deleteFunnel.isPending}>
-                      <SelectTrigger id="sales-funnel-transfer">
-                        <SelectValue placeholder={t('selectSalesFunnel')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activeTransferTargets.map((funnel) => (
-                          <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <p className="text-sm text-destructive">{t('salesFunnelDeleteUnavailable')}</p>
-                )}
-              </CompactModalSection>
-            </div>
-          ) : null}
+            {deleteNeedsTransfer ? (
+              <>
+                <CompactModalSection title={t('salesFunnelTransferTarget')} icon={GitBranch} tone="amber" collapsible={false} disabled={deleteFunnel.isPending} sectionId="funnel-transfer">
+                  {activeTransferTargets.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="sales-funnel-transfer">{t('salesFunnelTransferTarget')}</Label>
+                      <Select value={transferTargetId} onValueChange={setTransferTargetId} disabled={deleteFunnel.isPending}>
+                        <SelectTrigger id="sales-funnel-transfer">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeTransferTargets.map((funnel) => (
+                            <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-destructive">{t('salesFunnelDeleteUnavailable')}</p>
+                  )}
+                </CompactModalSection>
+              </>
+            ) : null}
+          </AlertDialogBody>
           <AlertDialogFooter className="compact-modal-footer">
             <AlertDialogCancel disabled={deleteFunnel.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

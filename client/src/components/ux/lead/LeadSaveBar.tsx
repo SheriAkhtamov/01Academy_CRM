@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, Save, Undo2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialogBody,
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
@@ -32,15 +33,17 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
           {pending ? t('saving') : t('saveChanges')}
         </Button>
       </div>
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen} pending={pending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('leadWorkspaceDiscardTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('leadWorkspaceDiscardDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>{t('leadWorkspaceDiscardDescription')}</AlertDialogDescription>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel>
-            <AlertDialogAction onClick={onDiscard}>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDiscard}>
               {t('discardChanges')}
             </AlertDialogAction>
           </AlertDialogFooter>

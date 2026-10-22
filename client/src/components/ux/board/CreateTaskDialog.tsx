@@ -33,7 +33,8 @@ import { TaskColorPicker } from './TaskColorPicker';
 import { TaskFilePicker } from './TaskFilePicker';
 import { uploadTaskAttachment } from '@/features/board/attachment-upload';
 import { attachmentErrorKey } from '@/lib/attachments';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+import {
+  AlertDialogBody, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
     AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PRIORITY_ORDER, TASK_COLOR_META, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
@@ -293,8 +294,13 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
         </Dialog>
         <AlertDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen}>
             <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>{t('attachmentDraftDiscardTitle')}</AlertDialogTitle><AlertDialogDescription>{t('attachmentDraftDiscardDescription')}</AlertDialogDescription></AlertDialogHeader>
-                <AlertDialogFooter><AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel><AlertDialogAction onClick={guard.discardChanges}>{t('discardChanges')}</AlertDialogAction></AlertDialogFooter>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('attachmentDraftDiscardTitle')}</AlertDialogTitle>
+              </AlertDialogHeader>
+              <AlertDialogBody>
+                <AlertDialogDescription>{t('attachmentDraftDiscardDescription')}</AlertDialogDescription>
+              </AlertDialogBody>
+              <AlertDialogFooter><AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel><AlertDialogAction onClick={guard.discardChanges}>{t('discardChanges')}</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog></>
     );

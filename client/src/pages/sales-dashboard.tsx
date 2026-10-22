@@ -1,6 +1,7 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { allowNavigation, requestNavigation } from '@/lib/navigationGuard';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type UseFormReturn } from 'react-hook-form';
@@ -219,93 +220,62 @@ function ArchiveLeadDialog({
   isPending: boolean;
   t: (key: TranslationKey) => string;
 }) {
+  const submitted = useRef(false);
   const needsManager = Boolean(lead && !lead.managerId);
-
-  useEffect(() => {
-    if (!lead) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isPending) onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isPending, lead, onClose]);
-
-  if (!lead) return null;
+  const valid = LEAD_ARCHIVE_REASONS.some((option) => option.code === reason)
+    && (reason !== 'other' || Boolean(customReason.trim()));
+  const confirm = () => {
+    if (!lead || !valid || isPending || submitted.current) return;
+    submitted.current = true;
+    try {
+      onConfirm(lead, needsManager);
+    } finally {
+      queueMicrotask(() => { submitted.current = false; });
+    }
+  };
 
   return (
-    <Dialog open={Boolean(lead)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle id="archive-lead-title">{t('archiveLead')}</DialogTitle>
-          <DialogDescription>{lead.contactName}</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          {needsManager ? (
-            <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p>
-          ) : null}
-
-          <div className="space-y-2">
-            <label htmlFor="archive-reason" className="text-sm font-medium leading-none">
-              {t('archiveReason')}
-            </label>
-            <Select
-              value={reason}
-              onValueChange={onReasonChange}
-              disabled={isPending}
-            >
-              <SelectTrigger id="archive-reason" className="w-full">
-                <SelectValue placeholder={t('chooseArchiveReason')} />
-              </SelectTrigger>
-              <SelectContent>
-                {LEAD_ARCHIVE_REASONS.map((archiveReason) => (
-                  <SelectItem key={archiveReason.code} value={archiveReason.code}>
-                    {t(archiveReason.translationKey as TranslationKey)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {reason === 'other' ? (
-            <div className="space-y-2">
-              <label htmlFor="archive-custom-reason" className="text-sm font-medium leading-none">
-                {t('archiveCustomReason')}
-              </label>
-              <Input
-                id="archive-custom-reason"
-                value={customReason}
-                onChange={(event) => onCustomReasonChange(event.target.value)}
-                onKeyDown={submitOnEnter(() => onConfirm(lead, needsManager), {
-                  disabled: !customReason.trim() || isPending,
-                })}
-                maxLength={80}
-                disabled={isPending}
-                autoFocus
-              />
-            </div>
-          ) : null}
-
-          <DialogFooter className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
-              {t('cancel')}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                if (!reason || (reason === 'other' && !customReason.trim())) return;
-                onConfirm(lead, needsManager);
-              }}
-              disabled={!reason || (reason === 'other' && !customReason.trim()) || isPending}
-            >
-              {needsManager ? <UserCheck data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
-              {isPending ? t('saving') : needsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
-            </Button>
-          </DialogFooter>
+    <ConfirmDialog
+      open={Boolean(lead)}
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={t('archiveLead')}
+      description={lead?.contactName ?? ''}
+      confirmLabel={needsManager ? t('assignToMeAndArchive') : t('sendToArchive')}
+      variant="destructive"
+      isPending={isPending}
+      confirmDisabled={!valid}
+      keepOpenOnConfirm
+      onConfirm={confirm}
+    >
+      {needsManager ? <p className="text-sm font-medium">{t('leadRequiresResponsibleManager')}</p> : null}
+      <div className="space-y-2">
+        <label htmlFor="archive-reason" className="text-sm font-medium leading-none">{t('archiveReason')}</label>
+        <Select value={reason} onValueChange={onReasonChange} disabled={isPending}>
+          <SelectTrigger id="archive-reason"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {LEAD_ARCHIVE_REASONS.map((archiveReason) => (
+              <SelectItem key={archiveReason.code} value={archiveReason.code}>
+                {t(archiveReason.translationKey as TranslationKey)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {reason === 'other' ? (
+        <div className="space-y-2">
+          <label htmlFor="archive-custom-reason" className="text-sm font-medium leading-none">{t('archiveCustomReason')}</label>
+          <Input
+            id="archive-custom-reason"
+            value={customReason}
+            onChange={(event) => onCustomReasonChange(event.target.value)}
+            onKeyDown={submitOnEnter(confirm, { disabled: !valid || isPending })}
+            maxLength={80}
+            disabled={isPending}
+            autoFocus
+          />
         </div>
-      </DialogContent>
-    </Dialog>
+      ) : null}
+    </ConfirmDialog>
   );
 }
 
@@ -988,7 +958,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           archiveReasonName={archiveReasonName}
           dateTime={dateTime}
           onLeadClick={(lead) => openLead(lead.id)}
-          onRestore={(leadId, statusCode) => restoreLead.mutate({ id: leadId, statusCode })}
+          onRestore={(leadId, statusCode) => restoreLead.mutateAsync({ id: leadId, statusCode })}
           isPending={restoreLead.isPending}
         />
       ) : null}

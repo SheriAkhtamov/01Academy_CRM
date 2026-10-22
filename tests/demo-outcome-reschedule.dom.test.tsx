@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoLessonDetailsDialog } from '../client/src/components/ux/DemoLessonDetailsDialog';
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
@@ -22,6 +22,7 @@ const apiMocks = vi.hoisted(() => ({
   reschedule: vi.fn(),
   teacherOptions: vi.fn(),
   changeTeacher: vi.fn(),
+  cancel: vi.fn(),
 }));
 
 vi.mock('../client/src/features/demo-lessons/api', () => ({
@@ -33,7 +34,7 @@ vi.mock('../client/src/features/demo-lessons/api', () => ({
   },
   demoLessonsApi: {
     saveAttendance: vi.fn(),
-    cancel: vi.fn(),
+    cancel: apiMocks.cancel,
     outcome: apiMocks.outcome,
     reschedule: apiMocks.reschedule,
     teacherOptions: apiMocks.teacherOptions,
@@ -84,6 +85,7 @@ describe('demo outcome and rescheduling dialogs', () => {
     apiMocks.reschedule.mockReset();
     apiMocks.teacherOptions.mockReset();
     apiMocks.changeTeacher.mockReset();
+    apiMocks.cancel.mockReset();
     apiMocks.outcome.mockImplementation(async (payloadDemoId: number, payload: { status: string }) => ({
       ...pastDemo,
       id: payloadDemoId,
@@ -103,6 +105,31 @@ describe('demo outcome and rescheduling dialogs', () => {
       teacherId: 7,
       teacherName: 'Новый преподаватель',
     });
+  });
+
+  it('shares one cancellation lock between Enter and clicks and preserves the reason for retry', async () => {
+    let reject!: (error: Error) => void;
+    apiMocks.cancel.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }))
+      .mockResolvedValueOnce({ ...pastDemo, status: 'cancelled' });
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Отменить демо-урок|Cancel demo lesson/i }));
+    const confirmation = await screen.findByRole('alertdialog');
+    const reason = within(confirmation).getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(reason, { target: { value: 'Schedule changed' } });
+    const confirm = within(confirmation).getByRole('button', { name: /Отменить демо-урок|Cancel demo lesson/i });
+    act(() => {
+      fireEvent.keyDown(reason, { key: 'Enter' });
+      fireEvent.keyDown(reason, { key: 'Enter' });
+      fireEvent.click(confirm);
+    });
+    await waitFor(() => expect(apiMocks.cancel).toHaveBeenCalledExactlyOnceWith(17, 'Schedule changed'));
+    await act(async () => reject(new Error('Request failed')));
+    await waitFor(() => expect(reason.disabled).toBe(false));
+    expect(reason.value).toBe('Schedule changed');
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    fireEvent.click(within(confirmation).getByRole('button', { name: /Отменить демо-урок|Cancel demo lesson/i }));
+    await waitFor(() => expect(apiMocks.cancel).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
   it('confirms and saves a conducted outcome', async () => {

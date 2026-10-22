@@ -799,6 +799,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                 error={deleteError} isPending={deleteCommentMutation.isPending || deleteChecklistMutation.isPending || deleteAttachmentMutation.isPending} />
             <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete}
                 title={t('deleteTaskTitle')} description={t('deleteTaskConfirm')} confirmLabel={t('delete')}
+                target={task?.title}
                 onConfirm={() => { setDeleteError(''); deleteMutation.mutate(); }} variant="destructive" keepOpenOnConfirm
                 error={deleteError} isPending={deleteMutation.isPending} />
             <UnsavedChangesDialog open={unsavedGuard.confirmationOpen} onOpenChange={unsavedGuard.setConfirmationOpen} onDiscard={unsavedGuard.discardChanges} />

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Shuffle } from 'lucide-react';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -85,7 +86,7 @@ export function LeadDistributionPanel() {
       onOpenChange={(open) => {
         if (!open && !update.isPending) setPendingEnabled(null);
       }}
-    >
+     pending={update.isPending}>
     <Card>
       <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1.5">
@@ -122,12 +123,14 @@ export function LeadDistributionPanel() {
               ? t('autoLeadDistributionEnableConfirmTitle')
               : t('autoLeadDistributionDisableConfirmTitle')}
           </AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
           <AlertDialogDescription>
             {pendingEnabled
               ? t('autoLeadDistributionEnableConfirmDescription').replace('{count}', String(data.unassignedNewLeadCount))
               : t('autoLeadDistributionDisableConfirmDescription')}
           </AlertDialogDescription>
-        </AlertDialogHeader>
+        </AlertDialogBody>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={update.isPending}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction

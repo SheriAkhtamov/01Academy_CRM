@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/core';
 import { CalendarDays, Clock3, Inbox } from 'lucide-react';
 import {
+  AlertDialogBody,
     AlertDialog,
     AlertDialogAction,
     AlertDialogCancel,
@@ -699,24 +700,26 @@ export function TaskCalendar({ tasks, onTaskClick, onReschedule, canRescheduleTa
                 onOpenChange={(open) => { if (!open) setClearDueTarget(null); }}
             >
                 <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>{t('taskClearDueTitle')}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            {clearDueTarget ? `«${clearDueTarget.title}». ` : ''}
-                            {t('taskClearDueDescription')}
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={() => {
-                                if (clearDueTarget) moveTask(clearDueTarget.id, null);
-                                setClearDueTarget(null);
-                            }}
-                        >
-                            {t('taskClearDueConfirm')}
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('taskClearDueTitle')}</AlertDialogTitle>
+                  </AlertDialogHeader>
+                  <AlertDialogBody>
+                    <AlertDialogDescription>
+                        {clearDueTarget ? `«${clearDueTarget.title}». ` : ''}
+                        {t('taskClearDueDescription')}
+                    </AlertDialogDescription>
+                  </AlertDialogBody>
+                  <AlertDialogFooter>
+                      <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                          onClick={() => {
+                              if (clearDueTarget) moveTask(clearDueTarget.id, null);
+                              setClearDueTarget(null);
+                          }}
+                      >
+                          {t('taskClearDueConfirm')}
+                      </AlertDialogAction>
+                  </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
         </Card>

@@ -18,7 +18,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialogBody,
+  AlertDialogHeader,
   AlertDialog,
+  AlertDialogAction,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -179,23 +182,29 @@ export function StaffConfirm({
   const { t } = useTranslation();
   const message = useStaffError();
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={onOpenChange} pending={pending}>
       <AlertDialogContent>
-        <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
-        <AlertDialogDescription>{t(description)}</AlertDialogDescription>
-        {children}
-        {Boolean(error) && (
-          <p role="alert" className="text-sm text-destructive">
-            {message(error)}
-          </p>
-        )}
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
+        </AlertDialogHeader>
+        <AlertDialogBody>
+          <AlertDialogDescription>{t(description)}</AlertDialogDescription>
+          {children}
+          {Boolean(error) && (
+            <p role="alert" className="text-sm text-destructive">
+              {message(error)}
+            </p>
+          )}
+        </AlertDialogBody>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>
             {t("lmsStaffCancel")}
           </AlertDialogCancel>
-          <Button disabled={pending || disabled} onClick={onConfirm}>
-            {t(action)}
-          </Button>
+          <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onConfirm(); }}>
+            <Button disabled={pending || disabled}>
+              {pending ? t('confirmProcessing') : t(action)}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

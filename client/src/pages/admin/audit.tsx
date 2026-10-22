@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { auditFieldLabel, auditValue, auditVisibleFields } from '@/lib/auditPresentation';
@@ -15,6 +15,8 @@ import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { Badge } from '@/components/ui/badge';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
+import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { AlertCircle, ChevronRight, Filter, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -129,6 +131,8 @@ export default function AuditPage() {
   const [selected, setSelected] = useState<AuditLog | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<AuditFilters>(emptyFilters);
+  const [accessRevoked, setAccessRevoked] = useState(false);
+  const accessEpoch = useRef(0);
 
   const queryUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -143,12 +147,40 @@ export default function AuditPage() {
     params.set('integrationLimit', String(integrationLimit));
     return `/api/academy/audit?${params.toString()}`;
   }, [action, auditLimit, auditPage, entityType, from, integrationLimit, integrationPage, to, userId]);
+  const queryScope = useRef(queryUrl);
+  if (queryScope.current !== queryUrl) {
+    queryScope.current = queryUrl;
+    accessEpoch.current += 1;
+  }
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditData>({
+  const { data: queryData, error, isLoading, isError, refetch, isFetching } = useQuery<AuditData>({
     queryKey: ['academy-audit', queryUrl],
-    queryFn: () => apiRequest('GET', queryUrl),
+    queryFn: async () => {
+      const epoch = accessEpoch.current;
+      try {
+        const result: AuditData = await apiRequest('GET', queryUrl);
+        if (epoch === accessEpoch.current && queryScope.current === queryUrl) setAccessRevoked(false);
+        return result;
+      } catch (failure) {
+        if (epoch === accessEpoch.current && queryScope.current === queryUrl
+          && [401, 403, 404].includes((failure as { status?: number })?.status ?? 0)) {
+          accessEpoch.current += 1;
+          setAccessRevoked(true);
+        }
+        throw failure;
+      }
+    },
     placeholderData: keepPreviousData,
   });
+  const accessLost = accessRevoked || [401, 403, 404].includes((error as { status?: number } | null)?.status ?? 0);
+  const data = accessLost ? undefined : queryData;
+
+  useEffect(() => {
+    if (!accessLost) return;
+    setSelected(null);
+    setFiltersOpen(false);
+    setFilterDraft(emptyFilters);
+  }, [accessLost]);
 
   useEffect(() => {
     const totalPages = data?.pagination.audit.totalPages;
@@ -161,9 +193,15 @@ export default function AuditPage() {
   }, [data?.pagination.integrations.totalPages, integrationPage]);
 
   const openFilters = () => {
+    if (accessLost) return;
     setFilterDraft({ userId, action, entityType, from, to });
     setFiltersOpen(true);
   };
+  const filterGuard = useUnsavedChangesGuard({
+    open: filtersOpen && !accessLost,
+    isDirty: JSON.stringify(filterDraft) !== JSON.stringify({ userId, action, entityType, from, to }),
+    onOpenChange: setFiltersOpen,
+  });
   const applyFilters = () => {
     setUserId(filterDraft.userId);
     setAction(filterDraft.action);
@@ -207,7 +245,7 @@ export default function AuditPage() {
           </SelectContent>
         </Select>
         {tab === 'audit' ? (
-          <Button variant="outline" size="sm" onClick={openFilters}>
+          <Button variant="outline" size="sm" onClick={openFilters} disabled={accessLost}>
             <Filter data-icon="inline-start" />
             {t('auditFilterButton')}
             {activeFilterCount > 0 ? <Badge variant="secondary">{activeFilterCount}</Badge> : null}
@@ -341,11 +379,12 @@ export default function AuditPage() {
       )}
       </ModulePageBody>
 
-      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <DialogContent className="max-w-xl" aria-describedby={undefined}>
-          <DialogHeader><DialogTitle>{t('auditFiltersTitle')}</DialogTitle></DialogHeader>
-          <form onSubmit={(event) => { event.preventDefault(); applyFilters(); }} className="space-y-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Dialog open={filtersOpen && !accessLost} onOpenChange={filterGuard.handleOpenChange}>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]" aria-describedby={undefined}>
+          <DialogHeader data-topographic="card" className="compact-modal-header"><DialogTitle>{t('auditFiltersTitle')}</DialogTitle></DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); applyFilters(); }} className="flex min-h-0 flex-1 flex-col">
+            <div className="compact-modal-body min-h-0 overflow-y-auto overscroll-contain space-y-3">
+            <CompactModalSection title={ceoCopy.audit.history} icon={Filter} tone="sky" collapsible={false} contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="audit-filter-employee">{ceoCopy.audit.employee}</Label>
                 <Select value={filterDraft.userId} onValueChange={(value) => setFilterDraft((draft) => ({ ...draft, userId: value }))}>
@@ -388,37 +427,67 @@ export default function AuditPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </CompactModalSection>
+            <CompactModalSection key={String(filtersOpen)} title={t('auditFilterPeriod')} tone="violet" summary={filterDraft.from || filterDraft.to ? `${filterDraft.from || '—'} — ${filterDraft.to || '—'}` : undefined}>
               <DateRangeField
-                className="flex-wrap sm:col-span-2"
+                className="flex-wrap"
                 idPrefix="audit-filter"
                 fromLabel={ceoCopy.audit.fromDate}
                 toLabel={ceoCopy.audit.toDate}
                 value={{ from: filterDraft.from, to: filterDraft.to }}
                 onChange={(range) => setFilterDraft((draft) => ({ ...draft, ...range }))}
               />
+            </CompactModalSection>
             </div>
-            <DialogFooter>
+            <DialogFooter className="compact-modal-footer flex-wrap">
               <Button type="button" variant="ghost" className="sm:mr-auto" onClick={() => setFilterDraft(emptyFilters)}>
                 <RotateCcw data-icon="inline-start" />{ceoCopy.audit.reset}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setFiltersOpen(false)}>{t('cancel')}</Button>
+              <Button type="button" variant="outline" onClick={() => filterGuard.handleOpenChange(false)}>{t('cancel')}</Button>
               <Button type="submit">{t('auditApplyFilters')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      <UnsavedChangesDialog open={filterGuard.confirmationOpen && !accessLost} onOpenChange={filterGuard.setConfirmationOpen} onDiscard={filterGuard.discardChanges} />
 
-      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
-          <SheetHeader className="shrink-0 border-b px-4 py-3"><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit, t)} · ${formatAcademyDate(selected.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}` : ''}</SheetDescription></SheetHeader>
-          {/*
-            Field / before / after reads as three columns only when there is
-            room for three. On a phone the header strip is dropped and each
-            field becomes its own block, with the two values labelled in place —
-            140px + two value columns would otherwise leave about 90px each,
-            which is not enough to tell an old value from a new one.
-          */}
-          {selected ? <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4"><div className="overflow-hidden rounded-lg border border-border/70"><div className="hidden grid-cols-[140px_1fr_1fr] border-b border-border/70 bg-muted/30 text-xs font-medium text-muted-foreground sm:grid"><div className="p-3">{ceoCopy.audit.field}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.before}</div><div className="border-l border-border/70 p-3">{ceoCopy.audit.after}</div></div>{changedFields.length ? changedFields.map((field) => <div key={field} className="border-b border-border/60 text-sm last:border-0 sm:grid sm:grid-cols-[140px_1fr_1fr]"><div className="break-words p-3 font-medium">{auditFieldLabel(field, t)}</div><div className="break-words px-3 pb-2 text-muted-foreground sm:border-l sm:border-border/60 sm:p-3"><span className="mr-1.5 text-xs uppercase tracking-wide text-muted-foreground/70 sm:hidden">{ceoCopy.audit.before}</span>{presentValue(field, oldValues[field])}</div><div className="break-words px-3 pb-3 sm:border-l sm:border-border/60 sm:p-3"><span className="mr-1.5 text-xs uppercase tracking-wide text-muted-foreground/70 sm:hidden">{ceoCopy.audit.after}</span>{presentValue(field, newValues[field])}</div></div>) : <div className="p-6 text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</div>}</div></div> : null}
+      <Sheet open={Boolean(selected) && !accessLost} onOpenChange={(open) => !open && setSelected(null)}>
+        <SheetContent className="compact-modal flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+          <SheetHeader data-topographic="card" className="compact-modal-header"><SheetTitle>{ceoCopy.audit.recordChanges}</SheetTitle><SheetDescription>{selected ? `${entityLabel(selected.entityType, ceoCopy.audit, t)} · ${formatAcademyDate(selected.createdAt, language, { dateStyle: 'short', timeStyle: 'short' })}` : ''}</SheetDescription></SheetHeader>
+          {/* Keep both values labelled when the comparison stacks on a narrow screen. */}
+          {selected ? (
+            <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]">
+              <CompactModalSection title={ceoCopy.audit.employee} tone="sky" collapsible={false}>
+                <p className="text-sm">
+                  {selected.action.startsWith('PUBLIC_ATTENDANCE_') ? t('publicAttendanceActor')
+                    : selected.userId ? <EmployeeIdentity interactive={false} userId={selected.userId} name={selected.userName} />
+                      : selected.userName ?? ceoCopy.audit.system}
+                </p>
+                <Badge variant="outline" className="mt-2">{actionLabel(selected.action, ceoCopy.audit, t)}</Badge>
+              </CompactModalSection>
+              {changedFields.length ? changedFields.map((field) => (
+                <CompactModalSection
+                  key={field}
+                  title={auditFieldLabel(field, t)}
+                  tone="teal"
+                  collapsible={false}
+                  contentClassName="grid gap-3 sm:grid-cols-2"
+                >
+                  <div className="min-w-0">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{ceoCopy.audit.before}</p>
+                    <div className="whitespace-pre-wrap text-sm text-muted-foreground">{presentValue(field, oldValues[field])}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{ceoCopy.audit.after}</p>
+                    <div className="whitespace-pre-wrap text-sm">{presentValue(field, newValues[field])}</div>
+                  </div>
+                </CompactModalSection>
+              )) : <p className="text-sm text-muted-foreground">{ceoCopy.audit.noDiff}</p>}
+            </div>
+          ) : null}
+          <div className="compact-modal-footer flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setSelected(null)}>{t('close')}</Button>
+          </div>
         </SheetContent>
       </Sheet>
     </ModulePage>

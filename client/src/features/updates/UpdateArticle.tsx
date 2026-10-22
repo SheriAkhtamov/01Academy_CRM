@@ -6,7 +6,8 @@ import type { PlatformUpdate } from '@shared/contracts/platform-updates';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { calculateReadingTime } from './utils';
 import { updatesApi, updateQueryKeys } from './api';
 
@@ -185,8 +186,8 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
                 <button
                   type="button"
                   className="block w-full overflow-hidden rounded-xl border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setImage({ src: section.image!.src, caption: section.image!.caption[locale] })}
-                  aria-label={section.image.caption[locale]}
+                  onClick={() => setImage({ src: section.image!.src, caption: section.image!.caption[locale] || post.content.title[locale] })}
+                  aria-label={section.image.caption[locale] || post.content.title[locale]}
                 >
                   <img src={section.image.src} alt={section.image.caption[locale]} loading="lazy" className="h-auto w-full max-w-full" />
                 </button>
@@ -246,15 +247,18 @@ export function UpdateArticle({ post }: { post: PlatformUpdate }) {
             if (!open) setImage(null);
           }}
         >
-          <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>{image?.caption}</DialogTitle>
+          <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-5xl flex-col overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+            <DialogHeader data-topographic="card" className="compact-modal-header">
+              <DialogTitle className="line-clamp-2 break-words [overflow-wrap:anywhere]">{image?.caption}</DialogTitle>
             </DialogHeader>
             {image ? (
-              <div className="min-h-0 overflow-auto">
-                <img src={image.src} alt={image.caption} className="h-auto w-full max-w-full" />
+              <div className="compact-modal-body min-h-0 overflow-auto overscroll-contain">
+                <CompactModalSection title={image.caption} tone="sky" collapsible={false}>
+                  <img src={image.src} alt={image.caption} className="h-auto w-full max-w-full" />
+                </CompactModalSection>
               </div>
             ) : null}
+            <DialogFooter className="compact-modal-footer"><Button type="button" variant="outline" onClick={() => setImage(null)}>{t('close')}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </article>

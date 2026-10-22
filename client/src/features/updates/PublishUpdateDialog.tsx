@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Eye, Plus, Trash2, RotateCcw } from 'lucide-react';
+import { Check, Eye, Plus, Trash2, FileText } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { DialogFooter, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
-import { cn } from '@/lib/utils';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { updatesApi, updateQueryKeys } from './api';
 import {
   getPublishDraft,
@@ -52,6 +52,27 @@ const emptyPostDraft = (): UpdatePostDraft => ({
   summary: { ru: '', en: '' },
   sections: [createInitialSection()],
 });
+
+function firstInvalidPostField(draft: UpdatePostDraft, language: 'ru' | 'en') {
+  if (!draft.title[language].trim()) return { id: `update-title-${language}` };
+  if (!draft.summary[language].trim()) return { id: `update-summary-${language}` };
+
+  const missingTranslation = (value: { ru: string; en: string }) =>
+    Boolean(value.ru.trim() || value.en.trim()) && !value[language].trim();
+
+  for (const [sectionIndex, section] of draft.sections.entries()) {
+    if (missingTranslation(section.heading)) {
+      return { id: `sec-heading-${language}-${sectionIndex}`, sectionIndex };
+    }
+    const hasText = section.body[language].trim() || section.items.some((item) => item[language].trim());
+    if (missingTranslation(section.body) || !hasText) {
+      return { id: `update-body-${language}${sectionIndex > 0 ? `-${sectionIndex}` : ''}`, sectionIndex };
+    }
+    const itemIndex = section.items.findIndex(missingTranslation);
+    if (itemIndex >= 0) return { id: `update-item-${language}-${sectionIndex}-${itemIndex}`, sectionIndex };
+  }
+  return null;
+}
 
 const serializeDraft = (draft: UpdatePostDraft): PublishDraftData => ({
   titleRu: draft.title.ru,
@@ -135,7 +156,6 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
         initialSaved.sectionsEn?.some((s) => s.heading?.trim() || s.paragraphs?.some(Boolean) || s.items?.some(Boolean)))
   );
 
-  const [draftRestored, setDraftRestored] = useState(hasSavedContent);
   const [draft, setDraft] = useState<UpdatePostDraft>(() => {
     if (hasSavedContent && initialSaved) {
       return deserializeDraft(initialSaved);
@@ -147,6 +167,28 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   const [publicationKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<DraftRemoval | null>(null);
+  const [activeTab, setActiveTab] = useState<'ru' | 'en' | 'preview'>(currentLanguage === 'en' ? 'en' : 'ru');
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [focusTarget, setFocusTarget] = useState('');
+  const [invalidField, setInvalidField] = useState('');
+  const active = useRef(true);
+  const submitLock = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!focusTarget) return;
+    setInvalidField(focusTarget);
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(focusTarget);
+      target?.focus();
+      target?.scrollIntoView({ block: 'nearest' });
+      setFocusTarget('');
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, openSections, focusTarget]);
 
   // Auto-save draft changes to localStorage (ADV-07)
   useEffect(() => {
@@ -174,21 +216,24 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   const handleClearDraft = () => {
     clearPublishDraft();
     setDraft(emptyPostDraft());
-    setDraftRestored(false);
+    setError('');
+    setOpenSections({});
   };
 
   const publish = useMutation({
     mutationFn: updatesApi.publish,
     onSuccess: async (post) => {
+      if (!active.current) return;
       clearPublishDraft();
       toast({ title: t('updatesPublished') });
       await Promise.all([
         client.invalidateQueries({ queryKey: updateQueryKeys.all }),
         client.invalidateQueries({ queryKey: ['/api/notifications'] }),
       ]);
-      allowNavigation(() => onPublished(post.id));
+      if (active.current) allowNavigation(() => onPublished(post.id));
     },
-    onError: (failure: Error) => setError(failure.message),
+    onError: () => { if (active.current) setError(t('updatesPublishFailed')); },
+    onSettled: () => { submitLock.current = false; },
   });
 
   const isDirty =
@@ -209,28 +254,17 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     open: true,
     isDirty,
     isPending: publish.isPending,
+    onDiscard: clearPublishDraft,
     onOpenChange: (open) => {
       if (!open) onClose();
     },
   });
 
-  const isLanguageComplete = (language: 'ru' | 'en') => {
-    const hasTranslation = (value: { ru: string; en: string }) =>
-      (!value.ru.trim() && !value.en.trim()) || Boolean(value[language].trim());
-
-    return Boolean(draft.title[language].trim()) &&
-      Boolean(draft.summary[language].trim()) &&
-      draft.sections.every((section) =>
-        (section.body[language].trim() || section.items.some((item) => item[language].trim())) &&
-        hasTranslation(section.heading) &&
-        hasTranslation(section.body) &&
-        section.items.every(hasTranslation)
-      );
-  };
-  const isRuValid = isLanguageComplete('ru');
-  const isEnValid = isLanguageComplete('en');
+  const isRuValid = !firstInvalidPostField(draft, 'ru');
+  const isEnValid = !firstInvalidPostField(draft, 'en');
 
   const addSection = () => {
+    setOpenSections((previous) => ({ ...previous, [`section-${draft.sections.length}`]: true }));
     setDraft((prev) => ({
       ...prev,
       sections: [
@@ -253,6 +287,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   };
 
   const addItem = (sectionIndex: number) => {
+    setOpenSections((previous) => ({ ...previous, [`items-${sectionIndex}`]: true }));
     setDraft((prev) => {
       const updated = [...prev.sections];
       const section = updated[sectionIndex];
@@ -300,28 +335,17 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   };
 
   const submit = () => {
-    const hasEmptyTitleOrSummary =
-      !draft.title.ru.trim() ||
-      !draft.title.en.trim() ||
-      !draft.summary.ru.trim() ||
-      !draft.summary.en.trim();
-
-    const hasIncompleteSection = draft.sections.some(
-      (s) =>
-        (!s.body.ru.trim() && !s.items.some((i) => i.ru.trim())) ||
-        (!s.body.en.trim() && !s.items.some((i) => i.en.trim()))
-    );
-
-    const hasIncompleteTranslation = (value: { ru: string; en: string }) =>
-      Boolean(value.ru.trim()) !== Boolean(value.en.trim());
-    const hasIncompleteContent = draft.sections.some((section) =>
-      hasIncompleteTranslation(section.heading) ||
-      hasIncompleteTranslation(section.body) ||
-      section.items.some(hasIncompleteTranslation)
-    );
-
-    if (hasEmptyTitleOrSummary || hasIncompleteSection || hasIncompleteContent) {
+    if (publish.isPending || submitLock.current) return;
+    for (const language of ['ru', 'en'] as const) {
+      const invalid = firstInvalidPostField(draft, language);
+      if (!invalid) continue;
       setError(t('updatesInvalidContent'));
+      setActiveTab(language);
+      if (invalid.sectionIndex !== undefined) {
+        const index = invalid.sectionIndex;
+        setOpenSections((previous) => ({ ...previous, [`section-${index}`]: true, [`items-${index}`]: true }));
+      }
+      setFocusTarget(invalid.id);
       return;
     }
 
@@ -351,6 +375,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
     };
 
     setError('');
+    submitLock.current = true;
     publish.mutate(command);
   };
 
@@ -364,317 +389,296 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
   return (
     <>
       <Dialog open onOpenChange={guard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden">
-          <DialogHeader>
+        <DialogContent aria-describedby={undefined} onOpenAutoFocus={(event) => { event.preventDefault(); document.getElementById(`update-title-${activeTab}`)?.focus(); }} className="compact-modal flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl flex-col overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+          <DialogHeader data-topographic="card" className="compact-modal-header">
             <DialogTitle>{t('updatesNewPost')}</DialogTitle>
           </DialogHeader>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); submit(); }} onChange={() => { setError(''); setInvalidField(''); }}>
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="compact-modal-body min-h-0 overflow-y-auto overscroll-contain">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="ru" className="flex items-center justify-center gap-1.5">
+                  <span>{t('updatesRussian')}</span>
+                  <span aria-hidden="true" className="inline-flex items-center">
+                    {isRuValid ? (
+                      <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <span className="size-1.5 rounded-full bg-amber-500" />
+                    )}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="en" className="flex items-center justify-center gap-1.5">
+                  <span>{t('updatesEnglish')}</span>
+                  <span aria-hidden="true" className="inline-flex items-center">
+                    {isEnValid ? (
+                      <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <span className="size-1.5 rounded-full bg-amber-500" />
+                    )}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="preview" className="flex items-center justify-center gap-1.5">
+                  <Eye className="size-3.5" aria-hidden="true" />
+                  <span>{t('updatesPreview')}</span>
+                </TabsTrigger>
+              </TabsList>
 
-          {/* Draft restored banner (ADV-07) */}
-          {draftRestored ? (
-            <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
-              <div className="flex items-center gap-2">
-                <RotateCcw className="size-3.5 text-primary" />
-                <span>{t('updatesDraftRestored')}</span>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-                disabled={publish.isPending}
-                onClick={() => setPendingRemoval({ kind: 'draft' })}
-              >
-                <Trash2 className="mr-1 size-3" />
-                {t('updatesClearDraft')}
-              </Button>
-            </div>
-          ) : null}
-
-          <Tabs defaultValue="ru" className="min-h-0 overflow-y-auto">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="ru" className="flex items-center justify-center gap-1.5">
-                <span>{t('updatesRussian')}</span>
-                <span aria-hidden="true" className="inline-flex items-center">
-                  {isRuValid ? (
-                    <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <span className="size-1.5 rounded-full bg-amber-500" />
-                  )}
-                </span>
-              </TabsTrigger>
-              <TabsTrigger value="en" className="flex items-center justify-center gap-1.5">
-                <span>{t('updatesEnglish')}</span>
-                <span aria-hidden="true" className="inline-flex items-center">
-                  {isEnValid ? (
-                    <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <span className="size-1.5 rounded-full bg-amber-500" />
-                  )}
-                </span>
-              </TabsTrigger>
-              <TabsTrigger value="preview" className="flex items-center justify-center gap-1.5">
-                <Eye className="size-3.5" aria-hidden="true" />
-                <span>{t('updatesPreview')}</span>
-              </TabsTrigger>
-            </TabsList>
-
-            {(['ru', 'en'] as const).map((language) => (
-              <TabsContent key={language} value={language} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor={`update-title-${language}`}>{t('updatesTitle')}</Label>
-                  <Input
-                    id={`update-title-${language}`}
-                    disabled={publish.isPending}
-                    maxLength={200}
-                    value={draft.title[language]}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        title: { ...prev.title, [language]: event.target.value },
-                      }))
-                    }
-                  />
-                  <div className="flex justify-end text-xs text-muted-foreground">
-                    <span>{draft.title[language].length} / 200</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor={`update-summary-${language}`}>{t('updatesSummary')}</Label>
-                  <Textarea
-                    id={`update-summary-${language}`}
-                    disabled={publish.isPending}
-                    maxLength={600}
-                    value={draft.summary[language]}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        summary: { ...prev.summary, [language]: event.target.value },
-                      }))
-                    }
-                  />
-                  <div className="flex justify-end text-xs text-muted-foreground">
-                    <span>{draft.summary[language].length} / 600</span>
-                  </div>
-                </div>
-
-                {/* Multi-section builder (ADV-09) */}
-                <div className="space-y-4 pt-2">
-                  {draft.sections.map((section, sIndex) => (
-                    <div
-                      key={section.id}
-                      className={cn(
-                        'space-y-3 rounded-lg border p-3.5 bg-card/40',
-                        sIndex > 0 && 'border-primary/30'
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {t('updatesSection')} {sIndex + 1}
-                        </span>
-                        {sIndex > 0 ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                            disabled={publish.isPending}
-                            onClick={() => setPendingRemoval({ kind: 'section', sectionIndex: sIndex })}
-                          >
-                            <Trash2 className="mr-1 size-3" />
-                            {t('updatesRemoveSection')}
-                          </Button>
-                        ) : null}
+              {(['ru', 'en'] as const).map((language) => (
+                <TabsContent key={language} value={language} className="space-y-4">
+                  <CompactModalSection title={t('updatesTitle')} icon={FileText} tone="sky" collapsible={false} disabled={publish.isPending} contentClassName="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`update-title-${language}`}>{t('updatesTitle')}</Label>
+                      <Input
+                        id={`update-title-${language}`}
+                        aria-invalid={invalidField === `update-title-${language}`}
+                        aria-describedby={invalidField === `update-title-${language}` ? 'update-publish-error' : undefined}
+                        disabled={publish.isPending}
+                        maxLength={200}
+                        value={draft.title[language]}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            title: { ...prev.title, [language]: event.target.value },
+                          }))
+                        }
+                      />
+                      <div className="flex justify-end text-xs text-muted-foreground">
+                        <span>{draft.title[language].length} / 200</span>
                       </div>
+                    </div>
 
-                      {sIndex > 0 || section.heading.ru || section.heading.en ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`update-summary-${language}`}>{t('updatesSummary')}</Label>
+                      <Textarea
+                        id={`update-summary-${language}`}
+                        aria-invalid={invalidField === `update-summary-${language}`}
+                        aria-describedby={invalidField === `update-summary-${language}` ? 'update-publish-error' : undefined}
+                        disabled={publish.isPending}
+                        maxLength={600}
+                        value={draft.summary[language]}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            summary: { ...prev.summary, [language]: event.target.value },
+                          }))
+                        }
+                      />
+                      <div className="flex justify-end text-xs text-muted-foreground">
+                        <span>{draft.summary[language].length} / 600</span>
+                      </div>
+                    </div>
+                  </CompactModalSection>
+                  {/* Multi-section builder (ADV-09) */}
+                  <div className="space-y-4 pt-2">
+                    {draft.sections.map((section, sIndex) => (
+                      <CompactModalSection
+                        key={section.id}
+                        title={`${t('updatesSection')} ${sIndex + 1}`}
+                        summary={section.heading[language] || section.body[language]}
+                        tone={sIndex === 0 ? 'teal' : 'violet'}
+                        collapsible={sIndex > 0}
+                        open={Boolean(openSections[`section-${sIndex}`])}
+                        onOpenChange={(open) => setOpenSections((previous) => ({ ...previous, [`section-${sIndex}`]: open }))}
+                        disabled={publish.isPending}
+                        contentClassName="space-y-3"
+                        actions={sIndex > 0 ? <Button type="button" variant="ghost" size="icon" className="size-8 text-destructive" disabled={publish.isPending} onClick={() => setPendingRemoval({ kind: 'section', sectionIndex: sIndex })} aria-label={t('updatesRemoveSection')}><Trash2 className="size-3.5" /></Button> : undefined}
+                      >
+
+                        {sIndex > 0 || section.heading.ru || section.heading.en ? (
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`sec-heading-${language}-${sIndex}`}>{t('updatesSectionHeading')}</Label>
+                            <Input
+                              id={`sec-heading-${language}-${sIndex}`}
+                              aria-invalid={invalidField === `sec-heading-${language}-${sIndex}`}
+                              aria-describedby={invalidField === `sec-heading-${language}-${sIndex}` ? 'update-publish-error' : undefined}
+                              disabled={publish.isPending}
+                              maxLength={200}
+                              value={section.heading[language]}
+                              onChange={(event) => {
+                                const val = event.target.value;
+                                setDraft((prev) => {
+                                  const updated = [...prev.sections];
+                                  updated[sIndex] = {
+                                    ...updated[sIndex],
+                                    heading: { ...updated[sIndex].heading, [language]: val },
+                                  };
+                                  return { ...prev, sections: updated };
+                                });
+                              }}
+                            />
+                          </div>
+                        ) : null}
+
                         <div className="space-y-1.5">
-                          <Label htmlFor={`sec-heading-${language}-${sIndex}`}>{t('updatesSectionHeading')}</Label>
-                          <Input
-                            id={`sec-heading-${language}-${sIndex}`}
+                          <Label htmlFor={`update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}`}>
+                            {sIndex === 0 ? t('updatesBody') : t('updatesSectionBody')}
+                          </Label>
+                          <Textarea
+                            id={`update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}`}
+                            aria-invalid={invalidField === `update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}`}
+                            aria-describedby={invalidField === `update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}` ? 'update-publish-error' : undefined}
                             disabled={publish.isPending}
-                            maxLength={200}
-                            value={section.heading[language]}
+                            maxLength={5000}
+                            rows={sIndex === 0 ? 6 : 4}
+                            value={section.body[language]}
                             onChange={(event) => {
                               const val = event.target.value;
                               setDraft((prev) => {
                                 const updated = [...prev.sections];
                                 updated[sIndex] = {
                                   ...updated[sIndex],
-                                  heading: { ...updated[sIndex].heading, [language]: val },
+                                  body: { ...updated[sIndex].body, [language]: val },
                                 };
                                 return { ...prev, sections: updated };
                               });
                             }}
                           />
                         </div>
-                      ) : null}
 
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}`}>
-                          {sIndex === 0 ? t('updatesBody') : t('updatesSectionBody')}
-                        </Label>
-                        <Textarea
-                          id={`update-body-${language}${sIndex > 0 ? `-${sIndex}` : ''}`}
-                          disabled={publish.isPending}
-                          maxLength={5000}
-                          rows={sIndex === 0 ? 6 : 4}
-                          value={section.body[language]}
-                          onChange={(event) => {
-                            const val = event.target.value;
-                            setDraft((prev) => {
-                              const updated = [...prev.sections];
-                              updated[sIndex] = {
-                                ...updated[sIndex],
-                                body: { ...updated[sIndex].body, [language]: val },
-                              };
-                              return { ...prev, sections: updated };
-                            });
-                          }}
-                        />
-                      </div>
-
-                      {/* Bullet list items */}
-                      <div className="space-y-2 pt-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">{t('updatesSectionItems')}</span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            disabled={publish.isPending}
-                            onClick={() => addItem(sIndex)}
-                          >
-                            <Plus className="mr-1 size-3" />
-                            {t('updatesAddItem')}
-                          </Button>
-                        </div>
-                        {section.items.map((item, iIndex) => (
-                          <div key={item.id} className="flex items-center gap-2">
-                            <Input
-                              disabled={publish.isPending}
-                              value={item[language]}
-                              placeholder={t('updatesAddItem')}
-                              maxLength={2000}
-                              className="h-8 text-sm"
-                              onChange={(event) => {
-                                const val = event.target.value;
-                                setDraft((prev) => {
-                                  const updated = [...prev.sections];
-                                  const curSec = updated[sIndex];
-                                  const updatedItems = [...curSec.items];
-                                  updatedItems[iIndex] = {
-                                    ...updatedItems[iIndex],
-                                    [language]: val,
-                                  };
-                                  updated[sIndex] = { ...curSec, items: updatedItems };
-                                  return { ...prev, sections: updated };
-                                });
-                              }}
-                            />
+                        {/* Bullet list items */}
+                        <CompactModalSection title={t('updatesSectionItems')} count={section.items.length} tone="amber" open={Boolean(openSections[`items-${sIndex}`])} onOpenChange={(open) => setOpenSections((previous) => ({ ...previous, [`items-${sIndex}`]: open }))} disabled={publish.isPending} contentClassName="space-y-2" actions={
+                          <div className="flex items-center justify-between">
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
                               disabled={publish.isPending}
-                              onClick={() => setPendingRemoval({ kind: 'item', sectionIndex: sIndex, itemIndex: iIndex })}
-                              aria-label={t('updatesRemoveItem')}
+                              onClick={() => addItem(sIndex)}
                             >
-                              <Trash2 className="size-3.5" />
+                              <Plus className="mr-1 size-3" />
+                              {t('updatesAddItem')}
                             </Button>
-                          </div>
-                        ))}
-                      </div>
+                          </div>}>
+                          {section.items.map((item, iIndex) => (
+                            <div key={item.id} className="flex items-center gap-2">
+                              <Input
+                                id={`update-item-${language}-${sIndex}-${iIndex}`}
+                                aria-invalid={invalidField === `update-item-${language}-${sIndex}-${iIndex}`}
+                                aria-describedby={invalidField === `update-item-${language}-${sIndex}-${iIndex}` ? 'update-publish-error' : undefined}
+                                disabled={publish.isPending}
+                                value={item[language]}
+                                aria-label={`${t('updatesSectionItems')} ${iIndex + 1}`}
+                                maxLength={2000}
+                                className="h-8 text-sm"
+                                onChange={(event) => {
+                                  const val = event.target.value;
+                                  setDraft((prev) => {
+                                    const updated = [...prev.sections];
+                                    const curSec = updated[sIndex];
+                                    const updatedItems = [...curSec.items];
+                                    updatedItems[iIndex] = {
+                                      ...updatedItems[iIndex],
+                                      [language]: val,
+                                    };
+                                    updated[sIndex] = { ...curSec, items: updatedItems };
+                                    return { ...prev, sections: updated };
+                                  });
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                disabled={publish.isPending}
+                                onClick={() => setPendingRemoval({ kind: 'item', sectionIndex: sIndex, itemIndex: iIndex })}
+                                aria-label={t('updatesRemoveItem')}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </CompactModalSection>
+                      </CompactModalSection>
+                    ))}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-1.5 border-dashed"
+                      disabled={publish.isPending}
+                      onClick={addSection}
+                    >
+                      <Plus className="size-4" />
+                      {t('updatesAddSection')}
+                    </Button>
+                  </div>
+                </TabsContent>
+              ))}
+
+              <TabsContent value="preview" className="space-y-4 pt-2">
+                <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-2 text-xs">
+                  <span className="font-medium text-muted-foreground">{t('updatesPreview')}</span>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={previewLanguage === 'ru' ? 'secondary' : 'ghost'}
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setPreviewLanguage('ru')}
+                    >
+                      {t('updatesRussian')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={previewLanguage === 'en' ? 'secondary' : 'ghost'}
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setPreviewLanguage('en')}
+                    >
+                      {t('updatesEnglish')}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-xl border p-5">
+                  <div className="space-y-2">
+                    <h3 className="break-words text-xl font-semibold tracking-tight">
+                      {draft.title[previewLanguage].trim() || <span className="text-muted-foreground italic">—</span>}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {draft.summary[previewLanguage].trim() || <span className="italic">—</span>}
+                    </p>
+                  </div>
+
+                  {draft.sections.map((section, sIndex) => (
+                    <div key={section.id} className="border-t pt-3 space-y-2">
+                      {section.heading[previewLanguage].trim() ? (
+                        <h4 className="font-semibold text-base">{section.heading[previewLanguage].trim()}</h4>
+                      ) : null}
+                      {section.body[previewLanguage].trim() ? (
+                        <p className="whitespace-pre-line break-words text-sm leading-relaxed">
+                          {section.body[previewLanguage].trim()}
+                        </p>
+                      ) : null}
+                      {section.items.filter((it) => it[previewLanguage].trim()).length > 0 ? (
+                        <ul className="list-disc pl-5 text-sm space-y-1">
+                          {section.items
+                            .filter((it) => it[previewLanguage].trim())
+                            .map((it) => (
+                              <li key={it.id}>{it[previewLanguage].trim()}</li>
+                            ))}
+                        </ul>
+                      ) : null}
                     </div>
                   ))}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full gap-1.5 border-dashed"
-                    disabled={publish.isPending}
-                    onClick={addSection}
-                  >
-                    <Plus className="size-4" />
-                    {t('updatesAddSection')}
-                  </Button>
                 </div>
               </TabsContent>
-            ))}
+            </Tabs>
 
-            <TabsContent value="preview" className="space-y-4 pt-2">
-              <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-2 text-xs">
-                <span className="font-medium text-muted-foreground">{t('updatesPreview')}</span>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={previewLanguage === 'ru' ? 'secondary' : 'ghost'}
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setPreviewLanguage('ru')}
-                  >
-                    {t('updatesRussian')}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={previewLanguage === 'en' ? 'secondary' : 'ghost'}
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setPreviewLanguage('en')}
-                  >
-                    {t('updatesEnglish')}
-                  </Button>
-                </div>
-              </div>
+            {error ? <p id="update-publish-error" role="alert" className="shrink-0 px-3 py-2 text-sm text-destructive sm:px-5">{error}</p> : null}
 
-              <div className="space-y-4 rounded-xl border p-5">
-                <div className="space-y-2">
-                  <h3 className="break-words text-xl font-semibold tracking-tight">
-                    {draft.title[previewLanguage].trim() || <span className="text-muted-foreground italic">—</span>}
-                  </h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {draft.summary[previewLanguage].trim() || <span className="italic">—</span>}
-                  </p>
-                </div>
-
-                {draft.sections.map((section, sIndex) => (
-                  <div key={section.id} className="border-t pt-3 space-y-2">
-                    {section.heading[previewLanguage].trim() ? (
-                      <h4 className="font-semibold text-base">{section.heading[previewLanguage].trim()}</h4>
-                    ) : null}
-                    {section.body[previewLanguage].trim() ? (
-                      <p className="whitespace-pre-line break-words text-sm leading-relaxed">
-                        {section.body[previewLanguage].trim()}
-                      </p>
-                    ) : null}
-                    {section.items.filter((it) => it[previewLanguage].trim()).length > 0 ? (
-                      <ul className="list-disc pl-5 text-sm space-y-1">
-                        {section.items
-                          .filter((it) => it[previewLanguage].trim())
-                          .map((it) => (
-                            <li key={it.id}>{it[previewLanguage].trim()}</li>
-                          ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-
-          <DialogFooter className="flex shrink-0 justify-end gap-2 border-t pt-4">
-            <Button variant="outline" disabled={publish.isPending} onClick={() => guard.handleOpenChange(false)}>
-              {t('cancel')}
-            </Button>
-            <Button disabled={publish.isPending} onClick={submit}>
-              {publish.isPending ? t('saving') : t('updatesPublish')}
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="compact-modal-footer flex-wrap">
+              {isDirty ? <Button type="button" variant="ghost" className="sm:mr-auto" disabled={publish.isPending} onClick={() => setPendingRemoval({ kind: 'draft' })}><Trash2 data-icon="inline-start" />{t('updatesClearDraft')}</Button> : null}
+              <Button type="button" variant="outline" disabled={publish.isPending} onClick={() => guard.handleOpenChange(false)}>
+                {t('cancel')}
+              </Button>
+              <Button type="submit" disabled={publish.isPending}>
+                {publish.isPending ? t('saving') : t('updatesPublish')}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
       <ConfirmDialog
@@ -687,7 +691,12 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
         variant="destructive"
         isPending={publish.isPending}
       />
-      <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />
+      <UnsavedChangesDialog
+        open={guard.confirmationOpen}
+        onOpenChange={guard.setConfirmationOpen}
+        onDiscard={guard.discardChanges}
+        isPending={publish.isPending}
+      />
     </>
   );
 }

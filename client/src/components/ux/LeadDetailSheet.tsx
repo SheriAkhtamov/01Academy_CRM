@@ -57,6 +57,7 @@ import {
 } from '@/components/ux/LeadMergeConflictDialog';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -1818,10 +1819,12 @@ export function LeadDetailSheet({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('leadWorkspaceRemovePhoneTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {removePhoneIndex !== null ? phoneValues[removePhoneIndex] : null}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (removePhoneIndex !== null) removeLeadPhoneRow(removePhoneIndex); }}>
@@ -1847,18 +1850,20 @@ export function LeadDetailSheet({
       />
       <AlertDialog open={pendingManagerId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen && !assignLead.isPending) setPendingManagerId(null);
-      }}>
+      }} pending={assignLead.isPending}>
         <AlertDialogContent onCloseAutoFocus={(event) => {
           event.preventDefault();
           sheetRef.current?.focus();
         }}>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmingSelfClaim ? t('leadAssignmentRequired') : t('confirmLeadTransfer')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {confirmingSelfClaim ? lead?.contactName : t('confirmLeadTransferDescription')
                 .replace('{manager}', managers.find((manager) => manager.id === pendingManagerId)?.fullName ?? '')}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={assignLead.isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

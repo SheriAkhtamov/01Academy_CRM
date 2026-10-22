@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import AuditPage from '../client/src/pages/admin/audit';
@@ -31,7 +31,10 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AuditPage /></QueryClientProvider>);
+const mount = () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return { client, ...render(<QueryClientProvider client={client}><AuditPage /></QueryClientProvider>) };
+};
 
 describe('audit copy and diagnostics', () => {
   it('keeps a modal with readable business changes and employee names', async () => {
@@ -87,6 +90,7 @@ describe('audit copy and diagnostics', () => {
     await user.click(screen.getByRole('option', { name: translations.auditActionChanged.en }));
     await user.click(within(dialog).getByRole('combobox', { name: translations.auditObject.en }));
     await user.click(screen.getByRole('option', { name: translations.navLeads.en }));
+    await user.click(within(dialog).getByRole('button', { name: translations.auditFilterPeriod.en }));
     fireEvent.change(within(dialog).getByLabelText(translations.fromDate.en), { target: { value: '2026-10-01' } });
     fireEvent.change(within(dialog).getByLabelText(translations.toDate.en), { target: { value: '2026-10-05' } });
     expect(mocks.api.mock.calls.length).toBe(requestsBeforeEditing);
@@ -117,11 +121,97 @@ describe('audit copy and diagnostics', () => {
     const requestCount = mocks.api.mock.calls.length;
     await user.click(screen.getByRole('button', { name: translations.auditFilterButton.en }));
     const dialog = screen.getByRole('dialog', { name: translations.auditFiltersTitle.en });
+    await user.click(within(dialog).getByRole('button', { name: translations.auditFilterPeriod.en }));
     fireEvent.change(within(dialog).getByLabelText(translations.fromDate.en), { target: { value: '2026-10-01' } });
     await user.click(within(dialog).getByRole('button', { name: translations.cancel.en }));
+    let confirmation = screen.getByRole('alertdialog', { name: translations.unsavedChangesTitle.en });
+    await user.click(within(confirmation).getByRole('button', { name: translations.keepEditing.en }));
+    expect((within(dialog).getByLabelText(translations.fromDate.en) as HTMLInputElement).value).toBe('2026-10-01');
+    await user.keyboard('{Escape}');
+    confirmation = screen.getByRole('alertdialog', { name: translations.unsavedChangesTitle.en });
+    await user.click(within(confirmation).getByRole('button', { name: translations.discardChanges.en }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.api.mock.calls.length).toBe(requestCount);
     await user.click(screen.getByRole('button', { name: translations.auditFilterButton.en }));
     expect((screen.getByLabelText(translations.fromDate.en) as HTMLInputElement).value).toBe('');
+  });
+
+  it.each([403, 404])('closes sensitive details and keeps cached rows hidden until a fresh success after %s', async (status) => {
+    const user = userEvent.setup();
+    const { client } = mount();
+    const buttons = await screen.findAllByRole('button', { name: translations.viewChanges.en });
+    const authorizedData = await mocks.api.mock.results[0].value;
+    await user.click(buttons[0]);
+    expect(screen.getByRole('dialog', { name: translations.recordChanges.en })).toBeTruthy();
+    mocks.api.mockRejectedValueOnce(Object.assign(new Error('Internal audit policy'), { status }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['academy-audit'] }); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('button', { name: translations.viewChanges.en })).toBeNull();
+    expect(document.body.textContent).not.toContain('New contact');
+    let finish!: (data: unknown) => void;
+    mocks.api.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await user.click(screen.getByRole('button', { name: translations.adminRefresh.en }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(3));
+    expect(screen.queryByRole('button', { name: translations.viewChanges.en })).toBeNull();
+    expect((screen.getByRole('button', { name: translations.auditFilterButton.en }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { finish(authorizedData); });
+    expect((await screen.findAllByRole('button', { name: translations.viewChanges.en })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('preserves a viewed change and staged filters after transient failures, then closes a revoked confirmation', async () => {
+    const user = userEvent.setup();
+    const { client } = mount();
+    const buttons = await screen.findAllByRole('button', { name: translations.viewChanges.en });
+    await user.click(buttons[0]);
+    mocks.api.mockRejectedValueOnce(Object.assign(new Error('Internal database temporarily unavailable'), { status: 500 }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['academy-audit'] }); });
+    let dialog = screen.getByRole('dialog', { name: translations.recordChanges.en });
+    expect(within(dialog).getByText('New contact')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: translations.auditFilterButton.en }));
+    dialog = screen.getByRole('dialog', { name: translations.auditFiltersTitle.en });
+    await user.click(within(dialog).getByRole('button', { name: translations.auditFilterPeriod.en }));
+    fireEvent.change(within(dialog).getByLabelText(translations.fromDate.en), { target: { value: '2026-10-01' } });
+    mocks.api.mockRejectedValueOnce(Object.assign(new Error('Internal service unavailable'), { status: 500 }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['academy-audit'] }); });
+    expect((within(dialog).getByLabelText(translations.fromDate.en) as HTMLInputElement).value).toBe('2026-10-01');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog', { name: translations.unsavedChangesTitle.en })).toBeTruthy();
+    mocks.api.mockRejectedValueOnce(Object.assign(new Error('Internal access revoked'), { status: 403 }));
+    await act(async () => { await client.refetchQueries({ queryKey: ['academy-audit'] }); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.body.textContent).not.toContain('Internal');
+  });
+
+  it.each([403, 404])('ignores a late %s from a previous filter request after the current query succeeds', async (status) => {
+    const user = userEvent.setup();
+    const { client } = mount();
+    await screen.findAllByRole('button', { name: translations.viewChanges.en });
+    const originalData = await mocks.api.mock.results[0].value;
+    let rejectPrevious!: (failure: Error) => void;
+    mocks.api.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectPrevious = reject; }));
+    act(() => { void client.refetchQueries({ queryKey: ['academy-audit'] }); });
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole('button', { name: translations.auditFilterButton.en }));
+    const filters = screen.getByRole('dialog', { name: translations.auditFiltersTitle.en });
+    await user.click(within(filters).getByRole('combobox', { name: translations.auditAction.en }));
+    await user.click(screen.getByRole('option', { name: translations.auditActionChanged.en }));
+    const freshData = {
+      ...originalData,
+      logs: originalData.logs.map((log: { newValues: object }) => ({ ...log, newValues: { ...log.newValues, contact_name: 'Fresh query contact' } })),
+    };
+    mocks.api.mockResolvedValueOnce(freshData);
+    await user.click(within(filters).getByRole('button', { name: translations.auditApplyFilters.en }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(3));
+    await user.click((await screen.findAllByRole('button', { name: translations.viewChanges.en }))[0]);
+    const details = screen.getByRole('dialog', { name: translations.recordChanges.en });
+    await within(details).findByText('Fresh query contact');
+    await act(async () => {
+      rejectPrevious(Object.assign(new Error('Previous query access denied'), { status }));
+    });
+    expect(screen.getByRole('dialog', { name: translations.recordChanges.en })).toBe(details);
+    expect(within(details).getByText('Fresh query contact')).toBeTruthy();
   });
 });

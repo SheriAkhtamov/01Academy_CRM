@@ -1,6 +1,8 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import {
+  AlertDialogBody,
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogFooter,
@@ -81,7 +83,7 @@ export function LeadMergeConflictDialog({
   return (
     <AlertDialog open={open} onOpenChange={(nextOpen) => {
       if (!nextOpen && !isPending) onCancel();
-    }}>
+    }} pending={isPending}>
       <AlertDialogContent className="max-w-2xl" aria-describedby={undefined}>
         <AlertDialogHeader>
           <div className="flex items-center gap-2">
@@ -89,21 +91,20 @@ export function LeadMergeConflictDialog({
             <AlertDialogTitle>{t('leadDuplicateFoundTitle')}</AlertDialogTitle>
           </div>
         </AlertDialogHeader>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <LeadSummaryCard
-            lead={currentLead}
-            label={mode === 'draft' ? t('leadNewDataLabel') : t('leadCurrentCardLabel')}
-          />
-          {existingLead ? (
-            <LeadSummaryCard lead={existingLead} label={t('leadExistingCardLabel')} />
+        <AlertDialogBody>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <LeadSummaryCard
+              lead={currentLead}
+              label={mode === 'draft' ? t('leadNewDataLabel') : t('leadCurrentCardLabel')}
+            />
+            {existingLead ? (
+              <LeadSummaryCard lead={existingLead} label={t('leadExistingCardLabel')} />
+            ) : null}
+          </div>
+          {!canMerge ? (
+            <p className="text-sm font-medium text-destructive">{t('leadMergeUnavailableForManager')}</p>
           ) : null}
-        </div>
-
-        {!canMerge ? (
-          <p className="text-sm font-medium text-destructive">{t('leadMergeUnavailableForManager')}</p>
-        ) : null}
-
+        </AlertDialogBody>
         <AlertDialogFooter className="gap-2 sm:flex-wrap">
           <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
           <Button type="button" variant="outline" disabled={isPending} onClick={onOpenExisting}>
@@ -111,17 +112,21 @@ export function LeadMergeConflictDialog({
             {t('openExistingLead')}
           </Button>
           {mode === 'persisted' && onKeepCurrent ? (
-            <Button type="button" variant="outline" disabled={isPending || !canMerge} onClick={onKeepCurrent}>
-              <ArrowRightLeft data-icon="inline-start" />
-              {t('keepLeadNamed').replace('{name}', currentName)}
-            </Button>
+            <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onKeepCurrent(); }}>
+              <Button type="button" variant="outline" disabled={isPending || !canMerge}>
+                <ArrowRightLeft data-icon="inline-start" />
+                {t('keepLeadNamed').replace('{name}', currentName)}
+              </Button>
+            </AlertDialogAction>
           ) : null}
-          <Button type="button" disabled={isPending || !canMerge} onClick={onMergeIntoExisting}>
-            <ArrowRightLeft data-icon="inline-start" />
-            {mode === 'draft'
-              ? t('mergeWithExistingLead')
-              : t('keepLeadNamed').replace('{name}', existingName)}
-          </Button>
+          <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onMergeIntoExisting(); }}>
+            <Button type="button" disabled={isPending || !canMerge}>
+              <ArrowRightLeft data-icon="inline-start" />
+              {mode === 'draft'
+                ? t('mergeWithExistingLead')
+                : t('keepLeadNamed').replace('{name}', existingName)}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

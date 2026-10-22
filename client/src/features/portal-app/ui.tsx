@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/ux/EmptyState";
 import { PageHeader } from "@/components/ux/PageHeader";
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogBody,
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogDescription,
@@ -169,6 +171,7 @@ export function ConfirmAction({
   return (
     <AlertDialog
       open={open}
+      pending={pending}
       onOpenChange={(value) => {
         if (!pending) onOpenChange(value);
       }}
@@ -176,32 +179,33 @@ export function ConfirmAction({
       <PortalAlertDialogContent className="portal-ui">
         <AlertDialogHeader>
           <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
-          {objectName && <p className="break-words font-medium">{objectName}</p>}
+        </AlertDialogHeader>
+        <AlertDialogBody>
+          {objectName && <p className="font-medium [overflow-wrap:anywhere]">{objectName}</p>}
           <AlertDialogDescription>
             {description in translations
               ? t(description as TranslationKey)
               : description}
           </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </AlertDialogBody>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>
             {t("portalCancel")}
           </AlertDialogCancel>
-          <Button
-            type="button"
-            variant={
-              variant ?? (destructiveActions.has(action) ? "destructive" : "default")
-            }
-            disabled={pending}
-            onClick={onConfirm}
-          >
-            {t(action)}
-          </Button>
+          <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onConfirm(); }}>
+            <Button
+              type="button"
+              variant={variant ?? (destructiveActions.has(action) ? "destructive" : "default")}
+              disabled={pending}
+            >
+              {pending ? t('confirmProcessing') : t(action)}
+            </Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </PortalAlertDialogContent>
     </AlertDialog>

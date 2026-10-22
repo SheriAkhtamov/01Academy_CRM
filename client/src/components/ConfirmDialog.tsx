@@ -1,8 +1,9 @@
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
+    AlertDialogBody,
     AlertDialogCancel,
     AlertDialogContent,
     AlertDialogDescription,
@@ -11,22 +12,24 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useTranslation } from '@/hooks/useTranslation';
-import '@/components/ux/compact-modal.css';
 
 interface ConfirmDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     title: string;
     description: string;
+    target?: string;
+    confirmationKey?: string | number;
     confirmLabel?: string;
     cancelLabel?: string;
-    onConfirm: () => void;
+    onConfirm: () => void | Promise<unknown>;
     variant?: 'default' | 'destructive';
     isPending?: boolean;
     keepOpenOnConfirm?: boolean;
     children?: ReactNode;
     error?: string;
     confirmDisabled?: boolean;
+    /** Retained for existing callers; confirmation windows now share one compact layout. */
     compact?: boolean;
     /** Where focus goes once the dialog has closed; call `event.preventDefault()` to place it yourself. */
     onCloseAutoFocus?: (event: Event) => void;
@@ -37,6 +40,8 @@ export default function ConfirmDialog({
     onOpenChange,
     title,
     description,
+    target,
+    confirmationKey,
     confirmLabel,
     cancelLabel,
     onConfirm,
@@ -46,45 +51,88 @@ export default function ConfirmDialog({
     children,
     error,
     confirmDisabled = false,
-    compact = false,
     onCloseAutoFocus,
 }: ConfirmDialogProps) {
     const { t } = useTranslation();
-    const finalConfirmLabel = confirmLabel || t('ok');
-    const finalCancelLabel = cancelLabel || t('cancel');
+    const [awaitingResult, setAwaitingResult] = useState(false);
+    const [callbackFailed, setCallbackFailed] = useState(false);
+    const submitted = useRef(false);
+    const session = useRef(0);
+    const current = useRef({ open, isPending, onOpenChange });
+    current.current = { open, isPending, onOpenChange };
+    const busy = isPending || awaitingResult;
+
+    useEffect(() => {
+        // An older callback may finish after the controlled dialog has closed
+        // and reopened. It must not close or unlock the new confirmation.
+        session.current += 1;
+        submitted.current = false;
+        setAwaitingResult(false);
+        setCallbackFailed(false);
+        return () => { session.current += 1; };
+    }, [open, title, description, target, confirmationKey]);
+
+    useEffect(() => {
+        if (!isPending && !awaitingResult) submitted.current = false;
+    }, [isPending, awaitingResult]);
+
+    const confirm = () => {
+        if (!open || busy || confirmDisabled || submitted.current) return;
+        submitted.current = true;
+        setCallbackFailed(false);
+        const startedInSession = session.current;
+        const finish = (failed: boolean) => {
+            if (session.current !== startedInSession || !current.current.open) return;
+            setAwaitingResult(false);
+            submitted.current = current.current.isPending;
+            setCallbackFailed(failed);
+            if (!failed && !keepOpenOnConfirm) current.current.onOpenChange(false);
+        };
+
+        try {
+            const result = onConfirm();
+            if (result && typeof result.then === 'function') {
+                setAwaitingResult(true);
+                void Promise.resolve(result).then(() => finish(false), () => finish(true));
+            } else {
+                if (!keepOpenOnConfirm) onOpenChange(false);
+                // Keep synchronous keep-open callers retryable, while rejecting
+                // a second click before their mutation state has rendered.
+                queueMicrotask(() => {
+                    if (session.current === startedInSession) submitted.current = current.current.isPending;
+                });
+            }
+        } catch {
+            finish(true);
+        }
+    };
 
     return (
-        <AlertDialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next); }}>
+        <AlertDialog open={open} pending={busy} onOpenChange={onOpenChange}>
             <AlertDialogContent
                 onCloseAutoFocus={onCloseAutoFocus}
-                className={compact ? 'compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0' : undefined}
             >
-                <AlertDialogHeader className={compact ? 'compact-modal-header' : undefined}>
-                    <AlertDialogTitle className={compact ? 'text-base leading-6' : undefined}>{title}</AlertDialogTitle>
-                    {compact ? null : <AlertDialogDescription>{description}</AlertDialogDescription>}
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{title}</AlertDialogTitle>
                 </AlertDialogHeader>
-                {compact ? (
-                    <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
-                        <AlertDialogDescription className="break-words">{description}</AlertDialogDescription>
-                        {children}
-                        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-                    </div>
-                ) : <>
+                <AlertDialogBody>
+                    {target ? <p className="rounded-md border border-border-strong bg-card px-3 py-2 text-sm font-semibold [overflow-wrap:anywhere]">{target}</p> : null}
+                    <AlertDialogDescription className={description ? undefined : 'sr-only'}>{description}</AlertDialogDescription>
                     {children}
-                    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-                </>}
-                <AlertDialogFooter className={compact ? 'compact-modal-footer' : undefined}>
-                    <AlertDialogCancel disabled={isPending}>{finalCancelLabel}</AlertDialogCancel>
+                    {error || callbackFailed ? <p role="alert" className="text-sm text-destructive">{error || t('errorOccurred')}</p> : null}
+                </AlertDialogBody>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={busy}>{cancelLabel || t('cancel')}</AlertDialogCancel>
                     <AlertDialogAction
-                        disabled={isPending || confirmDisabled}
+                        disabled={busy || confirmDisabled}
                         onClick={(event) => {
-                            if (keepOpenOnConfirm) event.preventDefault();
-                            onConfirm();
+                            event.preventDefault();
+                            confirm();
                         }}
                         className={variant === 'destructive' ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''}
                     >
-                        {isPending ? <Loader2 className="animate-spin mr-1.5 h-4 w-4 inline-block" /> : null}
-                        {isPending ? t('saving') : finalConfirmLabel}
+                        {busy ? <Loader2 aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                        {busy ? t('confirmProcessing') : confirmLabel || t('ok')}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Archive, ArrowRightLeft, GitBranch, Trash2, UsersRound } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -244,7 +245,7 @@ export function BulkLeadActionsDialog({
                 <Label htmlFor="bulk-archive-reason">{t('archiveReason')}</Label>
                 <Select value={archiveReason} onValueChange={setArchiveReason} disabled={!canArchiveSelected}>
                   <SelectTrigger id="bulk-archive-reason">
-                    <SelectValue placeholder={t('chooseArchiveReason')} />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
@@ -355,17 +356,19 @@ export function BulkLeadActionsDialog({
         onOpenChange={(nextOpen) => {
           if (!nextOpen && !isPending) onCancelMoveClaim();
         }}
-      >
+       pending={isPending}>
         <AlertDialogContent onCloseAutoFocus={(event) => {
           event.preventDefault();
           moveButtonRef.current?.focus();
         }}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('bulkLeadAssignmentRequired')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('bulkUnassignedLeadCount', { count: moveClaimCount })}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -381,14 +384,16 @@ export function BulkLeadActionsDialog({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={archiveConfirmationOpen} onOpenChange={setArchiveConfirmationOpen}>
+      <AlertDialog open={archiveConfirmationOpen} onOpenChange={setArchiveConfirmationOpen} pending={isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('bulkArchiveConfirmTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('bulkArchiveConfirmDescription').replace('{count}', String(selectedCount))}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -404,14 +409,16 @@ export function BulkLeadActionsDialog({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={firstDeleteConfirmationOpen} onOpenChange={setFirstDeleteConfirmationOpen}>
+      <AlertDialog open={firstDeleteConfirmationOpen} onOpenChange={setFirstDeleteConfirmationOpen} pending={isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('bulkDeleteFirstTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('bulkDeleteFirstDescription').replace('{count}', String(selectedCount))}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
@@ -429,14 +436,16 @@ export function BulkLeadActionsDialog({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={finalDeleteConfirmationOpen} onOpenChange={setFinalDeleteConfirmationOpen}>
+      <AlertDialog open={finalDeleteConfirmationOpen} onOpenChange={setFinalDeleteConfirmationOpen} pending={isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('bulkDeleteFinalTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('bulkDeleteFinalDescription').replace('{count}', String(selectedCount))}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction

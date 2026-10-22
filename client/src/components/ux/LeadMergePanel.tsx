@@ -13,7 +13,9 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import {
+  AlertDialogBody,
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -311,21 +313,23 @@ export function LeadMergePanel() {
 
       <AlertDialog open={confirmOpen} onOpenChange={(open) => {
         if (!open && !mergeMutation.isPending) setConfirmOpen(false);
-      }}>
+      }} pending={mergeMutation.isPending}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmLeadMergeTitle')}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
             <AlertDialogDescription>
               {t('confirmLeadMergeDescription')
                 .replace('{duplicate}', selectedCardLabel(duplicateLead))
                 .replace('{retained}', selectedCardLabel(retainedLead))}
             </AlertDialogDescription>
-          </AlertDialogHeader>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={mergeMutation.isPending}>{t('cancel')}</AlertDialogCancel>
-            <Button type="button" disabled={mergeMutation.isPending} onClick={() => mergeMutation.mutate()}>
-              {mergeMutation.isPending ? t('saving') : t('mergeLeads')}
-            </Button>
+            <AlertDialogAction disabled={mergeMutation.isPending} onClick={(event) => { event.preventDefault(); mergeMutation.mutate(); }}>
+              {mergeMutation.isPending ? t('confirmProcessing') : t('mergeLeads')}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

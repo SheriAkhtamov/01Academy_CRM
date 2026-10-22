@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from '@/components/ui/alert-dialog';
+import {
+  AlertDialogBody, AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from '@/components/ui/alert-dialog';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { AcademyAccessStatus } from './AcademyAccessAccount';
 import { academyPortalApi, academyPortalError } from '../academy-api';
@@ -192,15 +193,17 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
         </form>
       </DialogContent>
     </Dialog>
-    <AlertDialog open={Boolean(confirmation)} onOpenChange={open => { if (!open && !change.isPending && !changing.current) setConfirmation(null); }}>
+    <AlertDialog open={Boolean(confirmation)} onOpenChange={open => { if (!open && !change.isPending && !changing.current) setConfirmation(null); }} pending={change.isPending}>
       <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0">
         <AlertDialogHeader className="compact-modal-header">
           <AlertDialogTitle>{t('academyAccessConfirmChangeTitle')}</AlertDialogTitle>
         </AlertDialogHeader>
-        <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
-          <AlertDialogDescription className="break-words">{t(confirmation?.password || confirmation?.generatePassword ? 'academyAccessConfirmPasswordChangeBody' : 'academyAccessConfirmChangeBody').replace('{name}', current.fullName)}</AlertDialogDescription>
-        {change.error && <p role="alert" className="text-sm text-destructive">{t(academyPortalError(change.error))}</p>}
-        </div>
+        <AlertDialogBody>
+          <>
+            <AlertDialogDescription className="break-words">{t(confirmation?.password || confirmation?.generatePassword ? 'academyAccessConfirmPasswordChangeBody' : 'academyAccessConfirmChangeBody').replace('{name}', current.fullName)}</AlertDialogDescription>
+          {change.error && <p role="alert" className="text-sm text-destructive">{t(academyPortalError(change.error))}</p>}
+          </>
+        </AlertDialogBody>
         <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={change.isPending}>{t('cancel')}</AlertDialogCancel>
           <Button type="button" disabled={change.isPending} onClick={() => {

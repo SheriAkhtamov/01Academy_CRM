@@ -40,6 +40,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialogBody,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -1099,20 +1100,19 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           setPipelineDeleteTarget(null);
           setPipelineTransferTargetId('');
         }}
+        pending={transferAndDeletePipelineStatus.isPending}
       >
         <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-xl flex-col overflow-hidden p-0">
           <AlertDialogHeader data-topographic="header" className="compact-modal-header">
             <AlertDialogTitle className="text-base leading-6">{t('pipelineStageDeleteTransferTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pipelineDeleteTarget
-                ? t('pipelineStageDeleteTransferDescription').replace('{stage}', pipelineDeleteTarget.status.name)
-                : ''}
-            </AlertDialogDescription>
           </AlertDialogHeader>
 
           {pipelineDeleteTarget ? (
             <>
-              <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <AlertDialogBody>
+                <AlertDialogDescription>
+                  {t('pipelineStageDeleteTransferDescription').replace('{stage}', pipelineDeleteTarget.status.name)}
+                </AlertDialogDescription>
                 <CompactModalSection title={t('transferLeadsToStage')} icon={ArrowRightLeft} tone="amber" collapsible={false} disabled={transferAndDeletePipelineStatus.isPending} sectionId="stage-transfer" contentClassName="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>{t('currentStage')}</Label>
@@ -1121,7 +1121,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                         className="size-2.5 shrink-0 rounded-full"
                         style={{ backgroundColor: pipelineDeleteTarget.status.color }}
                       />
-                      <span className="truncate font-medium">{pipelineDeleteTarget.status.name}</span>
+                      <span className="font-medium [overflow-wrap:anywhere]">{pipelineDeleteTarget.status.name}</span>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels)}
@@ -1136,7 +1136,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       disabled={availableTransferStatuses.length === 0 || transferAndDeletePipelineStatus.isPending}
                     >
                       <SelectTrigger id="pipeline-transfer-target">
-                        <SelectValue placeholder={t('selectPipelineStage')} />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
@@ -1160,7 +1160,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   </div>
                 </CompactModalSection>
 
-              </div>
+              </AlertDialogBody>
 
               <AlertDialogFooter className="compact-modal-footer">
                 <AlertDialogCancel

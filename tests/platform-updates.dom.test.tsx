@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import UpdatesPage from '../client/src/features/updates/UpdatesPage';
@@ -178,7 +178,7 @@ afterEach(async () => {
 
 const mount = (query = '') => {
   allowNavigation(() => history.replaceState(null, '', `/updates${query}`));
-  render(
+  return render(
     <QueryClientProvider client={client}>
       <UpdatesPage />
     </QueryClientProvider>
@@ -530,7 +530,7 @@ it.each(['ru', 'en'] as const)('does not display or access retired ratings when 
   }
 });
 
-it('automatically saves draft to localStorage, shows restored banner, and clears on demand', async () => {
+it('automatically saves and restores draft content and confirms clearing it', async () => {
   mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
   mount();
   await screen.findByText(post.content.title.ru);
@@ -558,7 +558,6 @@ it('automatically saves draft to localStorage, shows restored banner, and clears
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const reDialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
 
-  expect(within(reDialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
   expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('Черновик релиза');
 
   const clearButton = within(reDialog).getByRole('button', { name: i18n.t('updatesClearDraft') });
@@ -574,7 +573,6 @@ it('automatically saves draft to localStorage, shows restored banner, and clears
   confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesClearDraft') });
   await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('updatesClearDraft') }));
 
-  expect(within(reDialog).queryByText(i18n.t('updatesDraftRestored'))).toBeNull();
   expect((within(reDialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('');
   expect(window.localStorage.getItem('academy-updates:publish-draft')).toBeNull();
 });
@@ -603,7 +601,7 @@ it('supports multi-section authoring with bullet items and live preview', async 
   const addItemButtons = within(dialog).getAllByRole('button', { name: i18n.t('updatesAddItem') });
   await userEvent.click(addItemButtons[1]);
 
-  const bulletInput = within(dialog).getByPlaceholderText(i18n.t('updatesAddItem'));
+  const bulletInput = within(dialog).getByRole('textbox', { name: `${i18n.t('updatesSectionItems')} 1` });
   await userEvent.type(bulletInput, 'Первый пункт списка');
 
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
@@ -628,7 +626,6 @@ it('restores and publishes a historical bilingual draft without its former categ
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
-  expect(within(dialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
   expect(within(dialog).queryByRole('combobox')).toBeNull();
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
   expect(within(dialog).getByText('Прежний черновик')).toBeTruthy();
@@ -660,10 +657,10 @@ it('restores an English-only historical section rather than replacing it with an
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
-  expect(within(dialog).getByText(i18n.t('updatesDraftRestored'))).toBeTruthy();
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
   expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesBody') }) as HTMLTextAreaElement).value).toBe('English-only saved section');
-  expect((within(dialog).getByPlaceholderText(i18n.t('updatesAddItem')) as HTMLInputElement).value).toBe('English-only item');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesSectionItems') }));
+  expect((within(dialog).getByRole('textbox', { name: `${i18n.t('updatesSectionItems')} 1` }) as HTMLInputElement).value).toBe('English-only item');
   const saved = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
   expect(saved).not.toHaveProperty('category');
   expect(saved).not.toHaveProperty('actionHref');
@@ -684,9 +681,9 @@ it('keeps sparse bullet translations aligned after saving and restoring, and rej
   }
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
-  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[1], 'Second item');
+  await userEvent.type(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) })[1], 'Second item');
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesRussian') }));
-  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[0], 'Первый пункт');
+  await userEvent.type(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) })[0], 'Первый пункт');
   const saved = JSON.parse(window.localStorage.getItem('academy-updates:publish-draft') || '{}');
   expect(saved.sectionsRu[0].items).toEqual(['Первый пункт', '']);
   expect(saved.sectionsEn[0].items).toEqual(['', 'Second item']);
@@ -696,14 +693,15 @@ it('keeps sparse bullet translations aligned after saving and restoring, and rej
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
-  expect(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem')).map((input) => (input as HTMLInputElement).value)).toEqual(['Первый пункт', '']);
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesSectionItems') }));
+  expect(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) }).map((input) => (input as HTMLInputElement).value)).toEqual(['Первый пункт', '']);
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
   expect(mocks.publish).not.toHaveBeenCalled();
   expect(within(dialog).getByRole('alert').textContent).toBe(i18n.t('updatesInvalidContent'));
-  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[1], 'Второй пункт');
+  await userEvent.type(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) })[1], 'Второй пункт');
   await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }));
-  expect(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem')).map((input) => (input as HTMLInputElement).value)).toEqual(['', 'Second item']);
-  await userEvent.type(within(dialog).getAllByPlaceholderText(i18n.t('updatesAddItem'))[0], 'First item');
+  expect(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) }).map((input) => (input as HTMLInputElement).value)).toEqual(['', 'Second item']);
+  await userEvent.type(within(dialog).getAllByRole('textbox', { name: new RegExp(`^${i18n.t('updatesSectionItems')} `) })[0], 'First item');
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesAddItem') }));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
   await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
@@ -730,6 +728,8 @@ it.each(['item', 'section'] as const)('confirms %s removal and preserves bilingu
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: `${i18n.t('updatesSection')} 2` }));
+  await userEvent.click(within(dialog).getAllByRole('button', { name: i18n.t('updatesSectionItems') })[1]);
   const actionKey = kind === 'item' ? 'updatesRemoveItem' : 'updatesRemoveSection';
   const descriptionKey = kind === 'item' ? 'updatesRemoveItemConfirm' : 'updatesRemoveSectionConfirm';
   const trigger = within(dialog).getAllByRole('button', { name: i18n.t(actionKey) }).at(-1)!;
@@ -770,6 +770,7 @@ it('does not restore the last draft text after confirmed removal of its bullet',
   await screen.findByText(post.content.title.ru);
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   let dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesSectionItems') }));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesRemoveItem') }));
   const confirmation = screen.getByRole('alertdialog', { name: i18n.t('updatesRemoveItem') });
   await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('updatesRemoveItem') }));
@@ -777,8 +778,7 @@ it('does not restore the last draft text after confirmed removal of its bullet',
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
   await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
   dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
-  expect(within(dialog).queryByText(i18n.t('updatesDraftRestored'))).toBeNull();
-  expect(within(dialog).queryByPlaceholderText(i18n.t('updatesAddItem'))).toBeNull();
+  expect(within(dialog).queryByRole('textbox', { name: `${i18n.t('updatesSectionItems')} 1` })).toBeNull();
 });
 
 it.each(['body', 'heading'] as const)('rejects a one-sided %s despite completed bilingual bullets', async (field) => {
@@ -837,4 +837,127 @@ it('keeps article shortcuts from navigating while the publisher or a confirmatio
   expect(location.search).toBe('?post=5');
   expect(screen.getByRole('dialog', { name: i18n.t('updatesNewPost') })).toBeTruthy();
   expect(window.localStorage.getItem('academy-updates:publish-draft')).toContain('Текст');
+});
+
+it('opens the missing translation and folded section before focusing its invalid field', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Релиз', titleEn: 'Release', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [{ paragraphs: ['Текст'] }, { heading: 'Дополнение', paragraphs: ['Дополнительный текст'] }],
+    sectionsEn: [{ paragraphs: ['Body'] }, { heading: 'Details', paragraphs: [] }],
+  }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect(within(dialog).queryByRole('textbox', { name: i18n.t('updatesSectionBody') })).toBeNull();
+  await userEvent.click(within(dialog).getByRole('tab', { name: i18n.t('updatesPreview') }));
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  const invalid = within(dialog).getByRole('textbox', { name: i18n.t('updatesSectionBody') });
+  await waitFor(() => expect(document.activeElement).toBe(invalid));
+  expect(invalid.getAttribute('aria-invalid')).toBe('true');
+  expect(within(dialog).getByRole('tab', { name: i18n.t('updatesEnglish') }).getAttribute('aria-selected')).toBe('true');
+  expect(within(dialog).getByRole('button', { name: `${i18n.t('updatesSection')} 2` }).getAttribute('aria-expanded')).toBe('true');
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+
+it('sends once while pending and preserves a newer local draft when an unmounted publisher finishes', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Релиз', titleEn: 'Release', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [{ paragraphs: ['Текст'] }], sectionsEn: [{ paragraphs: ['Body'] }],
+  }));
+  let finish!: (value: typeof post) => void;
+  mocks.publish.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  let dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  const form = within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }).closest('form')!;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).disabled).toBe(true);
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(screen.getByRole('dialog', { name: i18n.t('updatesNewPost') })).toBeTruthy();
+  cleanup();
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  const title = within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') });
+  await userEvent.clear(title);
+  await userEvent.type(title, 'Следующий черновик');
+  await act(async () => { finish(post); });
+  expect(JSON.parse(window.localStorage.getItem('academy-updates:publish-draft')!).titleRu).toBe('Следующий черновик');
+  expect((title as HTMLInputElement).value).toBe('Следующий черновик');
+  expect(location.search).toBe('');
+  expect(mocks.toast).not.toHaveBeenCalled();
+});
+
+it('keeps the bilingual draft editable after a failed publish without displaying internal errors', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Релиз', titleEn: 'Release', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [{ paragraphs: ['Текст'] }], sectionsEn: [{ paragraphs: ['Body'] }],
+  }));
+  mocks.publish.mockRejectedValueOnce(new Error('SQL internal publication_id=8765'));
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  expect((await within(dialog).findByRole('alert')).textContent).toBe(i18n.t('updatesPublishFailed'));
+  expect(document.body.textContent).not.toContain('publication_id');
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).disabled).toBe(false);
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), ' 2');
+  expect(within(dialog).queryByRole('alert')).toBeNull();
+});
+
+it('keeps a restored draft while editing and clears it only after explicit discard', async () => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  let dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.type(within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }), 'Черновик');
+  await userEvent.keyboard('{Escape}');
+  let confirmation = screen.getByRole('alertdialog', { name: i18n.t('unsavedChangesTitle') });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('keepEditing') }));
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toContain('Черновик');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
+  confirmation = screen.getByRole('alertdialog', { name: i18n.t('unsavedChangesTitle') });
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('discardChanges') }));
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  expect((within(dialog).getByRole('textbox', { name: i18n.t('updatesTitle') }) as HTMLInputElement).value).toBe('');
+});
+
+it.each([
+  { id: 2, module: 'administration', modules: ['administration'] },
+  { id: 1, module: 'teacher', modules: ['teacher'] },
+])('closes an old publishing session when actor or publishing access changes to $module/$id', async (nextActor) => {
+  mocks.actor = { id: 1, module: 'administration', modules: ['administration'] };
+  window.localStorage.setItem('academy-updates:publish-draft', JSON.stringify({
+    titleRu: 'Релиз', titleEn: 'Release', summaryRu: 'Описание', summaryEn: 'Summary',
+    sectionsRu: [{ paragraphs: ['Текст'] }], sectionsEn: [{ paragraphs: ['Body'] }],
+  }));
+  let finish!: (result: typeof post) => void;
+  mocks.publish.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const view = mount();
+  await screen.findByText(post.content.title.ru);
+  await userEvent.click(screen.getByRole('button', { name: i18n.t('updatesNewPost') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('updatesNewPost') });
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('updatesPublish') }));
+  await waitFor(() => expect(mocks.publish).toHaveBeenCalledTimes(1));
+  mocks.actor = nextActor;
+  view.rerender(<QueryClientProvider client={client}><UpdatesPage /></QueryClientProvider>);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  const preserved = window.localStorage.getItem('academy-updates:publish-draft');
+  await act(async () => { finish(post); });
+  expect(window.localStorage.getItem('academy-updates:publish-draft')).toBe(preserved);
+  expect(location.search).toBe('');
+  expect(mocks.toast).not.toHaveBeenCalled();
 });

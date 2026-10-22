@@ -19,6 +19,8 @@ import {
 import { getLead } from "./academy-leads";
 import { studentProjectFileInfo } from "../../middleware/student-project-upload.middleware";
 import { logger } from "../../lib/logger";
+import { studentWasStudyingSql } from "../../lib/student-learning-sql";
+import { studentPaymentAmountSql, studentPaymentPaidUntilSql, studentPaymentSourceSql } from "../../lib/student-payment-sql";
 
 export type StudentProfileLearningActor = {
   userId: number;
@@ -170,12 +172,6 @@ export async function loadAuthorizedStudent(
   return { student, lead, teacherId: null };
 }
 
-const wasStudyingSql = (lessonAlias: string) => `COALESCE((
-  SELECT history.to_status FROM academy_student_status_history history
-  WHERE history.student_id = $1 AND history.created_at <= ${lessonAlias}.scheduled_at
-  ORDER BY history.created_at DESC, history.id DESC LIMIT 1
-), 'studying') = 'studying'`;
-
 export async function loadStudentProfileData(
   studentId: number,
   teacherId?: number | null,
@@ -198,7 +194,7 @@ export async function loadStudentProfileData(
       LEFT JOIN academy_schools school ON school.id = g.school_id
       LEFT JOIN academy_teachers teacher ON teacher.id = g.teacher_id
       LEFT JOIN academy_lessons lesson ON lesson.group_id = g.id AND lesson.status = 'conducted'
-        AND lesson.scheduled_at >= membership.enrolled_at AND ${wasStudyingSql("lesson")}
+        AND lesson.scheduled_at >= membership.enrolled_at AND ${studentWasStudyingSql("$1", "lesson.scheduled_at")}
       LEFT JOIN academy_attendance mark ON mark.lesson_id = lesson.id AND mark.student_id = $1
       WHERE membership.student_id = $1 AND membership.status = 'active' ${teacherId ? "AND g.teacher_id = $2" : ""}
       GROUP BY membership.id, g.id, course.id, school.id, teacher.id
@@ -216,14 +212,16 @@ export async function loadStudentProfileData(
           WHERE membership.student_id = $1 AND membership.group_id = lesson.group_id
             AND lesson.scheduled_at >= membership.enrolled_at
             AND (membership.ended_at IS NULL OR lesson.scheduled_at < membership.ended_at)
-        ) AND ${wasStudyingSql("lesson")})
+        ) AND ${studentWasStudyingSql("$1", "lesson.scheduled_at")})
       ) ${teacherId ? "AND g.teacher_id = $2" : ""} ORDER BY lesson.scheduled_at DESC, lesson.id DESC`,
       params,
     ),
     teacherId
       ? Promise.resolve<StudentPayment[]>([])
       : query<StudentPayment>(
-          `SELECT * FROM academy_payments WHERE student_id = $1 ORDER BY COALESCE(paid_at, due_at, created_at) DESC, id DESC`,
+          `SELECT payment.id,${studentPaymentAmountSql} AS amount_uzs,payment.status,payment.type,payment.method,
+          payment.period,payment.paid_at,payment.due_at,${studentPaymentPaidUntilSql} AS paid_until,payment.created_at,payment.comment
+          ${studentPaymentSourceSql()} ORDER BY COALESCE(payment.paid_at,payment.due_at,payment.created_at) DESC,payment.id DESC`,
           [studentId],
         ),
     query<StudentProject>(

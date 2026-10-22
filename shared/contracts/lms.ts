@@ -716,9 +716,12 @@ export type LmsStaffEnrollmentDto = {
   studentId: number;
   studentName: string;
   status: string;
+  canReceiveLearning?: boolean;
   enrolledAt: string;
   endedAt: string | null;
 };
+export const isLmsLearningRecipient = (enrollment: LmsStaffEnrollmentDto) =>
+  enrollment.status === "active" && enrollment.canReceiveLearning !== false;
 export type LmsStaffSummaryDto = {
   assignmentResults?: LmsStaffAssignmentResultDto[];
   quizResults?: LmsStaffQuizResultDto[];

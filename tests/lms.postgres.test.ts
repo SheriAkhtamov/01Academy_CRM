@@ -128,7 +128,8 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       max: 10,
     });
     await pool.query(`CREATE TABLE users(id serial PRIMARY KEY,full_name text NOT NULL,module text NOT NULL DEFAULT 'teacher',is_active boolean NOT NULL DEFAULT true,is_archived boolean NOT NULL DEFAULT false);CREATE TABLE user_modules(id serial PRIMARY KEY,user_id integer,module text);
-      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text NOT NULL,manager_id integer);
+      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text NOT NULL,manager_id integer,status text NOT NULL DEFAULT 'studying');
+      CREATE TABLE academy_student_status_history(id serial PRIMARY KEY,student_id integer NOT NULL,to_status text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE academy_courses(id serial PRIMARY KEY,name text NOT NULL,program jsonb NOT NULL DEFAULT '[]');
       CREATE TABLE academy_schools(id serial PRIMARY KEY,name text NOT NULL);
       CREATE TABLE academy_rooms(id serial PRIMARY KEY,name text NOT NULL);
@@ -150,6 +151,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
         "utf8",
       ),
     );
+    await pool.query(readFileSync(new URL("../migrations/0137_lms_crm_preparation.sql", import.meta.url), "utf8"));
     learning = new PgLearningRepository(pool, undefined, () => true);
     assignments = new PgAssignmentRepository(pool, learning);
     quizzes = new PgQuizRepository(pool, learning, () => quizNow ?? new Date());
@@ -182,6 +184,82 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       await admin.query(`DROP SCHEMA ${schema} CASCADE`);
       await admin.end();
     }
+  });
+  it.each(['paused', 'expelled', 'completed', 'trial'])("excludes %s pupils from new learning recipients while preserving previous work", async (status) => {
+    const previous = await createAssignment();
+    await pool.query('UPDATE academy_students SET status=$1 WHERE id=1', [status]);
+    expect(await learning.recipientEnrollments(pool, runId)).toEqual([]);
+    expect((await learning.enrollments(teacher, runId))[0]).toMatchObject({ status: 'active', canReceiveLearning: false });
+    await expect(createAssignment()).rejects.toMatchObject({ code: 'lmsRecipientsInvalid' });
+    await expect(quizzes.create(teacher, quizInput())).rejects.toMatchObject({ code: 'lmsRecipientsInvalid' });
+    expect((await assignments.list(actor)).items.map((item) => item.id)).toContain(previous.id);
+    await pool.query("UPDATE academy_students SET status='studying' WHERE id=1");
+    expect(await learning.recipientEnrollments(pool, runId)).toEqual([{ id: 1, studentId: 1 }]);
+    expect((await learning.enrollments(teacher, runId))[0].canReceiveLearning).toBe(true);
+    expect(await createAssignment()).toBeTruthy();
+  });
+  it("excludes unmarked lessons during a pause, retains actual marks and resumes future lessons", async () => {
+    await pool.query("INSERT INTO academy_student_status_history(student_id,to_status,created_at) VALUES(1,'paused',now()-interval '2 days')");
+    await pool.query("UPDATE academy_students SET status='paused' WHERE id=1");
+    const beforePause = Number((await pool.query("INSERT INTO academy_lessons(group_id,lesson_number,topic,scheduled_at,status) VALUES(1,2,'Before pause',now()-interval '3 days','conducted') RETURNING id")).rows[0].id);
+    await pool.query("INSERT INTO academy_lessons(group_id,lesson_number,topic,scheduled_at) VALUES(1,3,'After resume',now()+interval '1 day')");
+    const from = new Date(Date.now() - 7 * 86400000).toISOString();
+    const to = new Date(Date.now() + 2 * 86400000).toISOString();
+    expect((await learning.attendance(actor)).map((lesson) => lesson.lessonId)).toEqual([beforePause]);
+    expect((await learning.progress(actor)).attendance.unmarked).toBe(1);
+    expect((await learning.schedule(actor, from, new Date(Date.now() + 2 * 86400000).toISOString())).map((lesson) => lesson.lessonId)).toEqual([beforePause]);
+    await pool.query("INSERT INTO academy_attendance(lesson_id,student_id,status) VALUES(1,1,'present')");
+    expect((await learning.attendance(actor)).map((lesson) => lesson.lessonId)).toEqual([1, beforePause]);
+    expect((await learning.progress(actor)).attendance).toMatchObject({ completed: 1, total: 1, unmarked: 1 });
+    await pool.query("UPDATE academy_students SET status='studying' WHERE id=1; INSERT INTO academy_student_status_history(student_id,to_status) VALUES(1,'studying')");
+    expect((await learning.schedule(actor, new Date().toISOString(), to)).map((lesson) => lesson.topic)).toEqual(['After resume']);
+  });
+  it.each(['archived', 'frozen'])("hides planned lessons of a %s group, preserves history and restores its timetable", async (state) => {
+    await pool.query("INSERT INTO academy_lessons(group_id,lesson_number,topic,scheduled_at) VALUES(1,2,'Future lesson',now()+interval '1 day')");
+    await pool.query(state === 'archived' ? "UPDATE academy_groups SET is_archived=true WHERE id=1" : "UPDATE academy_groups SET status='frozen' WHERE id=1");
+    const from = new Date(Date.now() - 7 * 86400000).toISOString();
+    const to = new Date(Date.now() + 2 * 86400000).toISOString();
+    expect((await learning.schedule(actor, from, to)).map((lesson) => lesson.topic)).toEqual(['Topic']);
+    expect((await learning.attendance(actor)).map((lesson) => lesson.lessonId)).toEqual([1]);
+    await pool.query("UPDATE academy_groups SET is_archived=false,status='in_progress' WHERE id=1");
+    expect((await learning.schedule(actor, from, to)).map((lesson) => lesson.topic)).toEqual(['Topic', 'Future lesson']);
+  });
+  it("reopens a CRM group without changing a pupil's personal course completion", async () => {
+    await pool.query("UPDATE academy_groups SET status='completed' WHERE id=1");
+    expect(await learning.reconcileGroupLifecycle()).toEqual({ completed: 1 });
+    await pool.query('INSERT INTO lms_course_completions(student_id,run_id,completed_by) VALUES(1,$1,1)', [runId]);
+    await pool.query("UPDATE academy_groups SET status='in_progress' WHERE id=1");
+    await learning.reconcileGroupLifecycle();
+    const reopened = (await pool.query('SELECT status,completed_at,version FROM lms_group_runs WHERE id=$1', [runId])).rows[0];
+    expect(reopened).toMatchObject({ status: 'active', completed_at: null, version: 3 });
+    expect((await learning.courses(actor))[0].status).toBe('completed');
+    await pool.query('DELETE FROM lms_course_completions WHERE student_id=1 AND run_id=$1', [runId]);
+    expect((await learning.courses(actor))[0].status).toBe('active');
+    await learning.reconcileGroupLifecycle();
+    expect((await pool.query('SELECT version FROM lms_group_runs WHERE id=$1', [runId])).rows[0].version).toBe(3);
+  });
+  it("preserves explicit staff completion until a completed CRM group is actually resumed", async () => {
+    await learning.updateRun(teacher, runId, { version: 1, status: 'completed', reason: 'Learning run completed separately' });
+    await learning.reconcileGroupLifecycle();
+    await learning.reconcileGroupLifecycle();
+    expect((await learning.courses(actor))[0].status).toBe('completed');
+    await pool.query("UPDATE academy_groups SET status='completed' WHERE id=1");
+    await learning.reconcileGroupLifecycle();
+    await pool.query("UPDATE academy_groups SET status='in_progress' WHERE id=1");
+    await learning.reconcileGroupLifecycle();
+    expect((await learning.courses(actor))[0].status).toBe('active');
+  });
+  it("repairs an older automatic completion and preserves an explicitly archived learning run", async () => {
+    await pool.query("UPDATE lms_group_runs SET status='completed',completed_at=now() WHERE id=$1", [runId]);
+    await learning.reconcileGroupLifecycle();
+    expect((await learning.courses(actor))[0].status).toBe('active');
+    const run = (await pool.query('SELECT version FROM lms_group_runs WHERE id=$1', [runId])).rows[0];
+    await learning.updateRun(teacher, runId, { version: run.version, status: 'archived', reason: 'Staff archive' });
+    await pool.query("UPDATE academy_groups SET status='completed' WHERE id=1");
+    await learning.reconcileGroupLifecycle();
+    await pool.query("UPDATE academy_groups SET status='in_progress' WHERE id=1");
+    await learning.reconcileGroupLifecycle();
+    expect((await learning.courses(actor))[0].status).toBe('archived');
   });
   it("imports legacy lesson content as private draft and restricts teacher to assigned group", async () => {
     expect(await learning.materials(actor)).toEqual([]);

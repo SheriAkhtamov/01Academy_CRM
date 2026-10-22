@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PortalPaymentDto } from "@shared/contracts/portal-resources";
 import {
   Dialog,
@@ -34,7 +34,7 @@ export function PortalPayments() {
   const paymentScope = usePortalFormScope();
   const { t } = useTranslation();
   const format = usePortalFormat();
-  const [selected, setSelected] = useState<PortalPaymentDto | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const { subject } = usePortal();
   const query = useSubjectInfiniteQuery(
     "payments-history",
@@ -42,6 +42,12 @@ export function PortalPayments() {
     [],
     "finance.read",
   );
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const selected = items.find((payment) => payment.id === selectedId);
+  useEffect(() => {
+    if (selectedId !== null && query.isSuccess && !query.isFetching && !selected)
+      setSelectedId(null);
+  }, [selectedId, selected, query.isSuccess, query.isFetching]);
   if (query.isPending) return <PortalLoading />;
   if (query.error && (query.data === undefined || isPortalAccessError(query.error)))
     return (
@@ -53,7 +59,6 @@ export function PortalPayments() {
       />
     );
   const firstPage = query.data.pages[0];
-  const items = query.data.pages.flatMap((page) => page.items);
   if (firstPage.state === "needs_review")
     return (
       <>
@@ -123,7 +128,7 @@ export function PortalPayments() {
               focusOnRowClick
               data={items}
               keyExtractor={(item) => String(item.id)}
-              onRowClick={setSelected}
+              onRowClick={(payment) => setSelectedId(payment.id)}
               pageSize={0}
               showPagination={false}
               columns={[
@@ -166,7 +171,7 @@ export function PortalPayments() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setSelected(item)}
+                      onClick={() => setSelectedId(item.id)}
                     >
                       {t("portalOpen")}
                     </Button>
@@ -191,9 +196,9 @@ export function PortalPayments() {
       <FinanceQuestions />
       <PortalFormScope id={paymentScope.id}>
         <Dialog
-          open={selected !== null}
+          open={Boolean(selected)}
           onOpenChange={(open) => {
-            if (!open) paymentScope.guarded(() => setSelected(null));
+            if (!open) paymentScope.guarded(() => setSelectedId(null));
           }}
         >
           <DialogContent className="portal-ui">

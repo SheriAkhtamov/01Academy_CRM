@@ -1,3 +1,4 @@
+import { isLmsLearningRecipient } from "@shared/contracts/lms";
 import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -236,7 +237,7 @@ export function QuizEditor({
   const [remove, setRemove] = useState<string | null>(null);
   const [selected, setSelected] = useState(
     enrollments
-      .filter((item) => item.status === "active")
+      .filter(isLmsLearningRecipient)
       .map((item) => item.id),
   );
   const [validation, setValidation] = useState("");

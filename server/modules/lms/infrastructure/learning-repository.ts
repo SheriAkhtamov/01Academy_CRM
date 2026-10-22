@@ -1,5 +1,7 @@
 import { insertCrmCourseUnits } from './crm-course-units';
 import { courseSourceFilesAvailable } from './course-source-files';
+import { studentWasStudyingSql } from '../../../lib/student-learning-sql';
+import { reconcileCrmGroupLifecycle } from './group-lifecycle-repository';
 import { courseLessonPosition, flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import type {
   LmsListOptions,
@@ -483,7 +485,11 @@ export class PgLearningRepository {
   ): Promise<LmsScheduleDto[]> {
     const schedule = await listRows<LmsScheduleDto>(
       this.pool,
-      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,binding.unit_id,EXISTS(SELECT 1 FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id) AS rescheduled,(SELECT change.previous_scheduled_at FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id ORDER BY change.id DESC LIMIT 1) AS previous_scheduled_at,course.name AS course_name,g.name AS group_name,lesson.topic,lesson.scheduled_at,(lesson.scheduled_at + lesson.duration_minutes * interval '1 minute') AS ends_at,lesson.duration_minutes,lesson.status,(SELECT teacher.full_name FROM academy_teachers teacher WHERE teacher.id=COALESCE(lesson.teacher_id,g.teacher_id)) AS teacher_name,(SELECT school.name FROM academy_schools school WHERE school.id=lesson.school_id) AS school_name,(SELECT room.name FROM academy_rooms room WHERE room.id=lesson.room_id) AS room_name,COALESCE(binding.format,run.format) AS format,CASE WHEN COALESCE(binding.format,run.format)='online' THEN COALESCE(binding.meeting_url,run.meeting_url) ELSE NULL END AS meeting_url,(SELECT mark.status FROM academy_attendance mark WHERE mark.lesson_id=lesson.id AND mark.student_id=$1) AS attendance,lesson.updated_at FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_lesson_bindings binding ON binding.lesson_id=lesson.id AND binding.run_id=run.id WHERE lesson.scheduled_at>=$2::timestamptz AND lesson.scheduled_at<$3::timestamptz AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at)) ORDER BY lesson.scheduled_at,lesson.id`,
+      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,binding.unit_id,EXISTS(SELECT 1 FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id) AS rescheduled,(SELECT change.previous_scheduled_at FROM academy_lesson_reschedules change WHERE change.lesson_id=lesson.id ORDER BY change.id DESC LIMIT 1) AS previous_scheduled_at,course.name AS course_name,g.name AS group_name,lesson.topic,lesson.scheduled_at,(lesson.scheduled_at + lesson.duration_minutes * interval '1 minute') AS ends_at,lesson.duration_minutes,lesson.status,(SELECT teacher.full_name FROM academy_teachers teacher WHERE teacher.id=COALESCE(lesson.teacher_id,g.teacher_id)) AS teacher_name,(SELECT school.name FROM academy_schools school WHERE school.id=lesson.school_id) AS school_name,(SELECT room.name FROM academy_rooms room WHERE room.id=lesson.room_id) AS room_name,COALESCE(binding.format,run.format) AS format,CASE WHEN COALESCE(binding.format,run.format)='online' THEN COALESCE(binding.meeting_url,run.meeting_url) ELSE NULL END AS meeting_url,(SELECT mark.status FROM academy_attendance mark WHERE mark.lesson_id=lesson.id AND mark.student_id=$1) AS attendance,lesson.updated_at FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_lesson_bindings binding ON binding.lesson_id=lesson.id AND binding.run_id=run.id WHERE lesson.scheduled_at>=$2::timestamptz AND lesson.scheduled_at<$3::timestamptz AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at))
+      AND (lesson.status='conducted' OR (NOT g.is_archived AND g.status<>'frozen'))
+      AND (EXISTS(SELECT 1 FROM academy_attendance recorded_mark WHERE recorded_mark.lesson_id=lesson.id AND recorded_mark.student_id=$1)
+        OR ${studentWasStudyingSql("$1", "lesson.scheduled_at")})
+      ORDER BY lesson.scheduled_at,lesson.id`,
       [actor.studentId, from, to],
       page,
       page ? await this.enabledRunIds(actor.studentId) : undefined,
@@ -532,7 +538,9 @@ export class PgLearningRepository {
   async attendance(actor: PortalActorContext, page?: LmsListOptions) {
     return listRows<LmsScheduleDto>(
       this.pool,
-      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,lesson.topic,lesson.scheduled_at,lesson.status,mark.status AS attendance,g.name AS group_name,course.name AS course_name FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN academy_attendance mark ON mark.lesson_id=lesson.id AND mark.student_id=$1 WHERE lesson.status='conducted' AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at)) ORDER BY lesson.scheduled_at DESC,lesson.id DESC`,
+      `SELECT lesson.id,lesson.id AS lesson_id,run.id AS run_id,lesson.topic,lesson.scheduled_at,lesson.status,mark.status AS attendance,g.name AS group_name,course.name AS course_name FROM academy_lessons lesson JOIN academy_groups g ON g.id=lesson.group_id JOIN academy_courses course ON course.id=g.course_id JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN academy_attendance mark ON mark.lesson_id=lesson.id AND mark.student_id=$1 WHERE lesson.status='conducted' AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=g.id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at))
+      AND (mark.id IS NOT NULL OR ${studentWasStudyingSql("$1", "lesson.scheduled_at")})
+      ORDER BY lesson.scheduled_at DESC,lesson.id DESC`,
       [actor.studentId],
       page,
       page ? await this.enabledRunIds(actor.studentId) : undefined,
@@ -565,7 +573,8 @@ export class PgLearningRepository {
       unmarked: number;
     }>(
       sql,
-      `SELECT COUNT(*) FILTER(WHERE mark.status='present')::int AS present,COUNT(*) FILTER(WHERE mark.status='absent')::int AS absent,COUNT(*) FILTER(WHERE mark.status IS NULL)::int AS unmarked FROM academy_lessons lesson JOIN lms_group_runs run ON run.group_id=lesson.group_id LEFT JOIN academy_attendance mark ON mark.lesson_id=lesson.id AND mark.student_id=$1 WHERE lesson.status='conducted' AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=lesson.group_id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at))${runClause}${periodClause}`,
+      `SELECT COUNT(*) FILTER(WHERE mark.status='present')::int AS present,COUNT(*) FILTER(WHERE mark.status='absent')::int AS absent,COUNT(*) FILTER(WHERE mark.status IS NULL)::int AS unmarked FROM academy_lessons lesson JOIN lms_group_runs run ON run.group_id=lesson.group_id LEFT JOIN academy_attendance mark ON mark.lesson_id=lesson.id AND mark.student_id=$1 WHERE lesson.status='conducted' AND EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment WHERE enrollment.group_id=lesson.group_id AND enrollment.student_id=$1 AND lesson.scheduled_at>=enrollment.enrolled_at AND (enrollment.ended_at IS NULL OR lesson.scheduled_at<enrollment.ended_at))
+      AND (mark.id IS NOT NULL OR ${studentWasStudyingSql("$1", "lesson.scheduled_at")})${runClause}${periodClause}`,
       attendanceParams,
     );
     const activityPeriodClause = period
@@ -882,7 +891,12 @@ export class PgLearningRepository {
   async recipientEnrollments(sql: LmsSql, runId: number, ids?: number[]) {
     const enrollments = await rows<{ id: number; studentId: number }>(
       sql,
-      `SELECT enrollment.id,enrollment.student_id FROM academy_student_group_enrollments enrollment JOIN lms_group_runs run ON run.group_id=enrollment.group_id WHERE run.id=$1 AND enrollment.status='active' ${ids ? "AND enrollment.id=ANY($2::int[])" : ""}`,
+      `SELECT enrollment.id,enrollment.student_id FROM academy_student_group_enrollments enrollment
+      JOIN academy_students student ON student.id=enrollment.student_id
+      JOIN lms_group_runs run ON run.group_id=enrollment.group_id
+      WHERE run.id=$1 AND enrollment.status='active' AND student.status='studying'
+      ${ids ? "AND enrollment.id=ANY($2::int[])" : ""}
+      FOR SHARE OF student`,
       ids ? [runId, ids] : [runId],
     );
     if (ids && enrollments.length !== new Set(ids).size)
@@ -1110,11 +1124,15 @@ export class PgLearningRepository {
       studentId: number;
       studentName: string;
       status: string;
+      canReceiveLearning: boolean;
       enrolledAt: string;
       endedAt: string | null;
     }>(
       this.pool,
-      `SELECT enrollment.id,enrollment.student_id,COALESCE(student.student_name,student.contact_name) AS student_name,enrollment.status,enrollment.enrolled_at,enrollment.ended_at FROM academy_student_group_enrollments enrollment JOIN academy_students student ON student.id=enrollment.student_id JOIN lms_group_runs run ON run.group_id=enrollment.group_id WHERE run.id=$1 ORDER BY student_name,enrollment.id`,
+      `SELECT enrollment.id,enrollment.student_id,COALESCE(student.student_name,student.contact_name) AS student_name,
+      enrollment.status,(student.status='studying') AS can_receive_learning,enrollment.enrolled_at,enrollment.ended_at
+      FROM academy_student_group_enrollments enrollment JOIN academy_students student ON student.id=enrollment.student_id
+      JOIN lms_group_runs run ON run.group_id=enrollment.group_id WHERE run.id=$1 ORDER BY student_name,enrollment.id`,
       [runId],
       page,
     );
@@ -1730,13 +1748,7 @@ export class PgLearningRepository {
     ).map((run) => run.id);
   }
   async reconcileGroupLifecycle() {
-    const enabledRuns = await this.enabledRunIds();
-    if (!enabledRuns.length) return { completed: 0 };
-    const result = await this.pool.query(
-      `UPDATE lms_group_runs run SET status='completed',completed_at=COALESCE(run.completed_at,source.completed_at),access_until=NULL,version=run.version+1 FROM (SELECT g.id AS group_id,LEAST(now(),COALESCE((SELECT MAX(lesson.scheduled_at+lesson.duration_minutes*interval '1 minute') FROM academy_lessons lesson WHERE lesson.group_id=g.id AND lesson.status='conducted'),g.end_date,g.updated_at,now())) AS completed_at FROM academy_groups g WHERE g.status='completed') source WHERE run.group_id=source.group_id AND run.status='active' AND run.id=ANY($1::bigint[]) RETURNING run.id`,
-      [enabledRuns],
-    );
-    return { completed: result.rowCount ?? 0 };
+    return reconcileCrmGroupLifecycle(this.pool, await this.enabledRunIds());
   }
   async syncMakeupResult(
     sql: LmsSql,

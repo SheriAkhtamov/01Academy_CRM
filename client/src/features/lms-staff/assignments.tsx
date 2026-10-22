@@ -1,3 +1,4 @@
+import { isLmsLearningRecipient } from "@shared/contracts/lms";
 import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -178,7 +179,7 @@ function AssignmentEditor({
   const [remove, setRemove] = useState<string | null>(null);
   const [selected, setSelected] = useState(
     enrollments
-      .filter((item) => item.status === "active")
+      .filter(isLmsLearningRecipient)
       .map((item) => item.id),
   );
   const [allowed, setAllowed] = useState<Array<"text" | "links" | "files">>(
@@ -548,7 +549,7 @@ function CopyAssignment({
           </StaffField>
           <Button
             disabled={
-              !enrollments.data?.some((student) => student.status === "active")
+              !enrollments.data?.some(isLmsLearningRecipient)
             }
           >
             {t("portalContinue")}
@@ -853,7 +854,7 @@ function AssignNewStudents({
           >
             <option value="">{t("lmsStaffRecipients")}</option>
             {enrollments
-              .filter((item) => item.status === "active")
+              .filter(isLmsLearningRecipient)
               .map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.studentName}

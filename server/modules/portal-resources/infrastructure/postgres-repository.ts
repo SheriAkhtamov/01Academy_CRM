@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { runUnitSelectionSql } from '../../lms/infrastructure/postgres-base';
 import { learningSubjectHref } from '@shared/platform-routes';
 import { getComputedPaymentStatus } from '@shared/academy';
+import { studentPaymentAmountSql, studentPaymentPaidUntilSql, studentPaymentSourceSql } from '../../../lib/student-payment-sql';
 import {
   PORTAL_FILE_QUOTA_BYTES, PORTAL_NOTIFICATION_CATEGORIES,
   type PortalNotificationDto, type PortalNotificationPageDto, type PortalNotificationPreferencesDto,
@@ -230,16 +231,14 @@ ${unreferencedLearningFile}
       EXISTS(SELECT 1 FROM academy_payments payment WHERE payment.lead_id=student.lead_id AND payment.student_id IS NULL
       AND (SELECT COALESCE(sum(allocation.amount_uzs),0) FROM academy_payment_student_allocations allocation WHERE allocation.payment_id=payment.id)<payment.amount_uzs) AS unresolved
       FROM academy_students student WHERE student.id=$1`, [actor.studentId]);
-    const values = await resourceRows<PortalPaymentDto>(this.pool, `SELECT payment.id,COALESCE(allocation.amount_uzs,payment.amount_uzs) AS amount_uzs,payment.status,payment.method,payment.type,
-      payment.period,payment.paid_at,payment.due_at,CASE WHEN allocation.payment_id IS NULL THEN payment.paid_until END AS paid_until
-      FROM academy_payments payment LEFT JOIN academy_payment_student_allocations allocation ON allocation.payment_id=payment.id AND allocation.student_id=$1
-      WHERE (allocation.student_id=$1 OR (payment.student_id=$1 AND NOT EXISTS(SELECT 1 FROM academy_payment_student_allocations any_allocation WHERE any_allocation.payment_id=payment.id)))
+    const values = await resourceRows<PortalPaymentDto>(this.pool, `SELECT payment.id,${studentPaymentAmountSql} AS amount_uzs,payment.status,payment.method,payment.type,
+      payment.period,payment.paid_at,payment.due_at,${studentPaymentPaidUntilSql} AS paid_until
+      ${studentPaymentSourceSql()}
       AND ($2::integer IS NULL OR payment.id<$2) ORDER BY payment.id DESC LIMIT $3`, [actor.studentId,cursor,limit+1]);
     const items = values.map((payment) => ({ ...payment, amountUzs: Number(payment.amountUzs), status: getComputedPaymentStatus(payment.status, payment.dueAt) }));
     const totals = await resourceRows<{ status: string; dueAt: string | null; amountUzs: number; paidUntil: string | null }>(this.pool, `SELECT payment.status,payment.due_at,
-      COALESCE(allocation.amount_uzs,payment.amount_uzs) AS amount_uzs,CASE WHEN allocation.payment_id IS NULL THEN payment.paid_until END AS paid_until
-      FROM academy_payments payment LEFT JOIN academy_payment_student_allocations allocation ON allocation.payment_id=payment.id AND allocation.student_id=$1
-      WHERE allocation.student_id=$1 OR (payment.student_id=$1 AND NOT EXISTS(SELECT 1 FROM academy_payment_student_allocations any_allocation WHERE any_allocation.payment_id=payment.id))`, [actor.studentId]);
+      ${studentPaymentAmountSql} AS amount_uzs,${studentPaymentPaidUntilSql} AS paid_until
+      ${studentPaymentSourceSql()}`, [actor.studentId]);
     const summary = { paidUzs: 0, dueUzs: 0, refundedUzs: 0, paidUntil: null as string | null, nextPaymentAt: student?.nextPaymentAt ?? null };
     for (const payment of totals) {
       const status = getComputedPaymentStatus(payment.status, payment.dueAt), amount = Number(payment.amountUzs);

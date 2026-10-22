@@ -52,7 +52,7 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
     await pool.query(`
       CREATE TABLE users(id serial PRIMARY KEY,full_name text NOT NULL,module text NOT NULL DEFAULT 'administration',is_active boolean NOT NULL DEFAULT true,is_archived boolean NOT NULL DEFAULT false);
       CREATE TABLE user_modules(id serial PRIMARY KEY,user_id integer,module text);
-      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text NOT NULL);
+      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text NOT NULL,status text NOT NULL DEFAULT 'studying');
       CREATE TABLE academy_courses(id serial PRIMARY KEY,name text NOT NULL,program jsonb NOT NULL DEFAULT '[]');
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer,full_name text,status text NOT NULL DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text NOT NULL,course_id integer,teacher_id integer,status text NOT NULL DEFAULT 'open',is_archived boolean NOT NULL DEFAULT false,end_date timestamptz,updated_at timestamptz DEFAULT now());

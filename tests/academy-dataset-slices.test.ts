@@ -32,8 +32,9 @@ describe("getAcademyDataset slice gating", () => {
     const dataset = await (await loadDataset())({ userId: 7, module: 'sales', modules: ['sales'], scopeModule: 'sales' }, { include: ['students'] });
     expect(dataset.students).toEqual([expect.objectContaining({ id: 12, expectedPaymentUzs: 1_000_000, paidAmountUzs: 300_000 })]);
     const studentQuery = mocks.poolQuery.mock.calls.find(([sql]) => String(sql).includes('SELECT st.*'))!;
-    expect(studentQuery[0]).toContain("confirmed_payment.status = 'paid'");
-    expect(studentQuery[0]).toContain('confirmed_payment.student_id = st.id');
+    expect(studentQuery[0]).toContain("payment.status = 'paid'");
+    expect(studentQuery[0]).toContain('payment.student_id=st.id');
+    expect(studentQuery[0]).toContain('allocation.student_id=st.id');
     expect(studentQuery[1]).toEqual([7]);
   });
 

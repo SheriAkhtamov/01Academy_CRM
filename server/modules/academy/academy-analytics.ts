@@ -5,7 +5,7 @@ import { buildMarketingSourceMetrics, marketingPaymentAttribution } from './mark
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
-import { leadExpectedPaymentTotalSelect, studentPaidAmountSelect } from './student-expected-payment';
+import { leadExpectedPaymentTotalSelect, studentPaidAmountSelect, studentPaymentStatusSelect } from './student-expected-payment';
 import { appConfig } from '../../config';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { storage } from '../../storage';
@@ -303,16 +303,7 @@ export const getAcademyDataset = async (
         c.name AS course_name, g.name AS group_name, ${isTeacherScoped ? 'NULL' : 'u.full_name'} AS manager_name,
         sc.name AS school_name, ${isTeacherScoped ? 'NULL AS paid_amount_uzs' : studentPaidAmountSelect('st')},
         ${isTeacherScoped ? teacherStudentMembershipsSelect : studentGroupMembershipsSelect('st')},
-        ${isTeacherScoped ? 'NULL' : `(
-          SELECT CASE
-            WHEN p.status = 'pending' AND p.due_at IS NOT NULL AND p.due_at < NOW() THEN 'overdue'
-            ELSE p.status
-          END
-          FROM academy_payments p
-          WHERE p.student_id = st.id
-          ORDER BY p.created_at DESC
-          LIMIT 1
-        )`} AS payment_status
+        ${isTeacherScoped ? 'NULL AS payment_status' : studentPaymentStatusSelect('st')}
       FROM academy_students st
       LEFT JOIN academy_courses c ON c.id = st.course_id
       LEFT JOIN academy_groups g ON g.id = st.group_id

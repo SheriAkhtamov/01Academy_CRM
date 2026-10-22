@@ -2,6 +2,7 @@ import { studentExpectedPaymentRequestSchema, type StudentExpectedPaymentRequest
 import { actorContextFrom, type ActorSource } from '../leads/domain/actor-context';
 import { canActorMutateLead } from '../leads/domain/access-policy';
 import type { Row } from './academy-core';
+import { studentPaymentAmountSql, studentPaymentSourceSql } from '../../lib/student-payment-sql';
 
 export const parseStudentExpectedPayment = (body: unknown): StudentExpectedPaymentRequest => {
   const result = studentExpectedPaymentRequestSchema.safeParse(body);
@@ -34,7 +35,13 @@ export const leadExpectedPaymentTotalSelect = (alias: string) => `CASE
   END AS expected_payment_total_uzs`;
 
 export const studentPaidAmountSelect = (alias: string) => `COALESCE((
-  SELECT SUM(confirmed_payment.amount_uzs)
-  FROM academy_payments confirmed_payment
-  WHERE confirmed_payment.student_id = ${alias}.id AND confirmed_payment.status = 'paid'
+  SELECT SUM(${studentPaymentAmountSql})
+  ${studentPaymentSourceSql(`${alias}.id`)} AND payment.status = 'paid'
 ), 0)::double precision AS paid_amount_uzs`;
+
+export const studentPaymentStatusSelect = (alias: string) => `(
+  SELECT CASE WHEN payment.status = 'pending' AND payment.due_at IS NOT NULL AND payment.due_at < NOW()
+    THEN 'overdue' ELSE payment.status END
+  ${studentPaymentSourceSql(`${alias}.id`)}
+  ORDER BY payment.created_at DESC,payment.id DESC LIMIT 1
+) AS payment_status`;

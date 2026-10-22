@@ -53,6 +53,7 @@ import {
 } from "../client/src/features/lms/video";
 import { PortalUploads } from "../client/src/features/portal-app/files";
 import { PortalCourse } from "../client/src/features/lms/courses";
+import { PortalSchedule, portalWeekRange } from "../client/src/features/lms/schedule";
 import {
   ProjectComparison,
   PortalProgress,
@@ -3050,4 +3051,47 @@ it("does not refetch account notices when a read request finishes after home unm
   const requests = mocks.allNotifications.mock.calls.length;
   await act(async () => { complete({ success: true }); });
   expect(mocks.allNotifications).toHaveBeenCalledTimes(requests);
+});
+
+it("updates an open lesson Dialog after a timetable refresh and closes it when the lesson disappears", async () => {
+  const scheduledAt = new Date(new Date(portalWeekRange(0).from).getTime() + 10 * 3600000).toISOString();
+  const lesson = {
+    id: 1, lessonId: 1, runId: 2, courseName: "Course", groupName: "Group", topic: "Original lesson", scheduledAt,
+    endsAt: new Date(new Date(scheduledAt).getTime() + 3600000).toISOString(), durationMinutes: 60, status: "scheduled",
+    teacherName: "Original teacher", schoolName: "School", roomName: "Original room", format: "offline", meetingUrl: null,
+    attendance: null, updatedAt: null, materials: [], assignments: [],
+  };
+  mocks.schedule.mockResolvedValue([lesson]);
+  mount(<PortalSchedule />);
+  await userEvent.click(await screen.findByText("Original lesson"));
+  const dialog = await screen.findByRole("dialog");
+  mocks.schedule.mockResolvedValue([{ ...lesson, topic: "Updated lesson", teacherName: "Updated teacher", roomName: "Updated room" }]);
+  await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "schedule") }); });
+  await waitFor(() => expect(within(dialog).getByText("Updated lesson")).toBeTruthy());
+  expect(dialog.textContent).toContain("Updated teacher");
+  expect(dialog.textContent).toContain("Updated room");
+  expect(dialog.textContent).not.toContain("Original teacher");
+  mocks.schedule.mockResolvedValue([]);
+  await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "schedule") }); });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  mocks.schedule.mockResolvedValue([lesson]);
+  await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "schedule") }); });
+  expect(await screen.findByText("Original lesson")).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("updates a payment already open in a Dialog when its confirmation arrives", async () => {
+  const payment = {
+    id: 88, amountUzs: 500000, status: "pending", method: "card", type: "full", period: null,
+    paidAt: null, dueAt: null, paidUntil: null,
+  };
+  mocks.payments.mockResolvedValue({ state: "ready", items: [payment], summary: null });
+  mount(<PortalPayments />);
+  await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText(i18n.t("portalUnpaid"))).toBeTruthy();
+  mocks.payments.mockResolvedValue({ state: "ready", items: [{ ...payment, status: "paid", paidAt: "2026-10-22T10:00:00Z" }], summary: null });
+  await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "payments-history") }); });
+  await waitFor(() => expect(within(dialog).getByText(i18n.t("portalPaid"))).toBeTruthy());
+  expect(within(dialog).queryByText(i18n.t("portalUnpaid"))).toBeNull();
 });

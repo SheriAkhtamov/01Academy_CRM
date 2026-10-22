@@ -173,6 +173,22 @@ afterEach(async () => {
 });
 
 describe("LMS composition default-off isolation and background scheduling", () => {
+  it("refreshes the portal after a successful CRM payment and ignores a rejected payment", async () => {
+    runtime = createLearningRuntime(fakePool(), configuration(true), { mode: "api", roles: ["api"] });
+    await runtime.start();
+    runtime.attachWebSocket({} as Server);
+    const app = express();
+    runtime.registerRoutes(app);
+    let status = 201;
+    app.post("/api/academy/payments", (_req, res) => res.status(status).json({ id: 1 }));
+    await request(app).post("/api/academy/payments").send({}).expect(201);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    expect(mocks.gateway.refresh).toHaveBeenCalledExactlyOnceWith({ force: true });
+    status = 400;
+    await request(app).post("/api/academy/payments").send({}).expect(400);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    expect(mocks.gateway.refresh).toHaveBeenCalledTimes(1);
+  });
   it("stops timers and awaits outstanding jobs even when gateway shutdown rejects", async () => {
     vi.useFakeTimers();
     const held = deferred<typeof result>();

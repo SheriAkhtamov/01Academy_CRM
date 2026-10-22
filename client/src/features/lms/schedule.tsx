@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { LmsScheduleDto } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,7 +76,7 @@ export function PortalSchedule() {
   const course = view.course;
   const setOffset = (value: number) =>
     setView((previous) => ({ ...previous, offset: String(value) }));
-  const [selected, setSelected] = useState<LmsScheduleDto | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [help, setHelp] = useState(false);
   const [assignmentId, setAssignmentId] = useState<number | null>(null);
   const range = portalWeekRange(offset);
@@ -87,6 +86,14 @@ export function PortalSchedule() {
     [range.from, range.to],
     allowed("learning.read") ? "learning.read" : "attendance.read",
   );
+  const selected = query.data?.find((lesson) => lesson.lessonId === selectedId);
+  useEffect(() => {
+    if (selectedId !== null && query.isSuccess && !query.isFetching && !selected) {
+      setSelectedId(null);
+      setHelp(false);
+      setAssignmentId(null);
+    }
+  }, [selectedId, selected, query.isSuccess, query.isFetching]);
   const courseNames = new Map(
     (query.data ?? []).map((item) => [String(item.runId), item.courseName]),
   );
@@ -205,7 +212,7 @@ export function PortalSchedule() {
                     <CardContent className="p-0">
                       <PortalActionRow
                         className="flex-col items-start justify-start gap-2 rounded-xl border-0 p-4"
-                        onClick={() => setSelected(item)}
+                        onClick={() => setSelectedId(item.lessonId)}
                       >
                         <span className="text-sm font-semibold">
                           {format.time(item.scheduledAt)}–
@@ -235,7 +242,7 @@ export function PortalSchedule() {
           onOpenChange={(open) => {
             if (!open)
               lessonScope.guarded(() => {
-                setSelected(null);
+                setSelectedId(null);
                 setHelp(false);
                 setAssignmentId(null);
               });
@@ -290,7 +297,7 @@ export function PortalSchedule() {
                             key={material.publicationId}
                             onClick={() =>
                               guarded(() => {
-                                setSelected(null);
+                                setSelectedId(null);
                                 navigate(
                                   `/learn/courses/${selected.runId}/materials/${material.publicationId}`,
                                 );
@@ -344,7 +351,7 @@ export function PortalSchedule() {
                       variant="outline"
                       onClick={() =>
                         guarded(() => {
-                          setSelected(null);
+                          setSelectedId(null);
                           navigate(`/learn/courses/${selected.runId}`);
                         })
                       }
@@ -370,10 +377,12 @@ export function PortalSchedule() {
             unitId={selected.unitId ?? undefined}
           />
         )}
-        <AssignmentDialog
-          id={assignmentId}
-          onClose={() => setAssignmentId(null)}
-        />
+        {selected && (
+          <AssignmentDialog
+            id={assignmentId}
+            onClose={() => setAssignmentId(null)}
+          />
+        )}
       </PortalFormScope>
     </>
   );

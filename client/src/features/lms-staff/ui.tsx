@@ -1,3 +1,4 @@
+import { isLmsLearningRecipient } from "@shared/contracts/lms";
 import {
   PortalDialogContent as DialogContent,
   PortalAlertDialogContent as AlertDialogContent,
@@ -264,7 +265,7 @@ export function StaffRecipients({
   onChange: (value: number[]) => void;
 }) {
   const { t } = useTranslation();
-  const active = items.filter((item) => item.status === "active");
+  const active = items.filter(isLmsLearningRecipient);
   return (
     <fieldset className="space-y-3">
       <legend className="mb-2 text-sm font-medium">

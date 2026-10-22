@@ -26,6 +26,7 @@ import { StaffResults } from "../client/src/features/lms-staff/results";
 import { LearningTeacherSummary } from "../client/src/features/lms-staff/teacher-summary";
 import { LearningGroupTabs } from "../client/src/features/lms-staff/group-tabs";
 import { LearningManagement } from "../client/src/features/lms-staff/management";
+import { StaffRecipients } from "../client/src/features/lms-staff/ui";
 let client: QueryClient;
 let calls: Array<{ url: string; method: string; body: unknown }>;
 const enrollments = [
@@ -88,6 +89,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("staff LMS interaction", () => {
+  it("selects only studying pupils when all learning recipients are selected", async () => {
+    const onChange = vi.fn();
+    mount(<StaffRecipients items={[enrollments[0], { ...enrollments[1], canReceiveLearning: false }]} selected={[]} onChange={onChange} />);
+    expect(screen.getByLabelText("Learner")).toBeTruthy();
+    expect(screen.queryByLabelText("Other learner")).toBeNull();
+    await userEvent.click(screen.getByLabelText(i18n.t("lmsStaffAllRecipients")));
+    expect(onChange).toHaveBeenCalledWith([1]);
+  });
   it("opens the dedicated report workspace directly at results after the group is selected", async () => {
     vi.stubGlobal(
       "fetch",

@@ -68,8 +68,8 @@ import {
 import {
   createPortalWebSocketGateway,
   type PortalWebSocketGateway,
-  type PortalRealtimeContext,
 } from "../realtime/portal-websocket-gateway";
+import { readPortalRevision } from "./portal-revision";
 import { createPortalRateLimiters } from "./portal-rate-limiters";
 import {
   LEARNING_PROCESS_ROLES,
@@ -169,22 +169,6 @@ export function createLearningRuntime(
       void portalGateway?.refresh(request).catch(() => undefined);
     }, 150);
     refreshTimer.unref();
-  };
-  const portalRevision = async (contexts: readonly PortalRealtimeContext[]) => {
-    const studentIds = [
-        ...new Set(contexts.flatMap((context) => context.studentIds)),
-      ],
-      accountIds = [...new Set(contexts.map((context) => context.accountId))];
-    const result = await pool.query<{ revision: string }>(
-      `SELECT md5(jsonb_build_array(
-      (SELECT jsonb_agg(value ORDER BY value.student_id) FROM (SELECT student_id,max(id) AS id FROM lms_learning_events WHERE student_id=ANY($1::integer[]) GROUP BY student_id) value),
-      (SELECT jsonb_agg(value ORDER BY value.student_id) FROM (SELECT student_id,max(id) AS id FROM lms_resource_audit WHERE student_id=ANY($1::integer[]) GROUP BY student_id) value),
-      (SELECT jsonb_agg(value ORDER BY value.account_id) FROM (SELECT account_id,max(id) AS id FROM portal_notifications WHERE account_id=ANY($2::bigint[]) GROUP BY account_id) value),
-      (SELECT jsonb_agg(value ORDER BY value.owner_account_id,value.run_id) FROM (SELECT owner_account_id,run_id,max(checked_at) AS checked_at FROM lms_files WHERE owner_account_id=ANY($2::bigint[]) OR run_id IN(SELECT run.id FROM lms_group_runs run JOIN academy_student_group_enrollments enrollment ON enrollment.group_id=run.group_id WHERE enrollment.student_id=ANY($1::integer[])) GROUP BY owner_account_id,run_id) value)
-    )::text) AS revision`,
-      [studentIds, accountIds],
-    );
-    return result.rows[0].revision;
   };
   if (api)
     execution.configureLegacyPortfolioAvailability?.(
@@ -424,7 +408,7 @@ export function createLearningRuntime(
         enabled &&
         ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
         (/^\/api\/(?:portal|lms-management)(?:\/|$)/.test(request.path) ||
-          /^\/api\/academy\/(?:students|lessons|groups)(?:\/|$)/.test(
+          /^\/api\/academy\/(?:students|lessons|groups|payments)(?:\/|$)/.test(
             request.path,
           ))
       )
@@ -653,7 +637,7 @@ export function createLearningRuntime(
         enabled: () => flags.capabilities().portalEnabled,
         isActorEnabled: (actor) =>
           flags.enabledForStudent("learning", actor.studentId),
-        readRevision: portalRevision,
+        readRevision: (contexts) => readPortalRevision(pool, contexts),
         clientIp,
       });
     },

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   lmsIdSchema,
+  lmsCourseQuerySchema,
   lmsPageSchema,
   lmsDraftSchema,
   lmsSubmitSchema,
@@ -49,7 +50,7 @@ export function createLmsPortalRouter(
   router.get(
     "/:linkId/courses/:id",
     handle(async (request) =>
-      service.course(await actor(request), id(request)),
+      service.course(await actor(request), id(request), readInput(lmsCourseQuerySchema, request.query).enrollmentId),
     ),
   );
   router.get(

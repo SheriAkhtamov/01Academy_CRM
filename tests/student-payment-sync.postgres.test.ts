@@ -142,4 +142,18 @@ describe.skipIf(!databaseUrl)("student finance consistency across CRM and the po
       previous = current;
     }
   });
+  it("counts historical marks during a pause in both attendance and course progress", async () => {
+    await fixture.pool.query(`INSERT INTO academy_courses(id,name,lesson_count) VALUES(1,'Course',10);
+      INSERT INTO academy_groups(id,name,course_id,lesson_count) VALUES(1,'Group',1,10);
+      INSERT INTO academy_student_group_enrollments(id,student_id,group_id,enrolled_at) VALUES(1,1,1,now()-interval '30 days');
+      INSERT INTO academy_student_status_history(id,student_id,to_status,created_at) VALUES(1,1,'paused',now()-interval '2 days');
+      UPDATE academy_students SET status='paused' WHERE id=1;
+      INSERT INTO academy_lessons(id,group_id,topic,scheduled_at,status) VALUES(1,1,'Actually attended',now()-interval '1 day','conducted');
+      INSERT INTO academy_attendance(id,lesson_id,student_id,status) VALUES(1,1,1,'present')`);
+    const profile=await loadStudentProfileData(1);
+    expect(profile.attendance).toHaveLength(1);
+    expect(profile.summary.attended).toBe(1);
+    expect(profile.groups[0].attendedLessons).toBe(1);
+    expect(profile.summary.completedLessons).toBe(1);
+  });
 });

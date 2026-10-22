@@ -35,7 +35,7 @@ import {
   type LmsSql,
 } from "./postgres-base";
 import { PgLearningRepository } from "./learning-repository";
-const assignmentSelect = `SELECT recipient.id,recipient.id AS recipient_id,recipient.assignment_version_id,assignment.run_id,assignment.unit_id,version.title,version.body,version.required,version.allowed_answers,version.file_ids,version.criteria,version.grading_mode,version.max_score,course.name AS course_name,g.name AS group_name,recipient.opens_at,recipient.due_at,recipient.closes_at,recipient.status,(recipient.due_at<now() AND recipient.status IN('assigned','revision_required')) AS overdue,recipient.version,recipient.student_id FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN lms_group_runs run ON run.id=assignment.run_id JOIN academy_groups g ON g.id=run.group_id JOIN academy_courses course ON course.id=g.course_id`;
+const assignmentSelect = `SELECT recipient.id,recipient.id AS recipient_id,recipient.enrollment_id,recipient.assignment_version_id,assignment.run_id,assignment.unit_id,version.title,version.body,version.required,version.allowed_answers,version.file_ids,version.criteria,version.grading_mode,version.max_score,course.name AS course_name,g.name AS group_name,recipient.opens_at,recipient.due_at,recipient.closes_at,recipient.status,(recipient.due_at<now() AND recipient.status IN('assigned','revision_required')) AS overdue,recipient.version,recipient.student_id FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN lms_group_runs run ON run.id=assignment.run_id JOIN academy_groups g ON g.id=run.group_id JOIN academy_courses course ON course.id=g.course_id`;
 export class PgAssignmentRepository {
   constructor(
     readonly pool: Pool,
@@ -66,6 +66,7 @@ export class PgAssignmentRepository {
   }
   summary(row: LmsAssignmentDto): LmsAssignmentDto {
     return {
+      enrollmentId: row.enrollmentId,
       id: row.id,
       recipientId: row.recipientId,
       assignmentVersionId: row.assignmentVersionId,

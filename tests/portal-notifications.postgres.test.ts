@@ -245,6 +245,24 @@ describe.skipIf(!databaseUrl)(
         await admin.end();
       }
     });
+    it("does not queue reminders for assignments outside the enrollment period", async () => {
+      await assignment(now + DAY, now - HOUR);
+      await pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=$1 WHERE id=1", [new Date(now - 2 * HOUR)]);
+      await worker().runOnce();
+      expect(await notifications("portalNoticeAssignmentDue")).toHaveLength(0);
+      expect(await notifications("portalNoticeAssignmentAssigned")).toHaveLength(0);
+    });
+    it("cancels already queued reminders when a transfer makes a scheduled assignment unavailable", async () => {
+      await assignment(now + 2 * DAY, now + HOUR);
+      await worker().runOnce();
+      const queued = await pool.query("SELECT id FROM lms_resource_outbox WHERE code='portalNoticeAssignmentDue' AND state='pending'");
+      expect(queued.rows).toHaveLength(3);
+      await pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=$1 WHERE id=1", [new Date(now + HOUR / 2)]);
+      now += DAY;
+      await worker().runOnce();
+      expect(await notifications("portalNoticeAssignmentDue")).toHaveLength(0);
+      expect((await pool.query("SELECT state FROM lms_resource_outbox WHERE id=ANY($1::bigint[])", [queued.rows.map(row => row.id)])).rows.every(row => row.state === "cancelled")).toBe(true);
+    });
     it("deduplicates scheduled publication and learning event sources across processes and repeated polls", async () => {
       await material();
       await Promise.all([worker().runOnce(), worker().runOnce()]);

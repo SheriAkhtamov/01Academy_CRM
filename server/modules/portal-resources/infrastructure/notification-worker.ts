@@ -1,3 +1,4 @@
+import { recipientEnrollmentVisibilitySql } from "../../../lib/student-learning-sql";
 import type { PoolClient } from "pg";
 import type { PortalNotificationPreferencesDto } from "@shared/contracts/portal-resources";
 import { learningSubjectHref } from "@shared/platform-routes";
@@ -295,7 +296,7 @@ export class PortalNotificationWorker {
           closes_at: Date | null;
           state: string;
         }>(
-          `SELECT recipient.status,recipient.due_at,recipient.opens_at,recipient.closes_at,assignment.state FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE recipient.id=$1 AND recipient.student_id=$2`,
+          `SELECT recipient.status,recipient.due_at,recipient.opens_at,recipient.closes_at,assignment.state FROM lms_assignment_recipients recipient JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id WHERE recipient.id=$1 AND recipient.student_id=$2 AND ${recipientEnrollmentVisibilitySql()}`,
           [params.recipientId, actor?.studentId],
         )
       ).rows[0];

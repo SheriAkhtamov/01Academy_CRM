@@ -39,7 +39,7 @@ type StoredAttempt = Omit<
   LmsQuizAttemptDto,
   "questions" | "disclosure" | "serverTime"
 > & { questions: LmsQuizInput["questions"] };
-const quizRecipientSelect = `SELECT recipient.id,recipient.id AS recipient_id,quiz.run_id,quiz.unit_id,recipient.quiz_version_id,recipient.student_id,recipient.opens_at,recipient.closes_at,recipient.extra_attempts,recipient.status,version.title,version.instructions,version.required,version.questions,version.pass_percent,version.max_attempts,version.timer_seconds,version.disclosure,version.shuffle_questions,version.shuffle_options FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id`;
+const quizRecipientSelect = `SELECT recipient.id,recipient.id AS recipient_id,recipient.enrollment_id,quiz.run_id,quiz.unit_id,recipient.quiz_version_id,recipient.student_id,recipient.opens_at,recipient.closes_at,recipient.extra_attempts,recipient.status,version.title,version.instructions,version.required,version.questions,version.pass_percent,version.max_attempts,version.timer_seconds,version.disclosure,version.shuffle_questions,version.shuffle_options FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id`;
 function shuffled<T>(input: T[]): T[] {
   const items = [...input];
   for (let i = items.length - 1; i > 0; i--) {
@@ -60,7 +60,7 @@ export class PgQuizRepository {
   ): Promise<LmsQuizDto[]> {
     return listRows<LmsQuizDto>(
       this.pool,
-      `SELECT recipient.id,recipient.id AS recipient_id,quiz.run_id,version.title,version.instructions,version.required,recipient.opens_at,recipient.closes_at,version.max_attempts+recipient.extra_attempts AS max_attempts,version.pass_percent,version.timer_seconds,CASE WHEN EXISTS(SELECT 1 FROM lms_quiz_attempts active WHERE active.recipient_id=recipient.id AND active.state='active') THEN 'active' ELSE recipient.status END AS status,(SELECT active.id FROM lms_quiz_attempts active WHERE active.recipient_id=recipient.id AND active.state='active') AS active_attempt_id,(SELECT finished.id FROM lms_quiz_attempts finished WHERE finished.recipient_id=recipient.id AND finished.state='finished' ORDER BY finished.attempt_number DESC LIMIT 1) AS latest_finished_attempt_id,(SELECT COUNT(*)::int FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id) AS attempts_used,(SELECT MAX(attempt.percent) FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished') AS best_percent,EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.passed) AS passed FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND recipient.opens_at<=now() AND recipient.status<>'cancelled' AND ${recipientEnrollmentVisibilitySql()} ORDER BY recipient.id`,
+      `SELECT recipient.id,recipient.id AS recipient_id,recipient.enrollment_id,quiz.run_id,version.title,version.instructions,version.required,recipient.opens_at,recipient.closes_at,version.max_attempts+recipient.extra_attempts AS max_attempts,version.pass_percent,version.timer_seconds,CASE WHEN EXISTS(SELECT 1 FROM lms_quiz_attempts active WHERE active.recipient_id=recipient.id AND active.state='active') THEN 'active' ELSE recipient.status END AS status,(SELECT active.id FROM lms_quiz_attempts active WHERE active.recipient_id=recipient.id AND active.state='active') AS active_attempt_id,(SELECT finished.id FROM lms_quiz_attempts finished WHERE finished.recipient_id=recipient.id AND finished.state='finished' ORDER BY finished.attempt_number DESC LIMIT 1) AS latest_finished_attempt_id,(SELECT COUNT(*)::int FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id) AS attempts_used,(SELECT MAX(attempt.percent) FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished') AS best_percent,EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.passed) AS passed FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id WHERE recipient.student_id=$1 AND recipient.opens_at<=now() AND recipient.status<>'cancelled' AND ${recipientEnrollmentVisibilitySql()} ORDER BY recipient.id`,
       [actor.studentId],
       page,
       page ? await this.learning.enabledRunIds(actor.studentId) : undefined,
@@ -488,16 +488,17 @@ export class PgQuizRepository {
     );
     if (!attempt) throw new LmsError("lmsNotFound", 404);
     const result = await this.present(this.pool, actor, attempt);
-    const quiz = await one<{ runId: number; unitId: number | null }>(
+    const quiz = await one<{ runId: number; unitId: number | null; enrollmentId: number }>(
       this.pool,
-      "SELECT quiz.run_id,quiz.unit_id FROM lms_quizzes quiz JOIN lms_quiz_recipients recipient ON recipient.quiz_id=quiz.id WHERE recipient.id=$1",
+      "SELECT quiz.run_id,quiz.unit_id,recipient.enrollment_id FROM lms_quizzes quiz JOIN lms_quiz_recipients recipient ON recipient.quiz_id=quiz.id WHERE recipient.id=$1",
       [recipientId],
     );
     result.relatedMaterials =
       actor.permissions.includes("learning.read") && quiz?.unitId
         ? (await this.learning.materials(actor, quiz.runId))
-            .filter((material) => material.unitId === quiz.unitId)
-            .map(({ runId, publicationId, title }) => ({
+            .filter((material) => material.unitId === quiz.unitId && material.enrollmentId === quiz.enrollmentId)
+            .map(({ runId, publicationId, title, enrollmentId }) => ({
+              enrollmentId,
               runId,
               publicationId,
               title,

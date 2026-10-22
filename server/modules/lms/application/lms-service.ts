@@ -261,9 +261,9 @@ export class LmsService {
     requirePortalPermission(actor, "learning.read");
     return this.ports.learning.courses(actor, page);
   }
-  course(actor: PortalActorContext, id: number) {
+  course(actor: PortalActorContext, id: number, enrollmentId?: number) {
     requirePortalPermission(actor, "learning.read");
-    return this.ports.learning.course(actor, id);
+    return this.ports.learning.course(actor, id, enrollmentId);
   }
   unit(actor: PortalActorContext, id: number) {
     requirePortalPermission(actor, "learning.read");

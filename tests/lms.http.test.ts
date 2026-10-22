@@ -69,6 +69,20 @@ const create = (actorOverride = actor, enabled = true) => {
   return { app, resolver, ports, unavailable };
 };
 describe("LMS HTTP policy boundaries", () => {
+  it("passes the selected enrollment through the authenticated course boundary", async () => {
+    const { app, ports } = create();
+    vi.mocked(ports.learning.course).mockResolvedValue({ enrollmentId: 77 } as never);
+    const result = await request(app).get("/api/portal/subjects/8/courses/123?enrollmentId=77");
+    expect(result.status).toBe(200);
+    expect(ports.learning.course).toHaveBeenCalledWith(actor, 123, 77);
+  });
+  it.each(["0", "-1", "wrong", "1.5"])("rejects an invalid course enrollment selector %s", async (value) => {
+    const { app, ports } = create();
+    const result = await request(app).get(`/api/portal/subjects/8/courses/123?enrollmentId=${value}`);
+    expect(result.status).toBe(400);
+    expect(ports.learning.course).not.toHaveBeenCalled();
+  });
+
   it("default-off router does not access identity or new tables", async () => {
     const resolver = vi.fn();
     const app = express();

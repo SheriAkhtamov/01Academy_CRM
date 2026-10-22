@@ -91,7 +91,7 @@ export interface LearningPort {
     actor: PortalActorContext,
     page?: LmsListOptions,
   ): Promise<LmsCourseDto[]>;
-  course(actor: PortalActorContext, id: number): Promise<LmsCourseDetailDto>;
+  course(actor: PortalActorContext, id: number, enrollmentId?: number): Promise<LmsCourseDetailDto>;
   materials(
     actor: PortalActorContext,
     runId?: number,

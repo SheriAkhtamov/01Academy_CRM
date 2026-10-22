@@ -1,3 +1,4 @@
+import { recipientEnrollmentVisibilitySql } from "../../../lib/student-learning-sql";
 import type { PoolClient } from "pg";
 import type { PortalActorContext } from "../../portal-identity/domain/actor-context";
 import {
@@ -590,7 +591,7 @@ export class PortalNotificationSources {
         due_at: Date;
         title: string;
       }>(
-        `SELECT recipient.id,recipient.student_id,assignment.run_id,run.group_id,recipient.due_at,version.title FROM lms_assignment_recipients recipient JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_group_runs run ON run.id=assignment.run_id WHERE recipient.status IN ('assigned','revision_required') AND assignment.state='published' AND recipient.due_at IS NOT NULL AND recipient.due_at>=$1 AND recipient.due_at<=$3 AND recipient.opens_at<=$2 AND (recipient.closes_at IS NULL OR recipient.closes_at>$2) ORDER BY recipient.due_at LIMIT 1000`,
+        `SELECT recipient.id,recipient.student_id,assignment.run_id,run.group_id,recipient.due_at,version.title FROM lms_assignment_recipients recipient JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id JOIN lms_group_runs run ON run.id=assignment.run_id WHERE recipient.status IN ('assigned','revision_required') AND assignment.state='published' AND ${recipientEnrollmentVisibilitySql()} AND recipient.due_at IS NOT NULL AND recipient.due_at>=$1 AND recipient.due_at<=$3 AND recipient.opens_at<=$2 AND (recipient.closes_at IS NULL OR recipient.closes_at>$2) ORDER BY recipient.due_at LIMIT 1000`,
         [
           new Date(Math.max(cutoff - DAY, now - 2 * DAY)),
           new Date(now + DAY),

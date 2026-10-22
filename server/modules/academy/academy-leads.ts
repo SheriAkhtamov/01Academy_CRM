@@ -1,14 +1,12 @@
+import { loadStudentLearningMetrics } from "./student-learning-metrics";
 import { enqueueMetaLeadIntakeSafely } from '../../services/meta-marketing';
 import { qualifiesManualLeadStageMove } from '@shared/lead-qualification';
 import { assertSalesFunnelAssignment } from './sales-funnel-policy';
 import {
   LEAD_STATUSES,
   addDays,
-  calculateAttendancePercent,
   calculateAverage,
-  calculateProgressPercent,
   normalizeMoney,
-  resolveStudentRiskFlags,
   suggestCourseSlugByAge,
 } from '@shared/academy';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
@@ -17,7 +15,6 @@ import { logger } from '../../lib/logger';
 import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
 import {
-  ACADEMY_TIME_ZONE,
   NormalizedLeadPhone,
   Row,
   canAccessLeadRow,
@@ -1237,110 +1234,13 @@ export const validateLeadSelectedGroups = async (
 };
 
 export const recalculateStudentMetrics = async (studentId: number) => {
-  const student = await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
-  if (!student?.groupId) return;
-
-  const latestGroupEntry = await queryOne<{ createdAt: Date }>(
-    `SELECT enrolled_at AS created_at
-     FROM academy_student_group_enrollments
-     WHERE student_id = $1 AND group_id = $2 AND status = 'active'
-     ORDER BY enrolled_at DESC, id DESC
-     LIMIT 1`,
-    [studentId, student.groupId],
-  );
-  const membershipStartedAt = latestGroupEntry?.createdAt ?? student.enrolledAt ?? student.createdAt;
-
-  const conductedLessons = await query<{ id: number }>(
-    `SELECT lesson.id
-     FROM academy_lessons lesson
-     WHERE lesson.group_id = $1
-       AND lesson.status = 'conducted'
-       AND lesson.scheduled_at >= $2
-       AND COALESCE(
-         (
-           SELECT history.to_status
-           FROM academy_student_status_history history
-           WHERE history.student_id = $3
-             AND history.created_at <= lesson.scheduled_at
-           ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1
-         ),
-         'studying'
-       ) = 'studying'`,
-    [student.groupId, membershipStartedAt, studentId],
-  );
-  const presentRows = await query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count
-     FROM academy_attendance a
-     JOIN academy_lessons l ON l.id = a.lesson_id
-     WHERE a.student_id = $1
-       AND a.status = 'present'
-       AND l.status = 'conducted'
-       AND l.group_id = $2
-       AND l.scheduled_at >= $3
-       AND COALESCE(
-         (
-           SELECT history.to_status
-           FROM academy_student_status_history history
-           WHERE history.student_id = $1
-             AND history.created_at <= l.scheduled_at
-           ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1
-         ),
-         'studying'
-       ) = 'studying'`,
-    [studentId, student.groupId, membershipStartedAt],
-  );
-  const group = await queryOne(`SELECT lesson_count FROM academy_groups WHERE id = $1`, [student.groupId]);
-  const monthlyAttendanceRows = await query<{
-    conductedCount: number;
-    presentCount: number;
-  }>(
-    `SELECT
-       COUNT(DISTINCT l.id)::int AS conducted_count,
-       COUNT(DISTINCT CASE WHEN a.status = 'present' THEN l.id END)::int AS present_count
-     FROM academy_lessons l
-     LEFT JOIN academy_attendance a
-       ON a.lesson_id = l.id
-      AND a.student_id = $1
-     WHERE l.group_id = $2
-       AND l.status = 'conducted'
-       AND l.scheduled_at >= $3
-       AND COALESCE(
-         (
-           SELECT history.to_status
-           FROM academy_student_status_history history
-           WHERE history.student_id = $1
-             AND history.created_at <= l.scheduled_at
-           ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1
-         ),
-         'studying'
-       ) = 'studying'
-       AND l.scheduled_at >= (
-         (date_trunc('month', NOW() AT TIME ZONE $4) AT TIME ZONE $4)
-         AT TIME ZONE 'UTC'
-       )`,
-    [studentId, student.groupId, membershipStartedAt, ACADEMY_TIME_ZONE],
-  );
-  const presentCount = Number(presentRows[0]?.count ?? 0);
-  const attendancePercent = calculateAttendancePercent(presentCount, conductedLessons.length);
-  const totalLessons = Number(group?.lessonCount) > 0 ? Number(group?.lessonCount) : conductedLessons.length;
-  const progressPercent = calculateProgressPercent(presentCount, totalLessons);
-  const monthConductedCount = Number(monthlyAttendanceRows[0]?.conductedCount ?? 0);
-  const monthPresentCount = Number(monthlyAttendanceRows[0]?.presentCount ?? 0);
-  const monthAttendancePercent = calculateAttendancePercent(monthPresentCount, monthConductedCount);
-  const riskFlags = resolveStudentRiskFlags({
-    conductedCount: conductedLessons.length,
-    attendancePercent,
-    monthConductedCount,
-    monthAttendancePercent,
-  });
-
+  const metrics = (await loadStudentLearningMetrics([studentId])).get(studentId);
+  if (!metrics) return;
   await updateRow('academy_students', studentId, {
-    attendancePercent,
-    progressPercent,
-    riskFlags });
+    attendancePercent: metrics.attendancePercent,
+    progressPercent: metrics.progressPercent,
+    riskFlags: metrics.riskFlags,
+  });
 };
 
 export const advanceStudentNextPaymentAt = async (

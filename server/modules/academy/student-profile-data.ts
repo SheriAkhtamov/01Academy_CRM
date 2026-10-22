@@ -19,7 +19,7 @@ import {
 import { getLead } from "./academy-leads";
 import { studentProjectFileInfo } from "../../middleware/student-project-upload.middleware";
 import { logger } from "../../lib/logger";
-import { studentWasStudyingSql } from "../../lib/student-learning-sql";
+import { studentLessonCountsSql, studentWasStudyingSql } from "../../lib/student-learning-sql";
 import { studentPaymentAmountSql, studentPaymentPaidUntilSql, studentPaymentSourceSql } from "../../lib/student-payment-sql";
 
 export type StudentProfileLearningActor = {
@@ -194,7 +194,7 @@ export async function loadStudentProfileData(
       LEFT JOIN academy_schools school ON school.id = g.school_id
       LEFT JOIN academy_teachers teacher ON teacher.id = g.teacher_id
       LEFT JOIN academy_lessons lesson ON lesson.group_id = g.id AND lesson.status = 'conducted'
-        AND lesson.scheduled_at >= membership.enrolled_at AND ${studentWasStudyingSql("$1", "lesson.scheduled_at")}
+        AND lesson.scheduled_at >= membership.enrolled_at AND ${studentLessonCountsSql("$1")}
       LEFT JOIN academy_attendance mark ON mark.lesson_id = lesson.id AND mark.student_id = $1
       WHERE membership.student_id = $1 AND membership.status = 'active' ${teacherId ? "AND g.teacher_id = $2" : ""}
       GROUP BY membership.id, g.id, course.id, school.id, teacher.id

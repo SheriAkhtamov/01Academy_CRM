@@ -1547,10 +1547,8 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('UPDATE "academy_lessons"')) {
         return { rows: [{ id: 10, group_id: 20, status: 'conducted', scheduled_at: scheduledAt }] };
       }
-      if (sql.includes('ORDER BY l.scheduled_at DESC') && sql.includes('LIMIT 3')) {
-        return { rows: [{ status: 'present' }, { status: 'absent' }, { status: 'absent' }] };
-      }
-      if (sql.includes("title = '3 пропуска подряд: позвонить родителю'")) {
+      if (sql.includes('recent.statuses=')) return emptyResult();
+      if (sql.includes("FROM academy_tasks") && values[1] === "3 пропуска подряд: позвонить родителю") {
         return { rows: [{ id: 70 }] };
       }
       return emptyResult();
@@ -1566,7 +1564,7 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(200);
     expect(mocks.clientQuery.mock.calls.some(([sql, values]) => (
       String(sql).includes('UPDATE academy_tasks')
-      && String(sql).includes("status = 'done'")
+      && /status\s*=\s*'done'/.test(String(sql))
       && values[0] === 70
     ))).toBe(true);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');

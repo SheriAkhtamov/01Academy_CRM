@@ -1,3 +1,5 @@
+import { enrollmentMaterialHref, inEnrollmentPeriod } from "./enrollment-period";
+import type { LmsEnrollmentPeriod } from "@shared/contracts/lms";
 import { useCallback, useEffect, useState } from "react";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { useMutation } from "@tanstack/react-query";
@@ -39,10 +41,14 @@ import { PortalActionRow } from "../portal-app/controls";
 
 export function PortalQuizzes({
   courseId,
+  enrollmentId,
+  period,
   quizId,
   embedded = false,
 }: {
   courseId?: number;
+  enrollmentId?: number;
+  period?: LmsEnrollmentPeriod;
   quizId?: number;
   embedded?: boolean;
 }) {
@@ -73,7 +79,7 @@ export function PortalQuizzes({
     );
   const items = (query.data ?? []).filter(
     (item) =>
-      (!courseId || item.runId === courseId) && (!quizId || item.id === quizId),
+      (!courseId || item.runId === courseId) && (enrollmentId === undefined || item.enrollmentId === enrollmentId) && inEnrollmentPeriod(item.opensAt, period) && (!quizId || item.id === quizId),
   );
   return (
     <>
@@ -563,7 +569,7 @@ function QuizRelatedMaterials({
             onClick={() =>
               guarded(() =>
                 navigate(
-                  `/learn/courses/${item.runId}/materials/${item.publicationId}`,
+                  enrollmentMaterialHref(item.runId, item.publicationId, item.enrollmentId),
                 ),
               )
             }

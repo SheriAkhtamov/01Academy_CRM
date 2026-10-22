@@ -185,6 +185,42 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       await admin.end();
     }
   });
+  it("keeps repeated enrollments separate, including materials, progress and upcoming lessons", async () => {
+    const oldTask = await createAssignment();
+    await pool.query("UPDATE lms_assignment_recipients SET opens_at=now()-interval '3 hours' WHERE id=$1", [oldTask.id]);
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({ runId, unitId: 1, title: "Old period material", body: "Old content", publishAt: new Date(Date.now() - 3 * 3600000).toISOString() }));
+    await quizzes.create(teacher, { ...quizInput(), unitId: 1, opensAt: new Date(Date.now() - 3 * 3600000).toISOString() });
+    const oldQuiz = (await quizzes.list(actor))[0];
+    await pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=now()-interval '2 hours' WHERE id=1");
+    const newEnrollment = Number((await pool.query("INSERT INTO academy_student_group_enrollments(student_id,group_id,enrolled_at) VALUES(1,1,now()-interval '1 hour') RETURNING id")).rows[0].id);
+    await learning.createMaterial(teacher, lmsMaterialSchema.parse({ runId, unitId: 1, title: "New period material", body: "New content", publishAt: new Date(Date.now() - 1800000).toISOString() }));
+    await pool.query("INSERT INTO academy_lessons(group_id,lesson_number,topic,scheduled_at) VALUES(1,2,'Next period lesson',now()+interval '1 day')");
+    const cards = await learning.courses(actor);
+    expect(cards).toHaveLength(2);
+    expect(cards.find(card => card.enrollmentId === 1)).toMatchObject({ nextLesson: null, progress: { total: 1 } });
+    expect(cards.find(card => card.enrollmentId === newEnrollment)?.nextLesson?.topic).toBe("Next period lesson");
+    const historical = await learning.course(actor, runId, 1);
+    const current = await learning.course(actor, runId, newEnrollment);
+    expect(historical.enrollmentId).toBe(1);
+    expect(historical.endedAt).toBeTruthy();
+    expect(historical.materials.map(material => material.title)).toEqual(["Old period material"]);
+    expect(current.materials.map(material => material.title)).toEqual(["New period material"]);
+    const attempt = await quizzes.start(actor, oldQuiz.id);
+    await quizzes.finish(actor, attempt.id, attempt.version);
+    expect((await quizzes.results(actor, oldQuiz.id)).relatedMaterials?.map(material => material.title)).toEqual(["Old period material"]);
+
+    expect((await learning.course(actor, runId)).enrollmentId).toBe(newEnrollment);
+    expect((await assignments.list(actor)).items.map(task => task.id)).toContain(oldTask.id);
+    await expect(learning.course(actor, runId, 2)).rejects.toMatchObject({ code: "lmsNotFound" });
+    await expect(learning.course(stranger, runId, 1)).rejects.toMatchObject({ code: "lmsNotFound" });
+  });
+  it("excludes work that opens after withdrawal from every progress total", async () => {
+    await assignments.create(teacher, lmsAssignmentSchema.parse({ runId, title: "Published later", body: "Answer", required: true, dueAt: future(), opensAt: open(), recipientEnrollmentIds: [1] }));
+    await pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn',ended_at=now()-interval '2 hours' WHERE id=1");
+    expect((await assignments.list(actor)).items).toEqual([]);
+    expect((await learning.progress(actor, runId)).assignments.total).toBe(0);
+    expect((await learning.courses(actor))[0].progress.total).toBe(0);
+  });
   it.each(['paused', 'expelled', 'completed', 'trial'])("excludes %s pupils from new learning recipients while preserving previous work", async (status) => {
     const previous = await createAssignment();
     await pool.query('UPDATE academy_students SET status=$1 WHERE id=1', [status]);

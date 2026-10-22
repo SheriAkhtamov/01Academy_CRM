@@ -321,7 +321,7 @@ export function PortalSessionProvider({ children }: { children: ReactNode }) {
           String(linkId ?? "family"),
         );
         const params = new URLSearchParams(window.location.search);
-        const entityKeys = ["review", "thread", "question", "submission"];
+        const entityKeys = ["review", "thread", "question", "submission", "enrollmentId"];
         const clearEntity =
           subject?.linkId !== linkId &&
           !options?.preserveEntityQuery &&

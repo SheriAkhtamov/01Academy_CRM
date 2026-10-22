@@ -196,6 +196,8 @@ function PortalRoutes() {
     /^\/learn\/courses\/(\d+)\/materials\/(\d+)$/,
   );
   const course = pagePath.match(/^\/learn\/courses\/(\d+)$/);
+  const enrollmentParam = new URLSearchParams(search).get("enrollmentId");
+  const enrollmentId = enrollmentParam === null ? undefined : Number(enrollmentParam);
   if (!subjects.length) page = <NoPortalAccess />;
   else if (
     portalSectionForPath(pagePath) &&
@@ -215,9 +217,9 @@ function PortalRoutes() {
   else if (pagePath === "/learn/courses") page = <PortalCourses />;
   else if (material)
     page = (
-      <PortalMaterial courseId={Number(material[1])} id={Number(material[2])} />
+      <PortalMaterial courseId={Number(material[1])} id={Number(material[2])} enrollmentId={enrollmentId} />
     );
-  else if (course) page = <PortalCourse id={Number(course[1])} />;
+  else if (course) page = <PortalCourse key={`${course[1]}:${enrollmentId ?? "current"}`} id={Number(course[1])} enrollmentId={enrollmentId} />;
   else if (assignment)
     page = <PortalAssignments initialId={Number(assignment[1])} />;
   else if (pagePath === "/learn/assignments") page = <PortalAssignments />;

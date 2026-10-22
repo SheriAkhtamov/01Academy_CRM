@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const lmsIdSchema = z.coerce.number().int().positive();
+export const lmsCourseQuerySchema = z.object({ enrollmentId: lmsIdSchema.optional() });
+export type LmsEnrollmentPeriod = { enrolledAt: string; endedAt: string | null };
 export const lmsPageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: lmsIdSchema.optional(),
@@ -390,6 +392,7 @@ export type LmsCourseDto = {
   progress: LmsProgressMetric;
 };
 export type LmsMaterialDto = {
+  enrollmentId?: number;
   lessonAt?: string | null;
   authorName?: string | null;
   durationMinutes?: number | null;
@@ -429,6 +432,7 @@ export type LmsAssignmentStatus =
   | "excused"
   | "cancelled";
 export type LmsAssignmentDto = {
+  enrollmentId?: number;
   id: number;
   recipientId: number;
   assignmentVersionId: number;
@@ -537,6 +541,7 @@ export type LmsProgressDto = {
   materials: LmsProgressMetric;
 };
 export type LmsQuizDto = {
+  enrollmentId?: number;
   id: number;
   recipientId: number;
   runId: number;
@@ -560,7 +565,7 @@ export type LmsQuizQuestionDto = Omit<
   "correctOptionIds" | "explanation"
 >;
 export type LmsQuizAttemptDto = {
-  relatedMaterials?: { runId: number; publicationId: number; title: string }[];
+  relatedMaterials?: { runId: number; publicationId: number; title: string; enrollmentId?: number }[];
   id: number;
   recipientId: number;
   quizVersionId: number;

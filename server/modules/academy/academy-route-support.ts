@@ -1,3 +1,4 @@
+import { studentGroupMetricsSql } from "../../lib/student-group-metrics-sql";
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -885,8 +886,16 @@ export const getLeadCountForStatusCode = async (statusCode: string) => {
 };
 
 export const getLessonRoster = async (groupId: number, scheduledAt: Date | string, lock = false) => query(
-  `SELECT student.*
+  `SELECT student.*,COALESCE(group_metrics.attendance_percent,0) AS attendance_percent,
+     COALESCE(group_metrics.progress_percent,0) AS progress_percent
    FROM academy_students student
+   LEFT JOIN LATERAL (
+     SELECT membership.enrolled_at,membership.ended_at FROM academy_student_group_enrollments membership
+     WHERE membership.student_id=student.id AND membership.group_id=$1 AND membership.enrolled_at<=$2
+       AND (membership.ended_at IS NULL OR membership.ended_at>$2)
+     ORDER BY membership.enrolled_at DESC,membership.id DESC LIMIT 1
+   ) roster_membership ON true
+   LEFT JOIN LATERAL (${studentGroupMetricsSql("student.id", "$1", "COALESCE(roster_membership.enrolled_at,student.enrolled_at,student.created_at)", "roster_membership.ended_at")}) group_metrics ON true
    WHERE COALESCE(student.enrolled_at, student.created_at) <= $2
      AND (
        EXISTS (

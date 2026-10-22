@@ -1,3 +1,4 @@
+import { reconcileStudentAbsenceTask } from "./student-absence-task";
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -84,8 +85,6 @@ import {
   Row,
   canMutateLeadRow,
   createAudit,
-  createNotification,
-  createTask,
   ensureLeadMutationAccess,
   ensureOperationsAccess,
   ensureModuleAccess,
@@ -534,72 +533,9 @@ router.post('/lessons/:id/attendance', async (req, res) => {
           comment: nullableText(req.body.statusComment) ?? 'Статус изменён при сохранении посещаемости',
         });
       }
-      const absenceAlerts: Row[] = [];
       if (requestedLessonStatus === 'conducted') {
         for (const item of normalizedItems) {
-          const recentAttendance = await query<{ status: string }>(
-            `SELECT a.status
-             FROM academy_lessons l
-             JOIN academy_attendance a ON a.lesson_id = l.id AND a.student_id = $2
-             WHERE l.group_id = $1
-               AND l.status = 'conducted'
-               AND l.scheduled_at >= COALESCE(
-                 (
-                   SELECT MAX(membership.enrolled_at)
-                   FROM academy_student_group_enrollments membership
-                   WHERE membership.student_id = $2
-                     AND membership.group_id = $1
-                     AND membership.enrolled_at <= l.scheduled_at
-                 ),
-                 (
-                   SELECT MAX(transfer.created_at)
-                   FROM academy_student_transfers transfer
-                   WHERE transfer.student_id = $2 AND transfer.to_group_id = $1
-                 ),
-                 (
-                   SELECT COALESCE(student.enrolled_at, student.created_at)
-                   FROM academy_students student
-                   WHERE student.id = $2
-                 )
-               )
-             ORDER BY l.scheduled_at DESC
-             LIMIT 3`,
-            [lesson.groupId, item.studentId],
-          );
-          const existingTask = await queryOne(
-            `SELECT id
-             FROM academy_tasks
-             WHERE entity_type = 'student'
-               AND entity_id = $1
-               AND title = '3 пропуска подряд: позвонить родителю'
-               AND status <> 'done'
-             LIMIT 1`,
-            [item.studentId],
-          );
-          const hasConsecutiveAbsenceRisk = recentAttendance.length === 3
-            && recentAttendance.every((row) => row.status === 'absent');
-          if (!hasConsecutiveAbsenceRisk) {
-            if (existingTask) {
-              await query(
-                `UPDATE academy_tasks
-                 SET status = 'done',
-                     completed_at = COALESCE(completed_at, NOW()),
-                     updated_at = NOW()
-                 WHERE id = $1 AND status <> 'done'`,
-                [existingTask.id],
-              );
-            }
-            continue;
-          }
-          if (existingTask) continue;
-          const student = studentsById.get(item.studentId)!;
-          await createTask('3 пропуска подряд: позвонить родителю', {
-            responsibleId: student.managerId ?? req.user!.id,
-            entityType: 'student',
-            entityId: item.studentId,
-            deadlineAt: addDays(new Date(), 1),
-          });
-          absenceAlerts.push(student);
+          await reconcileStudentAbsenceTask(studentsById.get(item.studentId)!, req.user!.id);
         }
       }
 
@@ -607,18 +543,9 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         await recalculateStudentMetrics(Number(student.id));
       }
 
-      return { lesson: updatedLesson, attendance: saved, absenceAlerts };
+      return { lesson: updatedLesson, attendance: saved };
     });
 
-    for (const student of result.absenceAlerts) {
-      await createNotification(
-        student.managerId ?? req.user!.id,
-        'Риск по посещаемости',
-        `${student.studentName ?? 'Ученик'} пропустил 3 занятия подряд`,
-        'student',
-        Number(student.id),
-      );
-    }
     res.json({ lesson: result.lesson, attendance: result.attendance });
   } catch (error: any) {
     logger.error('Failed to save attendance', { error });
@@ -820,6 +747,7 @@ router.post('/students/:id/groups', async (req, res) => {
         await recalculateStudentMetrics(studentId);
         return updated;
       }
+      await recalculateStudentMetrics(studentId);
       return lockedStudent;
     });
     res.status(201).json(student);

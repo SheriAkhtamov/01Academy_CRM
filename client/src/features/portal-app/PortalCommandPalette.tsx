@@ -1,3 +1,4 @@
+import { enrollmentCourseHref } from "../lms/enrollment-period";
 import { useEffect, useState } from "react";
 import { BookOpen } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -19,7 +20,7 @@ import { portalLmsApi } from "./api";
 import { usePortal, useSubjectQuery } from "./context";
 import { canAccessPortalSection, studentNav } from "./module-navigation";
 import { usePortalLocation } from "./navigation";
-import { isPortalAccessError, PortalError, PortalLoading } from "./ui";
+import { isPortalAccessError, PortalError, PortalLoading, usePortalFormat } from "./ui";
 
 export function PortalCommandPalette({
   open,
@@ -29,6 +30,7 @@ export function PortalCommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const format = usePortalFormat();
   const { subject, allSubjects, learningModule, guarded } = usePortal();
   const [, navigate] = usePortalLocation();
   const [search, setSearch] = useState("");
@@ -123,14 +125,14 @@ export function PortalCommandPalette({
           <CommandGroup heading={t("portalCourses")}>
             {matchedCourses.map((course) => (
               <CommandItem
-                key={course.runId}
-                value={`course-${subject.linkId}-${course.runId}`}
-                onSelect={() => select(learningSubjectHref(`/learn/courses/${course.runId}`, subject))}
+                key={course.enrollmentId}
+                value={`course-${subject.linkId}-${course.enrollmentId}`}
+                onSelect={() => select(learningSubjectHref(enrollmentCourseHref(course.runId, course.enrollmentId), subject))}
               >
                 <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
                   <p className="truncate">{course.courseName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{course.groupName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{course.groupName} · {format.date(course.enrolledAt)}{course.endedAt ? ` – ${format.date(course.endedAt)}` : ""}</p>
                 </div>
               </CommandItem>
             ))}

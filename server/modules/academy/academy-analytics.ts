@@ -1,3 +1,4 @@
+import { loadStudentLearningMetrics } from "./student-learning-metrics";
 import { summarizeLeadQualifications, type LeadQualificationFact } from '@shared/lead-qualification';
 import { teacherLessonVisibilitySql } from './teacher-lesson-access';
 import { Router } from 'express';
@@ -48,7 +49,6 @@ import {
   calculateAvgDealCycleDays,
   calculateAvgStudyMonths,
   calculateCac,
-  calculateLtv,
   calculateNps,
   calculateProgressPercent,
   calculateRoas,
@@ -401,6 +401,20 @@ export const getAcademyDataset = async (
     )),
   ]);
 
+  const learningMetrics = await loadStudentLearningMetrics(students.map(student => Number(student.id)), isTeacherScoped ? teacherId : undefined);
+  const currentStudents = students.map(student => {
+    const metrics = learningMetrics.get(Number(student.id));
+    if (!metrics) return student;
+    const groups = Array.isArray(student.groups) ? student.groups : [];
+    return {
+      ...student,
+      attendancePercent: metrics.attendancePercent,
+      progressPercent: metrics.progressPercent,
+      riskFlags: metrics.riskFlags,
+      groups: groups.map((group: Row) => ({ ...group, ...metrics.groups.find(metric => Number(metric.groupId) === Number(group.groupId)) })),
+    };
+  });
+
   const [visibleLeads, visibleArchivedLeads] = await Promise.all([
     applyLeadVisibilityForActor(actor, leads),
     applyLeadVisibilityForActor(actor, archivedLeads),
@@ -422,7 +436,7 @@ export const getAcademyDataset = async (
     groups,
     leads: visibleLeads,
     archivedLeads: visibleArchivedLeads,
-    students: isTeacherScoped ? students.map(teacherStudentRecord) : students,
+    students: isTeacherScoped ? currentStudents.map(teacherStudentRecord) : currentStudents,
     lessons: isTeacherScoped ? lessons.map<Row>(lesson => ({ ...lesson,
       canManageLesson: hasLeadershipAccess(actor) || Number(lesson.teacherUserId) === actor?.userId,
     })) : lessons,
@@ -546,11 +560,11 @@ export const buildAnalytics = async (
     .reduce((sum, expense) => sum + expenseAmountInsidePeriod(expense, metricStart, metricEnd), 0);
   const cac = calculateCac(expensesMonth, newPaidCustomersThisMonth.size) ?? 0;
   const roas = calculateRoas(revenueMonth, expensesMonth) ?? 0;
+  // Student totals already apply family allocations and replace direct attribution.
   const ltvByStudent = data.students.map((student) => ({
     studentId: student.id,
-    ltv: calculateLtv(paidPayments
-      .filter((payment) => Number(payment.studentId) === Number(student.id))
-      .map((payment) => Number(payment.amountUzs || 0))) }));
+    ltv: Number(student.paidAmountUzs ?? 0),
+  }));
   const averageLtv = calculateAverage(ltvByStudent.map((item) => item.ltv)) ?? 0;
   const overduePayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'overdue');
   const overdueTasks = data.tasks.filter((task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now);
@@ -564,10 +578,18 @@ export const buildAnalytics = async (
   const lowAttendanceStudents = data.students.filter((student) => (
     student.status === 'studying'
     && (
-      hasStudentRiskFlag(student, 'attendance_below_70')
-      || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT)
+      student.groups?.some((group: Row) => group.attendancePercent != null && Number(group.attendancePercent) < TARGET_ATTENDANCE_PERCENT)
+      || (!student.groups?.length && (hasStudentRiskFlag(student, 'attendance_below_70')
+        || (Number(student.attendancePercent || 0) > 0 && Number(student.attendancePercent || 0) < TARGET_ATTENDANCE_PERCENT)))
     )
-  ));
+  )).map(student => {
+    const riskGroup = student.groups?.filter((group: Row) => group.attendancePercent != null
+      && Number(group.attendancePercent) < TARGET_ATTENDANCE_PERCENT)
+      .sort((left: Row, right: Row) => Number(left.attendancePercent) - Number(right.attendancePercent))[0];
+    return riskGroup ? { ...student, attendancePercent: riskGroup.attendancePercent,
+      courseId: riskGroup.courseId, courseName: riskGroup.courseName,
+      groupId: riskGroup.groupId, groupName: riskGroup.groupName } : student;
+  });
   const nps = calculateNps(periodParentSurveys
     .filter((survey) => survey.npsScore !== null && survey.npsScore !== undefined && survey.npsScore !== '')
     .map((survey) => Number(survey.npsScore))
@@ -645,13 +667,19 @@ export const buildAnalytics = async (
       activeStudentsWithAttendance.filter((student) => (
         studentBelongsToGroup(student, Number(group.id))
       ))
-        .map((student) => Number(student.attendancePercent || 0)).filter(Number.isFinite),
+        .flatMap((student) => {
+          const groupMetrics = student.groups?.find((membership: Row) => Number(membership.groupId) === Number(group.id));
+          return groupMetrics?.attendancePercent == null ? [] : [Number(groupMetrics.attendancePercent)];
+        }).filter(Number.isFinite),
     ) ?? 0,
     progressAvg: calculateAverage(
       data.students.filter((student) => (
         studentBelongsToGroup(student, Number(group.id)) && student.status === 'studying'
       ))
-        .map((student) => Number(student.progressPercent || 0)).filter(Number.isFinite),
+        .flatMap((student) => {
+          const groupMetrics = student.groups?.find((membership: Row) => Number(membership.groupId) === Number(group.id));
+          return groupMetrics?.progressPercent == null ? [] : [Number(groupMetrics.progressPercent)];
+        }).filter(Number.isFinite),
     ) ?? 0,
   }));
 

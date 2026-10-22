@@ -283,23 +283,20 @@ export class PgLearningRepository {
       (await this.enabledRecords(courses)).map(async (course) => {
         const metrics = await one<{ completed: number; total: number }>(
           this.pool,
-          `SELECT COUNT(*) FILTER(WHERE recipient.status='accepted')::int AS completed,COUNT(*)::int AS total FROM lms_assignment_recipients recipient JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.enrollment_id=$1 AND version.required AND recipient.opens_at<=now() AND recipient.status NOT IN('excused','cancelled')`,
+          `SELECT COUNT(*) FILTER(WHERE recipient.status='accepted')::int AS completed,COUNT(*)::int AS total FROM lms_assignment_recipients recipient JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id WHERE recipient.enrollment_id=$1 AND version.required AND recipient.opens_at<=now() AND recipient.status NOT IN('excused','cancelled') AND ${recipientEnrollmentVisibilitySql()}`,
           [course.enrollmentId],
         );
+        const periodSchedule = schedule.filter(lesson =>
+          lesson.runId === course.runId && lesson.status !== "cancelled"
+          && lesson.scheduledAt >= course.enrolledAt && (!course.endedAt || lesson.scheduledAt < course.endedAt));
+        const periodMaterials = materials.filter(material => material.enrollmentId === course.enrollmentId);
+        const nextLesson = periodSchedule[0] ?? null;
         return {
           ...course,
-          nextLesson:
-            schedule.find(
-              (lesson) =>
-                lesson.runId === course.runId && lesson.status !== "cancelled",
-            ) ?? null,
-          calendarUnitId:
-            schedule.find(
-              (lesson) =>
-                lesson.runId === course.runId && lesson.status !== "cancelled",
-            )?.unitId ?? null,
+          nextLesson,
+          calendarUnitId: nextLesson?.unitId ?? null,
           currentUnit:
-            (await this.publishedUnits(actor, course.runId, materials))
+            (await this.publishedUnits(actor, course.runId, periodMaterials, course.enrollmentId))
               .filter((unit) => unit.status === "available")
               .map(({ id, title }) => ({ id, title }))[0] ?? null,
           progress: progressMetric(
@@ -314,6 +311,7 @@ export class PgLearningRepository {
     sql: LmsSql,
     actor: PortalActorContext,
     runId: number,
+    enrollmentId?: number,
   ) {
     const enrollment = await one<{
       id: number;
@@ -322,8 +320,8 @@ export class PgLearningRepository {
       accessUntil: string | null;
     }>(
       sql,
-      `SELECT enrollment.id,enrollment.enrolled_at,enrollment.ended_at,run.access_until FROM academy_student_group_enrollments enrollment JOIN lms_group_runs run ON run.group_id=enrollment.group_id WHERE enrollment.student_id=$1 AND run.id=$2 ORDER BY enrollment.enrolled_at DESC LIMIT 1`,
-      [actor.studentId, runId],
+      `SELECT enrollment.id,enrollment.enrolled_at,enrollment.ended_at,run.access_until FROM academy_student_group_enrollments enrollment JOIN lms_group_runs run ON run.group_id=enrollment.group_id WHERE enrollment.student_id=$1 AND run.id=$2 AND ($3::bigint IS NULL OR enrollment.id=$3) ORDER BY enrollment.enrolled_at DESC,enrollment.id DESC LIMIT 1`,
+      [actor.studentId, runId, enrollmentId ?? null],
     );
     if (!enrollment) throw new LmsError("lmsNotFound", 404);
     await this.requireRunEnabled(sql, runId);
@@ -332,14 +330,15 @@ export class PgLearningRepository {
   async course(
     actor: PortalActorContext,
     runId: number,
+    enrollmentId?: number,
   ): Promise<LmsCourseDetailDto> {
-    await this.requireEnrollment(this.pool, actor, runId);
+    const enrollment = await this.requireEnrollment(this.pool, actor, runId, enrollmentId);
     const course = (await this.courses(actor)).find(
-      (row) => row.runId === runId,
+      (row) => row.runId === runId && row.enrollmentId === enrollment.id,
     );
     if (!course) throw new LmsError("lmsNotFound", 404);
-    const materials = await this.materials(actor, runId);
-    const units = await this.publishedUnits(actor, runId, materials);
+    const materials = (await this.materials(actor, runId)).filter(material => !enrollmentId || material.enrollmentId === enrollmentId);
+    const units = await this.publishedUnits(actor, runId, materials, enrollmentId);
     return {
       ...course,
       units,
@@ -359,7 +358,7 @@ export class PgLearningRepository {
         JOIN academy_student_group_enrollments enrollment ON enrollment.id=publication.enrollment_id
         WHERE ${enrollmentVisibilitySql()} AND publication.publish_at<=now() AND publication.revoked_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM lms_material_publications newer WHERE newer.material_id=publication.material_id AND newer.enrollment_id=enrollment.id AND newer.id>publication.id AND newer.publish_at<=now() AND newer.revoked_at IS NULL)
-      ) SELECT publication.id,publication.id AS publication_id,version.id AS material_version_id,material.run_id,material.unit_id,version.title,version.body,version.category,version.links,version.file_ids,version.video_url,version.duration_minutes,author.full_name AS author_name,publication.publish_at AS published_at,
+      ) SELECT publication.id,publication.id AS publication_id,publication.enrollment_id,version.id AS material_version_id,material.run_id,material.unit_id,version.title,version.body,version.category,version.links,version.file_ids,version.video_url,version.duration_minutes,author.full_name AS author_name,publication.publish_at AS published_at,
         (SELECT MIN(lesson.scheduled_at) FROM lms_lesson_bindings binding JOIN academy_lessons lesson ON lesson.id=binding.lesson_id WHERE binding.run_id=material.run_id AND binding.unit_id=material.unit_id) AS lesson_at,
         EXISTS(SELECT 1 FROM lms_material_reads read JOIN lms_material_publications read_publication ON read_publication.id=read.publication_id WHERE read.student_id=$1 AND read_publication.material_id=material.id) AS read
       FROM visible_publications publication JOIN lms_material_versions version ON version.id=publication.material_version_id
@@ -387,11 +386,12 @@ export class PgLearningRepository {
     actor: PortalActorContext,
     runId: number,
     knownMaterials?: readonly LmsMaterialDto[],
+    enrollmentId?: number,
   ): Promise<LmsUnitDto[]> {
     const materials = (
       knownMaterials ?? (await this.materials(actor, runId))
     ).filter((material) => material.runId === runId);
-    const enrollment = await this.requireEnrollment(this.pool, actor, runId);
+    const enrollment = await this.requireEnrollment(this.pool, actor, runId, enrollmentId);
     const units = await rows<{
       id: number;
       title: string;
@@ -407,16 +407,16 @@ export class PgLearningRepository {
         SELECT assignment.unit_id FROM lms_assignment_recipients recipient
         JOIN lms_assignments assignment ON assignment.id=recipient.assignment_id
         JOIN lms_assignment_versions version ON version.id=recipient.assignment_version_id
-        WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND version.required AND recipient.opens_at<=now() AND recipient.status NOT IN('accepted','excused','cancelled')
+        WHERE recipient.student_id=$1 AND assignment.run_id=$2 AND ($5::bigint IS NULL OR recipient.enrollment_id=$5) AND ${recipientEnrollmentVisibilitySql()} AND version.required AND recipient.opens_at<=now() AND recipient.status NOT IN('accepted','excused','cancelled')
         UNION ALL
         SELECT quiz.unit_id FROM lms_quiz_recipients recipient JOIN lms_quizzes quiz ON quiz.id=recipient.quiz_id
         JOIN lms_quiz_versions version ON version.id=recipient.quiz_version_id
-        WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND version.required AND recipient.opens_at<=now() AND recipient.status='assigned'
+        WHERE recipient.student_id=$1 AND quiz.run_id=$2 AND ($5::bigint IS NULL OR recipient.enrollment_id=$5) AND ${recipientEnrollmentVisibilitySql()} AND version.required AND recipient.opens_at<=now() AND recipient.status='assigned'
         AND NOT EXISTS(SELECT 1 FROM lms_quiz_attempts attempt WHERE attempt.recipient_id=recipient.id AND attempt.state='finished' AND attempt.passed)
       ) SELECT unit.id,unit.title,unit.position,unit.required,section.title AS section_title,preview.open_at,(preview.enabled AND preview.visible_from<=now() AND TRUE AND preview.visible_from>=$3::timestamptz AND ($4::timestamptz IS NULL OR preview.visible_from<$4::timestamptz)) AS preview,
       EXISTS(SELECT 1 FROM pending_units pending_unit WHERE pending_unit.unit_id=unit.id) AS pending
       FROM lms_units unit JOIN lms_group_runs run ON run.course_version_id=unit.course_version_id LEFT JOIN lms_sections section ON section.id=unit.section_id LEFT JOIN lms_unit_previews preview ON preview.run_id=run.id AND preview.unit_id=unit.id WHERE run.id=$2 AND ${runUnitSelectionSql()} ORDER BY unit.position`,
-      [actor.studentId, runId, enrollment.enrolledAt, enrollment.endedAt],
+      [actor.studentId, runId, enrollment.enrolledAt, enrollment.endedAt, enrollmentId ?? null],
     );
     return units
       .filter(

@@ -1,3 +1,5 @@
+import { inEnrollmentPeriod } from "./enrollment-period";
+import type { LmsEnrollmentPeriod } from "@shared/contracts/lms";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { useMutation } from "@tanstack/react-query";
@@ -55,11 +57,15 @@ const statuses = [
 ] as const;
 export function PortalAssignments({
   courseId,
+  enrollmentId,
+  period,
   initialId,
   unitId,
   embedded = false,
 }: {
   courseId?: number;
+  enrollmentId?: number;
+  period?: LmsEnrollmentPeriod;
   initialId?: number;
   unitId?: number;
   embedded?: boolean;
@@ -68,7 +74,7 @@ export function PortalAssignments({
   const format = usePortalFormat();
   const query = useSubjectQuery("assignments", portalLmsApi.assignments);
   const [view, setView] = usePortalViewState(
-    `assignments:${courseId ?? "all"}:${unitId ?? "all"}`,
+    `assignments:${courseId ?? "all"}:${unitId ?? "all"}:${period?.enrolledAt ?? "all"}`,
     { status: "assigned", search: "", course: String(courseId ?? "") },
   );
   const { status, search, course } = view;
@@ -95,7 +101,7 @@ export function PortalAssignments({
     .filter(
       (item) =>
         item.status === status &&
-        (!courseId || item.runId === courseId) &&
+        (!courseId || item.runId === courseId) && (enrollmentId === undefined || item.enrollmentId === enrollmentId) && inEnrollmentPeriod(item.opensAt, period) &&
         (!unitId || item.unitId === unitId) &&
         (!course || item.runId === Number(course)) &&
         item.title.toLocaleLowerCase().includes(search.toLocaleLowerCase()),

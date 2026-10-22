@@ -1,3 +1,5 @@
+import { enrollmentCourseHref, enrollmentMaterialHref, inEnrollmentPeriod } from "./enrollment-period";
+import type { LmsEnrollmentPeriod } from "@shared/contracts/lms";
 import { useState } from "react";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
 import { useMutation } from "@tanstack/react-query";
@@ -111,7 +113,7 @@ export function PortalCourses() {
               )}
               <Button
                 onClick={() =>
-                  guarded(() => navigate(`/learn/courses/${item.runId}`))
+                  guarded(() => navigate(enrollmentCourseHref(item.runId, item.enrollmentId)))
                 }
               >
                 {t("portalOpen")}
@@ -123,18 +125,18 @@ export function PortalCourses() {
     </>
   );
 }
-export function PortalCourse({ id }: { id: number }) {
+export function PortalCourse({ id, enrollmentId }: { id: number; enrollmentId?: number }) {
   const { t } = useTranslation();
   const format = usePortalFormat();
   const { guarded, allowed } = usePortal();
-  const [view, setView] = usePortalViewState(`course:${id}`, {
+  const [view, setView] = usePortalViewState(`course:${id}:${enrollmentId ?? "current"}`, {
     tab: "lessons",
   });
   const [, navigate] = useLocation();
   const query = useSubjectQuery(
     "course",
-    (link, signal) => portalLmsApi.course(link, id, signal),
-    [id],
+    (link, signal) => portalLmsApi.course(link, id, signal, enrollmentId),
+    enrollmentId !== undefined ? [id, enrollmentId] : [id],
   );
   if (query.isPending) return <PortalLoading />;
   if (query.data === undefined || isPortalAccessError(query.error))
@@ -195,7 +197,7 @@ export function PortalCourse({ id }: { id: number }) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="lessons" className="space-y-4 pt-2">
-          <PortalMakeup embedded courseId={id} />
+          <PortalMakeup embedded courseId={id} period={enrollmentId !== undefined ? course : undefined} />
           {course.units.map((unit, index) => (
             <section key={unit.id} className="space-y-3">
               {unit.sectionTitle &&
@@ -220,7 +222,7 @@ export function PortalCourse({ id }: { id: number }) {
                   onClick={() =>
                     guarded(() =>
                       navigate(
-                        `/learn/courses/${id}/materials/${material.publicationId}`,
+                        enrollmentMaterialHref(id, material.publicationId, enrollmentId ?? material.enrollmentId),
                       ),
                     )
                   }
@@ -243,7 +245,7 @@ export function PortalCourse({ id }: { id: number }) {
                 onClick={() =>
                   guarded(() =>
                     navigate(
-                      `/learn/courses/${id}/materials/${material.publicationId}`,
+                      enrollmentMaterialHref(id, material.publicationId, enrollmentId ?? material.enrollmentId),
                     ),
                   )
                 }
@@ -262,13 +264,13 @@ export function PortalCourse({ id }: { id: number }) {
             )}
         </TabsContent>
         <TabsContent value="assignments">
-          <PortalAssignments courseId={id} />
+          <PortalAssignments courseId={id} enrollmentId={enrollmentId} period={enrollmentId !== undefined ? course : undefined} />
         </TabsContent>
         <TabsContent value="results">
-          <PortalQuizzes courseId={id} embedded />
+          <PortalQuizzes courseId={id} enrollmentId={enrollmentId} period={enrollmentId !== undefined ? course : undefined} embedded />
         </TabsContent>
         <TabsContent value="announcements">
-          <CourseAnnouncements id={id} />
+          <CourseAnnouncements id={id} period={enrollmentId !== undefined ? course : undefined} />
         </TabsContent>
       </Tabs>
     </>
@@ -277,9 +279,11 @@ export function PortalCourse({ id }: { id: number }) {
 export function PortalMaterial({
   courseId,
   id,
+  enrollmentId,
 }: {
   courseId: number;
   id: number;
+  enrollmentId?: number;
 }) {
   const { t } = useTranslation();
   const message = usePortalError();
@@ -291,8 +295,8 @@ export function PortalMaterial({
   const format = usePortalFormat();
   const query = useSubjectQuery(
     "course",
-    (link, signal) => portalLmsApi.course(link, courseId, signal),
-    [courseId],
+    (link, signal) => portalLmsApi.course(link, courseId, signal, enrollmentId),
+    enrollmentId !== undefined ? [courseId, enrollmentId] : [courseId],
   );
   const material =
     query.data &&
@@ -352,7 +356,7 @@ export function PortalMaterial({
             variant="link"
             className="h-auto px-0 py-0 text-sm"
             onClick={() =>
-              guarded(() => navigate(`/learn/courses/${courseId}`))
+              guarded(() => navigate(enrollmentCourseHref(courseId, enrollmentId ?? material.enrollmentId)))
             }
           >
             {query.data.courseName}
@@ -366,7 +370,7 @@ export function PortalMaterial({
             <Button
               variant="outline"
               onClick={() =>
-                guarded(() => navigate(`/learn/courses/${courseId}`))
+                guarded(() => navigate(enrollmentCourseHref(courseId, enrollmentId ?? material.enrollmentId)))
               }
             >
               {t("portalBack")}
@@ -450,6 +454,8 @@ export function PortalMaterial({
         <PortalAssignments
           courseId={courseId}
           unitId={material.unitId}
+          enrollmentId={enrollmentId ?? material.enrollmentId}
+          period={enrollmentId !== undefined ? query.data : undefined}
           embedded
         />
       )}
@@ -462,7 +468,7 @@ export function PortalMaterial({
     </>
   );
 }
-function CourseAnnouncements({ id }: { id: number }) {
+function CourseAnnouncements({ id, period }: { id: number; period?: LmsEnrollmentPeriod }) {
   const { t } = useTranslation();
   const message = usePortalError();
   const notify = usePortalSuccess();
@@ -487,7 +493,7 @@ function CourseAnnouncements({ id }: { id: number }) {
         }}
       />
     );
-  const items = query.data.filter((item) => item.runId === id);
+  const items = query.data.filter((item) => item.runId === id && inEnrollmentPeriod(item.publishAt, period));
   return (
     <div className="space-y-4">
       {query.error && (

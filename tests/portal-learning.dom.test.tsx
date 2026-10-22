@@ -52,7 +52,7 @@ import {
   portalVideoEmbed,
 } from "../client/src/features/lms/video";
 import { PortalUploads } from "../client/src/features/portal-app/files";
-import { PortalCourse } from "../client/src/features/lms/courses";
+import { PortalCourse, PortalCourses, PortalMaterial } from "../client/src/features/lms/courses";
 import { PortalSchedule, portalWeekRange } from "../client/src/features/lms/schedule";
 import {
   ProjectComparison,
@@ -102,6 +102,7 @@ const mocks = vi.hoisted(() => ({
   allNotifications: vi.fn(),
   upload: vi.fn(),
   course: vi.fn(),
+  announcements: vi.fn(),
   projectComparison: vi.fn(),
   saveComparison: vi.fn(),
   createThread: vi.fn(),
@@ -160,6 +161,7 @@ vi.mock("../client/src/features/portal-app/api", async (importActual) => {
       finishQuiz: mocks.finishQuiz,
       courses: mocks.courses,
       course: mocks.course,
+      announcements: mocks.announcements,
       createThread: mocks.createThread,
       communicationCourses: mocks.communicationCourses,
       assignments: mocks.assignments,
@@ -382,6 +384,7 @@ beforeEach(() => {
     version: 2,
   });
   mocks.courses.mockResolvedValue([]);
+  mocks.announcements.mockResolvedValue([]);
   mocks.assignments.mockResolvedValue({
     items: [],
     nextCursor: null,
@@ -3094,4 +3097,63 @@ it("updates a payment already open in a Dialog when its confirmation arrives", a
   await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "payments-history") }); });
   await waitFor(() => expect(within(dialog).getByText(i18n.t("portalPaid"))).toBeTruthy());
   expect(within(dialog).queryByText(i18n.t("portalUnpaid"))).toBeNull();
+});
+
+
+it("opens a historical course card with its own enrollment selector", async () => {
+  const current = { id: 4, runId: 2, enrollmentId: 4, groupId: 1, groupName: "Shared group", courseName: "Repeated course", teacherName: null, status: "active", enrolledAt: "2026-10-11T00:00:00Z", endedAt: null, accessUntil: null, progress: { completed: 0, total: 0, percent: null } };
+  mocks.courses.mockResolvedValue([current, { ...current, id: 3, enrollmentId: 3, enrolledAt: "2026-10-01T00:00:00Z", endedAt: "2026-10-10T00:00:00Z" }]);
+  mount(<PortalCourses />);
+  await screen.findByText("Repeated course");
+  await userEvent.click(screen.getByRole("tab", { name: i18n.t("portalCompleted") }));
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalOpen") }));
+  expect(window.location.pathname).toBe("/learn/courses/2");
+  expect(new URLSearchParams(window.location.search).get("enrollmentId")).toBe("3");
+});
+it("keeps historical assignments, quizzes, announcements and material navigation in the selected enrollment", async () => {
+  history.replaceState(null, "", "/student-module/courses/2?enrollmentId=3");
+  const oldDate = "2026-10-05T00:00:00Z";
+  const newDate = "2026-10-15T00:00:00Z";
+  const material = { id: 12, publicationId: 12, materialVersionId: 12, enrollmentId: 3, runId: 2, unitId: null, title: "Historical lesson material", body: "Archived content", category: "lesson", links: [], fileIds: [], publishedAt: oldDate, read: false };
+  mocks.course.mockResolvedValue({ id: 3, runId: 2, enrollmentId: 3, groupId: 1, groupName: "Shared group", courseName: "Repeated course", teacherName: null, status: "active", enrolledAt: "2026-10-01T00:00:00Z", endedAt: "2026-10-10T00:00:00Z", accessUntil: null, progress: { completed: 0, total: 1, percent: 0 }, materials: [material], units: [] });
+  mocks.assignments.mockResolvedValue({ items: [
+    { ...detail, enrollmentId: 3, title: "Old period task", opensAt: oldDate },
+    { ...detail, id: 2, recipientId: 2, enrollmentId: 4, title: "New period task", opensAt: oldDate },
+  ], nextCursor: null, hasMore: false });
+  mocks.quizzes.mockResolvedValue([
+    { ...quiz, enrollmentId: 3, title: "Old period test", opensAt: oldDate },
+    { ...quiz, id: 8, recipientId: 8, enrollmentId: 4, title: "New period test", opensAt: oldDate },
+  ]);
+  const notice = { id: 1, runId: 2, title: "Old period notice", body: "Notice", audience: "all", publishAt: oldDate, pinnedUntil: null, fileIds: [], read: false };
+  mocks.announcements.mockResolvedValue([notice, { ...notice, id: 2, title: "New period notice", publishAt: newDate }]);
+  render(<PortalApp />);
+  await waitFor(() => expect(mocks.course).toHaveBeenCalledWith(10, 2, expect.any(AbortSignal), 3));
+  await screen.findByRole("button", { name: /Historical lesson material/ });
+  await userEvent.click(screen.getByRole("tab", { name: i18n.t("portalAssignments") }));
+  await screen.findByText("Old period task");
+  expect(screen.queryByText("New period task")).toBeNull();
+  await userEvent.click(screen.getByRole("tab", { name: i18n.t("portalResults") }));
+  await screen.findByText("Old period test");
+  expect(screen.queryByText("New period test")).toBeNull();
+  await userEvent.click(screen.getByRole("tab", { name: i18n.t("portalAnnouncements") }));
+  await screen.findByText("Old period notice");
+  expect(screen.queryByText("New period notice")).toBeNull();
+  await userEvent.click(screen.getByRole("tab", { name: i18n.t("portalLessons") }));
+  await userEvent.click(screen.getByRole("button", { name: /Historical lesson material/ }));
+  await screen.findByRole("heading", { name: "Historical lesson material" });
+  expect(window.location.pathname).toBe("/student-module/courses/2/materials/12");
+  expect(new URLSearchParams(window.location.search).get("enrollmentId")).toBe("3");
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalBack") }));
+  expect(window.location.pathname).toBe("/student-module/courses/2");
+  expect(new URLSearchParams(window.location.search).get("enrollmentId")).toBe("3");
+});
+
+it("returns a bookmarked historical material to its original enrollment", async () => {
+  history.replaceState(null, "", "/learn/courses/2/materials/12");
+  mocks.course.mockResolvedValue({ id: 4, runId: 2, enrollmentId: 4, courseName: "Repeated course", groupName: "Shared group", materials: [{ id: 12, publicationId: 12, enrollmentId: 3, title: "Historical bookmark", body: "Content", category: "lesson", links: [], fileIds: [], publishedAt: "2026-10-05T00:00:00Z", unitId: null, read: false }], units: [] });
+  mount(<PortalMaterial courseId={2} id={12} />);
+  await screen.findByRole("heading", { name: "Historical bookmark" });
+  await userEvent.click(screen.getByRole("button", { name: i18n.t("portalBack") }));
+  expect(window.location.pathname).toBe("/learn/courses/2");
+  expect(new URLSearchParams(window.location.search).get("enrollmentId")).toBe("3");
 });

@@ -1,3 +1,5 @@
+import { enrollmentMaterialHref, inEnrollmentPeriod } from "./enrollment-period";
+import type { LmsEnrollmentPeriod } from "@shared/contracts/lms";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { usePortalLocation as useLocation } from "../portal-app/navigation";
@@ -56,9 +58,11 @@ export function MakeupStatus({ status }: { status: LmsMakeupDto["status"] }) {
 }
 export function PortalMakeup({
   courseId,
+  period,
   embedded = false,
 }: {
   courseId?: number;
+  period?: LmsEnrollmentPeriod;
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
@@ -85,7 +89,7 @@ export function PortalMakeup({
     );
   const items = query.data.filter(
     (item) =>
-      (!courseId || item.runId === courseId) &&
+      (!courseId || item.runId === courseId) && inEnrollmentPeriod(item.scheduledAt, period) &&
       (section === "completed"
         ? item.status === "completed"
         : ["needed", "in_progress"].includes(item.status)),
@@ -274,7 +278,7 @@ function MakeupDetail({
                     guarded(() => {
                       onClose();
                       navigate(
-                        `/learn/courses/${plan.runId}/materials/${material.publicationId}`,
+                        enrollmentMaterialHref(plan.runId, material.publicationId, material.enrollmentId),
                       );
                     })
                   }

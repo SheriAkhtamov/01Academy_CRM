@@ -260,8 +260,8 @@ export const portalLmsApi = {
     collectPortalPages<LmsMaterialDto>(linkId, "materials", signal),
   attendance: (linkId: number, signal?: AbortSignal) =>
     collectPortalPages<LmsScheduleDto>(linkId, "attendance", signal),
-  course: (linkId: number, runId: number, signal?: AbortSignal) =>
-    portalRequest<LmsCourseDetailDto>(subjectPath(linkId, `courses/${runId}`), {
+  course: (linkId: number, runId: number, signal?: AbortSignal, enrollmentId?: number) =>
+    portalRequest<LmsCourseDetailDto>(subjectPath(linkId, `courses/${runId}${enrollmentId !== undefined ? `?enrollmentId=${enrollmentId}` : ""}`), {
       signal,
     }),
   assignments: async (

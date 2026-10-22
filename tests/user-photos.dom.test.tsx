@@ -147,6 +147,7 @@ describe('employee forms and funnel dropdown', () => {
     employees(); await userEvent.click(await screen.findByRole('button', { name: i18n.t('createEmployee') }));
     const dialog = within(screen.getByRole('dialog', { name: i18n.t('addNewUser') }));
     fireEvent.change(document.querySelector('input[name=fullName]')!, { target: { value: 'New Employee' } }); upload(); const cropped = await applyCrop();
+    await userEvent.click(dialog.getByRole('button', { name: i18n.t('employeeContactsSection') }));
     const primaryPhone = dialog.getByRole('textbox', { name: i18n.t('phone') });
     await userEvent.type(primaryPhone, '+1 (415) 555-0123');
     expect((primaryPhone as HTMLInputElement).value).toBe('+1 (415) 555-0123');
@@ -162,6 +163,7 @@ describe('employee forms and funnel dropdown', () => {
   it('updates an international phone and photo when editing an employee and retains funnel assignments', async () => {
     allowNavigation(() => history.replaceState(null, '', '/employees?employee=20')); employees();
     const dialog = within(await screen.findByRole('dialog', { name: i18n.t('editUser') })); upload(); const cropped = await applyCrop();
+    await userEvent.click(dialog.getByRole('button', { name: i18n.t('employeeContactsSection') }));
     const phone = dialog.getByRole('textbox', { name: i18n.t('phone') });
     expect((phone as HTMLInputElement).value).toBe(employee.phoneNumbers[0]);
     await userEvent.clear(phone);

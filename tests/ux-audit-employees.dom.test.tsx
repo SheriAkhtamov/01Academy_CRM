@@ -102,3 +102,119 @@ it.each(['create', 'edit'])('shows identical primary and access module lists in 
   expect((finance as HTMLButtonElement).disabled).toBe(true);
   expect(within(dialog).getByRole('combobox', { name: new RegExp(i18n.t('primaryModule')) }).textContent).toBe(i18n.t('financeModule'));
 });
+
+it('retains a folded contact draft and reveals the duplicate phone before focusing it', async () => {
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('createEmployee') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('addNewUser') });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: new RegExp(i18n.t('fullName')) }), { target: { value: 'New colleague' } });
+  const contacts = within(dialog).getByRole('button', { name: i18n.t('employeeContactsSection') });
+  fireEvent.click(contacts);
+  fireEvent.change(within(dialog).getByRole('textbox', { name: i18n.t('phone') }), { target: { value: '+998 90 123 45 67' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('addPhone') }));
+  const duplicate = within(dialog).getByRole('textbox', { name: `${i18n.t('phone')} 2` });
+  fireEvent.change(duplicate, { target: { value: '998901234567' } });
+  fireEvent.click(contacts);
+  expect(contacts.getAttribute('aria-expanded')).toBe('false');
+  expect(within(dialog).queryByRole('textbox', { name: `${i18n.t('phone')} 2` })).toBeNull();
+  expect((duplicate as HTMLInputElement).value).toBe('998901234567');
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('createUser') }));
+  await waitFor(() => expect(contacts.getAttribute('aria-expanded')).toBe('true'));
+  await waitFor(() => expect(document.activeElement).toBe(duplicate));
+  expect(within(dialog).getByText(i18n.t('duplicatePhoneInForm'))).toBeTruthy();
+});
+
+it('requires confirmation to remove a populated additional phone and preserves its position on cancel', async () => {
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('createEmployee') }));
+  const dialog = screen.getByRole('dialog', { name: i18n.t('addNewUser') });
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('employeeContactsSection') }));
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('addPhone') }));
+  const additional = within(dialog).getByRole('textbox', { name: `${i18n.t('phone')} 2` });
+  fireEvent.change(additional, { target: { value: '+44 20 7946 0958' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('removePhone') }));
+  let confirmation = screen.getByRole('alertdialog');
+  expect(within(confirmation).getByText('+44 20 7946 0958')).toBeTruthy();
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('cancel') }));
+  expect(within(dialog).getByRole('textbox', { name: `${i18n.t('phone')} 2` })).toBe(additional);
+  expect((additional as HTMLInputElement).value).toBe('+44 20 7946 0958');
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('removePhone') }));
+  confirmation = screen.getByRole('alertdialog');
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('removePhone') }));
+  expect(within(dialog).queryByRole('textbox', { name: `${i18n.t('phone')} 2` })).toBeNull();
+  expect(within(dialog).getByRole('textbox', { name: i18n.t('phone') })).toBeTruthy();
+});
+
+it('reveals the folded sales section and focuses the required funnel selector', async () => {
+  const salesEmployee = { ...employee, module: 'sales', modules: ['sales'], salesFunnelIds: [] };
+  vi.mocked(fetch).mockImplementation(async (url) => new Response(JSON.stringify(
+    url === '/api/users' ? [salesEmployee] : [{ id: 1, name: 'Main funnel', isActive: true, workflowRole: 'pipeline' }],
+  ), { headers: { 'content-type': 'application/json' } }));
+  allowNavigation(() => history.replaceState(null, '', '/employees?employee=6'));
+  mount();
+  const dialog = await screen.findByRole('dialog', { name: i18n.t('editUser') });
+  const sales = within(dialog).getByRole('button', { name: i18n.t('salesModule') });
+  expect(sales.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('updateUser') }));
+  await waitFor(() => expect(sales.getAttribute('aria-expanded')).toBe('true'));
+  const selector = within(dialog).getByRole('button', { name: new RegExp(i18n.t('salesFunnels')) });
+  await waitFor(() => expect(document.activeElement).toBe(selector));
+  expect(within(dialog).getByText(i18n.t('salesFunnelRequired'))).toBeTruthy();
+});
+
+it('blocks edits, duplicate saves and closing while an employee update is pending', async () => {
+  let finish!: (response: Response) => void;
+  const writes: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (url, options) => {
+    if (options?.method === 'PUT') {
+      writes.push(String(url));
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    }
+    return new Response(JSON.stringify(url === '/api/users' ? [employee] : []), { headers: { 'content-type': 'application/json' } });
+  });
+  allowNavigation(() => history.replaceState(null, '', '/employees?employee=6'));
+  mount();
+  const dialog = await screen.findByRole('dialog', { name: i18n.t('editUser') });
+  const name = within(dialog).getByRole('textbox', { name: new RegExp(i18n.t('fullName')) });
+  fireEvent.change(name, { target: { value: 'Updated colleague' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('updateUser') }));
+  await waitFor(() => expect(writes).toEqual(['/api/users/6']));
+  expect(name.matches(':disabled')).toBe(true);
+  expect((within(dialog).getByRole('combobox', { name: new RegExp(i18n.t('primaryModule')) }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(dialog).getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('saving') }));
+  fireEvent.click(within(dialog).getByRole('button', { name: i18n.t('close') }));
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.getByRole('dialog', { name: i18n.t('editUser') })).toBe(dialog);
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(writes).toHaveLength(1);
+  finish(new Response(JSON.stringify(employee), { headers: { 'content-type': 'application/json' } }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+it('keeps archive confirmation pending through the responsibility check and then opens the transfer dialog', async () => {
+  let finish!: (response: Response) => void;
+  const manager = { ...employee, id: 7, fullName: 'Transfer manager', module: 'sales', modules: ['sales'] };
+  const checks: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    if (String(url).endsWith('/sales-lead-count')) {
+      checks.push(String(url));
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    }
+    return new Response(JSON.stringify(url === '/api/users' ? [employee, manager] : []), { headers: { 'content-type': 'application/json' } });
+  });
+  mount();
+  const row = (await screen.findByText(employee.fullName)).closest('tr')!;
+  fireEvent.click(within(row).getByRole('button', { name: i18n.t('archiveEmployee') }));
+  const confirmation = screen.getByRole('alertdialog');
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('archiveEmployee') }));
+  await waitFor(() => expect(checks).toEqual(['/api/users/6/sales-lead-count']));
+  expect((within(confirmation).getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('saving') }));
+  expect(checks).toHaveLength(1);
+  finish(new Response(JSON.stringify({ leadCount: 0, salesResponsibilityCount: 0, offboardingResponsibilityCount: 2 }), { headers: { 'content-type': 'application/json' } }));
+  const transfer = await screen.findByRole('dialog', { name: i18n.t('employeeWorkTransferTitle') });
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(within(transfer).getByText(i18n.t('employeeResponsibilityCount').replace('{count}', '2'))).toBeTruthy();
+  expect(within(transfer).getByRole('combobox').textContent).toContain(manager.fullName);
+});

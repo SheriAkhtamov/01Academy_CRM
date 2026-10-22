@@ -98,3 +98,90 @@ it('pages through the complete monthly journal and finds an early expense after 
   expect(screen.getByRole('button', { name: i18n.t('nextPage') }).hasAttribute('disabled')).toBe(true);
   client.clear();
 });
+
+it('preserves folded expense details after failure and blocks editing or closing during save', async () => {
+  const attempts: Record<string, unknown>[] = [];
+  let finish: (value: Response) => void = () => undefined;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    if (url === '/api/finance/expenses' && init?.method === 'POST') {
+      attempts.push(JSON.parse(String(init.body)));
+      return new Promise<Response>(resolve => { finish = resolve; });
+    }
+    return response({ operating: [], marketing: [], summary: {} });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><FinanceCenter section="expenses" /></QueryClientProvider>);
+  const copy = financeCopy(i18n.t.bind(i18n));
+  fireEvent.click(screen.getByRole('button', { name: copy.addExpense }));
+  const dialog = screen.getByRole('dialog', { name: copy.expenseDialogTitle });
+  fireEvent.change(within(dialog).getByLabelText(copy.title), { target: { value: 'Office supplies' } });
+  fireEvent.change(within(dialog).getByLabelText(copy.amount), { target: { value: '150000' } });
+  const details = within(dialog).getByRole('button', { name: i18n.t('details') });
+  fireEvent.click(details);
+  fireEvent.change(within(dialog).getByLabelText(copy.vendor), { target: { value: 'Local shop' } });
+  fireEvent.change(within(dialog).getByLabelText(copy.description), { target: { value: 'Paper and markers' } });
+  fireEvent.click(details);
+  expect(details.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(within(dialog).getByRole('button', { name: copy.saveExpense }));
+  await waitFor(() => expect(attempts).toHaveLength(1));
+  expect(within(dialog).getByLabelText(copy.title).matches(':disabled')).toBe(true);
+  expect(within(dialog).getByRole('combobox', { name: copy.paymentMethod }).hasAttribute('disabled')).toBe(true);
+  expect(within(dialog).getByRole('button', { name: copy.formCancel }).hasAttribute('disabled')).toBe(true);
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.getByRole('dialog', { name: copy.expenseDialogTitle })).toBeTruthy();
+  finish(response({ error: 'failedToUpdateResource' }, 503));
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: copy.saveExpense }).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(details);
+  expect((within(dialog).getByLabelText(copy.vendor) as HTMLInputElement).value).toBe('Local shop');
+  fireEvent.click(details);
+  fireEvent.click(within(dialog).getByRole('button', { name: copy.saveExpense }));
+  await waitFor(() => expect(attempts).toHaveLength(2));
+  expect(attempts[0]).toEqual(attempts[1]);
+  expect(attempts[1]).toMatchObject({ title: 'Office supplies', amountUzs: 150000, vendor: 'Local shop', description: 'Paper and markers' });
+  finish(response({ id: 10 }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  client.clear();
+});
+
+it.each(['salary', 'payout'] as const)('keeps a folded %s note and locks the active form during save', async (scenario) => {
+  let finish: (value: Response) => void = () => undefined;
+  let payload: Record<string, unknown> | undefined;
+  const endpoint = scenario === 'salary' ? '/api/finance/salary-rates' : '/api/finance/payroll/payout';
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    if (url === endpoint && init?.method === 'POST') {
+      payload = JSON.parse(String(init.body));
+      return new Promise<Response>(resolve => { finish = resolve; });
+    }
+    return response({
+      entries: [{ employeeUserId: 7, employeeName: 'Active employee', salaryRateId: 8, baseSalaryUzs: 2000000, status: 'pending' }],
+      salaryHistory: [], summary: { payrollFundUzs: 2000000, paidAmountUzs: 0, pendingAmountUzs: 2000000, pendingCount: 1, unconfiguredCount: 0 },
+    });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><FinanceCenter section="payroll" /></QueryClientProvider>);
+  const copy = financeCopy(i18n.t.bind(i18n));
+  await screen.findByRole('button', { name: copy.pay });
+  fireEvent.click(screen.getByRole('button', { name: scenario === 'salary' ? copy.configureSalary : copy.pay }));
+  const dialog = screen.getByRole('dialog', { name: scenario === 'salary' ? copy.salaryDialogTitle : copy.payoutDialogTitle });
+  const noteToggle = within(dialog).getByRole('button', { name: copy.note });
+  fireEvent.click(noteToggle);
+  fireEvent.change(within(dialog).getByRole('textbox', { name: copy.note }), { target: { value: 'Monthly agreement' } });
+  fireEvent.click(noteToggle);
+  fireEvent.click(within(dialog).getByRole('button', { name: scenario === 'salary' ? copy.saveSalary : copy.confirmPayout }));
+  await waitFor(() => expect(payload).toBeDefined());
+  expect(payload?.note).toBe('Monthly agreement');
+  expect(within(dialog).getByLabelText(copy.salary, { selector: 'input' }).matches(':disabled')).toBe(true);
+  if (scenario === 'payout') {
+    expect(within(dialog).getByLabelText(copy.bonus).matches(':disabled')).toBe(true);
+    expect(within(dialog).getByRole('combobox', { name: copy.paymentMethod }).hasAttribute('disabled')).toBe(true);
+  } else {
+    expect(within(dialog).getByRole('combobox', { name: copy.employee }).hasAttribute('disabled')).toBe(true);
+  }
+  fireEvent.click(noteToggle);
+  expect(noteToggle.getAttribute('aria-expanded')).toBe('true');
+  expect(within(dialog).getByRole('textbox', { name: copy.note }).matches(':disabled')).toBe(true);
+  expect(within(dialog).getByRole('button', { name: copy.formCancel }).hasAttribute('disabled')).toBe(true);
+  finish(response({ id: 20 }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  client.clear();
+});

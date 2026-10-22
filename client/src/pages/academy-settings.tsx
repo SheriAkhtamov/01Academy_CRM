@@ -36,10 +36,20 @@ import {
   DialogFooter,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   Form,
   FormControl,
@@ -161,6 +171,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const tabsListRef = useRef<HTMLDivElement | null>(null);
   const [schoolDialogOpen, setSchoolDialogOpen] = useState(false);
   const schoolTimezonePopupRef = useRef(false);
+  const resourceSaveLocks = useRef({ school: false, room: false, status: false, stageTransfer: false, delete: false });
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -289,6 +300,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: error.message,
       variant: 'destructive',
     }),
+    onSettled: () => { resourceSaveLocks.current.school = false; },
   });
 
   const saveRoom = useMutation({
@@ -314,6 +326,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: error.message,
       variant: 'destructive',
     }),
+    onSettled: () => { resourceSaveLocks.current.room = false; },
   });
 
   const saveCourse = useMutation({
@@ -369,6 +382,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: error.message,
       variant: 'destructive',
     }),
+    onSettled: () => { resourceSaveLocks.current.status = false; },
   });
 
   // Closing any resource dialog with unsaved edits asks for confirmation
@@ -376,6 +390,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const schoolGuard = useUnsavedChangesGuard({
     open: schoolDialogOpen,
     isDirty: schoolForm.formState.isDirty,
+    isPending: saveSchool.isPending,
     onOpenChange: (open) => {
       setSchoolDialogOpen(open);
       if (!open) setEditingSchool(null);
@@ -384,6 +399,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const roomGuard = useUnsavedChangesGuard({
     open: roomDialogOpen,
     isDirty: roomForm.formState.isDirty,
+    isPending: saveRoom.isPending,
     onOpenChange: (open) => {
       setRoomDialogOpen(open);
       if (!open) setEditingRoom(null);
@@ -404,6 +420,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
   const statusGuard = useUnsavedChangesGuard({
     open: statusDialogOpen,
     isDirty: statusForm.formState.isDirty,
+    isPending: saveStatus.isPending,
     onOpenChange: (open) => {
       setStatusDialogOpen(open);
       if (!open) setEditingStatus(null);
@@ -438,6 +455,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         variant: 'destructive',
       });
     },
+    onSettled: () => { resourceSaveLocks.current.delete = false; },
   });
 
   const preparePipelineStatusDelete = useMutation({
@@ -493,6 +511,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       description: error.message,
       variant: 'destructive',
     }),
+    onSettled: () => { resourceSaveLocks.current.stageTransfer = false; },
   });
 
   const updateStatusOrder = useMutation({
@@ -520,6 +539,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       toast({ title: t('error'), description: error.message, variant: 'destructive' });
     },
   });
+  const stageActionsPending = preparePipelineStatusDelete.isPending || updateStatusOrder.isPending;
 
   const openSchool = (school?: School) => {
     setEditingSchool(school ?? null);
@@ -793,55 +813,63 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Tabs>
       </ModulePageBody>
 
-      <Dialog open={Boolean(selectedStageFunnel)} onOpenChange={(open) => { if (!open) setSelectedStageFunnelId(null); }}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{selectedStageFunnel?.name}</DialogTitle>
+      <Dialog open={Boolean(selectedStageFunnel)} onOpenChange={(open) => {
+        if (!open && !stageActionsPending) setSelectedStageFunnelId(null);
+      }}>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle className="text-base leading-6">{selectedStageFunnel?.name}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-6 py-4">
-            <Button onClick={() => openStatus()}>
-              <Plus data-icon="inline-start" />{t('addPipelineStage')}
-            </Button>
-            {funnelStatuses.map((status, index) => (
-              <div key={status.id} className="rounded-xl border border-border p-3 sm:p-4">
-                <div className="flex items-start gap-3">
-                  <span className="mt-2 size-3 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words font-medium text-foreground">{status.name}</p>
-                    {selectedStageFunnel?.initialStageCode === status.code ? (
-                      <Badge variant="secondary" className="mt-1">{t('salesFunnelInitialStage')}</Badge>
-                    ) : null}
+          <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <CompactModalSection
+              title={t('pipelineStages')}
+              icon={GitBranch}
+              tone="violet"
+              count={funnelStatuses.length}
+              collapsible={false}
+              sectionId="funnel-stages"
+              contentClassName="divide-y divide-border/70 p-0"
+              actions={<Button size="sm" disabled={stageActionsPending} onClick={() => openStatus()}><Plus data-icon="inline-start" />{t('addPipelineStage')}</Button>}
+            >
+              {funnelStatuses.map((status, index) => (
+                <div key={status.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2.5">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-medium text-foreground">{status.name}</p>
+                      {selectedStageFunnel?.initialStageCode === status.code ? (
+                        <Badge variant="secondary" className="mt-0.5 text-[10px]">{t('salesFunnelInitialStage')}</Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex w-full flex-wrap items-center gap-1.5 sm:order-none sm:w-auto">
+                    <Badge variant={status.isPipeline ? 'default' : 'secondary'} className="text-[10px]">
+                      {status.isPipeline ? t('shownInPipeline') : t('hiddenFromPipeline')}
+                    </Badge>
+                    <Badge variant={status.isActive ? 'outline' : 'secondary'} className="text-[10px]">
+                      {status.isActive ? t('active') : t('inactive')}
+                    </Badge>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => openStatus(status)}>
+                    <Button variant="ghost" size="icon" className="size-8" disabled={stageActionsPending} onClick={() => openStatus(status)}>
                       <Edit3 />
                       <span className="sr-only">{t('edit')}</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={preparePipelineStatusDelete.isPending || selectedStageFunnel?.initialStageCode === status.code}
+                      className="size-8"
+                      disabled={stageActionsPending || selectedStageFunnel?.initialStageCode === status.code}
                       onClick={() => preparePipelineStatusDelete.mutate(status)}
                     >
                       <Trash2 />
                       <span className="sr-only">{t('delete')}</span>
                     </Button>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={status.isPipeline ? 'default' : 'secondary'}>
-                      {status.isPipeline ? t('shownInPipeline') : t('hiddenFromPipeline')}
-                    </Badge>
-                    <Badge variant={status.isActive ? 'outline' : 'secondary'}>
-                      {status.isActive ? t('active') : t('inactive')}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index <= 1 || updateStatusOrder.isPending}
+                      className="size-8"
+                      disabled={index <= 1 || stageActionsPending}
                       onClick={() => updateStatusOrder.mutate({ status, direction: -1 })}
                     >
                       <ArrowUp />
@@ -850,7 +878,8 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     <Button
                       variant="ghost"
                       size="icon"
-                      disabled={index === 0 || index === funnelStatuses.length - 1 || updateStatusOrder.isPending}
+                      className="size-8"
+                      disabled={index === 0 || index === funnelStatuses.length - 1 || stageActionsPending}
                       onClick={() => updateStatusOrder.mutate({ status, direction: 1 })}
                     >
                       <ArrowDown />
@@ -858,53 +887,61 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                     </Button>
                   </div>
                 </div>
-              </div>
-            ))}
-            {funnelStatuses.length === 0 ? (
-              <EmptyTableState title={t('noPipelineStages')}  />
-            ) : null}
+              ))}
+              {funnelStatuses.length === 0 ? (
+                <EmptyTableState title={t('noPipelineStages')}  />
+              ) : null}
+            </CompactModalSection>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={schoolDialogOpen} onOpenChange={schoolGuard.handleOpenChange}>
-        <DialogContent onEscapeKeyDown={event => { if (schoolTimezonePopupRef.current) event.preventDefault(); }} aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
+        <DialogContent onEscapeKeyDown={event => { if (schoolTimezonePopupRef.current) event.preventDefault(); }} aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle className="text-base leading-6">{editingSchool ? t('editSchool') : t('addSchool')}</DialogTitle>
           </DialogHeader>
           <Form {...schoolForm}>
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={schoolForm.handleSubmit((values) => saveSchool.mutate(values))}>
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
-              <FormField control={schoolForm.control} name="name" render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel required>{t('schoolName')}</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={schoolForm.control} name="address" render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel required>{t('address')}</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={schoolForm.control} name="timezone" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('timezone')}</FormLabel>
-                  <FormControl><TimezoneSelect {...field} onPopupOpenChange={open => { schoolTimezonePopupRef.current = open; }} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={schoolForm.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3 md:col-span-2">
-                  <FormLabel>{t('activeSchool')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={schoolForm.handleSubmit((values) => {
+              if (resourceSaveLocks.current.school) return;
+              resourceSaveLocks.current.school = true;
+              saveSchool.mutate(values);
+            })}>
+              <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                <CompactModalSection title={t('academyResourceDetails')} icon={Building2} tone="sky" collapsible={false} disabled={saveSchool.isPending} sectionId="school-details" contentClassName="grid gap-3 sm:grid-cols-2">
+                  <FormField control={schoolForm.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('schoolName')}</FormLabel>
+                      <FormControl><Input {...field} disabled={saveSchool.isPending} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={schoolForm.control} name="address" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('address')}</FormLabel>
+                      <FormControl><Input {...field} disabled={saveSchool.isPending} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={schoolForm.control} name="timezone" render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel required>{t('timezone')}</FormLabel>
+                      <FormControl><TimezoneSelect {...field} disabled={saveSchool.isPending} onPopupOpenChange={open => { schoolTimezonePopupRef.current = open; }} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
+                <CompactModalSection title={t('status')} tone="teal" collapsible={false} disabled={saveSchool.isPending} sectionId="school-status">
+                  <FormField control={schoolForm.control} name="isActive" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between gap-3 space-y-0">
+                      <FormLabel>{t('activeSchool')}</FormLabel>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={saveSchool.isPending} /></FormControl>
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
               </div>
-              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+              <DialogFooter className="compact-modal-footer">
+                <Button type="button" variant="outline" disabled={saveSchool.isPending} onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>
                   {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
                   {saveSchool.isPending ? t('saving') : t('save')}
@@ -916,52 +953,60 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       </Dialog>
 
       <Dialog open={roomDialogOpen} onOpenChange={roomGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle className="text-base leading-6">{editingRoom ? t('editRoom') : t('addRoom')}</DialogTitle>
           </DialogHeader>
           <Form {...roomForm}>
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={roomForm.handleSubmit((values) => saveRoom.mutate(values))}>
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
-              <FormField control={roomForm.control} name="schoolId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('school')}</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectGroup>
-                        {schools.filter((school) => school.isActive !== false).map((school) => (
-                          <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={roomForm.control} name="name" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('roomName')}</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={roomForm.control} name="capacity" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('roomCapacity')}</FormLabel>
-                  <FormControl><Input type="number" min="1" {...field} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={roomForm.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <FormLabel>{t('active')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={roomForm.handleSubmit((values) => {
+              if (resourceSaveLocks.current.room) return;
+              resourceSaveLocks.current.room = true;
+              saveRoom.mutate(values);
+            })}>
+              <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                <CompactModalSection title={t('academyResourceDetails')} icon={DoorOpen} tone="sky" collapsible={false} disabled={saveRoom.isPending} sectionId="room-details" contentClassName="grid gap-3 sm:grid-cols-2">
+                  <FormField control={roomForm.control} name="schoolId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('school')}</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange} disabled={saveRoom.isPending}>
+                        <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue placeholder={t('selectSchool')} /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectGroup>
+                            {schools.filter((school) => school.isActive !== false).map((school) => (
+                              <SelectItem key={school.id} value={String(school.id)}>{school.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={roomForm.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('roomName')}</FormLabel>
+                      <FormControl><Input {...field} disabled={saveRoom.isPending} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={roomForm.control} name="capacity" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('roomCapacity')}</FormLabel>
+                      <FormControl><Input type="number" min="1" {...field} disabled={saveRoom.isPending} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
+                <CompactModalSection title={t('status')} tone="teal" collapsible={false} disabled={saveRoom.isPending} sectionId="room-status">
+                  <FormField control={roomForm.control} name="isActive" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between gap-3 space-y-0">
+                      <FormLabel>{t('active')}</FormLabel>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={saveRoom.isPending} /></FormControl>
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
               </div>
-              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+              <DialogFooter className="compact-modal-footer">
+                <Button type="button" variant="outline" disabled={saveRoom.isPending} onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
               </DialogFooter>
             </form>
@@ -980,53 +1025,60 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       />
 
       <Dialog open={statusDialogOpen} onOpenChange={statusGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden p-0">
+          <DialogHeader className="compact-modal-header">
+            <DialogTitle className="text-base leading-6">{editingStatus ? t('editPipelineStage') : t('addPipelineStage')}</DialogTitle>
           </DialogHeader>
           <Form {...statusForm}>
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); statusForm.handleSubmit((values) => saveStatus.mutate(values))(event); }}>
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto overscroll-contain px-6 py-4 md:grid-cols-2">
-              <FormField control={statusForm.control} name="name" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('name')}</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="color" render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>{t('color')}</FormLabel>
-                  <div className="flex gap-2">
-                    <FormControl><Input type="color" className="w-16 p-1" {...field} /></FormControl>
-                    <Input aria-label={t('color')} value={field.value} onChange={field.onChange} />
-                  </div>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="sortOrder" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('sortOrder')}</FormLabel>
-                  <FormControl><Input type="number" min="0" step="10" {...field} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="isPipeline" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <FormLabel>{t('shownInPipeline')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <FormLabel>{t('active')}</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
-                </FormItem>
-              )} />
-
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={statusForm.handleSubmit((values) => {
+              if (resourceSaveLocks.current.status) return;
+              resourceSaveLocks.current.status = true;
+              saveStatus.mutate(values);
+            })}>
+              <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                <CompactModalSection title={t('academyResourceDetails')} icon={Target} tone="sky" collapsible={false} disabled={saveStatus.isPending} sectionId="stage-details" contentClassName="grid gap-3 sm:grid-cols-2">
+                  <FormField control={statusForm.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('name')}</FormLabel>
+                      <FormControl><Input {...field} disabled={saveStatus.isPending} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={statusForm.control} name="color" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t('color')}</FormLabel>
+                      <div className="flex gap-2">
+                        <FormControl><Input type="color" className="w-12 shrink-0 p-1" {...field} disabled={saveStatus.isPending} /></FormControl>
+                        <Input aria-label={t('color')} value={field.value} onChange={field.onChange} disabled={saveStatus.isPending} />
+                      </div>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={statusForm.control} name="sortOrder" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('sortOrder')}</FormLabel>
+                      <FormControl><Input type="number" min="0" step="10" {...field} disabled={saveStatus.isPending || selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
+                <CompactModalSection title={t('status')} tone="violet" collapsible={false} disabled={saveStatus.isPending} sectionId="stage-status" contentClassName="grid gap-3 sm:grid-cols-2">
+                  <FormField control={statusForm.control} name="isPipeline" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between gap-3 space-y-0">
+                      <FormLabel>{t('shownInPipeline')}</FormLabel>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={saveStatus.isPending || selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={statusForm.control} name="isActive" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between gap-3 space-y-0">
+                      <FormLabel>{t('active')}</FormLabel>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={saveStatus.isPending || selectedStageFunnel?.initialStageCode === editingStatus?.code} /></FormControl>
+                    </FormItem>
+                  )} />
+                </CompactModalSection>
               </div>
-              <DialogFooter className="flex shrink-0 justify-end gap-2 border-t bg-background/95 px-6 py-4">
-                <Button type="button" variant="outline" onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+              <DialogFooter className="compact-modal-footer">
+                <Button type="button" variant="outline" disabled={saveStatus.isPending} onClick={() => statusGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button
                   type="submit"
                   disabled={saveStatus.isPending}
@@ -1040,7 +1092,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <AlertDialog
         open={Boolean(pipelineDeleteTarget)}
         onOpenChange={(open) => {
           if (open || transferAndDeletePipelineStatus.isPending) return;
@@ -1048,105 +1100,98 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
           setPipelineTransferTargetId('');
         }}
       >
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{t('pipelineStageDeleteTransferTitle')}</DialogTitle>
-            <DialogDescription>
+        <AlertDialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-xl flex-col overflow-hidden p-0">
+          <AlertDialogHeader data-topographic="header" className="compact-modal-header">
+            <AlertDialogTitle className="text-base leading-6">{t('pipelineStageDeleteTransferTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
               {pipelineDeleteTarget
                 ? t('pipelineStageDeleteTransferDescription').replace('{stage}', pipelineDeleteTarget.status.name)
                 : ''}
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
           {pipelineDeleteTarget ? (
             <>
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
-
-
-              <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/30 p-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
-                <div className="space-y-2">
-                  <Label>{t('currentStage')}</Label>
-                  <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: pipelineDeleteTarget.status.color }}
-                    />
-                    <span className="truncate font-medium">{pipelineDeleteTarget.status.name}</span>
+              <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <CompactModalSection title={t('transferLeadsToStage')} icon={ArrowRightLeft} tone="amber" collapsible={false} disabled={transferAndDeletePipelineStatus.isPending} sectionId="stage-transfer" contentClassName="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>{t('currentStage')}</Label>
+                    <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+                      <span
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: pipelineDeleteTarget.status.color }}
+                      />
+                      <span className="truncate font-medium">{pipelineDeleteTarget.status.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels)}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatLeadCount(pipelineDeleteTarget.leadCount, language, leadCountLabels)}
-                  </p>
-                </div>
 
-                <div className="hidden pb-8 text-muted-foreground md:block">
-                  <ArrowRightLeft className="h-5 w-5" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pipeline-transfer-target">{t('transferLeadsToStage')}</Label>
-                  <Select
-                    value={pipelineTransferTargetId}
-                    onValueChange={setPipelineTransferTargetId}
-                    disabled={availableTransferStatuses.length === 0 || transferAndDeletePipelineStatus.isPending}
-                  >
-                    <SelectTrigger id="pipeline-transfer-target">
-                      <SelectValue placeholder={t('selectPipelineStage')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {availableTransferStatuses.map((status) => (
-                          <SelectItem key={status.id} value={String(status.id)}>
-                            <span className="inline-flex min-w-0 items-center gap-2">
-                              <span className="size-2 rounded-full" style={{ backgroundColor: status.color }} />
-                              <span className="truncate">{status.name}</span>
-                              {!status.isPipeline ? (
-                                <span className="text-xs text-muted-foreground">({t('hiddenFromPipeline')})</span>
-                              ) : null}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {availableTransferStatuses.length === 0 ? (
-                    <p className="text-xs text-destructive">{t('pipelineStageNoAvailableTargets')}</p>
-                  ) : null}
-                </div>
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pipeline-transfer-target">{t('transferLeadsToStage')}</Label>
+                    <Select
+                      value={pipelineTransferTargetId}
+                      onValueChange={setPipelineTransferTargetId}
+                      disabled={availableTransferStatuses.length === 0 || transferAndDeletePipelineStatus.isPending}
+                    >
+                      <SelectTrigger id="pipeline-transfer-target">
+                        <SelectValue placeholder={t('selectPipelineStage')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {availableTransferStatuses.map((status) => (
+                            <SelectItem key={status.id} value={String(status.id)}>
+                              <span className="inline-flex min-w-0 items-center gap-2">
+                                <span className="size-2 rounded-full" style={{ backgroundColor: status.color }} />
+                                <span className="truncate">{status.name}</span>
+                                {!status.isPipeline ? (
+                                  <span className="text-xs text-muted-foreground">({t('hiddenFromPipeline')})</span>
+                                ) : null}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {availableTransferStatuses.length === 0 ? (
+                      <p className="text-xs text-destructive">{t('pipelineStageNoAvailableTargets')}</p>
+                    ) : null}
+                  </div>
+                </CompactModalSection>
 
               </div>
 
-              <div className="flex flex-col-reverse gap-2 border-t bg-background/95 px-6 py-4 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
+              <AlertDialogFooter className="compact-modal-footer">
+                <AlertDialogCancel
                   disabled={transferAndDeletePipelineStatus.isPending}
-                  onClick={() => {
-                    setPipelineDeleteTarget(null);
-                    setPipelineTransferTargetId('');
-                  }}
                 >
                   {t('cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={!pipelineTransferTargetId || transferAndDeletePipelineStatus.isPending}
-                  onClick={() => transferAndDeletePipelineStatus.mutate({
-                    status: pipelineDeleteTarget.status,
-                    targetStatusId: pipelineTransferTargetId,
-                  })}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={!availableTransferStatuses.some(status => String(status.id) === pipelineTransferTargetId) || transferAndDeletePipelineStatus.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (resourceSaveLocks.current.stageTransfer || !availableTransferStatuses.some(status => String(status.id) === pipelineTransferTargetId)) return;
+                    resourceSaveLocks.current.stageTransfer = true;
+                    transferAndDeletePipelineStatus.mutate({
+                      status: pipelineDeleteTarget.status,
+                      targetStatusId: pipelineTransferTargetId,
+                    });
+                  }}
                 >
                   <ArrowRightLeft data-icon="inline-start" />
                   {transferAndDeletePipelineStatus.isPending ? t('saving') : t('transferLeadsAndDeleteStage')}
-                </Button>
-              </div>
-              </>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
           ) : null}
-        </DialogContent>
-      </Dialog>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ConfirmDialog
+        compact
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
           if (!open && !deleteResource.isPending) setDeleteTarget(null);
@@ -1158,8 +1203,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         confirmLabel={t('delete')}
         variant="destructive"
         isPending={deleteResource.isPending}
+        keepOpenOnConfirm
         onConfirm={() => {
-          if (deleteTarget) deleteResource.mutate(deleteTarget);
+          if (!deleteTarget || resourceSaveLocks.current.delete) return;
+          resourceSaveLocks.current.delete = true;
+          deleteResource.mutate(deleteTarget);
         }}
       />
 

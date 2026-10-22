@@ -6,21 +6,22 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/comp
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { roleKeys } from '../copy';
 
-export function EmployeeKpiField({ control, assignment, onRoleChange }: {
+export function EmployeeKpiField({ control, assignment, onRoleChange, disabled = false }: {
   control: Control<UserFormValues>;
   assignment?: KpiEmployeeAssignment | null;
   onRoleChange?: (role: KpiRole | null) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   return <FormField control={control} name="salesKpiRole" render={({ field }) => (
     <FormItem className="rounded-xl border border-primary/20 bg-primary/5 p-4">
       <FormLabel>{t('kpiSystem')}</FormLabel>
-      <Select value={field.value ?? 'none'} onValueChange={(value) => {
+      <Select disabled={disabled} value={field.value ?? 'none'} onValueChange={(value) => {
         const role = value === 'none' ? null : value as KpiRole;
         field.onChange(role);
         onRoleChange?.(role);
       }}>
-        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+        <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue /></SelectTrigger></FormControl>
         <SelectContent>
           <SelectItem value="none">{t('kpiNotAssigned')}</SelectItem>
           {KPI_ROLES.map((role) => <SelectItem key={role} value={role}>{t(roleKeys[role])}</SelectItem>)}

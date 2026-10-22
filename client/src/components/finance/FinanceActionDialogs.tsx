@@ -35,17 +35,17 @@ export function FinanceActionDialogs({ copy, error, money, methods, methodLabel,
     </Field>
   );
   return <>
-    <ConfirmDialog open={batch.open} onOpenChange={(open) => { if (!open) batch.onClose(); }}
+    <ConfirmDialog compact open={batch.open} onOpenChange={(open) => { if (!open) batch.onClose(); }}
       title={copy.batchTitle} description={`${t('payAllConfirmCount').replace('{count}', String(batch.count))} ${t('payAllConfirmTotal').replace('{amount}', money(batch.amount))}`}
       confirmLabel={copy.confirmBatch} cancelLabel={copy.formCancel} onConfirm={batch.onConfirm} isPending={batch.pending} keepOpenOnConfirm error={error}>
       {methodPicker(batch.method, batch.onMethodChange, batch.pending)}
     </ConfirmDialog>
-    <ConfirmDialog open={Boolean(pay.target)} onOpenChange={(open) => { if (!open) pay.onClose(); }}
+    <ConfirmDialog compact open={Boolean(pay.target)} onOpenChange={(open) => { if (!open) pay.onClose(); }}
       title={copy.confirmPayTitle} description={pay.target ? `${pay.target.title} · ${money(pay.target.amountUzs)}` : ''}
       confirmLabel={copy.confirmPay} cancelLabel={copy.formCancel} onConfirm={pay.onConfirm} isPending={pay.pending} keepOpenOnConfirm error={error}>
       {methodPicker(pay.method, pay.onMethodChange, pay.pending)}
     </ConfirmDialog>
-    <ConfirmDialog open={Boolean(cancel.target)} onOpenChange={(open) => { if (!open) cancel.onClose(); }}
+    <ConfirmDialog compact open={Boolean(cancel.target)} onOpenChange={(open) => { if (!open) cancel.onClose(); }}
       title={copy.confirmCancel} description={cancel.target?.title || ''} variant="destructive"
       confirmLabel={copy.confirmCancel} cancelLabel={copy.formCancel} onConfirm={() => { if (cancel.reason.trim()) cancel.onConfirm(); }}
       isPending={cancel.pending} confirmDisabled={!cancel.reason.trim()} keepOpenOnConfirm error={error}>

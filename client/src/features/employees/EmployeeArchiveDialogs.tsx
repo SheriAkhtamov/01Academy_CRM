@@ -13,6 +13,8 @@ export function EmployeeArchiveDialogs({
   onRestoreOpenChange,
   onArchive,
   onRestore,
+  archivePending = false,
+  restorePending = false,
 }: {
   archiveTarget: EmployeeTarget | null;
   restoreTarget: EmployeeTarget | null;
@@ -20,12 +22,17 @@ export function EmployeeArchiveDialogs({
   onRestoreOpenChange: (open: boolean) => void;
   onArchive: (employee: EmployeeTarget) => void;
   onRestore: (employee: EmployeeTarget) => void;
+  archivePending?: boolean;
+  restorePending?: boolean;
 }) {
   const { t } = useTranslation();
 
   return (
     <>
       <ConfirmDialog
+        compact
+        isPending={archivePending}
+        keepOpenOnConfirm
         open={archiveTarget !== null}
         onOpenChange={onArchiveOpenChange}
         title={t('archiveEmployeeTitle')}
@@ -37,6 +44,9 @@ export function EmployeeArchiveDialogs({
         }}
       />
       <ConfirmDialog
+        compact
+        isPending={restorePending}
+        keepOpenOnConfirm
         open={restoreTarget !== null}
         onOpenChange={onRestoreOpenChange}
         title={t('restoreEmployeeTitle')}

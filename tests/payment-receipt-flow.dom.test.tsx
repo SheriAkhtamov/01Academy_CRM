@@ -55,6 +55,7 @@ async function openPayment() {
   const user = userEvent.setup();
   await user.click(await screen.findByRole('button', { name: i18n.t('recordPayment') }));
   const dialog = await screen.findByRole('dialog', { name: i18n.t('recordPayment') });
+  await user.click(within(dialog).getByRole('button', { name: i18n.t('comment') }));
   return { user, dialog };
 }
 function pasteFile(target: Element, file: File) {
@@ -62,10 +63,24 @@ function pasteFile(target: Element, file: File) {
 }
 
 describe('payment receipt submission from the lead modal', () => {
+  it('keeps folded comment and receipts in the submitted payment', async () => {
+    const { user, dialog } = await openPayment();
+    const image = new File(['image'], 'folded.png', { type: 'image/png' });
+    await user.type(within(dialog).getByRole('textbox', { name: i18n.t('comment') }), 'Folded draft');
+    pasteFile(dialog, image);
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('comment') }));
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('paymentReceiptFiles') }));
+    expect(within(dialog).queryByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'folded.png') })).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].get('comment')).toBe('Folded draft');
+    expect(requests[0].getAll('files')).toEqual([image]);
+  });
+
   it('closes only the receipt preview and keeps the payment draft intact', async () => {
     const { user, dialog } = await openPayment();
     const image = new File(['image'], 'screenshot.png', { type: 'image/png' });
-    await user.type(within(dialog).getByLabelText(i18n.t('comment')), 'Receipt checked');
+    await user.type(within(dialog).getByRole('textbox', { name: i18n.t('comment') }), 'Receipt checked');
     pasteFile(dialog, image);
     await user.click(within(dialog).getByRole('button', { name: i18n.t('paymentPreviewFile').replace('{name}', 'screenshot.png') }));
     expect(screen.getByRole('dialog', { name: 'screenshot.png' })).toBeTruthy();
@@ -73,7 +88,7 @@ describe('payment receipt submission from the lead modal', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'screenshot.png' })).toBeNull();
     expect(screen.getByRole('dialog', { name: i18n.t('recordPayment') })).toBeTruthy();
-    expect((within(dialog).getByLabelText(i18n.t('comment')) as HTMLTextAreaElement).value).toBe('Receipt checked');
+    expect((within(dialog).getByRole('textbox', { name: i18n.t('comment') }) as HTMLTextAreaElement).value).toBe('Receipt checked');
     await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0].getAll('files')).toEqual([image]);
@@ -87,7 +102,7 @@ describe('payment receipt submission from the lead modal', () => {
     const pdf = new File(['pdf'], 'receipt.pdf', { type: 'application/pdf' });
     const image = new File(['image'], 'screenshot.png', { type: 'image/png' });
     await user.upload(within(dialog).getByLabelText(i18n.t('paymentReceiptFiles'), { selector: 'input' }), pdf);
-    pasteFile(within(dialog).getByLabelText(i18n.t('comment')), image);
+    pasteFile(within(dialog).getByRole('textbox', { name: i18n.t('comment') }), image);
     await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0].get('leadId')).toBe('15');
@@ -124,6 +139,13 @@ describe('payment receipt submission from the lead modal', () => {
     pasteFile(dialog, image);
     await user.click(within(dialog).getByRole('button', { name: i18n.t('confirmPayment') }));
     await waitFor(() => expect(finishSave).toBeDefined());
+    expect(within(dialog).getByLabelText(i18n.t('amount')).matches(':disabled')).toBe(true);
+    expect(within(dialog).getByRole('textbox', { name: i18n.t('comment') }).matches(':disabled')).toBe(true);
+    expect(within(dialog).getByLabelText(i18n.t('paymentDate')).matches(':disabled')).toBe(true);
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('comment') }));
+    expect(within(dialog).getByRole('button', { name: i18n.t('comment') }).getAttribute('aria-expanded')).toBe('false');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: i18n.t('recordPayment') })).toBeTruthy();
     pasteFile(dialog, new File(['extra'], 'extra.png', { type: 'image/png' }));
     expect(within(dialog).queryByText('extra.png')).toBeNull();
     expect(requests[0].getAll('files')).toEqual([image]);

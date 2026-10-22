@@ -226,6 +226,7 @@ describe('lead sheet drafts do not leak between leads', () => {
 
 describe('employee modal starts every session from a clean form', () => {
   it('opens a blank create form after an edit was saved', async () => {
+    const user = userEvent.setup();
     render(
       <Router hook={memoryLocation({ path: '/employees' }).hook}>
         <QueryClientProvider client={newQueryClient()}>
@@ -241,7 +242,11 @@ describe('employee modal starts every session from a clean form', () => {
       .find((button) => button.getAttribute('aria-label') === i18n.t('editUser'));
     fireEvent.click(editButton as HTMLElement);
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
-    expect(screen.getByText('Основная воронка')).toBeTruthy();
+    const employeeDialog = screen.getByRole('dialog', { name: i18n.t('editUser') });
+    await user.click(within(employeeDialog).getByRole('button', { name: i18n.t('salesModule') }));
+    await user.click(within(employeeDialog).getByRole('button', { name: new RegExp(i18n.t('salesFunnels')) }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Основная воронка' }).getAttribute('aria-checked')).toBe('true');
+    await user.keyboard('{Escape}');
     expect(screen.queryByText(/Личный добавочный телефонии|Personal telephony extension/i)).toBeNull();
     expect(screen.queryByText(/Доступность преподавателя|Teacher availability/i)).toBeNull();
 
@@ -256,6 +261,10 @@ describe('employee modal starts every session from a clean form', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
 
     expect(fullName().value).toBe('');
+    const createDialog = screen.getByRole('dialog', { name: i18n.t('addNewUser') });
+    await user.click(within(createDialog).getByRole('button', { name: new RegExp(i18n.t('salesFunnels')) }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Основная воронка' }).getAttribute('aria-checked')).toBe('false');
+    await user.keyboard('{Escape}');
 
     fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

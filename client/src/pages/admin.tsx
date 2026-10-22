@@ -1,7 +1,7 @@
 import { AUTH_SESSION_QUERY_KEY, SAVED_ACCOUNTS_QUERY_KEY } from '@shared/auth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -12,13 +12,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ux/DataTable';
 import type { DataTableColumn } from '@/components/ux/DataTable';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
   UnsavedChangesDialog,
   useUnsavedChangesGuard,
@@ -27,7 +27,6 @@ import {
   DialogFooter,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -49,7 +48,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  AlertCircle,
   Plus,
   Users,
   Shield,
@@ -59,6 +57,8 @@ import {
   Settings2,
   SlidersHorizontal,
   KanbanSquare,
+  UserRound,
+  Phone,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { EmployeeKpiField } from '@/features/sales-kpi/ui/EmployeeKpiField';
@@ -113,6 +113,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const routeSearch = useSearch();
   const requestedEmployeeId = new URLSearchParams(routeSearch).get('employee');
   const openedEmployeeRef = useRef<string | null>(null);
+  const credentialsRequestRef = useRef(0);
+  const [userSections, setUserSections] = useState({ profile: true, contacts: false, access: true, sales: true });
+  const [userFocusTarget, setUserFocusTarget] = useState<FieldPath<UserFormValues> | null>(null);
+  const userSectionRefs = useRef<Partial<Record<'profile' | 'contacts' | 'access' | 'sales', HTMLElement>>>({});
   const isEmployeesPage = mode === 'employees';
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -131,6 +135,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     leadCount: number;
     requiresSales?: boolean;
   } | null>(null);
+  const [checkingResponsibilities, setCheckingResponsibilities] = useState<'archive' | 'delete' | null>(null);
+  const offboardingLockRef = useRef(false);
   const [salesLeadTransferManagerId, setSalesLeadTransferManagerId] = useState('');
   const [searchTerm, setSearchTerm] = useStickyState('employees-search', '');
   const [moduleFilter, setModuleFilter] = useStickyState('employees-module-filter', 'all');
@@ -145,6 +151,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const credentialsSchema = useMemo(() => createCredentialsSchema(t), [t]);
   const userForm = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
+    shouldFocusError: false,
     defaultValues: defaultUserFormValues,
   });
   const credentialsForm = useForm<z.infer<typeof credentialsSchema>>({
@@ -155,6 +162,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       confirmPassword: '',
     },
   });
+
+  useEffect(() => () => { credentialsRequestRef.current += 1; }, []);
 
   useEffect(() => {
     if (!userCredentials) return;
@@ -170,6 +179,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   const handleCredentialsModalState = (open: boolean) => {
     setShowCredentialsModal(open);
     if (!open) {
+      credentialsRequestRef.current += 1;
       setUserCredentials(null);
       setPendingCredentialUpdate(null);
       credentialsForm.reset({ email: '', password: '', confirmPassword: '' });
@@ -186,6 +196,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       }
       setSelectedUser(null);
       setPhoto(null);
+      setUserFocusTarget(null);
       setSalesModuleTransfer(null);
       setSalesLeadTransferManagerId('');
       userForm.reset(defaultUserFormValues);
@@ -194,17 +205,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   // Every open starts from a known-clean form: otherwise the previous employee's
   // values survive here and an untouched form is reported as having unsaved changes.
   const openCreateUserModal = () => {
+    credentialsRequestRef.current += 1;
+    setUserSections({ profile: true, contacts: false, access: true, sales: true });
     setSelectedUser(null);
     setPhoto(null);
     userForm.reset(defaultUserFormValues);
     setShowCreateUserModal(true);
   };
-  const userDialogGuard = useUnsavedChangesGuard({
-    open: showCreateUserModal,
-    isDirty: userForm.formState.isDirty || Boolean(photo),
-    onOpenChange: handleUserModalState,
-  });
-
   const { data: users = [], isLoading: usersLoading, isError: usersError, refetch: refetchUsers } = useQuery<any[]>({
     queryKey: ['/api/users'],
     select: (employees) => employees.map((employee) => ({
@@ -232,6 +239,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] });
+      credentialsRequestRef.current += 1;
       setUserCredentials(data);
       setShowCredentialsModal(true);
       toast({
@@ -242,7 +250,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedCreateUserDescription'),
+        description: t('failedCreateUserDescription'),
         variant: 'destructive',
       });
     },
@@ -267,7 +275,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedUpdateUserDescription'),
+        description: t('failedUpdateUserDescription'),
         variant: 'destructive',
       });
     },
@@ -290,7 +298,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedDeleteUserDescription'),
+        description: t('failedDeleteUserDescription'),
         variant: 'destructive',
       });
     },
@@ -312,7 +320,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedArchiveEmployee'),
+        description: t('failedArchiveEmployee'),
         variant: 'destructive',
       });
     },
@@ -330,7 +338,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedRestoreEmployee'),
+        description: t('failedRestoreEmployee'),
         variant: 'destructive',
       });
     },
@@ -343,6 +351,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       setUserCredentials(data);
+      setPasswordResetUser(null);
       toast({
         title: t('passwordResetSuccessfullyTitle'),
       });
@@ -350,7 +359,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedResetPasswordDescription'),
+        description: t('failedResetPasswordDescription'),
         variant: 'destructive',
       });
     },
@@ -382,25 +391,70 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     onError: (error: Error) => {
       toast({
         title: t('error'),
-        description: error.message || t('failedToUpdateCredentials'),
+        description: t('failedToUpdateCredentials'),
         variant: 'destructive',
       });
     },
   });
+  const userFormPending = createUserMutation.isPending || updateUserMutation.isPending || userForm.formState.isSubmitting;
+  const userDialogGuard = useUnsavedChangesGuard({
+    open: showCreateUserModal,
+    isDirty: userForm.formState.isDirty || Boolean(photo),
+    isPending: userFormPending,
+    onOpenChange: handleUserModalState,
+  });
+  const credentialsPending = updateUserCredentialsMutation.isPending || resetUserPasswordMutation.isPending;
   const credentialsGuard = useUnsavedChangesGuard({
     open: showCredentialsModal, isDirty: credentialsForm.formState.isDirty,
-    isPending: updateUserCredentialsMutation.isPending, onOpenChange: handleCredentialsModalState,
+    isPending: credentialsPending, onOpenChange: handleCredentialsModalState,
   });
 
+  const onInvalidUser = (errors: FieldErrors<UserFormValues>) => {
+    const phoneIndex = Object.keys(errors.phoneNumbers ?? {}).find((key) => /^\d+$/.test(key));
+    const field: FieldPath<UserFormValues> | undefined = errors.fullName ? 'fullName'
+      : errors.email ? 'email'
+      : errors.position ? 'position'
+      : errors.dateOfBirth ? 'dateOfBirth'
+      : phoneIndex ? `phoneNumbers.${Number(phoneIndex)}`
+      : errors.module ? 'module'
+      : errors.modules ? 'module'
+      : errors.salesKpiRole ? 'salesKpiRole'
+      : errors.salesFunnelIds ? 'salesFunnelIds' : undefined;
+    setUserSections((current) => ({
+      profile: current.profile || Boolean(errors.fullName || errors.email || errors.position || errors.dateOfBirth),
+      contacts: current.contacts || Boolean(errors.phoneNumbers),
+      access: current.access || Boolean(errors.module || errors.modules),
+      sales: current.sales || Boolean(errors.salesKpiRole || errors.salesFunnelIds),
+    }));
+    if (field) setUserFocusTarget(field);
+  };
+  useEffect(() => {
+    if (!userFocusTarget || !showCreateUserModal) return;
+    const frame = requestAnimationFrame(() => {
+      userForm.setFocus(userFocusTarget);
+      const section = userFocusTarget.startsWith('phoneNumbers') ? 'contacts'
+        : userFocusTarget.startsWith('sales') ? 'sales'
+        : userFocusTarget === 'module' || userFocusTarget === 'modules' ? 'access' : 'profile';
+      const sectionElement = userSectionRefs.current[section];
+      if (!sectionElement?.contains(document.activeElement)) sectionElement?.focus();
+      document.activeElement?.scrollIntoView?.({ block: 'nearest' });
+      setUserFocusTarget(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showCreateUserModal, userFocusTarget, userForm, userSections]);
+
   const fetchUserCredentials = async (userId: number) => {
+    const request = ++credentialsRequestRef.current;
     try {
       devLog('Fetching credentials for user ID:', userId);
 
       const credentials = await getEmployeeCredentials(userId);
       devLog('Credentials received for user ID:', userId);
+      if (request !== credentialsRequestRef.current) return;
       setUserCredentials(credentials);
       setShowCredentialsModal(true);
     } catch (error) {
+      if (request !== credentialsRequestRef.current) return;
       devLog('Error fetching user credentials:', error);
       toast({
         title: t('error'),
@@ -440,22 +494,34 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     };
   };
 
-  const archiveEmployeeAfterImpactCheck = (employee: any) => {
-    void getAssignedResponsibilityCount(employee, true)
-      .then(({ leadCount, requiresSales }) => {
-        if (leadCount > 0) {
-          openLeadTransferDialog({ user: employee, action: 'archive', leadCount, requiresSales });
-          return;
-        }
+  const inspectEmployeeResponsibilities = async (employee: any, action: 'archive' | 'delete') => {
+    if (offboardingLockRef.current || archiveUserMutation.isPending || deleteUserMutation.isPending) return;
+    offboardingLockRef.current = true;
+    setCheckingResponsibilities(action);
+    try {
+      const { leadCount, requiresSales } = await getAssignedResponsibilityCount(employee, true);
+      if (leadCount > 0) {
+        setUserToArchive(null);
+        setUserToDelete(null);
+        openLeadTransferDialog({ user: employee, action, leadCount, requiresSales });
+      } else if (action === 'archive') {
         archiveUserMutation.mutate({ id: employee.id });
-      })
-      .catch((error: Error) => {
-        toast({
-          title: t('error'),
-          description: error.message || t('failedArchiveEmployee'),
-          variant: 'destructive',
-        });
+      } else {
+        deleteUserMutation.mutate({ id: employee.id });
+      }
+    } catch {
+      toast({
+        title: t('error'),
+        description: t(action === 'archive' ? 'failedArchiveEmployee' : 'failedDeleteUserDescription'),
+        variant: 'destructive',
       });
+    } finally {
+      offboardingLockRef.current = false;
+      setCheckingResponsibilities(null);
+    }
+  };
+  const archiveEmployeeAfterImpactCheck = (employee: any) => {
+    void inspectEmployeeResponsibilities(employee, 'archive');
   };
 
   // Ref-based lock: RHF flips `isSubmitting` before this handler runs, so
@@ -496,7 +562,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         } catch (error: any) {
           toast({
             title: t('error'),
-            description: error.message || t('failedUpdateUserDescription'),
+            description: t('failedUpdateUserDescription'),
             variant: 'destructive',
           });
           return;
@@ -510,7 +576,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const onSubmitCredentials = (data: z.infer<typeof credentialsSchema>) => {
-    if (!userCredentials?.id) return;
+    if (!userCredentials?.id || credentialsPending || pendingCredentialUpdate) return;
 
     const normalizedEmail = data.email.trim().toLowerCase();
     const loginChanged = normalizedEmail !== String(userCredentials.email || '').toLowerCase();
@@ -532,6 +598,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   };
 
   const openEditUserModal = useCallback((user: any) => {
+    credentialsRequestRef.current += 1;
+    setUserSections({ profile: true, contacts: false, access: true, sales: false });
     setSelectedUser(user);
     setPhoto(null);
     userForm.reset({
@@ -598,6 +666,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
   }));
   const primaryModuleValue = userForm.watch('module');
   const assignedModuleValues = userForm.watch('modules');
+  const assignedFunnelIds = userForm.watch('salesFunnelIds');
 
   const administrationSections = [
     {
@@ -744,234 +813,145 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               <h2 className="text-xl font-semibold text-foreground">{t('userManagement')}</h2>
             </div>
             <Dialog open={showCreateUserModal} onOpenChange={userDialogGuard.handleOpenChange}>
-                <DialogContent aria-describedby={undefined} className="grid max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
-                  <DialogHeader className="shrink-0 border-b border-border px-4 py-5 pr-12 text-left sm:px-6">
-                    <DialogTitle>
-                      {selectedUser ? t('editUser') : t('addNewUser')}
-                    </DialogTitle>
-                  </DialogHeader>
-                  <Form {...userForm}>
-                    <form
-                      onSubmit={userForm.handleSubmit(onSubmitUser)}
-                      className="flex min-h-0 flex-col"
-                    >
-                      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-                        <div className="flex flex-col gap-4">
-                        <UserPhotoPicker photo={photo} onChange={setPhoto} currentPhotoUrl={selectedUser?.avatarUrl} fullName={userForm.watch('fullName')} disabled={createUserMutation.isPending || updateUserMutation.isPending} />
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField
-                            control={userForm.control}
-                            name="fullName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel required>{t('fullName')}</FormLabel>
-                                <FormControl>
-                                  <Input {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={userForm.control}
-                            name="email"
-                            render={({ field }) => selectedUser ? (
-                                <FormItem>
-                                  <FormLabel required>{t('loginLabel')}</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="text"
-                                      autoComplete="username"
-                                      readOnly
-                                      {...field}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              ) : (
-                                <FormItem>
-                                  <FormLabel required>{t('loginLabel')}</FormLabel>
-                                  <div className="rounded-lg border border-dashed border-border bg-muted/70 p-3">
-                                    <p className="text-sm font-medium text-foreground">{t('employeeLoginGenerated')}</p>
-                                  </div>
-                                  <input type="hidden" {...field} value="" />
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <EmployeePhoneFields form={userForm} />
-                          <FormField
-                            control={userForm.control}
-                            name="position"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('position')}</FormLabel>
-                                <FormControl>
-                                  <Input {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField
-                            control={userForm.control}
-                            name="module"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel required>{t('primaryModule')}</FormLabel>
-                                <Select
-                                  onValueChange={(value) => {
-                                    const nextModule = value as AcademyModule;
-                                    field.onChange(nextModule);
-                                    const currentModules = userForm.getValues('modules') ?? [];
-                                    if (!currentModules.includes(nextModule)) {
-                                      userForm.setValue('modules', [...currentModules, nextModule], {
-                                        shouldDirty: true,
-                                        shouldValidate: true,
-                                      });
-                                    }
-                                  }}
-                                  value={field.value}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      {moduleOptions.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={userForm.control}
-                            name="dateOfBirth"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('dateOfBirth')}</FormLabel>
-                                <FormControl>
-                                  <Input type="date" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-
-                        <FormField
-                          control={userForm.control}
-                          name="modules"
-                          render={({ field }) => (
+              <DialogContent aria-describedby={undefined} className="compact-modal grid max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl p-0 sm:max-h-[90dvh]">
+                <DialogHeader data-topographic="card" className="compact-modal-header">
+                  <DialogTitle>{selectedUser ? t('editUser') : t('addNewUser')}</DialogTitle>
+                </DialogHeader>
+                <Form {...userForm}>
+                  <form onSubmit={userForm.handleSubmit(onSubmitUser, onInvalidUser)} className="flex min-h-0 flex-col">
+                    <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                      <CompactModalSection
+                        ref={(element) => { userSectionRefs.current.profile = element ?? undefined; }}
+                        title={t('employeeProfileSection')} icon={UserRound} tone="sky" sectionId="employee-profile"
+                        summary={userForm.watch('fullName') || undefined}
+                        open={userSections.profile} onOpenChange={(open) => setUserSections((current) => ({ ...current, profile: open }))}
+                        disabled={userFormPending} contentClassName="space-y-3"
+                      >
+                        <UserPhotoPicker photo={photo} onChange={setPhoto} currentPhotoUrl={selectedUser?.avatarUrl} fullName={userForm.watch('fullName')} disabled={userFormPending} />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <FormField control={userForm.control} name="fullName" render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{t('accessModules')}</FormLabel>
-                              <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
-                                {moduleOptions.map((option) => {
-                                  const value = option.value;
-                                  const checked = (field.value ?? []).includes(value);
-                                  const isPrimary = primaryModuleValue === value;
-                                  return (
-                                    <label
-                                      key={value}
-                                      className="flex items-center gap-3 rounded-md px-2 py-2 text-sm hover:bg-muted/60"
-                                    >
-                                      <Checkbox
-                                        checked={checked || isPrimary}
-                                        disabled={isPrimary}
-                                        onCheckedChange={(nextChecked) => {
-                                          const currentModules = field.value ?? [];
-                                          if (nextChecked) {
-                                            field.onChange([...new Set([...currentModules, value])]);
-                                            return;
-                                          }
-                                          field.onChange(currentModules.filter((module) => module !== value));
-                                        }}
-                                      />
-                                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                                      {isPrimary && (
-                                        <span className="shrink-0 text-xs text-muted-foreground">{t('primaryModuleShort')}</span>
-                                      )}
-                                    </label>
-                                  );
-                                })}
-                              </div>
+                              <FormLabel required>{t('fullName')}</FormLabel>
+                              <FormControl><Input {...field} /></FormControl>
                               <FormMessage />
                             </FormItem>
-                          )}
-                        />
-                        {assignedModuleValues.includes('sales') ? (
-                          <>
-                            <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} />
-                            <FormField
-                              control={userForm.control}
-                              name="salesFunnelIds"
-                              render={({ field }) => (
-                                <FormItem className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                                  <FormLabel required>{t('salesFunnels')}</FormLabel>
-                                  {salesFunnelsLoading ? (
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                      <Skeleton className="h-11 rounded-lg" />
-                                      <Skeleton className="h-11 rounded-lg" />
-                                    </div>
-                                  ) : salesFunnelsError ? (
-                                    <div className="flex items-center gap-2 text-sm text-destructive">
-                                      <span>{t('failedToLoadData')}</span>
-                                      <Button type="button" variant="outline" size="sm" onClick={() => refetchSalesFunnels()}>
-                                        {t('retry')}
-                                      </Button>
-                                    </div>
-                                  ) : salesFunnels.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground">{t('noSalesFunnels')}</p>
-                                  ) : (
-                                    <FormControl><EmployeeFunnelSelect ref={field.ref} name={field.name} onBlur={field.onBlur} funnels={salesFunnels} value={field.value} onChange={field.onChange} /></FormControl>
-                                  )}
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </>
-                        ) : null}
-
+                          )} />
+                          <FormField control={userForm.control} name="position" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('position')}</FormLabel>
+                              <FormControl><Input {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={userForm.control} name="dateOfBirth" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('dateOfBirth')}</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          {selectedUser ? <FormField control={userForm.control} name="email" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('loginLabel')}</FormLabel>
+                              <FormControl><Input type="text" autoComplete="username" readOnly {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} /> : null}
                         </div>
-                      </div>
+                      </CompactModalSection>
 
-                        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-background px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="w-full sm:w-auto"
-                            onClick={() => userDialogGuard.handleOpenChange(false)}
-                          >
-                            {t('cancel')}
-                          </Button>
-                          <Button
-                            type="submit"
-                            disabled={createUserMutation.isPending || updateUserMutation.isPending || userForm.formState.isSubmitting}
-                            className="w-full sm:w-auto"
-                          >
-                            {createUserMutation.isPending || updateUserMutation.isPending
-                              ? t('saving')
-                              : selectedUser
-                                ? t('updateUser')
-                                : t('createUser')}
-                          </Button>
-                        </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
+                      <CompactModalSection
+                        ref={(element) => { userSectionRefs.current.contacts = element ?? undefined; }}
+                        title={t('employeeContactsSection')} icon={Phone} tone="teal" sectionId="employee-contacts"
+                        summary={userForm.watch('phoneNumbers').filter(Boolean).join(', ')}
+                        open={userSections.contacts} onOpenChange={(open) => setUserSections((current) => ({ ...current, contacts: open }))}
+                        disabled={userFormPending}
+                      >
+                        <EmployeePhoneFields form={userForm} disabled={userFormPending} />
+                      </CompactModalSection>
+
+                      <CompactModalSection
+                        ref={(element) => { userSectionRefs.current.access = element ?? undefined; }}
+                        title={t('accessModules')} icon={Shield} tone="violet" sectionId="employee-access"
+                        summary={assignedModuleValues.map(getModuleLabel).join(', ')} count={assignedModuleValues.length}
+                        open={userSections.access} onOpenChange={(open) => setUserSections((current) => ({ ...current, access: open }))}
+                        disabled={userFormPending} contentClassName="space-y-3"
+                      >
+                        <FormField control={userForm.control} name="module" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>{t('primaryModule')}</FormLabel>
+                            <Select disabled={userFormPending} onValueChange={(value) => {
+                              const nextModule = value as AcademyModule;
+                              field.onChange(nextModule);
+                              const currentModules = userForm.getValues('modules') ?? [];
+                              if (!currentModules.includes(nextModule)) {
+                                userForm.setValue('modules', [...currentModules, nextModule], { shouldDirty: true, shouldValidate: true });
+                              }
+                            }} value={field.value}>
+                              <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent><SelectGroup>
+                                {moduleOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                              </SelectGroup></SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <FormField control={userForm.control} name="modules" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('accessModules')}</FormLabel>
+                            <div className="grid gap-1.5 sm:grid-cols-2">
+                              {moduleOptions.map((option) => {
+                                const value = option.value;
+                                const checked = (field.value ?? []).includes(value);
+                                const isPrimary = primaryModuleValue === value;
+                                return <label key={value} className="flex items-center gap-2 rounded-md border border-border/70 bg-background px-2 py-2 text-sm">
+                                  <Checkbox checked={checked || isPrimary} disabled={isPrimary || userFormPending} onCheckedChange={(nextChecked) => {
+                                    const currentModules = field.value ?? [];
+                                    field.onChange(nextChecked ? [...new Set([...currentModules, value])] : currentModules.filter((module) => module !== value));
+                                  }} />
+                                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                                  {isPrimary ? <span className="shrink-0 text-xs text-muted-foreground">{t('primaryModuleShort')}</span> : null}
+                                </label>;
+                              })}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </CompactModalSection>
+
+                      {assignedModuleValues.includes('sales') ? <CompactModalSection
+                        ref={(element) => { userSectionRefs.current.sales = element ?? undefined; }}
+                        title={t('salesModule')} icon={KanbanSquare} tone="amber" sectionId="employee-sales"
+                        summary={salesFunnels.filter((funnel) => assignedFunnelIds.includes(funnel.id)).map((funnel) => funnel.name).join(', ')}
+                        open={userSections.sales} onOpenChange={(open) => setUserSections((current) => ({ ...current, sales: open }))}
+                        disabled={userFormPending} contentClassName="space-y-3"
+                      >
+                        <EmployeeKpiField control={userForm.control} assignment={selectedUser?.salesKpi} disabled={userFormPending} />
+                        <FormField control={userForm.control} name="salesFunnelIds" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel required>{t('salesFunnels')}</FormLabel>
+                            {salesFunnelsLoading ? <div className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-9 rounded-md" /><Skeleton className="h-9 rounded-md" /></div>
+                              : salesFunnelsError ? <div className="flex items-center gap-2 text-sm text-destructive" role="alert">
+                                <span>{t('failedToLoadData')}</span>
+                                <Button type="button" variant="outline" size="sm" disabled={userFormPending} onClick={() => refetchSalesFunnels()}>{t('retry')}</Button>
+                              </div>
+                              : salesFunnels.length === 0 ? <p className="text-sm text-muted-foreground">{t('noSalesFunnels')}</p>
+                              : <FormControl><EmployeeFunnelSelect ref={field.ref} name={field.name} onBlur={field.onBlur} funnels={salesFunnels} value={field.value} onChange={field.onChange} disabled={userFormPending} /></FormControl>}
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </CompactModalSection> : null}
+                    </div>
+                    <DialogFooter className="compact-modal-footer flex-col-reverse sm:flex-row">
+                      <Button type="button" variant="outline" disabled={userFormPending} onClick={() => userDialogGuard.handleOpenChange(false)}>{t('cancel')}</Button>
+                      <Button type="submit" disabled={userFormPending}>
+                        {userFormPending ? t('saving') : selectedUser ? t('updateUser') : t('createUser')}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
               <UnsavedChangesDialog
                 open={userDialogGuard.confirmationOpen}
                 onOpenChange={userDialogGuard.setConfirmationOpen}
@@ -996,10 +976,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             <CardContent className="p-0">
               {usersError ? (
                 <div className="flex flex-col items-start gap-3 p-4">
-                  <Alert variant="destructive">
-                    <AlertCircle />
-                    <AlertTitle>{t('failedToLoadData')}</AlertTitle>
-                  </Alert>
+                  <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
                   <Button variant="outline" size="sm" onClick={() => refetchUsers()}>{t('retry')}</Button>
                 </div>
               ) : usersLoading ? (
@@ -1112,18 +1089,15 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           }
         }}
       >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-1rem)] max-w-lg flex-col overflow-hidden rounded-xl p-0">
+          <DialogHeader data-topographic="card" className="compact-modal-header">
             <DialogTitle>{salesModuleTransfer?.requiresSales === false ? t('employeeWorkTransferTitle') : t('salesModuleLeadsTransferTitle')}</DialogTitle>
-            <DialogDescription>
-              {salesModuleTransfer
-                ? t('salesModuleLeadsTransferDescription')
-                  .replace('{count}', String(salesModuleTransfer.leadCount))
-                : ''}
-            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2">
+          <div className="compact-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <CompactModalSection title={t('employeeResponsibilityCount').replace('{count}', String(salesModuleTransfer?.leadCount ?? 0))} icon={ArrowRight} tone="amber" collapsible={false} contentClassName="space-y-3">
+            {salesModuleTransfer ? <EmployeeIdentity userId={salesModuleTransfer.user.id} name={salesModuleTransfer.user.fullName} className="font-medium" /> : null}
+            <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="sales-lead-transfer-manager">
               {salesModuleTransfer?.requiresSales === false ? t('assigneeLabel') : t('responsibleManager')}
             </label>
@@ -1146,9 +1120,10 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             {salesTransferManagers.length === 0 ? (
               <p className="text-sm text-destructive">{salesModuleTransfer?.requiresSales === false ? t('employeeWorkTransferRequired') : t('salesModuleLeadsTransferRequired')}</p>
             ) : null}
+            </div>
+          </CompactModalSection>
           </div>
-
-          <DialogFooter className="flex justify-end gap-2">
+          <DialogFooter className="compact-modal-footer">
             <Button
               type="button"
               variant="outline"
@@ -1164,7 +1139,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
               type="button"
               disabled={!salesLeadTransferManagerId || updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending}
               onClick={() => {
-                if (!salesModuleTransfer) return;
+                if (!salesModuleTransfer || updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending) return;
                 const leadTransferManagerId = Number(salesLeadTransferManagerId);
                 if (salesModuleTransfer.action === 'delete') {
                   deleteUserMutation.mutate({ id: salesModuleTransfer.user.id, leadTransferManagerId });
@@ -1185,7 +1160,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             >
               {updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending
                 ? t('saving')
-                : t('disableSalesAndTransfer')}
+                : salesModuleTransfer?.action === 'archive' ? t('archiveEmployee')
+                  : salesModuleTransfer?.action === 'delete' ? t('delete')
+                    : t('disableSalesAndTransfer')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1194,8 +1171,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       <UnsavedChangesDialog open={credentialsGuard.confirmationOpen} onOpenChange={credentialsGuard.setConfirmationOpen} onDiscard={credentialsGuard.discardChanges} />
       {/* User Credentials Modal */}
       <Dialog open={showCredentialsModal} onOpenChange={credentialsGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-1rem)] max-w-lg flex-col overflow-hidden rounded-xl p-0">
+          <DialogHeader data-topographic="card" className="compact-modal-header">
             <DialogTitle className="flex items-center space-x-2">
               <Key className="h-5 w-5" />
               <span>{t('userCredentials')}</span>
@@ -1204,8 +1181,9 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
           {userCredentials && (
             <Form {...credentialsForm}>
               <form onSubmit={credentialsForm.handleSubmit(onSubmitCredentials)} className="flex min-h-0 flex-1 flex-col">
-                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-6 py-4">
-                <div className="rounded-lg border border-border bg-muted/50 p-3">
+                <div className="compact-modal-body flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
+                <CompactModalSection title={t('employeeProfileSection')} icon={UserRound} tone="sky" collapsible={false} contentClassName="space-y-3" disabled={credentialsPending}>
+                <div>
                   <EmployeeIdentity userId={userCredentials.id} name={userCredentials.fullName} className="text-sm font-medium text-foreground" avatarClassName="size-9" />
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Badge className={getModuleColor(userCredentials.module)}>
@@ -1245,6 +1223,8 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </div>
                 </div>
 
+                </CompactModalSection>
+                <CompactModalSection title={t('newPassword')} icon={Key} tone="violet" collapsible={false} disabled={credentialsPending}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <FormField
                     control={credentialsForm.control}
@@ -1256,7 +1236,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           <Input
                             type="password"
                             autoComplete="new-password"
-                            placeholder={t('newPassword')}
                             {...field}
                           />
                         </FormControl>
@@ -1274,7 +1253,6 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           <Input
                             type="password"
                             autoComplete="new-password"
-                            placeholder={t('confirmNewPassword')}
                             {...field}
                           />
                         </FormControl>
@@ -1283,16 +1261,16 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                     )}
                   />
                 </div>
-
+                </CompactModalSection>
                 </div>
 
-                <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t bg-background/95 px-6 py-4">
+                <div className="compact-modal-footer flex flex-wrap justify-end">
                   {userCredentials.id && (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setPasswordResetUser(userCredentials)}
-                      disabled={resetUserPasswordMutation.isPending}
+                      disabled={credentialsPending}
                     >
                       <Key className="h-4 w-4 mr-2" />
                       {resetUserPasswordMutation.isPending ? t('resettingPassword') : t('resetPassword')}
@@ -1301,6 +1279,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={credentialsPending}
                     onClick={async () => {
                       const credentialLines = [`${t('loginLabel')}: ${userCredentials.email}`];
                       if (userCredentials.temporaryPassword) {
@@ -1326,11 +1305,11 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={updateUserCredentialsMutation.isPending}
+                    disabled={credentialsPending}
                   >
                     {updateUserCredentialsMutation.isPending ? t('saving') : t('saveCredentials')}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => credentialsGuard.handleOpenChange(false)}>
+                  <Button type="button" variant="outline" disabled={credentialsPending} onClick={() => credentialsGuard.handleOpenChange(false)}>
                     {t('close')}
                   </Button>
                 </div>
@@ -1341,6 +1320,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       </Dialog>
 
       <ConfirmDialog
+        compact
         open={!!pendingCredentialUpdate}
         onOpenChange={(open) => !open && setPendingCredentialUpdate(null)}
         title={t('confirmCredentialsUpdateTitle')}
@@ -1361,16 +1341,18 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
       />
 
       <ConfirmDialog
+        compact
         open={!!passwordResetUser}
         onOpenChange={(open) => !open && setPasswordResetUser(null)}
         title={t('confirmPasswordResetTitle')}
         description={`${t('confirmPasswordResetDescription')} ${passwordResetUser?.fullName || ''}`}
         confirmLabel={t('resetPassword')}
         cancelLabel={t('cancel')}
+        isPending={resetUserPasswordMutation.isPending}
+        keepOpenOnConfirm
         onConfirm={() => {
-          if (passwordResetUser?.id) {
+          if (passwordResetUser?.id && !resetUserPasswordMutation.isPending) {
             resetUserPasswordMutation.mutate(passwordResetUser.id);
-            setPasswordResetUser(null);
           }
         }}
         variant="destructive"
@@ -1381,37 +1363,25 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
         restoreTarget={userToRestore}
         onArchiveOpenChange={(open) => { if (!open) setUserToArchive(null); }}
         onRestoreOpenChange={(open) => { if (!open) setUserToRestore(null); }}
+        archivePending={checkingResponsibilities === 'archive' || archiveUserMutation.isPending}
+        restorePending={restoreUserMutation.isPending}
         onArchive={archiveEmployeeAfterImpactCheck}
         onRestore={(employee) => restoreUserMutation.mutate(employee.id)}
       />
 
       {/* Delete User Confirmation */}
       <ConfirmDialog
+        compact
         open={!!userToDelete}
         onOpenChange={(open) => !open && setUserToDelete(null)}
         title={t('areYouSureDeleteUser')}
         description={`${t('deleteUserConfirmDescription').replace('{name}', userToDelete?.fullName ?? '')} ${t('thisActionCannotBeUndone')}`}
         confirmLabel={t('delete')}
         cancelLabel={t('cancel')}
+        isPending={checkingResponsibilities === 'delete' || deleteUserMutation.isPending}
+        keepOpenOnConfirm
         onConfirm={() => {
-          if (userToDelete) {
-            const employee = userToDelete;
-            void getAssignedResponsibilityCount(employee, true)
-              .then(({ leadCount, requiresSales }) => {
-                if (leadCount > 0) {
-                  openLeadTransferDialog({ user: employee, action: 'delete', leadCount, requiresSales });
-                  return;
-                }
-                deleteUserMutation.mutate({ id: employee.id });
-              })
-              .catch((error: Error) => {
-                toast({
-                  title: t('error'),
-                  description: error.message || t('failedDeleteUserDescription'),
-                  variant: 'destructive',
-                });
-              });
-          }
+          if (userToDelete) void inspectEmployeeResponsibilities(userToDelete, 'delete');
         }}
         variant="destructive"
       />

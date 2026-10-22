@@ -4,6 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import '@/components/ux/compact-modal.css';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   clampCropPosition,
@@ -155,7 +156,7 @@ export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disab
   return <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
     <DialogContent
       aria-describedby={undefined}
-      className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0"
+      className="compact-modal flex max-h-[calc(100dvh-1rem)] max-w-lg flex-col overflow-hidden rounded-xl p-0"
       onOpenAutoFocus={(event) => { event.preventDefault(); viewport.current?.focus(); }}
       onCloseAutoFocus={onCloseAutoFocus}
       onEscapeKeyDown={(event) => event.stopPropagation()}
@@ -163,10 +164,10 @@ export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disab
         if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) event.preventDefault();
       }}
     >
-      <DialogHeader className="shrink-0 border-b border-border px-4 py-5 pr-12 text-left sm:px-6">
+      <DialogHeader data-topographic="card" className="compact-modal-header">
         <DialogTitle>{t(titleKey)}</DialogTitle>
       </DialogHeader>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+      <div className="compact-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
         <div
           ref={viewport}
           role="group"
@@ -175,7 +176,7 @@ export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disab
           aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
           aria-disabled={controlsDisabled}
           data-testid="photo-crop-viewport"
-          className="relative mx-auto aspect-square w-full max-w-sm touch-none overflow-hidden rounded-md border border-border bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="relative mx-auto aspect-square w-full max-w-xs touch-none overflow-hidden rounded-lg border border-border-strong bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           style={{ cursor: controlsDisabled ? 'default' : 'grab' }}
           onPointerDown={startDrag}
           onPointerMove={moveDrag}
@@ -192,7 +193,7 @@ export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disab
           </> : null}
           {loading ? <p role="status" className="absolute inset-0 grid place-items-center p-4 text-center text-sm text-muted-foreground">{t('photoCropLoading')}</p> : null}
         </div>
-        <div className="grid grid-cols-[minmax(0,1fr)_4rem] items-center gap-4">
+        <div data-topographic="card" className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 rounded-lg border border-border-strong border-l-[3px] border-l-teal-600 bg-card p-3">
           <div className="min-w-0 space-y-2">
             <Label htmlFor={zoomId}>{t('photoCropZoom')}</Label>
             <input
@@ -218,7 +219,7 @@ export function UserPhotoCropDialog({ file, titleKey = 'cropProfilePhoto', disab
         </div>
         {error ? <p role="alert" className="text-sm text-destructive">{t(error === 'image' ? 'photoCropImageInvalid' : 'photoCropFailed')}</p> : null}
       </div>
-      <DialogFooter className="shrink-0 border-t border-border p-4 sm:px-6">
+      <DialogFooter className="compact-modal-footer">
         <Button type="button" variant="outline" onClick={close}>{t('cancel')}</Button>
         <Button type="button" disabled={controlsDisabled} onClick={() => void apply()}>{applying ? t('photoCropApplying') : t('applyPhotoCrop')}</Button>
       </DialogFooter>

@@ -100,7 +100,7 @@ function changeAmount(name: string, amount: string) {
 }
 function changeReason(reason = "Separate children") {
   fireEvent.change(
-    screen.getByLabelText(i18n.t("lmsPaymentAllocationReason")),
+    screen.getByRole('textbox', { name: i18n.t('lmsPaymentAllocationReason') }),
     { target: { value: reason } },
   );
 }
@@ -199,9 +199,7 @@ it("preserves allocation values and reason after a version conflict and asks bef
   ).toBe("400");
   expect(
     (
-      screen.getByLabelText(
-        i18n.t("lmsPaymentAllocationReason"),
-      ) as HTMLTextAreaElement
+      screen.getByRole('textbox', { name: i18n.t('lmsPaymentAllocationReason') }) as HTMLTextAreaElement
     ).value,
   ).toBe("Correct family allocation");
   expect(mocks.closed).not.toHaveBeenCalled();
@@ -215,9 +213,7 @@ it("preserves allocation values and reason after a version conflict and asks bef
   expect(mocks.closed).not.toHaveBeenCalled();
   expect(
     (
-      screen.getByLabelText(
-        i18n.t("lmsPaymentAllocationReason"),
-      ) as HTMLTextAreaElement
+      screen.getByRole('textbox', { name: i18n.t('lmsPaymentAllocationReason') }) as HTMLTextAreaElement
     ).value,
   ).toBe("Correct family allocation");
   await userEvent.click(screen.getByRole("button", { name: i18n.t("cancel") }));
@@ -255,4 +251,41 @@ it("restores focus to the caller after the loading Dialog is replaced by the all
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(mocks.saveAllocation).not.toHaveBeenCalled();
+});
+
+it('reveals and focuses a folded invalid reason while keeping allocation amounts', async () => {
+  await openAllocation();
+  changeAmount('Alice Brown', '400');
+  const reasonToggle = screen.getByRole('button', { name: i18n.t('lmsPaymentAllocationReason') });
+  await userEvent.click(reasonToggle);
+  expect(reasonToggle.getAttribute('aria-expanded')).toBe('false');
+  await userEvent.click(saveButton());
+  expect(reasonToggle.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('alert').textContent).toBe(i18n.t('lmsPaymentAllocationReasonRequired'));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: i18n.t('lmsPaymentAllocationReason') })));
+  expect((screen.getByLabelText('Alice Brown') as HTMLInputElement).value.replace(/\D/g, '')).toBe('400');
+  expect(mocks.saveAllocation).not.toHaveBeenCalled();
+});
+
+it('saves a folded reason and locks amounts, reason and closing while pending', async () => {
+  let finish: (value: { success: boolean }) => void = () => undefined;
+  mocks.saveAllocation.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await openAllocation();
+  changeAmount('Alice Brown', '400');
+  changeReason('Reallocated family payment');
+  const reasonToggle = screen.getByRole('button', { name: i18n.t('lmsPaymentAllocationReason') });
+  await userEvent.click(reasonToggle);
+  await userEvent.click(saveButton());
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('save') }));
+  await waitFor(() => expect(mocks.saveAllocation).toHaveBeenCalledOnce());
+  expect((screen.getByLabelText('Alice Brown') as HTMLInputElement).matches(':disabled')).toBe(true);
+  await userEvent.click(reasonToggle);
+  expect(reasonToggle.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('textbox', { name: i18n.t('lmsPaymentAllocationReason') }).matches(':disabled')).toBe(true);
+  expect((screen.getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.keyboard('{Escape}');
+  expect(mocks.closed).not.toHaveBeenCalled();
+  expect(mocks.saveAllocation.mock.calls[0][1].reason).toBe('Reallocated family payment');
+  await act(async () => finish({ success: true }));
+  await waitFor(() => expect(mocks.closed).toHaveBeenCalledOnce());
 });

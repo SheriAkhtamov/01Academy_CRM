@@ -57,6 +57,7 @@ import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/Un
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { StaggerGroup, useChartEntrance } from '@/components/ux/motion';
 import { CurrencyInput } from '@/components/ux/FormattedInputs';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -727,58 +728,70 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       ) : null}
 
       <Dialog open={expenseDialogOpen} onOpenChange={expenseGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.expenseDialogTitle}</DialogTitle></DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-            <FieldGroup className="gap-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field><FieldLabel htmlFor="expense-title">{copy.title}</FieldLabel><Input id="expense-title" value={expenseForm.title} onChange={(event) => setExpenseForm((form) => ({ ...form, title: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
-              <Field><FieldLabel>{copy.category}</FieldLabel><Select value={expenseForm.category} onValueChange={(category) => setExpenseForm((form) => ({ ...form, category }))}><SelectTrigger aria-label={copy.category}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{EXPENSE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{categoryLabel(category)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-              <Field><FieldLabel htmlFor="expense-vendor">{copy.vendor}</FieldLabel><Input id="expense-vendor" value={expenseForm.vendor} onChange={(event) => setExpenseForm((form) => ({ ...form, vendor: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
-              <Field><FieldLabel htmlFor="expense-amount">{copy.amount}</FieldLabel><CurrencyInput id="expense-amount" value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm((form) => ({ ...form, amountUzs }))} /></Field>
-              <Field><FieldLabel htmlFor="expense-date">{copy.expenseDate}</FieldLabel><Input id="expense-date" type="date" value={expenseForm.expenseDate} onChange={(event) => setExpenseForm((form) => ({ ...form, expenseDate: event.target.value }))} /></Field>
-              <Field><FieldLabel>{copy.paymentStatus}</FieldLabel><Select value={expenseForm.status} onValueChange={(status) => setExpenseForm((form) => ({ ...form, status }))}><SelectTrigger aria-label={copy.paymentStatus}><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="paid">{copy.paid}</SelectItem><SelectItem value="planned">{copy.planned}</SelectItem></SelectGroup></SelectContent></Select></Field>
-              <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={expenseForm.method} onValueChange={(method) => setExpenseForm((form) => ({ ...form, method }))}><SelectTrigger aria-label={copy.paymentMethod}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-            </div>
-            <Field><FieldLabel htmlFor="expense-description">{copy.description}</FieldLabel><Textarea id="expense-description" value={expenseForm.description} onChange={(event) => setExpenseForm((form) => ({ ...form, description: event.target.value }))} /></Field>
-            </FieldGroup>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-[620px]">
+          <DialogHeader className="compact-modal-header"><DialogTitle>{copy.expenseDialogTitle}</DialogTitle></DialogHeader>
+          <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={copy.expenses} icon={ReceiptText} tone="sky" collapsible={false} disabled={createExpense.isPending}>
+              <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field className="sm:col-span-2"><FieldLabel htmlFor="expense-title">{copy.title}</FieldLabel><Input id="expense-title" value={expenseForm.title} onChange={(event) => setExpenseForm((form) => ({ ...form, title: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
+                <Field><FieldLabel htmlFor="expense-amount">{copy.amount}</FieldLabel><CurrencyInput id="expense-amount" value={expenseForm.amountUzs} onValueChange={(amountUzs) => setExpenseForm((form) => ({ ...form, amountUzs }))} /></Field>
+                <Field><FieldLabel htmlFor="expense-date">{copy.expenseDate}</FieldLabel><Input id="expense-date" type="date" value={expenseForm.expenseDate} onChange={(event) => setExpenseForm((form) => ({ ...form, expenseDate: event.target.value }))} /></Field>
+                <Field><FieldLabel>{copy.category}</FieldLabel><Select value={expenseForm.category} disabled={createExpense.isPending} onValueChange={(category) => setExpenseForm((form) => ({ ...form, category }))}><SelectTrigger aria-label={copy.category}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{EXPENSE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{categoryLabel(category)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+                <Field><FieldLabel>{copy.paymentStatus}</FieldLabel><Select value={expenseForm.status} disabled={createExpense.isPending} onValueChange={(status) => setExpenseForm((form) => ({ ...form, status }))}><SelectTrigger aria-label={copy.paymentStatus}><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="paid">{copy.paid}</SelectItem><SelectItem value="planned">{copy.planned}</SelectItem></SelectGroup></SelectContent></Select></Field>
+                <Field className="sm:col-span-2"><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={expenseForm.method} disabled={createExpense.isPending} onValueChange={(method) => setExpenseForm((form) => ({ ...form, method }))}><SelectTrigger aria-label={copy.paymentMethod}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+              </FieldGroup>
+            </CompactModalSection>
+            <CompactModalSection title={t('details')} tone="violet" summary={expenseForm.vendor || expenseForm.description} disabled={createExpense.isPending}>
+              <FieldGroup className="gap-3">
+                <Field><FieldLabel htmlFor="expense-vendor">{copy.vendor}</FieldLabel><Input id="expense-vendor" value={expenseForm.vendor} onChange={(event) => setExpenseForm((form) => ({ ...form, vendor: event.target.value }))} onKeyDown={submitOnEnter(() => createExpense.mutate(), { disabled: !canSaveExpense })} /></Field>
+                <Field><FieldLabel htmlFor="expense-description">{copy.description}</FieldLabel><Textarea id="expense-description" value={expenseForm.description} onChange={(event) => setExpenseForm((form) => ({ ...form, description: event.target.value }))} /></Field>
+              </FieldGroup>
+            </CompactModalSection>
           </div>
-          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4"><Button variant="outline" onClick={() => expenseGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={createExpense.isPending} onClick={() => expenseGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={salaryDialogOpen} onOpenChange={salaryGuard.handleOpenChange}>
-        <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle></DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-            <FieldGroup className="gap-4">
-            <Field><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}><EmployeeIdentity userId={entry.employeeUserId} name={entry.employeeName} /></SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-            <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
-            <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
-            <Field><FieldLabel htmlFor="salary-note">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
-            </FieldGroup>
+        <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-[560px]">
+          <DialogHeader className="compact-modal-header"><DialogTitle>{copy.salaryDialogTitle}</DialogTitle></DialogHeader>
+          <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={copy.salary} icon={UserRound} tone="teal" collapsible={false} disabled={saveSalary.isPending}>
+              <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field className="sm:col-span-2"><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} disabled={saveSalary.isPending} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}><EmployeeIdentity userId={entry.employeeUserId} name={entry.employeeName} /></SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+                <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
+                <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
+              </FieldGroup>
+            </CompactModalSection>
+            <CompactModalSection title={copy.note} tone="violet" summary={salaryForm.note} disabled={saveSalary.isPending}>
+              <Field><FieldLabel htmlFor="salary-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
+            </CompactModalSection>
           </div>
-          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4"><Button variant="outline" onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={saveSalary.isPending} onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(payoutTarget)} onOpenChange={payoutGuard.handleOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 text-left"><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? <span className="inline-flex min-w-0 flex-wrap items-center gap-2"><EmployeeIdentity userId={payoutTarget.employeeUserId} name={payoutTarget.employeeName} />{payoutTarget.position ? <span>· {payoutTarget.position}</span> : null}</span> : null}</DialogDescription></DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-            <FieldGroup className="gap-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field><FieldLabel htmlFor="payout-period">{copy.calculationMonth}</FieldLabel><Input id="payout-period" type="month" value={period} disabled /></Field>
-              <Field><FieldLabel htmlFor="payout-salary">{copy.salary}</FieldLabel><CurrencyInput id="payout-salary" value={payoutTarget?.baseSalaryUzs || 0} onValueChange={() => undefined} disabled /></Field>
-              <Field><FieldLabel htmlFor="payout-bonus">{copy.bonus}</FieldLabel><CurrencyInput id="payout-bonus" value={payoutForm.bonusUzs} onValueChange={(bonusUzs) => setPayoutForm((form) => ({ ...form, bonusUzs }))} /></Field>
-              <Field><FieldLabel htmlFor="payout-deduction">{copy.deduction}</FieldLabel><CurrencyInput id="payout-deduction" value={payoutForm.deductionUzs} onValueChange={(deductionUzs) => setPayoutForm((form) => ({ ...form, deductionUzs }))} /></Field>
-            </div>
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><p className="text-sm text-muted-foreground">{copy.payoutTotal}</p><p className="mt-1 text-2xl font-bold text-primary tabular-nums">{money(payoutTotal)}</p></div>
-            <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={payoutForm.method} onValueChange={(method) => setPayoutForm((form) => ({ ...form, method }))}><SelectTrigger aria-label={copy.paymentMethod}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-            <Field><FieldLabel htmlFor="payout-note">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
-            </FieldGroup>
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-[560px]">
+          <DialogHeader className="compact-modal-header"><DialogTitle>{copy.payoutDialogTitle}</DialogTitle><DialogDescription>{payoutTarget ? <span className="inline-flex min-w-0 flex-wrap items-center gap-2"><EmployeeIdentity userId={payoutTarget.employeeUserId} name={payoutTarget.employeeName} />{payoutTarget.position ? <span>· {payoutTarget.position}</span> : null}</span> : null}</DialogDescription></DialogHeader>
+          <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <CompactModalSection title={copy.payoutAmount} icon={Banknote} tone="teal" collapsible={false} disabled={savePayout.isPending}>
+              <FieldGroup className="gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field><FieldLabel htmlFor="payout-period">{copy.calculationMonth}</FieldLabel><Input id="payout-period" type="month" value={period} disabled /></Field>
+                  <Field><FieldLabel htmlFor="payout-salary">{copy.salary}</FieldLabel><CurrencyInput id="payout-salary" value={payoutTarget?.baseSalaryUzs || 0} onValueChange={() => undefined} disabled /></Field>
+                  <Field><FieldLabel htmlFor="payout-bonus">{copy.bonus}</FieldLabel><CurrencyInput id="payout-bonus" value={payoutForm.bonusUzs} onValueChange={(bonusUzs) => setPayoutForm((form) => ({ ...form, bonusUzs }))} /></Field>
+                  <Field><FieldLabel htmlFor="payout-deduction">{copy.deduction}</FieldLabel><CurrencyInput id="payout-deduction" value={payoutForm.deductionUzs} onValueChange={(deductionUzs) => setPayoutForm((form) => ({ ...form, deductionUzs }))} /></Field>
+                </div>
+                <dl className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-teal-500/25 bg-teal-500/5 px-3 py-2"><dt className="text-sm">{copy.payoutTotal}</dt><dd className="text-lg font-bold text-primary tabular-nums">{money(payoutTotal)}</dd></dl>
+                <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={payoutForm.method} disabled={savePayout.isPending} onValueChange={(method) => setPayoutForm((form) => ({ ...form, method }))}><SelectTrigger aria-label={copy.paymentMethod}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+              </FieldGroup>
+            </CompactModalSection>
+            <CompactModalSection title={copy.note} tone="violet" summary={payoutForm.note} disabled={savePayout.isPending}>
+              <Field><FieldLabel htmlFor="payout-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
+            </CompactModalSection>
           </div>
-          <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4"><Button variant="outline" onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={savePayout.isPending} onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

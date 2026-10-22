@@ -11,6 +11,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useTranslation } from '@/hooks/useTranslation';
+import '@/components/ux/compact-modal.css';
 
 interface ConfirmDialogProps {
     open: boolean;
@@ -26,6 +27,7 @@ interface ConfirmDialogProps {
     children?: ReactNode;
     error?: string;
     confirmDisabled?: boolean;
+    compact?: boolean;
     /** Where focus goes once the dialog has closed; call `event.preventDefault()` to place it yourself. */
     onCloseAutoFocus?: (event: Event) => void;
 }
@@ -44,6 +46,7 @@ export default function ConfirmDialog({
     children,
     error,
     confirmDisabled = false,
+    compact = false,
     onCloseAutoFocus,
 }: ConfirmDialogProps) {
     const { t } = useTranslation();
@@ -52,14 +55,25 @@ export default function ConfirmDialog({
 
     return (
         <AlertDialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next); }}>
-            <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>{title}</AlertDialogTitle>
-                    <AlertDialogDescription>{description}</AlertDialogDescription>
+            <AlertDialogContent
+                onCloseAutoFocus={onCloseAutoFocus}
+                className={compact ? 'compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0' : undefined}
+            >
+                <AlertDialogHeader className={compact ? 'compact-modal-header' : undefined}>
+                    <AlertDialogTitle className={compact ? 'text-base leading-6' : undefined}>{title}</AlertDialogTitle>
+                    {compact ? null : <AlertDialogDescription>{description}</AlertDialogDescription>}
                 </AlertDialogHeader>
-                {children}
-                {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-                <AlertDialogFooter>
+                {compact ? (
+                    <div className="compact-modal-body min-h-0 space-y-3 overflow-y-auto overscroll-contain">
+                        <AlertDialogDescription className="break-words">{description}</AlertDialogDescription>
+                        {children}
+                        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+                    </div>
+                ) : <>
+                    {children}
+                    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+                </>}
+                <AlertDialogFooter className={compact ? 'compact-modal-footer' : undefined}>
                     <AlertDialogCancel disabled={isPending}>{finalCancelLabel}</AlertDialogCancel>
                     <AlertDialogAction
                         disabled={isPending || confirmDisabled}

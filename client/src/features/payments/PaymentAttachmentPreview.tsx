@@ -1,3 +1,4 @@
+import '@/components/ux/compact-modal.css';
 import { useState } from 'react';
 import { Trigger as DialogTrigger } from '@radix-ui/react-dialog';
 import { Download, FileArchive, FileImage, FileMusic, FileSpreadsheet, FileText, FileVideo, Loader2 } from 'lucide-react';
@@ -74,11 +75,11 @@ export function PaymentAttachmentPreview({ name, showName = false, disabled, ...
         </button>
       </DialogTrigger>
       {open ? (
-        <DialogContent className="flex max-h-[90dvh] max-w-5xl flex-col overflow-hidden" aria-describedby={undefined}>
-          <DialogHeader className="min-w-0 pr-8">
+        <DialogContent className="compact-modal flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden p-0" aria-describedby={undefined}>
+          <DialogHeader className="compact-modal-header min-w-0">
             <DialogTitle className="break-words">{name}</DialogTitle>
           </DialogHeader>
-          <div className="flex min-h-40 min-w-0 flex-1 items-center justify-center overflow-auto">
+          <div className="compact-modal-body flex min-h-40 min-w-0 flex-1 items-center justify-center overflow-auto">
             {imageType ? (failed
               ? <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>
               : src ? <img src={src} alt={name} className="max-h-[65dvh] max-w-full object-contain" onError={fail} />
@@ -89,7 +90,7 @@ export function PaymentAttachmentPreview({ name, showName = false, disabled, ...
                   <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>
                 </div>}
           </div>
-          {!source.file ? <DialogFooter>
+          {!source.file ? <DialogFooter className="compact-modal-footer">
             <Button type="button" disabled={downloading} aria-label={t('paymentDownloadFile').replace('{name}', name)} onClick={() => { void download(); }}>
               <Download className="size-4" aria-hidden="true" />{t('download')}
             </Button>

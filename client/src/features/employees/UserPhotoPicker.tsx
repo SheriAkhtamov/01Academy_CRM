@@ -26,9 +26,9 @@ export function UserPhotoPicker({ photo, onChange, currentPhotoUrl, fullName, di
   return <div className="space-y-2">
     <p className="text-sm font-medium">{t('profilePhoto')}</p>
     <div className="flex min-w-0 flex-wrap items-center gap-3">
-      <Avatar className="size-20 shrink-0 border border-border">
+      <Avatar className="size-14 shrink-0 border border-border">
         <AvatarImage src={preview ?? safeUserPhotoUrl(currentPhotoUrl)} alt={fullName || t('profilePhoto')} className="object-cover" />
-        <AvatarFallback className="bg-primary/10 text-lg text-primary">{getInitials(fullName ?? '') || <Camera className="size-7" />}</AvatarFallback>
+        <AvatarFallback className="bg-primary/10 text-base text-primary">{getInitials(fullName ?? '') || <Camera className="size-5" />}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1 space-y-2">
         <input ref={input} type="file" accept={USER_PHOTO_MIME_TYPES.join(',')} className="sr-only" tabIndex={-1} disabled={disabled} aria-label={t('profilePhoto')} onChange={(event) => {

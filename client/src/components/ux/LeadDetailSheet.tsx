@@ -25,6 +25,7 @@ import { deadlineInputToInstant } from '@/lib/leadScheduleInputs';
 import { cn } from '@/lib/utils';
 import { academyInstant, academyToday, formatAcademyDate } from '@/lib/localeFormat';
 import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
+import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
@@ -417,6 +418,7 @@ export function LeadDetailSheet({
   };
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentCommentOpen, setPaymentCommentOpen] = useState(false);
   const { files: paymentFiles, add: addPaymentFiles, remove: removePaymentFile,
     clear: clearPaymentFiles, paste: pastePaymentFiles } = usePaymentFiles();
   const [pendingManagerId, setPendingManagerId] = useState<number | null>(null);
@@ -490,11 +492,6 @@ export function LeadDetailSheet({
     if (!nextOpen) setTagDropdownOpen(false);
     onOpenChange(nextOpen);
   }, [onOpenChange]);
-  const unsavedGuard = useUnsavedChangesGuard({
-    open,
-    isDirty: sheetHasUnsavedChanges,
-    onOpenChange: closeSheet,
-  });
 
   useEffect(() => {
     if (open) {
@@ -816,6 +813,13 @@ export function LeadDetailSheet({
       await finishMutation(t('taskCreated'));
     },
     onError: (error: Error) => toast({ title: t('taskCreateFailed'), description: error.message, variant: 'destructive' }),
+  });
+
+  const unsavedGuard = useUnsavedChangesGuard({
+    open,
+    isPending: createPayment.isPending,
+    isDirty: sheetHasUnsavedChanges,
+    onOpenChange: closeSheet,
   });
 
   const updateTask = useMutation({
@@ -1596,22 +1600,22 @@ export function LeadDetailSheet({
         <Dialog open={paymentDialogOpen} onOpenChange={(nextOpen) => {
           if (!createPayment.isPending) setPaymentDialogOpen(nextOpen);
         }}>
-          <DialogContent aria-describedby={undefined} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+          <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl"
             onPaste={event => pastePaymentFiles(event, !paymentDialogOpen || createPayment.isPending || paymentNeedsStudent || leadNeedsClaim)}>
-            <DialogHeader>
-              <DialogTitle>{paymentActionLabel}</DialogTitle>
-            </DialogHeader>
-            <div className="relative">
+            <DialogHeader className="compact-modal-header"><DialogTitle>{paymentActionLabel}</DialogTitle></DialogHeader>
+            <div className="relative flex min-h-0 flex-1 flex-col">
               <Form {...paymentForm}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={paymentForm.handleSubmit(submitPayment)}>
-                  <fieldset disabled={paymentNeedsStudent} aria-hidden={paymentNeedsStudent} className="contents">
+                <form className="flex min-h-0 flex-1 flex-col" onSubmit={paymentForm.handleSubmit(submitPayment)}>
+                  <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                    <CompactModalSection title={t('payment')} icon={CreditCard} tone="sky" collapsible={false} disabled={paymentNeedsStudent || createPayment.isPending}>
+                      <div aria-hidden={paymentNeedsStudent} className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <FormField
                       control={paymentForm.control}
                       name="studentId"
                       render={({ field, fieldState }) => (
                         <FormItem className="md:col-span-2">
                           <FormLabel>{t('paymentStudent')}</FormLabel>
-                          <Select value={field.value} onValueChange={(studentId) => {
+                          <Select disabled={createPayment.isPending || paymentNeedsStudent} value={field.value} onValueChange={(studentId) => {
                             field.onChange(studentId);
                             if (!paymentForm.getFieldState('amountUzs').isDirty && paymentForm.getValues('type') === 'full') {
                               const amount = lead.students?.find((student) => String(student.id) === studentId)?.expectedPaymentUzs;
@@ -1655,9 +1659,9 @@ export function LeadDetailSheet({
                       control={paymentForm.control}
                       name="method"
                       render={({ field }) => (
-                        <FormItem className="md:col-span-2">
+                        <FormItem>
                           <FormLabel>{t('paymentMethod')}</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select disabled={createPayment.isPending || paymentNeedsStudent} value={field.value} onValueChange={field.onChange}>
                             <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                             <SelectContent>
                               {PAYMENT_METHODS.map((method) => (
@@ -1675,9 +1679,9 @@ export function LeadDetailSheet({
                       control={paymentForm.control}
                       name="type"
                       render={({ field }) => (
-                        <FormItem className="md:col-span-2">
+                        <FormItem>
                           <FormLabel>{t('paymentType')}</FormLabel>
-                          <Select value={field.value} onValueChange={(type) => {
+                          <Select disabled={createPayment.isPending || paymentNeedsStudent} value={field.value} onValueChange={(type) => {
                             const amountWasUnchanged = !paymentForm.getFieldState('amountUzs').isDirty;
                             field.onChange(type);
                             if (type === 'prepayment' && amountWasUnchanged) {
@@ -1699,27 +1703,33 @@ export function LeadDetailSheet({
                         </FormItem>
                       )}
                     />
+                      </div>
+                    </CompactModalSection>
+                    <CompactModalSection title={t('paymentReceiptFiles')} tone="teal" defaultOpen count={paymentFiles.length} disabled={paymentNeedsStudent || createPayment.isPending}>
+                      <PaymentFilesField files={paymentFiles} onAdd={addPaymentFiles} onRemove={removePaymentFile}
+                        disabled={createPayment.isPending || paymentNeedsStudent || leadNeedsClaim} />
+                    </CompactModalSection>
+                    <CompactModalSection title={t('comment')} icon={MessageSquare} tone="violet" summary={paymentForm.watch('comment')} open={paymentCommentOpen} onOpenChange={setPaymentCommentOpen} disabled={paymentNeedsStudent || createPayment.isPending}>
                     <FormField
                       control={paymentForm.control}
                       name="comment"
                       render={({ field }) => (
-                        <FormItem className="md:col-span-2">
+                        <FormItem>
                           <FormLabel>{t('comment')}</FormLabel>
                           <FormControl><Textarea {...field} /></FormControl>
                           <LocalizedFormMessage />
                         </FormItem>
                       )}
                     />
-                    <PaymentFilesField files={paymentFiles} onAdd={addPaymentFiles} onRemove={removePaymentFile}
-                      disabled={createPayment.isPending || paymentNeedsStudent || leadNeedsClaim} />
-                    <DialogFooter className="md:col-span-2">
-                      <Button type="button" variant="outline" disabled={createPayment.isPending} onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
-                      <Button type="submit" disabled={createPayment.isPending}>
-                        <CreditCard data-icon="inline-start" />
-                        {createPayment.isPending ? t('saving') : t('confirmPayment')}
-                      </Button>
-                    </DialogFooter>
-                  </fieldset>
+                    </CompactModalSection>
+                  </div>
+                  <DialogFooter className="compact-modal-footer">
+                    <Button type="button" variant="outline" disabled={createPayment.isPending} onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
+                    <Button type="submit" disabled={createPayment.isPending || paymentNeedsStudent}>
+                      <CreditCard data-icon="inline-start" />
+                      {createPayment.isPending ? t('saving') : t('confirmPayment')}
+                    </Button>
+                  </DialogFooter>
                 </form>
               </Form>
               {paymentNeedsStudent ? (

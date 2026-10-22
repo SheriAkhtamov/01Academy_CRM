@@ -303,6 +303,8 @@ describe('lead workspace navigation and drafts', () => {
 
     await user.click(within(dialog).getByRole('button', { name: i18n.t('goToStudents') }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('recordPayment') })).toBeNull());
+    expect(screen.getByRole('button', { name: i18n.t('students') }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: i18n.t('createStudent') })).toBeTruthy();
     expect(screen.getByRole('tab', { name: i18n.t('dealTab') }).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -325,6 +327,7 @@ describe('lead workspace navigation and drafts', () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
 
+    await user.click(screen.getByRole('button', { name: i18n.t('leadStudyPreferences') }));
     const locality = screen.getByRole('combobox', { name: i18n.t('leadLocality') });
     const days = screen.getByRole('combobox', { name: i18n.t('leadStudyDays') });
     const time = screen.getByRole('combobox', { name: i18n.t('leadStudyTime') });
@@ -340,6 +343,8 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getByRole('option', { name: '16:00' }));
     fireEvent.change(screen.getByRole('textbox', { name: i18n.t('leadGoal') }), { target: { value: 'Study AI tools' } });
     fireEvent.change(screen.getByRole('textbox', { name: i18n.t('leadUrgency') }), { target: { value: 'Start tomorrow' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('leadStudyPreferences') }));
+    expect(screen.queryByRole('combobox', { name: i18n.t('leadLocality') })).toBeNull();
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -355,6 +360,7 @@ describe('lead workspace navigation and drafts', () => {
     const name = await screen.findByLabelText(i18n.t('contactPersonName'));
     expect(screen.queryByRole('textbox', { name: i18n.t('expectedPayment') })).toBeNull();
     fireEvent.change(name, { target: { value: 'Parent draft' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('students') }));
     await user.click(screen.getByRole('button', { name: i18n.t('edit') }));
     const dialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
     await within(dialog).findByRole('button', { name: i18n.t('studentContractCreate') });
@@ -380,6 +386,7 @@ describe('lead workspace navigation and drafts', () => {
   it('starts every new student with a blank independent forecast', async () => {
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('students') }));
     await user.click(screen.getByRole('button', { name: i18n.t('createStudent') }));
     const dialog = screen.getByRole('dialog', { name: i18n.t('createStudent') });
     const amount = within(dialog).getByRole('textbox', { name: i18n.t('expectedPayment') }) as HTMLInputElement;
@@ -401,6 +408,7 @@ describe('lead workspace navigation and drafts', () => {
     }] };
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('students') }));
     await user.click(screen.getAllByRole('button', { name: i18n.t('edit') })[0]);
     const studentDialog = screen.getByRole('dialog', { name: i18n.t('editStudent') });
     await within(studentDialog).findByRole('button', { name: i18n.t('studentContractCreate') });
@@ -657,6 +665,7 @@ describe('lead workspace navigation and drafts', () => {
   it('returns to an invalid field when saving from another tab', async () => {
     const { user } = renderSheet();
     fireEvent.change(await screen.findByLabelText(i18n.t('contactPersonName')), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('contactInformation') }));
     await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(i18n.t('contactPersonName'))));
@@ -797,4 +806,58 @@ describe('lead version recovery and completed work', () => {
     expect(requests[0].body).toMatchObject({ contactName: 'My conflicting edit', expectedUpdatedAt: '2026-09-05T13:00:00Z' });
   });
 
+});
+
+
+describe('compact lead sections', () => {
+  it('shows summaries, opens by keyboard, and retains drafts across collapse and tabs', async () => {
+    const { user } = renderSheet();
+    const contacts = await screen.findByRole('button', { name: i18n.t('contactInformation') });
+    const preferences = screen.getByRole('button', { name: i18n.t('leadStudyPreferences') });
+    expect(contacts.getAttribute('aria-expanded')).toBe('true');
+    for (const key of ['students', 'dealDetails', 'leadStudyPreferences'] as const) {
+      expect(screen.getByRole('button', { name: i18n.t(key) }).getAttribute('aria-expanded')).toBe('false');
+    }
+    expect(screen.queryByRole('textbox', { name: i18n.t('leadGoal') })).toBeNull();
+    expect(document.getElementById(preferences.getAttribute('aria-describedby')!)?.textContent)
+      .toContain(i18n.t('leadDistrictMirabad'));
+    await user.hover(preferences);
+    expect(preferences.getAttribute('aria-expanded')).toBe('false');
+    preferences.focus();
+    await user.keyboard('{Enter}');
+    expect(preferences.getAttribute('aria-expanded')).toBe('true');
+    const goal = screen.getByRole('textbox', { name: i18n.t('leadGoal') });
+    fireEvent.change(goal, { target: { value: 'Keep this goal draft' } });
+    preferences.focus();
+    await user.keyboard(' ');
+    expect(preferences.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('textbox', { name: i18n.t('leadGoal') })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
+    await user.click(screen.getByRole('tab', { name: i18n.t('dealTab') }));
+    expect(preferences.getAttribute('aria-expanded')).toBe('false');
+    await user.click(preferences);
+    expect((screen.getByRole('textbox', { name: i18n.t('leadGoal') }) as HTMLTextAreaElement).value).toBe('Keep this goal draft');
+    expect(screen.getByRole('button', { name: i18n.t('contactInformation') }).getAttribute('aria-expanded')).toBe('true');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('reveals and focuses a missing source when saving a collapsed section', async () => {
+    lead = { ...lead, sourceId: 0 };
+    const { user } = renderSheet();
+    fireEvent.change(await screen.findByLabelText(i18n.t('contactPersonName')), { target: { value: 'Updated parent' } });
+    const details = screen.getByRole('button', { name: i18n.t('dealDetails') });
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    const source = await screen.findByRole('combobox', { name: i18n.t('source') });
+    await waitFor(() => expect(document.activeElement).toBe(source));
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    expect(source.getAttribute('aria-invalid')).toBe('true');
+    expect(requests).toHaveLength(0);
+    await user.click(source);
+    await user.click(screen.getByRole('option', { name: 'Website' }));
+    await user.click(details);
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ sourceId: 1, contactName: 'Updated parent' });
+  });
 });

@@ -28,6 +28,7 @@ import { CurrencyInput, PhoneInput } from '@/components/ux/FormattedInputs';
 import { LeadWorkspaceHeader } from '@/components/ux/lead/LeadWorkspaceHeader';
 import { LeadSaveBar } from '@/components/ux/lead/LeadSaveBar';
 import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
+import { LeadWorkspaceSection, type LeadWorkspaceSectionId } from '@/components/ux/lead/LeadWorkspaceSection';
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
 import { LeadPaymentSummary } from '@/components/ux/lead/LeadPaymentSummary';
 import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
@@ -103,6 +104,7 @@ import {
   Clock3,
   CreditCard,
   CalendarPlus2,
+  CalendarDays,
   History,
   Loader2,
   MessageSquare,
@@ -121,6 +123,9 @@ import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
+const defaultOpenSections: Record<LeadWorkspaceSectionId, boolean> = {
+  contacts: true, students: false, details: false, preferences: false,
+};
 interface LeadDetails {
   id: number;
   funnelId: number;
@@ -406,6 +411,10 @@ export function LeadDetailSheet({
   const transferFunnel = useHandoffKpiLead();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<LeadSheetTab>(initialTab);
+  const [openSections, setOpenSections] = useState(defaultOpenSections);
+  const setSectionOpen = (section: LeadWorkspaceSectionId, isOpen: boolean) => {
+    setOpenSections((current) => ({ ...current, [section]: isOpen }));
+  };
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const { files: paymentFiles, add: addPaymentFiles, remove: removePaymentFile,
@@ -421,14 +430,15 @@ export function LeadDetailSheet({
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const [socialAccountsDirty, setSocialAccountsDirty] = useState(false);
-  const studentsCardRef = useRef<HTMLDivElement | null>(null);
-  const contactsCardRef = useRef<HTMLDivElement | null>(null);
-  const detailsCardRef = useRef<HTMLDivElement | null>(null);
+  const studentsCardRef = useRef<HTMLDetailsElement | null>(null);
+  const contactsCardRef = useRef<HTMLDetailsElement | null>(null);
+  const detailsCardRef = useRef<HTMLDetailsElement | null>(null);
+  const preferencesCardRef = useRef<HTMLDetailsElement | null>(null);
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const tasksCardRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const [focusTarget, setFocusTarget] = useState<'contacts' | 'students' | 'details' | 'comment' | 'task' | 'tasks' | null>(null);
+  const [focusTarget, setFocusTarget] = useState<LeadWorkspaceSectionId | 'comment' | 'task' | 'tasks' | null>(null);
   const [invalidField, setInvalidField] = useState<FieldPath<LeadFormValues> | null>(null);
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
 
@@ -487,7 +497,10 @@ export function LeadDetailSheet({
   });
 
   useEffect(() => {
-    if (open) setActiveTab(initialTab);
+    if (open) {
+      setActiveTab(initialTab);
+      setOpenSections(defaultOpenSections);
+    }
   }, [initialTab, open, leadId]);
 
   // Per-lead drafts must not leak into another lead when the sheet switches
@@ -814,6 +827,9 @@ export function LeadDetailSheet({
     onError: (error: Error) => toast({ title: t('taskUpdateFailed'), description: error.message, variant: 'destructive' }),
   });
 
+  const [contactName, sourceId, languages, locality, studyDays, studyTime] = leadForm.watch([
+    'contactName', 'sourceId', 'languages', 'locality', 'studyDays', 'studyTime',
+  ]);
   const phoneNumbersRaw = leadForm.watch('phoneNumbers');
   const phoneValues = useMemo(() => (phoneNumbersRaw && phoneNumbersRaw.length > 0 ? phoneNumbersRaw : ['']), [phoneNumbersRaw]);
   // Parallel stable ids so deleting a middle phone does not shift input
@@ -887,6 +903,9 @@ export function LeadDetailSheet({
   const navigateTo = (tab: LeadSheetTab, target: typeof focusTarget = null) => {
     setActiveTab(tab);
     setFocusTarget(target);
+    if (target === 'contacts' || target === 'students' || target === 'details' || target === 'preferences') {
+      setSectionOpen(target, true);
+    }
     if (!target) scrollRef.current?.scrollTo({ top: 0 });
   };
   const goToStudents = () => navigateTo('deal', 'students');
@@ -917,7 +936,8 @@ export function LeadDetailSheet({
       const target = focusTarget === 'contacts' ? contactsCardRef.current
         : focusTarget === 'students' ? studentsCardRef.current
           : focusTarget === 'details' ? detailsCardRef.current
-            : focusTarget === 'comment' ? commentRef.current
+            : focusTarget === 'preferences' ? preferencesCardRef.current
+              : focusTarget === 'comment' ? commentRef.current
               : focusTarget === 'tasks' ? tasksCardRef.current : null;
       target?.scrollIntoView({ block: 'start' });
       target?.focus({ preventScroll: true });
@@ -936,7 +956,8 @@ export function LeadDetailSheet({
     if (!field) return;
     const phoneErrorIndex = Array.isArray(errors.phoneNumbers) ? errors.phoneNumbers.findIndex(Boolean) : 0;
     setInvalidField(field === 'phoneNumbers' ? `phoneNumbers.${Math.max(0, phoneErrorIndex)}` : field);
-    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'languages' ? 'contacts' : 'details');
+    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'languages'
+      ? 'contacts' : field === 'sourceId' ? 'details' : 'preferences');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
     if (!leadNeedsClaim && !updateLead.isPending && !versionConflict && !reviewingVersion) updateLead.mutate(values);
@@ -1080,8 +1101,8 @@ export function LeadDetailSheet({
               onValueChange={(value) => navigateTo(value as LeadSheetTab)}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="shrink-0 border-b border-border/70 bg-card px-4 sm:px-7">
-                <TabsList indicator="underline" className="grid h-12 w-full grid-cols-4 gap-2 rounded-none bg-transparent p-0">
+              <div className="shrink-0 border-b border-border/70 bg-card px-3 sm:px-5">
+                <TabsList indicator="underline" className="grid h-10 w-full grid-cols-4 gap-2 rounded-none bg-transparent p-0">
                   <TabsTrigger value="deal" className="lead-workspace-tab min-w-0 gap-1 px-1 text-xs sm:gap-2 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
                     <UserRound data-icon="inline-start" />
                     {t('dealTab')}
@@ -1110,8 +1131,8 @@ export function LeadDetailSheet({
                 </TabsList>
               </div>
 
-              <div ref={scrollRef} className="lead-workspace-body min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/25 p-4 sm:px-7 sm:py-6">
-              <fieldset disabled={leadReadOnly} className="min-w-0">
+              <div ref={scrollRef} className="lead-workspace-body min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:px-5 sm:py-4">
+              <div className="min-w-0">
             {versionConflict ? <LeadVersionNotice pending={reviewingVersion}
               onKeepDraft={() => void reviewLatestVersion(true)}
               onUseServer={() => unsavedGuard.requestAction(() => void reviewLatestVersion(false))}
@@ -1130,119 +1151,128 @@ export function LeadDetailSheet({
                 <TabsContent forceMount hidden={activeTab !== 'deal'} value="deal" className="mt-0 space-y-4 data-[state=inactive]:hidden">
                   <Form {...leadForm}>
                     <form data-lead-processing id="lead-details-form" noValidate onSubmit={saveDeal}>
-                      <fieldset disabled={updateLead.isPending} className="flex min-w-0 flex-col gap-4">
-                        <Card ref={contactsCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          <CardHeader className="lead-workspace-section-header">
-                            <CardTitle className="lead-workspace-section-title">
-                              <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
-                              {t('contactInformation')}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="lead-workspace-section-content grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
-                            <div className="space-y-4">
-                              <FormField
-                                control={leadForm.control}
-                                name="contactName"
-                                render={({ field, fieldState }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('contactPersonName')}</FormLabel>
-                                    <FormControl><Input {...field} aria-required aria-invalid={fieldState.invalid} /></FormControl>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={leadForm.control}
-                                name="languages"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('communicationLanguage')}</FormLabel>
-                                    <FormControl>
-                                      <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="flex flex-wrap gap-2 rounded-lg aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                                        {LEAD_LANGUAGES.map((option) => (
-                                          <label key={option} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-background px-3 text-muted-foreground transition-colors hover:border-primary/30 has-[:checked]:border-primary/25 has-[:checked]:bg-primary/5 has-[:checked]:text-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-                                            <input
-                                              type="checkbox"
-                                              className="size-4 shrink-0 accent-primary"
-                                              id={`lead-language-${option}`}
-                                              checked={field.value.includes(option)}
-                                              onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
-                                                item === option ? event.target.checked : field.value.includes(item)
-                                              )))}
-                                            />
-                                            <span className="text-sm font-medium">
-                                              {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
-                                            </span>
-                                          </label>
-                                        ))}
-                                      </div>
-                                    </FormControl>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-3">
-                              {phoneValues.map((_, index) => (
-                                <FormField
-                                  key={phoneKeys[index] ?? `lead-phone-fallback-${index}`}
-                                  control={leadForm.control}
-                                  name={`phoneNumbers.${index}`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
-                                      <div className="flex gap-2">
-                                        <FormControl>
-                                          <PhoneInput ref={field.ref} name={field.name} onBlur={field.onBlur} value={field.value} onValueChange={field.onChange} />
-                                        </FormControl>
-                                        {phoneValues.length > 1 ? (
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="icon"
-                                            aria-label={t('removePhone')}
-                                            onClick={() => setRemovePhoneIndex(index)}
-                                          >
-                                            <Trash2 />
-                                          </Button>
-                                        ) : null}
-                                      </div>
-                                      <LocalizedFormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              ))}
-                              {phoneNumbersMessage ? (
-                                <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
-                              ) : null}
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="w-fit"
-                                onClick={addLeadPhoneRow}
-                              >
-                                <Plus data-icon="inline-start" />
-                                {t('addPhone')}
-                              </Button>
-                            </div>
-                            <LeadSocialAccountsEditor
-                              leadId={lead.id}
-                              leadName={lead.contactName}
-                              managerId={lead.managerId}
-                              channels={lead.channels}
-                              canClaimUnassignedLead={canClaimUnassignedLead}
-                              onDirtyChange={setSocialAccountsDirty}
-                              onChanged={async () => {
-                                await leadQuery.refetch();
-                                onChanged();
-                              }}
+                      <div className="flex min-w-0 flex-col gap-2.5">
+                        <LeadWorkspaceSection
+                          section="contacts"
+                          cardRef={contactsCardRef}
+                          title={t('contactInformation')}
+                          icon={UserRound}
+                          open={openSections.contacts}
+                          disabled={leadReadOnly || updateLead.isPending}
+                          onOpenChange={(isOpen) => setSectionOpen('contacts', isOpen)}
+                          summary={[
+                            contactName || t('contactPersonName'),
+                            compactPhoneNumbers(phoneValues).join(', ') || t('phone'),
+                            languages.map((value) => t(value === 'uz' ? 'uzbekLang' : value === 'en' ? 'english' : 'russian')).join(', '),
+                          ].filter(Boolean).join(' · ')}
+                          contentClassName="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2"
+                        >
+                          <div className="space-y-3">
+                            <FormField
+                              control={leadForm.control}
+                              name="contactName"
+                              render={({ field, fieldState }) => (
+                                <FormItem className="space-y-1">
+                                  <FormLabel>{t('contactPersonName')}</FormLabel>
+                                  <FormControl><Input {...field} aria-required aria-invalid={fieldState.invalid} /></FormControl>
+                                  <LocalizedFormMessage />
+                                </FormItem>
+                              )}
                             />
-                          </CardContent>
-                        </Card>
+                            <FormField
+                              control={leadForm.control}
+                              name="languages"
+                              render={({ field }) => (
+                                <FormItem className="space-y-1">
+                                  <FormLabel>{t('communicationLanguage')}</FormLabel>
+                                  <FormControl>
+                                    <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="flex flex-wrap gap-1.5 rounded-lg aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                      {LEAD_LANGUAGES.map((option) => (
+                                        <label key={option} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border border-border-strong bg-background px-2.5 text-muted-foreground transition-colors hover:border-primary/30 has-[:checked]:border-primary/25 has-[:checked]:bg-primary/5 has-[:checked]:text-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+                                          <input
+                                            type="checkbox"
+                                            className="size-4 shrink-0 accent-primary"
+                                            id={`lead-language-${option}`}
+                                            checked={field.value.includes(option)}
+                                            onChange={(event) => field.onChange(LEAD_LANGUAGES.filter((item) => (
+                                              item === option ? event.target.checked : field.value.includes(item)
+                                            )))}
+                                          />
+                                          <span className="text-sm font-medium">
+                                            {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </FormControl>
+                                  <LocalizedFormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {phoneValues.map((_, index) => (
+                              <FormField
+                                key={phoneKeys[index] ?? `lead-phone-fallback-${index}`}
+                                control={leadForm.control}
+                                name={`phoneNumbers.${index}`}
+                                render={({ field }) => (
+                                  <FormItem className="space-y-1">
+                                    <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
+                                    <div className="flex gap-2">
+                                      <FormControl>
+                                        <PhoneInput ref={field.ref} name={field.name} onBlur={field.onBlur} value={field.value} onValueChange={field.onChange} />
+                                      </FormControl>
+                                      {phoneValues.length > 1 ? (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          aria-label={t('removePhone')}
+                                          onClick={() => setRemovePhoneIndex(index)}
+                                        >
+                                          <Trash2 />
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                    <LocalizedFormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            ))}
+                            {phoneNumbersMessage ? (
+                              <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-fit text-xs"
+                              onClick={addLeadPhoneRow}
+                            >
+                              <Plus data-icon="inline-start" />
+                              {t('addPhone')}
+                            </Button>
+                          </div>
+                          <LeadSocialAccountsEditor
+                            leadId={lead.id}
+                            leadName={lead.contactName}
+                            managerId={lead.managerId}
+                            channels={lead.channels}
+                            canClaimUnassignedLead={canClaimUnassignedLead}
+                            onDirtyChange={setSocialAccountsDirty}
+                            onChanged={async () => {
+                              await leadQuery.refetch();
+                              onChanged();
+                            }}
+                          />
+                        </LeadWorkspaceSection>
 
                         <LeadStudentsCard
                           cardRef={studentsCardRef}
+                          expanded={openSections.students}
+                          disabled={leadReadOnly || updateLead.isPending}
+                          onExpandedChange={(isOpen) => setSectionOpen('students', isOpen)}
                           createStudentOpen={createStudentOpen}
                           onCreateStudentOpenChange={setCreateStudentOpen}
                           lead={lead}
@@ -1254,74 +1284,97 @@ export function LeadDetailSheet({
                           }}
                         />
 
-                        <Card ref={detailsCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                          <CardHeader className="lead-workspace-section-header">
-                            <CardTitle className="lead-workspace-section-title">
-                              <Briefcase className="size-4 text-muted-foreground" aria-hidden="true" />
-                              {t('dealDetails')}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="lead-workspace-section-content grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
-                            <FormField
-                              control={leadForm.control}
-                              name="sourceId"
-                              render={({ field, fieldState }) => (
-                                <FormItem>
-                                  <FormLabel>{t('source')}</FormLabel>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required aria-invalid={fieldState.invalid}><SelectValue /></SelectTrigger></FormControl>
-                                    <SelectContent>
-                                      <SelectGroup>
-                                        {sources.map((source) => (
-                                          <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
-                                        ))}
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <LocalizedFormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormItem>
-                              {canTransferLeads ? <div className="flex items-center justify-between gap-2"><FormLabel>{t('responsibleManager')}</FormLabel><EmployeeCardButton userId={lead.managerId} name={lead.managerName} /></div> : <FormLabel>{t('responsibleManager')}</FormLabel>}
-                              {canTransferLeads ? <Select
-                                value={lead.managerId ? String(lead.managerId) : undefined}
-                                onValueChange={(value) => {
-                                  const nextManagerId = Number(value);
-                                  if (nextManagerId !== Number(lead.managerId)) setPendingManagerId(nextManagerId);
-                                }}
-                                disabled={assignLead.isPending}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder={t('selectManager')} />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectGroup>
-                                    {managers.map((manager) => (
-                                      <SelectItem key={manager.id} value={String(manager.id)}>
-                                        <EmployeeIdentity userId={manager.id} name={manager.fullName} />
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select> : (
-                                <div className="flex min-h-9 items-center text-sm">
-                                  <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} />
-                                </div>
-                              )}
-                            </FormItem>
-                            <LeadPreferencesFields />
-                          </CardContent>
-                        </Card>
+                        <LeadWorkspaceSection
+                          section="details"
+                          cardRef={detailsCardRef}
+                          title={t('dealDetails')}
+                          icon={Briefcase}
+                          open={openSections.details}
+                          disabled={leadReadOnly || updateLead.isPending}
+                          onOpenChange={(isOpen) => setSectionOpen('details', isOpen)}
+                          summary={[
+                            sources.find((source) => String(source.id) === sourceId)?.name || t('source'),
+                            lead.managerName || t('responsibleManager'),
+                          ].join(' · ')}
+                          contentClassName="grid grid-cols-1 gap-3 md:grid-cols-2"
+                        >
+                          <FormField
+                            control={leadForm.control}
+                            name="sourceId"
+                            render={({ field, fieldState }) => (
+                              <FormItem className="space-y-1">
+                                <FormLabel>{t('source')}</FormLabel>
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                  <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur} aria-required aria-invalid={fieldState.invalid}><SelectValue /></SelectTrigger></FormControl>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      {sources.map((source) => (
+                                        <SelectItem key={source.id} value={String(source.id)}>{source.name}</SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                                <LocalizedFormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormItem className="space-y-1">
+                            {canTransferLeads ? <div className="flex items-center justify-between gap-2"><FormLabel>{t('responsibleManager')}</FormLabel><EmployeeCardButton userId={lead.managerId} name={lead.managerName} /></div> : <FormLabel>{t('responsibleManager')}</FormLabel>}
+                            {canTransferLeads ? <Select
+                              value={lead.managerId ? String(lead.managerId) : undefined}
+                              onValueChange={(value) => {
+                                const nextManagerId = Number(value);
+                                if (nextManagerId !== Number(lead.managerId)) setPendingManagerId(nextManagerId);
+                              }}
+                              disabled={assignLead.isPending}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder={t('selectManager')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {managers.map((manager) => (
+                                    <SelectItem key={manager.id} value={String(manager.id)}>
+                                      <EmployeeIdentity userId={manager.id} name={manager.fullName} />
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select> : (
+                              <div className="flex min-h-9 items-center text-sm">
+                                <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} />
+                              </div>
+                            )}
+                          </FormItem>
+                        </LeadWorkspaceSection>
 
-                      </fieldset>
+                        <LeadWorkspaceSection
+                          section="preferences"
+                          cardRef={preferencesCardRef}
+                          title={t('leadStudyPreferences')}
+                          icon={CalendarDays}
+                          open={openSections.preferences}
+                          disabled={leadReadOnly || updateLead.isPending}
+                          onOpenChange={(isOpen) => setSectionOpen('preferences', isOpen)}
+                          summary={[
+                            locality ? t(localityKeys[locality]) : t('leadLocality'),
+                            studyDays ? t(studyDaysKeys[studyDays]) : t('leadStudyDays'),
+                            studyTime || t('leadStudyTime'),
+                          ].join(' · ')}
+                          contentClassName="grid grid-cols-1 gap-3 md:grid-cols-6"
+                        >
+                          <LeadPreferencesFields />
+                        </LeadWorkspaceSection>
+
+                      </div>
                     </form>
                   </Form>
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-0">
+                  <fieldset disabled={leadReadOnly} className="min-w-0">
                   <ActivityTimeline
                     lead={lead}
                     dateTime={dateTime}
@@ -1369,10 +1422,11 @@ export function LeadDetailSheet({
                       </form>
                     )}
                   />
+                  </fieldset>
                 </TabsContent>
 
                 <TabsContent value="payment" className="mt-0">
-                  <div className="flex flex-col gap-5">
+                  <fieldset disabled={leadReadOnly} className="flex min-w-0 flex-col gap-5">
                     <LeadPaymentSummary
                       expectedPaymentTotalUzs={lead.expectedPaymentTotalUzs}
                       expectedPaymentUzs={lead.expectedPaymentUzs}
@@ -1433,11 +1487,11 @@ export function LeadDetailSheet({
                         )}
                       </CardContent>
                     </Card>
-                  </div>
+                  </fieldset>
                 </TabsContent>
 
                 <TabsContent value="tasks" className="mt-0">
-                  <div className="flex flex-col gap-5">
+                  <fieldset disabled={leadReadOnly} className="flex min-w-0 flex-col gap-5">
                     <Card ref={tasksCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <CardHeader className="lead-workspace-section-header flex flex-row flex-wrap items-center justify-between gap-3">
                         <CardTitle className="lead-workspace-section-title">
@@ -1522,9 +1576,9 @@ export function LeadDetailSheet({
                         )}
                       </CardContent>
                     </Card>
-                  </div>
+                  </fieldset>
                 </TabsContent>
-              </fieldset>
+              </div>
               </div>
             </Tabs>
             </div>

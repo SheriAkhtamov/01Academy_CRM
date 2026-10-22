@@ -225,7 +225,7 @@ export function LeadTagsEditor({
 
       <div className="relative">
         <div
-          className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-border/80 bg-transparent px-2 py-1 transition-[background-color,border-color,box-shadow] hover:border-primary/30 focus-within:border-primary/30 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
+          className="flex min-h-8 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-border/80 bg-card/70 px-2 py-1 transition-[background-color,border-color,box-shadow] hover:border-primary/30 focus-within:border-primary/30 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
           onMouseDown={(event) => {
             const target = event.target as Element;
             if (target.closest('button, input')) return;

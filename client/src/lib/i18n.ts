@@ -2617,6 +2617,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   systemLeadSourceProtected: { en: 'A system lead source cannot be disabled, deleted, or converted to a custom source', ru: 'Системный источник нельзя отключить, удалить или превратить в пользовательский' },
 
   // Lead sheet — UX polish
+  leadStudyPreferences: { en: 'Study preferences', ru: 'Обучение и пожелания' },
   leadWorkspaceNote: { en: 'Add a note', ru: 'Заметка' },
   leadWorkspaceSaved: { en: 'Lead details saved', ru: 'Данные карточки сохранены' },
   leadWorkspaceDraft: { en: 'Unsaved lead details', ru: 'Есть изменения в карточке' },

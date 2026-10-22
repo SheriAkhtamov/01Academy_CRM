@@ -144,8 +144,9 @@ describe('self-assignment inside the lead modal', () => {
 
   it.each([18, 7])('does not offer claiming or transferring an assigned lead (manager %s)', async (managerId) => {
     lead = { ...lead, managerId, managerName: 'Assigned employee' };
-    renderSheet();
+    const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('dealDetails') }));
     expect(screen.queryByRole('button', { name: i18n.t('assignLeadToMe') })).toBeNull();
     expect(screen.queryByRole('combobox', { name: i18n.t('responsibleManager') })).toBeNull();
     const managerField = screen.getByText(i18n.t('responsibleManager')).parentElement!;
@@ -154,8 +155,9 @@ describe('self-assignment inside the lead modal', () => {
   });
 
   it('retains the manager selector and editable queue lead for leadership', async () => {
-    renderSheet(true);
+    const { user } = renderSheet(true);
     await screen.findByRole('heading', { name: 'Parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('dealDetails') }));
     expect(screen.getByRole('combobox', { name: i18n.t('responsibleManager') })).toBeTruthy();
     expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).matches(':disabled')).toBe(false);
     expect(screen.queryByRole('button', { name: i18n.t('assignLeadToMe') })).toBeNull();
@@ -163,8 +165,9 @@ describe('self-assignment inside the lead modal', () => {
 
   it('does not offer claiming an archived lead', async () => {
     lead.isArchived = true;
-    renderSheet();
+    const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('dealDetails') }));
     expect(screen.queryByRole('button', { name: i18n.t('assignLeadToMe') })).toBeNull();
   });
 
@@ -173,4 +176,22 @@ describe('self-assignment inside the lead modal', () => {
     expect(localizeApiErrorMessage('Lead mutation access required', 400)).toBe(i18n.t('accessDenied'));
     expect(localizeApiErrorMessage('Contact name is required', 400)).toBe(i18n.t('fillRequiredFields'));
   });
+});
+
+
+it.each([false, true])('allows section navigation without claiming a lead (archived %s)', async (isArchived) => {
+  lead = { ...lead, isArchived };
+  const { user } = renderSheet();
+  const details = await screen.findByRole('button', { name: i18n.t('dealDetails') });
+  await user.click(details);
+  expect(details.getAttribute('aria-expanded')).toBe('true');
+  const source = screen.getByRole('combobox', { name: i18n.t('source') });
+  expect(source.matches(':disabled')).toBe(isArchived);
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(requests).toHaveLength(0);
+  if (!isArchived) {
+    await user.click(source);
+    expect(await screen.findByRole('alertdialog', { name: i18n.t('leadAssignmentRequired') })).toBeTruthy();
+    expect(requests).toHaveLength(0);
+  }
 });

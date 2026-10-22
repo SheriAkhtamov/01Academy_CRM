@@ -1,16 +1,16 @@
-/* A restrained surface system scoped to the lead's modal workspace. */
+/* Compact lead workspace: coloured section headers, persistent form drafts. */
 .lead-workspace > button:last-child {
-  @apply right-4 top-5 grid size-8 place-items-center rounded-lg border border-border/70 bg-card text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground sm:right-6 sm:top-6;
+  @apply right-3 top-3 grid size-7 place-items-center rounded-lg border border-border/70 bg-card text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground sm:right-5;
 }
 
 .lead-workspace-actions > :is(button, a) {
-  @apply min-h-9 max-w-full rounded-lg px-3 py-2 text-xs shadow-none hover:translate-y-0 hover:shadow-none sm:text-sm;
+  @apply min-h-8 max-w-full rounded-md px-2.5 py-1.5 text-xs shadow-none hover:translate-y-0 hover:shadow-none;
   height: auto;
   white-space: normal;
 }
 
 .lead-workspace .lead-workspace-tab {
-  @apply h-12 rounded-none text-muted-foreground hover:text-foreground data-[state=active]:text-primary;
+  @apply h-10 rounded-none text-muted-foreground hover:text-foreground data-[state=active]:text-primary;
 }
 
 .lead-workspace-tab > svg {
@@ -22,7 +22,7 @@
 }
 
 .lead-workspace .lead-workspace-section-header {
-  @apply space-y-0 border-b border-border/60 bg-transparent px-4 py-4 sm:px-5;
+  @apply space-y-0 border-b border-border/70 bg-muted/70 px-3 py-2.5;
 }
 
 .lead-workspace .lead-workspace-section-title {
@@ -34,15 +34,15 @@
 }
 
 .lead-workspace .lead-workspace-section-content {
-  @apply p-4 sm:p-5;
+  @apply p-3;
 }
 
 .lead-workspace-body :is(input:not([type='checkbox']), textarea, button[role='combobox']) {
-  @apply rounded-lg border-border/80 bg-background shadow-none;
+  @apply rounded-md border-border-strong bg-background shadow-none;
 }
 
 .lead-workspace-body :is(input:not([type='checkbox']), button[role='combobox']) {
-  @apply min-h-10;
+  @apply h-9 min-h-9;
 }
 
 .lead-workspace-body :is(input, textarea, button[role='combobox'])[aria-invalid='true'] {
@@ -55,4 +55,64 @@
 
 .lead-workspace-body input[type='checkbox'] {
   @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+}
+
+.lead-workspace-body {
+  @apply bg-slate-200/70 dark:bg-slate-950/60;
+}
+
+.lead-workspace-disclosure {
+  --lead-section-accent: #0284c7;
+  @apply min-w-0 overflow-hidden rounded-lg border border-border-strong bg-card;
+  border-left: 3px solid var(--lead-section-accent);
+}
+
+.lead-workspace-disclosure[data-lead-section='students'] {
+  --lead-section-accent: #0d9488;
+}
+
+.lead-workspace-disclosure[data-lead-section='details'] {
+  --lead-section-accent: #7c3aed;
+}
+
+.lead-workspace-disclosure[data-lead-section='preferences'] {
+  --lead-section-accent: #b45309;
+}
+
+.lead-workspace-disclosure-trigger {
+  @apply flex min-h-11 cursor-pointer list-none items-center gap-2.5 px-3 py-2 text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring;
+  background-color: color-mix(in srgb, var(--lead-section-accent) 14%, var(--card));
+}
+
+.lead-workspace-disclosure-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.lead-workspace-disclosure-trigger:hover {
+  background-color: color-mix(in srgb, var(--lead-section-accent) 22%, var(--card));
+}
+
+.lead-workspace-disclosure[open] > .lead-workspace-disclosure-trigger {
+  @apply border-b border-border/70;
+}
+
+.lead-workspace-disclosure-icon {
+  @apply flex size-7 shrink-0 items-center justify-center rounded-md text-white;
+  background-color: var(--lead-section-accent);
+}
+
+.lead-workspace-disclosure-count {
+  @apply inline-flex min-w-5 items-center justify-center rounded-md bg-card/70 px-1 text-[11px] font-semibold tabular-nums;
+}
+
+.lead-workspace-disclosure-content {
+  @apply p-3;
+}
+
+.lead-workspace-disclosure-content[hidden] {
+  display: none;
+}
+
+.lead-workspace-disclosure-content label[for] {
+  @apply text-xs;
 }

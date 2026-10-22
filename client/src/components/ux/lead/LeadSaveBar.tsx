@@ -14,7 +14,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/70 bg-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:gap-3 sm:px-7">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/70 bg-card px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:gap-3 sm:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-2" role="status">
           {dirty ? <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" /> : <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />}
           <div className="min-w-0">
@@ -27,7 +27,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
             <span className="sr-only sm:not-sr-only">{t('undoChanges')}</span>
           </Button>
         ) : null}
-        <Button data-lead-processing type="submit" form="lead-details-form" size="sm" className="rounded-lg shadow-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100" disabled={!dirty || pending || saveDisabled}>
+        <Button data-lead-processing type="submit" form="lead-details-form" size="sm" className="h-8 rounded-lg shadow-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100" disabled={!dirty || pending || saveDisabled}>
           {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
           {pending ? t('saving') : t('saveChanges')}
         </Button>

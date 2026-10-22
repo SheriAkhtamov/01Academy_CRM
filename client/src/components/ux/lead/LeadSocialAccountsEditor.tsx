@@ -248,15 +248,17 @@ export function LeadSocialAccountsEditor({
       : null;
 
   return (
-    <div className="space-y-3 border-t border-border/60 pt-4 md:col-span-2">
+    <div className="space-y-2 border-t border-border/70 pt-3 md:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{t('leadSocialAccounts')}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <p className="text-xs font-semibold">{t('leadSocialAccounts')}</p>
+          {accounts.length === 0 ? <span className="text-xs text-muted-foreground">{t('noSocialAccounts')}</span> : null}
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="h-8 text-xs"
           disabled={manualAccountCount >= SOCIAL_ACCOUNT_LIMIT}
           onClick={beginCreate}
         >
@@ -304,11 +306,7 @@ export function LeadSocialAccountsEditor({
             </div>
           ))}
         </div>
-      ) : (
-        <p className="py-1 text-sm text-muted-foreground">
-          {t('noSocialAccounts')}
-        </p>
-      )}
+      ) : null}
 
       <Dialog open={Boolean(draft)} onOpenChange={(nextOpen) => {
         if (!nextOpen && !saveAccount.isPending) setDraft(null);

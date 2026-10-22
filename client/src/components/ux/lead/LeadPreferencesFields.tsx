@@ -46,7 +46,7 @@ export function LeadPreferencesFields() {
         control={form.control}
         name="locality"
         render={({ field, fieldState }) => (
-          <FormItem>
+          <FormItem className="space-y-1 md:col-span-2">
             <FormLabel>{t('leadLocality')}</FormLabel>
             <Select value={field.value || '__none__'} onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}>
               <FormControl><SelectTrigger ref={field.ref} aria-invalid={fieldState.invalid}><SelectValue placeholder={t('leadLocalitySelect')} /></SelectTrigger></FormControl>
@@ -65,7 +65,7 @@ export function LeadPreferencesFields() {
         control={form.control}
         name="studyDays"
         render={({ field, fieldState }) => (
-          <FormItem>
+          <FormItem className="space-y-1 md:col-span-2">
             <FormLabel>{t('leadStudyDays')}</FormLabel>
             <Select value={field.value || '__none__'} onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}>
               <FormControl><SelectTrigger ref={field.ref} aria-invalid={fieldState.invalid}><SelectValue placeholder={t('leadStudyDaysSelect')} /></SelectTrigger></FormControl>
@@ -84,7 +84,7 @@ export function LeadPreferencesFields() {
         control={form.control}
         name="studyTime"
         render={({ field, fieldState }) => (
-          <FormItem>
+          <FormItem className="space-y-1 md:col-span-2">
             <FormLabel>{t('leadStudyTime')}</FormLabel>
             <Select value={field.value || '__none__'} onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}>
               <FormControl><SelectTrigger ref={field.ref} aria-invalid={fieldState.invalid}><SelectValue placeholder={t('leadStudyTimeSelect')} /></SelectTrigger></FormControl>
@@ -103,7 +103,7 @@ export function LeadPreferencesFields() {
         control={form.control}
         name="goal"
         render={({ field, fieldState }) => (
-          <FormItem className="md:col-span-2">
+          <FormItem className="space-y-1 md:col-span-3">
             <FormLabel>{t('leadGoal')}</FormLabel>
             <FormControl><Textarea {...field} rows={2} aria-invalid={fieldState.invalid} /></FormControl>
             <LocalizedFormMessage />
@@ -114,7 +114,7 @@ export function LeadPreferencesFields() {
         control={form.control}
         name="urgency"
         render={({ field, fieldState }) => (
-          <FormItem className="md:col-span-2">
+          <FormItem className="space-y-1 md:col-span-3">
             <FormLabel>{t('leadUrgency')}</FormLabel>
             <FormControl><Textarea {...field} rows={2} aria-invalid={fieldState.invalid} /></FormControl>
             <LocalizedFormMessage />

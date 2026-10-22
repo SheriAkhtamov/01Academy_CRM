@@ -82,7 +82,7 @@ export function TabCount({ value, tone }: { value: number; tone?: 'warning' }) {
   return (
     <span
       className={cn(
-        'rounded-full border border-border/70 bg-background px-1.5 py-px text-[11px] font-semibold tabular-nums text-muted-foreground',
+        'inline-flex min-w-5 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold leading-4 tabular-nums text-muted-foreground',
         tone === 'warning'
           && 'border-amber-300/70 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
       )}
@@ -129,7 +129,7 @@ export function LeadStageStepper({
     : '#64748b';
 
   return (
-    <div>
+    <div className="flex min-w-0 flex-col-reverse gap-2">
       <div
         role="group"
         aria-label={t('pipelineStages')}
@@ -142,12 +142,10 @@ export function LeadStageStepper({
           return (
             <div
               key={stage.code}
-              title={stageName}
               aria-current={isCurrent ? 'step' : undefined}
               className={cn(
-                'min-w-3 flex-1 rounded-full transition-all',
-                isCurrent ? 'h-2' : 'h-1.5',
-                !isCurrent && 'bg-border/70',
+                'h-1 min-w-0 flex-1 rounded-full',
+                !isCurrent && 'bg-border/60',
               )}
               style={isCurrent ? { backgroundColor: color } : undefined}
             >
@@ -156,20 +154,20 @@ export function LeadStageStepper({
           );
         })}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {currentIndex >= 0 ? (
           <>
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
               <span
                 aria-hidden="true"
-                className="size-2 rounded-full"
+                className="size-1.5 shrink-0 rounded-full"
                 style={{ backgroundColor: currentColor }}
               />
-              <span className="font-medium text-foreground/80">
+              <span className="break-words font-medium text-foreground">
                 {leadStatusName(currentStatusCode)}
               </span>
             </span>
-            <span>
+            <span className="shrink-0 text-[11px] tabular-nums">
               {t('stageProgress')
                 .replace('{current}', String(currentIndex + 1))
                 .replace('{total}', String(stages.length))}

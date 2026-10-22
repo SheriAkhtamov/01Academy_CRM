@@ -1,0 +1,62 @@
+/* A restrained surface system scoped to the lead's modal workspace. */
+.lead-workspace [data-topographic]::before {
+  display: none;
+}
+
+.lead-workspace > button:last-child {
+  @apply right-4 top-5 grid size-8 place-items-center rounded-lg border border-border/70 bg-card text-muted-foreground opacity-100 hover:bg-muted hover:text-foreground sm:right-6 sm:top-6;
+}
+
+.lead-workspace-actions > :is(button, a) {
+  @apply min-h-9 max-w-full rounded-lg px-3 py-2 text-xs shadow-none hover:translate-y-0 hover:shadow-none sm:text-sm;
+  height: auto;
+  white-space: normal;
+}
+
+.lead-workspace .lead-workspace-tab {
+  @apply h-12 rounded-none text-muted-foreground hover:text-foreground data-[state=active]:text-primary;
+}
+
+.lead-workspace-tab > svg {
+  @apply size-4 shrink-0;
+}
+
+.lead-workspace .lead-workspace-section {
+  @apply overflow-hidden rounded-xl border border-border/70 bg-card shadow-none;
+}
+
+.lead-workspace .lead-workspace-section-header {
+  @apply space-y-0 border-b border-border/60 bg-transparent px-4 py-4 sm:px-5;
+}
+
+.lead-workspace .lead-workspace-section-title {
+  @apply flex items-center gap-2.5 text-sm font-semibold leading-5 tracking-normal;
+}
+
+.lead-workspace .lead-workspace-section-title > svg {
+  @apply box-content size-4 shrink-0 rounded-lg bg-muted/70 p-1.5 text-muted-foreground;
+}
+
+.lead-workspace .lead-workspace-section-content {
+  @apply p-4 sm:p-5;
+}
+
+.lead-workspace-body :is(input:not([type='checkbox']), textarea, button[role='combobox']) {
+  @apply rounded-lg border-border/80 bg-background shadow-none;
+}
+
+.lead-workspace-body :is(input:not([type='checkbox']), button[role='combobox']) {
+  @apply min-h-10;
+}
+
+.lead-workspace-body :is(input, textarea, button[role='combobox'])[aria-invalid='true'] {
+  @apply border-destructive bg-destructive/5;
+}
+
+.lead-workspace-body button {
+  @apply shadow-none hover:translate-y-0 hover:shadow-none;
+}
+
+.lead-workspace-body input[type='checkbox'] {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+}

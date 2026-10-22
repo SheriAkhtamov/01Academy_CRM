@@ -392,15 +392,15 @@ export function ActivityTimeline({
   }, [visibleItems]);
 
   return (
-    <Card className="overflow-hidden border-indigo-200/80 dark:border-indigo-900/70">
-      <CardHeader className="border-b border-indigo-100 bg-indigo-50/80 pb-3 dark:border-indigo-900/60 dark:bg-indigo-950/30">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="size-4 text-indigo-700 dark:text-indigo-300" aria-hidden="true" />
+    <Card className="lead-workspace-section">
+      <CardHeader className="lead-workspace-section-header">
+        <CardTitle className="lead-workspace-section-title">
+          <History className="size-4 text-muted-foreground" aria-hidden="true" />
           {t('activityHistory')}
           {items.length > 0 ? <Badge variant="secondary">{items.length}</Badge> : null}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 pt-3">
+      <CardContent className="lead-workspace-section-content space-y-4">
         {composer}
 
         {items.length > 0 ? (

@@ -1,3 +1,4 @@
+import '@/components/ux/lead/lead-workspace.css';
 import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
 import { LeadVersionNotice } from '@/components/ux/lead/LeadVersionNotice';
@@ -986,7 +987,7 @@ export function LeadDetailSheet({
           sheetRef.current?.focus();
         }}
         {...leadProcessingGuard(canClaimLead, () => { if (currentUserId) setPendingManagerId(currentUserId); })}
-        className="flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl"
+        className="lead-workspace flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl"
         onKeyDown={(event) => {
           if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]') !== event.currentTarget) return;
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -1055,6 +1056,7 @@ export function LeadDetailSheet({
                     <Button
                       type="button"
                       size="sm"
+                      variant="outline"
                       disabled={leadReadOnly || transferFunnel.isPending}
                       onClick={() => setFunnelTransferOpen(true)}
                     >
@@ -1078,9 +1080,9 @@ export function LeadDetailSheet({
               onValueChange={(value) => navigateTo(value as LeadSheetTab)}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="shrink-0 border-b border-border bg-background px-4 py-2.5 sm:px-6">
-                <TabsList className="grid h-auto w-full grid-cols-4 gap-1">
-                  <TabsTrigger value="deal" className="min-w-0 gap-1 px-1 py-2 text-xs text-foreground/80 sm:gap-1.5 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
+              <div className="shrink-0 border-b border-border/70 bg-card px-4 sm:px-7">
+                <TabsList indicator="underline" className="grid h-12 w-full grid-cols-4 gap-2 rounded-none bg-transparent p-0">
+                  <TabsTrigger value="deal" className="lead-workspace-tab min-w-0 gap-1 px-1 text-xs sm:gap-2 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
                     <UserRound data-icon="inline-start" />
                     {t('dealTab')}
                     {dealFormDirty ? (
@@ -1090,17 +1092,17 @@ export function LeadDetailSheet({
                       />
                     ) : null}
                   </TabsTrigger>
-                  <TabsTrigger value="activity" className="min-w-0 gap-1 px-1 py-2 text-xs text-foreground/80 sm:gap-1.5 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
+                  <TabsTrigger value="activity" className="lead-workspace-tab min-w-0 gap-1 px-1 text-xs sm:gap-2 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
                     <History data-icon="inline-start" />
                     {t('activityTab')}
                     <span className="hidden sm:inline-flex"><TabCount value={activityCount} /></span>
                   </TabsTrigger>
-                  <TabsTrigger value="payment" className="min-w-0 gap-1 px-1 py-2 text-xs text-foreground/80 sm:gap-1.5 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
+                  <TabsTrigger value="payment" className="lead-workspace-tab min-w-0 gap-1 px-1 text-xs sm:gap-2 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
                     <CreditCard data-icon="inline-start" />
                     {t('payment')}
                     <span className="hidden sm:inline-flex"><TabCount value={paymentsCount} /></span>
                   </TabsTrigger>
-                  <TabsTrigger value="tasks" className="min-w-0 gap-1 px-1 py-2 text-xs text-foreground/80 sm:gap-1.5 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
+                  <TabsTrigger value="tasks" className="lead-workspace-tab min-w-0 gap-1 px-1 text-xs sm:gap-2 sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block">
                     <ClipboardList data-icon="inline-start" />
                     {t('taskBoard')}
                     <TabCount value={openTasks.length} tone={hasOverdueTask ? 'warning' : undefined} />
@@ -1108,7 +1110,7 @@ export function LeadDetailSheet({
                 </TabsList>
               </div>
 
-              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/40 p-4 sm:p-6">
+              <div ref={scrollRef} className="lead-workspace-body min-h-0 flex-1 overflow-y-auto overscroll-contain bg-muted/25 p-4 sm:px-7 sm:py-6">
               <fieldset disabled={leadReadOnly} className="min-w-0">
             {versionConflict ? <LeadVersionNotice pending={reviewingVersion}
               onKeepDraft={() => void reviewLatestVersion(true)}
@@ -1129,14 +1131,14 @@ export function LeadDetailSheet({
                   <Form {...leadForm}>
                     <form data-lead-processing id="lead-details-form" noValidate onSubmit={saveDeal}>
                       <fieldset disabled={updateLead.isPending} className="flex min-w-0 flex-col gap-4">
-                        <Card ref={contactsCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-sky-200/80 shadow-sm focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-900/70 dark:focus-within:border-sky-700 dark:focus-within:ring-sky-900">
-                          <CardHeader className="border-b border-sky-100 bg-sky-50/80 pb-3 dark:border-sky-900/60 dark:bg-sky-950/30">
-                            <CardTitle className="flex items-center gap-2 text-base">
-                              <UserRound className="size-4 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+                        <Card ref={contactsCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          <CardHeader className="lead-workspace-section-header">
+                            <CardTitle className="lead-workspace-section-title">
+                              <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
                               {t('contactInformation')}
                             </CardTitle>
                           </CardHeader>
-                          <CardContent className="grid grid-cols-1 gap-4 pt-3 md:grid-cols-2">
+                          <CardContent className="lead-workspace-section-content grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
                             <div className="space-y-4">
                               <FormField
                                 control={leadForm.control}
@@ -1156,9 +1158,9 @@ export function LeadDetailSheet({
                                   <FormItem>
                                     <FormLabel>{t('communicationLanguage')}</FormLabel>
                                     <FormControl>
-                                      <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="space-y-1 rounded-lg border border-border p-2 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:focus-visible:ring-destructive/20">
+                                      <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="flex flex-wrap gap-2 rounded-lg aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                         {LEAD_LANGUAGES.map((option) => (
-                                          <div key={option} className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-accent">
+                                          <label key={option} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-background px-3 text-muted-foreground transition-colors hover:border-primary/30 has-[:checked]:border-primary/25 has-[:checked]:bg-primary/5 has-[:checked]:text-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
                                             <input
                                               type="checkbox"
                                               className="size-4 shrink-0 accent-primary"
@@ -1168,10 +1170,10 @@ export function LeadDetailSheet({
                                                 item === option ? event.target.checked : field.value.includes(item)
                                               )))}
                                             />
-                                            <label htmlFor={`lead-language-${option}`} className="flex-1 cursor-pointer text-sm">
+                                            <span className="text-sm font-medium">
                                               {t(option === 'ru' ? 'russian' : option === 'uz' ? 'uzbekLang' : 'english')}
-                                            </label>
-                                          </div>
+                                            </span>
+                                          </label>
                                         ))}
                                       </div>
                                     </FormControl>
@@ -1252,14 +1254,14 @@ export function LeadDetailSheet({
                           }}
                         />
 
-                        <Card ref={detailsCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-violet-200/80 shadow-sm focus-within:border-violet-400 focus-within:ring-1 focus-within:ring-violet-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-violet-900/70 dark:focus-within:border-violet-700 dark:focus-within:ring-violet-900">
-                          <CardHeader className="border-b border-violet-100 bg-violet-50/80 pb-3 dark:border-violet-900/60 dark:bg-violet-950/30">
-                            <CardTitle className="flex items-center gap-2 text-base">
-                              <Briefcase className="size-4 text-violet-700 dark:text-violet-300" aria-hidden="true" />
+                        <Card ref={detailsCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          <CardHeader className="lead-workspace-section-header">
+                            <CardTitle className="lead-workspace-section-title">
+                              <Briefcase className="size-4 text-muted-foreground" aria-hidden="true" />
                               {t('dealDetails')}
                             </CardTitle>
                           </CardHeader>
-                          <CardContent className="grid grid-cols-1 gap-4 pt-3 md:grid-cols-2">
+                          <CardContent className="lead-workspace-section-content grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
                             <FormField
                               control={leadForm.control}
                               name="sourceId"
@@ -1378,10 +1380,10 @@ export function LeadDetailSheet({
                       money={money}
                     />
 
-                    <Card className="overflow-hidden border-emerald-200/80 dark:border-emerald-900/70">
-                      <CardHeader className="flex flex-col items-start gap-3 border-b border-emerald-100 bg-emerald-50/80 pb-3 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-900/60 dark:bg-emerald-950/30">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Wallet className="size-4 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+                    <Card className="lead-workspace-section">
+                      <CardHeader className="lead-workspace-section-header flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <CardTitle className="lead-workspace-section-title">
+                          <Wallet className="size-4 text-muted-foreground" aria-hidden="true" />
                           {t('paymentHistory')}
                           {paymentsCount > 0 ? <Badge variant="secondary">{paymentsCount}</Badge> : null}
                         </CardTitle>
@@ -1390,7 +1392,7 @@ export function LeadDetailSheet({
                           {paymentActionLabel}
                         </Button>
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-3">
+                      <CardContent className="lead-workspace-section-content flex flex-col gap-0 divide-y divide-border">
                         {(lead.payments ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noPayments')}</p>
                         ) : (
@@ -1436,10 +1438,10 @@ export function LeadDetailSheet({
 
                 <TabsContent value="tasks" className="mt-0">
                   <div className="flex flex-col gap-5">
-                    <Card ref={tasksCardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-amber-200/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-amber-900/70">
-                      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-amber-100 bg-amber-50/80 pb-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <ClipboardList className="size-4 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+                    <Card ref={tasksCardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <CardHeader className="lead-workspace-section-header flex flex-row flex-wrap items-center justify-between gap-3">
+                        <CardTitle className="lead-workspace-section-title">
+                          <ClipboardList className="size-4 text-muted-foreground" aria-hidden="true" />
                           {t('leadTasks')}
                           {(lead.tasks ?? []).length > 0 ? (
                             <Badge variant="secondary">{(lead.tasks ?? []).length}</Badge>
@@ -1450,7 +1452,7 @@ export function LeadDetailSheet({
                           {t('createTask')}
                         </Button>
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-0 divide-y divide-border pt-3">
+                      <CardContent className="lead-workspace-section-content flex flex-col gap-0 divide-y divide-border">
                         {(lead.tasks ?? []).length === 0 ? (
                           <p className="py-3 text-sm text-muted-foreground">{t('noTasksAssigned')}</p>
                         ) : (

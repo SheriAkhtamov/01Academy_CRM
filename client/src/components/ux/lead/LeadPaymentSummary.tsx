@@ -21,27 +21,27 @@ export function LeadPaymentSummary({
   const remaining = expected == null ? null : Math.max(0, expected - paid);
 
   return (
-    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <div className="min-w-0 rounded-xl border border-sky-200/80 bg-sky-50/70 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
+    <dl className="grid grid-cols-1 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="min-w-0 p-5">
         <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Banknote className="size-4 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+          <Banknote className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           {t('expectedPayment')}
         </dt>
-        <dd className="mt-1 break-words text-sm font-semibold tabular-nums">{expected == null ? '—' : money(expected)}</dd>
+        <dd className="mt-3 break-words text-xl font-semibold tracking-tight tabular-nums">{expected == null ? '—' : money(expected)}</dd>
       </div>
-      <div className="min-w-0 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-3 dark:border-emerald-900/70 dark:bg-emerald-950/30">
+      <div className="min-w-0 p-5">
         <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Wallet className="size-4 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+          <Wallet className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           {t('totalPaidLabel')}
         </dt>
-        <dd className="mt-1 break-words text-sm font-semibold tabular-nums">{money(paid)}</dd>
+        <dd className="mt-3 break-words text-xl font-semibold tracking-tight tabular-nums">{money(paid)}</dd>
       </div>
-      <div className="min-w-0 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 dark:border-amber-900/70 dark:bg-amber-950/30">
+      <div className="min-w-0 p-5">
         <dt className="flex items-center gap-2 text-xs text-muted-foreground">
-          <CreditCard className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+          <CreditCard className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           {t('studentPaymentRemaining')}
         </dt>
-        <dd className="mt-1 break-words text-sm font-semibold tabular-nums">{remaining == null ? '—' : money(remaining)}</dd>
+        <dd className="mt-3 break-words text-xl font-semibold tracking-tight tabular-nums">{remaining == null ? '—' : money(remaining)}</dd>
       </div>
     </dl>
   );

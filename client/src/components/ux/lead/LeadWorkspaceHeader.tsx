@@ -38,22 +38,21 @@ export function LeadWorkspaceHeader({
   const { t } = useTranslation();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   return (
-    <SheetHeader className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto border-b border-border bg-background px-4 pb-3 pt-4 text-left sm:px-6">
-      <div className="flex items-start gap-3 pr-10">
-        <Avatar className="size-11 shrink-0 border border-primary/15 bg-primary/5">
-          <AvatarFallback>{getInitials(lead.contactName)}</AvatarFallback>
+    <SheetHeader data-topographic={undefined} className="max-h-[42dvh] shrink-0 space-y-4 overflow-y-auto border-b border-border/70 bg-card px-4 pb-4 pt-5 text-left sm:px-7 sm:pt-6">
+      <div className="flex items-start gap-3 pr-10 sm:gap-4">
+        <Avatar className="size-12 shrink-0 rounded-2xl border border-primary/10 sm:size-14">
+          <AvatarFallback className="rounded-2xl bg-primary/5 text-lg font-semibold text-primary">{getInitials(lead.contactName)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <SheetTitle className="break-words text-lg leading-tight sm:text-xl">{lead.contactName}</SheetTitle>
+            <SheetTitle className="break-words text-2xl font-semibold leading-tight tracking-tight sm:text-[1.75rem]">{lead.contactName}</SheetTitle>
             {lead.isArchived ? (
               <Badge variant="outline">{t('leadInArchive')}</Badge>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span className="inline-flex min-w-0 items-center gap-1">{t('manager')}: <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} avatarClassName="size-5 text-[9px]" /></span>
-            <span aria-hidden="true">·</span>
-            <span>{lead.sourceName || t('unknownSource')}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>{t('manager')}</span>
+            <EmployeeIdentity userId={lead.managerId} name={lead.managerName || t('notAssigned')} avatarClassName="size-5 text-[9px]" />
           </div>
           <SheetDescription className="sr-only">{t('lead')}</SheetDescription>
 
@@ -63,7 +62,7 @@ export function LeadWorkspaceHeader({
               visiblePhoneNumbers.map((phone) => (
                 <span
                   key={phone}
-                  className="group/phone inline-flex max-w-full items-center gap-1 rounded-md bg-muted/60 py-1 pl-2 pr-1 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                  className="group/phone inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/60 bg-background py-0.5 pl-2.5 pr-0.5 text-xs font-medium text-foreground transition-colors hover:border-primary/25"
                 >
                   <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <a
@@ -89,25 +88,26 @@ export function LeadWorkspaceHeader({
               <span className="text-xs italic text-muted-foreground">{t('leadSheetNoContactInfo')}</span>
             )}
           </div>
-
-          <fieldset data-lead-processing disabled={actionsDisabled} className="min-w-0">
-            {tagsEditor}
-          </fieldset>
         </div>
       </div>
 
-      <LeadStageStepper
-        statuses={statuses}
-        currentStatusCode={lead.statusCode}
-        leadStatusName={leadStatusName}
-      />
+      <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] sm:gap-6">
+        <fieldset data-lead-processing disabled={actionsDisabled} className="min-w-0">
+          {tagsEditor}
+        </fieldset>
+        <LeadStageStepper
+          statuses={statuses}
+          currentStatusCode={lead.statusCode}
+          leadStatusName={leadStatusName}
+        />
+      </div>
 
       {/* Quick actions — single prominent CTA + secondary outline buttons */}
-      <fieldset data-lead-processing disabled={actionsDisabled} className="flex flex-wrap gap-2">
+      <fieldset data-lead-processing disabled={actionsDisabled} className="lead-workspace-actions flex flex-wrap gap-2">
         {primaryPhone ? (
           <Button
             type="button"
-            size="sm" className="h-auto min-h-8 max-w-full whitespace-normal px-2 py-2 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
+            size="sm" className="max-w-full whitespace-normal"
             variant="default"
             disabled={actionsDisabled || onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
             onClick={() => {
@@ -124,7 +124,7 @@ export function LeadWorkspaceHeader({
           </Button>
         ) : null}
         {messageTarget && !actionsDisabled ? (
-          <Button asChild size="sm" className="px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block" variant="outline">
+          <Button asChild size="sm" variant="outline">
             <a
               href={messageTarget.href}
               target={messageTarget.external ? '_blank' : undefined}

@@ -2054,8 +2054,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
     ru: 'Этот аккаунт уже добавлен к лиду.',
   },
   leadSocialAccountLimitReached: {
-    en: 'A lead can have up to 20 manually added social accounts.',
-    ru: 'К одному лиду можно добавить до 20 аккаунтов вручную.',
+    en: 'Social account limit reached.',
+    ru: 'Достигнут лимит аккаунтов соцсетей.',
   },
   leadSocialAccountAdded: { en: 'Social account added', ru: 'Аккаунт соцсети добавлен' },
   leadSocialAccountUpdated: { en: 'Social account updated', ru: 'Аккаунт соцсети обновлён' },

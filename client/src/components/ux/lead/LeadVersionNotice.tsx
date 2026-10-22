@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -13,9 +12,9 @@ export function LeadVersionNotice({ pending, onKeepDraft, onUseServer, values }:
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { ref.current?.scrollIntoView({ block: 'nearest' }); }, []);
   return (
-    <Alert ref={ref} className="mb-4" role="alert">
-      <AlertTitle>{t('leadVersionReviewTitle')}</AlertTitle>
-      <AlertDescription className="space-y-2">
+    <section ref={ref} className="mb-4 rounded-xl border border-border bg-card p-4" role="alert">
+      <p className="mb-2 text-sm font-semibold">{t('leadVersionReviewTitle')}</p>
+      <div className="space-y-3 text-sm">
         <details>
           <summary className="cursor-pointer font-medium">{t('leadVersionServerValues')}</summary>
           <dl className="mt-2 space-y-1">
@@ -26,7 +25,7 @@ export function LeadVersionNotice({ pending, onKeepDraft, onUseServer, values }:
           <Button size="sm" variant="outline" disabled={pending} onClick={onKeepDraft}>{t('leadRefreshKeepingDraft')}</Button>
           <Button size="sm" variant="outline" disabled={pending} onClick={onUseServer}>{t('leadUseServerVersion')}</Button>
         </div>
-      </AlertDescription>
-    </Alert>
+      </div>
+    </section>
   );
 }

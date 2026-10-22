@@ -248,7 +248,7 @@ export function LeadSocialAccountsEditor({
       : null;
 
   return (
-    <div className="space-y-3 md:col-span-2">
+    <div className="space-y-3 border-t border-border/60 pt-4 md:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium">{t('leadSocialAccounts')}</p>
@@ -305,14 +305,10 @@ export function LeadSocialAccountsEditor({
           ))}
         </div>
       ) : (
-        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+        <p className="py-1 text-sm text-muted-foreground">
           {t('noSocialAccounts')}
         </p>
       )}
-
-      {manualAccountCount >= SOCIAL_ACCOUNT_LIMIT ? (
-        <p className="text-xs text-muted-foreground">{t('leadSocialAccountLimitReached')}</p>
-      ) : null}
 
       <Dialog open={Boolean(draft)} onOpenChange={(nextOpen) => {
         if (!nextOpen && !saveAccount.isPending) setDraft(null);

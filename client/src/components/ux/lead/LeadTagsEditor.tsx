@@ -225,7 +225,7 @@ export function LeadTagsEditor({
 
       <div className="relative">
         <div
-          className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-transparent bg-muted/50 px-2 py-1 transition-[background-color,border-color,box-shadow] hover:bg-muted/70 focus-within:border-input focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
+          className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-border/80 bg-transparent px-2 py-1 transition-[background-color,border-color,box-shadow] hover:border-primary/30 focus-within:border-primary/30 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
           onMouseDown={(event) => {
             const target = event.target as Element;
             if (target.closest('button, input')) return;
@@ -237,7 +237,7 @@ export function LeadTagsEditor({
           {automaticTag ? (
             <Badge
               variant="outline"
-              className="h-6 max-w-full shrink-0 gap-1 px-2 py-0"
+              className="h-6 max-w-full shrink-0 gap-1 rounded-md border-border/60 bg-muted/50 px-2 py-0 text-[11px] font-medium"
             >
               <span className="truncate">{automaticTag}</span>
               <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
@@ -250,7 +250,7 @@ export function LeadTagsEditor({
               <Badge
                 key={tag.id}
                 variant="secondary"
-                className="h-6 max-w-full shrink-0 gap-1 py-0 pl-2 pr-1"
+                className="h-6 max-w-full shrink-0 gap-1 rounded-md py-0 pl-2 pr-1 text-[11px] font-medium"
               >
                 <span className="truncate">{tag.name}</span>
                 <button

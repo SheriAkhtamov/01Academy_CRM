@@ -61,27 +61,27 @@ export function LeadStudentsCard({
 
   return (
     <>
-      <Card ref={cardRef} tabIndex={-1} className="scroll-mt-4 overflow-hidden border-teal-200/80 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-teal-900/70">
-        <CardHeader className="flex flex-col items-start justify-between gap-3 space-y-0 border-b border-teal-100 bg-teal-50/80 sm:flex-row dark:border-teal-900/60 dark:bg-teal-950/30">
+      <Card ref={cardRef} tabIndex={-1} className="lead-workspace-section scroll-mt-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <CardHeader className="lead-workspace-section-header flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <GraduationCap className="size-4 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+            <CardTitle className="lead-workspace-section-title">
+              <GraduationCap className="size-4 text-muted-foreground" aria-hidden="true" />
               {t('students')}
               <Badge variant="secondary">{lead.students?.length ?? 0}</Badge>
             </CardTitle>
           </div>
-          <Button type="button" size="sm" onClick={() => onCreateStudentOpenChange(true)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onCreateStudentOpenChange(true)}>
             <Plus data-icon="inline-start" />
             {t('createStudent')}
           </Button>
         </CardHeader>
         <CardContent className="p-0">
           {(lead.students ?? []).length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-8 text-center">
-              <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <div className="flex items-center gap-3 px-5 py-6">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
                 <Users className="size-5" />
               </span>
-              <p className="font-medium">{t('noStudentsForLead')}</p>
+              <p className="text-sm text-muted-foreground">{t('noStudentsForLead')}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">

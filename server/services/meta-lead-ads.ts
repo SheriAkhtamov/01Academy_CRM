@@ -10,7 +10,7 @@ import {
 } from './lead-import';
 import { deriveMetaUtm, extractMetaAdHook } from './meta-marketing';
 import { fetchMetaGraphJson } from './meta-graph';
-import { importText, leadImportAnswerKind, resolveLeadImportFields, type LeadImportAnswerKind } from './lead-import-fields';
+import { hasChildImportContext, importText, leadImportAnswerKind, resolveLeadImportFields, type LeadImportAnswerKind } from './lead-import-fields';
 
 const META_GRAPH_ORIGIN = 'https://graph.facebook.com';
 const META_LEAD_BACKFILL_MAX_PAGES = 1_000;
@@ -153,8 +153,9 @@ export const mapMetaLeadToImportRecord = (
     values: fieldValues(field),
   }));
   const mapped = resolveLeadImportFields({ answers });
+  const childContext = hasChildImportContext({ answers });
   const firstAnswer = (kind: LeadImportAnswerKind) => answers
-    .filter(answer => leadImportAnswerKind(answer.name) === kind)
+    .filter(answer => leadImportAnswerKind(answer.name, childContext) === kind)
     .flatMap(answer => answer.values).map(importText).find(Boolean) ?? null;
   const leadgenId = text(lead.id ?? webhookValue.leadgen_id, 255) ?? '';
   const resolvedFormId = text(lead.form_id ?? webhookValue.form_id, 255);

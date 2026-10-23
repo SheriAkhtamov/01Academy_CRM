@@ -80,6 +80,17 @@ describe('Meta Instant Form lead ingestion', () => {
     expect(record.answers).toEqual(lead.field_data.map(field => ({ name: field.name, values: field.values })));
   });
 
+  it('maps an adult learner age while keeping a parent age out of the child age field', () => {
+    const parentAge = { name: 'сколько_вам_лет?', values: ['35'] };
+    const adult = mapMetaLeadToImportRecord({ id: 'adult', field_data: [parentAge] });
+    expect(adult).toMatchObject({ studentAge: 35, childAgeAnswer: '35' });
+    const child = mapMetaLeadToImportRecord({ id: 'child', field_data: [parentAge,
+      { name: 'сколько_лет_вашему_ребенку?', values: ['8'] },
+    ] });
+    expect(child).toMatchObject({ studentAge: 8, childAgeAnswer: '8' });
+    expect(buildLeadImportComment(child)).toBe('сколько вам лет?: 35');
+  });
+
   it('ships a signed Page webhook and Instant Form attribution schema', () => {
     const routes = read('../server/routes/incoming.routes.ts');
     const httpApp = read('../server/app/http-app.ts');

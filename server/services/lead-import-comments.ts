@@ -1,5 +1,5 @@
 import {
-  importText, isStoredLeadImportAnswer, leadImportAnswerKind, resolveLeadImportFields,
+  hasChildImportContext, importText, isStoredLeadImportAnswer, leadImportAnswerKind, resolveLeadImportFields,
   type LeadImportAnswerKind, type LeadImportFieldInput, type LeadImportFields,
 } from './lead-import-fields';
 
@@ -57,6 +57,7 @@ export const buildLeadImportComment = (
   stored: LeadImportFields = resolveLeadImportFields(record),
 ): string => {
   const resolved = resolveLeadImportFields(record);
+  const childContext = hasChildImportContext(record);
   const answers = Array.isArray(record.answers) ? record.answers : [];
   const lines: string[] = [];
   const add = (label: string, values: unknown[], kind: LeadImportAnswerKind | null) => {
@@ -66,7 +67,7 @@ export const buildLeadImportComment = (
     if (label && value && !lines.includes(line)) lines.push(line);
   };
   for (const answer of answers) {
-    add(answerLabel(answer?.name), Array.isArray(answer?.values) ? answer.values : [], leadImportAnswerKind(answer?.name));
+    add(answerLabel(answer?.name), Array.isArray(answer?.values) ? answer.values : [], leadImportAnswerKind(answer?.name, childContext));
   }
   const details: Array<[string, unknown, LeadImportAnswerKind | null]> = [
     ['Имя', record.contactName, 'contactName'], ['Телефон', record.rawPhone ?? record.phone, 'phoneNumbers'],
@@ -81,7 +82,7 @@ export const buildLeadImportComment = (
   for (const [label, value, kind] of details) {
     // A custom question already carries this answer; don't append a second label.
     const covered = kind && answers.some(answer => {
-      const answerKind = leadImportAnswerKind(answer?.name);
+      const answerKind = leadImportAnswerKind(answer?.name, childContext);
       if (kind === 'contactName' && (answerKind === 'firstName' || answerKind === 'lastName')
         && value === resolved.contactName) return true;
       if (answerKind !== kind || !Array.isArray(answer?.values)) return false;

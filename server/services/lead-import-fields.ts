@@ -67,13 +67,21 @@ const names: Record<string, LeadImportAnswerKind> = {
   'study days': 'studyDays', 'learning days': 'studyDays', 'дни обучения': 'studyDays',
   'study time': 'studyTime', 'learning time': 'studyTime', 'время обучения': 'studyTime',
   goal: 'goal', 'learning goal': 'goal', цель: 'goal', 'цель обучения': 'goal', maqsad: 'goal',
+  'vibe coding sizga nima uchun kerak': 'goal',
   urgency: 'urgency', срочность: 'urgency',
   'learning format': 'format', 'формат обучения': 'format', offline: 'format',
   occupation: 'occupation', job: 'occupation', 'сфера деятельности': 'occupation',
 };
 
-export const leadImportAnswerKind = (name: unknown): LeadImportAnswerKind | null => {
+export const hasChildImportContext = (record: LeadImportFieldInput): boolean => Boolean(record.studentName)
+  || (Array.isArray(record.answers) && record.answers.some(answer =>
+    /child|kid|ребен|farzand|фарзанд|бола/u.test(normalizeImportFieldName(answer?.name))));
+
+export const leadImportAnswerKind = (name: unknown, childContext = false): LeadImportAnswerKind | null => {
   const key = normalizeImportFieldName(name);
+  if (['сколько вам лет', 'ваш возраст', 'yoshingiz nechada', 'yoshingiz', 'your age', 'age'].includes(key)) {
+    return childContext ? null : 'studentAge';
+  }
   if (names[key]) return names[key];
   const child = /child|student|kid|ребен|ученик|farzand|bola|фарзанд|бола/u.test(key);
   if (child && /\bage\b|возраст|сколько.*лет|yosh|еш/u.test(key)) return 'studentAge';
@@ -158,8 +166,9 @@ const personName = (value: unknown) => {
 
 export const resolveLeadImportFields = (record: LeadImportFieldInput): LeadImportFields => {
   const answers = Array.isArray(record.answers) ? record.answers : [];
+  const childContext = hasChildImportContext(record);
   const values = (kind: LeadImportAnswerKind) => answers
-    .filter(answer => leadImportAnswerKind(answer?.name) === kind)
+    .filter(answer => leadImportAnswerKind(answer?.name, childContext) === kind)
     .flatMap(answer => Array.isArray(answer?.values) ? answer.values : []);
   const first = <T>(candidates: unknown[], normalize: (value: unknown) => T | null): T | null => {
     for (const candidate of candidates) {

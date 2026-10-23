@@ -163,4 +163,25 @@ describe.skipIf(!url)('Meta form fields in PostgreSQL', () => {
     expect(await contact()).toMatchObject({ student_age: 8, phone: '+998901234567' });
     expect((await comments())[1].body).toBe('Возраст ребёнка: 9');
   });
+
+  it('repairs the migrated bullet template without changing authored or edited notes', async () => {
+    const payload = record({ answers: [
+      { name: 'full_name', values: ['Sevara'] }, { name: 'phone_number', values: ['+998901234567'] },
+      { name: 'сколько_вам_лет?', values: ['35'] }, { name: 'vibe_coding_sizga_nima_uchun_kerak?', values: ['Ish uchun'] },
+      { name: 'occupation', values: ['Маркетолог'] },
+    ] });
+    const { id } = await historical(payload);
+    const bullet = '• Имя: Sevara\n• Телефон: +998901234567\n• сколько вам лет?: 35\n• vibe coding sizga nima uchun kerak?: Ish uchun\n• occupation: Маркетолог';
+    await pool.query('UPDATE academy_lead_comments SET body=$1', [bullet]);
+    await pool.query('UPDATE academy_leads SET comment=$1 WHERE id=$2', [bullet + '\n\nЗаметка менеджера', id]);
+    await pool.query('INSERT INTO academy_lead_comments(lead_id,author_id,body,created_at) VALUES($1,7,$2,$3)', [id, bullet, payload.createdTime]);
+    const original = await comments();
+    expect(await repairMetaLeadFields(pool, [id])).toMatchObject({ leadsChanged: 1, commentsChanged: 1 });
+    expect(await comments()).toEqual(original);
+    expect(await repairMetaLeadFields(pool, [id], true)).toMatchObject({ leadsChanged: 1, commentsChanged: 1 });
+    expect(await contact()).toMatchObject({ student_age: 35, goal: 'Ish uchun', phone: '+998901234567', comment: '• occupation: Маркетолог\n\nЗаметка менеджера' });
+    expect((await comments())[0]).toEqual({ ...original[0], body: '• occupation: Маркетолог' });
+    expect((await comments())[1]).toEqual(original[1]);
+    expect(await repairMetaLeadFields(pool, [id], true)).toMatchObject({ leadsChanged: 0, commentsChanged: 0 });
+  });
 });

@@ -1,21 +1,9 @@
 import type { Pool } from 'pg';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import type { LeadImportRecord } from './lead-import';
-import { buildLeadImportComment, buildLegacyLeadImportComment } from './lead-import-comments';
+import { historicalLeadImportComments, replaceGeneratedImportParagraph } from './lead-import-history';
 import { enrichLeadImportFields } from './lead-import-enrichment';
 import { resolveLeadImportFields } from './lead-import-fields';
-
-const replaceGeneratedParagraph = (comment: string | null, before: string, after: string): string | null => {
-  if (!comment) return comment;
-  if (comment === before) return after || null;
-  // Replace only a complete, uniquely occurring generated paragraph.
-  const padded = `\n\n${comment}\n\n`;
-  const needle = `\n\n${before}\n\n`;
-  const index = padded.indexOf(needle);
-  if (index < 0 || padded.indexOf(needle, index + 1) >= 0) return comment;
-  const replacement = after ? `\n\n${after}\n\n` : '\n\n';
-  return (padded.slice(0, index) + replacement + padded.slice(index + needle.length)).slice(2, -2) || null;
-};
 
 /** Repair explicitly selected contacts from retained submissions; default is read-only. */
 export const repairMetaLeadFields = async (pool: Pool, leadIds: number[], apply = false) => {
@@ -43,14 +31,14 @@ export const repairMetaLeadFields = async (pool: Pool, leadIds: number[], apply 
       const { stored, changed, state } = await enrichLeadImportFields(client, leadId, resolveLeadImportFields(payload), apply, planned.get(leadId));
       planned.set(leadId, state);
       if (changed) changedLeads.add(leadId);
-      const before = buildLegacyLeadImportComment(payload);
-      const after = buildLeadImportComment(payload, stored);
       const createdAt = payload.createdTime ? new Date(payload.createdTime) : null;
-      if (!before || before === after || !createdAt || Number.isNaN(createdAt.getTime())) continue;
-      const comments = await client.query<{ id: number }>(
-        `SELECT id FROM academy_lead_comments
-         WHERE lead_id = $1 AND author_id IS NULL AND body = $2 AND created_at = $3${apply ? ' FOR UPDATE' : ''}`,
-        [leadId, before, createdAt],
+      if (!createdAt || Number.isNaN(createdAt.getTime())) continue;
+      const variants = historicalLeadImportComments(payload, stored);
+      if (!variants.length) continue;
+      const comments = await client.query<{ id: number; body: string }>(
+        `SELECT id, body FROM academy_lead_comments
+         WHERE lead_id = $1 AND author_id IS NULL AND body = ANY($2::text[]) AND created_at = $3${apply ? ' FOR UPDATE' : ''}`,
+        [leadId, variants.map(variant => variant.before), createdAt],
       );
       // Ambiguous origins, edited comments and operator comments are deliberately retained.
       if (comments.rows.length !== 1 || handledComments.has(comments.rows[0].id)) continue;
@@ -58,11 +46,13 @@ export const repairMetaLeadFields = async (pool: Pool, leadIds: number[], apply 
       commentsChanged += 1;
       changedLeads.add(leadId);
       if (!apply) continue;
+      const variant = variants.find(value => value.before === comments.rows[0].body)!;
+      const { before, after } = variant;
       if (after) await client.query('UPDATE academy_lead_comments SET body = $2 WHERE id = $1', [comments.rows[0].id, after]);
       else await client.query('DELETE FROM academy_lead_comments WHERE id = $1', [comments.rows[0].id]);
       const lead = await client.query<{ comment: string | null }>('SELECT comment FROM academy_leads WHERE id = $1 FOR UPDATE', [leadId]);
       const current = lead.rows[0]?.comment ?? null;
-      const next = replaceGeneratedParagraph(current, before, after);
+      const next = replaceGeneratedImportParagraph(current, before, after);
       if (next !== current) await client.query('UPDATE academy_leads SET comment = $2, updated_at = NOW() WHERE id = $1', [leadId, next]);
     }
     await client.query('COMMIT');

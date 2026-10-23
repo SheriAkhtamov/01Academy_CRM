@@ -3,6 +3,27 @@ import { buildLeadImportComment } from '../server/services/lead-import-comments'
 import { normalizeImportedAge, resolveLeadImportFields } from '../server/services/lead-import-fields';
 
 describe('Meta form field routing', () => {
+  it('routes a precise adult age and the learning goal, retaining age ranges', () => {
+    const record = { answers: [
+      { name: 'сколько_вам_лет?', values: ['35'] },
+      { name: 'vibe_coding_sizga_nima_uchun_kerak?', values: ['Ish uchun'] },
+    ] };
+    expect(resolveLeadImportFields(record)).toMatchObject({ studentAge: 35, goal: 'Ish uchun' });
+    expect(buildLeadImportComment(record)).toBe('');
+    expect(buildLeadImportComment({ answers: [{ name: 'yoshingiz_nechada?', values: ['35-44'] }] }))
+      .toBe('yoshingiz nechada?: 35-44');
+  });
+
+  it('does not mistake the parent age for the learner age on a child form', () => {
+    const record = { answers: [
+      { name: 'сколько вам лет?', values: ['35'] }, { name: 'child_age', values: ['8'] },
+    ] };
+    expect(resolveLeadImportFields(record).studentAge).toBe(8);
+    expect(buildLeadImportComment(record)).toBe('сколько вам лет?: 35');
+    const unknownChildAge = { answers: [record.answers[0], { name: 'child_name', values: ['Ali'] }] };
+    expect(resolveLeadImportFields(unknownChildAge).studentAge).toBeNull();
+  });
+
   it('routes the Uzbek form from the reported contact without manufacturing a phone or district', () => {
     const record = { answers: [
       { name: 'farzandingizni sun’iy intellekt bilan ishlash bo‘yicha ai kids demo-darsimizga yozdirmoqchimisiz?', values: ['ha'] },

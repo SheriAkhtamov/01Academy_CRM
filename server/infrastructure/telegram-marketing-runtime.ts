@@ -10,7 +10,8 @@ export const telegramMarketingRouter = () => createMarketingBotRouter({
   config: () => {
     const config = appConfig.integrations?.telegramMarketing;
     return config?.webhookReady && config.botToken && config.webhookSecret && config.passwordHash
-      ? { botToken: config.botToken, webhookSecret: config.webhookSecret, passwordHash: config.passwordHash } : null;
+      ? { botToken: config.botToken, botUsername: config.botUsername,
+        webhookSecret: config.webhookSecret, passwordHash: config.passwordHash } : null;
   },
   handle: createMarketingBotService({
     access: createMarketingBotAccess(pool), facts: createMarketingLeadFactsReader(pool), telegram: marketingTelegramApi, now: () => new Date(),

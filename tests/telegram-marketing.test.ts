@@ -91,6 +91,27 @@ describe('marketing bot flow', () => {
     expect(ports.facts).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-24', to: '2026-10-24' }), now);
     expect(response).toMatchObject({ method: 'editMessageText', message_id: 7 });
   });
+  it('prompts for one shared group password, including when an old report button is clicked', async () => {
+    const { ports, handle } = setup(false);
+    const response = await handle(config, { userId: '42', chatId: -123, text: 'mr:refresh', messageId: 7, callbackId: 'cb' });
+    expect(response).toMatchObject({ method: 'sendMessage', chat_id: -123, reply_markup: { force_reply: true } });
+    expect(response).not.toHaveProperty('message_id');
+    expect(response.text).toContain('всем участникам');
+    expect(ports.access.get).toHaveBeenCalledWith('100', '-123', config.passwordHash);
+    expect(ports.facts).not.toHaveBeenCalled();
+  });
+  it('uses a reply prompt for custom dates so privacy mode delivers the answer', async () => {
+    const { ports, handle } = setup();
+    const response = await handle(config, { userId: '43', chatId: -123, text: 'mr:custom', messageId: 7, callbackId: 'cb' });
+    expect(response).toMatchObject({ method: 'sendMessage', reply_markup: { force_reply: true } });
+    expect(ports.access.saveState).toHaveBeenCalledWith('100', '-123', config.passwordHash, expect.objectContaining({ awaitingDates: true }));
+  });
+  it('logs out the whole group without using the identity of the member who clicked', async () => {
+    const { ports, handle } = setup();
+    const response = await handle(config, { userId: '43', chatId: -123, text: '/logout' });
+    expect(ports.access.logout).toHaveBeenCalledWith('100', '-123');
+    expect(response.text).toContain('Доступ группы отключён');
+  });
   it('does not leak a report when access expires during its calculation', async () => {
     const { ports, handle } = setup();
     vi.mocked(ports.access.get).mockResolvedValueOnce({ state }).mockResolvedValueOnce(null);

@@ -1135,6 +1135,13 @@
       "when": 1791889606166,
       "tag": "0161_telegram_marketing_bot",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1791889606167,
+      "tag": "0162_telegram_marketing_group_access",
+      "breakpoints": true
     }
   ]
 }

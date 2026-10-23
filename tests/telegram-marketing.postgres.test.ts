@@ -6,6 +6,7 @@ import { createMarketingLeadFactsReader } from '../server/modules/telegram-marke
 import { createMarketingBotAccess } from '../server/modules/telegram-marketing/infrastructure/access-repository';
 import { hashMarketingPassword } from '../server/modules/telegram-marketing/infrastructure/password';
 import { summarizeMarketingLeads } from '../server/modules/telegram-marketing/domain/report';
+import { createMarketingBotService } from '../server/modules/telegram-marketing/application/bot-service';
 
 const url = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `marketing_bot_${randomUUID().replace(/-/g, '')}`;
@@ -21,6 +22,7 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
     marketingBotAccess = createMarketingBotAccess(pool);
     getMarketingLeadFacts = createMarketingLeadFactsReader(pool);
     await pool.query(readFileSync('migrations/0161_telegram_marketing_bot.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0162_telegram_marketing_group_access.sql', 'utf8'));
     await pool.query(`
       CREATE TABLE academy_lead_sources(id int PRIMARY KEY, code text);
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text);
@@ -91,5 +93,31 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
     expect(await marketingBotAccess.get('100', '42', await hashMarketingPassword('new-fixture-pass'))).toBeNull();
     await marketingBotAccess.logout('100', '42');
     expect(await marketingBotAccess.get('100', '42', hash)).toBeNull();
+  });
+  it('shares one group login and filters across members while keeping other chats isolated', async () => {
+    const hash = await hashMarketingPassword('group-fixture-pass');
+    const config = { botToken: '101:fixture', passwordHash: hash, webhookSecret: 'secret' };
+    const handle = createMarketingBotService({
+      access: marketingBotAccess, facts: async () => [], telegram: async () => true,
+      now: () => new Date('2026-10-23T10:00Z'),
+    });
+    const first = await handle(config, { userId: '42', chatId: -100, text: 'group-fixture-pass', messageId: 1 });
+    expect(first.text).toContain('Группа подключена');
+    const second = await handle(config, { userId: '43', chatId: -100, text: 'mr:c:ai-kids', messageId: 2, callbackId: 'cb' });
+    expect(second.text).toContain('META');
+    expect((await marketingBotAccess.get('101', '-100', hash))?.state).toMatchObject({ course: 'ai-kids' });
+    for (const chatId of [-200, 42, 43]) {
+      expect(await marketingBotAccess.get('101', String(chatId), hash)).toBeNull();
+      const response = await handle(config, { userId: '43', chatId, text: '/report' });
+      expect(response.text).toContain('парол');
+      expect(response.text).not.toContain('META');
+    }
+    expect(await marketingBotAccess.authenticate('101', '42', 'group-fixture-pass', hash)).toBe('ok');
+    await pool.query("UPDATE telegram_marketing_sessions SET authenticated_at=timezone('UTC',now())-interval '31 days' WHERE bot_id='101'");
+    expect(await marketingBotAccess.get('101', '-100', hash)).not.toBeNull();
+    expect(await marketingBotAccess.get('101', '42', hash)).toBeNull();
+    expect(await marketingBotAccess.get('101', '-100', await hashMarketingPassword('rotated-pass'))).toBeNull();
+    await handle(config, { userId: '43', chatId: -100, text: '/logout' });
+    expect(await marketingBotAccess.get('101', '-100', hash)).toBeNull();
   });
 });

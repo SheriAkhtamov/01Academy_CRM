@@ -3,15 +3,16 @@ import type { MarketingLeadFact } from '../domain/report';
 
 export type MarketingBotConfig = {
   botToken: string;
+  botUsername?: string;
   webhookSecret: string;
   passwordHash: string;
 };
 export type MarketingBotSession = { state: unknown };
 export interface MarketingBotAccess {
-  get(botId: string, userId: string, passwordHash: string): Promise<MarketingBotSession | null>;
-  authenticate(botId: string, userId: string, password: string, passwordHash: string): Promise<'ok' | 'denied' | 'locked'>;
-  saveState(botId: string, userId: string, passwordHash: string, state: MarketingBotState): Promise<void>;
-  logout(botId: string, userId: string): Promise<void>;
+  get(botId: string, chatId: string, passwordHash: string): Promise<MarketingBotSession | null>;
+  authenticate(botId: string, chatId: string, password: string, passwordHash: string): Promise<'ok' | 'denied' | 'locked'>;
+  saveState(botId: string, chatId: string, passwordHash: string, state: MarketingBotState): Promise<void>;
+  logout(botId: string, chatId: string): Promise<void>;
 }
 export type TelegramMethod = { method: string; [key: string]: unknown };
 export type MarketingBotEvent = {

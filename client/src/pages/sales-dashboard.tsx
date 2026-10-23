@@ -22,7 +22,7 @@ import { useLeadViewTracking } from '@/features/sales/useLeadViewTracking';
 import { useSalesPipelineBulkActions } from '@/features/sales/useSalesPipelineBulkActions';
 import { useLeadClaimAction } from '@/features/sales/useLeadClaimAction';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
-import { SalesBulkActionsButton, SalesOverviewSection, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
+import { SalesBulkActionsButton, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -61,7 +61,6 @@ import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
 import { PageHeader } from '@/components/ux/PageHeader';
 import { SalesOverviewPeriodFilter } from '@/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '@/features/sales/useSalesReportingRange';
-import { salesPlanMonth } from '@/lib/salesReportingRange';
 import { ModulePage, ModulePageBody } from '@/components/ux/ModulePage';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import { PhoneInput } from '@/components/ux/FormattedInputs';
@@ -73,7 +72,6 @@ import { leadMessageTarget, visibleLeadPhones } from '@/lib/leadContact';
 import { leadMergeErrorMessage } from '@/lib/leadMerge';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
 import { moduleSectionLabelKey } from '@/lib/moduleNavigation';
-import { addReportingDays, isInReportingRange, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import {
   getAssignedModules,
@@ -327,7 +325,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const [archiveReason, setArchiveReason] = useState('');
   const [archiveCustomReason, setArchiveCustomReason] = useState('');
   const [reportingRange, setReportingRange] = useSalesReportingRange();
-  const overviewMonth = salesPlanMonth(reportingRange);
 
   const replaceSalesParams = useCallback((changes: Record<string, string | null>, options?: { push?: boolean }) => {
     const params = new URLSearchParams(routeSearch);
@@ -444,6 +441,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const overviewManagerId = requestedManagerIsAvailable
     ? requestedOverviewManagerId!
     : defaultOverviewManagerId;
+  const overviewFunnelId = salesFunnels.some((funnel) => String(funnel.id) === requestedSalesFunnelId)
+    ? Number(requestedSalesFunnelId) : null;
   const overviewManagerNumericId = overviewManagerId === 'all'
     ? null
     : Number(overviewManagerId);
@@ -473,77 +472,6 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   );
   const pipelineBulkActions = useSalesPipelineBulkActions({ leads: filteredPipelineLeads, statuses: activePipelineStatuses,
     canManageAllLeads: isAdministrationModule });
-
-  const overviewLeads = useMemo(() => {
-    if (overviewManagerNumericId === null) return myLeads;
-    return myLeads.filter(
-      (lead) => Number(lead.managerId) === overviewManagerNumericId,
-    );
-  }, [myLeads, overviewManagerNumericId]);
-
-  const overviewStudents = useMemo(() => {
-    if (overviewManagerNumericId === null) return myStudents;
-    return myStudents.filter(
-      (student) => Number(student.managerId) === overviewManagerNumericId,
-    );
-  }, [myStudents, overviewManagerNumericId]);
-
-  const overviewPayments = useMemo(() => {
-    if (overviewManagerNumericId === null) return myPayments;
-    const managerLeadIds = new Set(
-      [...myLeads, ...archivedLeads]
-        .filter((lead) => Number(lead.managerId) === overviewManagerNumericId)
-        .map((lead) => Number(lead.id)),
-    );
-    const managerStudentIds = new Set(
-      overviewStudents.map((student) => Number(student.id)),
-    );
-    return myPayments.filter((payment) => (
-      managerStudentIds.has(Number(payment.studentId))
-      || managerLeadIds.has(Number(payment.leadId))
-    ));
-  }, [archivedLeads, myLeads, myPayments, overviewManagerNumericId, overviewStudents]);
-
-  const periodLeads = useMemo(
-    () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, reportingRange)),
-    [overviewLeads, reportingRange],
-  );
-  const previousRange = useMemo(() => {
-    const fromDate = new Date(`${reportingRange.from}T00:00:00Z`).getTime();
-    const toDate = new Date(`${reportingRange.to}T00:00:00Z`).getTime();
-    const days = Math.max(1, Math.round((toDate - fromDate) / 86_400_000) + 1);
-    return {
-      from: addReportingDays(reportingRange.from, -days),
-      to: addReportingDays(reportingRange.from, -1),
-    };
-  }, [reportingRange]);
-  const previousPeriodLeads = useMemo(
-    () => overviewLeads.filter((lead) => isInReportingRange(lead.createdAt, previousRange)),
-    [overviewLeads, previousRange],
-  );
-  const previousPeriodStudents = useMemo(
-    () => overviewStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, previousRange)),
-    [overviewStudents, previousRange],
-  );
-  const periodStudents = useMemo(
-    () => overviewStudents.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)),
-    [overviewStudents, reportingRange],
-  );
-  const periodPayments = useMemo(
-    () => overviewPayments.filter((payment) => (
-      payment.status === 'paid'
-      && isInReportingRange(payment.paidAt || payment.createdAt, reportingRange)
-    )),
-    [overviewPayments, reportingRange],
-  );
-
-  const managerStats = useMemo(() => ({
-    newLeadsPeriod: periodLeads.length,
-    activeLeads: periodLeads.filter((lead) => !lead.isArchived).length,
-    totalStudents: periodStudents.length,
-    activeLeadsPrevious: previousPeriodLeads.filter((lead) => !lead.isArchived).length,
-    totalStudentsPrevious: previousPeriodStudents.length,
-  }), [periodLeads, periodStudents, previousPeriodLeads, previousPeriodStudents]);
 
   const createLead = useMutation({
     mutationFn: (values: CreateLeadFormValues) => leadsApi.create(createLeadPayload(values)),
@@ -894,6 +822,16 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           <div className="space-y-3" role="group" aria-label={t('salesOverviewFilters')}>
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <SalesOverviewPeriodFilter value={reportingRange} onChange={setReportingRange} />
+              <Select value={overviewFunnelId === null ? 'all' : String(overviewFunnelId)}
+                onValueChange={(value) => replaceSalesParams({ funnel: value === 'all' ? null : value })}>
+                <SelectTrigger aria-label={t('salesFunnel')} className="h-12 min-w-0 rounded-xl bg-background sm:max-w-80">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('salesReportAllFunnels')}</SelectItem>
+                  {salesFunnels.map((funnel) => <SelectItem key={funnel.id} value={String(funnel.id)}>{funnel.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <SalesOverviewEmployeeFilter
                 value={overviewManagerId}
                 managers={overviewManagerOptions}
@@ -902,27 +840,13 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               />
             </div>
           </div>
-          <div className="rounded-2xl bg-card text-card-foreground">
-            <SalesOverviewMetrics
-              key={`${reportingRange.from}-${reportingRange.to}-${overviewManagerNumericId}`}
-              month={overviewMonth}
-              reportingRange={reportingRange}
-              managerId={overviewManagerNumericId}
-              stats={managerStats}
-              payments={overviewPayments}
-              students={overviewStudents}
-              money={money}
-              onNavigate={(target) => setLocation(SALES_SECTION_PATHS[target])}
-              onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))}
-              onOpenLead={openLead}
-            />
-            <SalesOverviewSection
-              payments={periodPayments}
-              leads={periodLeads}
-              reportingRange={reportingRange}
-              money={money}
-            />
-          </div>
+          <SalesOverviewMetrics
+            key={`${reportingRange.from}-${reportingRange.to}-${overviewManagerNumericId}-${overviewFunnelId}`}
+            reportingRange={reportingRange}
+            managerId={overviewManagerNumericId}
+            funnelId={overviewFunnelId}
+            onOpenLead={openLead}
+          />
         </div>
       ) : null}
 

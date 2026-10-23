@@ -1,3 +1,4 @@
+import type { LeadQualification, LeadQualificationRequest, RevokeLeadQualificationRequest } from '@shared/contracts/lead-qualification';
 import type {
   ArchiveLeadRequest,
   AssignLeadRequest,
@@ -29,6 +30,10 @@ export type LeadViewState = {
 export type UnviewedLeadCount = { count: number };
 
 export const leadsApi = {
+  getQualification: (leadId: number): Promise<LeadQualification> =>
+    apiRequest('GET', `/api/academy/leads/${leadId}/qualification`),
+  setQualification: (leadId: number, input: LeadQualificationRequest | RevokeLeadQualificationRequest): Promise<LeadQualification> =>
+    apiRequest('locationFits' in input ? 'POST' : 'DELETE', `/api/academy/leads/${leadId}/qualification`, input),
   create: (input: CreateAcademyLeadRequest) => (
     apiRequest('POST', '/api/academy/leads', input)
   ),

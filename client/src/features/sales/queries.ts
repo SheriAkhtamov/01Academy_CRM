@@ -1,4 +1,6 @@
-import type { QueryClient } from '@tanstack/react-query';
+import type { SalesReportScope } from '@shared/contracts/sales-report';
+import { getSalesActivityReport } from './api';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { invalidateLeadData, type LeadInvalidationOptions } from '../leads/queries';
 
 export const salesQueryKeys = {
@@ -23,3 +25,16 @@ export const invalidateSalesLeadData = (
   queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-kpi'] }),
   queryClient.invalidateQueries({ queryKey: ['/api/academy/sales-funnels'] }),
 ]);
+
+export const useSalesActivityReport = (scope: SalesReportScope) => useQuery({
+  queryKey: [...salesQueryKeys.metrics, scope],
+  staleTime: 10_000,
+  refetchInterval: 30_000,
+  refetchOnWindowFocus: true,
+  queryFn: () => {
+    const params = new URLSearchParams({ from: scope.from, to: scope.to });
+    if (scope.managerId !== null) params.set('managerId', String(scope.managerId));
+    if (scope.funnelId !== null) params.set('funnelId', String(scope.funnelId));
+    return getSalesActivityReport(params.toString());
+  },
+});

@@ -14,7 +14,6 @@ const clientTransportRatchet = new Map(Object.entries({
   'client/src/components/modals/SettingsModal.tsx': 1,
   'client/src/components/ux/AvailabilityCalendar.tsx': 1,
   'client/src/components/ux/CommandPalette.tsx': 1,
-  'client/src/components/ux/SalesOverviewMetrics.tsx': 1,
   'client/src/components/ux/board/CreateTaskDialog.tsx': 1,
   'client/src/components/ux/board/TaskDetailSheet.tsx': 10,
   'client/src/contexts/TelephonyContext.tsx': 5,

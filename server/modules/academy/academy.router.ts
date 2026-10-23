@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { createLeadQualificationService } from '../leads/application/qualification-service';
+import { createLeadQualificationRouter } from '../leads/http/qualification.router';
+import { LegacyLeadQualificationRepository } from '../leads/infrastructure/qualification-repository';
 import { requireAuth } from '../../middleware/auth.middleware';
 import { createLeadMergeService } from '../leads/application/merge-service';
 import { createLeadRelationsService } from '../leads/application/relations-service';
@@ -38,6 +41,7 @@ import { registerLessonStaffRoutes } from './lesson-staff.router';
 const router = Router();
 router.use(requireAuth);
 router.use(attachActorContext);
+router.use(createLeadQualificationRouter(createLeadQualificationService(new LegacyLeadQualificationRepository())));
 router.use(createSalesKpiRouter());
 
 const leadMergeService = createLeadMergeService(

@@ -1,73 +1,33 @@
 // @vitest-environment jsdom
-import React, { useState, type ReactNode } from 'react';
+import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultKpiConfig, type KpiOverviewEmployee, type KpiSaleFact } from '../shared/sales-kpi';
 import { translations, type TranslationKey } from '../client/src/lib/i18n';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: request }));
 vi.mock('../client/src/hooks/useTranslation', () => ({ useTranslation: () => ({ t: (key: TranslationKey) => translations[key].en, language: 'en' }) }));
-vi.mock('../client/src/components/ux/sales-overview/SalesOverviewDynamics', () => ({ SalesOverviewDynamics: () => null }));
-vi.mock('../client/src/components/ux/sales-overview/SalesOverviewFunnel', () => ({ SalesOverviewFunnel: () => null }));
-vi.mock('../client/src/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
-import { KpiSaleReviewDialog } from '../client/src/features/sales-kpi/ui/KpiSaleReviewDialog';
 import { SalesOverviewMetrics } from '../client/src/components/ux/SalesOverviewMetrics';
 import { SalesOverviewEmployeeFilter } from '../client/src/components/ux/SalesOverviewEmployeeFilter';
-import { SalesRepeatCallsChart } from '../client/src/components/ux/sales-overview/SalesOperationalCharts';
 import { SalesOverviewPeriodFilter } from '../client/src/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '../client/src/features/sales/useSalesReportingRange';
-import { salesMonthRange, salesPlanMonth } from '../client/src/lib/salesReportingRange';
-import { reportingRangeForPreset, isInReportingRange } from '../client/src/lib/reportingDateRange';
 
-const baseMetrics = { newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2, demoAttendees: 1, repeatCallLeads: 3, repeatCallDistribution: [{ attempts: 2, count: 2 }, { attempts: 5, count: 1 }] };
-const metrics = { ...baseMetrics, previous: baseMetrics, previousRange: { from: '2026-07-01', to: '2026-07-31' }, daily: [{ date: '2026-08-01', newLeads: 10, processedLeads: 8, reachedLeads: 6, demoBookings: 2, demoAttendees: 1 }] };
-const employee = (id = 1): KpiOverviewEmployee => ({
-  id, name: id === 1 ? 'Alice' : 'Bob', role: 'hunter', assignedAt: '2026-08-01T00:00:00Z',
-  version: { id: 1, role: 'hunter', config: defaultKpiConfig('hunter'), effectiveMonth: '2026-08', createdAt: '2026-08-01T00:00:00Z', createdBy: 1 },
-  calculation: {
-    totalUzs: id * 3000000, baseConditions: { volume: true, crm: null, timing: null },
-    metrics: [
-      { id: 'bookings', value: 20, target: 30, unit: 'count', details: [{ id: 1, entity: 'student', name: 'Trial student', date: '2026-08-12T10:00:00Z', success: true }] },
-      { id: 'attendance', value: null, target: 60, unit: 'percent', numerator: 0, denominator: 0, details: [] },
-      { id: 'response', value: 90, target: 90, unit: 'percent', numerator: 9, denominator: 10, details: [] },
-      { id: 'crm', value: 100, target: 100, unit: 'percent', details: [] },
-    ],
-    payLines: [{ key: 'base', quantity: 1, rateUzs: id * 3000000, amountUzs: id * 3000000, status: 'earned' }],
-    unclassifiedSales: [], reviewableSales: [],
-  },
-});
-const payments = [
-  { amountUzs: 100000, status: 'paid', paidAt: '2026-07-31T19:00:00Z' },
-  { amountUzs: 50000, status: 'paid', paidAt: '2026-08-31T18:59:59Z' },
-  { amountUzs: 90000, status: 'paid', paidAt: '2026-08-31T19:00:00Z' },
-  { amountUzs: 80000, status: 'refunded', paidAt: '2026-08-10T00:00:00Z' },
-];
-const students = [
-  { enrolledAt: '2026-07-31T19:00:00Z', createdAt: '2026-07-12T10:00:00Z' },
-  { createdAt: '2026-08-31T18:59:59Z' },
-  { enrolledAt: '2026-08-31T19:00:00Z' },
-];
-const clients: QueryClient[] = [];
+const report = { newLeads: 10, processedLeads: 8, reachedCalls: 12, qualifiedLeads: 6, demoBookings: 5, demoAttendees: 4,
+  successfulStudents: 3, closedLeads: 2, closedReasons: [{ reason: 'no_budget', count: 1 }, { reason: 'Moving away', count: 1 }] };
+let client: QueryClient;
 function Harness() {
-  const [reportingRange, setReportingRange] = useSalesReportingRange();
-  const month = salesPlanMonth(reportingRange);
+  const [range, setRange] = useSalesReportingRange();
   const [manager, setManager] = useState('1');
+  const [funnel, setFunnel] = useState<number | null>(null);
   return <>
-    <SalesOverviewPeriodFilter value={reportingRange} onChange={setReportingRange} />
+    <SalesOverviewPeriodFilter value={range} onChange={setRange} />
     <SalesOverviewEmployeeFilter value={manager} managers={[{ id: 1, fullName: 'Alice' }, { id: 2, fullName: 'Bob' }]} canViewAllManagers onChange={setManager} />
-    <SalesOverviewMetrics key={`${reportingRange.from}-${reportingRange.to}-${manager}`} month={month} reportingRange={reportingRange} managerId={manager === 'all' ? null : Number(manager)}
-      stats={{ newLeadsPeriod: 10, activeLeads: 8, activeLeadsPrevious: 6, totalStudents: students.filter((student) => isInReportingRange(student.enrolledAt || student.createdAt, reportingRange)).length, totalStudentsPrevious: 1 }}
-      payments={payments} students={students} money={(value) => String(value)} onNavigate={() => {}} onExpandPeriod={() => setReportingRange(reportingRangeForPreset('thisMonth'))} />
+    <button onClick={() => setFunnel(2)}>Funnel B</button>
+    <SalesOverviewMetrics reportingRange={range} managerId={manager === 'all' ? null : Number(manager)} funnelId={funnel} />
   </>;
 }
-function mount(children: ReactNode = <Harness />) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  clients.push(client);
-  return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>);
-}
-
+const mount = () => render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
 beforeEach(() => {
   Element.prototype.scrollIntoView ??= () => undefined;
   Element.prototype.hasPointerCapture ??= () => false;
@@ -77,280 +37,59 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-09-08T10:00:00Z'));
   localStorage.clear();
   localStorage.setItem('academy-ui:sales-overview-month', JSON.stringify('2026-08'));
-  request.mockReset();
-  request.mockImplementation(async (_method, path: string) => path.includes('/sales/metrics') ? metrics : { month: '2026-08', asOf: '2026-09-08T00:00:00Z', employees: [employee()] });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  request.mockReset().mockResolvedValue(report);
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute('open', ''); } });
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.removeAttribute('open'); } });
 });
-afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); localStorage.clear(); vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); client.clear(); localStorage.clear(); vi.useRealTimers(); });
 
-describe('unified sales overview', () => {
-  it('updates arbitrary report dates across months and explicitly labels the monthly plan', async () => {
+describe('factual sales report', () => {
+  it('shows exactly seven requested metrics and a separate reasons table', async () => {
     mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-01&to=2026-08-31&managerId=1');
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-08&managerId=1');
+    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    expect(screen.getAllByRole('article')).toHaveLength(7);
+    expect(within(screen.getByRole('article', { name: 'Connected calls' })).getByText('12')).toBeTruthy();
+    const closed = within(screen.getByRole('region', { name: 'Closed leads by reason' }));
+    expect(closed.getByText(translations.archiveReasonNoBudget.en)).toBeTruthy();
+    expect(closed.getByText('Moving away')).toBeTruthy();
+    expect(screen.queryByText(translations.revenue.en)).toBeNull();
+    expect(request.mock.calls.every(([, url]) => url.includes('/sales/metrics'))).toBe(true);
+  });
+  it('updates arbitrary dates, manager, and funnel together', async () => {
+    const user = userEvent.setup(); mount();
+    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
     fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-08-15' } });
     fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-09-02' } });
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-15&to=2026-09-02&managerId=1'));
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-09&managerId=1');
-    expect(await screen.findByText('Target and actuals for September 2026')).toBeTruthy();
-    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('140000')).toBeTruthy();
-    expect((screen.getByLabelText(translations.dateFrom.en) as HTMLInputElement).value).toBe('2026-08-15');
-    expect((screen.getByLabelText(translations.dateTo.en) as HTMLInputElement).value).toBe('2026-09-02');
+    await user.click(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }));
+    await user.click(screen.getByRole('option', { name: 'Bob' }));
+    await user.click(screen.getByRole('button', { name: 'Funnel B' }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-15&to=2026-09-02&managerId=2&funnelId=2'));
   });
-
-  it('preserves explicit dates when returning to the overview and keeps daily chart boundaries exact', async () => {
-    const user = userEvent.setup();
-    const view = mount();
-    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-07-15' } });
-    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-09-01' } });
-    view.unmount();
-    request.mockClear();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-07-15&to=2026-09-01&managerId=1');
-    const revenue = within(screen.getByRole('region', { name: translations.revenue.en }));
-    expect(revenue.getByText('240000')).toBeTruthy();
-    const chart = revenue.getByRole('slider');
-    act(() => chart.focus());
-    await user.keyboard('{Home}');
-    expect(chart.getAttribute('aria-valuetext')).toBe('Jul 15: 0');
-    await user.keyboard('{End}');
-    expect(chart.getAttribute('aria-valuetext')).toBe('Sep 1: 90000');
-  });
-
-  it('switches quick periods and permits either boundary to move past the other', async () => {
-    const user = userEvent.setup();
-    mount();
-    await user.selectOptions(screen.getByRole('combobox', { name: translations.reportingQuickPeriods.en }), 'last7');
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-09-02&to=2026-09-08&managerId=1'));
-    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-08-01' } });
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-01&to=2026-08-01&managerId=1'));
-    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('100000')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-09-01' } });
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-09-01&to=2026-09-01&managerId=1'));
-    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('90000')).toBeTruthy();
-  });
-
-  it('keeps invalid or oversized drafts out of requests and accepts a corrected interval', async () => {
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    request.mockClear();
+  it('keeps invalid period drafts out of requests', async () => {
+    mount(); await screen.findByRole('button', { name: 'Meetings attended · students: 4' }); request.mockClear();
     fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '' } });
     expect(screen.getByRole('alert').textContent).toBe(translations.salesPeriodInvalid.en);
     expect(request).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2020-01-01' } });
-    expect(screen.getByRole('alert').textContent).toBe('Choose a period of up to 731 days.');
-    expect(request).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2020-01-31' } });
-    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2020-01-01&to=2020-01-31&managerId=1'));
-    expect(screen.queryByRole('alert')).toBeNull();
   });
-
-  it('does not retain another employee’s targets while their replacement is loading', async () => {
-    const user = userEvent.setup();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeTruthy();
-    let finish!: (value: unknown) => void;
-    request.mockImplementation((_method, path: string) => path.includes('/sales/metrics') ? Promise.resolve(metrics) : new Promise((resolve) => { finish = resolve; }));
-    await user.click(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }));
-    await user.click(screen.getByRole('option', { name: 'Bob' }));
-    expect(screen.queryByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` })).toBeNull();
-    await act(async () => { finish({ month: '2026-08', asOf: '2026-09-08', employees: [employee(2)] }); });
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(request).toHaveBeenCalledWith('GET', '/api/academy/sales-kpi/overview?month=2026-08&managerId=2');
+  it('does not show another filter’s values during loading or an error', async () => {
+    const user = userEvent.setup(); mount(); await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    let reject!: (error: Error) => void;
+    request.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+    await user.click(screen.getByRole('button', { name: 'Funnel B' }));
+    expect(screen.queryByText('12')).toBeNull();
+    await act(async () => reject(new Error('offline')));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('article')).toBeNull();
+    request.mockResolvedValue(report); await user.click(screen.getByRole('button', { name: translations.retry.en }));
+    expect(await screen.findByRole('button', { name: 'Meetings attended · students: 4' })).toBeTruthy();
   });
-
-  it('labels payments correctly and excludes refunds and the next Tashkent month', async () => {
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(within(screen.getByRole('region', { name: translations.revenue.en })).getByText('150000')).toBeTruthy();
-    expect(within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByText('2')).toBeTruthy();
-    expect(screen.queryByText(translations.paidCustomersForPeriod.en)).toBeNull();
-  });
-
-  it('switches the main wide plot between revenue and activity without hiding the overview results', async () => {
-    const user = userEvent.setup();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const revenue = within(screen.getByRole('region', { name: translations.revenue.en }));
-    expect(revenue.getByRole('slider')).toBeTruthy();
-    await user.click(revenue.getByRole('button', { name: translations.activityTab.en }));
-    expect(revenue.queryByRole('slider')).toBeNull();
-    expect(revenue.getByText('150000')).toBeTruthy();
-    expect(screen.queryByRole('region', { name: "Lead-to-payment conversion" })).toBeNull();
-    expect(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).toBeTruthy();
-    await user.click(revenue.getByRole('button', { name: translations.revenue.en }));
-    expect(revenue.getByRole('slider')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: translations.activityTab.en })).toHaveLength(1);
-  });
-
-  it('lets keyboard users inspect actual daily revenue and enrolments inside the headline cards', async () => {
-    const user = userEvent.setup();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const revenue = within(screen.getByRole('region', { name: translations.revenue.en })).getByRole('slider');
-    act(() => revenue.focus());
-    await user.keyboard('{Home}');
-    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 1: 100000');
-    await user.keyboard('{ArrowRight}');
-    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 2: 0');
-    await user.keyboard('{End}');
-    expect(revenue.getAttribute('aria-valuetext')).toBe('Aug 31: 50000');
-    const enrolled = within(screen.getByRole('region', { name: translations.adminNewStudents.en })).getByRole('slider');
-    act(() => enrolled.focus());
-    await user.keyboard('{Home}');
-    expect(enrolled.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
-    await user.keyboard('{End}');
-    expect(enrolled.getAttribute('aria-valuetext')).toBe('Aug 31: 1');
-  });
-
-  it('shows the measured percentage on a rate ring and target completion separately on a count chart', async () => {
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const response = within(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiResponseMetric.en}` }));
-    expect(response.getByRole('img').getAttribute('aria-label')).toContain('90%; Target: 90%');
-    expect(response.getByText('90%')).toBeTruthy();
-    const bookings = within(screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}` }));
-    expect(bookings.getByRole('img').getAttribute('aria-label')).toContain('20; Target: 30');
-    expect(bookings.getByText('66.7% of target')).toBeTruthy();
-  });
-
-  it('shows active leads and plots actual attendance, payments and call attempts', async () => {
-    const user = userEvent.setup();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const active = within(screen.getByRole('region', { name: translations.taskInProgress.en }));
-    expect(active.getByText('8')).toBeTruthy();
-    expect(active.queryByRole('img')).toBeNull();
-    expect(screen.queryByText("Qualified leads")).toBeNull();
-    expect(screen.queryByText("Qualified refusals")).toBeNull();
-    const trials = within(screen.getByRole('region', { name: translations.demoStudentsModalTitle.en })).getByRole('slider');
-    act(() => trials.focus());
-    await user.keyboard('{Home}');
-    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
-    await user.keyboard('{ArrowRight}');
-    expect(trials.getAttribute('aria-valuetext')).toBe('Aug 2: 0');
-    const paid = within(screen.getByRole('region', { name: translations.salesPaymentsCount.en })).getByRole('slider');
-    act(() => paid.focus());
-    await user.keyboard('{Home}');
-    expect(paid.getAttribute('aria-valuetext')).toBe('Aug 1: 1');
-    await user.keyboard('{End}');
-    expect(paid.getAttribute('aria-valuetext')).toBe('Aug 31: 1');
-    const repeat = within(screen.getByRole('region', { name: translations.repeatCallLeads.en })).getByRole('img');
-    expect(repeat.getAttribute('aria-label')).toBe('Leads by number of call attempts: 2 attempts: 2; 3 attempts: 0; 4 attempts: 0; 5 attempts: 1');
-  });
-
-  it('represents a single repeatedly called lead with all attempt buckets', () => {
-    mount(<SalesRepeatCallsChart distribution={[{ attempts: 2, count: 1 }]} />);
-    expect(screen.getByRole('img', { name: 'Leads by number of call attempts: 2 attempts: 1; 3 attempts: 0; 4 attempts: 0; 5 attempts: 0' })).toBeTruthy();
-    expect(screen.queryByText(translations.salesPlanReached.en)).toBeNull();
-  });
-
-  it('keeps full results and underlying records in nested modals and restores page scrolling on close', async () => {
-    const user = userEvent.setup();
-    mount();
-    await user.click(await screen.findByRole('button', { name: translations.salesAllMetrics.en }));
-    const details = screen.getByRole('dialog', { name: 'Employee results · Alice' });
-    expect(document.body.style.overflow).toBe('hidden');
-    const bookingsName = `${translations.kpiDetailsTitle.en}: ${translations.kpiBookingsMetric.en}`;
-    await user.click(within(details).getByRole('button', { name: bookingsName }));
-    const records = screen.getByRole('dialog', { name: translations.kpiBookingsMetric.en });
-    expect(within(records).getByText('Trial student')).toBeTruthy();
-    fireEvent(records, new Event('cancel', { bubbles: false, cancelable: true }));
-    expect(screen.queryByRole('dialog', { name: translations.kpiBookingsMetric.en })).toBeNull();
-    expect(document.body.style.overflow).toBe('hidden');
-    await user.click(within(details).getByRole('button', { name: translations.close.en }));
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(document.body.style.overflow).toBe('');
-    expect(screen.queryByText('3,000,000')).toBeNull();
-  });
-
-  it('shows an unmeasured attendance rate as pending rather than zero performance', async () => {
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    const attendance = screen.getByRole('button', { name: `${translations.kpiDetailsTitle.en}: ${translations.kpiAttendanceMetric.en}` });
-    expect(within(attendance).getByText(translations.kpiNoData.en)).toBeTruthy();
-    expect(within(attendance).queryByText(translations.kpiNotMet.en)).toBeNull();
-    expect(within(attendance).queryByText('0%')).toBeNull();
-  });
-
-  it('does not display payroll amounts or setup instructions in the overview or its details', async () => {
-    const user = userEvent.setup();
-    mount();
-    await screen.findByRole('button', { name: translations.salesAllMetrics.en });
-    expect(screen.queryByText(/3,000,000|Salary|compensation|\bversion\b|\btracking\b/i)).toBeNull();
-    await user.click(screen.getByRole('button', { name: translations.salesAllMetrics.en }));
-    expect(within(screen.getByRole('dialog')).queryByText(/3,000,000|Salary|compensation|\bversion\b|\btracking\b/i)).toBeNull();
-  });
-
-  it('omits unconfigured targets instead of displaying setup instructions', async () => {
-    request.mockImplementation(async (_method, path: string) => path.includes('/sales/metrics') ? metrics : { month: '2026-08', asOf: '2026-09-08', employees: [] });
-    mount();
-    await waitFor(() => expect(screen.queryByRole('region', { name: translations.salesMonthPlan.en })).toBeNull());
-    expect(screen.queryByText(/KPI system|administrator|assigned/i)).toBeNull();
-    expect(screen.getByRole('region', { name: translations.revenue.en })).toBeTruthy();
-  });
-
-  const sale = (): KpiSaleFact => ({ id: 17, leadId: 2, studentId: 2, groupId: 1, name: 'Student', closerId: 1, paidAt: new Date().toISOString(), paidUntil: null, amountUzs: 100000, status: 'paid', kind: 'unclassified', cycleKey: null, referralInitiated: false });
-
-  it('saves an explicitly classified payment with its learning period and audit reason', async () => {
-    const user = userEvent.setup();
-    mount(<KpiSaleReviewDialog sales={[sale()]} onClose={() => {}} />);
-    await user.click(screen.getByRole('button', { name: translations.edit.en }));
-    const editor = screen.getByRole('dialog', { name: `${translations.kpiSalesReview.en} · Student` });
-    await user.selectOptions(within(editor).getByRole('combobox', { name: translations.kpiSaleKind.en }), 'upsell');
-    await user.type(within(editor).getByLabelText(translations.kpiCycleKey.en), '2026-09');
-    await user.type(within(editor).getByLabelText(translations.kpiReviewReason.en), 'Additional course confirmed');
-    await user.click(within(editor).getByRole('button', { name: translations.save.en }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith('PATCH', '/api/academy/sales-kpi/payments/17', { kind: 'upsell', cycleKey: '2026-09', referralInitiated: false, reason: 'Additional course confirmed' }));
-    expect(screen.queryByRole('dialog', { name: `${translations.kpiSalesReview.en} · Student` })).toBeNull();
-  });
-
-  it('requires confirmation to discard a payment draft and preserves it when editing continues', async () => {
-    const user = userEvent.setup();
-    mount(<KpiSaleReviewDialog sales={[sale()]} onClose={() => {}} />);
-    await user.click(screen.getByRole('button', { name: translations.edit.en }));
-    const editor = screen.getByRole('dialog', { name: `${translations.kpiSalesReview.en} · Student` });
-    const reason = within(editor).getByLabelText(translations.kpiReviewReason.en);
-    await user.type(reason, 'Draft reason');
-    await user.click(within(editor).getByRole('button', { name: translations.cancel.en }));
-    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: translations.keepEditing.en }));
-    expect((reason as HTMLTextAreaElement).value).toBe('Draft reason');
-    await user.click(within(editor).getByRole('button', { name: translations.cancel.en }));
-    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: translations.discardChanges.en }));
-    expect(screen.queryByRole('dialog', { name: `${translations.kpiSalesReview.en} · Student` })).toBeNull();
-    expect(request).not.toHaveBeenCalled();
-  });
-
-  it('uses a complete past month, leap day and the current month only up to today', () => {
-    expect(salesMonthRange('2024-02', '2026-09-08')).toMatchObject({ from: '2024-02-01', to: '2024-02-29' });
-    expect(salesMonthRange('2025-12', '2026-01-01')).toMatchObject({ from: '2025-12-01', to: '2025-12-31' });
-    expect(salesMonthRange('2026-09', '2026-09-08')).toMatchObject({ from: '2026-09-01', to: '2026-09-08' });
-  });
-
-  it('opens actual demo attendees instead of navigating away from the overview', async () => {
-    const user = userEvent.setup();
-    request.mockImplementation(async (_method, path: string) => {
-      if (path.includes('/demo-students')) {
-        return [
-          {
-            studentId: 10, leadId: 20, studentName: 'Temur Aliyev', contactName: 'Temur Aliyev', phone: '+998901234567',
-            managerId: 1, managerName: 'Alice', visits: [{ participantId: 1, demoId: 1, courseName: 'AI Kids', schoolName: 'Cyberpark',
-              roomName: '101', teacherName: 'Elena Kim', scheduledAt: '2026-08-10T10:00:00Z', durationMinutes: 60, format: 'offline' }],
-          },
-        ];
-      }
-      if (path.includes('/sales/metrics')) return metrics;
-      return { month: '2026-08', asOf: '2026-09-08T00:00:00Z', employees: [employee()] };
-    });
-    mount();
-    const trialBookingButton = await screen.findByRole('button', { name: translations.demoStudentsModalTitle.en });
-    await user.click(trialBookingButton);
-    expect(await screen.findByRole('dialog', { name: translations.demoStudentsModalTitle.en })).toBeTruthy();
-    expect(await screen.findByText('Temur Aliyev')).toBeTruthy();
-    expect(screen.getByText('AI Kids')).toBeTruthy();
+  it('opens attendees with the identical funnel, manager and period', async () => {
+    const user = userEvent.setup(); mount(); await user.click(screen.getByRole('button', { name: 'Funnel B' }));
+    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    request.mockImplementation(async (_method, url: string) => url.includes('/demo-students') ? [] : report);
+    await user.click(screen.getByRole('button', { name: 'Meetings attended · students: 4' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/demo-students?from=2026-08-01&to=2026-08-31&managerId=1&funnelId=2'));
   });
 });

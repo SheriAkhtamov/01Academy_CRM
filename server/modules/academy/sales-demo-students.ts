@@ -5,10 +5,8 @@ import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
 
 // Attendance is an explicit participant mark. A scheduled lesson can already
 // have saved attendance; cancelled, not-conducted and future demos cannot.
-// Reporting follows frozen KPI ownership, not the current operational owner.
-const attendanceOwnerSql = `CASE WHEN academy_kpi_employee_role($3) = 'closer'
-  THEN COALESCE(trial.closer_id, tracked.closer_id, lead.manager_id, student.manager_id)
-  ELSE COALESCE(trial.hunter_id, tracked.hunter_id, handoff.from_manager_id, lead.manager_id, student.manager_id) END`;
+// All report metrics use the current manager/funnel portfolio.
+const attendanceOwnerSql = 'COALESCE(lead.manager_id, student.manager_id)';
 export const salesDemoAttendanceCte = `WITH attended_demos AS (
   SELECT participant.id AS participant_id, demo.id AS demo_id,
     demo.scheduled_at, demo.duration_minutes, demo.format,
@@ -24,26 +22,24 @@ export const salesDemoAttendanceCte = `WITH attended_demos AS (
   JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
   JOIN academy_students student ON student.id = participant.student_id
   LEFT JOIN academy_leads lead ON lead.id = student.lead_id
-  LEFT JOIN academy_sales_kpi_trials trial ON trial.participant_id = participant.id
-  LEFT JOIN academy_sales_kpi_leads tracked ON tracked.lead_id = lead.id
-  LEFT JOIN academy_lead_funnel_handoffs handoff ON handoff.lead_id = lead.id
   WHERE participant.status = 'attended'
     AND demo.status IN ('scheduled', 'completed')
     AND demo.scheduled_at <= timezone('UTC', now())
     AND demo.scheduled_at >= $1 AND demo.scheduled_at < $2
     AND ($3::int IS NULL OR ${attendanceOwnerSql} = $3)
+    AND ($4::int IS NULL OR lead.funnel_id = $4)
 )`;
 
-const scopeValues = (actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null) => [
-  range.start, range.end, hasLeadershipAccess(actor) ? requestedManagerId : actor.userId,
+const scopeValues = (actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null, funnelId: number | null) => [
+  range.start, range.end, hasLeadershipAccess(actor) ? requestedManagerId : actor.userId, funnelId,
 ];
 
 /** A student contributes once, on their first attendance within this range. */
-export async function buildSalesDemoAttendanceStats(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null) {
+export async function buildSalesDemoAttendanceStats(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null, funnelId: number | null = null) {
   const rows = await query<{ studentId: number; happenedAt: Date }>(
     `${salesDemoAttendanceCte}
      SELECT student_id, MIN(scheduled_at) AS happened_at
-     FROM attended_demos GROUP BY student_id`, scopeValues(actor, range, requestedManagerId),
+     FROM attended_demos GROUP BY student_id`, scopeValues(actor, range, requestedManagerId, funnelId),
   );
   const daily = new Map<string, number>();
   for (const row of rows) {
@@ -55,7 +51,7 @@ export async function buildSalesDemoAttendanceStats(actor: DatasetActor, range: 
 
 type AttendanceRow = Omit<SalesDemoStudent, 'visits'> & Omit<SalesDemoVisit, 'scheduledAt'> & { scheduledAt: Date };
 
-export async function buildSalesDemoStudents(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null): Promise<SalesDemoStudent[]> {
+export async function buildSalesDemoStudents(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null, funnelId: number | null = null): Promise<SalesDemoStudent[]> {
   // academy-core.query converts the top-level SQL aliases to camelCase.
   const rows = await query<AttendanceRow>(`${salesDemoAttendanceCte}
     SELECT attendance.*, course.name AS course_name, school.name AS school_name,
@@ -66,7 +62,7 @@ export async function buildSalesDemoStudents(actor: DatasetActor, range: Reporti
     LEFT JOIN academy_rooms room ON room.id = attendance.room_id
     JOIN academy_teachers teacher ON teacher.id = attendance.teacher_id
     LEFT JOIN users manager ON manager.id = attendance.manager_id
-    ORDER BY attendance.scheduled_at DESC, attendance.participant_id DESC`, scopeValues(actor, range, requestedManagerId));
+    ORDER BY attendance.scheduled_at DESC, attendance.participant_id DESC`, scopeValues(actor, range, requestedManagerId, funnelId));
   const students = new Map<number, SalesDemoStudent>();
   for (const row of rows) {
     let student = students.get(row.studentId);

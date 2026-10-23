@@ -1,390 +1,129 @@
 import { hasLeadershipAccess } from '@shared/academy';
-import {
-  type DatasetActor,
-  type Row,
-  query,
-  queryOne,
-} from './academy-core';
-import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
-import { buildSalesDemoAttendanceStats } from './sales-demo-students';
-
-const DAY_MS = 24 * 60 * 60 * 1_000;
-const SUCCESSFUL_CALL_MIN_TALK_SECONDS = 3 * 60;
-const reportingManagerSql = `COALESCE((SELECT CASE WHEN academy_kpi_employee_role($3) = 'closer'
-  THEN tracked.closer_id ELSE tracked.hunter_id END FROM academy_sales_kpi_leads tracked
-  WHERE tracked.lead_id = lead.id), lead.manager_id)`;
-
-export type SalesDashboardMetricReason = {
-  reason: string;
-  count: number;
-};
-
-export type SalesDashboardCoreMetrics = {
-  newLeads: number;
-  processedLeads: number;
-  reachedLeads: number;
-  demoBookings: number;
-  demoAttendees: number;
-  repeatCallLeads: number;
-  repeatCallDistribution: Array<{ attempts: number; count: number }>;
-};
-
-export type SalesDashboardDailyPoint = {
-  date: string;
-  newLeads: number;
-  processedLeads: number;
-  reachedLeads: number;
-  demoBookings: number;
-  demoAttendees: number;
-};
-
-export type SalesDashboardMetrics = SalesDashboardCoreMetrics & {
-  previous: SalesDashboardCoreMetrics;
-  previousRange: { from: string; to: string };
-  daily: SalesDashboardDailyPoint[];
-};
-
-const countValue = (value: unknown) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-};
-
-/** Counts actual persisted actions and unique leads, independently of sales labels. */
-const buildSalesDashboardPeriodMetrics = async (
-  managerId: number | null,
-  start: Date,
-  end: Date,
-): Promise<Omit<SalesDashboardCoreMetrics, 'demoAttendees'>> => {
-  const managerFilter = managerId
-    ? `AND ${reportingManagerSql} = $3`
-    : '';
-  const values = managerId
-    ? [start, end, managerId]
-    : [start, end];
-
-  const row = await queryOne<Row>(
-    `WITH visible_leads AS (
-       SELECT lead.*
-       FROM academy_leads lead
-       WHERE TRUE ${managerFilter}
-     ),
-     period_calls AS (
-       SELECT
-         COALESCE(
-           phone_call.lead_id,
-           CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
-         ) AS lead_id,
-         COUNT(*)::int AS attempts,
-         BOOL_OR(phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}) AS was_reached
-       FROM telephony_calls phone_call
-       JOIN visible_leads lead
-         ON lead.id = COALESCE(
-           phone_call.lead_id,
-           CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
-         )
-       WHERE phone_call.started_at >= $1
-         AND phone_call.started_at < $2
-       GROUP BY COALESCE(
-         phone_call.lead_id,
-         CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
-       )
-     ),
-     period_stage_events AS (
-       SELECT history.lead_id, history.from_status_code, history.to_status_code
-       FROM academy_lead_stage_history history
-       JOIN visible_leads lead ON lead.id = history.lead_id
-       WHERE history.entered_at >= $1
-         AND history.entered_at < $2
-     ),
-     processed_lead_ids AS (
-       SELECT calls.lead_id FROM period_calls calls
-       UNION
-       SELECT communication.lead_id
-       FROM academy_communications communication
-       JOIN visible_leads lead ON lead.id = communication.lead_id
-       WHERE communication.created_at >= $1
-         AND communication.created_at < $2
-       UNION
-       SELECT stage.lead_id
-       FROM period_stage_events stage
-       WHERE stage.from_status_code IS NOT NULL
-       UNION
-       SELECT comment.lead_id
-       FROM academy_lead_comments comment
-       JOIN visible_leads lead ON lead.id = comment.lead_id
-       WHERE comment.created_at >= $1
-         AND comment.created_at < $2
-       UNION
-       SELECT student.lead_id
-       FROM academy_students student
-       JOIN visible_leads lead ON lead.id = student.lead_id
-       WHERE student.created_at >= $1
-         AND student.created_at < $2
-       UNION
-       SELECT lead.id
-       FROM visible_leads lead
-       WHERE lead.archived_at >= $1
-         AND lead.archived_at < $2
-       UNION
-       SELECT lead.id
-       FROM visible_leads lead
-       WHERE lead.updated_at >= $1
-         AND lead.updated_at < $2
-         AND lead.updated_at > lead.created_at
-     ),
-     demo_booking_lead_ids AS (
-       SELECT DISTINCT student.lead_id
-       FROM academy_demo_lesson_participants participant
-       JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
-       JOIN academy_students student ON student.id = participant.student_id
-       JOIN visible_leads lead ON lead.id = student.lead_id
-       WHERE participant.created_at >= $1 AND participant.created_at < $2
-         AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
-     )
-     SELECT
-       (
-         SELECT COUNT(*)::int
-         FROM visible_leads lead
-         WHERE lead.created_at >= $1 AND lead.created_at < $2
-       ) AS new_leads,
-       (SELECT COUNT(*)::int FROM processed_lead_ids) AS processed_leads,
-       (SELECT COUNT(*)::int FROM period_calls calls WHERE calls.was_reached) AS reached_leads,
-       (SELECT COUNT(*)::int FROM demo_booking_lead_ids) AS demo_bookings,
-       (
-         SELECT COUNT(*)::int
-         FROM period_calls calls
-         WHERE calls.attempts BETWEEN 2 AND 5
-       ) AS repeat_call_leads,
-       COALESCE((
-         SELECT JSON_AGG(JSON_BUILD_OBJECT('attempts', buckets.attempts, 'count', buckets.count) ORDER BY buckets.attempts)
-         FROM (SELECT calls.attempts, COUNT(*)::int AS count FROM period_calls calls
-               WHERE calls.attempts BETWEEN 2 AND 5 GROUP BY calls.attempts) buckets
-       ), '[]'::json) AS repeat_call_distribution`,
-    values,
-  );
-
-  return {
-    newLeads: countValue(row?.newLeads),
-    processedLeads: countValue(row?.processedLeads),
-    reachedLeads: countValue(row?.reachedLeads),
-    demoBookings: countValue(row?.demoBookings),
-    repeatCallLeads: countValue(row?.repeatCallLeads),
-    repeatCallDistribution: Array.isArray(row?.repeatCallDistribution) ? row.repeatCallDistribution.flatMap((item: Row) => {
-      const attempts = countValue(item?.attempts);
-      return attempts >= 2 && attempts <= 5 ? [{ attempts, count: countValue(item.count) }] : [];
-    }) : [],
-  };
-};
+import type { SalesActivityReport } from '@shared/contracts/sales-report';
+import { LEAD_QUALIFIED_ACTION, LEAD_QUALIFICATION_REVOKED_ACTION } from '@shared/contracts/lead-qualification';
+import { type DatasetActor, type Row, queryOne } from './academy-core';
+import type { ReportingRange } from './academy-scheduling';
+import { salesDemoAttendanceCte } from './sales-demo-students';
 
 /**
- * Builds per-day series of the core funnel KPIs inside the reporting range
- * (dates follow the academy timezone).
- */
-const buildSalesDashboardDailySeries = async (
-  managerId: number | null,
-  range: ReportingRange,
-): Promise<Omit<SalesDashboardDailyPoint, 'demoAttendees'>[]> => {
-  const managerFilter = managerId
-    ? `AND ${reportingManagerSql} = $3`
-    : '';
-  const values = managerId
-    ? [range.start, range.end, managerId]
-    : [range.start, range.end];
-
-  const [newRows, processedRows, reachedRows, bookingRows] = await Promise.all([
-    query<Row>(
-      `SELECT lead.created_at AS happened_at
-       FROM academy_leads lead
-       WHERE lead.created_at >= $1
-         AND lead.created_at < $2
-         ${managerFilter}`,
-      values,
-    ),
-    query<Row>(
-      `WITH visible_leads AS (
-         SELECT lead.id
-         FROM academy_leads lead
-         WHERE TRUE ${managerFilter}
-       ),
-       processed_events AS (
-         SELECT phone_call.started_at AS happened_at,
-                lead.id AS lead_id
-         FROM telephony_calls phone_call
-         JOIN visible_leads lead
-           ON lead.id = COALESCE(
-             phone_call.lead_id,
-             CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
-           )
-         WHERE phone_call.started_at >= $1
-           AND phone_call.started_at < $2
-         UNION ALL
-         SELECT communication.created_at AS happened_at,
-                communication.lead_id AS lead_id
-         FROM academy_communications communication
-         JOIN visible_leads lead ON lead.id = communication.lead_id
-         WHERE communication.created_at >= $1
-           AND communication.created_at < $2
-         UNION ALL
-         SELECT stage.entered_at AS happened_at,
-                stage.lead_id AS lead_id
-         FROM academy_lead_stage_history stage
-         JOIN visible_leads lead ON lead.id = stage.lead_id
-         WHERE stage.entered_at >= $1
-           AND stage.entered_at < $2
-           AND stage.from_status_code IS NOT NULL
-         UNION ALL
-         SELECT comment.created_at AS happened_at,
-                comment.lead_id AS lead_id
-         FROM academy_lead_comments comment
-         JOIN visible_leads lead ON lead.id = comment.lead_id
-         WHERE comment.created_at >= $1
-           AND comment.created_at < $2
-         UNION ALL
-         SELECT student.created_at AS happened_at,
-                student.lead_id AS lead_id
-         FROM academy_students student
-         JOIN visible_leads lead ON lead.id = student.lead_id
-         WHERE student.created_at >= $1
-           AND student.created_at < $2
-         UNION ALL
-         SELECT source_lead.archived_at AS happened_at,
-                lead.id AS lead_id
-         FROM visible_leads lead
-         JOIN academy_leads source_lead ON source_lead.id = lead.id
-         WHERE source_lead.archived_at >= $1
-           AND source_lead.archived_at < $2
-         UNION ALL
-         SELECT source_lead.updated_at AS happened_at,
-                lead.id AS lead_id
-         FROM visible_leads lead
-         JOIN academy_leads source_lead ON source_lead.id = lead.id
-         WHERE source_lead.updated_at >= $1
-           AND source_lead.updated_at < $2
-           AND source_lead.updated_at > source_lead.created_at
-       )
-       SELECT processed_events.happened_at, processed_events.lead_id
-       FROM processed_events`,
-      values,
-    ),
-    query<Row>(
-      `SELECT phone_call.started_at AS happened_at,
-              lead.id AS lead_id
-       FROM telephony_calls phone_call
-       JOIN academy_leads lead
-         ON lead.id = COALESCE(
-           phone_call.lead_id,
-           CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END
-         )
-       WHERE phone_call.started_at >= $1
-         AND phone_call.started_at < $2
-         AND phone_call.talk_seconds >= ${SUCCESSFUL_CALL_MIN_TALK_SECONDS}
-         ${managerFilter}`,
-      values,
-    ),
-    query<Row>(
-      `SELECT MIN(participant.created_at) AS happened_at
-       FROM academy_demo_lesson_participants participant
-       JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
-       JOIN academy_students student ON student.id = participant.student_id
-       JOIN academy_leads lead ON lead.id = student.lead_id
-       WHERE participant.created_at >= $1 AND participant.created_at < $2
-         AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
-         ${managerFilter}
-       GROUP BY student.lead_id`,
-      values,
-    ),
-  ]);
-
-  const totalDays = Math.max(
-    1,
-    Math.round((range.end.getTime() - range.start.getTime()) / DAY_MS),
-  );
-  const dayKeys: string[] = [];
-  for (let index = 0; index < totalDays; index += 1) {
-    dayKeys.push(academyDateOnlyKey(new Date(range.start.getTime() + index * DAY_MS)));
-  }
-
-  const newCounts = new Map<string, number>();
-  const processedKeysByDay = new Map<string, Set<string>>();
-  const bookingCounts = new Map<string, number>();
-  const reachedKeysByDay = new Map<string, Set<string>>();
-  const bump = (map: Map<string, number>, key: string) => {
-    map.set(key, (map.get(key) ?? 0) + 1);
-  };
-
-  for (const eventRow of newRows) {
-    if (!eventRow.happenedAt) continue;
-    bump(newCounts, academyDateOnlyKey(new Date(eventRow.happenedAt as string)));
-  }
-  // A lead contributes once, on its first booking in this period, matching the headline.
-  for (const eventRow of bookingRows) {
-    if (!eventRow.happenedAt) continue;
-    bump(bookingCounts, academyDateOnlyKey(new Date(eventRow.happenedAt as string)));
-  }
-  for (const eventRow of processedRows) {
-    if (!eventRow.happenedAt) continue;
-    const key = academyDateOnlyKey(new Date(eventRow.happenedAt as string));
-    const leadKey = String(eventRow.leadId ?? '');
-    if (!leadKey) continue;
-    const bucket = processedKeysByDay.get(key) ?? new Set<string>();
-    bucket.add(leadKey);
-    processedKeysByDay.set(key, bucket);
-  }
-  for (const eventRow of reachedRows) {
-    if (!eventRow.happenedAt) continue;
-    const happenedAt = new Date(eventRow.happenedAt as string);
-    const key = academyDateOnlyKey(happenedAt);
-    const leadKey = String(eventRow.leadId ?? '');
-    if (!leadKey) continue;
-    const bucket = reachedKeysByDay.get(key) ?? new Set<string>();
-    bucket.add(leadKey);
-    reachedKeysByDay.set(key, bucket);
-  }
-
-  return dayKeys.map((date) => ({
-    date,
-    newLeads: newCounts.get(date) ?? 0,
-    processedLeads: processedKeysByDay.get(date)?.size ?? 0,
-    reachedLeads: reachedKeysByDay.get(date)?.size ?? 0,
-    demoBookings: bookingCounts.get(date) ?? 0,
-  }));
-};
-
-/**
- * Builds sales KPIs for the selected reporting period, the same KPIs for the
- * previous period of equal length (for trend deltas) and the daily activity
- * series used by the dashboard charts.
+ * Activity dates are independent of card stages. The report scopes the current
+ * lead portfolio by funnel and manager; attendance uses the same portfolio.
+ * Qualifications retain their confirmed funnel and can be explicitly revoked.
  */
 export const buildSalesDashboardMetrics = async (
   actor: DatasetActor,
   range: ReportingRange,
   requestedManagerId: number | null = null,
-): Promise<SalesDashboardMetrics> => {
-  // A sales employee is always pinned to their own figures. Leadership can
-  // request one employee or leave the filter empty for the company-wide view.
-  const managerId = hasLeadershipAccess(actor)
-    ? requestedManagerId
-    : actor.userId;
-  const durationMs = Math.max(1, range.end.getTime() - range.start.getTime());
-  const previousEnd = new Date(range.start.getTime());
-  const previousStart = new Date(range.start.getTime() - durationMs);
-
-  const [current, previous, daily, attendance, previousAttendance] = await Promise.all([
-    buildSalesDashboardPeriodMetrics(managerId, range.start, range.end),
-    buildSalesDashboardPeriodMetrics(managerId, previousStart, previousEnd),
-    buildSalesDashboardDailySeries(managerId, range),
-    buildSalesDemoAttendanceStats(actor, range, requestedManagerId),
-    buildSalesDemoAttendanceStats(actor, { ...range, start: previousStart, end: previousEnd }, requestedManagerId),
-  ]);
-
+  funnelId: number | null = null,
+): Promise<SalesActivityReport> => {
+  const managerId = hasLeadershipAccess(actor) ? requestedManagerId : actor.userId;
+  const row = await queryOne<Row>(
+    `${salesDemoAttendanceCte},
+     visible_leads AS (
+       SELECT lead.* FROM academy_leads lead
+       WHERE ($3::int IS NULL OR lead.manager_id = $3)
+         AND ($4::int IS NULL OR lead.funnel_id = $4)
+     ),
+     period_calls AS (
+       SELECT phone_call.*,
+         COALESCE(phone_call.lead_id,
+           CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END,
+           student.lead_id) AS report_lead_id
+       FROM telephony_calls phone_call
+       LEFT JOIN academy_students student
+         ON phone_call.contact_type = 'student' AND student.id = phone_call.contact_id
+       JOIN visible_leads lead ON lead.id = COALESCE(phone_call.lead_id,
+         CASE WHEN phone_call.contact_type = 'lead' THEN phone_call.contact_id END, student.lead_id)
+       WHERE phone_call.started_at >= $1 AND phone_call.started_at < $2
+     ),
+     qualification_states AS (
+       SELECT DISTINCT ON (lead.id, lead.funnel_id)
+         fact.entity_id AS lead_id, fact.created_at, fact.action
+       FROM audit_logs fact
+       JOIN visible_leads lead ON lead.id = fact.entity_id
+       WHERE fact.entity_type = 'academy_lead' AND fact.action IN ($5, $6)
+         AND fact.new_values->0->>'funnelId' = lead.funnel_id::text
+       ORDER BY lead.id, lead.funnel_id, fact.created_at DESC, fact.id DESC
+     ),
+     qualified_facts AS (
+       SELECT lead_id, created_at FROM qualification_states
+       WHERE action = $5 AND created_at >= $1 AND created_at < $2
+     ),
+     booked_students AS (
+       SELECT DISTINCT student.id AS student_id, student.lead_id
+       FROM academy_demo_lesson_participants participant
+       JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
+       JOIN academy_students student ON student.id = participant.student_id
+       JOIN visible_leads lead ON lead.id = student.lead_id
+       WHERE participant.created_at >= $1 AND participant.created_at < $2
+         AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
+     ),
+     first_student_payments AS (
+       SELECT student.id AS student_id, student.lead_id,
+         MIN(payment.paid_at) AS paid_at
+       FROM academy_students student
+       JOIN visible_leads lead ON lead.id = student.lead_id
+       JOIN academy_payments payment ON payment.student_id = student.id
+       WHERE payment.status = 'paid' AND payment.amount_uzs > 0 AND payment.paid_at IS NOT NULL
+       GROUP BY student.id, student.lead_id
+     ),
+     successful_students AS (
+       SELECT * FROM first_student_payments WHERE paid_at >= $1 AND paid_at < $2
+     ),
+     closure_events AS (
+       SELECT fact.entity_id AS lead_id, fact.created_at AS closed_at,
+         NULLIF(BTRIM(fact.new_values->0->>'archiveReason'), '') AS reason
+       FROM audit_logs fact
+       JOIN visible_leads lead ON lead.id = fact.entity_id
+       WHERE fact.entity_type = 'academy_lead'
+         AND fact.action IN ('ARCHIVE_ACADEMY_LEAD', 'BULK_ARCHIVE_ACADEMY_LEAD')
+         AND fact.created_at >= $1 AND fact.created_at < $2
+       UNION ALL
+       SELECT lead.id, lead.archived_at, NULLIF(BTRIM(lead.archive_reason), '')
+       FROM visible_leads lead
+       WHERE lead.is_archived AND lead.archived_at >= $1 AND lead.archived_at < $2
+     ),
+     closed_leads AS (
+       SELECT DISTINCT ON (lead_id) lead_id, COALESCE(reason, 'unspecified') AS reason
+       FROM closure_events ORDER BY lead_id, closed_at DESC, reason
+     ),
+     processed_lead_ids AS (
+       SELECT report_lead_id AS lead_id FROM period_calls
+       WHERE direction = 'outgoing' OR talk_seconds > 0
+       UNION
+       SELECT communication.lead_id
+       FROM academy_communications communication
+       JOIN visible_leads lead ON lead.id = communication.lead_id
+       WHERE communication.created_by IS NOT NULL
+         AND communication.created_at >= $1 AND communication.created_at < $2
+       UNION
+       SELECT comment.lead_id FROM academy_lead_comments comment
+       JOIN visible_leads lead ON lead.id = comment.lead_id
+       WHERE comment.author_id IS NOT NULL AND comment.created_at >= $1 AND comment.created_at < $2
+       UNION SELECT lead_id FROM booked_students
+       UNION SELECT lead_id FROM qualified_facts
+       UNION SELECT lead_id FROM successful_students
+       UNION SELECT lead_id FROM closed_leads
+     )
+     SELECT
+       (SELECT COUNT(*)::int FROM visible_leads WHERE created_at >= $1 AND created_at < $2) AS new_leads,
+       (SELECT COUNT(*)::int FROM processed_lead_ids) AS processed_leads,
+       (SELECT COUNT(*)::int FROM period_calls WHERE talk_seconds > 0) AS reached_calls,
+       (SELECT COUNT(DISTINCT lead_id)::int FROM qualified_facts) AS qualified_leads,
+       (SELECT COUNT(*)::int FROM booked_students) AS demo_bookings,
+       (SELECT COUNT(DISTINCT student_id)::int FROM attended_demos) AS demo_attendees,
+       (SELECT COUNT(*)::int FROM successful_students) AS successful_students,
+       (SELECT COUNT(*)::int FROM closed_leads) AS closed_leads,
+       COALESCE((SELECT JSON_AGG(reasons ORDER BY reasons.count DESC, reasons.reason)
+         FROM (SELECT reason, COUNT(*)::int AS count FROM closed_leads GROUP BY reason) reasons), '[]'::json) AS closed_reasons`,
+    [range.start, range.end, managerId, funnelId, LEAD_QUALIFIED_ACTION, LEAD_QUALIFICATION_REVOKED_ACTION],
+  );
+  const count = (value: unknown) => Math.max(0, Number(value) || 0);
   return {
-    ...current,
-    demoAttendees: attendance.count,
-    previous: { ...previous, demoAttendees: previousAttendance.count },
-    previousRange: {
-      from: academyDateOnlyKey(previousStart),
-      to: academyDateOnlyKey(new Date(previousEnd.getTime() - 1)),
-    },
-    daily: daily.map((point) => ({ ...point, demoAttendees: attendance.daily.get(point.date) ?? 0 })),
+    newLeads: count(row?.newLeads), processedLeads: count(row?.processedLeads),
+    reachedCalls: count(row?.reachedCalls), qualifiedLeads: count(row?.qualifiedLeads),
+    demoBookings: count(row?.demoBookings), demoAttendees: count(row?.demoAttendees),
+    successfulStudents: count(row?.successfulStudents), closedLeads: count(row?.closedLeads),
+    closedReasons: Array.isArray(row?.closedReasons) ? row.closedReasons : [],
   };
 };

@@ -1,3 +1,4 @@
+import { LeadQualificationAction } from '@/features/leads/ui/LeadQualificationAction';
 import '@/components/ux/lead/lead-workspace.css';
 import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
@@ -1078,6 +1079,8 @@ export function LeadDetailSheet({
               )}
               workflowActions={(
                 <>
+                  <LeadQualificationAction key={`${lead.id}-${lead.funnelId}`} leadId={lead.id} funnelId={lead.funnelId}
+                    disabled={leadReadOnly || Boolean(lead.isArchived)} />
                   {!lead.isArchived ? (
                     <Button
                       type="button"

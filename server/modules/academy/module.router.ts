@@ -199,6 +199,11 @@ router.get('/modules/sales/metrics', async (req, res) => {
     if (!reportingRange) {
       return res.status(400).json({ error: 'invalidReportingPeriod' });
     }
+    const hasFunnelParameter = req.query.funnelId !== undefined;
+    const requestedFunnelId = hasFunnelParameter ? parseId(req.query.funnelId) : null;
+    if (hasFunnelParameter && !requestedFunnelId) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
     const hasManagerParameter = req.query.managerId !== undefined;
     const requestedManagerId = hasManagerParameter ? parseId(req.query.managerId) : null;
     if (hasManagerParameter && !requestedManagerId) {
@@ -235,7 +240,7 @@ router.get('/modules/sales/metrics', async (req, res) => {
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     };
-    res.json(await buildSalesDashboardMetrics(actor, reportingRange, requestedManagerId));
+    res.json(await buildSalesDashboardMetrics(actor, reportingRange, requestedManagerId, requestedFunnelId));
   } catch (error: any) {
     logger.error('Failed to fetch sales dashboard metrics', { error });
     res.status(error.statusCode || 500).json({
@@ -251,6 +256,11 @@ router.get('/modules/sales/demo-students', async (req, res) => {
     if (!reportingRange) {
       return res.status(400).json({ error: 'invalidReportingPeriod' });
     }
+    const hasFunnelParameter = req.query.funnelId !== undefined;
+    const requestedFunnelId = hasFunnelParameter ? parseId(req.query.funnelId) : null;
+    if (hasFunnelParameter && !requestedFunnelId) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
     const hasManagerParameter = req.query.managerId !== undefined;
     const requestedManagerId = hasManagerParameter ? parseId(req.query.managerId) : null;
     if (hasManagerParameter && !requestedManagerId) {
@@ -287,7 +297,7 @@ router.get('/modules/sales/demo-students', async (req, res) => {
       modules: getAssignedModules(req.user),
       scopeModule: 'sales',
     };
-    const demoStudents = await buildSalesDemoStudents(actor, reportingRange, requestedManagerId);
+    const demoStudents = await buildSalesDemoStudents(actor, reportingRange, requestedManagerId, requestedFunnelId);
     res.json(demoStudents);
   } catch (error: any) {
     logger.error('Failed to fetch sales demo students', { error });

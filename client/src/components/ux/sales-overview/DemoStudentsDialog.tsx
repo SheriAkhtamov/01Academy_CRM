@@ -9,18 +9,21 @@ import { salesQueryKeys } from '@/features/sales/queries';
 import { OverviewDialog, overviewButton } from './OverviewDialog';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 
-export function DemoStudentsDialog({ reportingRange, managerId, onClose, onOpenLead }: {
+export function DemoStudentsDialog({ reportingRange, managerId, funnelId = null, onClose, onOpenLead }: {
   reportingRange: { from: string; to: string };
   managerId: number | null;
+  funnelId?: number | null;
   onClose: () => void;
   onOpenLead?: (leadId: number) => void;
 }) {
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const reportingQuery = reportingRangeQuery(reportingRange);
-  const queryString = managerId ? `${reportingQuery}&managerId=${managerId}` : reportingQuery;
+  const queryString = reportingQuery
+    + (managerId ? `&managerId=${managerId}` : '')
+    + (funnelId ? `&funnelId=${funnelId}` : '');
   const { data: students = [], isPending, isError, refetch } = useQuery({
-    queryKey: [...salesQueryKeys.demoStudents, reportingQuery, managerId],
+    queryKey: [...salesQueryKeys.demoStudents, reportingQuery, managerId, funnelId],
     queryFn: () => getSalesDemoStudents(queryString),
   });
   const filtered = useMemo(() => {

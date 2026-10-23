@@ -46,7 +46,7 @@ export function SalesReportTrend({ daily, metric, title, kind, cumulative = fals
   return <div className="min-w-0">
     <div className="mb-3 flex min-h-4 items-center justify-between gap-2 text-[11px] font-medium tabular-nums">
       <span className="truncate text-muted-foreground">{selected === null ? label : interval(active)}</span>
-      <span className={selected === null ? 'invisible' : ''}>{number.format(active.value)}</span>
+      <span className={selected === null ? 'invisible' : 'text-foreground'}>{number.format(active.value)}</span>
     </div>
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none"
       className={`${featured ? 'h-36' : 'h-28'} w-full overflow-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring`}

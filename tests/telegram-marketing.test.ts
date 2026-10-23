@@ -16,12 +16,12 @@ const now = new Date('2026-10-23T21:00:00Z');
 const state = { from: '2026-10-01', to: '2026-10-23', course: 'all' as const, awaitingDates: false };
 
 describe('Meta advertising cohort report', () => {
-  it('resolves explicit course and language evidence from current Meta forms without using age guesses', () => {
+  it('resolves courses from Meta forms but counts languages only after CRM selection', () => {
     expect(resolveMarketingCourse({ courseSlug: null, formName: 'АИ КИДС - РР- УЗБ язык' })).toBe('ai-kids');
     expect(resolveMarketingCourse({ courseSlug: null, formName: 'ВАЙБКОДИНГ - Взрослые' })).toBe('vibe-coding');
     expect(resolveMarketingCourse({ courseSlug: null, formName: 'AI Creator Форма УЗБ' })).toBe('ai-creator');
     expect(resolveMarketingCourse({ courseSlug: null, formName: 'Новая форма' })).toBe('unknown');
-    expect(resolveMarketingLanguages({ languages: [], language: '', formName: 'АИ КИДС - УЗБ', campaignName: 'RU campaign' })).toEqual(['uz']);
+    expect(resolveMarketingLanguages({ languages: [], language: '', formName: 'АИ КИДС - УЗБ', campaignName: 'RU campaign' })).toEqual([]);
     expect(resolveMarketingLanguages({ languages: ['ru'], language: '', formName: 'АИ КИДС - УЗБ' })).toEqual(['ru']);
   });
   it('separates calls, students, languages and actual payments without double-counting repeat demos', () => {

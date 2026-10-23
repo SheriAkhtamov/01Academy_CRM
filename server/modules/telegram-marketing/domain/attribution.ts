@@ -23,13 +23,5 @@ export function resolveMarketingCourse(evidence: Evidence): Exclude<MarketingBot
 export function resolveMarketingLanguages(evidence: {
   languages: string[] | null; language: string | null; formName?: string | null; campaignName?: string | null;
 }) {
-  const recorded = selectedLeadLanguages(evidence.languages, evidence.language);
-  if (recorded.length) return recorded;
-  for (const source of [evidence.formName, evidence.campaignName]) {
-    const name = (source ?? '').toLowerCase();
-    const uz = /(?:^|[^a-z])uz(?:[^a-z]|$)|узб|o[ʻ’']?zbek|uzbek/u.test(name);
-    const ru = /(?:^|[^a-z])ru(?:[^a-z]|$)|русск|рус(?:\s|$)|russian/u.test(name);
-    if (uz || ru) return [...(uz ? ['uz' as const] : []), ...(ru ? ['ru' as const] : [])];
-  }
-  return [];
+  return selectedLeadLanguages(evidence.languages, evidence.language);
 }

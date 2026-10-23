@@ -50,7 +50,16 @@ describe.skipIf(!databaseUrl)("Distributed learning job coordination on isolated
     const pid = (await admin.query("SELECT pid FROM pg_stat_activity WHERE application_name=$1", [`${schema}_lease_a`])).rows[0].pid;
     expect((await admin.query("SELECT pg_terminate_backend($1) AS terminated", [pid])).rows[0].terminated).toBe(true);
     expect(await running).toBe("LMS_JOB_LEASE_LOST"); expect(aborted).toBe(true);
-    expect(await second("lifecycle", async () => { await business.query("SELECT 1"); })).toBe(true);
+    // The connection error can reach the client before the terminating backend
+    // releases its advisory lock. A replica retries a busy singleton normally.
+    let reclaimedRuns = 0;
+    await vi.waitFor(async () => {
+      expect(await second("lifecycle", async () => {
+        reclaimedRuns++;
+        await business.query("SELECT 1");
+      })).toBe(true);
+    }, { timeout: 2000, interval: 20 });
+    expect(reclaimedRuns).toBe(1);
   });
   it("leaves queue-based roles parallel and never borrows the singleton connection for them", async () => {
     const connect = vi.fn(() => { throw new Error("Unexpected lease connection"); });

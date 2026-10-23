@@ -32,7 +32,8 @@ export async function configureMarketingBot(input: { botToken?: string; accessPa
   if (existing.url && existing.url !== webhookUrl) {
     throw Object.assign(new Error('integrationBotAlreadyBound'), { statusCode: 409 });
   }
-  const webhookSecret = current?.webhookSecret || randomBytes(32).toString('base64url');
+  const sameBot = current?.botToken?.split(':')[0] === String(bot.id);
+  const webhookSecret = (sameBot ? current?.webhookSecret : undefined) || randomBytes(32).toString('base64url');
   // Save before accepting webhook traffic; credentials are encrypted by the shared store.
   await saveIntegrationSettings('telegramMarketing', { botToken, passwordHash, webhookSecret, botUsername: bot.username, webhookReady: false });
   try {

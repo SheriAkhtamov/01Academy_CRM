@@ -358,6 +358,7 @@ describe('academy route logic boundaries', () => {
       'website:01academy.uz',
       'meta',
       'onlinepbx',
+      'telegram_marketing',
       'telegram_tasks',
     ]);
     expect(response.body).toContainEqual(expect.objectContaining({

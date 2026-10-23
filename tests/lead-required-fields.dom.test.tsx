@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { zodResolver } from '@hookform/resolvers/zod';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -76,4 +76,19 @@ it('lets the manager select a language and return to an empty selection', async 
   await user.click(language);
   await user.click(screen.getByRole('option', { name: i18n.t('leadClearSelection') }));
   expect(language.textContent).toBe(i18n.t('selectCommunicationLanguage'));
+});
+
+it('keeps each phone owner with its number when removing a row during creation', async () => {
+  const user = userEvent.setup();
+  render(<CreationForm mutate={vi.fn()} />);
+  fireEvent.change(screen.getByRole('textbox', { name: i18n.t('phoneOwnerName') }), { target: { value: 'First' } });
+  await user.click(screen.getByRole('button', { name: i18n.t('addPhone') }));
+  fireEvent.change(screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })[1], { target: { value: 'Second' } });
+  await user.click(screen.getAllByRole('button', { name: i18n.t('removePhone') })[0]);
+  expect(screen.getByDisplayValue('First')).toBeTruthy();
+  await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('removePhone') }));
+  expect((screen.getByRole('textbox', { name: i18n.t('phoneOwnerName') }) as HTMLInputElement).value).toBe('Second');
+  await user.click(screen.getByRole('button', { name: i18n.t('addPhone') }));
+  expect(screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })
+    .map((input) => (input as HTMLInputElement).value)).toEqual(['Second', '']);
 });

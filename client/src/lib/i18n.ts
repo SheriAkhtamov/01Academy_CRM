@@ -1373,6 +1373,7 @@ export const translations = {
   addExpense: { en: 'Add Expense', ru: 'Добавить расход' },
   addTag: { en: 'Add tag', ru: 'Добавить тег' },
   addPhone: { en: 'Add phone', ru: 'Добавить номер' },
+  phoneOwnerName: { en: 'Phone owner’s full name', ru: 'ФИО владельца телефона' },
   addNewUser: { en: 'Add New User', ru: 'Добавить нового пользователя' },
   administration: { en: 'Administration', ru: 'Администрирование' },
   age: { en: 'Age', ru: 'Возраст' },

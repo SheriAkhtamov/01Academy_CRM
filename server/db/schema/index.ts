@@ -351,6 +351,7 @@ export const academyLeadPhones = pgTable("academy_lead_phones", {
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
   phone: varchar("phone", { length: 50 }).notNull(),
   normalizedPhone: varchar("normalized_phone", { length: 50 }).notNull(),
+  ownerName: varchar("owner_name", { length: 255 }),
   isPrimary: boolean("is_primary").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

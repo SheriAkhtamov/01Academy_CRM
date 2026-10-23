@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { leadsApi } from '@/features/leads/api';
 import { leadProcessingGuard } from '@/features/leads/lead-processing-guard';
 import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
+import { phoneOwnerNamesFor, phoneOwnersFromRows } from '@shared/lead-phone-owners';
 import { invalidateLeadData, useLeadDetailsQuery, type LeadInvalidationOptions } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
 import type { TelephonyCallSource } from '@shared/telephony';
@@ -138,6 +139,7 @@ interface LeadDetails {
   schoolId?: number | null;
   phone?: string | null;
   phoneNumbers?: string[];
+  phoneOwners?: Record<string, string>;
   sourceId?: number | null;
   sourceName?: string | null;
   sourceChannel?: string | null;
@@ -322,6 +324,7 @@ const optionalPhoneString = z.string().trim().refine(
 const leadSchema = z.object({
   contactName: z.string().trim().min(1, leadRequiredFieldKeys.contactName),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
+  phoneOwnerNames: z.array(z.string().trim().max(255, 'invalidData')),
   sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
   languages: z.array(z.enum(LEAD_LANGUAGES)),
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
@@ -379,6 +382,7 @@ type PaymentMutationVariables = {
 const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   contactName: lead.contactName ?? '',
   phoneNumbers: visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''],
+  phoneOwnerNames: phoneOwnerNamesFor(visibleLeadPhones(lead).length ? visibleLeadPhones(lead) : [''], lead.phoneOwners),
   sourceId: lead.sourceId ? String(lead.sourceId) : '',
   languages: selectedLeadLanguages(lead.languages, lead.language),
   locality: lead.locality ?? '',
@@ -457,6 +461,7 @@ export function LeadDetailSheet({
     defaultValues: {
       contactName: '',
       phoneNumbers: [''],
+      phoneOwnerNames: [''],
       sourceId: '',
       languages: [],
       locality: '',
@@ -534,6 +539,7 @@ export function LeadDetailSheet({
       lead.id,
       lead.contactName,
       (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
+      JSON.stringify(lead.phoneOwners ?? {}),
       lead.sourceId ?? '',
       selectedLeadLanguages(lead.languages, lead.language).join(','),
       lead.locality ?? '',
@@ -637,7 +643,7 @@ export function LeadDetailSheet({
 
   const updateLead = useMutation({
     mutationFn: (values: LeadFormValues) => {
-      const { phoneNumbers, ...rest } = values;
+      const { phoneNumbers, phoneOwnerNames, ...rest } = values;
       const nextPhoneNumbers = compactPhoneNumbers(phoneNumbers);
       const currentLead = leadQuery.data;
       const hasOnlyHiddenInstagramPhone = Boolean(
@@ -653,7 +659,10 @@ export function LeadDetailSheet({
       return leadsApi.update<LeadDetails>(leadId!, {
         ...rest,
         expectedUpdatedAt: editVersion.current ?? currentLead?.updatedAt,
-        ...(hasOnlyHiddenInstagramPhone ? {} : { phoneNumbers: nextPhoneNumbers }),
+        ...(hasOnlyHiddenInstagramPhone ? {} : {
+          phoneNumbers: nextPhoneNumbers,
+          phoneOwners: phoneOwnersFromRows(phoneNumbers, phoneOwnerNames),
+        }),
         sourceId: Number(values.sourceId),
         language: values.languages[0] ?? '',
         locality: values.locality || null,
@@ -852,11 +861,15 @@ export function LeadDetailSheet({
   }, [phoneValues]);
   const addLeadPhoneRow = () => {
     setPhoneKeys((current) => [...current, `lead-phone-new-${phoneKeySequence.current++}`]);
+    const owners = phoneValues.map((_, index) => leadForm.getValues(`phoneOwnerNames.${index}`) ?? '');
+    leadForm.setValue('phoneOwnerNames', [...owners, ''], { shouldDirty: true });
     leadForm.setValue('phoneNumbers', [...phoneValues, ''], { shouldDirty: true, shouldValidate: true });
   };
   const removeLeadPhoneRow = (index: number) => {
     setPhoneKeys((current) => current.filter((_, i) => i !== index));
     const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+    const nextOwners = leadForm.getValues('phoneOwnerNames').filter((_, phoneIndex) => phoneIndex !== index);
+    leadForm.setValue('phoneOwnerNames', nextOwners.length ? nextOwners : [''], { shouldDirty: true, shouldValidate: true });
     leadForm.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
       shouldDirty: true,
       shouldValidate: true,
@@ -961,9 +974,11 @@ export function LeadDetailSheet({
   const showDealErrors = (errors: FieldErrors<LeadFormValues>) => {
     const field = Object.keys(errors)[0] as keyof LeadFormValues | undefined;
     if (!field) return;
-    const phoneErrorIndex = Array.isArray(errors.phoneNumbers) ? errors.phoneNumbers.findIndex(Boolean) : 0;
-    setInvalidField(field === 'phoneNumbers' ? `phoneNumbers.${Math.max(0, phoneErrorIndex)}` : field);
-    navigateTo('deal', field === 'contactName' || field === 'phoneNumbers' || field === 'languages'
+    const phoneField = field === 'phoneNumbers' || field === 'phoneOwnerNames' ? field : null;
+    const phoneErrors = phoneField ? errors[phoneField] : undefined;
+    const phoneErrorIndex = Array.isArray(phoneErrors) ? phoneErrors.findIndex(Boolean) : 0;
+    setInvalidField(phoneField ? `${phoneField}.${Math.max(0, phoneErrorIndex)}` : field);
+    navigateTo('deal', field === 'contactName' || phoneField || field === 'languages'
       ? 'contacts' : field === 'sourceId' ? 'details' : 'preferences');
   };
   const saveDeal = leadForm.handleSubmit((values) => {
@@ -1221,33 +1236,49 @@ export function LeadDetailSheet({
                           </div>
                           <div className="flex flex-col gap-2">
                             {phoneValues.map((_, index) => (
-                              <FormField
+                              <div
                                 key={phoneKeys[index] ?? `lead-phone-fallback-${index}`}
-                                control={leadForm.control}
-                                name={`phoneNumbers.${index}`}
-                                render={({ field }) => (
-                                  <FormItem className="space-y-1">
-                                    <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
-                                    <div className="flex gap-2">
+                                className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-2"
+                              >
+                                <FormField
+                                  control={leadForm.control}
+                                  name={`phoneNumbers.${index}`}
+                                  render={({ field }) => (
+                                    <FormItem className="min-w-0 space-y-1">
+                                      <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
                                       <FormControl>
                                         <PhoneInput ref={field.ref} name={field.name} onBlur={field.onBlur} value={field.value} onValueChange={field.onChange} />
                                       </FormControl>
-                                      {phoneValues.length > 1 ? (
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="icon"
-                                          aria-label={t('removePhone')}
-                                          onClick={() => setRemovePhoneIndex(index)}
-                                        >
-                                          <Trash2 />
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                    <LocalizedFormMessage />
-                                  </FormItem>
-                                )}
-                              />
+                                      <LocalizedFormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={leadForm.control}
+                                  name={`phoneOwnerNames.${index}`}
+                                  render={({ field }) => (
+                                    <FormItem className="min-w-0 space-y-1">
+                                      <FormLabel>{t('phoneOwnerName')}</FormLabel>
+                                      <div className="flex items-start gap-2">
+                                        <FormControl><Input {...field} value={field.value ?? ''} maxLength={255} className="min-w-0" /></FormControl>
+                                        {phoneValues.length > 1 ? (
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            className="shrink-0"
+                                            aria-label={t('removePhone')}
+                                            onClick={() => setRemovePhoneIndex(index)}
+                                          >
+                                            <Trash2 />
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                      <LocalizedFormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
                             ))}
                             {phoneNumbersMessage ? (
                               <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { leadLanguageSchema, type CreateAcademyLeadRequest } from '@shared/contracts/academy-leads';
 import type { TranslationKey } from '@/lib/i18n';
+import { phoneOwnersFromRows } from '@shared/lead-phone-owners';
 
 export const leadRequiredFieldKeys = {
   contactName: 'contactPersonRequired',
@@ -35,6 +36,7 @@ const uniquePhoneNumbers = (values: string[]) => {
 export const createLeadSchema = z.object({
   contactName: z.string().trim().min(1, leadRequiredFieldKeys.contactName),
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
+  phoneOwnerNames: z.array(z.string().trim().max(255, 'invalidData')).optional(),
   sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
   funnelId: z.string().min(1, leadRequiredFieldKeys.funnelId),
   managerId: z.string().min(1, leadRequiredFieldKeys.managerId),
@@ -47,6 +49,7 @@ export type CreateLeadFormValues = z.infer<typeof createLeadSchema>;
 export const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   contactName: '',
   phoneNumbers: [''],
+  phoneOwnerNames: [''],
   sourceId: '',
   funnelId: '',
   managerId: '',
@@ -54,10 +57,14 @@ export const EMPTY_LEAD_FORM: CreateLeadFormValues = {
   language: '',
 };
 
-export const createLeadPayload = (values: CreateLeadFormValues): CreateAcademyLeadRequest => ({
-  ...values,
-  phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
-  sourceId: Number(values.sourceId),
-  funnelId: Number(values.funnelId),
-  managerId: values.managerId ? Number(values.managerId) : undefined,
-});
+export const createLeadPayload = (values: CreateLeadFormValues): CreateAcademyLeadRequest => {
+  const { phoneOwnerNames, ...rest } = values;
+  return {
+    ...rest,
+    phoneNumbers: compactPhoneNumbers(values.phoneNumbers),
+    phoneOwners: phoneOwnersFromRows(values.phoneNumbers, phoneOwnerNames),
+    sourceId: Number(values.sourceId),
+    funnelId: Number(values.funnelId),
+    managerId: values.managerId ? Number(values.managerId) : undefined,
+  };
+};

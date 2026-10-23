@@ -29,6 +29,7 @@ const initialLead = {
   goal: 'Interested in AI', urgency: 'Ready this week',
   createdAt: '2026-08-01T08:00:00.000Z', updatedAt: '2026-08-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567', '+998901234568'],
+  phoneOwners: {} as Record<string, string>,
   students: [{ id: 50, studentName: 'Test student' as string | null, status: 'studying', expectedPaymentUzs: 100_000, updatedAt: '2026-08-01T08:00:00.000Z' }],
   payments: [] as Array<{ id: number; status: string; amountUzs: number; paidAt: string; type?: string }>, comments: [],
   tasks: [
@@ -760,6 +761,42 @@ describe('lead workspace navigation and drafts', () => {
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0].body.phoneNumbers).toEqual(['+998901234567']);
+  });
+
+  it('loads, saves and clears the owner of an individual phone', async () => {
+    lead.phoneOwners = { '+998901234567': 'First parent', '+998901234568': 'Second parent' };
+    queryClient.setQueryData(['/api/academy/leads', 15], lead);
+    const { user } = renderSheet();
+    const owners = await screen.findAllByRole('textbox', { name: i18n.t('phoneOwnerName') });
+    expect(owners.map((input) => (input as HTMLInputElement).value)).toEqual(['First parent', 'Second parent']);
+    await user.clear(owners[0]);
+    await user.clear(owners[1]);
+    await user.type(owners[1], 'Updated parent');
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body.phoneOwners).toEqual({ '+998901234567': '', '+998901234568': 'Updated parent' });
+    await screen.findByText(i18n.t('leadWorkspaceSaved'));
+    expect(screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })
+      .map((input) => (input as HTMLInputElement).value)).toEqual(['', 'Updated parent']);
+  });
+
+  it('keeps owners attached to their phones after removing a middle row and adding a new one', async () => {
+    lead.phoneNumbers.push('+998901234569');
+    lead.phoneOwners = { '+998901234567': 'First', '+998901234568': 'Second', '+998901234569': 'Third' };
+    queryClient.setQueryData(['/api/academy/leads', 15], lead);
+    const { user } = renderSheet();
+    await screen.findByDisplayValue('Third');
+    await user.click(screen.getAllByRole('button', { name: i18n.t('removePhone') })[1]);
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: i18n.t('removePhone') }));
+    await waitFor(() => expect(screen.queryByDisplayValue('Second')).toBeNull());
+    expect(screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })
+      .map((input) => (input as HTMLInputElement).value)).toEqual(['First', 'Third']);
+    await user.click(screen.getByRole('button', { name: i18n.t('addPhone') }));
+    expect((screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })[2] as HTMLInputElement).value).toBe('');
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body.phoneNumbers).toEqual(['+998901234567', '+998901234569']);
+    expect(requests[0].body.phoneOwners).toEqual({ '+998901234567': 'First', '+998901234569': 'Third' });
   });
 });
 

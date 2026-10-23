@@ -15,6 +15,8 @@ const optionalTextInput = z.string().trim().max(5_000).optional().nullable();
 export const leadLanguageSchema = z.union([z.enum(LEAD_LANGUAGES), z.literal('')]);
 export const leadLanguagesSchema = z.array(z.enum(LEAD_LANGUAGES)).max(LEAD_LANGUAGES.length)
   .refine((values) => new Set(values).size === values.length);
+export const leadPhoneOwnersSchema = z.record(z.string().trim().max(80), z.string().trim().max(255))
+  .refine((owners) => Object.keys(owners).length <= 10);
 
 /**
  * This contract covers the public shape accepted by POST /api/academy/leads.
@@ -25,6 +27,7 @@ export const createAcademyLeadRequestSchema = z.object({
   contactName: z.string().trim().min(1).max(255),
   phone: z.string().trim().max(80).optional().nullable(),
   phoneNumbers: z.array(z.string().trim().max(80)).max(10).optional(),
+  phoneOwners: leadPhoneOwnersSchema.optional(),
   messenger: z.string().trim().max(255).optional().nullable(),
   sourceId: optionalPositiveIdInput,
   sourceCode: z.string().trim().max(80).optional().nullable(),
@@ -195,6 +198,7 @@ export const updateAcademyLeadRequestSchema = z.object({
   contactName: z.string().trim().min(1).max(255).optional(),
   phone: z.string().trim().max(80).optional().nullable(),
   phoneNumbers: z.array(z.string().trim().max(80)).max(10).optional(),
+  phoneOwners: leadPhoneOwnersSchema.optional(),
   messenger: z.string().trim().max(255).optional().nullable(),
   sourceId: optionalPositiveIdInput,
   managerId: optionalPositiveIdInput,

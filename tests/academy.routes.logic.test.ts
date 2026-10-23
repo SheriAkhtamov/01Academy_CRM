@@ -5120,6 +5120,82 @@ describe('academy route logic boundaries', () => {
     expect(mocks.poolQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE "academy_students"'), [5, '["low_attendance"]']);
   });
 
+  it('creates phone owners alongside normalized lead phones', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('FROM academy_lead_sources')) return { rows: [{ id: 2 }] };
+      if (sql.includes('JOIN academy_lead_statuses stage')) return { rows: [{ code: 'new_request' }] };
+      if (sql.includes('FROM academy_sales_funnels')) return { rows: [{ id: 3, is_assigned: true }] };
+      if (sql.includes('FROM academy_lead_statuses')) return { rows: [{ id: 1, code: 'new_request', funnel_id: 3 }] };
+      if (sql.includes('FROM users u')) return { rows: [{ id: 7, full_name: 'Sales manager' }] };
+      if (sql.includes('INSERT INTO "academy_leads"')) return { rows: [leadFixture({ manager_id: 7 })] };
+      if (sql.includes('INSERT INTO academy_lead_phones')) {
+        expect(values).toEqual([42, '+998901234567', '+998901234567', true, 'Phone owner', true]);
+        return { rows: [{ owner_name: values[4] }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).post('/api/academy/leads').send({
+      contactName: 'Parent', sourceId: 2, funnelId: 3,
+      phoneNumbers: ['90 123 45 67'], phoneOwners: { '+998901234567': '  Phone owner  ' },
+    });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
+    expect(response.body).toMatchObject({ phoneNumbers: ['+998901234567'], phoneOwners: { '+998901234567': 'Phone owner' } });
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it.each([
+    { label: 'changes', owners: { '+998901234567': 'Updated owner' }, expected: 'Updated owner', supplied: true },
+    { label: 'clears', owners: { '+998901234567': '' }, expected: null, supplied: true },
+    { label: 'preserves omitted', owners: undefined, expected: 'Existing owner', supplied: false },
+  ])('$label phone owners while updating a lead', async ({ owners, expected, supplied }) => {
+    const existing = leadFixture({ phone: '+998901234567', phone_numbers: ['+998901234567'] });
+    mocks.poolQuery.mockImplementation(async (sql: string) => (
+      sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')
+        ? { rows: [existing] } : emptyResult()
+    ));
+    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [existing] };
+      if (sql.includes('UPDATE "academy_leads"')) return { rows: [existing] };
+      if (sql.includes('INSERT INTO academy_lead_phones')) {
+        expect(values).toEqual([42, '+998901234567', '+998901234567', true, supplied ? expected : null, supplied]);
+        return { rows: [{ owner_name: expected }] };
+      }
+      return emptyResult();
+    });
+
+    const response = await request(await createApp()).patch('/api/academy/leads/42').send({
+      phoneNumbers: ['+998 90 123 45 67'], ...(owners ? { phoneOwners: owners } : {}),
+    });
+
+    expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
+    expect(response.body.phoneOwners).toEqual(expected ? { '+998901234567': expected } : {});
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
+    expect(mocks.clientQuery).toHaveBeenCalledWith(expect.stringContaining('normalized_phone <> ALL'), [42, ['+998901234567']]);
+  });
+
+  it('preserves unmentioned phone owners when updating another name', async () => {
+    const { normalizeLeadPhones } = await import('../server/modules/academy/academy-core');
+    expect(normalizeLeadPhones(['+998901234567', '+998901234568'], { '+998901234567': 'Updated' })).toEqual([
+      { phone: '+998901234567', normalizedPhone: '+998901234567', ownerName: 'Updated' },
+      { phone: '+998901234568', normalizedPhone: '+998901234568' },
+    ]);
+  });
+
+  it('hides owner mappings when an unassigned lead phone is masked', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'masked_until_assigned' });
+    const { applyLeadVisibilityForActor } = await import('../server/modules/academy/academy-core');
+    const rows = await applyLeadVisibilityForActor(mocks.actor, [{
+      id: 42, managerId: null, phone: '+998901234567', phoneNumbers: ['+998901234567'],
+      phoneOwners: { '+998901234567': 'Private owner' },
+    }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].phoneOwners).toEqual({});
+  });
+
   it('rejects a lead whose referrer student does not exist', async () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();

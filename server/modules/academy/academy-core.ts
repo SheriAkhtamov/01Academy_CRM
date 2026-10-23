@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
+import { leadPhoneIdentity } from '@shared/lead-phone-owners';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -174,30 +175,34 @@ export const nullableText = (value: unknown) => {
 export type NormalizedLeadPhone = {
   phone: string;
   normalizedPhone: string;
+  ownerName?: string | null;
 };
 
 export const normalizePhoneForStorage = (value: unknown): NormalizedLeadPhone | null => {
   const text = nullableText(value);
   if (!text) return null;
-  let digits = text.replace(/\D/g, '');
-  if (!digits) return null;
-  if (digits.startsWith('00')) digits = digits.slice(2);
-  if (digits.length === 9) digits = `998${digits}`;
-  const phone = `+${digits}`;
+  const phone = leadPhoneIdentity(text);
+  if (!phone) return null;
   return { phone, normalizedPhone: phone };
 };
 
-export const normalizeLeadPhones = (value: unknown): NormalizedLeadPhone[] => {
+export const normalizeLeadPhones = (value: unknown, owners?: Record<string, string>): NormalizedLeadPhone[] => {
   const rawValues = Array.isArray(value)
     ? value
     : value === undefined || value === null
       ? []
       : [value];
   const seen = new Set<string>();
+  const normalizedOwners = owners === undefined ? undefined : new Map(
+    Object.entries(owners).map(([phone, name]) => [leadPhoneIdentity(phone), nullableText(name)]),
+  );
   return rawValues.flatMap((raw) => {
     const normalized = normalizePhoneForStorage(raw);
     if (!normalized || seen.has(normalized.normalizedPhone)) return [];
     seen.add(normalized.normalizedPhone);
+    if (normalizedOwners?.has(normalized.normalizedPhone)) {
+      normalized.ownerName = normalizedOwners.get(normalized.normalizedPhone) ?? null;
+    }
     return [normalized];
   });
 };
@@ -213,7 +218,13 @@ export const leadPhoneNumbersSelect = (leadAlias = 'l') => `
       WHEN ${leadAlias}.phone IS NULL OR btrim(${leadAlias}.phone) = '' THEN '[]'::json
       ELSE json_build_array(${leadAlias}.phone)
     END
-  ) AS phone_numbers`;
+  ) AS phone_numbers,
+  COALESCE(
+    (SELECT json_object_agg(lp.normalized_phone, lp.owner_name)
+     FROM academy_lead_phones lp
+     WHERE lp.lead_id = ${leadAlias}.id AND lp.owner_name IS NOT NULL),
+    '{}'::json
+  ) AS phone_owners`;
 
 export const leadChannelsSelect = (leadAlias = 'l') => `
   COALESCE(
@@ -669,15 +680,27 @@ export const deleteRow = async (table: string, id: number) => {
 };
 
 export const syncLeadPhones = async (leadId: number, phones: NormalizedLeadPhone[]) => {
-  await query(`DELETE FROM academy_lead_phones WHERE lead_id = $1`, [leadId]);
+  const owners: Record<string, string> = {};
   for (let index = 0; index < phones.length; index += 1) {
-    await insertRow('academy_lead_phones', {
-      leadId,
-      phone: phones[index].phone,
-      normalizedPhone: phones[index].normalizedPhone,
-      isPrimary: index === 0,
-    });
+    const phone = phones[index];
+    // Legacy writers omit ownerName; updating a phone must preserve its owner.
+    const rows = await query(
+      `INSERT INTO academy_lead_phones (lead_id, phone, normalized_phone, is_primary, owner_name)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (lead_id, normalized_phone) DO UPDATE
+       SET phone = EXCLUDED.phone, is_primary = EXCLUDED.is_primary,
+           owner_name = CASE WHEN $6 THEN EXCLUDED.owner_name ELSE academy_lead_phones.owner_name END,
+           updated_at = NOW()
+       RETURNING owner_name`,
+      [leadId, phone.phone, phone.normalizedPhone, index === 0, phone.ownerName ?? null, phone.ownerName !== undefined],
+    );
+    if (rows[0]?.ownerName) owners[phone.normalizedPhone] = String(rows[0].ownerName);
   }
+  await query(
+    `DELETE FROM academy_lead_phones WHERE lead_id = $1 AND normalized_phone <> ALL($2::text[])`,
+    [leadId, phones.map((phone) => phone.normalizedPhone)],
+  );
+  return owners;
 };
 
 export const ensureOperationsAccess = (req: any, res: any) => {
@@ -768,6 +791,7 @@ export const applyLeadVisibilityForActor = async (actor: DatasetActor | undefine
         phoneNumbers: Array.isArray(lead.phoneNumbers)
           ? lead.phoneNumbers.map((phone: string) => maskPhone(phone))
           : lead.phoneNumbers,
+        phoneOwners: {},
       }
       : lead;
   });

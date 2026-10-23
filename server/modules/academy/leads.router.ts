@@ -75,7 +75,7 @@ import {
   type NormalizedWeeklyScheduleItem,
 } from '@shared/scheduling';
 import { leadTagNameKey, type LeadTagOption } from '@shared/lead-tags';
-import { createAcademyLeadRequestSchema } from '@shared/contracts/academy-leads';
+import { createAcademyLeadRequestSchema, leadPhoneOwnersSchema } from '@shared/contracts/academy-leads';
 import { parseLeadLanguageUpdates } from './lead-languages';
 import { assertStudentLeadAccess, leadExpectedPaymentTotalSelect, parseStudentExpectedPayment } from './student-expected-payment';
 import { parseLeadPreferenceUpdates } from './lead-preferences';
@@ -280,7 +280,7 @@ router.post('/leads', async (req, res) => {
     }
     const input = parsedInput.data;
     const contactName = nullableText(input.contactName);
-    const phones = normalizeLeadPhones(input.phoneNumbers ?? input.phone);
+    const phones = normalizeLeadPhones(input.phoneNumbers ?? input.phone, input.phoneOwners);
     const primaryPhone = phones[0]?.phone ?? null;
     const messenger = nullableText(input.messenger);
 
@@ -386,7 +386,7 @@ router.post('/leads', async (req, res) => {
           [createdLead.id, enrolledGroupId, req.user!.id],
         );
       }
-      await syncLeadPhones(createdLead.id, phones);
+      const phoneOwners = await syncLeadPhones(createdLead.id, phones);
       await syncLeadChannelInCurrentTransaction({
         leadId: Number(createdLead.id),
         sourceId: Number(sourceId),
@@ -400,7 +400,7 @@ router.post('/leads', async (req, res) => {
         req.user!.id,
         enrolledGroupId ? 'Создание лида и добавление в группу' : 'Создание лида',
       );
-      return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone) };
+      return { ...createdLead, phoneNumbers: phones.map((phone) => phone.phone), phoneOwners };
     });
 
     await notifyLeadIntake(req.actor!, lead);
@@ -905,6 +905,8 @@ router.patch('/leads/:id', async (req, res) => {
   }
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
+    const parsedPhoneOwners = leadPhoneOwnersSchema.optional().safeParse(req.body.phoneOwners);
+    if (!parsedPhoneOwners.success) return res.status(400).json({ error: 'invalidData' });
     if (
       req.body.demoAt !== undefined
       || req.body.demoCourseId !== undefined
@@ -992,8 +994,12 @@ router.patch('/leads/:id', async (req, res) => {
     const managerId = requestedManagerId
       ? await resolveLeadManagerId(req.actor!, requestedManagerId, oldLead.funnelRole, oldLead.funnelId)
       : undefined;
-    const requestedPhones = req.body.phoneNumbers !== undefined || req.body.phone !== undefined
-      ? normalizeLeadPhones(req.body.phoneNumbers ?? req.body.phone)
+    const hasRequestedPhones = req.body.phoneNumbers !== undefined || req.body.phone !== undefined;
+    const requestedPhones = hasRequestedPhones || req.body.phoneOwners !== undefined
+      ? normalizeLeadPhones(
+        hasRequestedPhones ? req.body.phoneNumbers ?? req.body.phone : oldLead.phoneNumbers ?? oldLead.phone,
+        parsedPhoneOwners.data,
+      )
       : undefined;
     const requestedMessenger = req.body.messenger !== undefined ? nullableText(req.body.messenger) : undefined;
     const duplicate = await findDuplicate(
@@ -1234,11 +1240,12 @@ router.patch('/leads/:id', async (req, res) => {
         await recordManualLeadStageMove(req.actor!, lockedLead, updated);
       }
       if (updated && requestedPhones !== undefined) {
-        await syncLeadPhones(id, requestedPhones);
+        const phoneOwners = await syncLeadPhones(id, requestedPhones);
         return {
           ...updated,
           managerName: lockedManager?.fullName ?? oldLead.managerName,
           phoneNumbers: requestedPhones.map((phone) => phone.phone),
+          phoneOwners,
         };
       }
       return updated ? { ...updated, managerName: lockedManager?.fullName ?? oldLead.managerName } : updated;

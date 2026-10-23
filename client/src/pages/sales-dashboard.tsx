@@ -1057,6 +1057,7 @@ export function LeadForm({
 }) {
   const phoneNumbersRaw = form.watch('phoneNumbers');
   const phoneValues = useMemo(() => (phoneNumbersRaw && phoneNumbersRaw.length > 0 ? phoneNumbersRaw : ['']), [phoneNumbersRaw]);
+  const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
   /*
     Parallel stable ids for the phone rows: React must not reuse one input's
     DOM node for a different logical phone after deleting a middle row (focus
@@ -1073,11 +1074,15 @@ export function LeadForm({
   }, [phoneValues]);
   const addPhoneRow = () => {
     setPhoneKeys((current) => [...current, `phone-new-${Date.now()}-${current.length}`]);
+    const owners = phoneValues.map((_, index) => form.getValues(`phoneOwnerNames.${index}`) ?? '');
+    form.setValue('phoneOwnerNames', [...owners, ''], { shouldDirty: true });
     form.setValue('phoneNumbers', [...phoneValues, ''], { shouldDirty: true, shouldValidate: true });
   };
   const removePhoneRow = (index: number) => {
     setPhoneKeys((current) => current.filter((_, i) => i !== index));
     const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+    const nextOwners = (form.getValues('phoneOwnerNames') ?? []).filter((_, phoneIndex) => phoneIndex !== index);
+    form.setValue('phoneOwnerNames', nextOwners.length ? nextOwners : [''], { shouldDirty: true, shouldValidate: true });
     form.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
       shouldDirty: true,
       shouldValidate: true,
@@ -1106,48 +1111,51 @@ export function LeadForm({
             </FormItem>
           )}
         />
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3 md:col-span-2">
           {phoneValues.map((_, index) => (
-            <FormField
+            <div
               // Stable per-row ids: deleting a middle phone must not shift
               // input identity (focus/cursor jumps).
               key={phoneKeys[index] ?? `phone-fallback-${index}`}
-              control={form.control}
-              name={`phoneNumbers.${index}`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
-                  <div className="flex gap-2">
+              className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-2"
+            >
+              <FormField
+                control={form.control}
+                name={`phoneNumbers.${index}`}
+                render={({ field }) => (
+                  <FormItem className="min-w-0 space-y-1">
+                    <FormLabel>{index === 0 ? t('phone') : `${t('phone')} ${index + 1}`}</FormLabel>
                     <FormControl>
-                      <PhoneInput
-                        ref={field.ref}
-                        name={field.name}
-                        value={field.value}
-                        onBlur={field.onBlur}
-                        onValueChange={field.onChange}
-                      />
+                      <PhoneInput ref={field.ref} name={field.name} value={field.value} onBlur={field.onBlur} onValueChange={field.onChange} disabled={createLead.isPending} />
                     </FormControl>
-                    {phoneValues.length > 1 ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        aria-label={t('removePhone')}
-                        onClick={() => removePhoneRow(index)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    ) : null}
-                  </div>
-                  <LocalizedFormMessage />
-                </FormItem>
-              )}
-            />
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`phoneOwnerNames.${index}`}
+                render={({ field }) => (
+                  <FormItem className="min-w-0 space-y-1">
+                    <FormLabel>{t('phoneOwnerName')}</FormLabel>
+                    <div className="flex items-start gap-2">
+                      <FormControl><Input {...field} value={field.value ?? ''} maxLength={255} className="min-w-0" disabled={createLead.isPending} /></FormControl>
+                      {phoneValues.length > 1 ? (
+                        <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label={t('removePhone')} disabled={createLead.isPending} onClick={() => setRemovePhoneIndex(index)}>
+                          <Trash2 />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <LocalizedFormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           ))}
           {phoneNumbersMessage ? (
             <p className="text-sm font-medium text-destructive">{t(phoneNumbersMessage)}</p>
           ) : null}
-          <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addPhoneRow}>
+          <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addPhoneRow} disabled={createLead.isPending}>
             <Plus data-icon="inline-start" />
             {t('addPhone')}
           </Button>
@@ -1263,6 +1271,17 @@ export function LeadForm({
           </Button>
         </div>
       </form>
+      <ConfirmDialog
+        open={removePhoneIndex !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setRemovePhoneIndex(null); }}
+        title={t('leadWorkspaceRemovePhoneTitle')}
+        description=""
+        target={removePhoneIndex === null ? '' : [phoneValues[removePhoneIndex], form.getValues(`phoneOwnerNames.${removePhoneIndex}`)].filter(Boolean).join(' — ')}
+        confirmLabel={t('removePhone')}
+        variant="destructive"
+        isPending={createLead.isPending}
+        onConfirm={() => { if (removePhoneIndex !== null) removePhoneRow(removePhoneIndex); }}
+      />
     </Form>
   );
 }

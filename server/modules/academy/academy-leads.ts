@@ -11,6 +11,7 @@ import {
 } from '@shared/academy';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import { selectedLeadLanguages } from '@shared/lead-languages';
+import { leadPhoneOwnersSchema } from '@shared/contracts/academy-leads';
 import { logger } from '../../lib/logger';
 import { leadExpectedPaymentTotalSelect } from './student-expected-payment';
 import { leadViewStateAfterManagerTransfer } from '../../services/lead-view-state';
@@ -514,6 +515,17 @@ export const mergeLeadRecords = async (
     await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [retainedLeadId]);
   }
 
+  // Keep the retained lead's owner, filling an empty name from its duplicate.
+  await query(
+    `UPDATE academy_lead_phones retained_phone
+     SET owner_name = source_phone.owner_name, updated_at = NOW()
+     FROM academy_lead_phones source_phone
+     WHERE retained_phone.lead_id = $1 AND source_phone.lead_id = $2
+       AND retained_phone.normalized_phone = source_phone.normalized_phone
+       AND NULLIF(BTRIM(retained_phone.owner_name), '') IS NULL
+       AND source_phone.owner_name IS NOT NULL`,
+    [retainedLeadId, duplicateLeadId],
+  );
   await query(
     `DELETE FROM academy_lead_phones source_phone
      USING academy_lead_phones retained_phone
@@ -752,7 +764,11 @@ export const mergeLeadDraftIntoExisting = async (
     throw Object.assign(new Error('leadMergeAccessDenied'), { statusCode: 403 });
   }
 
-  const draftPhones = normalizeLeadPhones(draft.phoneNumbers ?? draft.phone);
+  const parsedPhoneOwners = leadPhoneOwnersSchema.optional().safeParse(draft.phoneOwners);
+  if (!parsedPhoneOwners.success) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  const draftPhones = normalizeLeadPhones(draft.phoneNumbers ?? draft.phone, parsedPhoneOwners.data);
   const draftMessenger = nullableText(draft.messenger);
   await lockLeadContactIdentities(draftPhones, draftMessenger);
   const otherDuplicate = await findDuplicate(draftPhones, draftMessenger, {
@@ -779,15 +795,17 @@ export const mergeLeadDraftIntoExisting = async (
     mergedPhones.set(String(phone.normalizedPhone), {
       phone: String(phone.phone),
       normalizedPhone: String(phone.normalizedPhone),
+      ownerName: nullableText(phone.ownerName),
     });
   }
   if (usefulLeadValue(retainedLead.phone) && !isSyntheticInstagramIdentity(retainedLead.phone)) {
     for (const phone of normalizeLeadPhones(retainedLead.phone)) {
-      mergedPhones.set(phone.normalizedPhone, phone);
+      if (!mergedPhones.has(phone.normalizedPhone)) mergedPhones.set(phone.normalizedPhone, phone);
     }
   }
   for (const phone of draftPhones) {
-    mergedPhones.set(phone.normalizedPhone, phone);
+    const existing = mergedPhones.get(phone.normalizedPhone);
+    mergedPhones.set(phone.normalizedPhone, { ...phone, ownerName: existing?.ownerName || phone.ownerName });
   }
   const phoneValuesToSave = [...mergedPhones.values()];
 

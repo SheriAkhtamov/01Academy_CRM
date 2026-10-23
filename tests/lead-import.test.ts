@@ -34,6 +34,7 @@ describe('lead import normalization', () => {
       if (sql.includes('RETURNING id') && sql.includes('academy_lead_sources')) return { rows: [{ id: 9 }], rowCount: 1 };
       if (sql.includes('FROM academy_integration_funnel_settings')) return { rows: [{ id: 3 }], rowCount: 1 };
       if (sql.includes('INSERT INTO academy_leads')) return { rows: [{ id: 42 }], rowCount: 1 };
+      if (sql.includes('SELECT contact_name AS')) return { rows: [{ contactName: 'Контакт', phone: '+998901234567', studentName: null, studentAge: null, locality: null, languages: [], language: '', studyDays: null, studyTime: null, goal: null, urgency: null }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     });
     const pool = { connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }) } as any;
@@ -48,6 +49,8 @@ describe('lead import normalization', () => {
   it('rejects malformed Uzbekistan and test phone values', () => {
     expect(normalizeLeadImportPhone('+9989999999095')).toBeNull();
     expect(normalizeLeadImportPhone('p:<test lead: dummy data>')).toBeNull();
+    expect(normalizeLeadImportPhone('1991')).toBeNull();
+    expect(normalizeLeadImportPhone('Call after 18:00: +998901234567')).toBeNull();
   });
 
   it('keeps customer answers and operator notes without import metadata', () => {
@@ -60,7 +63,7 @@ describe('lead import normalization', () => {
     });
 
     expect(comment).not.toMatch(/Импорт|AI KIDS|123|Июльская кампания|Кампания/);
-    expect(comment).toContain('Возраст ребёнка: 8 лет');
+    expect(comment).not.toContain('Возраст ребёнка');
     expect(comment).toContain('Заметка: Перезвонить завтра');
   });
 
@@ -76,7 +79,7 @@ describe('lead import normalization', () => {
       ], cityAnswer: 'Ташкент', note: 'Позвонить\nпосле 18:00',
       disclaimerResponses: [{ name: 'marketing_consent', value: { is_checked: 1 } }],
     });
-    expect(comment).toBe('Имя: Имя клиента\nТелефон: +998901234567\nГород: Ташкент\nЛюбимый предмет: Математика\nХотите пробный урок?: Да\nЗаметка: Позвонить\nпосле 18:00');
+    expect(comment).toBe('Город: Ташкент\nЛюбимый предмет: Математика\nХотите пробный урок?: Да\nЗаметка: Позвонить\nпосле 18:00');
   });
 
   it('produces no comment from an import containing only attribution metadata', () => {
@@ -92,6 +95,7 @@ describe('lead import normalization', () => {
       if (sql.includes('FROM academy_integration_funnel_settings')) return { rows: [{ id: 3 }], rowCount: 1 };
       if (sql.includes('FROM academy_leads lead') && sql.includes('indexed_phone')) return { rows: matched ? [{ id: 42, isArchived: false }] : [], rowCount: matched ? 1 : 0 };
       if (sql.includes('INSERT INTO academy_leads')) return { rows: [{ id: 42 }], rowCount: 1 };
+      if (sql.includes('SELECT contact_name AS')) return { rows: [{ contactName: 'Контакт', phone: '+998901234567', studentName: null, studentAge: null, locality: null, languages: [], language: '', studyDays: null, studyTime: null, goal: null, urgency: null }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     });
     const pool = { connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }) } as any;

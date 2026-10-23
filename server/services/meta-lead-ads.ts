@@ -10,6 +10,7 @@ import {
 } from './lead-import';
 import { deriveMetaUtm, extractMetaAdHook } from './meta-marketing';
 import { fetchMetaGraphJson } from './meta-graph';
+import { importText, leadImportAnswerKind, resolveLeadImportFields, type LeadImportAnswerKind } from './lead-import-fields';
 
 const META_GRAPH_ORIGIN = 'https://graph.facebook.com';
 const META_LEAD_BACKFILL_MAX_PAGES = 1_000;
@@ -120,29 +121,11 @@ export const verifyMetaLeadWebhookSignature = (
     && crypto.timingSafeEqual(expectedBuffer, suppliedBuffer);
 };
 
-const normalizedFieldName = (value: unknown) => (
-  text(value)?.toLocaleLowerCase('ru-RU').replace(/[\s-]+/g, '_') ?? ''
-);
-
 const fieldValues = (field: MetaLeadField): unknown[] => {
   if (Array.isArray(field.values)) return field.values;
   if (field.values === undefined || field.values === null) return [];
   return [field.values];
 };
-
-const firstScalarValue = (field: MetaLeadField | undefined): string | null => {
-  if (!field) return null;
-  for (const value of fieldValues(field)) {
-    const normalized = text(value);
-    if (normalized) return normalized;
-  }
-  return null;
-};
-
-const findField = (fields: MetaLeadField[], names: RegExp[]) => fields.find((field) => {
-  const name = normalizedFieldName(field.name);
-  return names.some((pattern) => pattern.test(name));
-});
 
 const metaTimestamp = (value: unknown): string | null => {
   if (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim()))) {
@@ -165,41 +148,18 @@ export const mapMetaLeadToImportRecord = (
   const fields: MetaLeadField[] = rawFields.filter((field): field is MetaLeadField => (
     Boolean(field) && typeof field === 'object'
   ));
-  const fullName = firstScalarValue(findField(fields, [
-    /^full_name$/,
-    /^contact_name$/,
-    /^parent_name$/,
-    /^фио$/u,
-    /^имя(?:_родителя)?$/u,
-  ]));
-  const firstName = firstScalarValue(findField(fields, [/^first_name$/, /^имя$/u]));
-  const lastName = firstScalarValue(findField(fields, [/^last_name$/, /^фамилия$/u]));
-  const phone = firstScalarValue(findField(fields, [
-    /^phone(?:_number)?$/,
-    /^mobile(?:_phone|_number)?$/,
-    /^номер_телефона$/u,
-    /^телефон$/u,
-  ]));
-  const childAge = firstScalarValue(findField(fields, [
-    /child.*age/,
-    /age.*child/,
-    /возраст.*реб/u,
-  ]));
-  const city = firstScalarValue(findField(fields, [/^city$/, /^город$/u, /location/])) ?? null;
-  const learningFormat = firstScalarValue(findField(fields, [
-    /offline/,
-    /learning.*format/,
-    /формат.*обуч/u,
-  ]));
-  const occupation = firstScalarValue(findField(fields, [
-    /occupation/,
-    /job/,
-    /сфера.*деятель/u,
-  ]));
+  const answers = fields.map(field => ({
+    name: text(field.name, 500) ?? 'Поле без названия',
+    values: fieldValues(field),
+  }));
+  const mapped = resolveLeadImportFields({ answers });
+  const firstAnswer = (kind: LeadImportAnswerKind) => answers
+    .filter(answer => leadImportAnswerKind(answer.name) === kind)
+    .flatMap(answer => answer.values).map(importText).find(Boolean) ?? null;
   const leadgenId = text(lead.id ?? webhookValue.leadgen_id, 255) ?? '';
   const resolvedFormId = text(lead.form_id ?? webhookValue.form_id, 255);
   const resolvedFormName = text(formName, 500) ?? (resolvedFormId ? `Meta Instant Form ${resolvedFormId}` : 'Meta Instant Form');
-  const contactName = fullName ?? ([firstName, lastName].filter(Boolean).join(' ') || null);
+  const contactName = mapped.contactName;
   const isNamedTestLead = Boolean(contactName && /\btest[\s_-]*lead\b/i.test(contactName));
   const disclaimerResponses = Array.isArray(lead.custom_disclaimer_responses)
     ? lead.custom_disclaimer_responses.map((response: JsonObject) => ({
@@ -212,9 +172,10 @@ export const mapMetaLeadToImportRecord = (
     externalId: leadgenId,
     sheet: resolvedFormName,
     createdTime: metaTimestamp(lead.created_time ?? webhookValue.created_time),
+    ...mapped,
     contactName,
-    phone,
-    rawPhone: phone,
+    phone: mapped.phoneNumbers[0] ?? null,
+    rawPhone: firstAnswer('phoneNumbers'),
     campaignName: text(lead.campaign_name, 500),
     campaignId: text(lead.campaign_id, 120),
     adsetName: text(lead.adset_name, 500),
@@ -225,14 +186,11 @@ export const mapMetaLeadToImportRecord = (
     formId: resolvedFormId,
     platform: text(lead.platform, 120) ?? 'instagram',
     isOrganic: typeof lead.is_organic === 'boolean' ? lead.is_organic : null,
-    childAgeAnswer: childAge,
-    cityAnswer: city,
-    offlineAnswer: learningFormat,
-    occupationAnswer: occupation,
-    answers: fields.map((field) => ({
-      name: text(field.name, 500) ?? 'Поле без названия',
-      values: fieldValues(field),
-    })),
+    childAgeAnswer: firstAnswer('studentAge'),
+    cityAnswer: firstAnswer('locality'),
+    offlineAnswer: firstAnswer('format'),
+    occupationAnswer: firstAnswer('occupation'),
+    answers,
     disclaimerResponses,
     test: lead.is_test === true || lead.test_lead === true || isNamedTestLead,
     rawMetaLead: lead,

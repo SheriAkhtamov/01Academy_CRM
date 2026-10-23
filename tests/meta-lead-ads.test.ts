@@ -33,7 +33,8 @@ describe('Meta Instant Form lead ingestion', () => {
     expect(record).toMatchObject({
       externalId: 'lead-123',
       contactName: 'Ali Valiyev',
-      phone: '+998 90 123 45 67',
+      phone: '+998901234567',
+      studentAge: 9,
       formName: 'AI Kids form',
       campaignName: 'August leads',
       adName: '[РОБОТОТЕХНИКА] Reel',
@@ -42,8 +43,8 @@ describe('Meta Instant Form lead ingestion', () => {
     expect(record.answers).toHaveLength(4);
 
     const comment = buildLeadImportComment(record);
-    expect(comment).toContain('Имя: Ali Valiyev');
-    expect(comment).toContain('Телефон: +998 90 123 45 67');
+    expect(comment).not.toContain('Ali Valiyev');
+    expect(comment).not.toMatch(/Телефон|Возраст/);
     expect(comment).toContain('Любимый предмет: Математика, Информатика');
     expect(comment).not.toMatch(/Импорт|August leads|Reel|AI Kids form|campaign-1|adset-1|ad-1|form-1|lead-123|instagram|marketing consent|2026-/);
     // Complete technical attribution and consent data stay available internally.
@@ -63,6 +64,20 @@ describe('Meta Instant Form lead ingestion', () => {
 
     expect(record.test).toBe(true);
     expect(record.contactName).toBe('Meta CRM Test Lead');
+  });
+
+  it('maps localized questions and all phone values while retaining the original Meta submission', () => {
+    const lead = { id: 'localized-lead', field_data: [
+      { name: 'Ism_va_familiyangiz', values: ['Sevara Aliyeva'] },
+      { name: 'Telefon_raqamingiz', values: ['1991', '+998901234567', '+998911234567'] },
+      { name: 'farzandingiz_nechchi_yoshda?', values: ['8🏰'] },
+      { name: 'qaysi_shahardansiz?', values: ['toshkent'] },
+    ] };
+    const record = mapMetaLeadToImportRecord(lead);
+    expect(record).toMatchObject({ contactName: 'Sevara Aliyeva', phone: '+998901234567', rawPhone: '1991',
+      phoneNumbers: ['+998901234567', '+998911234567'], studentAge: 8, locality: null, rawMetaLead: lead });
+    expect(buildLeadImportComment(record)).toBe('Telefon raqamingiz: 1991\nqaysi shahardansiz?: toshkent');
+    expect(record.answers).toEqual(lead.field_data.map(field => ({ name: field.name, values: field.values })));
   });
 
   it('ships a signed Page webhook and Instant Form attribution schema', () => {

@@ -2,8 +2,14 @@ import { enqueueMetaLeadIntakeSafely } from './meta-marketing';
 import type { Pool, PoolClient } from 'pg';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { resolveLeadFunnelId } from './lead-funnels';
+import { resolveLeadImportFields, type LeadImportFieldInput } from './lead-import-fields';
+import { buildLeadImportComment } from './lead-import-comments';
+import { enrichLeadImportFields, storeImportedPhones } from './lead-import-enrichment';
 
-export type LeadImportRecord = {
+export { normalizeLeadImportPhone } from './lead-import-fields';
+export { buildLeadImportComment } from './lead-import-comments';
+
+export type LeadImportRecord = LeadImportFieldInput & {
   externalId: string;
   sheet?: string | null;
   row?: number | null;
@@ -67,57 +73,6 @@ export const leadImportSource = (platform: unknown, options: Pick<LeadImportOpti
     code: channel === 'facebook' ? `${code}_facebook` : code,
     name: channel === 'facebook' ? `${name} · Facebook` : name,
   };
-};
-
-export const normalizeLeadImportPhone = (value: unknown): string | null => {
-  const raw = text(value).replace(/^p:/i, '').trim();
-  let digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('00')) digits = digits.slice(2);
-  if (digits.length === 9) digits = `998${digits}`;
-  if (digits.length < 7 || digits.length > 15) return null;
-  if (digits.startsWith('998') && digits.length !== 12) return null;
-  return `+${digits}`;
-};
-
-const answerText = (value: unknown): string => {
-  if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
-  return typeof value === 'string' || typeof value === 'number' ? text(value) : '';
-};
-
-const answerLabel = (value: unknown): string => {
-  const name = text(value).replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-  const key = name.toLowerCase();
-  if (/^(external id|leadgen id|page id|campaign (id|name)|adset (id|name)|ad (id|name)|form (id|name)|created time|platform|is organic|source sheet|row|sheet)$/.test(key)) return '';
-  const labels: Record<string, string> = {
-    'full name': 'Имя', 'contact name': 'Имя', 'parent name': 'Имя',
-    'first name': 'Имя', 'last name': 'Фамилия',
-    phone: 'Телефон', 'phone number': 'Телефон', 'mobile phone': 'Телефон', 'mobile number': 'Телефон',
-    email: 'Электронная почта', city: 'Город', 'child age': 'Возраст ребёнка',
-    'learning format': 'Формат обучения', occupation: 'Сфера деятельности',
-  };
-  return labels[key] ?? name;
-};
-
-export const buildLeadImportComment = (record: LeadImportRecord) => {
-  const lines: string[] = [];
-  const addAnswer = (label: string, value: unknown) => {
-    const normalized = answerText(value);
-    const line = `${label}: ${normalized}`;
-    if (label && normalized && !lines.includes(line)) lines.push(line);
-  };
-  for (const answer of Array.isArray(record.answers) ? record.answers : []) {
-    const values = Array.isArray(answer?.values) ? answer.values.map(answerText).filter(Boolean) : [];
-    addAnswer(answerLabel(answer?.name), values.join(', '));
-  }
-  const details: Array<[string, unknown]> = [
-    ['Возраст ребёнка', record.childAgeAnswer],
-    ['Город', record.cityAnswer],
-    ['Формат обучения', record.offlineAnswer],
-    ['Сфера деятельности', record.occupationAnswer],
-    ['Заметка', record.note],
-  ];
-  for (const [label, value] of details) addAnswer(label, value);
-  return lines.join('\n');
 };
 
 const importOutcome = async (
@@ -267,18 +222,23 @@ export const importLeadRecords = async (
         continue;
       }
 
-      const phone = normalizeLeadImportPhone(record.rawPhone ?? record.phone);
+      const fields = resolveLeadImportFields(record);
+      const phone = fields.phoneNumbers[0] ?? null;
       if (!phone && !options.allowMissingPhone) {
         await importOutcome(client, provider, normalizedRecord, 'skipped_invalid', null);
         summary.skippedInvalid += 1;
         continue;
       }
 
-      const comment = buildLeadImportComment(normalizedRecord);
+      let comment = buildLeadImportComment(normalizedRecord, fields);
       const commentCreatedAt = record.createdTime && !Number.isNaN(new Date(record.createdTime).getTime())
         ? new Date(record.createdTime)
         : new Date();
-      let matchedLead = phone ? await findLeadByPhone(client, phone) : null;
+      let matchedLead = null;
+      for (const candidate of fields.phoneNumbers) {
+        matchedLead = await findLeadByPhone(client, candidate);
+        if (matchedLead) break;
+      }
       let outcome: 'created' | 'merged' | 'merged_archived';
       if (!matchedLead) {
         const source = leadImportSource(record.platform, options);
@@ -297,16 +257,19 @@ export const importLeadRecords = async (
           sourceId = result.rows[0].id;
           sourceIds.set(source.code, sourceId);
         }
-        const contactName = text(record.contactName)
+        const contactName = fields.contactName
           || (phone ? `Новый контакт ${phone}` : 'Новый контакт');
         const created = await client.query<{ id: number }>(
           `INSERT INTO academy_leads (
              contact_name, phone, source_id, funnel_id, advertising_campaign, status_code,
-             language, languages, comment, first_contact_channel, created_at, updated_at
+             language, languages, comment, first_contact_channel, created_at, updated_at,
+             student_name, student_age, locality, study_days, study_time, goal, urgency
           )
-           VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), '', ARRAY[]::text[], $6, $8, $7, NOW())
+           VALUES ($1, $2, $3, $4, $5, (SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $4), $9, $10::text[], $6, $8, $7, NOW(), $11, $12, $13, $14, $15, $16, $17)
            RETURNING id`,
-          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment || null, commentCreatedAt, source.channel],
+          [contactName, phone, sourceId, funnelId, text(record.campaignName) || null, comment || null, commentCreatedAt, source.channel,
+            fields.languages[0] ?? '', fields.languages, fields.studentName, fields.studentAge, fields.locality,
+            fields.studyDays, fields.studyTime, fields.goal, fields.urgency],
         );
         matchedLead = { id: created.rows[0].id, isArchived: false };
         await client.query(
@@ -315,10 +278,13 @@ export const importLeadRecords = async (
            VALUES ($1, NULL, (SELECT status_code FROM academy_leads WHERE id = $1), $2)`,
           [matchedLead.id, commentCreatedAt],
         );
+        await storeImportedPhones(client, matchedLead.id, fields.phoneNumbers);
         outcome = 'created';
         createdLeadIds.push(Number(matchedLead.id));
         summary.created += 1;
       } else {
+        const { stored } = await enrichLeadImportFields(client, matchedLead.id, fields);
+        comment = buildLeadImportComment(normalizedRecord, stored);
         if (matchedLead.isArchived && options.restoreArchivedMatches) {
           await restoreArchivedLead(client, matchedLead.id, commentCreatedAt);
         }
@@ -366,24 +332,6 @@ export const importLeadRecords = async (
          VALUES ($1, NULL, $2, $3)`,
         [matchedLead.id, comment, commentCreatedAt],
       );
-      if (phone) {
-        await client.query(
-          `INSERT INTO academy_lead_phones
-             (lead_id, phone, normalized_phone, is_primary)
-           VALUES (
-             $1, $2, $2,
-             NOT EXISTS (SELECT 1 FROM academy_lead_phones existing WHERE existing.lead_id = $1)
-           )
-           ON CONFLICT (lead_id, normalized_phone) DO NOTHING`,
-          [matchedLead.id, phone],
-        );
-        await client.query(
-          `UPDATE academy_leads
-           SET phone = COALESCE(NULLIF(BTRIM(phone), ''), $2)
-           WHERE id = $1`,
-          [matchedLead.id, phone],
-        );
-      }
       const recordedOutcome = outcome === 'merged_archived' && options.restoreArchivedMatches
         ? 'merged'
         : outcome;

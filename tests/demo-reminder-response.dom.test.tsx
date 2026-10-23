@@ -76,8 +76,12 @@ describe('demo reminder answers beside actual attendance', () => {
     ['calling', 'Auto-informer: Calling', 'Автоинформатор: Звонит'],
     ['waiting', 'Auto-informer: Awaiting call', 'Автоинформатор: Ожидает звонка'],
     ['retry', 'Auto-informer: Awaiting retry', 'Автоинформатор: Ожидает повтора'],
-    ['unanswered', 'Auto-informer: No answer', 'Автоинформатор: Не дозвонился'],
-    ['failed', 'Auto-informer: Call failed', 'Автоинформатор: Ошибка звонка'],
+    ['unanswered', 'Auto-informer: No answer', 'Автоинформатор: Нет ответа'],
+    ['failed', 'Auto-informer: Technical error', 'Автоинформатор: Техническая ошибка'],
+    ['line_busy', 'Auto-informer: Busy', 'Автоинформатор: Занято'],
+    ['rejected', 'Auto-informer: Call declined', 'Автоинформатор: Вызов отклонён'],
+    ['not_connected', 'Auto-informer: Could not connect', 'Автоинформатор: Не удалось соединиться'],
+    ['interrupted', 'Auto-informer: Message interrupted', 'Автоинформатор: Сообщение прервано'],
     ['played', 'Auto-informer: Reminder delivered', 'Автоинформатор: Напоминание доставлено'],
     ['not_started', 'Auto-informer: Not called', 'Автоинформатор: Не звонил'],
     ['disabled', 'Auto-informer: Disabled', 'Автоинформатор: Отключён'],
@@ -210,7 +214,7 @@ describe('demo reminder answers beside actual attendance', () => {
       reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-08-31T10:00:00Z', reminderProgressStatus: 'failed' }] });
     expect(screen.getByText(response === 'yes' ? 'Auto-informer: Will attend' : 'Auto-informer: Will not attend')).toBeTruthy();
     expect(screen.queryByText('Reminder delivered, no response received')).toBeNull();
-    expect(screen.queryByText('Auto-informer: Call failed')).toBeNull();
+    expect(screen.queryByText('Auto-informer: Technical error')).toBeNull();
     expect(screen.getByRole('combobox').textContent).toBe(translations.selectAttendanceResult.en);
     expect(mocks.saveAttendance).not.toHaveBeenCalled();
     expect(mocks.cancel).not.toHaveBeenCalled();

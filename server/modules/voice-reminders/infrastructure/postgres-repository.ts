@@ -15,7 +15,7 @@ import {
   type VoiceReminderSettings,
   type VoiceReminderSettingsInput,
 } from '@shared/contracts/voice-reminders';
-import { normalizeReminderPhone, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline, reminderKindEnabled, VoiceReminderError } from '../domain/policy';
+import { normalizeReminderPhone, reminderWithinAllowedHours, reminderOnEligibleDay, reminderDeadline, reminderKindEnabled, reminderAttemptPolicy, retryableReminderCall, nextReminderAttempt, nextReminderResponseRetry, VoiceReminderError } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   PreparedVoiceReminder,
@@ -69,6 +69,8 @@ const settingsSql = `SELECT enabled,confirmation_enabled AS "confirmationEnabled
   confirmation_yes_audio_id AS "confirmationYesAudioId",confirmation_no_audio_id AS "confirmationNoAudioId", lead_minutes AS "leadMinutes", max_attempts AS "maxAttempts",
   day_before_enabled AS "dayBeforeEnabled",day_before_start_time AS "dayBeforeStartTime",day_before_end_time AS "dayBeforeEndTime",
   retry_minutes AS "retryMinutes", allowed_start_time AS "allowedStartTime",
+  same_day_retry_minutes AS "sameDayRetryMinutes",day_before_max_attempts AS "dayBeforeMaxAttempts",
+  day_before_retry_minutes AS "dayBeforeRetryMinutes",
   allowed_end_time AS "allowedEndTime", max_concurrent_calls AS "maxConcurrentCalls", audio_id AS "audioId",
   day_before_intro_audio_id AS "dayBeforeIntroAudioId",intro_audio_id AS "introAudioId", outro_audio_id AS "outroAudioId"
   FROM voice_reminder_settings WHERE id = 1`;
@@ -252,10 +254,12 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       await connection.query(`UPDATE voice_reminder_settings SET enabled = $1, lead_minutes = $2,
       max_attempts = $3, retry_minutes = $4, allowed_start_time = $5, allowed_end_time = $6,
       max_concurrent_calls = $7, updated_by = $8,
-      day_before_enabled=$9,day_before_start_time=$10,day_before_end_time=$11,confirmation_enabled=$12, updated_at = now() WHERE id = 1`, [
+      day_before_enabled=$9,day_before_start_time=$10,day_before_end_time=$11,confirmation_enabled=$12,
+      same_day_retry_minutes=$13,day_before_max_attempts=$14,day_before_retry_minutes=$15,updated_at = now() WHERE id = 1`, [
       input.enabled, input.leadMinutes, input.maxAttempts, input.retryMinutes,
       input.allowedStartTime, input.allowedEndTime, input.maxConcurrentCalls, actorId,
       input.dayBeforeEnabled,input.dayBeforeStartTime,input.dayBeforeEndTime,input.confirmationEnabled,
+      input.sameDayRetryMinutes,input.dayBeforeMaxAttempts,input.dayBeforeRetryMinutes,
       ]);
     });
   }
@@ -327,7 +331,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
   async synchronize(now: Date, settings: VoiceReminderSettings): Promise<void> {
     await this.transaction(async connection => {
       // Expired in-flight work is ambiguous after a crash. It is terminal until
-      // an operator reconciles it; automatic retries only follow a known no-answer.
+      // an operator reconciles it; retries require a confirmed ended attempt.
       await connection.query(`UPDATE voice_reminder_jobs SET status = CASE WHEN no_response_count>0 THEN 'delivered_no_response' ELSE 'failed' END, last_retry_outcome=CASE WHEN retry_phase='response_retry' THEN 'failed' ELSE last_retry_outcome END, lease_token = NULL,
         lease_until = NULL, completed_at = $1, updated_at = $1
         WHERE status = 'calling' AND lease_until <= $1`, [now]);
@@ -385,6 +389,11 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
           scheduled_at AT TIME ZONE 'Asia/Tashkent' - interval '1 day',
           (scheduled_at AT TIME ZONE 'Asia/Tashkent')::date - 1 + $3::time - interval '1 minute')) AT TIME ZONE 'Asia/Tashkent' END
         WHERE status = 'waiting' AND attempts = 0`, [settings.leadMinutes,settings.dayBeforeStartTime,settings.dayBeforeEndTime]);
+      await connection.query(`UPDATE voice_reminder_jobs job SET due_at=job.last_call_at+
+        (CASE WHEN job.reminder_kind='day_before' THEN policy.day_before_retry_minutes ELSE policy.same_day_retry_minutes END*interval '1 minute')
+        FROM voice_reminder_settings policy WHERE policy.id=1 AND job.status='waiting' AND job.retry_phase='primary'
+          AND job.attempts>0 AND job.last_call_at IS NOT NULL AND job.due_at<job.last_call_at+
+            (CASE WHEN job.reminder_kind='day_before' THEN policy.day_before_retry_minutes ELSE policy.same_day_retry_minutes END*interval '1 minute')`);
     });
   }
 
@@ -402,7 +411,10 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
          WHERE job.id = (SELECT pending.id FROM voice_reminder_jobs pending
            CROSS JOIN voice_reminder_settings settings
            WHERE pending.status = 'waiting' AND settings.id=1 AND settings.enabled
-           AND ((pending.retry_phase='primary' AND pending.attempts<settings.max_attempts
+           AND ((pending.retry_phase='primary' AND pending.attempts<CASE WHEN pending.reminder_kind='day_before' THEN settings.day_before_max_attempts ELSE settings.max_attempts END
+             AND (pending.attempts=0 OR (pending.last_call_at IS NOT NULL AND pending.last_call_at+
+               (CASE WHEN pending.reminder_kind='day_before' THEN settings.day_before_retry_minutes ELSE settings.same_day_retry_minutes END*interval '1 minute')<=$1))
+             AND NOT EXISTS(SELECT 1 FROM voice_reminder_call_attempts unresolved WHERE unresolved.job_id=pending.id AND unresolved.termination_confirmed_at IS NULL)
              AND voice_reminder_library_ready(pending.language,to_char(pending.scheduled_at AT TIME ZONE 'Asia/Tashkent','HH24:MI'),pending.reminder_kind,settings.confirmation_enabled))
              OR (pending.retry_phase='response_retry' AND pending.no_response_count=1 AND pending.response IS NULL
                AND settings.confirmation_enabled AND NOT voice_reminder_job_fresh_response(pending.id)
@@ -434,7 +446,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const settings = await this.readSettings(connection);
       const phone = row ? currentPhone(row) : null;
       if (!row?.valid || !phone || (row.retryPhase==='response_retry' && (row.phone!==phone || row.response || row.hasFreshResponse))) return null;
-      if (!reminderKindEnabled(settings,row.reminderKind) || !reminderOnEligibleDay(row.scheduledAt,now,row.reminderKind) || (row.retryPhase==='primary' && row.attempts >= settings.maxAttempts) || (row.retryPhase==='response_retry' && (!settings.confirmationEnabled || row.noResponseCount!==1))
+      if (!reminderKindEnabled(settings,row.reminderKind) || !reminderOnEligibleDay(row.scheduledAt,now,row.reminderKind) || (row.retryPhase==='primary' && row.attempts >= reminderAttemptPolicy(settings,row.reminderKind).maxAttempts) || (row.retryPhase==='response_retry' && (!settings.confirmationEnabled || row.noResponseCount!==1))
         || !reminderWithinAllowedHours(now,settings,row.reminderKind)) return 'defer';
       const library = await readVoiceReminderAudioLibrary(connection, row.language);
       const parts = selectedJobParts(row,library);
@@ -465,7 +477,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
         && currentPhone(row)===phone && reminderKindEnabled(settings,row.reminderKind)
         && (row.retryPhase==='response_retry'
           ? row.noResponseCount===1 && settings.confirmationEnabled && (row.response!==null || !row.hasFreshResponse)
-          : row.attempts<settings.maxAttempts) && reminderWithinAllowedHours(now,settings,row.reminderKind);
+          : row.attempts<reminderAttemptPolicy(settings,row.reminderKind).maxAttempts) && reminderWithinAllowedHours(now,settings,row.reminderKind);
       if (!eligible || row.confirmationEnabled !== settings.confirmationEnabled) return false;
       if (!verifyAudio) return true;
       if (row.confirmationEnabled && (row.confirmationYesAudioId !== library.confirmationYes?.id || row.confirmationNoAudioId !== library.confirmationNo?.id)) return false;
@@ -528,9 +540,9 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
     await this.transaction(async connection => {
       const row = (await connection.query<{
         confirmationEnabled: boolean; response: VoiceReminderResponse | null;
-        noResponseCount: number; retryPhase: 'primary' | 'response_retry';
+        attempts: number; noResponseCount: number; retryPhase: 'primary' | 'response_retry';
         freshResponse: boolean; identityCurrent: boolean;
-      }>(`SELECT confirmation_enabled AS "confirmationEnabled",response,no_response_count AS "noResponseCount",
+      }>(`SELECT confirmation_enabled AS "confirmationEnabled",response,attempts,no_response_count AS "noResponseCount",
         retry_phase AS "retryPhase",voice_reminder_job_fresh_response(id) AS "freshResponse",
         voice_reminder_job_identity_current(id) AS "identityCurrent"
         FROM voice_reminder_jobs WHERE id=$1 AND lease_token=$2 AND status='calling' FOR UPDATE`, [job.id,job.leaseToken])).rows[0];
@@ -538,12 +550,21 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
       const delivered = result.outcome==='delivered_no_response' && result.callStarted && row.confirmationEnabled && !row.response;
       const count = Math.min(2,row.noResponseCount+(delivered ? 1 : 0));
       const settings = await this.readSettings(connection);
-      const canRetry = retryAt !== null && retryAt>now && retryAt<reminderDeadline(job.scheduledAt,settings,job.reminderKind)
-        && reminderKindEnabled(settings,job.reminderKind) && reminderOnEligibleDay(job.scheduledAt,retryAt,job.reminderKind)
-        && reminderWithinAllowedHours(retryAt,settings,job.reminderKind) && row.identityCurrent && !row.response && !row.freshResponse;
+      // Settings can change while a call is in progress. Recheck its budget and
+      // interval with the locked job and current settings before persisting work.
+      const plannedRetryAt = retryAt !== null && retryAt>now
+        ? delivered && result.terminationConfirmed === true
+          ? nextReminderResponseRetry({ now, scheduledAt: job.scheduledAt, noResponseCount: count, settings, reminderKind: job.reminderKind })
+          : retryableReminderCall(result) && row.retryPhase === 'primary'
+            ? nextReminderAttempt({ now, scheduledAt: job.scheduledAt, attempts: row.attempts + 1, settings, reminderKind: job.reminderKind })
+            : null
+        : null;
+      const canRetry = plannedRetryAt !== null && plannedRetryAt<reminderDeadline(job.scheduledAt,settings,job.reminderKind)
+        && reminderKindEnabled(settings,job.reminderKind) && reminderOnEligibleDay(job.scheduledAt,plannedRetryAt,job.reminderKind)
+        && reminderWithinAllowedHours(plannedRetryAt,settings,job.reminderKind) && row.identityCurrent && !row.response && !row.freshResponse;
       const responseRetry = delivered && count===1 && row.retryPhase==='primary' && settings.confirmationEnabled
         && result.terminationConfirmed===true && canRetry;
-      const unansweredRetry = result.outcome==='unanswered' && row.retryPhase==='primary' && canRetry;
+      const unansweredRetry = retryableReminderCall(result) && row.retryPhase==='primary' && canRetry;
       const waiting = responseRetry || unansweredRetry;
       const status = row.response || row.freshResponse ? 'played' : !row.identityCurrent ? 'cancelled'
         : waiting ? 'waiting' : count>0 ? 'delivered_no_response'
@@ -558,7 +579,7 @@ export class PostgresVoiceReminderRepository implements VoiceReminderRepository 
         provider_call_id=COALESCE(provider_call_id,$11::text),not_before_at=NULL,
         lease_token=NULL,lease_until=NULL,updated_at=$8::timestamptz WHERE id=$1 AND lease_token=$2 AND status='calling'`, [
         job.id,job.leaseToken,status,result.callStarted ? 1 : 0,count,responseRetry,delivered,now,
-        result.outcome,retryAt,result.callId?.slice(0,160) ?? null,
+        result.outcome,plannedRetryAt,result.callId?.slice(0,160) ?? null,
       ]);
     });
   }

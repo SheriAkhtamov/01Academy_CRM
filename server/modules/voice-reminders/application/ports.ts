@@ -2,6 +2,7 @@ import type {
   VoiceReminderAudio,
   VoiceReminderAudioLibraryOf,
   VoiceReminderAudioPartsOf,
+  VoiceReminderCallReason,
   VoiceReminderReadiness,
   VoiceReminderKind,
   VoiceReminderLanguage,
@@ -56,6 +57,8 @@ export type VoiceReminderCallResult = {
   callId: string | null;
   terminationConfirmed?: boolean;
   response?: VoiceReminderResponse;
+  reason?: VoiceReminderCallReason;
+  endCause?: string;
 };
 export interface VoiceReminderLine {
   call(input: ({ jobId: number; jobLeaseToken?: string } | { testCallId: string; testLeaseToken: string }) & {

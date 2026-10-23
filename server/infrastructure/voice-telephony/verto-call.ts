@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { MediaStreamTrack, RTCPeerConnection, RTCRtpCodecParameters, RtpHeader, RtpPacket, usePCMU as createPcmuCodec } from 'werift';
 import type WebSocket from 'ws';
-import { VOICE_REMINDER_MAX_AUDIO_SECONDS, VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS, type VoiceReminderResponse } from '@shared/contracts/voice-reminders';
+import { VOICE_REMINDER_MAX_AUDIO_SECONDS, VOICE_REMINDER_CONFIRMATION_WAIT_SECONDS, type VoiceReminderCallReason, type VoiceReminderResponse } from '@shared/contracts/voice-reminders';
 import type { VoiceReminderCallOutcome, VoiceReminderCallResult, VoiceReminderLine } from '../../modules/voice-reminders/application/ports';
 import type { OnlinePbxWebRtcCredentials } from '../../services/onlinepbx';
 import { VertoRpcClient, VertoTransportError, type VertoEvent, type VertoRpcDiagnostic } from './verto-rpc';
@@ -33,6 +33,7 @@ export type VertoCallDiagnostic = {
   iceState: string;
   dtlsState: string | null;
   cause?: string;
+  reason?: VoiceReminderCallReason;
   method?: VertoRpcDiagnostic['method'];
   code?: number;
   outcome?: VoiceReminderCallOutcome;
@@ -152,12 +153,14 @@ export async function performVertoReminderCall(
   let saveFinished = false;
   let saveError: unknown;
   let fullPromptDelivered = false;
+  let endReason: VoiceReminderCallReason | undefined;
+  let endCause: string | undefined;
   let callDeadline = input.deadline.getTime();
   let acceptingResponse = false;
   const diagnosticStartedAt = Date.now();
   let phase: VertoCallPhase = 'preflight';
   const diagnose = (event: VertoCallDiagnostic['event'], details: Partial<Pick<VertoCallDiagnostic,
-    'cause' | 'method' | 'code' | 'outcome' | 'terminationConfirmed' | 'source' | 'digit' | 'disposition' | 'saveStatus'>> = {}) => {
+    'cause' | 'reason' | 'method' | 'code' | 'outcome' | 'terminationConfirmed' | 'source' | 'digit' | 'disposition' | 'saveStatus'>> = {}) => {
     try {
       input.onDiagnostic?.({ event, phase, elapsedMs: Date.now() - diagnosticStartedAt,
         callStarted, answered, finalAnswerReceived, peerState: peer.connectionState, iceState: peer.iceConnectionState,
@@ -289,8 +292,15 @@ export async function performVertoReminderCall(
       if (event.method === 'verto.bye') {
         receivedBye = true;
         const cause = String(event.params.cause ?? '').toUpperCase();
-        diagnose('remote_end', { cause: /^[A-Z0-9_]{1,64}$/.test(cause) ? cause : 'UNSPECIFIED' });
-        const unanswered = ['NO_ANSWER', 'NO_USER_RESPONSE', 'USER_BUSY', 'CALL_REJECTED'].includes(cause);
+        endCause = /^[A-Z0-9_]{1,64}$/.test(cause) ? cause : 'UNSPECIFIED';
+        const unanswered = ['NO_ANSWER', 'NO_USER_RESPONSE', 'USER_BUSY', 'CALL_REJECTED', 'NORMAL_CLEARING', 'NORMAL_UNSPECIFIED'].includes(cause);
+        if (!finalAnswerReceived && unanswered) {
+          endReason = cause === 'USER_BUSY' ? 'line_busy' : cause === 'CALL_REJECTED' ? 'rejected'
+            : cause === 'NORMAL_CLEARING' || cause === 'NORMAL_UNSPECIFIED' ? 'not_connected' : 'no_answer';
+        } else if (finalAnswerReceived && phase === 'playback' && !fullPromptDelivered && !pendingResponse) {
+          endReason = 'interrupted';
+        }
+        diagnose('remote_end', { cause: endCause, reason: endReason });
         stop(!finalAnswerReceived && unanswered ? 'unanswered'
           : input.confirmation && fullPromptDelivered && !pendingResponse ? 'delivered_no_response' : 'failed');
         return;
@@ -440,6 +450,8 @@ export async function performVertoReminderCall(
       outcome,
       callStarted, callId: callStarted ? callId : null,
       ...(savedResponse ? { response: savedResponse } : {}),
+      ...(outcome === 'unanswered' ? { reason: endReason ?? 'no_answer' } : {}),
+      ...(outcome === 'failed' ? { reason: endReason ?? 'technical_error' } : {}),
     };
   } finally {
     ending = true;
@@ -458,7 +470,10 @@ export async function performVertoReminderCall(
         }, 1_500);
         acknowledgedBye = true;
       } catch {
-        if (!savedResponse && ['played', 'unanswered', 'delivered_no_response'].includes(result.outcome)) result.outcome = 'failed';
+        if (!savedResponse && ['played', 'unanswered', 'delivered_no_response'].includes(result.outcome)) {
+          result.outcome = 'failed';
+          result.reason = 'technical_error';
+        }
       }
     }
     await rpc?.close();
@@ -467,6 +482,7 @@ export async function performVertoReminderCall(
     await monitor;
   }
   if (callStarted) result.terminationConfirmed = receivedBye || acknowledgedBye;
-  diagnose('finished', { outcome: result.outcome, terminationConfirmed: result.terminationConfirmed });
+  if (endCause) result.endCause = endCause;
+  diagnose('finished', { outcome: result.outcome, reason: result.reason, terminationConfirmed: result.terminationConfirmed });
   return result;
 }

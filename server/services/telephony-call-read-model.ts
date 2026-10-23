@@ -33,7 +33,7 @@ export const buildTelephonyHistoryRowsSql = (viewer: TelephonyNotificationViewer
       call.started_at AT TIME ZONE 'UTC' AS started_at,call.answered_at AT TIME ZONE 'UTC' AS answered_at,
       call.ended_at AT TIME ZONE 'UTC' AS ended_at,call.duration_seconds,call.talk_seconds,call.hangup_cause,call.note,
       (NULLIF(BTRIM(call.recording_url),'') IS NOT NULL OR call.talk_seconds>0) AS has_recording,
-      NULL::text AS reminder_outcome,NULL::text AS reminder_response,
+      NULL::text AS reminder_outcome,NULL::text AS reminder_response,NULL::text AS reminder_reason,
       ${buildUnresolvedMissedCallSql('call')} AS requires_callback,
       ${buildMissedIncomingCallSql('call')} AS is_missed,call.talk_seconds>0 AS is_answered
     FROM telephony_calls call LEFT JOIN academy_leads lead ON lead.id=call.lead_id
@@ -46,7 +46,7 @@ export const buildTelephonyHistoryRowsSql = (viewer: TelephonyNotificationViewer
       detail.hangup_cause,NULL::text,
       (detail.recording_storage_key IS NOT NULL OR detail.recording_url IS NOT NULL
         OR detail.answered_at IS NOT NULL OR detail.reminder_response IS NOT NULL),
-      detail.reminder_outcome,detail.reminder_response,FALSE,FALSE,
+      detail.reminder_outcome,detail.reminder_response,detail.reminder_reason,FALSE,FALSE,
       (detail.talk_seconds>0 OR detail.answered_at IS NOT NULL OR detail.reminder_response IS NOT NULL)
     FROM voice_reminder_call_details detail JOIN voice_reminder_call_attempts attempt ON attempt.call_id=detail.call_id
     JOIN academy_leads lead ON lead.id=detail.lead_id
@@ -63,7 +63,7 @@ export const telephonyHistoryPublicColumns = `call.id,call.source,call.voice_rem
   call.started_at AS "startedAt",call.answered_at AS "answeredAt",call.ended_at AS "endedAt",
   call.duration_seconds AS "durationSeconds",call.talk_seconds AS "talkSeconds",call.hangup_cause AS "hangupCause",
   call.note,call.has_recording AS "hasRecording",call.reminder_outcome AS "reminderOutcome",
-  call.reminder_response AS "reminderResponse",call.requires_callback AS "requiresCallback"`;
+  call.reminder_response AS "reminderResponse",call.reminder_reason AS "reminderReason",call.requires_callback AS "requiresCallback"`;
 
 export const telephonyHistoryPublicJoins = `FROM call_rows call
   LEFT JOIN users employee ON employee.id=call.user_id

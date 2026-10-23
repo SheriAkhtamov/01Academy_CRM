@@ -10,7 +10,7 @@ import { canAccessAcademyModule, hasLeadershipAccess } from '@shared/academy';
 import { telephonyReminderHistoryCondition, type TelephonyNotificationViewer } from './telephony-notifications';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
-export type ReminderCallCompletion = Pick<VoiceReminderCallResult, 'outcome' | 'response'> & { answeredAt?: Date | null };
+export type ReminderCallCompletion = Pick<VoiceReminderCallResult, 'outcome' | 'response' | 'reason' | 'endCause'> & { answeredAt?: Date | null };
 export type ReminderHistoryRow = {
   callId: string; leadId: number; phone: string; extension: string; providerId: string | null;
   startedAt: Date; status: string; answeredAt: Date | null; endedAt: Date | null;
@@ -43,9 +43,10 @@ export const completeVoiceReminderCallDetails = async (
     duration_seconds=GREATEST(detail.duration_seconds,FLOOR(EXTRACT(EPOCH FROM now()-attempt.started_at))::integer,0),
     talk_seconds=GREATEST(detail.talk_seconds,COALESCE(FLOOR(EXTRACT(EPOCH FROM now()-$3::timestamptz))::integer,0),0),
     reminder_outcome=COALESCE(detail.reminder_outcome,$2),
-    reminder_response=COALESCE(detail.reminder_response,$4),updated_at=now()
+    reminder_response=COALESCE(detail.reminder_response,$4),
+    reminder_reason=COALESCE(detail.reminder_reason,$5),hangup_cause=COALESCE(detail.hangup_cause,$6),updated_at=now()
     FROM voice_reminder_call_attempts attempt WHERE detail.call_id=$1::uuid AND attempt.call_id=detail.call_id`,
-  [callId,result.outcome,result.answeredAt ?? null,result.response ?? null]);
+  [callId,result.outcome,result.answeredAt ?? null,result.response ?? null,result.reason ?? null,result.endCause ?? null]);
 };
 
 export const reminderCallHistoryColumns = `attempt.call_id AS "callId",detail.lead_id AS "leadId",

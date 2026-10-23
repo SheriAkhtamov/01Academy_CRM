@@ -14,7 +14,7 @@ import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
 import { invalidateLeadData, useLeadDetailsQuery, type LeadInvalidationOptions } from '@/features/leads/queries';
 import { ActivityTimeline } from '@/features/leads/ui/LeadActivity';
 import type { TelephonyCallSource } from '@shared/telephony';
-import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderCallReason, VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import { boardApi, boardQueryKeys } from '@/features/board/api';
 import { paymentsApi } from '@/features/payments/api';
 import { toast } from '@/hooks/use-toast';
@@ -229,6 +229,7 @@ interface LeadDetails {
     voiceReminderCallId?: string | null;
     reminderOutcome?: VoiceReminderStatus | null;
     reminderResponse?: VoiceReminderResponse | null;
+    reminderReason?: VoiceReminderCallReason | null;
     direction: 'incoming' | 'outgoing';
     status: TelephonyCallStatus;
     phone: string;

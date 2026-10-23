@@ -31,7 +31,8 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);`);
     for (const name of ['0142_voice_reminders', '0143_crm_telephony_capacity', '0144_voice_reminder_audio_library',
-      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations', '0150_voice_reminder_languages', '0152_voice_reminder_response_retry']) {
+      '0145_voice_reminder_clock_audio', '0146_voice_reminder_test_calls', '0147_voice_reminder_day_before', '0149_voice_reminder_confirmations', '0150_voice_reminder_languages', '0152_voice_reminder_response_retry',
+      '0154_voice_reminder_call_history', '0163_voice_reminder_retry_policy']) {
       await database.query(readFileSync(`migrations/${name}.sql`, 'utf8'));
     }
     repository = new PostgresVoiceReminderTestCallRepository(database);
@@ -221,7 +222,7 @@ describe.skipIf(!url)('durable actor-scoped one-shot test calls on PostgreSQL', 
     expect((await library.settings()).enabled).toBe(false);
     const request = input();
     const dto = await repository.enqueue(1, request, now, expiresAt);
-    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', language: 'ru', response: null, respondedAt: null });
+    expect(dto).toEqual({ id: request.requestId, status: 'waiting', phone: request.phone, clockTime: request.clockTime, reminderKind: 'same_day', language: 'ru', response: null, respondedAt: null, reason: null });
     expect(await repository.current(1)).toEqual(dto);
     expect(await repository.current(2)).toBeNull();
     const job = (await repository.claim(now, 300))!;

@@ -1,4 +1,4 @@
-import type { VoiceReminderKind, VoiceReminderSettings } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderCallReason, VoiceReminderKind, VoiceReminderSettings } from '@shared/contracts/voice-reminders';
 import type { ActorContext } from '../../leads/domain/actor-context';
 
 export class VoiceReminderError extends Error {
@@ -58,6 +58,21 @@ export const anyReminderWindowOpen = (now: Date, settings: VoiceReminderSettings
   reminderWithinAllowedHours(now, settings) || (settings.dayBeforeEnabled && reminderWithinAllowedHours(now, settings, 'day_before'))
 );
 
+export const reminderAttemptPolicy = (settings: VoiceReminderSettings, kind: VoiceReminderKind) => (
+  kind === 'day_before'
+    ? { maxAttempts: settings.dayBeforeMaxAttempts, retryMinutes: settings.dayBeforeRetryMinutes }
+    : { maxAttempts: settings.maxAttempts, retryMinutes: settings.sameDayRetryMinutes }
+);
+
+/** A known ended call may be retried; an ambiguous transport failure must not dial again. */
+export const retryableReminderCall = (result: {
+  outcome: string;
+  reason?: VoiceReminderCallReason;
+  callStarted: boolean;
+  terminationConfirmed?: boolean;
+}): boolean => result.callStarted && result.terminationConfirmed === true
+  && (result.outcome === 'unanswered' || (result.outcome === 'failed' && result.reason === 'interrupted'));
+
 export const nextReminderAttempt = (input: {
   now: Date;
   scheduledAt: Date;
@@ -65,9 +80,11 @@ export const nextReminderAttempt = (input: {
   settings: VoiceReminderSettings;
   reminderKind?: VoiceReminderKind;
 }): Date | null => {
-  const next = new Date(input.now.getTime() + input.settings.retryMinutes * 60_000);
   const kind = input.reminderKind ?? 'same_day';
-  return input.attempts < input.settings.maxAttempts && next < reminderDeadline(input.scheduledAt, input.settings, kind)
+  const policy = reminderAttemptPolicy(input.settings, kind);
+  const next = new Date(input.now.getTime() + policy.retryMinutes * 60_000);
+  return reminderKindEnabled(input.settings, kind) && input.attempts < policy.maxAttempts
+    && next < reminderDeadline(input.scheduledAt, input.settings, kind)
     && reminderOnEligibleDay(input.scheduledAt, next, kind) && reminderWithinAllowedHours(next, input.settings, kind) ? next : null;
 };
 

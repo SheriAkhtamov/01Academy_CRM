@@ -241,11 +241,15 @@ describe('voice reminder settings and test calls', () => {
     expect((screen.getByLabelText('Simultaneous calls') as HTMLSelectElement).value).toBe('2');
     await user.click(screen.getByRole('switch', { name: 'Demo reminders' }));
     fireEvent.change(screen.getByLabelText('Minutes before the demo'), { target: { value: '90' } });
-    fireEvent.change(screen.getByLabelText('Call attempts'), { target: { value: '5' } });
-    fireEvent.change(screen.getByLabelText('Minutes between attempts'), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText('Attempts on demo day'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Confirmation follow-up interval, min'), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText('Demo-day retry interval, min'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Day-before attempts'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Day-before retry interval, min'), { target: { value: '60' } });
     await user.click(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith({
       enabled: true, confirmationEnabled: false, leadMinutes: 90, maxAttempts: 5, retryMinutes: 15,
+      sameDayRetryMinutes: 30, dayBeforeMaxAttempts: 3, dayBeforeRetryMinutes: 60,
       dayBeforeEnabled: false, dayBeforeStartTime: '10:00', dayBeforeEndTime: '20:00',
       allowedStartTime: '09:00', allowedEndTime: '20:00', maxConcurrentCalls: 2,
     }, expect.anything()));

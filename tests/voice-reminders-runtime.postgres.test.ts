@@ -129,6 +129,7 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
     await database.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
     await database.query(readFileSync('migrations/0154_voice_reminder_call_history.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(database);
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-runtime-'));
   });
@@ -158,6 +159,51 @@ describe.skipIf(!url)('voice reminder runtime on isolated PostgreSQL', () => {
     await database?.end();
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
     if (directory) await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it.each([
+    ['day_before', 3, 60],
+    ['same_day', 2, 30],
+  ] as const)('uses the %s budget of %i calls at %i minute intervals', async (kind, limit, interval) => {
+    let clock = kind === 'day_before' ? testClock + 30 * 60_000 : testClock - 90 * 60_000;
+    if (kind === 'day_before') {
+      await prepareTomorrowAudio();
+      await database.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 05:30:00' WHERE id=1");
+    }
+    const call = vi.fn<typeof performVertoReminderCall>(async (_credentials, input) => {
+      await input.onStarted!();
+      return { outcome: 'unanswered', reason: 'not_connected', callStarted: true, callId: input.callId!, terminationConfirmed: true };
+    });
+    const runtime = makeRuntime(provider(), call, () => clock);
+    try {
+      for (let index = 0; index < limit; index += 1) {
+        await runtime.tick();
+        expect(call).toHaveBeenCalledTimes(index + 1);
+        const row = (await database.query(`SELECT status,attempts,due_at FROM voice_reminder_jobs WHERE reminder_kind=$1`, [kind])).rows[0];
+        expect(row.attempts).toBe(index + 1);
+        if (index < limit - 1) {
+          expect(row.status).toBe('waiting');
+          expect(row.due_at.getTime()).toBe(clock + interval * 60_000);
+          const nextAt = clock + interval * 60_000;
+          if (index === 0) {
+            await database.query("UPDATE voice_reminder_jobs SET due_at=$1 WHERE reminder_kind=$2", [new Date(clock + 10 * 60_000), kind]);
+            clock += 10 * 60_000;
+            await runtime.tick();
+            expect(call).toHaveBeenCalledTimes(index + 1);
+            expect((await database.query('SELECT due_at FROM voice_reminder_jobs WHERE reminder_kind=$1', [kind])).rows[0].due_at.getTime()).toBe(nextAt);
+          }
+          clock = nextAt - 1;
+          await runtime.tick();
+          expect(call).toHaveBeenCalledTimes(index + 1);
+          clock += 1;
+        } else expect(row.status).toBe('unanswered');
+      }
+      clock += interval * 60_000;
+      await runtime.tick();
+      expect(call).toHaveBeenCalledTimes(limit);
+      expect((await database.query('SELECT count(*)::int AS count FROM voice_reminder_call_attempts')).rows[0].count).toBe(limit);
+      expect((await database.query('SELECT count(*)::int AS count FROM telephony_line_reservations')).rows[0].count).toBe(0);
+    } finally { await runtime.close(); }
   });
 
   it('preserves a completed transport result and releases its line when only the journal detail write fails',async () => {

@@ -115,6 +115,21 @@ export function VoiceReminderSettingsForm({
           />
         </div>
         <div className="space-y-2">
+          <Label htmlFor="voice-reminders-same-day-retry">{t('voiceRemindersSameDayRetryMinutes')}</Label>
+          <Input id="voice-reminders-same-day-retry" type="number" min={1} max={60} required
+            value={draft.sameDayRetryMinutes} onChange={(event) => update('sameDayRetryMinutes', Number(event.target.value))} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voice-reminders-day-before-attempts">{t('voiceRemindersDayBeforeAttempts')}</Label>
+          <Input id="voice-reminders-day-before-attempts" type="number" min={1} max={5} required
+            value={draft.dayBeforeMaxAttempts} onChange={(event) => update('dayBeforeMaxAttempts', Number(event.target.value))} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="voice-reminders-day-before-retry">{t('voiceRemindersDayBeforeRetryMinutes')}</Label>
+          <Input id="voice-reminders-day-before-retry" type="number" min={1} max={60} required
+            value={draft.dayBeforeRetryMinutes} onChange={(event) => update('dayBeforeRetryMinutes', Number(event.target.value))} />
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="voice-reminders-retry">{t('voiceRemindersRetryMinutes')}</Label>
           <Input
             id="voice-reminders-retry"

@@ -17,7 +17,7 @@ export const readLeadCallHistory = async (leadId: number): Promise<Row[]> => {
       attempt.started_at,detail.answered_at,detail.ended_at,detail.duration_seconds,detail.talk_seconds,
       detail.hangup_cause,NULL::integer AS user_id,NULL::text AS user_name,
       NULL::text AS note,NULL::integer AS note_author_id,NULL::text AS note_author_name,NULL::timestamptz AS note_updated_at,
-      detail.reminder_outcome,detail.reminder_response,
+      detail.reminder_outcome,detail.reminder_response,detail.reminder_reason,
       (detail.recording_storage_key IS NOT NULL OR detail.recording_url IS NOT NULL OR detail.answered_at IS NOT NULL
         OR detail.reminder_response IS NOT NULL) AS has_recording
       FROM voice_reminder_call_details detail JOIN voice_reminder_call_attempts attempt ON attempt.call_id=detail.call_id

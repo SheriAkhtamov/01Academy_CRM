@@ -30,6 +30,9 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
       is_active boolean DEFAULT true,is_archived boolean DEFAULT false);
       CREATE TABLE academy_demo_lessons(id integer PRIMARY KEY,scheduled_at timestamp,status text);
       CREATE TABLE academy_demo_lesson_participants(id integer PRIMARY KEY,demo_lesson_id integer,student_id integer,status text);
+      CREATE TABLE academy_leads(id integer PRIMARY KEY,phone text,is_archived boolean DEFAULT false,language varchar(20),languages text[]);
+      CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,phone text);
+      CREATE TABLE academy_lead_phones(id serial PRIMARY KEY,lead_id integer,phone text,is_primary boolean);
       CREATE TABLE telephony_calls(id serial PRIMARY KEY,provider_call_id text,client_call_id text,ended_at timestamptz,status text);`);
     await database.query(readFileSync('migrations/0142_voice_reminders.sql', 'utf8'));
     await database.query(readFileSync('migrations/0143_crm_telephony_capacity.sql', 'utf8'));
@@ -37,9 +40,12 @@ describe.skipIf(!url)('shared manager and robot channel reservations on PostgreS
     await database.query(readFileSync('migrations/0145_voice_reminder_clock_audio.sql', 'utf8'));
     await database.query(readFileSync('migrations/0146_voice_reminder_test_calls.sql', 'utf8'));
     await database.query(readFileSync('migrations/0147_voice_reminder_day_before.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     await database.query(readFileSync('migrations/0151_telephony_manager_line_priority.sql', 'utf8'));
-    await database.query('CREATE TABLE academy_leads(id integer PRIMARY KEY)');
-    await database.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8').split('-- Older receipts')[0]);
+    await database.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
+    await database.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+    await database.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql','utf8'));
     channels = new TelephonyChannelReservations(database, async () => snapshot);
   });
   beforeEach(async () => {

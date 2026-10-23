@@ -135,8 +135,8 @@ export const createVoiceRemindersRuntime = (
           } catch (error) {
             logCallDiagnostic('Voice reminder call setup failed', { ...diagnosticIdentity, phase: setupPhase, markerWritten,
               errorCode: error instanceof OnlinePbxError ? error.clientCode : 'voiceReminderTransportUnavailable' }, true);
-            if (markerWritten) await receipts.complete(lease.clientCallId, true, false,{ outcome:'failed',answeredAt });
-            return { outcome: 'failed', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };
+            if (markerWritten) await receipts.complete(lease.clientCallId, true, false,{ outcome:'failed',reason:'technical_error',answeredAt });
+            return { outcome: 'failed', reason: 'technical_error', callStarted: markerWritten, callId: markerWritten ? lease.clientCallId : null };
           }
         },
         release,

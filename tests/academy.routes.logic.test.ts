@@ -1114,12 +1114,13 @@ describe('academy route logic boundaries', () => {
 
   it('exposes report contacts only for demo participants the sales manager may manage', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const reminderRuns = [{ kind: 'day_before', calls: [{ startedAt: '2026-10-07T09:00:00Z', reason: 'not_connected' }] }];
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM academy_demo_lessons demo')) {
         return { rows: [{ id: 23, status: 'scheduled', participants: [
           { id: 77, studentId: 155, managerId: 7, status: 'invited', studentName: 'Own student', contactName: 'Own contact', leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: 'played' },
           { id: 78, studentId: 156, managerId: 18, status: 'invited', studentName: 'Other student', contactName: 'Other contact', leadName: 'Other lead', leadPhone: '+998909876543', reminderResponse: 'no', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderDeliveryStatus: 'delivered_no_response', reminderDeliveredAt: '2026-10-07T09:00:00Z', reminderProgressStatus: 'played' },
-        ] }] };
+        ].map(participant => ({ ...participant, reminderRuns })) }] };
       }
       return emptyResult();
     });
@@ -1129,8 +1130,8 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(200);
     expect(response.body[0].canManage).toBe(false);
     expect(response.body[0].participants).toEqual([
-      expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderProgressStatus: 'played', canManage: true }),
-      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, canManage: false }),
+      expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderProgressStatus: 'played', reminderRuns, canManage: true }),
+      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false }),
     ]);
   });
 

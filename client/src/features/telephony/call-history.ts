@@ -1,28 +1,21 @@
 import type { TelephonyCallSource } from '@shared/telephony';
-import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderCallReason, VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
 import type { TranslationKey } from '@/lib/i18n';
+import { reminderOutcomeLabels, reminderReasonLabels } from '@/features/voice-reminders/results';
 
 export type ReminderCallHistoryFields = {
   source?: TelephonyCallSource;
   voiceReminderCallId?: string | null;
   reminderOutcome?: VoiceReminderStatus | null;
   reminderResponse?: VoiceReminderResponse | null;
-};
-
-const reminderOutcomeLabels: Record<VoiceReminderStatus, TranslationKey> = {
-  waiting: 'voiceRemindersWaiting',
-  calling: 'voiceRemindersCalling',
-  played: 'voiceRemindersPlayed',
-  delivered_no_response: 'voiceRemindersDeliveredNoResponse',
-  unanswered: 'voiceRemindersUnanswered',
-  failed: 'voiceRemindersFailed',
-  cancelled: 'voiceRemindersCancelled',
+  reminderReason?: VoiceReminderCallReason | null;
 };
 
 export const reminderCallResultKey = (call: ReminderCallHistoryFields): TranslationKey | null => {
   if (call.source !== 'voice_reminder') return null;
   if (call.reminderResponse === 'yes') return 'telephonyReminderResponseYes';
   if (call.reminderResponse === 'no') return 'telephonyReminderResponseNo';
+  if (call.reminderReason) return reminderReasonLabels[call.reminderReason];
   return call.reminderOutcome ? reminderOutcomeLabels[call.reminderOutcome] : null;
 };
 

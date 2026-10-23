@@ -13,7 +13,32 @@ export const voiceReminderResponseSchema = z.enum(['yes', 'no']);
 export type VoiceReminderResponse = z.infer<typeof voiceReminderResponseSchema>;
 export type VoiceReminderDeliveryStatus = 'delivered_no_response';
 export type VoiceReminderProgressStatus = 'calling' | 'waiting' | 'retry' | 'unanswered' | 'failed'
-  | 'played' | 'not_started' | 'disabled' | 'cancelled' | 'no_phone';
+  | 'played' | 'not_started' | 'disabled' | 'cancelled' | 'no_phone'
+  | 'line_busy' | 'rejected' | 'not_connected' | 'interrupted';
+export const VOICE_REMINDER_CALL_REASONS = [
+  'no_answer', 'line_busy', 'rejected', 'not_connected', 'interrupted', 'technical_error',
+] as const;
+export type VoiceReminderCallReason = typeof VOICE_REMINDER_CALL_REASONS[number];
+export type VoiceReminderAttemptSummary = {
+  startedAt: string;
+  answeredAt: string | null;
+  endedAt: string | null;
+  talkSeconds: number;
+  outcome: VoiceReminderStatus | null;
+  reason: VoiceReminderCallReason | null;
+  response: VoiceReminderResponse | null;
+  terminationConfirmed: boolean;
+  causeUnspecified: boolean;
+  responseRetry: boolean;
+};
+export type VoiceReminderRunSummary = {
+  kind: VoiceReminderKind;
+  status: VoiceReminderStatus;
+  attemptLimit: number;
+  responseRetry: boolean;
+  nextAttemptAt: string | null;
+  calls: VoiceReminderAttemptSummary[];
+};
 export const voiceReminderLanguageSchema = z.enum(['ru', 'uz']);
 export type VoiceReminderLanguage = z.infer<typeof voiceReminderLanguageSchema>;
 export const resolveVoiceReminderLanguage = (languages: unknown, language?: unknown): VoiceReminderLanguage => (
@@ -33,6 +58,9 @@ export const voiceReminderSettingsSchema = z.object({
   dayBeforeStartTime: wallClock.default('10:00'),
   dayBeforeEndTime: wallClock.default('20:00'),
   maxAttempts: z.number().int().min(1).max(5),
+  sameDayRetryMinutes: z.number().int().min(1).max(60).default(30),
+  dayBeforeMaxAttempts: z.number().int().min(1).max(5).default(3),
+  dayBeforeRetryMinutes: z.number().int().min(1).max(60).default(60),
   retryMinutes: z.number().int().min(1).max(60),
   allowedStartTime: wallClock,
   allowedEndTime: wallClock,
@@ -178,6 +206,7 @@ export type VoiceReminderTestCall = {
   language?: VoiceReminderLanguage;
   response: VoiceReminderResponse | null;
   respondedAt: string | null;
+  reason?: VoiceReminderCallReason | null;
 };
 
 export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
@@ -188,6 +217,9 @@ export const DEFAULT_VOICE_REMINDER_SETTINGS: VoiceReminderSettings = {
   dayBeforeStartTime: '10:00',
   dayBeforeEndTime: '20:00',
   maxAttempts: 2,
+  sameDayRetryMinutes: 30,
+  dayBeforeMaxAttempts: 3,
+  dayBeforeRetryMinutes: 60,
   retryMinutes: 10,
   allowedStartTime: '09:00',
   allowedEndTime: '20:00',

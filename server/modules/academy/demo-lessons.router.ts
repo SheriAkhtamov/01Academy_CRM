@@ -58,6 +58,7 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
             'reminderDeliveryStatus', reminder_delivery.delivery_status,
             'reminderDeliveredAt', reminder_delivery.delivered_at,
             'reminderProgressStatus', reminder_progress.progress_status,
+            'reminderRuns', reminder_progress.runs,
             'result', participant.result,
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
@@ -147,7 +148,7 @@ const presentDemoLesson = (req: any, demo: Row) => {
       const participantCanManage = canManageParticipant(req, participant);
       return participantCanManage
         ? { ...participant, canManage: true }
-        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, canManage: false };
+        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false };
     }),
   };
 };

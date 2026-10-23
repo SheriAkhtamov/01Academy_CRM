@@ -152,16 +152,17 @@ describe('safe reminder transport diagnostics', () => {
     expect(harness.messages.filter(message => message.method === 'verto.invite')).toHaveLength(1);
   });
 
-  it.each(['NORMAL_CLEARING', 'private-provider-detail test-password'])('reports a pre-answer hangup with a safe cause (%s)', async cause => {
+  it.each(['NORMAL_CLEARING', 'NORMAL_UNSPECIFIED', 'private-provider-detail test-password'])('reports a pre-answer hangup with a safe cause (%s)', async cause => {
     const onDiagnostic = vi.fn();
     const harness = await fakeVerto((socket, invite) => event(socket, 'verto.bye', {
       callID: invite.params!.dialogParams.callID, cause,
     }, 'early-hangup'));
     const result = await performVertoReminderCall(harness.credentials, callInput({ onDiagnostic }), dependencies());
-    expect(result).toMatchObject({ outcome: 'failed', callStarted: true, terminationConfirmed: true });
+    expect(result).toMatchObject({ outcome: cause.startsWith('NORMAL_') ? 'unanswered' : 'failed',
+      reason: cause.startsWith('NORMAL_') ? 'not_connected' : 'technical_error', callStarted: true, terminationConfirmed: true });
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       event: 'remote_end', callStarted: true, answered: false,
-      cause: cause === 'NORMAL_CLEARING' ? cause : 'UNSPECIFIED',
+      cause: cause.startsWith('NORMAL_') ? cause : 'UNSPECIFIED',
     }));
     expect(JSON.stringify(onDiagnostic.mock.calls)).not.toContain('test-password');
   });
@@ -630,6 +631,7 @@ describe('reminder confirmation dialogue', () => {
     });
     const result = await performVertoReminderCall(harness.credentials, input, confirmationDependencies());
     expect(result).toMatchObject({ outcome: phase === 'confirmation' ? 'delivered_no_response' : 'failed', terminationConfirmed: true });
+    if (phase === 'playback') expect(result.reason).toBe('interrupted');
     expect(input.confirmation!.onResponse).not.toHaveBeenCalled();
   });
 

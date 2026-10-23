@@ -17,10 +17,11 @@ type TestRow = Omit<VoiceReminderTestCall, 'respondedAt'> & {
   respondedAt: Date | null;
 };
 const fields = `test.id,test.language,test.status,test.phone,test.clock_time AS "clockTime",test.reminder_kind AS "reminderKind",test.actor_user_id AS "actorUserId",
-  test.response,test.response_at AS "respondedAt",test.confirmation_enabled AS "confirmationEnabled",test.provider_call_id AS "providerCallId",
+  test.response,test.reminder_reason AS reason,test.response_at AS "respondedAt",test.confirmation_enabled AS "confirmationEnabled",test.provider_call_id AS "providerCallId",
   test.lease_token AS "leaseToken",test.expires_at AS "expiresAt",test.dial_started_at AS "startedAt"`;
-const publicCall = ({ id, status, phone, clockTime, reminderKind, language, response, respondedAt }: TestRow): VoiceReminderTestCall => ({
+const publicCall = ({ id, status, phone, clockTime, reminderKind, language, response, respondedAt, reason }: TestRow): VoiceReminderTestCall => ({
   id, status, phone, clockTime, reminderKind, language: language ?? 'ru', response: response ?? null, respondedAt: respondedAt?.toISOString() ?? null,
+  reason: reason ?? null,
 });
 const liveSql = `SELECT ${fields} FROM voice_reminder_test_calls test JOIN users staff ON staff.id=test.actor_user_id
   WHERE test.id=$1 AND test.lease_token=$2 AND test.status='calling' AND test.lease_until>$3
@@ -191,10 +192,10 @@ export class PostgresVoiceReminderTestCallRepository implements VoiceReminderTes
 
   async finish(job: ClaimedVoiceReminderTestCall, result: VoiceReminderCallResult, now: Date): Promise<void> {
     await this.database.query(`UPDATE voice_reminder_test_calls SET status=CASE WHEN $3='delivered_no_response' THEN CASE WHEN response IS NOT NULL THEN 'played' WHEN confirmation_enabled AND $6 THEN 'delivered_no_response' ELSE 'failed' END ELSE $3 END,lease_token=NULL,lease_until=NULL,not_before_at=NULL,
-      completed_at=$4,updated_at=$4,provider_call_id=COALESCE(provider_call_id,$5),
+      completed_at=$4,updated_at=$4,provider_call_id=COALESCE(provider_call_id,$5),reminder_reason=$7,
       dial_started_at=CASE WHEN $6 THEN COALESCE(dial_started_at,$4) ELSE dial_started_at END
       WHERE id=$1 AND lease_token=$2 AND status='calling'`, [job.id,job.leaseToken,
-      result.outcome==='delivered_no_response' ? 'delivered_no_response' : result.outcome==='busy' ? 'failed' : result.outcome,now,result.callId?.slice(0,160) ?? null,result.callStarted]);
+      result.outcome==='delivered_no_response' ? 'delivered_no_response' : result.outcome==='busy' ? 'failed' : result.outcome,now,result.callId?.slice(0,160) ?? null,result.callStarted,result.reason ?? null]);
   }
 
   async defer(job: ClaimedVoiceReminderTestCall, now: Date): Promise<boolean> {

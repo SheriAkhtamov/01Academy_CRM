@@ -60,7 +60,7 @@ describe.skipIf(!url)('combined call histories on isolated PostgreSQL',() => {
         note text,recording_url text);
       CREATE TABLE voice_reminder_call_attempts(call_id uuid PRIMARY KEY,phone text,extension text,started_at timestamptz,provider_id text);
       CREATE TABLE voice_reminder_call_details(call_id uuid PRIMARY KEY,lead_id integer,status text,answered_at timestamptz,
-        ended_at timestamptz,duration_seconds integer,talk_seconds integer,hangup_cause text,reminder_outcome text,reminder_response text,
+        ended_at timestamptz,duration_seconds integer,talk_seconds integer,hangup_cause text,reminder_outcome text,reminder_response text,reminder_reason text,
         recording_storage_key text,recording_url text,recording_provider_id text,recording_mime_type text)`);
   });
   beforeEach(async () => {
@@ -78,6 +78,16 @@ describe.skipIf(!url)('combined call histories on isolated PostgreSQL',() => {
   });
   afterAll(async () => {
     await database?.end();if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end(); }
+  });
+
+  it('carries the real reminder reason through both histories without assigning it to manager calls', async () => {
+    await managerCall(1);
+    await reminderCall(2, 1, undefined, 12, true);
+    await database.query("UPDATE voice_reminder_call_details SET reminder_outcome='failed',reminder_reason='interrupted' WHERE call_id=$1", [botId(2)]);
+    for (const payload of [(await journal()).items, await widget()]) {
+      expect(payload.find((call: { source: string }) => call.source === 'voice_reminder')).toMatchObject({ reminderOutcome: 'failed', reminderReason: 'interrupted' });
+      expect(payload.find((call: { source: string }) => call.source === 'manager')).toMatchObject({ reminderReason: null });
+    }
   });
 
   it('sorts and paginates the union before limiting, preserving numeric human IDs and UUID robot IDs',async () => {

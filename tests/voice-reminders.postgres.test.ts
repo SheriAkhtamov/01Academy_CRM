@@ -50,6 +50,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql', 'utf8'));
     repository = new PostgresVoiceReminderRepository(pool);
   });
   beforeEach(async () => {
@@ -268,12 +269,14 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       retry_phase='response_retry',no_response_count=1,delivered_at=$3,last_retry_outcome='unanswered',provider_call_id=$2 WHERE id=$1`, [job.id,retryId,now]);
     await pool.query('DROP TABLE voice_reminder_call_details');
     await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+    await pool.query('ALTER TABLE voice_reminder_call_details ADD COLUMN reminder_reason varchar(30)');
     const details=await callDetails();
     expect(details.find(row => row.call_id===callId)).toMatchObject({ reminder_outcome:null,reminder_response:null });
     expect(details.find(row => row.call_id===retryId)).toMatchObject({ reminder_outcome:'unanswered',reminder_response:null });
     await pool.query('DROP TABLE voice_reminder_call_details');
     await pool.query("UPDATE academy_demo_lesson_participants SET student_id=2 WHERE id=1");
     await pool.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+    await pool.query('ALTER TABLE voice_reminder_call_details ADD COLUMN reminder_reason varchar(30)');
     expect(await callDetails()).toEqual([]);
   });
 
@@ -393,6 +396,70 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
     await pool.query(`UPDATE voice_reminder_jobs SET status='waiting',lease_token=NULL,lease_until=NULL,
       attempts=1,last_call_at=$2,not_before_at=$2::timestamptz+interval '10 minutes' WHERE id=$1`, [jobId,now]);
     expect(await reminderProgress()).toBe('retry');
+  });
+
+  it.each([
+    ['not_connected', 'unanswered', 'not_connected'],
+    ['line_busy', 'unanswered', 'line_busy'],
+    ['rejected', 'unanswered', 'rejected'],
+    ['interrupted', 'failed', 'interrupted'],
+    ['technical_error', 'failed', 'failed'],
+  ] as const)('projects the actual %s reason without changing queue state', async (reason, status, expected) => {
+    const { callId } = await progressJob({ status, attempted: true });
+    await captureVoiceReminderCallDetails(pool, callId);
+    await completeVoiceReminderCallDetails(pool, callId, {
+      outcome: status, reason, ...(reason === 'interrupted' ? { answeredAt: now } : {}),
+    });
+    const before = (await pool.query('SELECT status,attempts FROM voice_reminder_jobs')).rows;
+    expect(await reminderProgress()).toBe(expected);
+    expect((await pool.query('SELECT status,attempts FROM voice_reminder_jobs')).rows).toEqual(before);
+  });
+
+  it('returns invitation-scoped call facts and the next allowed time without provider identifiers or phones', async () => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    const { callId } = await progressJob({ status: 'failed', kind: 'day_before', attempted: true });
+    await captureVoiceReminderCallDetails(pool, callId);
+    await completeVoiceReminderCallDetails(pool, callId, { outcome: 'unanswered', reason: 'not_connected', endCause: 'NORMAL_UNSPECIFIED' });
+    await progressJob();
+    const read = async () => (await pool.query(`SELECT reminder_progress.runs FROM academy_demo_lesson_participants participant
+      JOIN academy_demo_lessons demo ON demo.id=participant.demo_lesson_id
+      ${demoReminderProgressJoinSql('$1::timestamptz')} WHERE participant.id=1`, [now])).rows[0].runs;
+    const runs = await read();
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({ kind: 'day_before', attemptLimit: 3, nextAttemptAt: null,
+      calls: [{ reason: 'not_connected', causeUnspecified: true, terminationConfirmed: true, responseRetry: false }] });
+    expect(new Date(runs[0].calls[0].startedAt)).toEqual(now);
+    expect(runs[1]).toMatchObject({ kind: 'same_day', attemptLimit: 2, calls: [] });
+    expect(new Date(runs[1].nextAttemptAt)).toEqual(new Date('2030-01-16T04:00:00Z'));
+    for (const privateValue of [callId, '+998901234567', 'NORMAL_UNSPECIFIED', 'providerId']) {
+      expect(JSON.stringify(runs)).not.toContain(privateValue);
+    }
+    await pool.query("UPDATE academy_leads SET phone='+998931234567' WHERE id=1");
+    expect((await read()).flatMap((run: { calls: unknown[] }) => run.calls)).toEqual([]);
+  });
+
+  it.each([true, false])('rechecks the retry interval and confirmed termination in the durable finish (%s)', async terminationConfirmed => {
+    const { job, callId } = await historyAttempt();
+    const result = { outcome: 'failed' as const, reason: 'interrupted' as const,
+      callStarted: true, callId, terminationConfirmed };
+    await repository.finish(job, result, now, new Date(now.getTime() + 10 * 60_000));
+    const row = (await pool.query('SELECT status,due_at,attempts FROM voice_reminder_jobs WHERE id=$1', [job.id])).rows[0];
+    expect(row.status).toBe(terminationConfirmed ? 'waiting' : 'failed');
+    expect(row.attempts).toBe(1);
+    if (terminationConfirmed) expect(row.due_at).toEqual(new Date(now.getTime() + 30 * 60_000));
+  });
+
+  it('does not reopen terminal day-before calls when the retry budget increases', async () => {
+    await enableDayBefore();
+    await pool.query("UPDATE academy_demo_lessons SET scheduled_at='2030-01-16 06:00:00' WHERE id=1");
+    for (const status of ['failed', 'unanswered'] as const) {
+      await pool.query('DELETE FROM voice_reminder_jobs');
+      const { jobId } = await progressJob({ status, kind: 'day_before', attempted: true });
+      await repository.saveSettings({ ...input, enabled: true, dayBeforeEnabled: true, dayBeforeMaxAttempts: 3 }, 1);
+      await repository.synchronize(now, await repository.settings());
+      expect((await pool.query('SELECT status,attempts FROM voice_reminder_jobs WHERE id=$1', [jobId])).rows[0]).toEqual({ status, attempts: 1 });
+    }
   });
 
   it.each(['unanswered','failed','played'])('keeps the real %s report ahead of a future unattempted reminder and after attendance changes', async (status) => {
@@ -1344,6 +1411,8 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       expect((await upgrade.query('SELECT * FROM telephony_line_reservations')).rows).toEqual(before.reservations);
       expect((await upgrade.query('SELECT * FROM voice_reminder_participant_response(1)')).rows)
         .toEqual([{ response: 'yes',response_at: now }]);
+      await upgrade.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+      await upgrade.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql','utf8'));
       const migrated = new PostgresVoiceReminderRepository(upgrade);
       await migrated.synchronize(now,await migrated.settings());
       expect((await upgrade.query('SELECT count(*)::int AS count FROM voice_reminder_jobs')).rows[0].count).toBe(2);
@@ -1374,6 +1443,8 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       await upgrade.query(readFileSync('migrations/0149_voice_reminder_confirmations.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0150_voice_reminder_languages.sql', 'utf8'));
       await upgrade.query(readFileSync('migrations/0152_voice_reminder_response_retry.sql', 'utf8'));
+      await upgrade.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+      await upgrade.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql','utf8'));
       const upgraded = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(upgraded.enabled).toBe(false);
       expect(upgraded.audio?.id).toBe(audio.id);
@@ -1426,6 +1497,8 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
       expect(migratedJobs.every(row => row.reminder_kind === 'same_day')).toBe(true);
       expect(migratedTests.map(({ language, language_revision, reminder_kind, confirmation_enabled, confirmation_yes_audio_id, confirmation_no_audio_id, response, response_at, response_call_id, response_lesson_revision, response_participant_revision, ...row }) => row)).toEqual(previousTests);
       expect(migratedTests[0].reminder_kind).toBe('same_day');
+      await upgrade.query(readFileSync('migrations/0154_voice_reminder_call_history.sql','utf8'));
+      await upgrade.query(readFileSync('migrations/0163_voice_reminder_retry_policy.sql','utf8'));
       const settings = await new PostgresVoiceReminderRepository(upgrade).settings();
       expect(settings.enabled).toBe(true); expect(settings.dayBeforeEnabled).toBe(false);
       expect(settings.audioLibrary.dayBeforeIntro).toBeNull();
@@ -1509,7 +1582,7 @@ describe.skipIf(!url)('voice reminders PostgreSQL queue and cancellation', () =>
   it('retries known no-answer but recovers crashed in-flight jobs as terminal failed', async () => {
     await repository.synchronize(now, await repository.settings());
     const first = (await repository.claim(now, 2, 300))!;
-    await repository.finish(first, { outcome: 'unanswered', callStarted: true, callId: 'first' }, now, new Date('2030-01-15T05:10:00Z'));
+    await repository.finish(first, { outcome: 'unanswered', callStarted: true, callId: 'first', terminationConfirmed: true }, now, new Date('2030-01-15T05:30:00Z'));
     expect((await readVoiceReminderJobs(pool)).results.find(value => value.id === first.id)).toMatchObject({ status: 'waiting', attempts: 1 });
     const crashed = (await repository.claim(now, 2, 300))!;
     const later = new Date('2030-01-15T05:06:00Z');

@@ -1,5 +1,5 @@
 import { hasReadyVoiceReminderLibrary, hasReadyVoiceReminderFollowup } from '@shared/contracts/voice-reminders';
-import { nextReminderAttempt, nextReminderResponseRetry, anyReminderWindowOpen } from '../domain/policy';
+import { nextReminderAttempt, nextReminderResponseRetry, anyReminderWindowOpen, retryableReminderCall } from '../domain/policy';
 import type {
   ClaimedVoiceReminder,
   VoiceReminderAudioComposer,
@@ -132,7 +132,7 @@ export class VoiceReminderWorker {
       const settings = await this.repository.settings();
       const retryAt = result.outcome === 'delivered_no_response' && result.callStarted && result.terminationConfirmed === true
         ? nextReminderResponseRetry({ now: this.now(), scheduledAt: job.scheduledAt, noResponseCount: (job.noResponseCount ?? 0) + 1, settings, reminderKind: job.reminderKind })
-        : result.outcome === 'unanswered' && result.callStarted && job.retryPhase !== 'response_retry'
+        : retryableReminderCall(result) && job.retryPhase !== 'response_retry'
         ? nextReminderAttempt({ now: this.now(), scheduledAt: job.scheduledAt, attempts: job.attempts + 1, settings, reminderKind: job.reminderKind })
         : null;
       await this.repository.finish(job, result, this.now(), retryAt);

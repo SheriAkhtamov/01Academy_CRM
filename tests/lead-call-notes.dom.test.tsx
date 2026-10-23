@@ -23,6 +23,15 @@ const timeline = (calls: Parameters<typeof ActivityTimeline>[0]['lead']['calls']
 );
 
 describe('call notes in lead activity', () => {
+  it.each([
+    ['not_connected', 'Не удалось соединиться'],
+    ['interrupted', 'Сообщение прервано'],
+    ['rejected', 'Вызов отклонён'],
+  ] as const)('shows a reminder %s reason ahead of its generic outcome', (reminderReason, label) => {
+    timeline([{ ...reminderCall, reminderOutcome: 'failed', reminderReason, hasRecording: false }]);
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText('Техническая ошибка')).toBeNull();
+  });
   it('shows a previously saved manager note on its call activity', () => {
     render(
       <ActivityTimeline

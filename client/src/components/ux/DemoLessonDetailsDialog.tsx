@@ -22,7 +22,7 @@ import {
   type DemoNotConductedReasonCode,
   type DemoNoShowReasonCode,
 } from '@shared/contracts/demo-lessons';
-import type { VoiceReminderProgressStatus } from '@shared/contracts/voice-reminders';
+import { DemoReminderStatus } from '@/features/demo-lessons/ui/DemoReminderStatus';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
@@ -77,19 +77,6 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import type { TranslationKey } from '@/lib/i18n';
-
-const reminderProgressLabels: Record<VoiceReminderProgressStatus, TranslationKey> = {
-  calling: 'voiceRemindersProgressCalling',
-  waiting: 'voiceRemindersProgressWaiting',
-  retry: 'voiceRemindersProgressRetry',
-  unanswered: 'voiceRemindersProgressUnanswered',
-  failed: 'voiceRemindersProgressFailed',
-  played: 'voiceRemindersProgressPlayed',
-  not_started: 'voiceRemindersProgressNotStarted',
-  disabled: 'voiceRemindersProgressDisabled',
-  cancelled: 'voiceRemindersProgressCancelled',
-  no_phone: 'voiceRemindersProgressNoPhone',
-};
 
 interface DemoLessonDetailsDialogProps {
   demo: DemoLesson | null;
@@ -168,7 +155,7 @@ export function DemoLessonDetailsDialog({
     ...demo, participants: demo.participants.map(({
       reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt,
       reminderDeliveryStatus: _reminderDeliveryStatus, reminderDeliveredAt: _reminderDeliveredAt,
-      reminderProgressStatus: _reminderProgressStatus, ...participant
+      reminderProgressStatus: _reminderProgressStatus, reminderRuns: _reminderRuns, ...participant
     }) => participant)
   }) : null;
   const draftIdentityRef = useRef<string | null>(null);
@@ -591,10 +578,6 @@ export function DemoLessonDetailsDialog({
                     : null;
                   const canEditParticipantAttendance = canEditAttendance
                     && participant.canManage !== false;
-                  const reminderProgressLabel = participant.reminderProgressStatus
-                    ? reminderProgressLabels[participant.reminderProgressStatus]
-                    : null;
-
                   return (
                     <div key={participant.id} className="relative grid grid-cols-1 items-center gap-2 rounded-md border border-border-strong bg-background p-2.5 pr-11 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:pr-2.5">
                       {onOpenLead && participant.leadId && primaryName ? (
@@ -647,15 +630,7 @@ export function DemoLessonDetailsDialog({
                             <SelectItem value="no_show">{t('demoParticipantNoShow')}</SelectItem>
                           </SelectContent>
                         </Select>
-                        {participant.reminderResponse === 'yes' || participant.reminderResponse === 'no' ? (
-                          <Badge variant={participant.reminderResponse === 'yes' ? 'success' : 'secondary'}>
-                            {t(participant.reminderResponse === 'yes' ? 'voiceRemindersResponseYes' : 'voiceRemindersResponseNo')}
-                          </Badge>
-                        ) : participant.reminderDeliveryStatus === 'delivered_no_response' ? (
-                          <Badge variant="secondary" className="max-w-full whitespace-normal">{t('voiceRemindersDeliveredNoResponse')}</Badge>
-                        ) : reminderProgressLabel ? (
-                          <Badge variant="secondary" className="max-w-full whitespace-normal">{t(reminderProgressLabel)}</Badge>
-                        ) : null}
+                        <DemoReminderStatus participant={participant} parentOpen={open} />
                         {attendance[participant.id] === 'no_show' ? (
                           <div className="flex items-start justify-between gap-2 px-1 text-xs text-muted-foreground">
                             <span className="min-w-0 truncate">

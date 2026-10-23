@@ -56,9 +56,9 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     expect(reminderWithinAllowedHours(new Date('2030-01-15T03:59:00Z'), settings)).toBe(false);
     expect(reminderWithinAllowedHours(new Date('2030-01-15T04:00:00Z'), settings)).toBe(true);
     expect(reminderWithinAllowedHours(new Date('2030-01-15T15:00:00Z'), settings)).toBe(false);
-    expect(nextReminderAttempt({ now, scheduledAt, attempts: 1, settings })?.toISOString()).toBe('2030-01-15T05:10:00.000Z');
+    expect(nextReminderAttempt({ now, scheduledAt, attempts: 1, settings })?.toISOString()).toBe('2030-01-15T05:30:00.000Z');
     expect(nextReminderAttempt({ now, scheduledAt, attempts: 2, settings })).toBeNull();
-    expect(nextReminderAttempt({ now, scheduledAt: new Date('2030-01-15T05:10:00Z'), attempts: 1, settings })).toBeNull();
+    expect(nextReminderAttempt({ now, scheduledAt: new Date('2030-01-15T05:30:00Z'), attempts: 1, settings })).toBeNull();
   });
 
   it('bounds day-before retries and transport deadlines by the previous Tashkent day window', () => {
@@ -69,9 +69,9 @@ describe('voice reminder scheduling and safe parallel calls', () => {
     expect(reminderOnEligibleDay(tomorrow, new Date('2030-01-15T19:00:00Z'), 'day_before')).toBe(false);
     expect(reminderWithinAllowedHours(new Date('2030-01-15T04:59:59Z'), previousDay, 'day_before')).toBe(false);
     expect(reminderWithinAllowedHours(new Date('2030-01-15T05:00:00Z'), previousDay, 'day_before')).toBe(true);
-    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:49:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })?.toISOString())
+    expect(nextReminderAttempt({ now: new Date('2030-01-15T13:59:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })?.toISOString())
       .toBe('2030-01-15T14:59:00.000Z');
-    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:50:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
+    expect(nextReminderAttempt({ now: new Date('2030-01-15T14:00:00Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
     expect(nextReminderAttempt({ now: new Date('2030-01-15T14:59:59Z'), scheduledAt: tomorrow, attempts: 1, settings: previousDay, reminderKind: 'day_before' })).toBeNull();
   });
 
@@ -194,16 +194,50 @@ describe('voice reminder scheduling and safe parallel calls', () => {
   it('does not consume an attempt when a manager claims the line and retries only known no-answer', async () => {
     for (const result of [
       { outcome: 'busy', callStarted: false, callId: null },
-      { outcome: 'unanswered', callStarted: true, callId: 'call-1' },
+      { outcome: 'unanswered', callStarted: true, callId: 'call-1', terminationConfirmed: true },
       { outcome: 'failed', callStarted: true, callId: 'call-1' },
     ] as VoiceReminderCallResult[]) {
       const fixture = setup(1);
       fixture.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async () => result), release: vi.fn(async () => undefined) });
       await fixture.worker.tick();
       if (result.callStarted) expect(fixture.repository.finish).toHaveBeenCalledWith(expect.anything(), result, now,
-        result.outcome === 'unanswered' ? new Date('2030-01-15T05:10:00Z') : null);
+        result.outcome === 'unanswered' ? new Date('2030-01-15T05:30:00Z') : null);
       else expect(fixture.repository.defer).toHaveBeenCalled();
     }
+  });
+
+  it.each([
+    ['day_before', 0, '2030-01-15T06:00:00Z'],
+    ['day_before', 1, '2030-01-15T06:00:00Z'],
+    ['day_before', 2, null],
+    ['same_day', 0, '2030-01-15T05:30:00Z'],
+    ['same_day', 1, null],
+  ] as const)('bounds %s unanswered retries after %i previous attempts', async (kind, attempts, expected) => {
+    const fixture = setup(1);
+    const claimed = { ...job(1), attempts, reminderKind: kind,
+      scheduledAt: kind === 'day_before' ? new Date('2030-01-16T06:00:00Z') : scheduledAt };
+    fixture.repository.claim.mockResolvedValueOnce(claimed).mockResolvedValue(null);
+    fixture.repository.settings.mockResolvedValue({ ...settings, dayBeforeEnabled: true,
+      audioLibrary: { ...settings.audioLibrary, dayBeforeIntro: audio } } as never);
+    const result: VoiceReminderCallResult = { outcome: 'unanswered', reason: 'not_connected', callStarted: true, callId: 'own', terminationConfirmed: true };
+    fixture.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async () => result), release: vi.fn(async () => undefined) });
+    await fixture.worker.tick();
+    expect(fixture.repository.finish).toHaveBeenCalledWith(claimed, result, now, expected ? new Date(expected) : null);
+  });
+
+  it.each([
+    ['unanswered', 'no_answer', false, false],
+    ['unanswered', 'line_busy', true, true],
+    ['unanswered', 'rejected', true, true],
+    ['failed', 'interrupted', true, true],
+    ['failed', 'interrupted', false, false],
+    ['failed', 'technical_error', true, false],
+  ] as const)('requires positive termination for %s/%s (%s)', async (outcome, reason, terminationConfirmed, retry) => {
+    const fixture = setup(1);
+    const result: VoiceReminderCallResult = { outcome, reason, terminationConfirmed, callStarted: true, callId: 'own' };
+    fixture.gateway.tryAcquireLine.mockResolvedValue({ call: vi.fn(async () => result), release: vi.fn(async () => undefined) });
+    await fixture.worker.tick();
+    expect(fixture.repository.finish).toHaveBeenCalledWith(job(1), result, now, retry ? new Date('2030-01-15T05:30:00Z') : null);
   });
 
   it('cancels changed lessons but defers a temporary settings gate before dial', async () => {

@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import type { TelephonyCallSource } from '@shared/telephony';
-import type { VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import type { VoiceReminderCallReason, VoiceReminderResponse, VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import { reminderOutcomeLabels, reminderReasonLabels } from '@/features/voice-reminders/results';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
@@ -60,6 +61,7 @@ export type LeadActivityData = {
     voiceReminderCallId?: string | null;
     reminderOutcome?: VoiceReminderStatus | null;
     reminderResponse?: VoiceReminderResponse | null;
+    reminderReason?: VoiceReminderCallReason | null;
     direction: 'incoming' | 'outgoing';
     status: TelephonyCallStatus;
     startedAt: string;
@@ -196,17 +198,8 @@ type ActivityItem = {
   voiceReminderCallId?: string | null;
   reminderOutcome?: VoiceReminderStatus | null;
   reminderResponse?: VoiceReminderResponse | null;
+  reminderReason?: VoiceReminderCallReason | null;
   hasRecording: boolean;
-};
-
-const reminderOutcomeLabels: Record<VoiceReminderStatus, TranslationKey> = {
-  waiting: 'voiceRemindersWaiting',
-  calling: 'voiceRemindersCalling',
-  played: 'voiceRemindersPlayed',
-  delivered_no_response: 'voiceRemindersDeliveredNoResponse',
-  unanswered: 'voiceRemindersUnanswered',
-  failed: 'voiceRemindersFailed',
-  cancelled: 'voiceRemindersCancelled',
 };
 
 type ActivityFilterId = 'all' | 'comments' | 'calls' | 'stages' | 'payments' | 'other';
@@ -319,6 +312,7 @@ export function ActivityTimeline({
       voiceReminderCallId: item.source === 'voice_reminder' ? item.voiceReminderCallId : null,
       reminderOutcome: item.reminderOutcome,
       reminderResponse: item.reminderResponse,
+      reminderReason: item.reminderReason,
       hasRecording: item.hasRecording,
     })),
     ...(lead.assignmentHistory ?? []).map((item): ActivityItem => ({
@@ -452,7 +446,8 @@ export function ActivityTimeline({
                     const reminderResultKey = !isReminderCall ? null
                       : item.reminderResponse === 'yes' ? 'telephonyReminderResponseYes'
                         : item.reminderResponse === 'no' ? 'telephonyReminderResponseNo'
-                          : item.reminderOutcome ? reminderOutcomeLabels[item.reminderOutcome] : null;
+                          : item.reminderReason ? reminderReasonLabels[item.reminderReason]
+                            : item.reminderOutcome ? reminderOutcomeLabels[item.reminderOutcome] : null;
                     return (
                       // Entries slide in from the left, following the timeline
                       // rail, and each waits a beat on the one above it — the

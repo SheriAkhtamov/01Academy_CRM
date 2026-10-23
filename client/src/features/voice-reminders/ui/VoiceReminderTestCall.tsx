@@ -1,7 +1,7 @@
 import { TimePicker } from '@/components/ui/time-picker';
 import { useEffect } from 'react';
 import { Loader2, Phone } from 'lucide-react';
-import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot, type VoiceReminderStatus } from '@shared/contracts/voice-reminders';
+import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot } from '@shared/contracts/voice-reminders';
 import { Badge } from '@/components/ui/badge';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
@@ -10,15 +10,10 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { reminderOutcomeLabels, reminderReasonLabels } from '../results';
 import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
 import { VoiceReminderLanguageSelect } from './VoiceReminderLanguageSelect';
 import { testCallIsActive, useVoiceReminderTestCall } from '../test-call';
-
-const statusKeys: Record<VoiceReminderStatus, TranslationKey> = {
-  waiting: 'voiceRemindersWaiting', calling: 'voiceRemindersCalling', played: 'voiceRemindersPlayed',
-  delivered_no_response: 'voiceRemindersDeliveredNoResponse',
-  unanswered: 'voiceRemindersUnanswered', failed: 'voiceRemindersFailed', cancelled: 'voiceRemindersCancelled',
-};
 
 function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   actorId: number;
@@ -46,7 +41,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   const audioAvailable = Boolean(selectVoiceReminderAudioParts(library, call.clockTime, call.reminderKind)) && !confirmationAudioMissing;
   const statusKey: TranslationKey | null = call.isSending ? 'voiceRemindersTestSending'
     : call.intent && !testCallIsActive(call.job) ? 'voiceRemindersTestUnconfirmed'
-      : call.job ? statusKeys[call.job.status] : null;
+      : call.job ? call.job.reason ? reminderReasonLabels[call.job.reason] : reminderOutcomeLabels[call.job.status] : null;
   const submitDisabled = disabled || call.isSending || testCallIsActive(call.job)
     || (!call.intent && (call.current.isPending || call.current.isError));
   return <CompactModalSection title={t('voiceRemindersTestCall')} icon={Phone} tone="sky" collapsible={false} contentClassName="space-y-3">

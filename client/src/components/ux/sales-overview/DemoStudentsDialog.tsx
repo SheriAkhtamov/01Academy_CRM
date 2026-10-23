@@ -38,7 +38,7 @@ export function DemoStudentsDialog({ reportingRange, managerId, funnelId = null,
   const period = [reportingRange.from, reportingRange.to].map((date) => formatAcademyDate(`${date}T00:00:00+05:00`, language, {
     day: 'numeric', month: 'short', year: 'numeric',
   })).join(' — ');
-  return <OverviewDialog title={t('demoStudentsModalTitle')} description={period} onClose={onClose}>
+  return <OverviewDialog title={t('demoStudentsModalTitle')} description={t('salesReportArrivalRange', { period })} onClose={onClose}>
     {isError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4 text-sm">
       <span className="flex items-center gap-2 text-destructive"><AlertCircle className="size-4" aria-hidden="true" />{t('failedToLoadData')}</span>
       <button type="button" className={overviewButton} onClick={() => refetch()}>{t('retry')}</button>

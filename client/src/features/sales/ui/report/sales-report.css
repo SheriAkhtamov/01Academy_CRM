@@ -8,6 +8,10 @@
   gap: 1rem;
 }
 
+.sales-report-contact {
+  grid-column: 1 / -1;
+}
+
 /* The sidebar reduces available space without changing the viewport breakpoint. */
 @container (min-width: 36rem) {
   .sales-report-grid {

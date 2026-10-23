@@ -18,10 +18,14 @@ describe('sales report scope', () => {
   });
   it('returns a measured zero report without fabricated legacy statistics', async () => {
     expect(await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range)).toEqual({
-      newLeads: 0, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0,
+      asOf: expect.any(String),
+      newLeads: 0, processedLeads: 0, reachedLeads: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0,
       successfulStudents: 0, closedLeads: 0, closedReasons: [],
+      contactBreakdown: { firstAttempt: 0, secondAttempt: 0, thirdAttempt: 0, laterAttempt: 0,
+        incomingFirst: 0, attemptedUnreached: 0, notAttempted: 0,
+        reachedArchived: 0, reachedQualifiedInWork: 0, reachedUnqualifiedInWork: 0 },
       daily: ['2026-08-01', '2026-08-02', '2026-08-03'].map(date => ({ date,
-        newLeads: 0, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0,
+        newLeads: 0, processedLeads: 0, reachedLeads: 0, qualifiedLeads: 0,
         demoBookings: 0, demoAttendees: 0, successfulStudents: 0 })),
     });
   });

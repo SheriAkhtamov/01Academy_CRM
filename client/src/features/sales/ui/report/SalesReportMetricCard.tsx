@@ -6,13 +6,15 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { SalesReportTrend, type SalesReportChartKind } from './SalesReportTrend';
 
-export function SalesReportMetricCard({ title, unit, value, daily, metric, icon: Icon, color, kind, cumulative, featured, className, onOpen }: {
+export function SalesReportMetricCard({ title, unit, value, daily, metric, icon: Icon, color, kind, cumulative, featured, className, onOpen, cohortTotal }: {
   title: string; unit: string; value?: number; daily?: SalesReportDailyPoint[];
   metric: SalesReportMetric; icon: LucideIcon; color: string; kind: SalesReportChartKind;
   cumulative?: boolean; featured?: boolean; className?: string; onOpen?: () => void;
+  cohortTotal?: number;
 }) {
-  const { language } = useTranslation();
+  const { t, language } = useTranslation();
   const number = new Intl.NumberFormat(language);
+  const percentage = new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 1 });
   const loaded = value !== undefined;
   return <article aria-label={title} style={{ '--metric-color': color } as CSSProperties}
     className={cn('relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/65 bg-card text-card-foreground shadow-sm',
@@ -34,6 +36,9 @@ export function SalesReportMetricCard({ title, unit, value, daily, metric, icon:
             <ArrowUpRight className="size-5 text-muted-foreground transition-colors group-hover:text-[var(--metric-color)]" aria-hidden="true" />
           </button> : <p className={cn('font-semibold tracking-tight tabular-nums', featured ? 'text-5xl sm:text-[56px]' : 'text-4xl sm:text-[42px]')}>{number.format(value)}</p>}
           <span className="text-xs text-muted-foreground">{unit}</span>
+          {cohortTotal !== undefined && cohortTotal > 0 ? <span className="basis-full text-[11px] text-muted-foreground">
+            {t('salesReportShareOfNew', { percent: percentage.format(value / cohortTotal) })}
+          </span> : null}
         </> : <Skeleton className="h-12 w-24" />}
       </div>
       <div className="mt-auto text-[var(--metric-color)]">

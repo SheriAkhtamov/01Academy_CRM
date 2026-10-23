@@ -25,7 +25,7 @@ export function SalesOverviewPeriodFilter({ value, onChange }: { value: Reportin
     if (salesRangeError(next)) setDraft({ source, value: next });
     else { setDraft(null); onChange(next); }
   };
-  return <div className="min-w-0 flex-1" role="group" aria-label={t('reportingPeriod')}>
+  return <div className="min-w-0 flex-1" role="group" aria-label={t('salesReportArrivalPeriod')}>
     <div className="grid min-w-0 grid-cols-2 items-end gap-2 sm:flex sm:flex-wrap">
       <label className="col-span-2 min-w-0 space-y-1 sm:w-44">
         <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><CalendarRange className="size-3.5" aria-hidden="true" />{t('reportingQuickPeriods')}</span>
@@ -37,7 +37,7 @@ export function SalesOverviewPeriodFilter({ value, onChange }: { value: Reportin
         </select>
       </label>
       {(['from', 'to'] as const).map((boundary) => <label key={boundary} className="min-w-0 space-y-1 sm:w-40">
-        <span className="block text-xs font-medium text-muted-foreground">{t(boundary === 'from' ? 'dateFrom' : 'dateTo')}</span>
+        <span className="block text-xs font-medium text-muted-foreground">{t(boundary === 'from' ? 'salesReportCreatedFrom' : 'salesReportCreatedTo')}</span>
         <input type="date" className={controlClass} value={range[boundary]} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
           onChange={(event) => changeBoundary(boundary, event.target.value)} />
       </label>)}

@@ -28,6 +28,14 @@ const report = async (manager: number | null = null, funnel: number | null = nul
   for (const metric of SALES_REPORT_METRICS) {
     expect(result.daily.reduce((sum, day) => sum + day[metric], 0), metric).toBe(result[metric]);
   }
+  for (const metric of ['processedLeads', 'reachedLeads', 'qualifiedLeads', 'closedLeads'] as const) {
+    expect(result[metric], metric).toBeLessThanOrEqual(result.newLeads);
+  }
+  const contact = result.contactBreakdown;
+  expect(contact.firstAttempt + contact.secondAttempt + contact.thirdAttempt + contact.laterAttempt + contact.incomingFirst).toBe(result.reachedLeads);
+  expect(result.reachedLeads + contact.attemptedUnreached + contact.notAttempted).toBe(result.newLeads);
+  expect(contact.reachedArchived + contact.reachedQualifiedInWork + contact.reachedUnqualifiedInWork).toBe(result.reachedLeads);
+  expect(result.closedReasons.reduce((sum, reason) => sum + reason.count, 0)).toBe(result.closedLeads);
   return result;
 };
 const qualify = { funnelId: 1, locationFits: true, ageFits: true, budgetFits: true };
@@ -83,17 +91,17 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
 
   it('counts new leads across sources and ignores all stage-only changes and generic updates', async () => {
     await fixture.pool.query("UPDATE academy_leads SET status_code='paid',updated_at='2025-08-12'");
-    expect(await report()).toMatchObject({ newLeads: 3, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0, successfulStudents: 0, closedLeads: 0, closedReasons: [] });
+    expect(await report()).toMatchObject({ newLeads: 3, processedLeads: 0, reachedLeads: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0, successfulStudents: 0, closedLeads: 0, closedReasons: [] });
     expect((await report(7, 1)).newLeads).toBe(1);
     expect((await report(null, 2)).newLeads).toBe(1);
   });
-  it('counts short connected calls, deduplicates processed leads and excludes unanswered incoming calls', async () => {
+  it('counts connected leads once and excludes actions on older leads from the whole report', async () => {
     await fixture.pool.query(`INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
       (1,'2025-08-01','outgoing',1),(1,'2025-08-02','incoming',25),(1,'2025-08-03','outgoing',0),(2,'2025-08-04','incoming',0);
       INSERT INTO academy_communications(lead_id,created_at,created_by) VALUES(2,'2025-08-05',NULL);`);
-    expect(await report()).toMatchObject({ reachedCalls: 2, processedLeads: 1 });
+    expect(await report()).toMatchObject({ reachedLeads: 1, processedLeads: 1 });
     await fixture.pool.query(`INSERT INTO academy_lead_comments(lead_id,created_at,author_id) VALUES(1,'2025-08-04',7),(2,'2025-08-05',7),(2,'2025-08-06',7)`);
-    expect(await report()).toMatchObject({ reachedCalls: 2, processedLeads: 2 });
+    expect(await report()).toMatchObject({ reachedLeads: 1, processedLeads: 1 });
   });
   it('counts attending siblings separately, deduplicates visits, excludes cancellations, no-shows and future attendance', async () => {
     await fixture.pool.query(`INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES
@@ -101,21 +109,22 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
       INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
       (1,10,'attended','2025-08-01'),(1,11,'attended','2025-08-01'),(2,10,'attended','2025-08-02'),
       (1,12,'no_show','2025-08-03'),(3,13,'attended','2025-08-04'),(4,14,'attended','2025-08-05'),(2,13,'cancelled','2025-08-05');`);
-    expect(await report()).toMatchObject({ demoBookings: 4, demoAttendees: 2, processedLeads: 3 });
-    expect(await report(7, 1)).toMatchObject({ demoBookings: 3, demoAttendees: 2, processedLeads: 2 });
+    expect(await report()).toMatchObject({ demoBookings: 3, demoAttendees: 2, processedLeads: 2 });
+    expect(await report(7, 1)).toMatchObject({ demoBookings: 2, demoAttendees: 2, processedLeads: 1 });
     expect(await report(8, 1)).toMatchObject({ demoBookings: 0, demoAttendees: 0 });
     const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
     expect(students.map(student => student.studentId).sort()).toEqual([10, 11]);
     expect(students.find(student => student.studentId === 10)?.visits).toHaveLength(2);
   });
-  it('counts the first positive paid payment per student, not repeat payments or pending/refunded entries', async () => {
+  it('includes later payments of cohort students, without repeats, old leads or pending/refunded entries', async () => {
     await fixture.pool.query(`INSERT INTO academy_payments(student_id,paid_at,status,amount_uzs) VALUES
-      (10,'2025-07-10','paid',100),(10,'2025-08-10','paid',100),
-      (11,'2025-08-10','paid',100),(11,'2025-08-20','paid',100),
+      (10,'2025-08-10','paid',100),(10,'2025-09-10','paid',100),
+      (11,'2025-09-10','paid',100),(11,'2025-09-20','paid',100),
       (12,'2025-08-10','refunded',100),(13,'2025-08-10','pending',100),
-      (14,'2025-08-10','paid',100),(12,'2025-08-11','paid',0);`);
-    expect(await report()).toMatchObject({ successfulStudents: 2 });
-    expect((await report(7, 1)).successfulStudents).toBe(1);
+      (14,'2025-08-10','paid',100),(12,'2025-08-11','paid',0),
+      (12,'2025-09-11','paid',100),(13,'2099-09-11','paid',100);`);
+    expect(await report()).toMatchObject({ successfulStudents: 3 });
+    expect((await report(7, 1)).successfulStudents).toBe(2);
     expect((await report(7, 2)).successfulStudents).toBe(1);
   });
   it('uses inclusive academy start and exclusive next-day end', async () => {
@@ -124,33 +133,98 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     await fixture.pool.query("UPDATE academy_leads SET created_at=$1 WHERE id=2", [range.end]);
     expect((await report()).newLeads).toBe(1);
   });
-  it('buckets real events in academy time and assigns distinct entities to their first event in the period', async () => {
-    await fixture.pool.query(`INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
-      (1,'2025-08-01 18:59:59','outgoing',3),(1,'2025-08-01 19:00:00','incoming',4),
-      (2,'2025-08-31 18:59:59','outgoing',2),(2,'2025-08-31 19:00:00','outgoing',2);
+  it('groups all later results by academy creation date and keeps the exact cohort boundaries', async () => {
+    await fixture.pool.query(`UPDATE academy_leads SET created_at='2025-08-01 18:59:59' WHERE id=1;
+      UPDATE academy_leads SET created_at='2025-08-01 19:00:00' WHERE id=3;
+      UPDATE academy_leads SET created_at='2025-08-31 18:59:59' WHERE id=4;
+      INSERT INTO academy_leads(id,manager_id,funnel_id,created_at) VALUES(5,7,1,'2025-08-31 19:00:00');
+      INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
+      (1,'2025-09-01','outgoing',3),(1,'2025-09-02','incoming',4),
+      (3,'2025-09-05','outgoing',2),(4,'2025-09-05','outgoing',2),(5,'2025-09-05','outgoing',2);
       INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES
-      (1,'2025-08-10 19:00:00','completed'),(2,'2025-08-11 19:00:00','completed');
+      (1,'2025-09-10 19:00:00','completed'),(2,'2025-09-11 19:00:00','completed');
       INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
-      (1,10,'attended','2025-08-02 19:00:00'),(1,11,'attended','2025-08-02 19:00:00'),
-      (2,10,'attended','2025-08-03 19:00:00');`);
-    const result = await report(7, 1);
-    expect(result.daily[0]).toMatchObject({ reachedCalls: 1, processedLeads: 1 });
-    expect(result.daily[1]).toMatchObject({ reachedCalls: 1, processedLeads: 0 });
-    expect(result.daily[2].demoBookings).toBe(2);
-    expect(result.daily[3].demoBookings).toBe(0);
-    expect(result.daily[10].demoAttendees).toBe(2);
-    expect(result.daily[11].demoAttendees).toBe(0);
-    expect(result.daily[30]).toMatchObject({ reachedCalls: 1, processedLeads: 1 });
+      (1,10,'attended','2025-09-02'),(1,11,'attended','2025-09-02'),(2,10,'attended','2025-09-03');`);
+    const result = await report();
+    expect(result.newLeads).toBe(3);
+    expect(result.daily[0]).toMatchObject({ newLeads: 1, reachedLeads: 1, processedLeads: 1, demoBookings: 2, demoAttendees: 2 });
+    expect(result.daily[1]).toMatchObject({ newLeads: 1, reachedLeads: 1, processedLeads: 1 });
+    expect(result.daily[30]).toMatchObject({ reachedLeads: 1, processedLeads: 1 });
+    const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
+    expect(students.map(student => student.studentId).sort()).toEqual([10, 11]);
+    expect(students.find(student => student.studentId === 10)?.visits).toHaveLength(2);
   });
-  it('retains closure reasons after reopening and counts each lead once under its latest reason in the period', async () => {
+  it('shows current archived cohort leads, including later closures, and excludes reopened and older leads', async () => {
     await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
       ('ARCHIVE_ACADEMY_LEAD','academy_lead',1,'[{"archiveReason":"no_budget"}]','2025-08-01'),
       ('BULK_ARCHIVE_ACADEMY_LEAD','academy_lead',1,'[{"archiveReason":"not_interested"}]','2025-08-02');
-      UPDATE academy_leads SET is_archived=true,archive_reason='no_budget',archived_at='2025-08-03' WHERE id=2;`);
-    expect(await report()).toMatchObject({ closedLeads: 2, closedReasons: [{ reason: 'no_budget', count: 1 }, { reason: 'not_interested', count: 1 }] });
-    expect((await report()).daily[0].processedLeads).toBe(1);
+      UPDATE academy_leads SET is_archived=true,archive_reason='no_budget',archived_at='2025-08-03' WHERE id=2;
+      UPDATE academy_leads SET is_archived=true,archive_reason='not_interested',archived_at='2025-09-03' WHERE id=3;`);
+    expect(await report()).toMatchObject({ closedLeads: 1, closedReasons: [{ reason: 'not_interested', count: 1 }] });
+    expect((await report()).daily[0].processedLeads).toBe(2);
     expect((await report()).daily[1].processedLeads).toBe(0);
-    expect((await report(8)).closedLeads).toBe(0);
+    expect((await report(7)).closedLeads).toBe(0);
+    await fixture.pool.query('UPDATE academy_leads SET is_archived=false WHERE id=3');
+    expect((await report()).closedLeads).toBe(0);
+    await fixture.pool.query("UPDATE academy_leads SET is_archived=true,archive_reason='' WHERE id=1");
+    expect((await report()).closedReasons).toEqual([{ reason: 'not_interested', count: 1 }]);
+  });
+  it('partitions the cohort by first successful outgoing attempt, incoming contact and unreached leads', async () => {
+    await fixture.pool.query(`UPDATE academy_leads SET created_at='2025-07-01';
+      INSERT INTO academy_leads(id,manager_id,funnel_id,created_at)
+      SELECT id,7,1,'2025-08-03 08:00:00'::timestamp FROM generate_series(20,28) id;
+      INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
+      (20,'2025-09-01','outgoing',1),(20,'2025-09-02','outgoing',20),(20,'2025-09-03','incoming',5),
+      (21,'2025-09-01','outgoing',0),(21,'2025-09-01','outgoing',2),
+      (22,'2025-09-01','incoming',0),(22,'2025-09-02','outgoing',0),
+      (22,'2025-09-03','outgoing',0),(22,'2025-09-04','outgoing',3),
+      (23,'2025-09-01','outgoing',0),(23,'2025-09-02','outgoing',0),
+      (23,'2025-09-03','outgoing',0),(23,'2025-09-04','outgoing',4),
+      (24,'2025-08-03 07:59:00','incoming',6),
+      (25,'2025-09-01','outgoing',0),(25,'2025-09-02','outgoing',0),(25,'2025-09-03','incoming',7),
+      (26,'2025-09-01','outgoing',0),(26,'2025-09-02','outgoing',0),
+      (27,'2025-09-01','incoming',0),(27,'2099-09-02','outgoing',8),
+      (1,'2025-09-01','outgoing',20);
+      UPDATE academy_leads SET is_archived=true,archive_reason='no_budget',archived_at='2025-09-20' WHERE id IN (20,26);
+      INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
+      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',20,'[{"funnelId":1}]','2025-09-05'),
+      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',21,'[{"funnelId":1}]','2025-09-05');`);
+    expect(await report(7, 1)).toMatchObject({
+      newLeads: 9, reachedLeads: 6, processedLeads: 7, qualifiedLeads: 2, closedLeads: 2,
+      contactBreakdown: {
+        firstAttempt: 1, secondAttempt: 1, thirdAttempt: 1, laterAttempt: 1, incomingFirst: 2,
+        attemptedUnreached: 1, notAttempted: 2,
+        reachedArchived: 1, reachedQualifiedInWork: 1, reachedUnqualifiedInWork: 4,
+      },
+    });
+    expect((await report(8, 1)).newLeads).toBe(0);
+    expect((await report(7, 2)).newLeads).toBe(0);
+  });
+  it('joins calls through child contacts but counts the parent lead only once', async () => {
+    await fixture.pool.query(`INSERT INTO academy_students(id,lead_id,manager_id) VALUES(99,NULL,7);
+      INSERT INTO telephony_calls(contact_type,contact_id,started_at,direction,talk_seconds) VALUES
+      ('student',10,'2025-09-01','outgoing',3),('student',11,'2025-09-02','outgoing',4),
+      ('student',99,'2025-09-01','outgoing',3),('lead',3,'2025-09-01','outgoing',3);`);
+    expect(await report()).toMatchObject({ newLeads: 3, reachedLeads: 2 });
+    expect(await report(7, 1)).toMatchObject({ newLeads: 1, reachedLeads: 1, contactBreakdown: { firstAttempt: 1 } });
+  });
+  it('keeps attendance drill-down restricted to children of the same lead cohort', async () => {
+    await fixture.pool.query(`INSERT INTO academy_students(id,lead_id,manager_id) VALUES(99,NULL,7);
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(1,'2025-09-10','completed');
+      INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
+      (1,10,'attended','2025-09-01'),(1,12,'attended','2025-09-01'),
+      (1,13,'attended','2025-09-01'),(1,99,'attended','2025-09-01');`);
+    expect(await report(7, 1)).toMatchObject({ newLeads: 1, demoBookings: 1, demoAttendees: 1 });
+    const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
+    expect(students.map(student => student.studentId)).toEqual([10]);
+  });
+  it('uses qualification state as of the calculation time and includes later real confirmations', async () => {
+    await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
+      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',1,'[{"funnelId":1}]','2025-09-05'),
+      ('REVOKE_ACADEMY_LEAD_QUALIFICATION','academy_lead',1,'[{"funnelId":1}]','2099-09-05'),
+      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',3,'[{"funnelId":1}]','2099-09-05');`);
+    expect(await report()).toMatchObject({ newLeads: 3, processedLeads: 1, qualifiedLeads: 1 });
+    expect((await report(8)).qualifiedLeads).toBe(0);
   });
   it('validates all three criteria and requires ownership and the unchanged funnel', async () => {
     expect((await request(app).post(path).send({ ...qualify, budgetFits: false })).status).toBe(400);

@@ -45,6 +45,9 @@ export function SalesReportClosures({ report }: { report?: SalesActivityReport }
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5">
           <span className="text-5xl font-semibold tracking-tight tabular-nums">{number.format(total)}</span>
           <span className="text-xs text-muted-foreground">{t('salesReportClosedUnit')}</span>
+          {report.newLeads > 0 ? <span className="text-[11px] text-muted-foreground">
+            {t('salesReportShareOfNew', { percent: percentage.format(total / report.newLeads) })}
+          </span> : null}
         </div>
       </div>
       {!reasons.length ? <p className="py-8 text-center text-sm text-muted-foreground">{t('salesReportNoClosedLeads')}</p> :

@@ -2,39 +2,37 @@ import { hasLeadershipAccess } from '@shared/academy';
 import type { SalesDemoStudent, SalesDemoVisit } from '@shared/contracts/sales-demo-students';
 import { query, type DatasetActor } from './academy-core';
 import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
+import { salesCohortCte } from './sales-cohort-scope';
 
 // Attendance is an explicit participant mark. A scheduled lesson can already
 // have saved attendance; cancelled, not-conducted and future demos cannot.
-// All report metrics use the current manager/funnel portfolio.
-const attendanceOwnerSql = 'COALESCE(lead.manager_id, student.manager_id)';
-export const salesDemoAttendanceCte = `WITH attended_demos AS (
+// Creation dates select the lead cohort; later attended lessons remain included.
+export const salesDemoAttendanceCte = `${salesCohortCte}, attended_demos AS (
   SELECT participant.id AS participant_id, demo.id AS demo_id,
     demo.scheduled_at, demo.duration_minutes, demo.format,
     demo.course_id, demo.school_id, demo.room_id, demo.teacher_id,
     student.id AS student_id,
-    CASE WHEN $3::int IS NULL OR lead.manager_id = $3 THEN lead.id END AS lead_id,
+    lead.id AS lead_id,
     COALESCE(NULLIF(BTRIM(student.student_name), ''), lead.student_name) AS student_name,
     COALESCE(NULLIF(BTRIM(student.contact_name), ''), lead.contact_name) AS contact_name,
-    CASE WHEN $3::int IS NULL OR COALESCE(lead.manager_id, student.manager_id) = $3
-      THEN COALESCE(NULLIF(BTRIM(student.phone), ''), lead.phone) END AS phone,
-    ${attendanceOwnerSql} AS manager_id
+    COALESCE(NULLIF(BTRIM(student.phone), ''), lead.phone) AS phone,
+    lead.manager_id
   FROM academy_demo_lesson_participants participant
   JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
   JOIN academy_students student ON student.id = participant.student_id
-  LEFT JOIN academy_leads lead ON lead.id = student.lead_id
+  JOIN cohort_leads lead ON lead.id = student.lead_id
+  CROSS JOIN report_clock clock
   WHERE participant.status = 'attended'
     AND demo.status IN ('scheduled', 'completed')
-    AND demo.scheduled_at <= timezone('UTC', now())
-    AND demo.scheduled_at >= $1 AND demo.scheduled_at < $2
-    AND ($3::int IS NULL OR ${attendanceOwnerSql} = $3)
-    AND ($4::int IS NULL OR lead.funnel_id = $4)
+    AND demo.scheduled_at <= clock.as_of
+    AND participant.created_at <= clock.as_of
 )`;
 
 const scopeValues = (actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null, funnelId: number | null) => [
   range.start, range.end, hasLeadershipAccess(actor) ? requestedManagerId : actor.userId, funnelId,
 ];
 
-/** A student contributes once, on their first attendance within this range. */
+/** A cohort's student contributes once, on their first actual attendance. */
 export async function buildSalesDemoAttendanceStats(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null, funnelId: number | null = null) {
   const rows = await query<{ studentId: number; happenedAt: Date }>(
     `${salesDemoAttendanceCte}

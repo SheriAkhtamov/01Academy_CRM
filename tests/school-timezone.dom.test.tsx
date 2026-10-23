@@ -120,6 +120,10 @@ describe('school timezone dropdown', () => {
     await user.keyboard('{Escape}');
     const confirmation = within(screen.getByRole('alertdialog'));
     await user.click(confirmation.getByRole('button', { name: i18n.t('keepEditing') }));
+    // Returning focus reopens this searchable combobox. The selected value
+    // remains London even though its new search input is empty.
+    expect(dialog.getByRole('option', { name: /Europe\/London/ }).getAttribute('aria-selected')).toBe('true');
+    await user.keyboard('{Escape}');
     expect((timezone as HTMLInputElement).value).toContain('Europe/London');
     await user.click(dialog.getByRole('button', { name: i18n.t('cancel') }));
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('discardChanges') }));

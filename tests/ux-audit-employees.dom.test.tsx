@@ -210,7 +210,7 @@ it('keeps archive confirmation pending through the responsibility check and then
   fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('archiveEmployee') }));
   await waitFor(() => expect(checks).toEqual(['/api/users/6/sales-lead-count']));
   expect((within(confirmation).getByRole('button', { name: i18n.t('cancel') }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('saving') }));
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('confirmProcessing') }));
   expect(checks).toHaveLength(1);
   finish(new Response(JSON.stringify({ leadCount: 0, salesResponsibilityCount: 0, offboardingResponsibilityCount: 2 }), { headers: { 'content-type': 'application/json' } }));
   const transfer = await screen.findByRole('dialog', { name: i18n.t('employeeWorkTransferTitle') });

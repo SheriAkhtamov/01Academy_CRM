@@ -70,8 +70,10 @@ describe('dashboard period filters and simplified actions', () => {
     expect(leadSheet).not.toContain('name="result"');
   });
 
-  it('gives every requested overview diverse, accessible analytics instead of number-only cards', () => {
-    expect(sales).toContain('<SalesOverviewSection');
+  it('keeps the factual sales report and the other modules’ accessible analytics', () => {
+    expect(sales).toContain('<SalesOverviewMetrics');
+    expect(sales).not.toContain('<SalesOverviewSection');
+    expect(sales).toContain('funnelId={overviewFunnelId}');
     expect(teacher).toContain('<TeacherAnalyticsCharts');
     expect(marketing).toContain('<MarketingAnalyticsCharts');
     expect(finance).toContain('<FinanceAnalyticsCharts');

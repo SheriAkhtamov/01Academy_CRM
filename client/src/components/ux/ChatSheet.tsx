@@ -330,7 +330,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
           </SheetTitle>
         </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1">
           {/* Employee List */}
           <div className="flex min-h-0 w-40 shrink-0 flex-col border-r border-border sm:w-64 lg:w-72">
             <div className="shrink-0 border-b border-border bg-sky-50/60 p-3 dark:bg-sky-950/20">

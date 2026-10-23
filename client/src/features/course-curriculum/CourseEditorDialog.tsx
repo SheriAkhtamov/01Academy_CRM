@@ -41,6 +41,34 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
     }
   }, [open]);
 
+  const { submitCount, isValid } = form.formState;
+  useEffect(() => {
+    const root = formRef.current;
+    if (!open || !root || submitCount === 0 || isValid) return;
+    let frame = 0;
+    const focusInvalid = () => {
+      const candidates = root.querySelectorAll<HTMLElement>('[aria-invalid="true"], [data-curriculum-error]');
+      const visible = Array.from(candidates).filter(element => !element.closest('[hidden]'));
+      const control = visible.find(element => element.matches('input, textarea, select, button'));
+      const target = control ?? visible[0];
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus();
+      if (control) observer.disconnect();
+    };
+    const scheduleFocus = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(focusInvalid);
+    };
+    // Invalid curriculum fields may mount after their block and lesson open
+    // in separate effects. Follow those mounts instead of guessing a frame count.
+    const observer = new MutationObserver(scheduleFocus);
+    observer.observe(root, { subtree: true, childList: true, attributes: true,
+      attributeFilter: ['hidden', 'aria-invalid'] });
+    scheduleFocus();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [open, submitCount, isValid]);
+
   const program = useWatch({ control: form.control, name: 'program' });
   const isActive = useWatch({ control: form.control, name: 'isActive' });
   const name = useWatch({ control: form.control, name: 'name' });
@@ -85,7 +113,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
           <form
             ref={formRef}
             noValidate
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex min-h-0 flex-1 flex-col"
             onSubmit={(event) => {
               if (uploading.current.size > 0 || saving) { event.preventDefault(); return; }
               void form.handleSubmit(
@@ -95,13 +123,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
                 (errors) => {
                   if (errors.name || errors.ageCategory || errors.isActive) setParametersOpen(true);
                   if (errors.description) setDescriptionOpen(true);
-                  // The curriculum opens invalid blocks and lessons before focus moves.
-                  requestAnimationFrame(() => requestAnimationFrame(() => {
-                    const candidates = formRef.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"], [data-curriculum-error]');
-                    const firstInvalid = Array.from(candidates ?? []).find((element) => !element.closest('[hidden]'));
-                    firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    firstInvalid?.focus();
-                  }));
+
                 },
               )(event);
             }}

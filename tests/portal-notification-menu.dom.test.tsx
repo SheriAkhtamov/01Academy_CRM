@@ -169,7 +169,7 @@ it('keeps deletion pending and retry errors inside confirmation, then restores t
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('delete') }));
   await waitFor(() => expect(mutations()).toHaveLength(1));
-  const saving = within(dialog).getByRole('button', { name: i18n.t('saving') });
+  const saving = within(dialog).getByRole('button', { name: i18n.t('confirmProcessing') });
   expect(saving.hasAttribute('disabled')).toBe(true);
   expect(dialog.contains(document.activeElement)).toBe(true);
   await userEvent.click(saving);

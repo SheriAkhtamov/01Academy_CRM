@@ -269,12 +269,12 @@ describe('academy route logic boundaries', () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[]) => {
       if (!sql.includes('WITH attended_demos')) return emptyResult();
-      expect(values).toEqual([new Date('2026-07-31T19:00:00Z'), new Date('2026-08-31T19:00:00Z'), 7]);
+      expect(values).toEqual([new Date('2026-07-31T19:00:00Z'), new Date('2026-08-31T19:00:00Z'), 7, null]);
       expect(sql).toContain("participant.status = 'attended'");
       expect(sql).toContain("demo.status IN ('scheduled', 'completed')");
       expect(sql).toContain("demo.scheduled_at <= timezone('UTC', now())");
       expect(sql).toContain('demo.scheduled_at >= $1 AND demo.scheduled_at < $2');
-      expect(sql).toContain('COALESCE(trial.hunter_id, tracked.hunter_id, handoff.from_manager_id, lead.manager_id, student.manager_id) END = $3');
+      expect(sql).toContain('COALESCE(lead.manager_id, student.manager_id) = $3');
       expect(sql).not.toContain('academy_lead_stage_history');
       const row = { student_id: 10, lead_id: 20, student_name: 'Temur', contact_name: 'Parent', phone: '+998901234567',
         manager_id: 7, manager_name: 'Alice', course_name: 'Coding', school_name: 'Cyberpark', room_name: '101',
@@ -502,7 +502,7 @@ describe('academy route logic boundaries', () => {
     const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
       String(sql).includes('processed_lead_ids AS')
     ));
-    expect(String(periodMetricCall?.[0])).toContain('THEN tracked.closer_id ELSE tracked.hunter_id');
+    expect(String(periodMetricCall?.[0])).toContain('($3::int IS NULL OR lead.manager_id = $3)');
     expect(periodMetricCall?.[1]?.[2]).toBe(7);
   });
 

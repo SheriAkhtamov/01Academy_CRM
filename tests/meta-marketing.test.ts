@@ -181,8 +181,8 @@ describe('Meta ad catalog', () => {
     const client = read('../client/src/components/marketing/MetaAttributionSection.tsx');
     expect(client).toContain('key={lead.attributionId}');
     expect(client).toContain("spendMoney(selectedLeadsCreative.costPerLead)");
-    expect(client).toContain('flex max-h-[calc(100dvh-2rem)] max-w-3xl flex-col');
-    expect(client).toContain('min-h-0 flex-1 overflow-y-auto overscroll-contain');
+    expect(client).toContain('compact-modal flex max-h-[90dvh] max-w-3xl flex-col overflow-hidden p-0');
+    expect(client).toContain('compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain');
   });
 
   it('joins ad spend onto the report and keeps spend-without-leads visible', () => {

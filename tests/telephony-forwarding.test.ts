@@ -69,11 +69,11 @@ describe('OnlinePBX CRM manager assignments', () => {
       'utf8',
     );
 
-    expect(integrationsPage).toContain('<Dialog open={onlinePbxSettingsOpen}');
+    expect(integrationsPage).toContain('<Dialog open={onlinePbxSettingsOpen && !routingUnavailable && routingSession.current.allowed}');
     expect(integrationsPage).toContain("t('onlinePbxAddManager')");
     expect(integrationsPage).toContain("t('onlinePbxExistingExtension')");
     expect(integrationsPage).toContain("t('onlinePbxForwardingTitle')");
-    expect(integrationsPage).toContain('updateOnlinePbxRouting.mutate(onlinePbxRoutingDraft)');
+    expect(integrationsPage).toContain('updateOnlinePbxRouting.mutate({ settings: onlinePbxRoutingDraft, epoch: routingSession.current.epoch })');
     expect(integrationsPage).toContain('removeManagerTarget');
     expect(integrationsPage).not.toContain('testOnlinePbx');
   });

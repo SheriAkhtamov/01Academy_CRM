@@ -768,7 +768,7 @@ function PortalRepresentatives() {
             </AlertDialogTitle>
           </AlertDialogHeader>
           <form
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex min-h-0 flex-1 flex-col"
             onSubmit={(event) => {
               event.preventDefault();
               if (action.isPending || confirming.current || !selected) return;
@@ -776,7 +776,7 @@ function PortalRepresentatives() {
               action.mutate(undefined, { onSettled: () => { confirming.current = false; } });
             }}
           >
-            <fieldset disabled={action.isPending} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <fieldset disabled={action.isPending} className="flex min-h-0 min-w-0 flex-1 flex-col">
               <AlertDialogBody>
                 <AlertDialogDescription>{selected?.fullName}</AlertDialogDescription>
                 {selected?.status === "active" && <p>{t("portalRevokeAccessDescription")}</p>}

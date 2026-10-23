@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const db = vi.hoisted(() => ({ queryOne: vi.fn() }));
-vi.mock('../server/modules/academy/academy-core', () => db);
+vi.mock('../server/modules/academy/academy-core', () => ({ ...db, ACADEMY_TIME_ZONE: 'Asia/Tashkent' }));
 vi.mock('../server/modules/academy/academy-scheduling', () => ({}));
 import { buildSalesDashboardMetrics } from '../server/modules/academy/sales-dashboard-metrics';
 const range = { from: '2026-08-01', to: '2026-08-03', start: new Date('2026-07-31T19:00:00Z'), end: new Date('2026-08-03T19:00:00Z') };
@@ -20,6 +20,9 @@ describe('sales report scope', () => {
     expect(await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range)).toEqual({
       newLeads: 0, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0,
       successfulStudents: 0, closedLeads: 0, closedReasons: [],
+      daily: ['2026-08-01', '2026-08-02', '2026-08-03'].map(date => ({ date,
+        newLeads: 0, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0,
+        demoBookings: 0, demoAttendees: 0, successfulStudents: 0 })),
     });
   });
 });

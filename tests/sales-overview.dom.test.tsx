@@ -13,7 +13,10 @@ import { SalesOverviewEmployeeFilter } from '../client/src/components/ux/SalesOv
 import { SalesOverviewPeriodFilter } from '../client/src/components/ux/sales-overview/SalesOverviewPeriodFilter';
 import { useSalesReportingRange } from '../client/src/features/sales/useSalesReportingRange';
 
-const report = { newLeads: 10, processedLeads: 8, reachedCalls: 12, qualifiedLeads: 6, demoBookings: 5, demoAttendees: 4,
+const report = { daily: [
+  { date: '2026-08-01', newLeads: 4, processedLeads: 3, reachedCalls: 5, qualifiedLeads: 2, demoBookings: 2, demoAttendees: 1, successfulStudents: 1 },
+  { date: '2026-08-02', newLeads: 6, processedLeads: 5, reachedCalls: 7, qualifiedLeads: 4, demoBookings: 3, demoAttendees: 3, successfulStudents: 2 },
+], newLeads: 10, processedLeads: 8, reachedCalls: 12, qualifiedLeads: 6, demoBookings: 5, demoAttendees: 4,
   successfulStudents: 3, closedLeads: 2, closedReasons: [{ reason: 'no_budget', count: 1 }, { reason: 'Moving away', count: 1 }] };
 let client: QueryClient;
 function Harness() {
@@ -47,8 +50,11 @@ afterEach(() => { cleanup(); client.clear(); localStorage.clear(); vi.useRealTim
 describe('factual sales report', () => {
   it('shows exactly seven requested metrics and a separate reasons table', async () => {
     mount();
-    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    await screen.findByRole('button', { name: 'Meetings attended: 4' });
     expect(screen.getAllByRole('article')).toHaveLength(7);
+    expect(screen.getAllByRole('slider')).toHaveLength(7);
+    expect(screen.getByRole('img', { name: /Closed leads by reason/ })).toBeTruthy();
+    expect(screen.getAllByText('50%')).toHaveLength(2);
     expect(within(screen.getByRole('article', { name: 'Connected calls' })).getByText('12')).toBeTruthy();
     const closed = within(screen.getByRole('region', { name: 'Closed leads by reason' }));
     expect(closed.getByText(translations.archiveReasonNoBudget.en)).toBeTruthy();
@@ -56,9 +62,21 @@ describe('factual sales report', () => {
     expect(screen.queryByText(translations.revenue.en)).toBeNull();
     expect(request.mock.calls.every(([, url]) => url.includes('/sales/metrics'))).toBe(true);
   });
+  it('exposes daily and cumulative values with keyboard navigation', async () => {
+    mount(); await screen.findByRole('button', { name: 'Meetings attended: 4' });
+    const calls = screen.getByRole('slider', { name: /Connected calls/ });
+    fireEvent.focus(calls);
+    fireEvent.keyDown(calls, { key: 'Home' });
+    expect(calls.getAttribute('aria-valuetext')).toBe('Aug 1: 5');
+    fireEvent.keyDown(calls, { key: 'ArrowRight' });
+    expect(calls.getAttribute('aria-valuetext')).toBe('Aug 2: 7');
+    const successes = screen.getByRole('slider', { name: /Successful/ });
+    fireEvent.keyDown(successes, { key: 'End' });
+    expect(successes.getAttribute('aria-valuetext')).toBe('Aug 2: 3');
+  });
   it('updates arbitrary dates, manager, and funnel together', async () => {
     const user = userEvent.setup(); mount();
-    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    await screen.findByRole('button', { name: 'Meetings attended: 4' });
     fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '2026-08-15' } });
     fireEvent.change(screen.getByLabelText(translations.dateTo.en), { target: { value: '2026-09-02' } });
     await user.click(screen.getByRole('combobox', { name: translations.salesOverviewManager.en }));
@@ -67,13 +85,13 @@ describe('factual sales report', () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/metrics?from=2026-08-15&to=2026-09-02&managerId=2&funnelId=2'));
   });
   it('keeps invalid period drafts out of requests', async () => {
-    mount(); await screen.findByRole('button', { name: 'Meetings attended · students: 4' }); request.mockClear();
+    mount(); await screen.findByRole('button', { name: 'Meetings attended: 4' }); request.mockClear();
     fireEvent.change(screen.getByLabelText(translations.dateFrom.en), { target: { value: '' } });
     expect(screen.getByRole('alert').textContent).toBe(translations.salesPeriodInvalid.en);
     expect(request).not.toHaveBeenCalled();
   });
   it('does not show another filter’s values during loading or an error', async () => {
-    const user = userEvent.setup(); mount(); await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    const user = userEvent.setup(); mount(); await screen.findByRole('button', { name: 'Meetings attended: 4' });
     let reject!: (error: Error) => void;
     request.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
     await user.click(screen.getByRole('button', { name: 'Funnel B' }));
@@ -82,13 +100,13 @@ describe('factual sales report', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.queryByRole('article')).toBeNull();
     request.mockResolvedValue(report); await user.click(screen.getByRole('button', { name: translations.retry.en }));
-    expect(await screen.findByRole('button', { name: 'Meetings attended · students: 4' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Meetings attended: 4' })).toBeTruthy();
   });
   it('opens attendees with the identical funnel, manager and period', async () => {
     const user = userEvent.setup(); mount(); await user.click(screen.getByRole('button', { name: 'Funnel B' }));
-    await screen.findByRole('button', { name: 'Meetings attended · students: 4' });
+    await screen.findByRole('button', { name: 'Meetings attended: 4' });
     request.mockImplementation(async (_method, url: string) => url.includes('/demo-students') ? [] : report);
-    await user.click(screen.getByRole('button', { name: 'Meetings attended · students: 4' }));
+    await user.click(screen.getByRole('button', { name: 'Meetings attended: 4' }));
     expect(await screen.findByRole('dialog')).toBeTruthy();
     await waitFor(() => expect(request).toHaveBeenCalledWith('GET', '/api/academy/modules/sales/demo-students?from=2026-08-01&to=2026-08-31&managerId=1&funnelId=2'));
   });

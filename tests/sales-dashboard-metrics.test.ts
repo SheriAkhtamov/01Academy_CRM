@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
-import { Pool } from 'pg';
+import { Pool, defaults, types } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({ pool: null as unknown as Pool }));
 vi.mock('../server/db', () => ({ pool: {
@@ -13,19 +13,32 @@ import { LegacyLeadQualificationRepository } from '../server/modules/leads/infra
 import { createLeadQualificationService } from '../server/modules/leads/application/qualification-service';
 import { createLeadQualificationRouter } from '../server/modules/leads/http/qualification.router';
 import { actorContextFrom } from '../server/modules/leads/domain/actor-context';
+import { SALES_REPORT_METRICS } from '../shared/contracts/sales-report';
 
 const url = process.env.PORTAL_TEST_DATABASE_URL;
 const schema = `sales_report_${randomBytes(6).toString('hex')}`;
+const originalUtcInput = defaults.parseInputDatesAsUTC;
+const originalTimestampParser = types.getTypeParser(1114);
 let admin: Pool;
 let app: express.Express;
 const range = { from: '2025-08-01', to: '2025-08-31', start: new Date('2025-07-31T19:00:00Z'), end: new Date('2025-08-31T19:00:00Z') };
-const report = (manager: number | null = null, funnel: number | null = null) => buildSalesDashboardMetrics({ userId: 1, module: 'administration' }, range, manager, funnel);
+const report = async (manager: number | null = null, funnel: number | null = null) => {
+  const result = await buildSalesDashboardMetrics({ userId: 1, module: 'administration' }, range, manager, funnel);
+  expect(result.daily).toHaveLength(31);
+  for (const metric of SALES_REPORT_METRICS) {
+    expect(result.daily.reduce((sum, day) => sum + day[metric], 0), metric).toBe(result[metric]);
+  }
+  return result;
+};
 const qualify = { funnelId: 1, locationFits: true, ageFits: true, budgetFits: true };
 const path = '/leads/1/qualification';
 
 describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
   beforeAll(async () => {
     if (!url || !['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Local isolated PostgreSQL required');
+    // Match server/db.ts, which is mocked to keep this suite on its isolated pool.
+    defaults.parseInputDatesAsUTC = true;
+    types.setTypeParser(1114, value => new Date(`${value.replace(' ', 'T')}Z`));
     admin = new Pool({ connectionString: url });
     await admin.query(`CREATE SCHEMA ${schema}`);
     fixture.pool = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=UTC` });
@@ -61,11 +74,16 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
       INSERT INTO academy_students(id,lead_id,manager_id,student_name) VALUES(10,1,7,'Child A'),(11,1,7,'Child B'),(12,2,7,'Child C'),(13,3,8,'Child D'),(14,4,7,'Child E');
     `);
   });
-  afterAll(async () => { await fixture.pool?.end(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
+  afterAll(async () => {
+    await fixture.pool?.end();
+    if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
+    defaults.parseInputDatesAsUTC = originalUtcInput;
+    types.setTypeParser(1114, originalTimestampParser);
+  });
 
   it('counts new leads across sources and ignores all stage-only changes and generic updates', async () => {
     await fixture.pool.query("UPDATE academy_leads SET status_code='paid',updated_at='2025-08-12'");
-    expect(await report()).toEqual({ newLeads: 3, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0, successfulStudents: 0, closedLeads: 0, closedReasons: [] });
+    expect(await report()).toMatchObject({ newLeads: 3, processedLeads: 0, reachedCalls: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0, successfulStudents: 0, closedLeads: 0, closedReasons: [] });
     expect((await report(7, 1)).newLeads).toBe(1);
     expect((await report(null, 2)).newLeads).toBe(1);
   });
@@ -106,12 +124,32 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     await fixture.pool.query("UPDATE academy_leads SET created_at=$1 WHERE id=2", [range.end]);
     expect((await report()).newLeads).toBe(1);
   });
+  it('buckets real events in academy time and assigns distinct entities to their first event in the period', async () => {
+    await fixture.pool.query(`INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
+      (1,'2025-08-01 18:59:59','outgoing',3),(1,'2025-08-01 19:00:00','incoming',4),
+      (2,'2025-08-31 18:59:59','outgoing',2),(2,'2025-08-31 19:00:00','outgoing',2);
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES
+      (1,'2025-08-10 19:00:00','completed'),(2,'2025-08-11 19:00:00','completed');
+      INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
+      (1,10,'attended','2025-08-02 19:00:00'),(1,11,'attended','2025-08-02 19:00:00'),
+      (2,10,'attended','2025-08-03 19:00:00');`);
+    const result = await report(7, 1);
+    expect(result.daily[0]).toMatchObject({ reachedCalls: 1, processedLeads: 1 });
+    expect(result.daily[1]).toMatchObject({ reachedCalls: 1, processedLeads: 0 });
+    expect(result.daily[2].demoBookings).toBe(2);
+    expect(result.daily[3].demoBookings).toBe(0);
+    expect(result.daily[10].demoAttendees).toBe(2);
+    expect(result.daily[11].demoAttendees).toBe(0);
+    expect(result.daily[30]).toMatchObject({ reachedCalls: 1, processedLeads: 1 });
+  });
   it('retains closure reasons after reopening and counts each lead once under its latest reason in the period', async () => {
     await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
       ('ARCHIVE_ACADEMY_LEAD','academy_lead',1,'[{"archiveReason":"no_budget"}]','2025-08-01'),
       ('BULK_ARCHIVE_ACADEMY_LEAD','academy_lead',1,'[{"archiveReason":"not_interested"}]','2025-08-02');
       UPDATE academy_leads SET is_archived=true,archive_reason='no_budget',archived_at='2025-08-03' WHERE id=2;`);
     expect(await report()).toMatchObject({ closedLeads: 2, closedReasons: [{ reason: 'no_budget', count: 1 }, { reason: 'not_interested', count: 1 }] });
+    expect((await report()).daily[0].processedLeads).toBe(1);
+    expect((await report()).daily[1].processedLeads).toBe(0);
     expect((await report(8)).closedLeads).toBe(0);
   });
   it('validates all three criteria and requires ownership and the unchanged funnel', async () => {

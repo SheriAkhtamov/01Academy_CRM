@@ -30,7 +30,8 @@ describe('demo reminder call details', () => {
     const dialog = screen.getByRole('dialog', { name: 'Auto-informer calls' });
     expect(within(dialog).getByText('Could not connect')).toBeTruthy();
     expect(within(dialog).getByText('Call ended without a stated reason')).toBeTruthy();
-    expect(within(dialog).getByText('1 of 3')).toBeTruthy();
+    expect(within(dialog).getByText('1')).toBeTruthy();
+    expect(within(dialog).queryByText('1 of 3')).toBeNull();
     expect(within(dialog).getByText('0 of 2')).toBeTruthy();
     expect(within(dialog).getByText('Next call')).toBeTruthy();
     expect(within(dialog).getByText('No calls yet')).toBeTruthy();
@@ -57,6 +58,22 @@ describe('demo reminder call details', () => {
     expect(screen.queryByText('Learner')).toBeNull();
   });
 
+  it('shows the independent confirmation follow-up without suggesting unused primary attempts', async () => {
+    const user = userEvent.setup();
+    const first = participant.reminderRuns![0];
+    render(<DemoReminderStatus participant={{ ...participant, reminderProgressStatus: 'retry', reminderRuns: [{ ...first,
+      status: 'waiting', responseRetry: true, nextAttemptAt: '2026-10-23T10:24:00Z',
+      calls: [{ ...first.calls[0], reason: null, outcome: 'delivered_no_response', causeUnspecified: false,
+        answeredAt: '2026-10-23T10:13:07Z', talkSeconds: 21 }],
+    }] }} parentOpen />);
+    await user.click(screen.getByRole('button', { name: /Call details/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('1')).toBeTruthy();
+    expect(within(dialog).queryByText('1 of 3')).toBeNull();
+    expect(within(dialog).getByText('Confirmation follow-up')).toBeTruthy();
+    expect(within(dialog).queryByText('Next call')).toBeNull();
+  });
+
   it('distinguishes interrupted audio, a saved response, and an unconfirmed call end', async () => {
     const user = userEvent.setup();
     const first = participant.reminderRuns![0];
@@ -73,6 +90,7 @@ describe('demo reminder call details', () => {
     expect(within(dialog).getByText('Call end not confirmed')).toBeTruthy();
     expect(within(dialog).getByText('Will attend')).toBeTruthy();
     expect(within(dialog).getByText('Confirmation follow-up')).toBeTruthy();
-    expect(within(dialog).getByText('1 of 3')).toBeTruthy();
+    expect(within(dialog).getByText('1')).toBeTruthy();
+    expect(within(dialog).queryByText('1 of 3')).toBeNull();
   });
 });

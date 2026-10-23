@@ -38,10 +38,12 @@ function ReminderAttempt({ call, number }: { call: VoiceReminderAttemptSummary; 
 function ReminderRun({ run }: { run: VoiceReminderRunSummary }) {
   const { t, language } = useTranslation();
   const primaryAttempts = run.calls.filter(call => !call.responseRetry).length;
+  const activePrimary = !run.responseRetry && (run.status === 'waiting' || run.status === 'calling');
   return <CompactModalSection title={t(run.kind === 'day_before' ? 'voiceRemindersDayBeforeCalls' : 'voiceRemindersSameDayCalls')}
     icon={Phone} tone={run.kind === 'day_before' ? 'sky' : 'teal'} collapsible={false} contentClassName="space-y-3">
     <dl className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-      <dt>{t('voiceRemindersAttemptsUsed')}</dt><dd>{t('voiceRemindersAttemptCount', { count: primaryAttempts, limit: run.attemptLimit })}</dd>
+      <dt>{t('voiceRemindersAttemptsUsed')}</dt><dd>{activePrimary
+        ? t('voiceRemindersAttemptCount', { count: primaryAttempts, limit: run.attemptLimit }) : primaryAttempts}</dd>
       {run.nextAttemptAt ? <>
         <dt>{t(run.responseRetry ? 'voiceRemindersConfirmationRetry' : 'voiceRemindersNextCall')}</dt>
         <dd>{formatAcademyDate(run.nextAttemptAt, language, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</dd>

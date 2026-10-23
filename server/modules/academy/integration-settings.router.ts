@@ -1,3 +1,5 @@
+import { marketingBotSettingsSchema } from '@shared/contracts/telegram-marketing';
+import { configureMarketingBot, safeMarketingBotSettings } from '../../services/telegram-marketing-settings';
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -15,9 +17,10 @@ import { ensureAdministrationModuleAccess } from './academy-core';
 
 const router = Router();
 
-const settingsProvider = z.enum(['telegram_tasks', 'website', 'instagram', 'meta', 'onlinepbx']);
+const settingsProvider = z.enum(['telegram_marketing', 'telegram_tasks', 'website', 'instagram', 'meta', 'onlinepbx']);
 const secretField = z.string().trim().max(2048).optional();
 const integrationSettingsSchemas = {
+  telegram_marketing: marketingBotSettingsSchema,
   telegram_tasks: z.object({
     botToken: secretField,
     openRouterApiKey: secretField,
@@ -51,6 +54,7 @@ const integrationSettingsSchemas = {
 } as const;
 
 const currentIntegrationSettings = (provider: z.infer<typeof settingsProvider>) => {
+  if (provider === 'telegram_marketing') return safeMarketingBotSettings();
   const integrations = appConfig.integrations;
   if (provider === 'telegram_tasks') {
     const settings = integrations?.telegramTasks;
@@ -150,6 +154,9 @@ router.put('/integrations/settings/:provider', async (req, res) => {
   try {
     const input = parsed.data as Record<string, string>;
     const nonempty = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== ''));
+    if (provider.data === 'telegram_marketing') {
+      return res.json(await configureMarketingBot(input));
+    }
     if (provider.data === 'website') {
       const domain = normalizeWebsiteIntegrationDomain(input.domain);
       if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {

@@ -19,6 +19,10 @@ import { queryClient } from '@/lib/queryClient';
 type Field = { name: string; label: string; secret?: boolean; required?: boolean };
 
 const integrationFields = (t: (key: TranslationKey) => string): Record<IntegrationType, Field[]> => ({
+  telegram_marketing: [
+    { name: 'botToken', label: t('integrationBotToken'), secret: true },
+    { name: 'accessPassword', label: t('telegramMarketingPassword'), secret: true },
+  ],
   telegram_tasks: [
     { name: 'botToken', label: t('integrationBotToken'), secret: true },
     { name: 'openRouterApiKey', label: t('integrationAgentKey'), secret: true },
@@ -57,7 +61,7 @@ const accessUnavailable = (error: unknown) => {
 };
 
 const requiredSecrets = new Set([
-  'botToken', 'appSecret', 'verifyToken', 'marketingAccessToken',
+  'accessPassword', 'botToken', 'appSecret', 'verifyToken', 'marketingAccessToken',
   'capiAccessToken', 'leadAccessToken', 'webhookAppSecret',
   'leadWebhookVerifyToken', 'authKey', 'webhookSecret',
 ]);
@@ -82,6 +86,7 @@ function IntegrationSettingsForm({
   const { t } = useTranslation();
   const fields = useMemo(() => integrationFields(t), [t]);
   const titles: Record<IntegrationType, string> = {
+    telegram_marketing: t('telegramMarketingIntegration'),
     telegram_tasks: t('telegramTasksIntegration'), website: t('integrationProviderWebsite'),
     instagram: t('instagramIntegration'), meta: t('metaIntegration'), onlinepbx: t('onlinePbxIntegration'),
   };

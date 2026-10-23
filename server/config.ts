@@ -43,6 +43,13 @@ export interface AppConfig {
     support?: { phone?: string; email?: string };
   };
   integrations?: {
+    telegramMarketing?: {
+      webhookReady?: boolean;
+      botToken?: string;
+      webhookSecret?: string;
+      botUsername?: string;
+      passwordHash?: string;
+    };
     telegramTasks?: {
       botToken?: string;
       webhookSecret?: string;
@@ -222,6 +229,17 @@ export const validateConfig = (config: AppConfig) => {
     || new Set(attendance.groupIds).size !== attendance.groupIds.length
   )) {
     throw new Error('publicAttendance requires a scrypt password hash and distinct positive group IDs');
+  }
+  const marketingBot = config.integrations?.telegramMarketing;
+  if (marketingBot?.botToken || marketingBot?.webhookSecret || marketingBot?.passwordHash) {
+    if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(marketingBot.botToken ?? '')
+      || !/^[A-Za-z0-9_-]{32,256}$/.test(marketingBot.webhookSecret ?? '')
+      || !/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/.test(marketingBot.passwordHash ?? '')) {
+      throw new Error('Telegram Marketing requires valid bot credentials and a password hash');
+    }
+    if (config.server.environment === 'production' && new URL(config.server.appUrl).protocol !== 'https:') {
+      throw new Error('Telegram Marketing requires HTTPS');
+    }
   }
   const telegram = config.integrations?.telegramTasks;
   if (telegram?.botToken?.trim() || telegram?.webhookSecret?.trim()) {

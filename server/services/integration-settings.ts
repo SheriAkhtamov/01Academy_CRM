@@ -3,7 +3,7 @@ import { appConfig, validateConfig, type AppConfig } from '../config';
 import { pool } from '../db';
 import { onlinePbxClient } from './onlinepbx';
 
-export type ManagedIntegration = 'telegramTasks' | 'website' | 'instagram' | 'metaAds' | 'onlinePbx';
+export type ManagedIntegration = 'telegramTasks' | 'telegramMarketing' | 'website' | 'instagram' | 'metaAds' | 'onlinePbx';
 
 export class IntegrationSettingsValidationError extends Error {
   constructor() {
@@ -61,7 +61,7 @@ export const loadIntegrationSettings = async () => {
     'SELECT provider, encrypted_config FROM academy_integration_settings',
   );
   const loaded = rows.filter((row) =>
-    ['telegramTasks', 'website', 'instagram', 'metaAds', 'onlinePbx'].includes(row.provider)
+    ['telegramTasks', 'telegramMarketing', 'website', 'instagram', 'metaAds', 'onlinePbx'].includes(row.provider)
   ).map((row) => ({ provider: row.provider, settings: decrypt(row.encrypted_config) }));
   const candidate: AppConfig = {
     ...appConfig,

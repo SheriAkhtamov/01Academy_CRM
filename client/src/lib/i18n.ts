@@ -3352,6 +3352,8 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   integrationUsdRate: { en: 'USD to UZS exchange rate', ru: 'Курс USD к UZS' },
   integrationCallRouting: { en: 'Call routing', ru: 'Маршрутизация звонков' },
   integrationNeedsAttention: { en: 'Needs setup', ru: 'Требует настройки' },
+  telegramMarketingIntegration: { en: 'Telegram — advertising reports', ru: 'Telegram — отчёты по рекламе' },
+  telegramMarketingPassword: { en: 'Report access password', ru: 'Пароль доступа к отчётам' },
   telegramTasksIntegration: { en: 'Telegram Tasks', ru: 'Telegram: задачи' },
   telegramTasksBotLabel: { en: 'Bot', ru: 'Бот' },
   telegramTasksOpenBot: { en: 'Open bot', ru: 'Открыть бота' },

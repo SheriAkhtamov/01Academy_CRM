@@ -15,6 +15,7 @@ import { assertDatabaseConnection } from "../infrastructure/database-health";
 import { createSessionMiddleware } from "../infrastructure/session";
 import { attachWebSocketGateway } from "../realtime/websocket-gateway";
 import { createHttpApp } from "./http-app";
+import { telegramMarketingRouter } from "../infrastructure/telegram-marketing-runtime";
 import { registerTelegramTaskRoutes } from "../routes/telegram-tasks.routes";
 import { loadIntegrationSettings } from "../services/integration-settings";
 import { createLearningRuntime } from "../infrastructure/lms-runtime";
@@ -74,6 +75,7 @@ export const startApplication = async (): Promise<ApplicationRuntime> => {
     app.set("trust proxy", trustedProxyConfig);
 
     registerTelegramTaskRoutes(app);
+    app.use(telegramMarketingRouter());
     const sessionMiddleware = createSessionMiddleware();
     app.use((request, response, next) =>
       isLearningModulePath(request.path) ||

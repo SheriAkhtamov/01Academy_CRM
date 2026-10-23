@@ -174,6 +174,8 @@ const integrationCopy = (
       return { title: t('metaIntegration')};
     case 'onlinepbx':
       return { title: t('onlinePbxIntegration')};
+    case 'telegram_marketing':
+      return { title: t('telegramMarketingIntegration') };
     case 'telegram_tasks':
       return { title: t('telegramTasksIntegration')};
     default:
@@ -510,7 +512,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                 ? RadioTower
               : integration.provider === 'onlinepbx'
                 ? PhoneCall
-                : integration.provider === 'telegram_tasks'
+                : ['telegram_tasks', 'telegram_marketing'].includes(integration.provider)
                   ? Send
                 : Plug;
 
@@ -530,7 +532,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                         {statusText}
                       </p>
                       <div className="mt-3 inline-flex max-w-full rounded-lg border border-border/70 bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                        {integration.provider === 'telegram_tasks' && integration.accountUsername ? (
+                        {['telegram_tasks', 'telegram_marketing'].includes(integration.provider) && integration.accountUsername ? (
                           <span>{t('telegramTasksBotLabel')}: @{integration.accountUsername}</span>
                         ) : lastLogTime ? (
                           <span>{t('integrationLastEvent')}: {lastLogTime}</span>
@@ -592,7 +594,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           {t('voiceRemindersTitle')}
                         </Button>
                       </>
-                    ) : integration.provider === 'telegram_tasks' && integration.externalUrl ? (
+                    ) : ['telegram_tasks', 'telegram_marketing'].includes(integration.provider) && integration.externalUrl ? (
                       <Button asChild variant="outline">
                         <a href={integration.externalUrl} target="_blank" rel="noopener noreferrer">
                           <ExternalLink data-icon="inline-start" />
@@ -634,7 +636,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
           <div className="compact-modal-body overflow-y-auto">
           <CompactModalSection title={t('navIntegrations')} icon={Plug} tone="sky" collapsible={false} contentClassName="grid gap-2">
             {([
-              ['telegram_tasks', Send], ['instagram', Camera], ['meta', RadioTower],
+              ['telegram_tasks', Send], ['telegram_marketing', Send], ['instagram', Camera], ['meta', RadioTower],
               ['website', Globe2], ['onlinepbx', PhoneCall],
             ] as const).map(([provider, Icon]) => (
               <Button

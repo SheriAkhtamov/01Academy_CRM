@@ -9,7 +9,7 @@
   "scripts": {
     "start": "tsx server/index.ts",
     "build": "vite build && esbuild server/index.ts server/learning-api.ts server/learning-worker.ts server/learning-health.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npm run build:meta-tools && npm run check:production-bundle",
-    "build:meta-tools": "esbuild scripts/import-meta-lead-ads.ts scripts/repair-meta-lead-channels.ts scripts/sync-meta-marketing.ts scripts/reconnect-instagram.ts scripts/lms-import-legacy.ts scripts/lms-health.ts scripts/lms-api-acceptance.ts scripts/import-operational-workbook.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/scripts",
+    "build:meta-tools": "esbuild scripts/configure-telegram-marketing.ts scripts/import-meta-lead-ads.ts scripts/repair-meta-lead-channels.ts scripts/sync-meta-marketing.ts scripts/reconnect-instagram.ts scripts/lms-import-legacy.ts scripts/lms-health.ts scripts/lms-api-acceptance.ts scripts/import-operational-workbook.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/scripts",
     "import:meta-leads": "node dist/scripts/import-meta-lead-ads.js",
     "import:lms-legacy": "node dist/scripts/lms-import-legacy.js",
     "import:operational-workbook": "node dist/scripts/import-operational-workbook.js",

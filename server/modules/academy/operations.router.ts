@@ -605,6 +605,18 @@ router.get('/integrations/status', async (req, res) => {
         lastLog: null,
       },
       {
+        provider: 'telegram_marketing',
+        connected: Boolean(integ.telegramMarketing?.webhookReady && integ.telegramMarketing?.botToken && integ.telegramMarketing?.webhookSecret && integ.telegramMarketing?.passwordHash),
+        requiresReconnect: false,
+        accountId: null,
+        accountUsername: integ.telegramMarketing?.botUsername ?? null,
+        siteDomain: null,
+        externalUrl: /^[A-Za-z][A-Za-z0-9_]{1,28}bot$/i.test(integ.telegramMarketing?.botUsername ?? '')
+          ? `https://t.me/${integ.telegramMarketing!.botUsername}` : null,
+        details: null,
+        lastLog: null,
+      },
+      {
         provider: 'telegram_tasks',
         connected: Boolean(
           integ.telegramTasks?.botToken?.trim()

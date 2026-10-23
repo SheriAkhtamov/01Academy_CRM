@@ -1,3 +1,4 @@
+export { telegramMarketingSessions } from './telegram-marketing';
 import { createTelegramTaskEventsTable } from './telegram-task-events';
 import { createPlatformUpdatesTable } from './platform-updates';
 import { createChatGroupTables } from './chat-groups';

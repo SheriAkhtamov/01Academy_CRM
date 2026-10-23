@@ -35,6 +35,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); vi.unstubAllGlobals(); });
 
 describe('compact integration settings', () => {
+  it('configures the independent advertising bot with masked secrets and preserves a configured password', async () => {
+    mocks.api.mockImplementation(async (method: string) => method === 'GET'
+      ? { botTokenConfigured: true, accessPasswordConfigured: true, botUsername: 'report_bot' } : {});
+    const { options } = mount('telegram_marketing');
+    const password = await screen.findByLabelText(i18n.t('telegramMarketingPassword')) as HTMLInputElement;
+    expect(password.type).toBe('password'); expect(password.value).toBe(''); expect(password.required).toBe(false);
+    expect(screen.getByRole('dialog', { name: i18n.t('telegramMarketingIntegration') })).toBeTruthy();
+    fireEvent.change(password, { target: { value: 'new-test-password' } });
+    fireEvent.submit(screen.getByRole('button', { name: i18n.t('save') }).closest('form')!);
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PUT', '/api/academy/integrations/settings/telegram_marketing', {
+      botToken: '', accessPassword: 'new-test-password',
+    }));
+    await waitFor(() => expect(options.onOpenChange).toHaveBeenCalledWith(false));
+  });
+
   it('keeps an optional draft mounted when folded and preserves it during a settings refresh', async () => {
     mount('meta'); const user = userEvent.setup();
     await screen.findByLabelText(i18n.t('metaAdAccountId'));

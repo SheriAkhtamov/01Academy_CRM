@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/queryClient';
-export type IntegrationType = 'telegram_tasks' | 'website' | 'instagram' | 'meta' | 'onlinepbx';
+export type IntegrationType = 'telegram_marketing' | 'telegram_tasks' | 'website' | 'instagram' | 'meta' | 'onlinepbx';
 
 export type SafeIntegrationSettings = Record<string, string | number | boolean | string[]>;
 

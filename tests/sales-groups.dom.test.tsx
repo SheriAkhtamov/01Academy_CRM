@@ -132,6 +132,10 @@ it('steps through groups in the order the table shows them and closes with Back'
   expect(new URLSearchParams(location.search).get('group')).toBeNull();
 });
 
+// Complete editor journeys include many input, menu, lookup and focus transitions
+// on shared CI runners. Individual assertions retain their own bounded waits.
+const editorJourneyTimeout = 10_000;
+
 it('creates a group from the same editor, shows schedule problems in place and fills the end date', async () => {
   mount(); await screen.findByText('Python morning');
   await userEvent.click(screen.getByRole('button', { name: i18n.t('addGroup') }));
@@ -165,7 +169,7 @@ it('creates a group from the same editor, shows schedule problems in place and f
     endDate: '2026-12-14', schedule: expect.arrayContaining([expect.objectContaining({ dayOfWeek: 1 })]),
   })));
   expect(apiRequest.mock.calls[0][2]).not.toHaveProperty('autoAssign');
-});
+}, editorJourneyTimeout);
 
 it('says which field is wrong instead of a generic error', async () => {
   mount(); await screen.findByText('Python morning');
@@ -668,7 +672,7 @@ it('updates the protected name when course, delivery and training type change', 
   expect(name.value).toBe('ONL-AI-IND-26-0043 — Another class');
   fireEvent.change(name, { target: { value: 'ONL-VC-IND-26-9999 — spoofed' } });
   expect(name.value).toBe('ONL-AI-IND-26-0043 — Another class');
-});
+}, editorJourneyTimeout);
 
 it('applies quick presets, warns when group capacity exceeds room capacity and saves on Ctrl+Enter', async () => {
   mount(); await screen.findByText('Python morning');

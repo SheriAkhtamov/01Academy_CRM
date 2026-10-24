@@ -15,6 +15,6 @@ export const createTelegramTaskRemindersTable = (bindingIdColumn: AnyPgColumn) =
 }, (table) => ({
   eventUnique: uniqueIndex('telegram_task_reminders_event_unique').on(table.bindingId, table.kind, table.eventKey),
   cooldownIdx: index('telegram_task_reminders_cooldown_idx').on(table.errorCode, table.nextAttemptAt),
-  kindCheck: check('telegram_task_reminders_kind_check', sql`${table.kind} IN ('daily', 'due_soon', 'overdue')`),
+  kindCheck: check('telegram_task_reminders_kind_check', sql`${table.kind} IN ('daily', 'due_soon', 'overdue', 'onlinepbx_license')`),
   statusCheck: check('telegram_task_reminders_status_check', sql`${table.status} IN ('attempted', 'sent', 'deferred', 'failed', 'uncertain')`),
 }));

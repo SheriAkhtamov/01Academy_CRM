@@ -50,6 +50,13 @@ export type OnlinePbxExtension = {
   registered: boolean;
 };
 
+export type OnlinePbxLicense = {
+  startStamp: number;
+  endStamp: number;
+  serviceType: string;
+  serviceCount: number;
+};
+
 export type OnlinePbxGroup = {
   extension: string;
   name: string | null;
@@ -266,6 +273,27 @@ export class OnlinePbxClient {
         registered: Boolean(user.device?.ip),
       }))
       .filter((user) => /^\d{2,10}$/.test(user.extension));
+  }
+
+  async listLicenses(): Promise<OnlinePbxLicense[]> {
+    const data = await this.request<Array<Record<string, unknown>>>(
+      'billing/licenses/get', new URLSearchParams(),
+    );
+    if (!Array.isArray(data)) throw new OnlinePbxError('onlinePbxInvalidResponse');
+    return data.map((license) => {
+      if (!license || typeof license !== 'object') throw new OnlinePbxError('onlinePbxInvalidResponse');
+      const startStamp = Number(license.start_stamp);
+      const endStamp = Number(license.end_stamp);
+      const serviceCount = Number(license.service_count);
+      const serviceType = String(license.service_type ?? '');
+      if (!Number.isSafeInteger(startStamp) || startStamp <= 0
+        || !Number.isSafeInteger(endStamp) || endStamp < startStamp || endStamp > 253402300799
+        || !Number.isSafeInteger(serviceCount) || serviceCount <= 0
+        || !/^[A-Z][A-Z_]{0,63}$/.test(serviceType)) {
+        throw new OnlinePbxError('onlinePbxInvalidResponse');
+      }
+      return { startStamp, endStamp, serviceType, serviceCount };
+    });
   }
 
   async getWebRtcCredentials(extension: string): Promise<OnlinePbxWebRtcCredentials> {

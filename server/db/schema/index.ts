@@ -19,6 +19,7 @@ import { createVoiceReminderTables } from './voice-reminders';
 import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
+import { createOnlinePbxLicenseTasksTable } from './onlinepbx-license-tasks';
 import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
 import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
@@ -1574,6 +1575,8 @@ export const boardTasks = pgTable("board_tasks", {
   priorityCheck: check("board_tasks_priority_check", sql`${table.priority} IN ('urgent', 'normal', 'low')`),
   colorCheck: check("board_tasks_color_check", sql`${table.color} IS NULL OR ${table.color} IN ('blue', 'emerald', 'amber', 'violet', 'rose', 'cyan')`),
 }));
+
+export const onlinePbxLicenseTasks = createOnlinePbxLicenseTasksTable(users.id, boardTasks.id);
 
 export const boardTaskComments = pgTable("board_task_comments", {
   id: serial("id").primaryKey(),

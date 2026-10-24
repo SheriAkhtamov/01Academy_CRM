@@ -1,6 +1,6 @@
 # Telegram Tasks Mini App
 
-The bot offers only the shared CRM task module. Private-chat `/start` requests the
+The bot offers the shared CRM task module and configured OnlinePBX renewal tasks. Private-chat `/start` requests the
 sender's own contact through a reply keyboard; a unique active employee match
 receives a greeting and an inline Web App button. Existing employees are not
 created, renamed or given new CRM permissions by registration.
@@ -189,3 +189,37 @@ owner permission and an actual employee to share their own contact.
 
 Protocol references: [Telegram Mini Apps](https://core.telegram.org/bots/webapps)
 and [Telegram Bot API](https://core.telegram.org/bots/api).
+
+## OnlinePBX license renewal reminders
+
+The scheduler creates a task for each selected employee when OnlinePBX licenses approach
+expiration, even if that employee has not connected Telegram yet. Set
+`integrations.onlinePbx.licenseReminderUserIds` to their CRM employee IDs in the
+server's untracked `config/app.config.json` (or saved OnlinePBX integration settings).
+The default empty list disables these reminders. Assignees must remain active,
+unarchived employees. Telegram delivery additionally requires a verified account binding
+to the configured task bot. No messages go to other employees.
+
+The hourly scheduler checks `billing/licenses/get.json` from 09:00 in
+`ACADEMY_TIME_ZONE` (default `Asia/Tashkent`). It sends one reminder in each 7-, 3-, and
+1-day window before the local expiration date, catching up within the current window
+after downtime. Services ending together share one message; the message states the exact
+local deadline and opens the renewal task. Each task has the license deadline, urgent
+priority, the account domain, and the OnlinePBX panel link. Services with the same
+deadline share one task per employee; later reminder stages reuse it. Completed,
+reassigned or deleted tasks do not receive more license reminders and are not recreated.
+This is a payment reminder; no payments or license changes are performed.
+
+Already paid licenses starting immediately after the current period suppress reminders
+for the capacity they replace. A partial renewal still warns about the remaining
+reduction in user seats or services. Billing is account-wide and does not attach a
+license expiration to each internal extension.
+
+Migration `0165_onlinepbx_license_reminders.sql` adds a reminder kind to the existing
+persistent delivery ledger and a unique task-to-license-period mapping. Task creation,
+its activity and this mapping commit together. The license reminder is the task creation
+notice, so a second generic notification is not queued. Claims survive restarts and
+concurrent workers share the task reminder lock and Telegram rate-limit cooldowns. Only
+explicit Telegram 429 responses are retried; ambiguous timeouts are retained without
+resending the same reminder. Development and test processes never send these messages,
+even if production credentials are copied locally.

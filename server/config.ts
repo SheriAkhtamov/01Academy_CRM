@@ -96,6 +96,7 @@ export interface AppConfig {
       authKey?: string;
       apiUrl?: string;
       webhookSecret?: string;
+      licenseReminderUserIds?: number[];
     };
   };
 }
@@ -242,6 +243,15 @@ export const validateConfig = (config: AppConfig) => {
     }
   }
   const telegram = config.integrations?.telegramTasks;
+  const licenseRecipients = config.integrations?.onlinePbx?.licenseReminderUserIds;
+  if (licenseRecipients !== undefined && (
+    !Array.isArray(licenseRecipients)
+    || licenseRecipients.length > 20
+    || licenseRecipients.some((id) => !Number.isSafeInteger(id) || id <= 0)
+    || new Set(licenseRecipients).size !== licenseRecipients.length
+  )) {
+    throw new Error('integrations.onlinePbx.licenseReminderUserIds must contain distinct positive employee IDs (up to 20)');
+  }
   if (telegram?.botToken?.trim() || telegram?.webhookSecret?.trim()) {
     if (!/^\d+:[A-Za-z0-9_-]{30,}$/.test(telegram.botToken?.trim() ?? '')
       || !/^[A-Za-z0-9_-]{32,256}$/.test(telegram.webhookSecret?.trim() ?? '')) {

@@ -10,6 +10,32 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 });
 
 describe('OnlinePbxClient', () => {
+  it('loads current and prepaid licenses in seconds from the billing API', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'billing', key: 'session' } }))
+      .mockResolvedValueOnce(jsonResponse({ status: '1', data: [
+        { start_stamp: 1792750360, end_stamp: 1795294799, service_type: 'USER', service_count: 2 },
+        { start_stamp: '1795294800', end_stamp: '1797886799', service_type: 'USER', service_count: '2' },
+      ] }));
+    const client = new OnlinePbxClient({ domain: 'example.onpbx.ru', authKey: 'test-only' }, fetchMock);
+    await expect(client.listLicenses()).resolves.toEqual([
+      { startStamp: 1792750360, endStamp: 1795294799, serviceType: 'USER', serviceCount: 2 },
+      { startStamp: 1795294800, endStamp: 1797886799, serviceType: 'USER', serviceCount: 2 },
+    ]);
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api2.onlinepbx.ru/example.onpbx.ru/billing/licenses/get.json');
+  });
+
+  it.each([null, {}, [null], [{ start_stamp: 1792750360, end_stamp: 1795294799000, service_type: 'USER', service_count: 1 }],
+    [{ start_stamp: 1792750360, end_stamp: 1795294799, service_type: 'USER', service_count: -1 }]])(
+    'rejects malformed billing data rather than planning a misleading reminder: %j', async (data) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(jsonResponse({ status: '1', data: { key_id: 'billing', key: 'session' } }))
+        .mockResolvedValueOnce(jsonResponse({ status: '1', data }));
+      const client = new OnlinePbxClient({ domain: 'example.onpbx.ru', authKey: 'test-only' }, fetchMock);
+      await expect(client.listLicenses()).rejects.toThrow('onlinePbxInvalidResponse');
+    },
+  );
+
   it('normalizes Uzbek customer phone numbers', () => {
     expect(normalizeOnlinePbxPhone('90 123-45-67')).toBe('+998901234567');
     expect(normalizeOnlinePbxPhone('998901234567')).toBe('+998901234567');

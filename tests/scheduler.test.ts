@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   runEscalations: vi.fn(),
   syncRecentMetaLeads: vi.fn(),
   telegramReminders: vi.fn().mockResolvedValue(0),
+  licenseReminders: vi.fn().mockResolvedValue(0),
 }));
 
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
@@ -17,6 +18,7 @@ vi.mock("../server/services/instagram", () => ({ refreshExpiringInstagramTokens:
 vi.mock("../server/services/escalations", () => ({ runEscalations: mocks.runEscalations }));
 vi.mock("../server/services/meta-lead-ads", () => ({ syncRecentMetaLeadAds: mocks.syncRecentMetaLeads }));
 vi.mock("../server/services/telegram-task-reminders", () => ({ processTelegramTaskReminders: mocks.telegramReminders }));
+vi.mock("../server/services/onlinepbx-license-reminders", () => ({ processOnlinePbxLicenseReminders: mocks.licenseReminders }));
 
 describe("scheduler timezone", () => {
   beforeEach(() => {
@@ -52,5 +54,7 @@ describe("scheduler timezone", () => {
     ]);
     await mocks.schedule.mock.calls[0][1]();
     expect(mocks.telegramReminders).toHaveBeenCalledWith('Asia/Tashkent');
+    await mocks.schedule.mock.calls[6][1]();
+    expect(mocks.licenseReminders).toHaveBeenCalledWith('Asia/Tashkent');
   });
 });

@@ -87,7 +87,8 @@
       "domain": "",
       "authKey": "",
       "apiUrl": "https://api2.onlinepbx.ru",
-      "webhookSecret": "CHANGE-ME-use-a-long-random-string-here"
+      "webhookSecret": "CHANGE-ME-use-a-long-random-string-here",
+      "licenseReminderUserIds": []
     }
   }
 }

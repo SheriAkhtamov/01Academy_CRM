@@ -15,6 +15,7 @@ import {
 } from "./meta-marketing";
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
 import { processTelegramTaskReminders } from './telegram-task-reminders';
+import { processOnlinePbxLicenseReminders } from './onlinepbx-license-reminders';
 
 export const SCHEDULER_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_ACADEMY_TIME_ZONE;
 
@@ -124,6 +125,12 @@ export const startScheduler = () => {
 
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {
+    try {
+      const sent = await processOnlinePbxLicenseReminders(SCHEDULER_TIME_ZONE);
+      if (sent > 0) logger.info('[scheduler] OnlinePBX license reminders sent', { count: sent });
+    } catch {
+      logger.error('[scheduler] OnlinePBX license reminder worker failed');
+    }
     try {
       const actions = await runEscalations();
       if (actions.length > 0) {

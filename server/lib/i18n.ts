@@ -6,6 +6,15 @@
 type Language = 'en' | 'ru';
 
 const translations = {
+    onlinePbxLicenseReminder: { en: '🔔 OnlinePBX: renew your licenses\n{domain}\nExpires: {deadline} ({timezone})\n{services}', ru: '🔔 OnlinePBX: пора продлить лицензии\n{domain}\nОкончание: {deadline} ({timezone})\n{services}' },
+    onlinePbxLicenseUsers: { en: 'User seats: {count}', ru: 'Пользовательские места: {count}' },
+    onlinePbxLicensePlatform: { en: 'Platform access', ru: 'Доступ к платформе' },
+    onlinePbxLicenseAnalytics: { en: 'Business analytics', ru: 'Бизнес-аналитика' },
+    onlinePbxLicenseQuality: { en: 'Quality scoring', ru: 'Оценка качества' },
+    onlinePbxLicenseRecords: { en: 'Call recording', ru: 'Запись разговоров' },
+    onlinePbxLicenseStereo: { en: 'Stereo call recording', ru: 'Стереозапись разговоров' },
+    onlinePbxLicenseOther: { en: 'Additional service', ru: 'Дополнительная услуга' },
+    onlinePbxLicenseTaskTitle: { en: 'Renew OnlinePBX licenses — {domain}', ru: 'Оплатить продление лицензий OnlinePBX — {domain}' },
     telegramTaskCreated: { en: "🆕 New task\n{title}", ru: "🆕 Новая задача\n{title}" },
     telegramTaskAssigned: { en: "👤 Task assigned to you\n{title}", ru: "👤 Вам назначена задача\n{title}" },
     telegramTaskUnassigned: { en: "👤 Task reassigned\n{title}", ru: "👤 Задача передана другому исполнителю\n{title}" },

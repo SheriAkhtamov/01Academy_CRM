@@ -65,7 +65,7 @@ describe('module navigation naming', () => {
         'Входящие',
         'Журнал звонков',
       ],
-      teacher: ['Мои показатели', 'Моё расписание', 'Мои группы', 'Обучение', 'Посещаемость'],
+      teacher: ['Мои показатели', 'Мои группы', 'Обучение', 'Посещаемость'],
       marketing: [
         'Обзор маркетинга',
         'Источники лидов',
@@ -89,7 +89,7 @@ describe('module navigation naming', () => {
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/sales/contracts');
     expect(hrefs).not.toContain('/sales/clients');
-    expect(hrefs).toContain('/teacher-module/schedule');
+    expect(hrefs).not.toContain('/teacher-module/schedule');
     expect(hrefs).toContain('/marketing-module/meta-attribution');
     expect(hrefs).toContain('/marketing-module/meta-events');
     expect(hrefs).toContain('/finance/transactions');

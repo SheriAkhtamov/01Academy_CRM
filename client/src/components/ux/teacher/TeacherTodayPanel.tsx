@@ -15,12 +15,10 @@ import { cn } from '@/lib/utils';
 interface TeacherTodayPanelProps {
   focusLesson: TeacherLesson | null;
   isLessonLive: boolean;
-  isFocusLessonToday: boolean;
   todayCount: number;
   pendingLessons: TeacherLesson[];
   onOpenAttendance: (lessonId: string) => void;
-  onOpenLessonInSchedule: (lessonId: string) => void;
-  onOpenSchedule: () => void;
+  onOpenAttendanceCalendar: () => void;
 }
 
 /**
@@ -37,12 +35,10 @@ interface TeacherTodayPanelProps {
 export function TeacherTodayPanel({
   focusLesson,
   isLessonLive,
-  isFocusLessonToday,
   todayCount,
   pendingLessons,
   onOpenAttendance,
-  onOpenLessonInSchedule,
-  onOpenSchedule,
+  onOpenAttendanceCalendar,
 }: TeacherTodayPanelProps) {
   const { t, language } = useTranslation();
   const oldestPending = pendingLessons[0] ?? null;
@@ -86,16 +82,6 @@ export function TeacherTodayPanel({
                   {focusLesson.groupName || t('noGroup')}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{focusLesson.topic}</p>
-                {/* Says why the checklist is not on offer, at the point where
-                    the user would otherwise go looking for it — but only once
-                    the lesson is close enough for that to be the question. On a
-                    lesson four days out it read as a warning about something
-                    imminent and pushed the real content down a line. */}
-                {!isLessonLive && isFocusLessonToday ? (
-                  <p className="text-xs text-muted-foreground">
-                    {t('attendanceAvailableAfterLessonStart')}
-                  </p>
-                ) : null}
               </div>
               {isLessonLive ? (
                 <Button
@@ -111,18 +97,18 @@ export function TeacherTodayPanel({
                   type="button"
                   variant="outline"
                   className="min-h-11 shrink-0 rounded-lg"
-                  onClick={() => onOpenLessonInSchedule(String(focusLesson.id))}
+                  onClick={() => onOpenAttendance(String(focusLesson.id))}
                 >
                   <CalendarClock className="mr-1.5 size-4" />
-                  {t('openLessonInSchedule')}
+                  {t('details')}
                 </Button>
               )}
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-start justify-center gap-3">
               <p className="text-sm text-muted-foreground">{t('noUpcomingLessons')}</p>
-              <Button type="button" variant="outline" className="min-h-11 rounded-lg" onClick={onOpenSchedule}>
-                {t('openSchedule')}
+              <Button type="button" variant="outline" className="min-h-11 rounded-lg" onClick={onOpenAttendanceCalendar}>
+                {t('attendanceLabel')}
               </Button>
             </div>
           )}

@@ -1,5 +1,4 @@
 import type { TranslationKey } from '@/lib/i18n';
-import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 
 /**
  * The teacher module used to describe the same status four different ways —
@@ -10,7 +9,7 @@ import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
  * can never leak into the interface untranslated.
  */
 
-export type TeacherSection = 'overview' | 'schedule' | 'groups' | 'attendance';
+export type TeacherSection = 'overview' | 'groups' | 'attendance';
 
 /** Which shelf of "My groups" is on screen: the live courses or the archive. */
 export type TeacherGroupView = 'active' | 'archive';
@@ -256,42 +255,6 @@ export const RATINGS_COUNT_KEYS = {
   few: 'ratingsCountFew',
   many: 'ratingsCountMany',
 } as const satisfies Record<TeacherPluralForm, TranslationKey>;
-
-const DAY_MS = 24 * 60 * 60 * 1_000;
-
-/** Day arithmetic runs on UTC-anchored date keys so it never drifts across a
-    daylight-saving boundary in the browser's own zone. */
-export const dateFromDayKey = (key: string) => new Date(`${key}T00:00:00Z`);
-export const dayKeyFromDate = (date: Date) => date.toISOString().slice(0, 10);
-export const shiftDayKey = (key: string, days: number) => (
-  dayKeyFromDate(new Date(dateFromDayKey(key).getTime() + days * DAY_MS))
-);
-export const weekStartDayKey = (key: string) => (
-  shiftDayKey(key, -((dateFromDayKey(key).getUTCDay() + 6) % 7))
-);
-export const isDayKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-const academyDayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: ACADEMY_TIME_ZONE,
-  calendar: 'gregory',
-  numberingSystem: 'latn',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-/**
- * Which calendar day a timestamp belongs to is an academy-local question, not a
- * UTC one: a survey left at 02:00 Tashkent time is 21:00 UTC of the previous
- * day, and grouping it by UTC put it on the wrong bar of the chart.
- */
-export const academyDayKey = (value: string | number | Date): string => {
-  const parts: Record<string, string> = {};
-  for (const part of academyDayKeyFormatter.formatToParts(new Date(value))) {
-    if (part.type !== 'literal') parts[part.type] = part.value;
-  }
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
 
 export const teacherPercent = (value: number, total: number) => (
   total > 0 ? Math.round((value / total) * 100) : 0

@@ -76,7 +76,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[], section: 'attendance' | 'schedule' = 'attendance') {
+function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[]) {
   const location = memoryLocation({ path });
   const client = new QueryClient({ defaultOptions: { queries: {
     retry: false, gcTime: 0, staleTime: 5 * 60_000, queryFn: ({ queryKey }) => apiMock('GET', queryKey[0]),
@@ -85,7 +85,7 @@ function mount(path = '/teacher-module/attendance', cachedDemos?: DemoLesson[], 
   clients.push(client);
   render(<QueryClientProvider client={client}>
     <Router hook={location.hook} searchHook={location.searchHook}>
-      <TeacherModule section={section} />
+      <TeacherModule section="attendance" />
     </Router>
   </QueryClientProvider>);
   return location;
@@ -144,11 +144,11 @@ describe('teacher demo attendance', () => {
     expect(screen.queryByRole('dialog', { name: translations.demoLesson.en })).toBeNull();
   });
 
-  it('shows an assigned assistant lesson in the schedule even without ownership of its group', async () => {
+  it('shows an assigned assistant lesson in attendance even without ownership of its group', async () => {
     regularLesson = { ...regularLesson, teacherUserId: 99, canManageLesson: false };
-    mount('/teacher-module/schedule?week=2026-09-14', undefined, 'schedule');
-    expect(await screen.findByText(regularLesson.topic)).toBeTruthy();
-    expect(screen.getByText(regularLesson.groupName)).toBeTruthy();
+    mount();
+    const lesson = await screen.findByTestId('attendance-calendar-lesson-17');
+    expect(lesson.textContent).toContain(regularLesson.groupName);
   });
 
   it('lets an assistant save attendance and restores marks after reopening without management controls', async () => {

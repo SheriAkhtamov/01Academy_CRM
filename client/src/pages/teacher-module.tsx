@@ -31,25 +31,15 @@ import { demoLessonQueryKeys, teacherDemoLessonsApi } from '@/features/demo-less
 import { AttendanceLessonDialog } from '@/components/ux/teacher/AttendanceLessonDialog';
 import { TeacherGroupsSection } from '@/components/ux/teacher/TeacherGroupsSection';
 import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
-import {
-  TeacherScheduleSection,
-  type TeacherScheduleDayView,
-} from '@/components/ux/teacher/TeacherScheduleSection';
 import { TeacherSectionSkeleton } from '@/components/ux/teacher/TeacherSectionSkeleton';
 import { TeacherTodayPanel } from '@/components/ux/teacher/TeacherTodayPanel';
 import { AlertTriangle } from 'lucide-react';
 import { buildDemoAttendanceLessons, parseDemoAttendanceId, sortAttendanceLessons } from '@/lib/attendance';
 import { ACADEMY_TIME_ZONE, formatAcademyDate, resolveLocale } from '@/lib/localeFormat';
-import { buildTeacherScheduleDays } from '@/lib/teacherSchedule';
 import { isInReportingRange, isReportingPresetKey, reportingRangeForPreset } from '@/lib/reportingDateRange';
 import { useStickyState } from '@/hooks/useStickyState';
 import {
-  academyDayKey,
-  dateFromDayKey,
-  isDayKey,
   lessonsOutsideArchivedGroups,
-  shiftDayKey,
-  weekStartDayKey,
   type TeacherAttendanceDraft,
   type TeacherAttendanceRecord,
   type TeacherGroup,
@@ -225,14 +215,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     t('friday'), t('saturday'), t('sunday'),
   ];
 
-  /* Everything the teacher can point at — the open lesson, the open group, the
-     visible week — lives in the URL. Back, reload and a pasted link now all do
-     what the browser promises, and the schedule's "attendance" button can hand
-     a specific lesson to another route instead of losing it on unmount. */
+  // Open lessons, groups and students live in the URL for reload and Back.
   const searchParams = useMemo(() => new URLSearchParams(routeSearch), [routeSearch]);
   const groupParam = searchParams.get('group') ?? '';
   const studentParam = searchParams.get('student') ?? '';
-  const weekParam = searchParams.get('week') ?? '';
   const groupView: TeacherGroupView = searchParams.get('groups') === 'archive' ? 'archive' : 'active';
 
   const pathname = location.split('?')[0];
@@ -246,10 +232,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     return query ? `${pathname}?${query}` : pathname;
   }, [pathname, routeSearch]);
 
-  /* Panning the schedule or opening a lesson replaces the entry — the Back
-     button should leave the module, not walk back through every week the
-     teacher scrolled past. Opening a group pushes, because "back to the list"
-     is exactly what Back is expected to do there. */
+  /* Opening a lesson replaces the entry. Opening a group pushes so Back
+     returns to the list. */
   const replaceParams = useCallback((changes: Record<string, string | null>) => {
     setLocation(buildHref(changes), { replace: true });
   }, [buildHref, setLocation]);
@@ -329,7 +313,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       toast({ title: t('error'), description: mutationError.message, variant: 'destructive' }),
   });
 
-  /* Archiving reshapes the group list, the schedule and every period figure on
+  /* Archiving reshapes the group list, the calendar and every period figure on
      the overview, so the whole teacher dataset is refetched rather than one
      card being patched in place. */
   const { archiveGroup, restoreGroup, pendingGroupId } = useGroupArchive<TeacherGroup>(
@@ -404,8 +388,7 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   );
   /* A lesson between its start and its end is the one the teacher is standing
      in, and the only one whose attendance can actually be saved. The overview
-     leads with it; otherwise it leads with the next one and offers a link into
-     the schedule rather than a checklist that cannot be submitted yet. */
+     leads with it; otherwise it leads with the next one and opens its details. */
   const liveLesson = useMemo(
     () => lessons.find((lesson) => {
       if (lesson.status !== 'scheduled') return false;
@@ -537,25 +520,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     });
     return data?.courses?.filter((course: any) => courseIds.has(course.id)) ?? [];
   }, [activeGroups, data]);
-
-  // Schedule: a real, navigable Monday-to-Sunday week synchronised with the URL.
-  const currentWeekKey = weekStartDayKey(todayKey);
-  const scheduleWeekKey = isDayKey(weekParam) ? weekStartDayKey(weekParam) : currentWeekKey;
-  const scheduleDays: TeacherScheduleDayView[] = useMemo(() => {
-    const lessonsByDate = new Map<string, TeacherLesson[]>();
-    for (const lesson of lessons) {
-      const dateKey = localDateKey(lesson.scheduledAt);
-      const dayLessons = lessonsByDate.get(dateKey) ?? [];
-      dayLessons.push(lesson);
-      lessonsByDate.set(dateKey, dayLessons);
-    }
-    return buildTeacherScheduleDays(dateFromDayKey(scheduleWeekKey), ACADEMY_TIME_ZONE).map((day) => ({
-      ...day,
-      lessons: [...(lessonsByDate.get(day.dateKey) ?? [])].sort(
-        (left, right) => new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime(),
-      ),
-    }));
-  }, [lessons, scheduleWeekKey]);
 
   const rawLessonParam = section === 'attendance' ? searchParams.get('lesson') : null;
   const selectedDemoId = parseDemoAttendanceId(rawLessonParam);
@@ -778,7 +742,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const fullName = user?.fullName || t('teacher');
   const sectionTitle: Record<TeacherSection, string> = {
     overview: t(moduleSectionLabelKey('teacher', 'overview')),
-    schedule: t(moduleSectionLabelKey('teacher', 'schedule')),
     groups: t(moduleSectionLabelKey('teacher', 'groups')),
     attendance: t(moduleSectionLabelKey('teacher', 'attendance')),
   };
@@ -832,18 +795,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     }
     setLocation(`/teacher-module/attendance?lesson=${encodeURIComponent(lessonId)}`);
   }, [replaceParams, section, setLocation]);
-
-  /* Lands on the schedule week that contains the lesson, not on the current
-     one — a lesson three weeks out is useless if the link drops you on today. */
-  const openLessonInSchedule = useCallback((lessonId: string) => {
-    const lesson = lessons.find((item) => String(item.id) === lessonId);
-    if (!lesson) {
-      setLocation('/teacher-module/schedule');
-      return;
-    }
-    const week = weekStartDayKey(academyDayKey(lesson.scheduledAt));
-    setLocation(`/teacher-module/schedule?week=${week}`);
-  }, [lessons, setLocation]);
 
   const handleLessonSelect = useCallback((lessonId: string) => {
     if (lessonMutationPending || lessonId === selectedLessonId) return;
@@ -929,15 +880,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
           <TeacherTodayPanel
             focusLesson={liveLesson ?? nextLesson}
             isLessonLive={liveLesson !== null}
-            isFocusLessonToday={(() => {
-              const focus = liveLesson ?? nextLesson;
-              return focus != null && localDateKey(focus.scheduledAt) === todayKey;
-            })()}
             todayCount={todayLessons.length}
             pendingLessons={pendingAttendanceLessons}
             onOpenAttendance={openAttendanceForLesson}
-            onOpenLessonInSchedule={openLessonInSchedule}
-            onOpenSchedule={() => setLocation('/teacher-module/schedule')}
+            onOpenAttendanceCalendar={() => setLocation('/teacher-module/attendance')}
           />
           <ReportingDateRangeFilter value={reportingRange} onChange={handleReportingRangeChange} />
           <TeacherOverviewKpis
@@ -959,24 +905,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             attendance={attendanceDistribution}
           />
         </div>
-      );
-    }
-
-    if (section === 'schedule') {
-      return (
-        <TeacherScheduleSection
-          days={scheduleDays}
-          currentUserId={user?.id}
-          nextLesson={nextLesson}
-          dayNames={dayNames}
-          todayKey={todayKey}
-          atToday={scheduleWeekKey === currentWeekKey}
-          onPreviousWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, -7) })}
-          onNextWeek={() => replaceParams({ week: shiftDayKey(scheduleWeekKey, 7) })}
-          onToday={() => replaceParams({ week: null })}
-          onOpenNextLesson={openLessonInSchedule}
-          onOpenAttendance={openAttendanceForLesson}
-        />
       );
     }
 

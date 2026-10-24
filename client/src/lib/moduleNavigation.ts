@@ -79,7 +79,6 @@ export const MODULE_NAVIGATION = {
     icon: GraduationCap,
     items: [
       { id: 'overview', labelKey: 'teacherPerformance', href: '/teacher-module', icon: BarChart3 },
-      { id: 'schedule', labelKey: 'teacherSchedule', href: '/teacher-module/schedule', icon: Calendar },
       { id: 'groups', labelKey: 'myGroups', href: '/teacher-module/groups', icon: Layers3 },
       { id: 'learning', labelKey: 'lmsStaffTitle', href: '/teacher-module/learning', icon: GraduationCap },
       { id: 'attendance', labelKey: 'attendanceLabel', href: '/teacher-module/attendance', icon: ClipboardCheck },

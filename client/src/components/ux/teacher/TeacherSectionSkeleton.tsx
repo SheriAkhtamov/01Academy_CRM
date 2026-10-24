@@ -8,21 +8,6 @@ import type { TeacherSection } from '@/lib/teacherModule';
  * section now gets a placeholder with its own grid and its own heights.
  */
 export function TeacherSectionSkeleton({ section }: { section: TeacherSection }) {
-  if (section === 'schedule') {
-    return (
-      <div className="space-y-4" aria-hidden="true">
-        <Skeleton className="h-16 w-full rounded-xl" />
-        {/* Same breakpoints as the live week grid, or the column count jumps
-            the moment the data lands. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, index) => (
-            <Skeleton key={index} className="h-56 rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   if (section === 'groups') {
     return (
       <div className="space-y-4" aria-hidden="true">

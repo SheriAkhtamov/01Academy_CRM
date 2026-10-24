@@ -16,7 +16,6 @@ describe('isContainedModuleRoute', () => {
     // the width of the content and the element that scrolls must not change
     // when the user moves between sections of the same module.
     '/teacher-module',
-    '/teacher-module/schedule',
     '/teacher-module/groups',
     '/teacher-module/attendance',
     '/teacher-module/tasks',

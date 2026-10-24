@@ -200,11 +200,7 @@ export function AppRouter() {
             <SalesDashboard section="overview" />
           </ModuleGuard>
         } />
-        <Route path="/teacher-module/schedule" children={
-          <ModuleGuard module="teacher">
-            <TeacherModule section="schedule" />
-          </ModuleGuard>
-        } />
+        <Route path="/teacher-module/schedule" children={<Redirect to="/teacher-module/attendance" />} />
         <Route path="/teacher-module/groups" children={
           <ModuleGuard module="teacher">
             <TeacherModule section="groups" />

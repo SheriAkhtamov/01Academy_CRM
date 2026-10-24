@@ -1341,6 +1341,8 @@ export const translations = {
   onlinePbxLicenseStereo: { en: 'Stereo call recording', ru: 'Стереозапись разговоров' },
   onlinePbxLicenseOther: { en: 'Additional service', ru: 'Дополнительная услуга' },
   onlinePbxLicenseTaskTitle: { en: 'Renew OnlinePBX licenses — {domain}', ru: 'Оплатить продление лицензий OnlinePBX — {domain}' },
+  onlinePbxLicenseActivationTaskTitle: { en: 'Pay for a license and enable OnlinePBX #{extension}', ru: 'Оплатить лицензию и включить OnlinePBX №{extension}' },
+  onlinePbxLicenseActivationTaskDescription: { en: 'OnlinePBX user #{extension} is disabled and paid user seats are insufficient. Pay for an additional user seat and enable #{extension}.\n\nAccount: {domain}\nhttps://panel.onlinepbx.ru/', ru: 'Пользователь OnlinePBX №{extension} отключён, оплаченных пользовательских мест недостаточно. Оплатить дополнительное место и включить пользователя №{extension}.\n\nАккаунт: {domain}\nhttps://panel.onlinepbx.ru/' },
   miniTasksTitle: { en: '01 Academy · Tasks', ru: '01 Academy · Задачи' },
   openTasksInTelegram: { en: 'Tasks in Telegram', ru: 'Задачи в Telegram' },
   miniTasksAssigned: { en: 'Assigned by me', ru: 'Порученные' },

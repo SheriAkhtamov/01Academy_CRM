@@ -19,7 +19,7 @@ import { createVoiceReminderTables } from './voice-reminders';
 import { createMetaMarketingTables } from "./meta-marketing";
 import { createUserPhonesTable } from "./user-phones";
 import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
-import { createOnlinePbxLicenseTasksTable } from './onlinepbx-license-tasks';
+import { createOnlinePbxLicenseIssuesTable, createOnlinePbxLicenseTasksTable } from './onlinepbx-license-tasks';
 import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
 import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
@@ -1577,6 +1577,7 @@ export const boardTasks = pgTable("board_tasks", {
 }));
 
 export const onlinePbxLicenseTasks = createOnlinePbxLicenseTasksTable(users.id, boardTasks.id);
+export const onlinePbxLicenseIssues = createOnlinePbxLicenseIssuesTable(users.id, boardTasks.id);
 
 export const boardTaskComments = pgTable("board_task_comments", {
   id: serial("id").primaryKey(),

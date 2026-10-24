@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   db: null as ReturnType<typeof drizzle> | null,
   production: true,
   recipients: [7] as number[],
+  requiredExtensions: [] as string[],
   identity: vi.fn(),
   licenses: vi.fn(),
+  extensions: vi.fn(),
   fetch: vi.fn(),
 }));
 vi.mock('../server/db', () => ({ get pool() { return mocks.pool; }, get db() { return mocks.db; } }));
@@ -19,11 +21,11 @@ vi.mock('../server/config', () => ({
   get isProductionEnvironment() { return mocks.production; },
   appConfig: { server: { appUrl: 'https://crm.example.test' }, integrations: {
     telegramTasks: { botToken: '12345:test-only', webhookSecret: 'test-only' },
-    onlinePbx: { get licenseReminderUserIds() { return mocks.recipients; } },
+    onlinePbx: { get licenseReminderUserIds() { return mocks.recipients; }, get licenseRequiredExtensions() { return mocks.requiredExtensions; } },
   } },
 }));
 vi.mock('../server/services/onlinepbx', () => ({ onlinePbxClient: {
-  isConfigured: () => true, getDomain: () => 'example.onpbx.ru', listLicenses: mocks.licenses,
+  isConfigured: () => true, getDomain: () => 'example.onpbx.ru', listLicenses: mocks.licenses, listExtensions: mocks.extensions,
 } }));
 vi.mock('../server/services/telegram-tasks', () => ({ getTelegramTaskIdentity: mocks.identity }));
 vi.mock('../server/lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn() } }));
@@ -67,6 +69,7 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     await pool.query(readFileSync('migrations/0103_telegram_task_reminders.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0158_telegram_task_events.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0165_onlinepbx_license_reminders.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0166_onlinepbx_license_issues.sql', 'utf8'));
   });
 
   beforeEach(async () => {
@@ -75,6 +78,11 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     vi.setSystemTime(morning);
     mocks.production = true;
     mocks.recipients = [7];
+    mocks.requiredExtensions = [];
+    mocks.extensions.mockResolvedValue([
+      { extension: '100', name: 'Main', enabled: true, registered: true },
+      { extension: '101', name: 'Second', enabled: false, registered: false },
+    ]);
     mocks.licenses.mockResolvedValue([license]);
     vi.stubGlobal('fetch', mocks.fetch);
     mocks.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
@@ -208,5 +216,66 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     expect(results.map((result) => result.created).sort()).toEqual([false, true]);
     expect(results[0].task?.id).toBe(results[1].task?.id);
     expect((await pool.query('SELECT id FROM board_task_activity')).rows).toHaveLength(1);
+  });
+
+  it('creates a separate task for an already expired 101 while 100 has a valid license, even at night', async () => {
+    mocks.requiredExtensions = ['100', '101'];
+    vi.setSystemTime(new Date('2026-10-24T19:30:00Z'));
+    expect(await run()).toBe(0);
+    expect(await run()).toBe(0);
+    const tasks = (await pool.query('SELECT title,assignee_id,priority,due_at FROM board_tasks')).rows;
+    expect(tasks).toEqual([{ title: 'Оплатить лицензию и включить OnlinePBX №101', assignee_id: 7, priority: 'urgent', due_at: null }]);
+    const issues = (await pool.query('SELECT extension,task_id,resolved_at FROM onlinepbx_license_issues')).rows;
+    expect(issues).toMatchObject([{ extension: '101', task_id: 1, resolved_at: null }]);
+    expect((await pool.query('SELECT recipient_id,payload FROM telegram_task_events')).rows).toMatchObject([
+      { recipient_id: 7, payload: { kind: 'created', taskId: 1 } },
+    ]);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not label a manually disabled user as unlicensed when two seats are paid', async () => {
+    mocks.requiredExtensions = ['100', '101'];
+    mocks.licenses.mockResolvedValue([{ ...license, serviceCount: 2 }]);
+    vi.setSystemTime(new Date('2026-10-24T19:30:00Z'));
+    expect(await run()).toBe(0);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
+  });
+
+  it('retains one issue until recovery, and creates a new task after another real license outage', async () => {
+    mocks.requiredExtensions = ['100', '101'];
+    vi.setSystemTime(new Date('2026-10-24T19:30:00Z'));
+    await run();
+    mocks.extensions.mockResolvedValue([{ extension: '100', name: 'Main', enabled: true, registered: true }]);
+    await run();
+    expect((await pool.query('SELECT resolved_at FROM onlinepbx_license_issues')).rows[0].resolved_at).toBeNull();
+    mocks.extensions.mockResolvedValue([
+      { extension: '100', name: 'Main', enabled: true, registered: true },
+      { extension: '101', name: 'Second', enabled: true, registered: true },
+    ]);
+    await run();
+    expect((await pool.query('SELECT resolved_at FROM onlinepbx_license_issues')).rows[0].resolved_at).not.toBeNull();
+    mocks.extensions.mockResolvedValue([
+      { extension: '100', name: 'Main', enabled: true, registered: true },
+      { extension: '101', name: 'Second', enabled: false, registered: false },
+    ]);
+    await run();
+    await run();
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(2);
+    expect((await pool.query('SELECT id FROM telegram_task_events')).rows).toHaveLength(2);
+  });
+
+  it('adopts the existing 101 task and respects deletion without recreating it', async () => {
+    mocks.requiredExtensions = ['100', '101'];
+    vi.setSystemTime(new Date('2026-10-24T19:30:00Z'));
+    await pool.query("INSERT INTO board_tasks(board_id,title,creator_id,assignee_id,status) VALUES (1,'Оплатить №101',1,7,'todo')");
+    await pool.query(`INSERT INTO board_task_activity(task_id,actor_id,type,meta)
+      VALUES (1,1,'created','{"requestKey":"onlinepbx-license-activation:example.onpbx.ru:101"}')`);
+    await run();
+    expect((await pool.query('SELECT task_id FROM onlinepbx_license_issues')).rows).toEqual([{ task_id: 1 }]);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(1);
+    expect((await pool.query('SELECT id FROM telegram_task_events')).rows).toHaveLength(0);
+    await pool.query('DELETE FROM board_tasks');
+    await run();
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
   });
 });

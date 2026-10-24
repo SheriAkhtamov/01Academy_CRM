@@ -97,6 +97,7 @@ export interface AppConfig {
       apiUrl?: string;
       webhookSecret?: string;
       licenseReminderUserIds?: number[];
+      licenseRequiredExtensions?: string[];
     };
   };
 }
@@ -244,6 +245,14 @@ export const validateConfig = (config: AppConfig) => {
   }
   const telegram = config.integrations?.telegramTasks;
   const licenseRecipients = config.integrations?.onlinePbx?.licenseReminderUserIds;
+  const requiredExtensions = config.integrations?.onlinePbx?.licenseRequiredExtensions;
+  if (requiredExtensions !== undefined && (
+    !Array.isArray(requiredExtensions) || requiredExtensions.length > 20
+    || requiredExtensions.some((extension) => typeof extension !== 'string' || !/^\d{2,10}$/.test(extension))
+    || new Set(requiredExtensions).size !== requiredExtensions.length
+  )) {
+    throw new Error('integrations.onlinePbx.licenseRequiredExtensions must contain distinct internal numbers (up to 20)');
+  }
   if (licenseRecipients !== undefined && (
     !Array.isArray(licenseRecipients)
     || licenseRecipients.length > 20

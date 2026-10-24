@@ -192,6 +192,22 @@ and [Telegram Bot API](https://core.telegram.org/bots/api).
 
 ## OnlinePBX license renewal reminders
 
+`integrations.onlinePbx.licenseRequiredExtensions` lists the internal numbers
+that must have working licenses (for example `["100", "101"]`). The hourly check
+compares their enabled state with the number of currently paid user seats.
+A disabled required number and insufficient paid seats create a separate urgent
+activation task, including when an expired license has disappeared from the
+billing response. These incident tasks are created at any hour, independently
+of the 7/3/1-day renewal windows. An unknown expiration date stays unknown and
+does not become a fabricated task deadline. A disabled number with enough paid
+seats is not classified as an expired license.
+
+Migration `0166_onlinepbx_license_issues.sql` records these incidents. Repeated
+checks reuse the same task; completed or deleted tasks are not recreated during
+the same incident. Recovery resolves the incident, allowing a separate task for
+a later outage. Existing operator-created activation tasks are adopted. The
+ordinary task notification outbox delivers creation through the task bot.
+
 The scheduler creates a task for each selected employee when OnlinePBX licenses approach
 expiration, even if that employee has not connected Telegram yet. Set
 `integrations.onlinePbx.licenseReminderUserIds` to their CRM employee IDs in the

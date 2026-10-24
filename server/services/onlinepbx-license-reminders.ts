@@ -9,6 +9,7 @@ import { getTelegramTaskIdentity } from './telegram-tasks';
 import { sendTelegramTaskReminder } from './telegram-task-delivery';
 import { ensureOnlinePbxLicenseTask } from '../storage/onlinepbx-license-tasks';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { processOnlinePbxLicenseIssues } from './onlinepbx-license-issues';
 
 export async function processOnlinePbxLicenseReminders(timeZone: string, now = new Date()): Promise<number> {
   const config = appConfig.integrations;
@@ -16,7 +17,8 @@ export async function processOnlinePbxLicenseReminders(timeZone: string, now = n
   const userIds = config?.onlinePbx?.licenseReminderUserIds;
   if (!isProductionEnvironment || !userIds?.length || !onlinePbxClient.isConfigured()) return 0;
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
-  if (hour < 9) return 0;
+  const requiredExtensions = config?.onlinePbx?.licenseRequiredExtensions ?? [];
+  if (hour < 9 && !requiredExtensions.length) return 0;
   const domain = onlinePbxClient.getDomain();
   const botId = token?.split(':')[0] ?? domain;
   // Share the task reminder lock and Telegram cooldowns with the existing sender.
@@ -28,7 +30,12 @@ export async function processOnlinePbxLicenseReminders(timeZone: string, now = n
   try {
     locked = (await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [lockKey])).rows[0]?.locked === true;
     if (!locked) return 0;
-    const planned = planOnlinePbxLicenseReminders(await onlinePbxClient.listLicenses(), domain, now, timeZone);
+    const licenses = await onlinePbxClient.listLicenses();
+    if (requiredExtensions.length) {
+      await processOnlinePbxLicenseIssues(domain, requiredExtensions, userIds, await onlinePbxClient.listExtensions(), licenses, now);
+    }
+    if (hour < 9) return 0;
+    const planned = planOnlinePbxLicenseReminders(licenses, domain, now, timeZone);
     const tasks = new Map<string, number>();
     for (const userId of userIds) {
       for (const reminder of planned) {

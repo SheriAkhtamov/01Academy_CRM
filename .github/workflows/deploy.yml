@@ -54,9 +54,23 @@ jobs:
         run: npm run check
 
       - name: Install audio verification tools
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          set -euo pipefail
+          # Azure's mirror can stream packages too slowly to trigger a network
+          # timeout. Keep the runner's official Ubuntu fallback mirrors instead.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '\|azure\.archive\.ubuntu\.com|d' /etc/apt/apt-mirrors.txt
+          fi
+          apt_options=(
+            -o Acquire::Retries=1
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+          )
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
 
       - name: Run test suite
         run: npm test

@@ -23,7 +23,7 @@ const sourceSchema = z.object({
   sheet: z.string().min(1),
   cells: z.string().min(1),
 });
-const valuesSchema = z.record(z.unknown()).refine(
+const valuesSchema = z.record(z.string(), z.unknown()).refine(
   (value) => Object.keys(value).length > 0
     && Object.keys(value).every((key) => /^[a-z][a-z0-9_]*$/.test(key)),
   'Values must use nonempty SQL column names',

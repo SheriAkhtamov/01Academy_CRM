@@ -93,7 +93,7 @@ export const mergeLeadDraftRequestSchema = z.object({
   retainedLeadId: positiveIdSchema,
   // The legacy endpoint accepts a partial creation draft. Keep the wire
   // contract permissive while the nested fields are made explicit one by one.
-  draft: z.record(z.unknown()),
+  draft: z.record(z.string(), z.unknown()),
 });
 
 export const assignLeadRequestSchema = z.object({
@@ -224,7 +224,7 @@ export const academyLeadDtoSchema = z.object({
 
 export const academyLeadErrorSchema = z.object({
   error: z.string(),
-  duplicate: z.record(z.unknown()).optional(),
+  duplicate: z.record(z.string(), z.unknown()).optional(),
 }).passthrough();
 
 export type BulkAssignLeadsRequest = z.infer<typeof bulkAssignLeadsRequestSchema>;

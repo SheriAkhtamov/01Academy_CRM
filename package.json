@@ -38,7 +38,7 @@
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/utilities": "^3.2.2",
-    "@hookform/resolvers": "^3.10.0",
+    "@hookform/resolvers": "^5.9.2",
     "@imagemagick/magick-wasm": "0.0.43",
     "@radix-ui/react-alert-dialog": "^1.1.7",
     "@radix-ui/react-avatar": "^1.2.6",
@@ -68,7 +68,7 @@
     "date-fns": "^3.6.0",
     "docx-preview": "0.4.1",
     "drizzle-orm": "^0.45.2",
-    "drizzle-zod": "^0.7.1",
+    "drizzle-zod": "^0.8.3",
     "express": "^4.22.2",
     "express-rate-limit": "^8.6.1",
     "express-session": "^1.19.0",
@@ -76,7 +76,7 @@
     "framer-motion": "^13.1.0",
     "lucide-react": "^0.453.0",
     "morgan": "^1.12.1",
-    "multer": "^2.4.0",
+    "multer": "^2.5.0",
     "nanoid": "^6.0.0",
     "node-cron": "^4.6.0",
     "pg": "^8.22.0",
@@ -91,7 +91,7 @@
     "winston": "^3.19.0",
     "wouter": "^3.3.5",
     "ws": "^8.21.1",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

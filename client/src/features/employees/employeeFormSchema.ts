@@ -9,7 +9,7 @@ type Translate = (key: TranslationKey) => string;
 // Schema functions that use runtime translation
 export const createUserSchema = (t: Translate) => z.object({
   email: z.preprocess(
-    (value) => typeof value === 'string' ? value.trim() || undefined : value,
+    (value: string | undefined) => typeof value === 'string' ? value.trim() || undefined : value,
     z.string().max(MAX_STAFF_LOGIN_LENGTH, t('fieldTooLong')).refine(isValidStaffLogin, t('invalidLogin')).optional()
   ),
   fullName: z.string().min(1, t('fullNameRequired')),
@@ -32,8 +32,8 @@ export const createUserSchema = (t: Translate) => z.object({
   position: z.string().optional(),
   module: z.enum(ACADEMY_MODULES),
   modules: z.array(z.enum(ACADEMY_MODULES)).min(1, t('selectAtLeastOneModule')),
-  salesKpiRole: kpiRoleSchema.nullable().default(null),
-  salesFunnelIds: z.array(z.number().int().positive()).default([]),
+  salesKpiRole: kpiRoleSchema.nullable().default(null).nonoptional(),
+  salesFunnelIds: z.array(z.number().int().positive()).default([]).nonoptional(),
 }).superRefine((values, ctx) => {
   const modules = new Set([values.module, ...values.modules]);
   if (modules.has('sales') && values.salesFunnelIds.length === 0) {

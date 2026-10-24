@@ -54,14 +54,14 @@ export const kpiConfigSchema = z.object({
   renewalBonusUzs: money,
   upsellBonusUzs: money,
   // Retained only to read existing saved plans; referral bonuses are no longer paid.
-  referralBonusUzs: money.default(0),
+  referralBonusUzs: money.default(0).nonoptional(),
   renewalTargetPercent: percent,
   upsellTarget: count,
   npsTarget: z.number().min(-100).max(100),
   tiers: z.array(z.object({ from: count.min(1), rateUzs: money }).strict()).min(1).max(12),
-  enabledMetrics: z.preprocess((value) => {
+  enabledMetrics: z.preprocess((value: KpiMetricId[]) => {
     if (!Array.isArray(value)) return value;
-    const metrics = value.filter((metric) => metric !== 'referrals' && metric !== 'qualified');
+    const metrics = value.filter((metric: string) => metric !== 'referrals' && metric !== 'qualified');
     // A saved plan may have displayed only the removed metric. Keep it readable.
     return value.length > 0 && metrics.length === 0 ? ['newStudents'] : metrics;
   }, z.array(z.enum(KPI_METRICS)).min(1).max(KPI_METRICS.length)),

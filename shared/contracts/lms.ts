@@ -103,7 +103,7 @@ export const lmsReviewSchema = lmsVersionSchema
     decision: z.enum(["accepted", "revision_required"]),
     comment: content.default(""),
     score: z.number().min(0).optional(),
-    criterionScores: z.record(z.number().min(0)).default({}),
+    criterionScores: z.record(z.string(), z.number().min(0)).default({}),
     reason: z.string().trim().max(2000).optional(),
     dueAt: z.string().datetime().nullable().optional(),
   })

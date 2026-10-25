@@ -1,5 +1,5 @@
 const courseNames = new Map([
-  ['explorer', 'AI Explorer'],
+  ['explorer', 'AI Kids'],
   ['creator', 'AI Creator'],
   ['professional', 'AI Professional'],
 ]);
@@ -22,6 +22,8 @@ const resolveCourseName = (input: WebsiteLeadCommentInput): string | null => {
 
   if (typeof input.courseName === 'string') {
     const suppliedName = input.courseName.trim();
+    // Forms in tabs opened before the rename can still send the previous name.
+    if (suppliedName === 'AI Explorer') return courseNames.get('explorer') ?? null;
     for (const courseName of courseNames.values()) {
       if (suppliedName === courseName) return courseName;
     }

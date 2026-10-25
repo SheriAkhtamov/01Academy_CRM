@@ -133,7 +133,7 @@ describe('external lead ownership', () => {
   });
 
   it.each([
-    ['explorer', 'AI Explorer'],
+    ['explorer', 'AI Kids'],
     ['creator', 'AI Creator'],
     ['professional', 'AI Professional'],
   ])('saves interest in %s to visible comment history and the legacy field', async (courseId, courseName) => {
@@ -170,7 +170,7 @@ describe('external lead ownership', () => {
   });
 
   it.each([
-    ['https://01academy.uz/ru/courses/explorer', 'AI Explorer'],
+    ['https://01academy.uz/ru/courses/explorer', 'AI Kids'],
     ['https://01academy.uz/uz/courses/creator?utm_source=header', 'AI Creator'],
     ['https://www.01academy.uz/ru/courses/professional/', 'AI Professional'],
   ])('uses the authenticated course page %s when CTA context is absent', async (pageUrl, courseName) => {
@@ -186,14 +186,18 @@ describe('external lead ownership', () => {
       .toEqual([77, 1, response.body.comment]);
   });
 
-  it('recognizes a known course name without an ID', async () => {
+  it.each([
+    ['AI Kids', 'AI Kids'],
+    ['AI Explorer', 'AI Kids'],
+    ['AI Creator', 'AI Creator'],
+  ])('recognizes %s without an ID as %s', async (suppliedName, courseName) => {
     const response = await request(createApp())
       .post('/api/incoming/website-lead')
       .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
-      .send({ name: 'Course Name Client', phone: '+998904445566', courseName: 'AI Creator' });
+      .send({ name: 'Course Name Client', phone: '+998904445566', courseName: suppliedName });
 
     expect(response.status).toBe(201);
-    expect(response.body.comment).toBe('Интересуется AI Creator');
+    expect(response.body.comment).toBe(`Интересуется ${courseName}`);
   });
 
   it.each([

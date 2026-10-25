@@ -43,6 +43,15 @@ describe('Meta advertising cohort report', () => {
     const empty = summarizeMarketingLeads([], 'all');
     expect(formatMarketingReport(empty, state, now)).not.toMatch(/NaN|Infinity/);
   });
+  it('counts three submissions as three requests and one contact with one set of outcomes', () => {
+    const report = summarizeMarketingLeads([fact(), fact(), fact({ courseSlug: 'vibe-coding' })], 'all');
+    expect(report).toMatchObject({ leads: 3, uniqueLeads: 1, reached: 1, qualified: 1,
+      payingLeads: 1, payments: 2, revenueUzs: 100000, bookedStudents: 2 });
+    const text = formatMarketingReport(report, state, now);
+    expect(text).toContain('Заявки Meta: 3');
+    expect(text).toContain('Уникальные контакты: 1');
+    expect(text).toContain('Дозвон: 1 · 100%');
+  });
   it('uses Tashkent day boundaries and rejects invalid or future custom dates', () => {
     expect(marketingPeriod('today', now)).toEqual({ from: '2026-10-24', to: '2026-10-24' });
     expect(marketingPeriod('previous', now)).toEqual({ from: '2026-09-01', to: '2026-09-30' });

@@ -3,6 +3,7 @@ import { summarizeLeadQualifications, type LeadQualificationFact } from '@shared
 import { teacherLessonVisibilitySql } from './teacher-lesson-access';
 import { Router } from 'express';
 import { buildMarketingSourceMetrics, marketingPaymentAttribution } from './marketing-source-metrics';
+import { metaWebsiteSubmissionSql } from '@shared/meta-website-leads';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -518,6 +519,13 @@ export const buildAnalytics = async (
   );
   const metricStart = reportingRange?.start ?? monthStart;
   const metricEnd = reportingRange?.end ?? nextMonthStart;
+  const metaWebsiteSubmissions = await query(
+    `SELECT attribution.lead_id, attribution.captured_at FROM meta_lead_attributions attribution
+     WHERE ${metaWebsiteSubmissionSql('attribution')}
+       AND attribution.lead_id IS NOT NULL
+       AND attribution.captured_at >= $1 AND attribution.captured_at < $2`,
+    [metricStart, metricEnd],
+  );
   const valueInMetricRange = (value: unknown) => {
     const date = getValidDate(value);
     return date !== null && date >= metricStart && date < metricEnd;
@@ -777,6 +785,7 @@ export const buildAnalytics = async (
         cac: calculateCac(courseExpenses, coursePaidCustomers.size) ?? 0 };
     }),
     bySource: buildMarketingSourceMetrics({
+      metaWebsiteSubmissions,
       sources: data.sources,
       leads: [...data.leads, ...data.archivedLeads],
       students: data.students,

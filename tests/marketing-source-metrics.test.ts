@@ -18,6 +18,21 @@ const calculate = (overrides: Partial<Parameters<typeof buildMarketingSourceMetr
 });
 
 describe('marketing source attribution', () => {
+  it('counts landing submissions instead of contact creation, including repeats of old contacts', () => {
+    const result = calculate({
+      sources: [{ id: 9, code: 'meta_website', name: 'Meta · сайт' }],
+      leads: [{ id: 1, sourceId: 9, createdAt: '2026-09-01T00:00:00Z' }],
+      metaWebsiteSubmissions: [
+        { leadId: 1, capturedAt: '2026-10-05T00:00:00Z' },
+        { leadId: 1, capturedAt: '2026-10-05T00:01:00Z' },
+        { leadId: 1, capturedAt: '2026-10-05T00:02:00Z' },
+        { leadId: 1, capturedAt: '2026-09-01T00:00:00Z' },
+      ],
+      paidPayments: [{ leadId: 1, amountUzs: 100, paidAt: '2026-10-06T00:00:00Z' }],
+      expenses: [{ sourceId: 9, amountUzs: 300 }],
+    });
+    expect(result[0]).toMatchObject({ leads: 3, revenue: 100, paidStudents: 1, cpl: 100 });
+  });
   it('attributes period payments for older and archived leads, independently of lead creation date', () => {
     const result = calculate({
       leads: [

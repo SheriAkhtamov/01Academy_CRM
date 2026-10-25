@@ -18,11 +18,12 @@ export type MarketingLeadFact = {
   revenueUzs: number;
 };
 
-/** One creation cohort, with outcomes observed through the report's as-of time. */
+/** Acquisition facts count separately; contact outcomes and money count once. */
 export function summarizeMarketingLeads(facts: readonly MarketingLeadFact[], course: MarketingBotCourse): MarketingBotReport {
   const selected = facts.filter((fact) => course === 'all' || resolveMarketingCourse(fact) === course);
   const result: MarketingBotReport = {
-    leads: selected.length, reached: 0, unreached: 0, notCalled: 0, qualified: 0,
+    leads: selected.length, uniqueLeads: new Set(selected.map((fact) => fact.id)).size,
+    reached: 0, unreached: 0, notCalled: 0, qualified: 0,
     bookedStudents: 0, attendedStudents: 0, dueStudents: 0, payingLeads: 0, payments: 0, revenueUzs: 0,
     courses: [], languages: { uz: 0, ru: 0, both: 0, other: 0, unknown: 0 },
   };
@@ -30,14 +31,11 @@ export function summarizeMarketingLeads(facts: readonly MarketingLeadFact[], cou
   const attended = new Set<number>();
   const due = new Set<number>();
   const courses = new Map<Exclude<MarketingBotCourse, 'all'>, number>();
+  const contacts = new Map<number, MarketingLeadFact[]>();
   for (const fact of selected) {
-    if (fact.reached) result.reached += 1;
-    else if (fact.attempted) result.unreached += 1;
-    else result.notCalled += 1;
-    if (fact.qualified) result.qualified += 1;
-    if (fact.paymentCount > 0) result.payingLeads += 1;
-    result.payments += fact.paymentCount;
-    result.revenueUzs += fact.revenueUzs;
+    const contactFacts = contacts.get(fact.id) ?? [];
+    contactFacts.push(fact);
+    contacts.set(fact.id, contactFacts);
     fact.bookedStudentIds.forEach((id) => booked.add(id));
     fact.attendedStudentIds.forEach((id) => attended.add(id));
     fact.dueStudentIds.forEach((id) => due.add(id));
@@ -49,6 +47,16 @@ export function summarizeMarketingLeads(facts: readonly MarketingLeadFact[], cou
     else if (languages.includes('ru')) result.languages.ru += 1;
     else if (languages.length) result.languages.other += 1;
     else result.languages.unknown += 1;
+  }
+  for (const contactFacts of contacts.values()) {
+    if (contactFacts.some((fact) => fact.reached)) result.reached += 1;
+    else if (contactFacts.some((fact) => fact.attempted)) result.unreached += 1;
+    else result.notCalled += 1;
+    if (contactFacts.some((fact) => fact.qualified)) result.qualified += 1;
+    if (contactFacts.some((fact) => fact.paymentCount > 0)) result.payingLeads += 1;
+    // SQL gives the same contact outcomes to each acquisition in the cohort.
+    result.payments += Math.max(...contactFacts.map((fact) => fact.paymentCount));
+    result.revenueUzs += Math.max(...contactFacts.map((fact) => fact.revenueUzs));
   }
   result.bookedStudents = booked.size;
   result.attendedStudents = attended.size;

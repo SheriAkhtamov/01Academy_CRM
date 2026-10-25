@@ -21,6 +21,8 @@ import { resolveLeadFunnelId } from '../services/lead-funnels';
 import { websiteIntegrationProvider } from '../services/website-integrations';
 import { authenticateWebsiteLeadToken } from '../services/website-lead-tokens';
 import { buildWebsiteLeadComment } from '../services/website-lead-comment';
+import { isWebsiteSubmissionId, META_WEBSITE_SOURCE, resolveMetaWebsiteLanding } from '@shared/meta-website-leads';
+import { findMetaWebsiteReceipt, resolveMetaWebsiteCourseId, saveMetaWebsiteAttribution } from '../services/meta-website-attribution';
 
 const router = Router();
 
@@ -359,50 +361,75 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
     const integrationProvider = websiteIntegrationProvider(siteDomain);
     const integrationPayload = { ...body, siteDomain };
+    const metaLanding = resolveMetaWebsiteLanding(pageUrl, siteDomain);
+    const submissionId = typeof body.submissionId === 'string' ? body.submissionId.toLowerCase() : '';
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });
     if (!phone && !messenger) return res.status(400).json({ error: 'contactRequired' });
+    if (metaLanding && !isWebsiteSubmissionId(submissionId)) {
+      return res.status(400).json({ error: 'submissionIdRequired' });
+    }
 
     const storedPhone = phone ? (normalizePhoneForStorage(phone)?.phone ?? phone) : null;
     const { comment, courseName } = buildWebsiteLeadComment({
       siteDomain,
-      courseId: body.courseId,
-      courseName: body.courseName,
+      courseId: metaLanding?.courseId ?? body.courseId,
+      courseName: metaLanding?.courseName ?? body.courseName,
       company,
       team,
       message,
       pageUrl,
+      metaSource: Boolean(metaLanding),
     });
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
       await lockIncomingContact(client, phone, messenger);
+      if (metaLanding) {
+        const receiptLeadId = await findMetaWebsiteReceipt(client, submissionId);
+        if (receiptLeadId) {
+          return { duplicate: { entityType: 'lead', id: receiptLeadId }, lead: null, commentLeadId: null };
+        }
+      }
+      const metaSourceId = metaLanding ? await ensureIncomingSourceId(client, META_WEBSITE_SOURCE) : null;
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
-      if (duplicate) {
+      let unlinkedStudentId: number | null = null;
+      if (metaLanding && duplicate?.entity_type === 'student' && !duplicate.lead_id) {
+        const { rows } = await client.query('SELECT lead_id FROM academy_students WHERE id = $1 FOR UPDATE', [duplicate.id]);
+        duplicate.lead_id = rows[0]?.lead_id ?? null;
+        if (!duplicate.lead_id) unlinkedStudentId = Number(duplicate.id);
+      }
+      if (duplicate && !unlinkedStudentId) {
         const duplicateLeadId = duplicate.entity_type === 'lead' ? duplicate.id : duplicate.lead_id;
         const commentLeadId = courseName && comment && duplicateLeadId ? Number(duplicateLeadId) : null;
         if (commentLeadId && comment) {
           await appendIncomingLeadComment(client, commentLeadId, systemUserId, comment);
+          if (metaLanding) await saveMetaWebsiteAttribution(client, commentLeadId, submissionId, metaLanding);
         }
         return { duplicate: camelize(duplicate), lead: null, commentLeadId };
       }
 
-      const sourceId = await ensureIncomingSourceId(client, {
+      const sourceId = metaSourceId ?? await ensureIncomingSourceId(client, {
         code: integrationProvider,
         name: siteDomain,
         channel: 'website',
       });
-      const funnelId = await resolveLeadFunnelId(client, integrationProvider);
+      const funnelId = await resolveLeadFunnelId(client, metaLanding ? 'meta' : integrationProvider);
+      const courseId = metaLanding ? await resolveMetaWebsiteCourseId(client, metaLanding) : null;
 
       const { rows: inserted } = await client.query(
         `INSERT INTO academy_leads
-          (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by, languages)
-         VALUES ($1,$2,$3,$4,$5,$6,(SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $5),NULL,$7,$8,$9,$10) RETURNING *`,
-        [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId, language ? [language] : []],
+          (contact_name, phone, messenger, source_id, funnel_id, advertising_campaign, status_code, manager_id, language, comment, created_by, languages, course_id)
+         VALUES ($1,$2,$3,$4,$5,$6,(SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $5),NULL,$7,$8,$9,$10,$11) RETURNING *`,
+        [contactName, storedPhone, messenger, sourceId, funnelId, campaign, language, comment, systemUserId, language ? [language] : [], courseId],
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
       if (comment) await appendIncomingLeadComment(client, lead.id, systemUserId, comment);
+      if (metaLanding) await saveMetaWebsiteAttribution(client, lead.id, submissionId, metaLanding);
+      if (unlinkedStudentId) {
+        await client.query('UPDATE academy_students SET lead_id = $1 WHERE id = $2 AND lead_id IS NULL', [lead.id, unlinkedStudentId]);
+      }
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,'Заявка с сайта')`,

@@ -12,6 +12,7 @@ type WebsiteLeadCommentInput = {
   team: string | null;
   message: string | null;
   pageUrl: string | null;
+  metaSource?: boolean;
 };
 
 const resolveCourseName = (input: WebsiteLeadCommentInput): string | null => {
@@ -36,7 +37,7 @@ const resolveCourseName = (input: WebsiteLeadCommentInput): string | null => {
     const hostname = page.hostname.toLowerCase().replace(/^www\./, '');
     const siteDomain = input.siteDomain.toLowerCase().replace(/^www\./, '');
     if (hostname !== siteDomain) return null;
-    const courseId = /^\/(?:ru|uz)\/courses\/([^/]+)\/?$/.exec(page.pathname)?.[1];
+    const courseId = /^\/(?:ru|uz)\/(?:meta\/)?courses\/([^/]+)\/?$/.exec(page.pathname)?.[1];
     return courseId ? courseNames.get(courseId) ?? null : null;
   } catch {
     return null;
@@ -46,6 +47,7 @@ const resolveCourseName = (input: WebsiteLeadCommentInput): string | null => {
 export const buildWebsiteLeadComment = (input: WebsiteLeadCommentInput) => {
   const courseName = resolveCourseName(input);
   const comment = [
+    input.metaSource ? 'Заявка из Meta' : null,
     courseName ? `Интересуется ${courseName}` : null,
     input.company ? `Компания: ${input.company}` : null,
     input.team ? `Отдел / размер группы: ${input.team}` : null,

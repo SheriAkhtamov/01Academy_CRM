@@ -1,3 +1,5 @@
+import { META_WEBSITE_SOURCE } from '@shared/meta-website-leads';
+
 type MetricRow = Record<string, any>;
 
 const positiveId = (value: unknown): number | null => {
@@ -35,13 +37,14 @@ export function marketingPaymentAttribution(students: MetricRow[]) {
 }
 
 export function buildMarketingSourceMetrics({
-  sources, leads, students, paidPayments, expenses, periodStart, periodEnd, recognizedExpense,
+  sources, leads, students, paidPayments, expenses, periodStart, periodEnd, recognizedExpense, metaWebsiteSubmissions = [],
 }: {
   sources: MetricRow[];
   leads: MetricRow[];
   students: MetricRow[];
   paidPayments: MetricRow[];
   expenses: MetricRow[];
+  metaWebsiteSubmissions?: MetricRow[];
   periodStart: Date;
   periodEnd: Date;
   recognizedExpense: (expense: MetricRow) => number;
@@ -74,6 +77,9 @@ export function buildMarketingSourceMetrics({
   return sources.map((source) => {
     const sourceId = Number(source.id);
     const periodLeads = leads.filter((lead) => Number(lead.sourceId) === sourceId && inPeriod(lead.createdAt));
+    const leadCount = source.code === META_WEBSITE_SOURCE.code
+      ? metaWebsiteSubmissions.filter((submission) => inPeriod(submission.capturedAt)).length
+      : periodLeads.length;
     const newCustomers = [...customerTotals.values()].filter((customer) => customer.sourceId === sourceId
       && customer.firstPaidAt !== null
       && customer.firstPaidAt >= periodStart.getTime()
@@ -93,11 +99,11 @@ export function buildMarketingSourceMetrics({
     return {
       sourceId: source.id,
       sourceName: source.name,
-      leads: periodLeads.length,
+      leads: leadCount,
       paidStudents: newCustomers.length,
       revenue,
       expenses: sourceExpenses,
-      cpl: periodLeads.length > 0 ? Math.round(sourceExpenses / periodLeads.length) : null,
+      cpl: leadCount > 0 ? Math.round(sourceExpenses / leadCount) : null,
       cac,
       roas: sourceExpenses > 0 ? Number((revenue / sourceExpenses).toFixed(2)) : null,
       ltvCac: cac !== null && cac > 0 && averageLtv !== null ? Number((averageLtv / cac).toFixed(2)) : null,

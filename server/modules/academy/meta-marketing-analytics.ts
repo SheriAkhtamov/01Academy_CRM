@@ -1,6 +1,7 @@
 import { query } from './academy-core';
 import { getMetaSpendCurrency } from '../../services/meta-marketing';
 import type { ReportingRange } from './academy-scheduling';
+import { metaWebsiteSubmissionSql } from '@shared/meta-website-leads';
 
 export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange) => {
   const creatives = await query(
@@ -15,12 +16,22 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
          AND attribution.captured_at >= $1
          AND attribution.captured_at < $2
      ),
+     period_intake AS (
+       SELECT attribution.lead_id, MIN(attribution.captured_at) AS acquired_at,
+         BOOL_AND(${metaWebsiteSubmissionSql('attribution')}) AS website_only
+       FROM period_attribution attribution GROUP BY attribution.lead_id
+     ),
      paid_by_lead AS (
-       SELECT payment.lead_id,
+       SELECT COALESCE(payment.lead_id, student.lead_id) AS lead_id,
               COALESCE(SUM(payment.amount_uzs) FILTER (WHERE payment.status = 'paid'), 0)::bigint AS revenue
        FROM academy_payments payment
-       WHERE payment.lead_id IS NOT NULL
-       GROUP BY payment.lead_id
+       LEFT JOIN academy_students student ON student.id = payment.student_id
+       JOIN period_intake intake ON intake.lead_id = COALESCE(payment.lead_id, student.lead_id)
+       WHERE NOT intake.website_only OR (
+         COALESCE(payment.paid_at, payment.created_at) >= intake.acquired_at
+         AND COALESCE(payment.paid_at, payment.created_at) <= NOW()
+       )
+       GROUP BY COALESCE(payment.lead_id, student.lead_id)
      ),
      enriched AS (
        SELECT attribution.*, COALESCE(payment.revenue, 0)::bigint AS revenue
@@ -130,6 +141,7 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
     const spend = toDisplaySpend(Number(creative.spend || 0));
     return {
       ...creative,
+      adId: creative.adId ?? null,
       leads,
       paid,
       revenue: Number(creative.revenue || 0),
@@ -188,8 +200,8 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
     summary: normalizedCreatives.reduce((summary, creative) => ({
       // `creatives` stays the count of ads that actually produced leads in the period;
       // `totalAds` is the whole account, so the pair reads as "11 of 48 brought leads".
-      creatives: summary.creatives + (creative.leads > 0 ? 1 : 0),
-      totalAds: summary.totalAds + 1,
+      creatives: summary.creatives + (creative.adId && creative.leads > 0 ? 1 : 0),
+      totalAds: summary.totalAds + (creative.adId ? 1 : 0),
       leads: summary.leads + creative.leads,
       paid: summary.paid + creative.paid,
       revenue: summary.revenue + creative.revenue,

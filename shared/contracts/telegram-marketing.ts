@@ -17,6 +17,7 @@ export const marketingBotSettingsSchema = z.object({
 
 export type MarketingBotReport = {
   leads: number;
+  uniqueLeads: number;
   reached: number;
   unreached: number;
   notCalled: number;

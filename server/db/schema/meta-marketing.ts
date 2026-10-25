@@ -68,6 +68,9 @@ export const createMetaMarketingTables = (references: {
     leadgenTouchUnique: uniqueIndex('meta_lead_attributions_leadgen_touch_unique')
       .on(table.leadgenId, table.touchType)
       .where(sql`${table.leadgenId} IS NOT NULL AND BTRIM(${table.leadgenId}) <> ''`),
+    websiteSubmissionUnique: uniqueIndex('meta_website_submission_unique')
+      .on(table.referralRef)
+      .where(sql`${table.provider} = 'meta' AND ${table.channel} = 'website' AND ${table.referralType} = 'landing_form'`),
     formIdx: index('meta_lead_attributions_form_idx').on(table.formId),
     leadIdx: index('meta_lead_attributions_lead_idx').on(table.leadId, table.capturedAt),
     adIdx: index('meta_lead_attributions_ad_idx').on(table.adId),

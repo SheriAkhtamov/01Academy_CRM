@@ -1,4 +1,14 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { isIP } from 'node:net';
+import { authenticateWebsiteLeadToken } from '../services/website-lead-tokens';
+
+export const websiteLeadRateLimitKey = (req: { ip?: string; get: (name: string) => string | undefined }) => {
+    const domain = authenticateWebsiteLeadToken(req.get('authorization'));
+    const visitorIp = req.get('x-website-client-ip') ?? '';
+    // Only the authenticated server of a website may supply a visitor address.
+    if (domain && isIP(visitorIp)) return `website:${domain}:${ipKeyGenerator(visitorIp)}`;
+    return ipKeyGenerator(req.ip || '127.0.0.1');
+};
 
 const rateLimitHandler = (_req: unknown, res: any) =>
     res.status(429).json({ error: 'tooManyRequests' });
@@ -39,6 +49,7 @@ export const inboundWebhookLimiter = rateLimit({
 export const websiteLeadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
+    keyGenerator: websiteLeadRateLimitKey,
     handler: rateLimitHandler,
     standardHeaders: true,
     legacyHeaders: false,

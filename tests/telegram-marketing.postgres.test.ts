@@ -28,7 +28,9 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text);
       CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp);
       CREATE TABLE academy_lead_import_records(id serial PRIMARY KEY, lead_id int, source_sheet text, payload jsonb, provider text);
-      CREATE TABLE meta_lead_attributions(lead_id int, ad_id text, leadgen_id text);
+      CREATE TABLE meta_lead_attributions(id serial PRIMARY KEY, lead_id int, ad_id text, leadgen_id text,
+        provider text DEFAULT 'meta', channel text DEFAULT 'instant_form', referral_type text,
+        referral_ref text, captured_at timestamp DEFAULT '2026-10-01', raw_payload jsonb);
       CREATE TABLE academy_students(id int PRIMARY KEY, lead_id int);
       CREATE TABLE telephony_calls(lead_id int, contact_type text, contact_id int, talk_seconds int, started_at timestamp);
       CREATE TABLE audit_logs(id serial PRIMARY KEY, entity_type text, entity_id int, action text, new_values jsonb, created_at timestamp);
@@ -43,7 +45,7 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
         (3,2,1,ARRAY['ru'],'ru','2026-10-02'),
         (4,3,NULL,NULL,'ru','2026-10-03'),
         (5,1,1,ARRAY['ru'],'ru','2026-09-01');
-      INSERT INTO meta_lead_attributions VALUES (1,'ad1','form1'),(1,'ad2','form2'),(4,'ad3',NULL);
+      INSERT INTO meta_lead_attributions(lead_id,ad_id,leadgen_id) VALUES (1,'ad1','form1'),(1,'ad2','form2'),(4,'ad3',NULL);
       INSERT INTO academy_students VALUES (10,1),(11,1),(20,2);
       INSERT INTO telephony_calls VALUES
         (1,'lead',1,0,'2026-10-03'),(NULL,'student',10,15,'2026-10-04'),
@@ -80,6 +82,26 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
       bookedStudents: 3, attendedStudents: 1, dueStudents: 2, payingLeads: 1, payments: 2, revenueUzs: 300,
       languages: { both: 1, uz: 1, ru: 1, unknown: 0, other: 0 },
     });
+  });
+  it('counts every landing submission in its own period, including old contacts, without multiplying money', async () => {
+    await pool.query(`
+      INSERT INTO meta_lead_attributions(lead_id,provider,channel,referral_type,referral_ref,captured_at,raw_payload) VALUES
+        (5,'meta','website','landing_form','request1','2026-10-24 05:00','{"courseSlug":"ai-kids"}'),
+        (5,'meta','website','landing_form','request2','2026-10-24 06:00','{"courseSlug":"ai-kids"}'),
+        (5,'meta','website','landing_form','request3','2026-10-24 07:00','{"courseSlug":"vibe-coding"}'),
+        (5,'meta','website','landing_form','previous','2026-10-23 18:59:59','{"courseSlug":"ai-kids"}'),
+        (5,'meta','website','landing_form','next','2026-10-24 19:00','{"courseSlug":"ai-kids"}');
+      INSERT INTO academy_payments VALUES
+        (5,NULL,'paid',999,'2026-10-01','2026-10-01'),
+        (5,NULL,'paid',100,'2026-10-24 08:00','2026-10-24 08:00');
+    `);
+    const facts = await getMarketingLeadFacts({ from: '2026-10-24', to: '2026-10-24', course: 'all', awaitingDates: false }, new Date('2026-10-24T12:00Z'));
+    expect(facts.map((fact) => fact.id)).toEqual([5,5,5]);
+    expect(summarizeMarketingLeads(facts, 'all')).toMatchObject({
+      leads: 3, uniqueLeads: 1, payingLeads: 1, payments: 1, revenueUzs: 100,
+    });
+    expect(summarizeMarketingLeads(facts, 'ai-kids').leads).toBe(2);
+    expect(summarizeMarketingLeads(facts, 'vibe-coding').leads).toBe(1);
   });
   it('serializes concurrent wrong passwords, locks after five, and invalidates sessions after password rotation', async () => {
     const hash = await hashMarketingPassword('fixture-pass');

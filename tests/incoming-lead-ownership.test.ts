@@ -77,6 +77,7 @@ describe('external lead ownership', () => {
             manager_id: null,
             language: params[6],
             comment: params[7],
+            course_id: params[10],
             languages: params[9],
           }],
         };
@@ -394,6 +395,7 @@ describe('external lead ownership', () => {
       ].join('\n'),
       1,
       [],
+      null,
     ]);
     const integrationLogCall = mocks.poolQuery.mock.calls.find(([sql]) =>
       String(sql).includes('INSERT INTO academy_integration_logs'));
@@ -450,6 +452,86 @@ describe('external lead ownership', () => {
     expect(response.status).toBe(202);
     expect(response.body).toEqual({ ok: true });
     expect(mocks.clientQuery).not.toHaveBeenCalled();
+  });
+
+  const sendMeta = (submissionId: string, courseId = 'explorer') => request(createApp())
+    .post('/api/incoming/website-lead')
+    .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+    .send({ name: 'Meta Client', phone: '+998904445566', submissionId,
+      pageUrl: `https://01academy.uz/ru/meta/courses/${courseId}?ad_id=123456&utm_campaign=Summer` });
+
+  it.each(['explorer', 'creator', 'professional'])('records %s as a Meta acquisition in the same transaction', async (courseId) => {
+    const response = await sendMeta('00000000-0000-4000-8000-000000000001', courseId);
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toContain('Заявка из Meta');
+    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'))?.[1])
+      .toEqual(['meta_website', 'Meta · сайт', 'website']);
+    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('FROM academy_integration_funnel_settings'))?.[1])
+      .toEqual(['meta']);
+    const insert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO meta_lead_attributions'));
+    expect(insert?.[1]?.slice(0, 4)).toEqual([77, '00000000-0000-4000-8000-000000000001',
+      `https://01academy.uz/ru/meta/courses/${courseId}?ad_id=123456&utm_campaign=Summer`, '123456']);
+    expect(JSON.parse(String(insert?.[1]?.[14]))).toMatchObject({ courseId });
+    const sql = mocks.clientQuery.mock.calls.map(([statement]) => String(statement));
+    expect(sql.indexOf(String(insert?.[0]))).toBeLessThan(sql.indexOf('COMMIT'));
+  });
+
+  it('counts three separate submissions by an existing contact as three acquisitions without new leads', async () => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation((sqlValue, params) => String(sqlValue).includes("SELECT 'lead' AS entity_type")
+      ? Promise.resolve({ rows: [{ entity_type: 'lead', id: 55, lead_id: null }] })
+      : defaultQuery(sqlValue, params));
+    for (const suffix of ['1', '2', '3']) {
+      expect((await sendMeta(`00000000-0000-4000-8000-00000000000${suffix}`)).status).toBe(409);
+    }
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO meta_lead_attributions'))).toHaveLength(3);
+    expect(mocks.clientQuery.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO academy_lead_comments'))).toHaveLength(3);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /INSERT INTO academy_leads|UPDATE academy_leads/.test(String(sql)))).toBe(false);
+  });
+
+  it('acknowledges a retry of an already saved submission without adding another acquisition or comment', async () => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation((sqlValue, params) => String(sqlValue).includes('attribution.referral_ref = $1')
+      ? Promise.resolve({ rows: [{ lead_id: 55 }] }) : defaultQuery(sqlValue, params));
+    expect((await sendMeta('00000000-0000-4000-8000-000000000001')).status).toBe(409);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /INSERT INTO meta_lead_attributions|INSERT INTO academy_lead_comments/.test(String(sql)))).toBe(false);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each([null, 55])('records a student request with original linked lead %s', async (leadId) => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation((sqlValue, params) => String(sqlValue).includes("SELECT 'lead' AS entity_type")
+      ? Promise.resolve({ rows: [{ entity_type: 'student', id: 88, lead_id: leadId }] })
+      : defaultQuery(sqlValue, params));
+    const response = await sendMeta('00000000-0000-4000-8000-000000000001');
+    expect(response.status).toBe(leadId ? 409 : 201);
+    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO meta_lead_attributions'))?.[1]?.[0])
+      .toBe(leadId ?? 77);
+    const link = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('UPDATE academy_students SET lead_id'));
+    if (!leadId) expect(link?.[1]).toEqual([77, 88]);
+    else expect(link).toBeUndefined();
+  });
+
+  it('rolls back the lead and comment if its Meta acquisition cannot be saved', async () => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation((sqlValue, params) => {
+      if (String(sqlValue).includes('INSERT INTO meta_lead_attributions')) throw new Error('storage unavailable');
+      return defaultQuery(sqlValue, params);
+    });
+    expect((await sendMeta('00000000-0000-4000-8000-000000000001')).status).toBe(500);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Meta request without a submission ID while ordinary pages remain ordinary website leads', async () => {
+    expect((await sendMeta('invalid')).status).toBe(400);
+    expect(mocks.clientQuery).not.toHaveBeenCalled();
+    const response = await request(createApp()).post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Organic Client', phone: '+998904445566', pageUrl: 'https://01academy.uz/ru/courses/explorer?utm_source=meta' });
+    expect(response.status).toBe(201);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO meta_lead_attributions'))).toBe(false);
   });
 
   it('uses the destination intake for Meta Instagram and creates follow-up tasks only when assigned', () => {

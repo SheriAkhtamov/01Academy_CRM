@@ -15,6 +15,11 @@ vi.mock('../server/realtime/realtime-hub', () => ({
   publishRealtimeEvent: mocks.broadcast,
 }));
 
+vi.mock('../server/middleware/rateLimiter', () => ({
+  inboundWebhookLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  websiteLeadLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 vi.mock('../server/config', () => ({
   appConfig: {
     integrations: {
@@ -71,6 +76,7 @@ describe('external lead ownership', () => {
             messenger: params[2] ?? null,
             manager_id: null,
             language: params[6],
+            comment: params[7],
             languages: params[9],
           }],
         };
@@ -124,6 +130,211 @@ describe('external lead ownership', () => {
     expect(response.status).toBe(401);
     expect(mocks.clientQuery).not.toHaveBeenCalled();
     expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['explorer', 'AI Explorer'],
+    ['creator', 'AI Creator'],
+    ['professional', 'AI Professional'],
+  ])('saves interest in %s to visible comment history and the legacy field', async (courseId, courseName) => {
+    const pageUrl = `https://01academy.uz/ru/courses/${courseId}`;
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({
+        contactName: 'Course Client',
+        phone: '+998904445566',
+        courseId,
+        courseName: 'Untrusted display name',
+        pageUrl,
+        company: 'Acme',
+        team: '3 человека',
+        message: 'Позвоните после 18:00',
+      });
+
+    const comment = [
+      `Интересуется ${courseName}`,
+      'Компания: Acme',
+      'Отдел / размер группы: 3 человека',
+      'Комментарий: Позвоните после 18:00',
+      `Страница заявки: ${pageUrl}`,
+    ].join('\n');
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toBe(comment);
+    const commentInsert = mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_comments'));
+    expect(commentInsert?.[1]).toEqual([77, 1, comment]);
+    const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+    expect(statements.indexOf('BEGIN')).toBeLessThan(statements.indexOf(String(commentInsert?.[0])));
+    expect(statements.indexOf(String(commentInsert?.[0]))).toBeLessThan(statements.indexOf('COMMIT'));
+  });
+
+  it.each([
+    ['https://01academy.uz/ru/courses/explorer', 'AI Explorer'],
+    ['https://01academy.uz/uz/courses/creator?utm_source=header', 'AI Creator'],
+    ['https://www.01academy.uz/ru/courses/professional/', 'AI Professional'],
+  ])('uses the authenticated course page %s when CTA context is absent', async (pageUrl, courseName) => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Header CTA Client', phone: '+998904445566', pageUrl });
+
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toBe(`Интересуется ${courseName}\nСтраница заявки: ${pageUrl}`);
+    expect(mocks.clientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_comments'))?.[1])
+      .toEqual([77, 1, response.body.comment]);
+  });
+
+  it('recognizes a known course name without an ID', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Course Name Client', phone: '+998904445566', courseName: 'AI Creator' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toBe('Интересуется AI Creator');
+  });
+
+  it.each([
+    'https://01academy.uz/ru',
+    'https://01academy.uz/ru/courses',
+    'https://01academy.uz/ru/courses/unknown',
+    'https://other.example/ru/courses/explorer',
+    'https://01academy.uz.other.example/ru/courses/explorer',
+    'https://01academy.uz/ru/courses/explorer/details',
+    '/ru/courses/explorer',
+    'invalid-url',
+  ])('does not infer course interest from %s', async (pageUrl) => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({
+        name: 'General Inquiry',
+        phone: '+998904445566',
+        courseId: 'unknown',
+        courseName: 'Unknown Course',
+        pageUrl,
+        message: 'Общая консультация',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toBe(`Комментарий: Общая консультация\nСтраница заявки: ${pageUrl}`);
+  });
+
+  it('preserves text limits when saving visible comments', async () => {
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({
+        name: 'Long Message Client',
+        phone: '+998904445566',
+        company: 'c'.repeat(300),
+        team: 't'.repeat(300),
+        message: 'm'.repeat(2100),
+        pageUrl: 'p'.repeat(2100),
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toBe([
+      `Компания: ${'c'.repeat(255)}`,
+      `Отдел / размер группы: ${'t'.repeat(255)}`,
+      `Комментарий: ${'m'.repeat(2000)}`,
+      `Страница заявки: ${'p'.repeat(2000)}`,
+    ].join('\n'));
+  });
+
+  it.each([false, true])('rolls back when a course comment fails (duplicate: %s)', async (isDuplicate) => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation(async (sqlValue: unknown, params: unknown[] = []) => {
+      if (isDuplicate && String(sqlValue).includes("SELECT 'lead' AS entity_type")) {
+        return { rows: [{ entity_type: 'lead', id: 55, lead_id: null }] };
+      }
+      if (String(sqlValue).includes('INSERT INTO academy_lead_comments')) {
+        throw new Error('Comment storage failed');
+      }
+      return defaultQuery(sqlValue, params);
+    });
+
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Course Client', phone: '+998904445566', courseId: 'explorer' });
+
+    expect(response.status).toBe(500);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mocks.clientQuery).not.toHaveBeenCalledWith('COMMIT');
+    expect(mocks.release).toHaveBeenCalledOnce();
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('keeps duplicate rejection without a comment for an unknown course', async () => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation(async (sqlValue: unknown, params: unknown[] = []) => {
+      if (String(sqlValue).includes("SELECT 'lead' AS entity_type")) {
+        return { rows: [{ entity_type: 'lead', id: 55, lead_id: null }] };
+      }
+      return defaultQuery(sqlValue, params);
+    });
+
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Existing Client', phone: '+998904445566', courseId: 'unknown' });
+
+    expect(response.status).toBe(409);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_comments'))).toBe(false);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['lead', 55, null, 55],
+    ['student', 88, 55, 55],
+    ['student', 88, null, null],
+  ])('preserves course interest on a duplicate %s with linked lead %s/%s', async (entityType, id, leadId, expectedLeadId) => {
+    const defaultQuery = mocks.clientQuery.getMockImplementation()!;
+    mocks.clientQuery.mockImplementation(async (sqlValue: unknown, params: unknown[] = []) => {
+      if (String(sqlValue).includes("SELECT 'lead' AS entity_type")) {
+        return { rows: [{ entity_type: entityType, id, lead_id: leadId }] };
+      }
+      return defaultQuery(sqlValue, params);
+    });
+
+    const response = await request(createApp())
+      .post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({
+        name: 'Existing Client',
+        phone: '+998904445566',
+        courseId: 'creator',
+        message: 'Хочу узнать о другом курсе',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.duplicate).toMatchObject({ entityType, id, leadId });
+    const commentInserts = mocks.clientQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes('INSERT INTO academy_lead_comments'));
+    if (expectedLeadId) {
+      expect(commentInserts).toHaveLength(1);
+      expect(commentInserts[0]?.[1]).toEqual([
+        expectedLeadId,
+        1,
+        'Интересуется AI Creator\nКомментарий: Хочу узнать о другом курсе',
+      ]);
+      expect(mocks.broadcast).toHaveBeenCalledExactlyOnceWith({
+        type: 'ACADEMY_LEAD_UPDATED',
+        data: { id: expectedLeadId },
+      });
+      const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(statements.indexOf(String(commentInserts[0]?.[0]))).toBeLessThan(statements.indexOf('COMMIT'));
+    } else {
+      expect(commentInserts).toHaveLength(0);
+      expect(mocks.broadcast).not.toHaveBeenCalled();
+    }
+    expect(mocks.clientQuery.mock.calls.some(([sql]) =>
+      /(?:INSERT INTO academy_leads|UPDATE academy_leads|INSERT INTO academy_lead_stage_history)/.test(String(sql))))
+      .toBe(false);
   });
 
   it.each(['ru', 'uz', 'en'])('preserves the %s language provided by the website', async (language) => {

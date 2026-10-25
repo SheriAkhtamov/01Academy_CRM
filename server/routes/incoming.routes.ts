@@ -20,6 +20,7 @@ import {
 import { resolveLeadFunnelId } from '../services/lead-funnels';
 import { websiteIntegrationProvider } from '../services/website-integrations';
 import { authenticateWebsiteLeadToken } from '../services/website-lead-tokens';
+import { buildWebsiteLeadComment } from '../services/website-lead-comment';
 
 const router = Router();
 
@@ -278,6 +279,19 @@ const syncIncomingLeadPhone = async (executor: QueryExecutor, leadId: number, ph
   );
 };
 
+const appendIncomingLeadComment = async (
+  executor: QueryExecutor,
+  leadId: number,
+  authorId: number,
+  comment: string,
+) => {
+  await executor.query(
+    `INSERT INTO academy_lead_comments (lead_id, author_id, body)
+     VALUES ($1, $2, $3)`,
+    [leadId, authorId, comment],
+  );
+};
+
 const findIncomingDuplicate = async (
   executor: QueryExecutor,
   phone: string | null | undefined,
@@ -350,18 +364,28 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     if (!phone && !messenger) return res.status(400).json({ error: 'contactRequired' });
 
     const storedPhone = phone ? (normalizePhoneForStorage(phone)?.phone ?? phone) : null;
-    const comment = [
-      company ? `Компания: ${company}` : null,
-      team ? `Отдел / размер группы: ${team}` : null,
-      message ? `Комментарий: ${message}` : null,
-      pageUrl ? `Страница заявки: ${pageUrl}` : null,
-    ].filter((line): line is string => Boolean(line)).join('\n') || null;
+    const { comment, courseName } = buildWebsiteLeadComment({
+      siteDomain,
+      courseId: body.courseId,
+      courseName: body.courseName,
+      company,
+      team,
+      message,
+      pageUrl,
+    });
 
     const result = await withIncomingTransaction(async (client) => {
       const systemUserId = await getSystemUserId(client);
       await lockIncomingContact(client, phone, messenger);
       const duplicate = await findIncomingDuplicate(client, phone, messenger);
-      if (duplicate) return { duplicate: camelize(duplicate), lead: null };
+      if (duplicate) {
+        const duplicateLeadId = duplicate.entity_type === 'lead' ? duplicate.id : duplicate.lead_id;
+        const commentLeadId = courseName && comment && duplicateLeadId ? Number(duplicateLeadId) : null;
+        if (commentLeadId && comment) {
+          await appendIncomingLeadComment(client, commentLeadId, systemUserId, comment);
+        }
+        return { duplicate: camelize(duplicate), lead: null, commentLeadId };
+      }
 
       const sourceId = await ensureIncomingSourceId(client, {
         code: integrationProvider,
@@ -378,16 +402,20 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
       );
       const lead = camelize(inserted[0]);
       if (storedPhone) await syncIncomingLeadPhone(client, lead.id, storedPhone);
+      if (comment) await appendIncomingLeadComment(client, lead.id, systemUserId, comment);
       await client.query(
         `INSERT INTO academy_lead_stage_history (lead_id, from_status_code, to_status_code, changed_by, comment)
          VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,'Заявка с сайта')`,
         [lead.id, systemUserId],
       );
-      return { duplicate: null, lead };
+      return { duplicate: null, lead, commentLeadId: null };
     });
 
     if (result.duplicate) {
       await logIntegration(integrationProvider, 'inbound', 'duplicate', integrationPayload);
+      if (result.commentLeadId) {
+        publishRealtimeEvent({ type: 'ACADEMY_LEAD_UPDATED', data: { id: result.commentLeadId } });
+      }
       return res.status(409).json({ error: 'Duplicate lead or student', duplicate: result.duplicate });
     }
 

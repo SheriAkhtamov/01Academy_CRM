@@ -2,11 +2,14 @@ import { z } from 'zod';
 
 export const marketingBotCourses = ['all', 'ai-kids', 'vibe-coding', 'ai-creator', 'other', 'unknown'] as const;
 export type MarketingBotCourse = typeof marketingBotCourses[number];
+export const marketingBotPresets = ['today', 'yesterday', 'week', 'month', 'previous', 'custom'] as const;
 export const marketingBotStateSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   course: z.enum(marketingBotCourses).default('all'),
   awaitingDates: z.boolean().default(false),
+  // Old sessions contain dates only; preserve them rather than guessing a custom range.
+  preset: z.enum(marketingBotPresets).optional(),
 });
 export type MarketingBotState = z.infer<typeof marketingBotStateSchema>;
 

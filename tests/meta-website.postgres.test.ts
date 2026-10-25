@@ -7,6 +7,8 @@ import { findMetaWebsiteReceipt, saveMetaWebsiteAttribution } from '../server/se
 import { createMarketingLeadFactsReader } from '../server/modules/telegram-marketing/infrastructure/report-repository';
 import { summarizeMarketingLeads } from '../server/modules/telegram-marketing/domain/report';
 import { buildMarketingSourceMetrics } from '../server/modules/academy/marketing-source-metrics';
+import { marketingAcquisitions } from '../server/modules/academy/marketing-acquisitions';
+import { marketingReportingCohortSql, metaReportingIntakesSql } from '../server/services/meta-reporting-intakes';
 
 const mocks = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock('../server/modules/academy/academy-core', () => ({ query: mocks.query }));
@@ -110,11 +112,59 @@ describe.skipIf(!url)('Meta landing persisted acquisitions across all reporting 
   it('includes all three in source metrics even though the contact predates the period', async () => {
     const sources = await mocks.query('SELECT * FROM academy_lead_sources', []);
     const leads = await mocks.query('SELECT * FROM academy_leads', []);
-    const metaWebsiteSubmissions = await mocks.query('SELECT lead_id,captured_at FROM meta_lead_attributions', []);
-    const report = buildMarketingSourceMetrics({ sources, leads, metaWebsiteSubmissions,
+    const metaIntakes = await mocks.query(`WITH ${metaReportingIntakesSql} SELECT * FROM meta_intakes`, []);
+    const report = buildMarketingSourceMetrics({ sources, leads, metaIntakes,
       students: [], paidPayments: [], expenses: [], periodStart: range.start, periodEnd: range.end, recognizedExpense: () => 0 });
     expect(report.find((source) => source.sourceId === 9)?.leads).toBe(3);
     expect((await pool.query('SELECT source_id FROM academy_leads WHERE id=501')).rows[0].source_id).toBe(2);
+  });
+
+  it('agrees across bot, Meta ads, forms, source totals and funnel for repeat native submissions', async () => {
+    const nativeRange = { from: '2026-10-25', to: '2026-10-25',
+      start: new Date('2026-10-24T19:00Z'), end: new Date('2026-10-25T19:00Z') };
+    await pool.query(`
+      INSERT INTO academy_lead_sources VALUES (10,'meta_lead_ads','Meta'),(11,'meta_lead_ads_facebook','Meta Facebook');
+      INSERT INTO academy_leads VALUES
+        (502,2,1,ARRAY['ru'],'ru','2026-09-01'),
+        (503,10,NULL,ARRAY['uz'],'uz','2026-10-25 06:00'),
+        (504,10,NULL,ARRAY['uz'],'uz','2026-10-25 07:00');
+      INSERT INTO academy_students VALUES(602,502);
+      INSERT INTO meta_lead_attributions(lead_id,provider,channel,referral_type,leadgen_id,form_id,ad_id,placement,captured_at) VALUES
+        (502,'meta','instant_form','leadgen','101','form1','ad1','instagram','2026-10-25 04:00'),
+        (502,'meta','instant_form','leadgen','102','form2','ad2','facebook','2026-10-25 05:00'),
+        (503,'meta','instant_form','leadgen','103','form1','ad1','instagram','2026-10-25 06:00');
+      INSERT INTO academy_lead_import_records(lead_id,provider,external_id,source_sheet) VALUES
+        (502,'meta_lead_ads_live','101','AI Kids'),(502,'meta_lead_ads_live','102','Вайбкодинг');
+      INSERT INTO academy_payments VALUES
+        (502,NULL,'paid',999,'2026-09-01','2026-09-01'),
+        (NULL,602,'paid',100,'2026-10-25 08:00','2026-10-25 08:00'),
+        (502,NULL,'refunded',500,'2026-10-25 09:00','2026-10-25 09:00'),
+        (502,NULL,'paid',-100,'2026-10-25 09:00','2026-10-25 09:00'),
+        (502,NULL,'paid',700,'2999-01-01','2026-10-25 09:00');
+    `);
+    const facts = await createMarketingLeadFactsReader(pool)({ ...nativeRange, course: 'all', awaitingDates: false }, new Date('2026-10-25T12:00Z'));
+    const bot = summarizeMarketingLeads(facts, 'all');
+    expect(bot).toMatchObject({ leads: 4, uniqueLeads: 3, payments: 1, payingLeads: 1, revenueUzs: 100 });
+    expect(summarizeMarketingLeads(facts, 'ai-kids').leads).toBe(1);
+    expect(summarizeMarketingLeads(facts, 'vibe-coding').leads).toBe(1);
+    const dashboard = await getMetaAttributionAnalytics(nativeRange);
+    expect(dashboard.summary).toMatchObject({ leads: 4, paid: 1, revenue: 100 });
+    expect(dashboard.forms.reduce((sum, form) => sum + Number(form.leads), 0)).toBe(3);
+    expect(dashboard.forms.reduce((sum, form) => sum + Number(form.revenue), 0)).toBe(100);
+    const sources = await mocks.query('SELECT * FROM academy_lead_sources', []);
+    const leads = await mocks.query('SELECT * FROM academy_leads', []);
+    const metaIntakes = await mocks.query(`WITH ${metaReportingIntakesSql} SELECT * FROM meta_intakes`, []);
+    const args = { sources, leads, metaIntakes, periodStart: nativeRange.start, periodEnd: nativeRange.end };
+    const bySource = buildMarketingSourceMetrics({ ...args, students: [], paidPayments: [], expenses: [], recognizedExpense: () => 0 });
+    expect(bySource.find((source) => source.sourceId === 10)?.leads).toBe(3);
+    expect(bySource.find((source) => source.sourceId === 11)?.leads).toBe(1);
+    expect(bySource.reduce((sum, source) => sum + source.leads, 0)).toBe(bot.leads);
+    const acquisitions = marketingAcquisitions(args);
+    expect(acquisitions).toHaveLength(bot.leads);
+    const cohort: Array<{ leadId: number; sourceIds: number[] }> = await mocks.query(`WITH ${marketingReportingCohortSql} SELECT * FROM marketing_cohort`, [nativeRange.start, nativeRange.end]);
+    expect(cohort).toHaveLength(bot.uniqueLeads);
+    expect(cohort.find((lead) => lead.leadId === 502)?.sourceIds).toEqual([10,11]);
+    expect(new Set(acquisitions.map((intake) => intake.leadId)).size).toBe(cohort.length);
   });
 
   it('rolls back a failed request together with its acquisition fact', async () => {

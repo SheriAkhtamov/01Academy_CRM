@@ -43,8 +43,10 @@ export function createMarketingBotService(ports: MarketingBotPorts) {
     }
 
     const parsed = marketingBotStateSchema.safeParse(session.state);
-    let state: MarketingBotState = parsed.success && validMarketingPeriod(parsed.data.from, parsed.data.to, now)
-      ? parsed.data : { ...marketingPeriod('week', now), course: 'all', awaitingDates: false };
+    const saved = parsed.success ? parsed.data : null;
+    if (saved?.preset && saved.preset !== 'custom') Object.assign(saved, marketingPeriod(saved.preset, now));
+    let state: MarketingBotState = saved && validMarketingPeriod(saved.from, saved.to, now)
+      ? saved : { ...marketingPeriod('week', now), preset: 'week', course: 'all', awaitingDates: false };
     const save = () => ports.access.saveState(botId, chatId, config.passwordHash, state);
     const action = event.callbackId ? event.text : '';
     if (action === 'mr:logout' || event.text === '/logout') {
@@ -64,12 +66,12 @@ export function createMarketingBotService(ports: MarketingBotPorts) {
       const range = parseMarketingDates(event.text, now);
       if (!range) return reply(`Проверьте даты: не позднее сегодня, период до 366 дней.\n${marketingDatePrompt}`,
         group ? { force_reply: true } : undefined, group);
-      state = { ...state, ...range, awaitingDates: false };
+      state = { ...state, ...range, preset: 'custom', awaitingDates: false };
     }
     if (action.startsWith('mr:p:')) {
       const preset = action.slice(5);
       if (['today', 'yesterday', 'week', 'month', 'previous'].includes(preset)) {
-        state = { ...state, ...marketingPeriod(preset, now), awaitingDates: false };
+        state = { ...state, ...marketingPeriod(preset, now), preset: preset as MarketingBotState['preset'], awaitingDates: false };
       }
     }
     if (action.startsWith('mr:c:') && marketingBotCourses.includes(action.slice(5) as MarketingBotCourse)) {

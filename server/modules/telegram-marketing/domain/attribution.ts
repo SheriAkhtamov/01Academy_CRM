@@ -13,11 +13,14 @@ const courseFromName = (name: string | null | undefined): Exclude<MarketingBotCo
 };
 
 export function resolveMarketingCourse(evidence: Evidence): Exclude<MarketingBotCourse, 'all'> {
+  // The form belongs to this submission; a returning contact may have a different CRM course.
+  const formCourse = courseFromName(evidence.formName);
+  if (formCourse) return formCourse;
   if (evidence.courseSlug) {
     return ['ai-kids', 'vibe-coding', 'ai-creator'].includes(evidence.courseSlug)
       ? evidence.courseSlug as Exclude<MarketingBotCourse, 'all'> : 'other';
   }
-  return courseFromName(evidence.formName) ?? courseFromName(evidence.campaignName) ?? 'unknown';
+  return courseFromName(evidence.campaignName) ?? 'unknown';
 }
 
 export function resolveMarketingLanguages(evidence: {

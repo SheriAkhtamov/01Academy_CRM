@@ -1,36 +1,35 @@
 import { query } from './academy-core';
 import { getMetaSpendCurrency } from '../../services/meta-marketing';
 import type { ReportingRange } from './academy-scheduling';
-import { metaWebsiteSubmissionSql } from '@shared/meta-website-leads';
+import { metaReportingAttributionsSql } from '../../services/meta-reporting-intakes';
 
 export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange) => {
   const creatives = await query(
-    `WITH period_attribution AS (
+    `WITH ${metaReportingAttributionsSql}, period_attribution AS (
        SELECT attribution.*,
               ROW_NUMBER() OVER (
                 PARTITION BY attribution.lead_id
                 ORDER BY attribution.captured_at, attribution.id
               ) AS lead_rank
-       FROM meta_lead_attributions attribution
+       FROM reporting_attributions attribution
        WHERE attribution.lead_id IS NOT NULL
          AND attribution.captured_at >= $1
          AND attribution.captured_at < $2
+         AND attribution.captured_at <= timezone('UTC', now())
      ),
      period_intake AS (
-       SELECT attribution.lead_id, MIN(attribution.captured_at) AS acquired_at,
-         BOOL_AND(${metaWebsiteSubmissionSql('attribution')}) AS website_only
+       SELECT attribution.lead_id, MIN(attribution.captured_at) AS acquired_at
        FROM period_attribution attribution GROUP BY attribution.lead_id
      ),
      paid_by_lead AS (
        SELECT COALESCE(payment.lead_id, student.lead_id) AS lead_id,
-              COALESCE(SUM(payment.amount_uzs) FILTER (WHERE payment.status = 'paid'), 0)::bigint AS revenue
+              COALESCE(SUM(payment.amount_uzs), 0)::bigint AS revenue
        FROM academy_payments payment
        LEFT JOIN academy_students student ON student.id = payment.student_id
        JOIN period_intake intake ON intake.lead_id = COALESCE(payment.lead_id, student.lead_id)
-       WHERE NOT intake.website_only OR (
-         COALESCE(payment.paid_at, payment.created_at) >= intake.acquired_at
-         AND COALESCE(payment.paid_at, payment.created_at) <= NOW()
-       )
+       WHERE payment.status = 'paid' AND payment.amount_uzs > 0
+         AND COALESCE(payment.paid_at, payment.created_at) >= intake.acquired_at
+         AND COALESCE(payment.paid_at, payment.created_at) <= timezone('UTC', now())
        GROUP BY COALESCE(payment.lead_id, student.lead_id)
      ),
      enriched AS (
@@ -154,20 +153,22 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
   // Which Instant Form a lead filled in is a separate question from which ad showed it,
   // so the forms are counted on their own rather than folded into the ad rows.
   const forms = await query(
-    `WITH selected AS (
+    `WITH ${metaReportingAttributionsSql}, selected AS (
        SELECT attribution.id,
               attribution.lead_id,
               attribution.form_id,
               attribution.leadgen_id,
+              MIN(attribution.captured_at) OVER (PARTITION BY attribution.lead_id) AS acquired_at,
               ROW_NUMBER() OVER (
                 PARTITION BY attribution.lead_id
                 ORDER BY attribution.captured_at, attribution.id
               ) AS lead_rank
-       FROM meta_lead_attributions attribution
+       FROM reporting_attributions attribution
        WHERE attribution.lead_id IS NOT NULL
          AND attribution.form_id IS NOT NULL
          AND attribution.captured_at >= $1
          AND attribution.captured_at < $2
+         AND attribution.captured_at <= timezone('UTC', now())
      )
      SELECT
        selected.form_id,
@@ -186,9 +187,13 @@ export const getMetaAttributionAnalytics = async (reportingRange: ReportingRange
        LIMIT 1
      ) record ON true
      LEFT JOIN LATERAL (
-       SELECT COALESCE(SUM(payment_inner.amount_uzs) FILTER (WHERE payment_inner.status = 'paid'), 0)::bigint AS revenue
+       SELECT COALESCE(SUM(payment_inner.amount_uzs), 0)::bigint AS revenue
        FROM academy_payments payment_inner
-       WHERE payment_inner.lead_id = selected.lead_id
+       LEFT JOIN academy_students student ON student.id = payment_inner.student_id
+       WHERE COALESCE(payment_inner.lead_id, student.lead_id) = selected.lead_id
+         AND payment_inner.status = 'paid' AND payment_inner.amount_uzs > 0
+         AND COALESCE(payment_inner.paid_at, payment_inner.created_at) >= selected.acquired_at
+         AND COALESCE(payment_inner.paid_at, payment_inner.created_at) <= timezone('UTC', now())
      ) payment ON true
      GROUP BY selected.form_id
      ORDER BY COUNT(*) DESC`,
@@ -217,12 +222,13 @@ export const getMetaAttributionLeads = async (
   reportingRange: ReportingRange,
   attributionKey: string,
 ) => query(
-  `WITH period_attribution AS (
+  `WITH ${metaReportingAttributionsSql}, period_attribution AS (
      SELECT attribution.*
-     FROM meta_lead_attributions attribution
+     FROM reporting_attributions attribution
      WHERE attribution.lead_id IS NOT NULL
        AND attribution.captured_at >= $1
        AND attribution.captured_at < $2
+       AND attribution.captured_at <= timezone('UTC', now())
    )
    SELECT attribution.id AS attribution_id,
           lead.id,

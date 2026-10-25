@@ -99,6 +99,27 @@ describe('marketing bot flow', () => {
     expect(ports.telegram).toHaveBeenCalledWith(config.botToken, 'answerCallbackQuery', { callback_query_id: 'cb' });
     expect(ports.facts).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-24', to: '2026-10-24' }), now);
     expect(response).toMatchObject({ method: 'editMessageText', message_id: 7 });
+    expect(ports.access.saveState).toHaveBeenCalledWith('100', '42', 'hash', expect.objectContaining({ preset: 'today' }));
+  });
+  it.each(['today', 'yesterday', 'week', 'month', 'previous'] as const)('refreshes a saved %s relative to the current Tashkent day', async (preset) => {
+    const { ports, handle } = setup();
+    vi.mocked(ports.access.get).mockResolvedValue({ state: {
+      ...state, ...marketingPeriod(preset, new Date('2026-09-10T10:00Z')), preset,
+    } });
+    await handle(config, { userId: '42', chatId: 42, text: 'mr:refresh', messageId: 7, callbackId: 'cb' });
+    expect(ports.facts).toHaveBeenCalledWith(expect.objectContaining({ ...marketingPeriod(preset, now), preset }), now);
+  });
+  it.each([undefined, 'custom'] as const)('preserves explicit dates in a %s session on refresh', async (preset) => {
+    const { ports, handle } = setup();
+    vi.mocked(ports.access.get).mockResolvedValue({ state: { ...state, preset } });
+    await handle(config, { userId: '42', chatId: 42, text: 'mr:refresh', messageId: 7, callbackId: 'cb' });
+    expect(ports.facts).toHaveBeenCalledWith(expect.objectContaining({ from: state.from, to: state.to }), now);
+  });
+  it('keeps entered custom dates fixed after a relative preset', async () => {
+    const { ports, handle } = setup();
+    vi.mocked(ports.access.get).mockResolvedValue({ state: { ...state, preset: 'week', awaitingDates: true } });
+    await handle(config, { userId: '42', chatId: 42, text: '01.10.2026 — 05.10.2026', messageId: 8 });
+    expect(ports.facts).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-01', to: '2026-10-05', preset: 'custom' }), now);
   });
   it('prompts for one shared group password, including when an old report button is clicked', async () => {
     const { ports, handle } = setup(false);

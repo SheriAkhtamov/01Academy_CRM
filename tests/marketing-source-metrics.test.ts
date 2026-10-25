@@ -22,11 +22,11 @@ describe('marketing source attribution', () => {
     const result = calculate({
       sources: [{ id: 9, code: 'meta_website', name: 'Meta · сайт' }],
       leads: [{ id: 1, sourceId: 9, createdAt: '2026-09-01T00:00:00Z' }],
-      metaWebsiteSubmissions: [
-        { leadId: 1, capturedAt: '2026-10-05T00:00:00Z' },
-        { leadId: 1, capturedAt: '2026-10-05T00:01:00Z' },
-        { leadId: 1, capturedAt: '2026-10-05T00:02:00Z' },
-        { leadId: 1, capturedAt: '2026-09-01T00:00:00Z' },
+      metaIntakes: [
+        { leadId: 1, sourceCode: 'meta_website', acquiredAt: '2026-10-05T00:00:00Z' },
+        { leadId: 1, sourceCode: 'meta_website', acquiredAt: '2026-10-05T00:01:00Z' },
+        { leadId: 1, sourceCode: 'meta_website', acquiredAt: '2026-10-05T00:02:00Z' },
+        { leadId: 1, sourceCode: 'meta_website', acquiredAt: '2026-09-01T00:00:00Z' },
       ],
       paidPayments: [{ leadId: 1, amountUzs: 100, paidAt: '2026-10-06T00:00:00Z' }],
       expenses: [{ sourceId: 9, amountUzs: 300 }],

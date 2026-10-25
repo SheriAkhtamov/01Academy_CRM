@@ -1,4 +1,4 @@
-import { META_WEBSITE_SOURCE } from '@shared/meta-website-leads';
+import { marketingAcquisitions } from './marketing-acquisitions';
 
 type MetricRow = Record<string, any>;
 
@@ -37,19 +37,20 @@ export function marketingPaymentAttribution(students: MetricRow[]) {
 }
 
 export function buildMarketingSourceMetrics({
-  sources, leads, students, paidPayments, expenses, periodStart, periodEnd, recognizedExpense, metaWebsiteSubmissions = [],
+  sources, leads, students, paidPayments, expenses, periodStart, periodEnd, recognizedExpense, metaIntakes = [],
 }: {
   sources: MetricRow[];
   leads: MetricRow[];
   students: MetricRow[];
   paidPayments: MetricRow[];
   expenses: MetricRow[];
-  metaWebsiteSubmissions?: MetricRow[];
+  metaIntakes?: MetricRow[];
   periodStart: Date;
   periodEnd: Date;
   recognizedExpense: (expense: MetricRow) => number;
 }) {
   const leadById = new Map(leads.map((lead) => [Number(lead.id), lead]));
+  const acquisitions = marketingAcquisitions({ sources, leads, metaIntakes, periodStart, periodEnd });
   const inPeriod = (value: unknown) => {
     const timestamp = dateValue(value);
     return timestamp !== null && timestamp >= periodStart.getTime() && timestamp < periodEnd.getTime();
@@ -76,10 +77,7 @@ export function buildMarketingSourceMetrics({
 
   return sources.map((source) => {
     const sourceId = Number(source.id);
-    const periodLeads = leads.filter((lead) => Number(lead.sourceId) === sourceId && inPeriod(lead.createdAt));
-    const leadCount = source.code === META_WEBSITE_SOURCE.code
-      ? metaWebsiteSubmissions.filter((submission) => inPeriod(submission.capturedAt)).length
-      : periodLeads.length;
+    const leadCount = acquisitions.filter((intake) => intake.sourceId === sourceId).length;
     const newCustomers = [...customerTotals.values()].filter((customer) => customer.sourceId === sourceId
       && customer.firstPaidAt !== null
       && customer.firstPaidAt >= periodStart.getTime()

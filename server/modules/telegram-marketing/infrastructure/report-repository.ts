@@ -2,40 +2,16 @@ import type { Pool } from 'pg';
 import type { MarketingLeadFact } from '../domain/report';
 import type { MarketingBotState } from '@shared/contracts/telegram-marketing';
 import { marketingDateBounds } from '../domain/period';
-import { metaWebsiteSubmissionSql } from '@shared/meta-website-leads';
+import { metaReportingIntakesSql } from '../../../services/meta-reporting-intakes';
 
 export const marketingLeadFactsSql = `
-  WITH intakes AS MATERIALIZED (
-    SELECT lead.id AS lead_id, lead.created_at AS acquired_at,
-      NULL::text AS course_slug, 'native:' || lead.id AS intake_id
-    FROM academy_leads lead
-    JOIN academy_lead_sources source ON source.id = lead.source_id
-    WHERE lead.created_at >= $1 AND lead.created_at < $2
-      AND lead.created_at <= $3
-      AND (source.code IN ('meta_lead_ads', 'meta_lead_ads_facebook') OR EXISTS (
-        SELECT 1 FROM meta_lead_attributions attribution
-        WHERE attribution.lead_id = lead.id
-          AND (NULLIF(attribution.ad_id, '') IS NOT NULL OR NULLIF(attribution.leadgen_id, '') IS NOT NULL)
-          AND NOT COALESCE((${metaWebsiteSubmissionSql('attribution')}), false)
-      ))
-    UNION ALL
-    SELECT attribution.lead_id, attribution.captured_at,
-      attribution.raw_payload->>'courseSlug', 'website:' || attribution.id
-    FROM meta_lead_attributions attribution
-    WHERE ${metaWebsiteSubmissionSql('attribution')}
-      AND attribution.lead_id IS NOT NULL
-      AND attribution.captured_at >= $1 AND attribution.captured_at < $2
-      AND attribution.captured_at <= $3
+  WITH ${metaReportingIntakesSql}, intakes AS MATERIALIZED (
+    SELECT * FROM meta_intakes
+    WHERE acquired_at >= $1 AND acquired_at < $2 AND acquired_at <= $3
   ), cohort AS MATERIALIZED (
     SELECT lead.*, intake.acquired_at FROM academy_leads lead
     JOIN (SELECT lead_id, MIN(acquired_at) AS acquired_at FROM intakes GROUP BY lead_id) intake
       ON intake.lead_id = lead.id
-  ), origin AS (
-    SELECT DISTINCT ON (record.lead_id) record.lead_id, record.source_sheet AS form_name,
-      record.payload->>'campaignName' AS campaign_name
-    FROM academy_lead_import_records record JOIN cohort lead ON lead.id = record.lead_id
-    WHERE record.provider = 'meta_lead_ads_live'
-    ORDER BY record.lead_id, record.id
   ), call_facts AS (
     SELECT lead.id AS lead_id, true AS attempted, BOOL_OR(call.talk_seconds > 0) AS reached
     FROM telephony_calls call
@@ -85,7 +61,13 @@ export const marketingLeadFactsSql = `
     COALESCE(payments.revenue, 0)::float8 AS "revenueUzs"
   FROM cohort lead
   JOIN intakes intake ON intake.lead_id = lead.id
-  LEFT JOIN origin ON origin.lead_id = lead.id
+  LEFT JOIN LATERAL (
+    SELECT record.source_sheet AS form_name, record.payload->>'campaignName' AS campaign_name
+    FROM academy_lead_import_records record
+    WHERE record.provider = 'meta_lead_ads_live' AND record.lead_id = lead.id
+      AND (record.external_id = intake.leadgen_id OR intake.attribution_id IS NULL)
+    ORDER BY record.id LIMIT 1
+  ) origin ON true
   LEFT JOIN academy_courses course ON course.id = lead.course_id
   LEFT JOIN call_facts calls ON calls.lead_id = lead.id
   LEFT JOIN qualification_facts qualification ON qualification.lead_id = lead.id

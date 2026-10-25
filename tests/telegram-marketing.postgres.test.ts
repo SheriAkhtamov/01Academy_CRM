@@ -27,10 +27,10 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
       CREATE TABLE academy_lead_sources(id int PRIMARY KEY, code text);
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text);
       CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp);
-      CREATE TABLE academy_lead_import_records(id serial PRIMARY KEY, lead_id int, source_sheet text, payload jsonb, provider text);
+      CREATE TABLE academy_lead_import_records(id serial PRIMARY KEY, lead_id int, source_sheet text, payload jsonb, provider text, external_id text);
       CREATE TABLE meta_lead_attributions(id serial PRIMARY KEY, lead_id int, ad_id text, leadgen_id text,
         provider text DEFAULT 'meta', channel text DEFAULT 'instant_form', referral_type text,
-        referral_ref text, captured_at timestamp DEFAULT '2026-10-01', raw_payload jsonb);
+        referral_ref text, captured_at timestamp DEFAULT '2026-10-01', raw_payload jsonb, placement text);
       CREATE TABLE academy_students(id int PRIMARY KEY, lead_id int);
       CREATE TABLE telephony_calls(lead_id int, contact_type text, contact_id int, talk_seconds int, started_at timestamp);
       CREATE TABLE audit_logs(id serial PRIMARY KEY, entity_type text, entity_id int, action text, new_values jsonb, created_at timestamp);
@@ -76,11 +76,11 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
   });
   it('reads only the Meta cohort and actual calls, criteria, demos and paid records', async () => {
     const facts = await getMarketingLeadFacts({ from: '2026-10-01', to: '2026-10-23', course: 'all', awaitingDates: false }, new Date('2026-10-23T10:00Z'));
-    expect(facts.map((row) => row.id)).toEqual([1,2,4]);
+    expect(facts.map((row) => row.id)).toEqual([1,1,2,4]);
     expect(summarizeMarketingLeads(facts, 'all')).toMatchObject({
-      leads: 3, reached: 1, unreached: 1, notCalled: 1, qualified: 1,
+      leads: 4, uniqueLeads: 3, reached: 1, unreached: 1, notCalled: 1, qualified: 1,
       bookedStudents: 3, attendedStudents: 1, dueStudents: 2, payingLeads: 1, payments: 2, revenueUzs: 300,
-      languages: { both: 1, uz: 1, ru: 1, unknown: 0, other: 0 },
+      languages: { both: 2, uz: 1, ru: 1, unknown: 0, other: 0 },
     });
   });
   it('counts every landing submission in its own period, including old contacts, without multiplying money', async () => {

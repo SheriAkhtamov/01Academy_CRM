@@ -57,4 +57,15 @@ describe('marketing funnel selection', () => {
     expect(marketingFunnelMetrics([]).avgDealCycleDays).toBeNull();
     expect(leadToPaidConversion(leadsForFunnel(leads, '1', '1'))).toBe(50);
   });
+
+  it('filters returning contacts by the sources of their period submissions without duplicating contacts', () => {
+    const leads = [{ sourceId: 1, reportingSourceIds: [10, 11], funnelId: 1,
+      createdAt: '2026-09-01T00:00:00Z', acquiredAt: '2026-10-01T00:00:00Z',
+      firstPaidAt: '2026-10-03T00:00:00Z', hasPaidPayment: true }];
+    expect(leadsForFunnel(leads, '1', '1')).toHaveLength(0);
+    expect(leadsForFunnel(leads, '1', '10')).toHaveLength(1);
+    expect(leadsForFunnel(leads, '1', '11')).toHaveLength(1);
+    expect(leadsForFunnel(leads, '1', 'all')).toHaveLength(1);
+    expect(marketingFunnelMetrics(leads)).toEqual({ leadToPaidConversion: 100, avgDealCycleDays: 2 });
+  });
 });

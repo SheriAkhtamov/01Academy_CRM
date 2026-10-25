@@ -11,17 +11,22 @@ interface FunnelStage {
 
 interface LeadForFunnel {
   sourceId?: number | null;
+  reportingSourceIds?: number[];
   funnelId?: number | null;
   statusCode?: string | null;
   demoAttended?: boolean;
   hasPaidPayment?: boolean;
   createdAt?: string | null;
+  acquiredAt?: string | null;
   firstPaidAt?: string | null;
 }
 
+const matchesSource = (lead: LeadForFunnel, sourceId: string) => sourceId === 'all'
+  || (lead.reportingSourceIds ?? [lead.sourceId]).some((id) => String(id) === sourceId);
+
 export function leadsForFunnel<T extends LeadForFunnel>(leads: T[], funnelId: string, sourceId: string): T[] {
   return leads.filter((lead) => String(lead.funnelId ?? '') === funnelId
-    && (sourceId === 'all' || String(lead.sourceId ?? '') === sourceId));
+    && matchesSource(lead, sourceId));
 }
 
 export function marketingFunnelStages<T extends FunnelStage>(
@@ -39,7 +44,7 @@ export function funnelForSource<T extends FunnelStage>(
 ): Array<T & { count: number }> {
   const filtered = sourceId === 'all'
     ? leads
-    : leads.filter((lead) => String(lead.sourceId ?? '') === sourceId);
+    : leads.filter((lead) => matchesSource(lead, sourceId));
   return funnel.map((stage) => ({
     ...stage,
     count: filtered.filter((lead) => lead.statusCode === stage.code).length,
@@ -53,7 +58,7 @@ const percentage = (count: number, total: number) => total > 0
 export function marketingFunnelMetrics(leads: LeadForFunnel[]) {
   const paidLeads = leads.filter((lead) => lead.hasPaidPayment === true);
   const cycleDays = paidLeads.flatMap((lead) => {
-    const createdAt = new Date(lead.createdAt ?? '').getTime();
+    const createdAt = new Date(lead.acquiredAt ?? lead.createdAt ?? '').getTime();
     const firstPaidAt = new Date(lead.firstPaidAt ?? '').getTime();
     return Number.isFinite(createdAt) && Number.isFinite(firstPaidAt) && firstPaidAt >= createdAt
       ? [(firstPaidAt - createdAt) / 86_400_000]

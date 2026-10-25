@@ -1,4 +1,5 @@
 export { telegramMarketingSessions } from './telegram-marketing';
+export { onlinePbxLicensePeriods } from './onlinepbx-license-periods';
 import { createTelegramTaskEventsTable } from './telegram-task-events';
 import { createPlatformUpdatesTable } from './platform-updates';
 import { createChatGroupTables } from './chat-groups';

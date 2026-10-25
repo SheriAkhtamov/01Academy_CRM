@@ -23,12 +23,11 @@ describe('OnlinePBX renewal reminders', () => {
     expect(plan([license()], '2026-11-14T04:00:00Z')).toEqual([]);
   });
 
-  it('uses one persistent stage per 7/3/1 day window, catching up after an outage without sending old stages', () => {
+  it('uses one persistent seven-day reminder, including catch-up without extra 3/1-day stages', () => {
     expect(plan([license()], '2026-11-16T04:00:00Z')[0].eventKey).toBe(plan([license()])[0].eventKey);
-    expect(plan([license()], '2026-11-19T04:00:00Z')[0].eventKey).toMatch(/:3$/);
-    expect(plan([license()], '2026-11-20T04:00:00Z')[0].eventKey).toMatch(/:3$/);
-    expect(plan([license()], '2026-11-21T04:00:00Z')[0].eventKey).toMatch(/:1$/);
-    expect(plan([license()], '2026-11-21T20:00:00Z')[0].eventKey).toMatch(/:1$/);
+    for (const day of ['2026-11-19T04:00:00Z', '2026-11-20T04:00:00Z', '2026-11-21T04:00:00Z', '2026-11-21T20:00:00Z']) {
+      expect(plan([license()], day)[0].eventKey).toBe(plan([license()])[0].eventKey);
+    }
     expect(plan([license()], '2026-11-21T21:00:00Z')).toEqual([]);
   });
 
@@ -44,6 +43,7 @@ describe('OnlinePBX renewal reminders', () => {
     const result = plan([license('USER', 3), license('USER', 1, end + 2592000, end + 1), license('RECORDS')]);
     expect(result[0].text).toContain('Пользовательские места: 2');
     expect(result[0].text).toContain('Запись разговоров');
+    expect(result[0].coverage).toEqual({ USER: 3, RECORDS: 1 });
   });
 
   it('does not treat a later license with a service gap as a paid continuation', () => {

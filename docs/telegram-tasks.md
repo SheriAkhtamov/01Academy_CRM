@@ -198,7 +198,7 @@ compares their enabled state with the number of currently paid user seats.
 A disabled required number and insufficient paid seats create a separate urgent
 activation task, including when an expired license has disappeared from the
 billing response. These incident tasks are created at any hour, independently
-of the 7/3/1-day renewal windows. An unknown expiration date stays unknown and
+of the seven-day renewal window. An unknown expiration date stays unknown and
 does not become a fabricated task deadline. A disabled number with enough paid
 seats is not classified as an expired license.
 
@@ -216,20 +216,34 @@ The default empty list disables these reminders. Assignees must remain active,
 unarchived employees. Telegram delivery additionally requires a verified account binding
 to the configured task bot. No messages go to other employees.
 
-The hourly scheduler checks `billing/licenses/get.json` from 09:00 in
-`ACADEMY_TIME_ZONE` (default `Asia/Tashkent`). It sends one reminder in each 7-, 3-, and
-1-day window before the local expiration date, catching up within the current window
-after downtime. Services ending together share one message; the message states the exact
-local deadline and opens the renewal task. Each task has the license deadline, urgent
-priority, the account domain, and the OnlinePBX panel link. Services with the same
-deadline share one task per employee; later reminder stages reuse it. Completed,
-reassigned or deleted tasks do not receive more license reminders and are not recreated.
-This is a payment reminder; no payments or license changes are performed.
+At startup and every hour the scheduler reads `billing/licenses/get.json` and saves
+its current and prepaid license periods in `onlinepbx_license_periods`. Previously
+seen dates remain in history when a license expires or its paid deadline changes.
+Identical type/start/end periods are aggregated; repeated reads update the last
+observation instead of inserting duplicates. Failed API reads leave saved dates intact.
+History is collected at any hour, including when Telegram or recipients are not configured.
+
+From 09:00 in `ACADEMY_TIME_ZONE` (default `Asia/Tashkent`), a license with seven or
+fewer calendar days remaining creates one task and one task-bot reminder. There
+are no additional 3-day or 1-day license reminders. Downtime is caught up inside
+the same window. Services ending together share one task per selected employee,
+with urgent priority, the actual license deadline, and the OnlinePBX panel link.
+Deleting a task inside its valid reminder window suppresses repeats. Premature
+operator-created tasks removed before that window do not prevent the subsequently
+requested seven-day schedule; they are not recreated early.
 
 Already paid licenses starting immediately after the current period suppress reminders
 for the capacity they replace. A partial renewal still warns about the remaining
 reduction in user seats or services. Billing is account-wide and does not attach a
 license expiration to each internal extension.
+
+Each generated task records the paid capacity it needs. Once the API confirms
+complete renewal of those seats and services, its automatic payment task is marked
+done once, with task activity and the normal task-bot completion notice. Partial
+renewal, an empty response, or a service gap before renewal cannot falsely settle
+the task. The next task becomes eligible only seven days before the updated paid
+deadline. Reassigned, already completed and deleted tasks are preserved.
+Migration `0167_onlinepbx_license_periods.sql` adds saved history and task coverage.
 
 Migration `0165_onlinepbx_license_reminders.sql` adds a reminder kind to the existing
 persistent delivery ledger and a unique task-to-license-period mapping. Task creation,

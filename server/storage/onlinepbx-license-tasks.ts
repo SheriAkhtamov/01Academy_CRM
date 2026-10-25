@@ -2,8 +2,9 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { boards, boardTaskActivity, boardTasks, onlinePbxLicenseIssues, onlinePbxLicenseTasks, users } from '../db/schema';
 import { queueTaskNotices } from './board-telegram-events';
+import type { OnlinePbxLicenseCoverage } from '../domain/onlinepbx-licenses';
 
-type RenewalTaskInput = { domain: string; endStamp: number; userId: number; title: string; description: string };
+type RenewalTaskInput = { domain: string; endStamp: number; userId: number; title: string; description: string; coverage?: OnlinePbxLicenseCoverage };
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function createOnlinePbxTask(tx: Transaction, input: { userId: number; title: string; description: string; dueAt: Date | null; meta: object }) {
@@ -28,21 +29,29 @@ async function createOnlinePbxTask(tx: Transaction, input: { userId: number; tit
 }
 
 /** One renewal task per recipient and paid period, even after restarts/deletion. */
-export async function ensureOnlinePbxLicenseTask(input: RenewalTaskInput) {
+export async function ensureOnlinePbxLicenseTask(input: RenewalTaskInput, now = new Date()) {
   return db.transaction(async (tx) => {
     const key = `onlinepbx-task:${input.domain}:${input.endStamp}:${input.userId}`;
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
-    const [existing] = await tx.select({ task: boardTasks }).from(onlinePbxLicenseTasks)
+    const [existing] = await tx.select({ task: boardTasks, period: onlinePbxLicenseTasks }).from(onlinePbxLicenseTasks)
       .leftJoin(boardTasks, eq(boardTasks.id, onlinePbxLicenseTasks.taskId))
       .where(and(eq(onlinePbxLicenseTasks.domain, input.domain), eq(onlinePbxLicenseTasks.endStamp, input.endStamp),
         eq(onlinePbxLicenseTasks.userId, input.userId))).limit(1);
-    if (existing) return { task: existing.task, created: false };
+    const windowStart = (input.endStamp - 7 * 86_400) * 1000;
+    // An operator-created task deleted weeks early must not suppress the newly
+    // requested seven-day schedule. Deletions inside that window stay suppressed.
+    const prematureDeletedTask = existing && !existing.task && existing.period.createdAt.getTime() < windowStart
+      && now.getTime() >= windowStart && now.getTime() <= input.endStamp * 1000;
+    if (existing && !prematureDeletedTask) return { task: existing.task, created: false };
     const task = await createOnlinePbxTask(tx, {
       ...input, dueAt: new Date(input.endStamp * 1000),
       meta: { source: 'onlinepbx_license', domain: input.domain, endStamp: input.endStamp },
     });
     if (!task) return { task: null, created: false };
-    await tx.insert(onlinePbxLicenseTasks).values({ domain: input.domain, endStamp: input.endStamp, userId: input.userId, taskId: task.id });
+    await tx.insert(onlinePbxLicenseTasks).values({ domain: input.domain, endStamp: input.endStamp, userId: input.userId,
+      taskId: task.id, coverage: input.coverage, createdAt: now })
+      .onConflictDoUpdate({ target: [onlinePbxLicenseTasks.domain, onlinePbxLicenseTasks.endStamp, onlinePbxLicenseTasks.userId],
+        set: { taskId: task.id, coverage: input.coverage, createdAt: now } });
     // The license worker delivers the task link through its durable reminder
     // ledger. A second generic creation notification would duplicate it.
     return { task, created: true };

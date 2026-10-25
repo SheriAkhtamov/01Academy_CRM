@@ -10,31 +10,35 @@ import { sendTelegramTaskReminder } from './telegram-task-delivery';
 import { ensureOnlinePbxLicenseTask } from '../storage/onlinepbx-license-tasks';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { processOnlinePbxLicenseIssues } from './onlinepbx-license-issues';
+import { completePaidOnlinePbxLicenseTasks, saveOnlinePbxLicensePeriods } from '../storage/onlinepbx-license-periods';
 
 export async function processOnlinePbxLicenseReminders(timeZone: string, now = new Date()): Promise<number> {
   const config = appConfig.integrations;
   const token = config?.telegramTasks?.botToken?.trim();
-  const userIds = config?.onlinePbx?.licenseReminderUserIds;
-  if (!isProductionEnvironment || !userIds?.length || !onlinePbxClient.isConfigured()) return 0;
+  const userIds = config?.onlinePbx?.licenseReminderUserIds ?? [];
+  if (!isProductionEnvironment || !onlinePbxClient.isConfigured()) return 0;
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
   const requiredExtensions = config?.onlinePbx?.licenseRequiredExtensions ?? [];
-  if (hour < 9 && !requiredExtensions.length) return 0;
   const domain = onlinePbxClient.getDomain();
   const botId = token?.split(':')[0] ?? domain;
-  // Share the task reminder lock and Telegram cooldowns with the existing sender.
-  const lockKey = `telegram-task-reminders:${botId}`;
+  const lockKey = `onlinepbx-licenses:${domain}`;
+  const deliveryLockKey = `telegram-task-reminders:${botId}`;
   const client = await pool.connect();
   let locked = false;
+  let deliveryLocked = false;
   let sent = 0;
   const started = Date.now();
   try {
     locked = (await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [lockKey])).rows[0]?.locked === true;
     if (!locked) return 0;
     const licenses = await onlinePbxClient.listLicenses();
+    await saveOnlinePbxLicensePeriods(domain, licenses, now);
+    const completed = await completePaidOnlinePbxLicenseTasks(domain, licenses, now);
+    for (const task of completed) publishRealtimeEvent({ type: 'BOARD_TASK_UPDATED', data: task });
     if (requiredExtensions.length) {
       await processOnlinePbxLicenseIssues(domain, requiredExtensions, userIds, await onlinePbxClient.listExtensions(), licenses, now);
     }
-    if (hour < 9) return 0;
+    if (hour < 9 || !userIds.length) return 0;
     const planned = planOnlinePbxLicenseReminders(licenses, domain, now, timeZone);
     const tasks = new Map<string, number>();
     for (const userId of userIds) {
@@ -43,7 +47,8 @@ export async function processOnlinePbxLicenseReminders(timeZone: string, now = n
           domain, endStamp: reminder.endStamp, userId,
           title: t('onlinePbxLicenseTaskTitle', { domain }).slice(0, 255),
           description: `${reminder.text}\n\nhttps://panel.onlinepbx.ru/`,
-        });
+          coverage: reminder.coverage,
+        }, now);
         if (result.created && result.task) {
           publishRealtimeEvent({ type: 'BOARD_TASK_CREATED', data: { id: result.task.id, boardId: result.task.boardId } });
           logger.info('OnlinePBX renewal task created', { taskId: result.task.id, assigneeId: userId });
@@ -56,6 +61,8 @@ export async function processOnlinePbxLicenseReminders(timeZone: string, now = n
     if (!token || !config?.telegramTasks?.webhookSecret?.trim() || !tasks.size) return 0;
     const appUrl = new URL('/miniapp/tasks', appConfig.server.appUrl).href;
     if (!appUrl.startsWith('https://')) return 0;
+    deliveryLocked = (await client.query('SELECT pg_try_advisory_lock(hashtext($1)) AS locked', [deliveryLockKey])).rows[0]?.locked === true;
+    if (!deliveryLocked) return 0;
     const cooldown = await client.query(
       `SELECT 1 FROM telegram_task_reminders reminder
        JOIN telegram_task_bindings binding ON binding.id = reminder.binding_id
@@ -104,6 +111,7 @@ export async function processOnlinePbxLicenseReminders(timeZone: string, now = n
     return sent;
   } finally {
     try {
+      if (deliveryLocked) await client.query('SELECT pg_advisory_unlock(hashtext($1))', [deliveryLockKey]);
       if (locked) await client.query('SELECT pg_advisory_unlock(hashtext($1))', [lockKey]);
       client.release();
     } catch {

@@ -47,6 +47,15 @@ export const startScheduler = () => {
     catch (error) { logger.error('[scheduler] Meta lead intake recovery failed', { error }); }
   };
   void recoverIntakes();
+  const refreshOnlinePbxLicenses = async () => {
+    try {
+      const sent = await processOnlinePbxLicenseReminders(SCHEDULER_TIME_ZONE);
+      if (sent > 0) logger.info('[scheduler] OnlinePBX license reminders sent', { count: sent });
+    } catch {
+      logger.error('[scheduler] OnlinePBX license reminder worker failed');
+    }
+  };
+  void refreshOnlinePbxLicenses();
 
 
   cron.schedule("* * * * *", async () => {
@@ -125,12 +134,7 @@ export const startScheduler = () => {
 
   // The escalation monitor makes overdue work and cash risks push themselves to leadership.
   cron.schedule("0 * * * *", async () => {
-    try {
-      const sent = await processOnlinePbxLicenseReminders(SCHEDULER_TIME_ZONE);
-      if (sent > 0) logger.info('[scheduler] OnlinePBX license reminders sent', { count: sent });
-    } catch {
-      logger.error('[scheduler] OnlinePBX license reminder worker failed');
-    }
+    await refreshOnlinePbxLicenses();
     try {
       const actions = await runEscalations();
       if (actions.length > 0) {

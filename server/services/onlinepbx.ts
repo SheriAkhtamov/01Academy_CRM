@@ -1,5 +1,7 @@
 import { appConfig } from '../config';
 import { isOnlinePbxExtension } from '@shared/telephony';
+import type { OnlinePbxLicense } from '../domain/onlinepbx-licenses';
+export type { OnlinePbxLicense } from '../domain/onlinepbx-licenses';
 
 type OnlinePbxConfig = {
   domain?: string;
@@ -48,13 +50,6 @@ export type OnlinePbxExtension = {
   name: string | null;
   enabled: boolean;
   registered: boolean;
-};
-
-export type OnlinePbxLicense = {
-  startStamp: number;
-  endStamp: number;
-  serviceType: string;
-  serviceCount: number;
 };
 
 export type OnlinePbxGroup = {

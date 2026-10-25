@@ -70,6 +70,7 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     await pool.query(readFileSync('migrations/0158_telegram_task_events.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0165_onlinepbx_license_reminders.sql', 'utf8'));
     await pool.query(readFileSync('migrations/0166_onlinepbx_license_issues.sql', 'utf8'));
+    await pool.query(readFileSync('migrations/0167_onlinepbx_license_periods.sql', 'utf8'));
   });
 
   beforeEach(async () => {
@@ -87,7 +88,7 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     vi.stubGlobal('fetch', mocks.fetch);
     mocks.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
     mocks.identity.mockImplementation(async (_bot, chat) => ({ user: { id: Number(chat) }, binding: { verification_id: 'v1' } }));
-    await pool.query('TRUNCATE users, boards, board_tasks, board_task_activity, onlinepbx_license_tasks, telegram_task_bindings, telegram_task_reminders, telegram_task_events RESTART IDENTITY CASCADE');
+    await pool.query('TRUNCATE users, boards, board_tasks, board_task_activity, onlinepbx_license_tasks, onlinepbx_license_periods, telegram_task_bindings, telegram_task_reminders, telegram_task_events RESTART IDENTITY CASCADE');
     await pool.query("INSERT INTO users (id,module) VALUES (1,'administration'),(7,'sales'),(8,'sales'); INSERT INTO boards(id) VALUES(1); INSERT INTO telegram_task_bindings (bot_id,user_id,telegram_user_id,verification_id) VALUES ('12345',7,'7','v1'),('12345',8,'8','v1')");
   });
 
@@ -110,14 +111,17 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     expect(tasks).toMatchObject([{ assignee_id: 7, creator_id: 1, title: 'Оплатить продление лицензий OnlinePBX — example.onpbx.ru', due_at: '2026-11-21 20:59:59' }]);
   });
 
-  it('does not send without an explicit recipient, outside production, before 09:00, or for an unrelated bot', async () => {
+  it('stores dates silently without a recipient or before 09:00, but never runs outside production', async () => {
     mocks.recipients = [];
     expect(await run()).toBe(0);
+    expect((await pool.query('SELECT end_stamp FROM onlinepbx_license_periods')).rows).toEqual([{ end_stamp: '1795294799' }]);
     mocks.recipients = [7]; mocks.production = false;
+    mocks.licenses.mockClear();
     expect(await run()).toBe(0);
+    expect(mocks.licenses).not.toHaveBeenCalled();
     mocks.production = true;
     expect(await run(new Date('2026-11-15T03:59:59Z'))).toBe(0);
-    expect(mocks.licenses).not.toHaveBeenCalled();
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
     await pool.query("UPDATE telegram_task_bindings SET bot_id = 'other'");
     expect(await run()).toBe(0);
     expect(mocks.fetch).not.toHaveBeenCalled();
@@ -134,15 +138,17 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
-  it('sends the next stage once and stops reminding as soon as a full continuation is paid', async () => {
+  it('does not repeat reminders at 3/1 days and completes the task when a full continuation is paid', async () => {
     expect(await run()).toBe(1);
     vi.setSystemTime(new Date('2026-11-19T04:00:00Z'));
-    expect(await run()).toBe(1);
+    expect(await run()).toBe(0);
     expect(await run()).toBe(0);
     vi.setSystemTime(new Date('2026-11-21T04:00:00Z'));
     mocks.licenses.mockResolvedValue([license, { ...license, startStamp: license.endStamp + 1, endStamp: license.endStamp + 2592000 }]);
     expect(await run()).toBe(0);
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect((await pool.query('SELECT status FROM board_tasks')).rows).toEqual([{ status: 'done' }]);
+    expect((await pool.query("SELECT payload FROM telegram_task_events WHERE payload->>'kind'='done'")).rows).toHaveLength(1);
   });
 
   it('retries explicit rate limits only after the shared cooldown, then persists success', async () => {
@@ -276,6 +282,99 @@ describe.skipIf(!url)('OnlinePBX reminders with a persistent delivery ledger', (
     expect((await pool.query('SELECT id FROM telegram_task_events')).rows).toHaveLength(0);
     await pool.query('DELETE FROM board_tasks');
     await run();
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
+  });
+
+  it('keeps expiration history after licenses disappear and refreshes the current paid deadline', async () => {
+    mocks.recipients = [];
+    vi.setSystemTime(new Date('2026-10-24T19:30:00Z'));
+    await run();
+    vi.setSystemTime(new Date('2026-10-25T19:30:00Z'));
+    const renewed = { ...license, endStamp: license.endStamp + 2592000 };
+    mocks.licenses.mockResolvedValue([renewed]);
+    await run();
+    let periods = (await pool.query('SELECT end_stamp,is_current,first_seen_at::text,last_seen_at::text FROM onlinepbx_license_periods ORDER BY end_stamp')).rows;
+    expect(periods).toEqual([
+      { end_stamp: String(license.endStamp), is_current: false, first_seen_at: '2026-10-24 19:30:00', last_seen_at: '2026-10-24 19:30:00' },
+      { end_stamp: String(renewed.endStamp), is_current: true, first_seen_at: '2026-10-25 19:30:00', last_seen_at: '2026-10-25 19:30:00' },
+    ]);
+    vi.setSystemTime(new Date((renewed.endStamp + 86400) * 1000));
+    mocks.licenses.mockResolvedValue([]);
+    await run();
+    periods = (await pool.query('SELECT end_stamp,is_current FROM onlinepbx_license_periods ORDER BY end_stamp')).rows;
+    expect(periods).toEqual([{ end_stamp: String(license.endStamp), is_current: false }, { end_stamp: String(renewed.endStamp), is_current: false }]);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
+  });
+
+  it('updates a changed expiration, completes the old task once, then schedules only the new seven-day window', async () => {
+    expect(await run()).toBe(1);
+    const renewed = { ...license, endStamp: license.endStamp + 2592000 };
+    mocks.licenses.mockResolvedValue([renewed]);
+    expect(await run()).toBe(0);
+    expect(await run()).toBe(0);
+    expect((await pool.query('SELECT status FROM board_tasks ORDER BY id')).rows).toEqual([{ status: 'done' }]);
+    expect((await pool.query("SELECT id FROM board_task_activity WHERE meta->>'source'='onlinepbx_renewed'")).rows).toHaveLength(1);
+    expect((await pool.query('SELECT end_stamp FROM onlinepbx_license_periods WHERE is_current=true')).rows).toEqual([{ end_stamp: String(renewed.endStamp) }]);
+    vi.setSystemTime(new Date((renewed.endStamp - 8 * 86400) * 1000 + 8 * 3600 * 1000));
+    expect(await run()).toBe(0);
+    vi.setSystemTime(new Date((renewed.endStamp - 7 * 86400) * 1000 + 8 * 3600 * 1000));
+    expect(await run()).toBe(1);
+    expect(await run()).toBe(0);
+    expect((await pool.query('SELECT status FROM board_tasks ORDER BY id')).rows).toEqual([{ status: 'done' }, { status: 'todo' }]);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not close a payment task for a partial renewal or a billing error', async () => {
+    mocks.licenses.mockResolvedValue([{ ...license, serviceCount: 2 }]);
+    await run();
+    mocks.licenses.mockResolvedValue([{ ...license, serviceCount: 2 }, { ...license, startStamp: license.endStamp + 1, endStamp: license.endStamp + 2592000 }]);
+    await run();
+    expect((await pool.query('SELECT status FROM board_tasks')).rows).toEqual([{ status: 'todo' }]);
+    const saved = (await pool.query('SELECT end_stamp,is_current,last_seen_at::text FROM onlinepbx_license_periods ORDER BY end_stamp')).rows;
+    mocks.licenses.mockRejectedValueOnce(new Error('provider unavailable'));
+    await expect(run()).rejects.toThrow('provider unavailable');
+    expect((await pool.query('SELECT end_stamp,is_current,last_seen_at::text FROM onlinepbx_license_periods ORDER BY end_stamp')).rows).toEqual(saved);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(1);
+  });
+
+  it('aggregates matching paid periods without duplicate history and preserves the first observation', async () => {
+    mocks.licenses.mockResolvedValue([license, { ...license, serviceCount: 2 }]);
+    await run();
+    vi.setSystemTime(new Date(morning.getTime() + 3600000));
+    await run();
+    const rows = (await pool.query('SELECT service_count,first_seen_at::text,last_seen_at::text FROM onlinepbx_license_periods')).rows;
+    expect(rows).toEqual([{ service_count: 3, first_seen_at: '2026-11-15 04:00:00', last_seen_at: '2026-11-15 05:00:00' }]);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(1);
+  });
+
+  it('stores dates while another task reminder sender owns its delivery lock', async () => {
+    const lock = await pool.connect();
+    await lock.query("SELECT pg_advisory_lock(hashtext('telegram-task-reminders:12345'))");
+    try {
+      expect(await run()).toBe(0);
+      expect((await pool.query('SELECT end_stamp FROM onlinepbx_license_periods')).rows).toHaveLength(1);
+      expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(1);
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    } finally {
+      await lock.query("SELECT pg_advisory_unlock(hashtext('telegram-task-reminders:12345'))");
+      lock.release();
+    }
+    expect(await run()).toBe(1);
+  });
+
+  it('does not restore a premature deleted task now, but enables the newly requested seven-day schedule', async () => {
+    const early = new Date('2026-10-25T04:00:00Z');
+    await ensureOnlinePbxLicenseTask({ domain: 'example.onpbx.ru', endStamp: license.endStamp, userId: 7,
+      title: 'Слишком ранняя задача', description: 'Удалена до окна напоминания' }, early);
+    await pool.query('DELETE FROM board_tasks');
+    vi.setSystemTime(early);
+    expect(await run()).toBe(0);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
+    vi.setSystemTime(morning);
+    expect(await run()).toBe(1);
+    expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(1);
+    await pool.query('DELETE FROM board_tasks');
+    expect(await run()).toBe(0);
     expect((await pool.query('SELECT id FROM board_tasks')).rows).toHaveLength(0);
   });
 });

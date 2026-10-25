@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { OnlinePbxLicense } from './onlinepbx';
+import { onlinePbxLicenseCapacity, type OnlinePbxLicense, type OnlinePbxLicenseCoverage } from '../domain/onlinepbx-licenses';
 import { t } from '../lib/i18n';
 
-export type OnlinePbxLicenseReminder = { eventKey: string; endStamp: number; text: string };
+export type OnlinePbxLicenseReminder = { eventKey: string; endStamp: number; coverage: OnlinePbxLicenseCoverage; text: string };
 
 const serviceKeys = {
   USER: 'onlinePbxLicenseUsers',
@@ -30,15 +30,14 @@ export function planOnlinePbxLicenseReminders(
   for (const endStamp of [...new Set(active.map((license) => license.endStamp))].sort((a, b) => a - b)) {
     const end = new Date(endStamp * 1000);
     const days = Math.round((Date.parse(`${dateKey(end, timeZone)}T00:00:00Z`) - today) / 86_400_000);
-    const threshold = [1, 3, 7].find((value) => days <= value);
-    if (threshold === undefined) continue;
+    if (days > 7) continue;
     const types = [...new Set(active.filter((license) => license.endStamp === endStamp).map((license) => license.serviceType))].sort();
+    const coverage: OnlinePbxLicenseCoverage = {};
     const services = types.flatMap((type) => {
-      const capacityAt = (stamp: number) => licenses
-        .filter((license) => license.serviceType === type && license.startStamp <= stamp && license.endStamp >= stamp)
-        .reduce((sum, license) => sum + license.serviceCount, 0);
-      const lost = capacityAt(endStamp) - capacityAt(endStamp + 1);
+      const before = onlinePbxLicenseCapacity(licenses, type, endStamp);
+      const lost = before - onlinePbxLicenseCapacity(licenses, type, endStamp + 1);
       if (lost <= 0) return [];
+      coverage[type] = before;
       const key = serviceKeys[type as keyof typeof serviceKeys] ?? 'onlinePbxLicenseOther';
       return [`• ${t(key, language, { count: String(lost) })}`];
     });
@@ -48,7 +47,8 @@ export function planOnlinePbxLicenseReminders(
     }).format(end);
     reminders.push({
       endStamp,
-      eventKey: `pbx:${domainKey}:${endStamp}:${threshold}`,
+      coverage,
+      eventKey: `pbx:${domainKey}:${endStamp}:7`,
       text: t('onlinePbxLicenseReminder', language, { domain, deadline, timezone: timeZone, services: services.join('\n') }),
     });
   }

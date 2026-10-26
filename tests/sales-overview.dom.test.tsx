@@ -87,7 +87,10 @@ describe('factual sales report', () => {
     expect(outcomes.getByText('57.1%')).toBeTruthy();
     expect(outcomes.getByText('Qualified, active')).toBeTruthy();
     expect(screen.getByText('70% of new leads')).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Lead arrival period' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Reporting period' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Meetings booked · By booking date' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Meetings attended · By demo date' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Successful · Cumulative by payment date' })).toBeTruthy();
   });
   it('updates arbitrary dates, manager, and funnel together', async () => {
     const user = userEvent.setup(); mount();

@@ -13,7 +13,7 @@ import { invalidateSalesData } from '../client/src/features/sales/queries';
 
 const range = { from: '2026-08-01', to: '2026-08-31' };
 const students: SalesDemoStudent[] = [{ studentId: 10, leadId: 20, studentName: 'Temur', contactName: 'Parent', phone: '+998 (90) 123-45-67', managerId: 1, managerName: 'Alice', visits: [
-  { participantId: 2, demoId: 2, scheduledAt: '2026-09-10T10:00:00Z', durationMinutes: 60, format: 'online', courseName: 'Design', schoolName: 'Cyberpark', roomName: null, teacherName: 'Teacher' },
+  { participantId: 2, demoId: 2, scheduledAt: '2026-08-10T10:00:00Z', durationMinutes: 60, format: 'online', courseName: 'Design', schoolName: 'Cyberpark', roomName: null, teacherName: 'Teacher' },
   { participantId: 1, demoId: 1, scheduledAt: '2026-07-31T19:00:00Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
 ] }, { studentId: 11, leadId: null, studentName: 'Aziza', contactName: null, phone: null, managerId: 1, managerName: 'Alice', visits: [
   { participantId: 3, demoId: 3, scheduledAt: '2026-08-31T18:59:59Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '102', teacherName: 'Teacher' },
@@ -41,8 +41,8 @@ describe('demo attendance list', () => {
     expect(screen.getAllByRole('article')).toHaveLength(2);
     expect(within(temur).getAllByRole('listitem')).toHaveLength(2);
     expect(within(temur).getByText(/Aug 0?1, 2026/)).toBeTruthy();
-    expect(within(temur).getByText(/Sep 10, 2026/)).toBeTruthy();
-    expect(screen.getByText('Leads arrived: Aug 1, 2026 — Aug 31, 2026')).toBeTruthy();
+    expect(within(temur).getByText(/Aug 10, 2026/)).toBeTruthy();
+    expect(screen.getByText('Demo dates: Aug 1, 2026 — Aug 31, 2026')).toBeTruthy();
     expect(within(temur).getByText(translations.online.en)).toBeTruthy();
     expect(screen.queryByRole('tablist')).toBeNull();
     expect(screen.getByText('Students: 2')).toBeTruthy();

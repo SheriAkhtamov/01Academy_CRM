@@ -6,7 +6,7 @@ import { salesCohortCte } from './sales-cohort-scope';
 
 // Attendance is an explicit participant mark. A scheduled lesson can already
 // have saved attendance; cancelled, not-conducted and future demos cannot.
-// Creation dates select the lead cohort; later attended lessons remain included.
+// The selected dates apply to the demo itself, regardless of lead creation date.
 export const salesDemoAttendanceCte = `${salesCohortCte}, attended_demos AS (
   SELECT participant.id AS participant_id, demo.id AS demo_id,
     demo.scheduled_at, demo.duration_minutes, demo.format,
@@ -20,10 +20,11 @@ export const salesDemoAttendanceCte = `${salesCohortCte}, attended_demos AS (
   FROM academy_demo_lesson_participants participant
   JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
   JOIN academy_students student ON student.id = participant.student_id
-  JOIN cohort_leads lead ON lead.id = student.lead_id
+  JOIN portfolio_leads lead ON lead.id = student.lead_id
   CROSS JOIN report_clock clock
   WHERE participant.status = 'attended'
     AND demo.status IN ('scheduled', 'completed')
+    AND demo.scheduled_at >= $1 AND demo.scheduled_at < $2
     AND demo.scheduled_at <= clock.as_of
     AND participant.created_at <= clock.as_of
 )`;
@@ -32,7 +33,7 @@ const scopeValues = (actor: DatasetActor, range: ReportingRange, requestedManage
   range.start, range.end, hasLeadershipAccess(actor) ? requestedManagerId : actor.userId, funnelId,
 ];
 
-/** A cohort's student contributes once, on their first actual attendance. */
+/** Each student contributes once, on their first attendance within the period. */
 export async function buildSalesDemoAttendanceStats(actor: DatasetActor, range: ReportingRange, requestedManagerId: number | null = null, funnelId: number | null = null) {
   const rows = await query<{ studentId: number; happenedAt: Date }>(
     `${salesDemoAttendanceCte}

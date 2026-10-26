@@ -18,7 +18,7 @@ export type SalesContactBreakdown = {
   reachedUnqualifiedInWork: number;
 };
 
-/** Results as of now for leads created within the selected dates. */
+/** Lead-cohort results plus student bookings, visits and payments in the period. */
 export type SalesActivityReport = {
   asOf: string;
   newLeads: number;

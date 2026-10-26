@@ -95,7 +95,7 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     expect((await report(7, 1)).newLeads).toBe(1);
     expect((await report(null, 2)).newLeads).toBe(1);
   });
-  it('counts connected leads once and excludes actions on older leads from the whole report', async () => {
+  it('keeps lead processing and contact metrics on the new-lead cohort', async () => {
     await fixture.pool.query(`INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
       (1,'2025-08-01','outgoing',1),(1,'2025-08-02','incoming',25),(1,'2025-08-03','outgoing',0),(2,'2025-08-04','incoming',0);
       INSERT INTO academy_communications(lead_id,created_at,created_by) VALUES(2,'2025-08-05',NULL);`);
@@ -109,21 +109,26 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
       INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
       (1,10,'attended','2025-08-01'),(1,11,'attended','2025-08-01'),(2,10,'attended','2025-08-02'),
       (1,12,'no_show','2025-08-03'),(3,13,'attended','2025-08-04'),(4,14,'attended','2025-08-05'),(2,13,'cancelled','2025-08-05');`);
-    expect(await report()).toMatchObject({ demoBookings: 3, demoAttendees: 2, processedLeads: 2 });
-    expect(await report(7, 1)).toMatchObject({ demoBookings: 2, demoAttendees: 2, processedLeads: 1 });
+    expect(await report()).toMatchObject({ demoBookings: 4, demoAttendees: 2, processedLeads: 2 });
+    expect(await report(7, 1)).toMatchObject({ demoBookings: 3, demoAttendees: 2, processedLeads: 1 });
     expect(await report(8, 1)).toMatchObject({ demoBookings: 0, demoAttendees: 0 });
     const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
     expect(students.map(student => student.studentId).sort()).toEqual([10, 11]);
     expect(students.find(student => student.studentId === 10)?.visits).toHaveLength(2);
   });
-  it('includes later payments of cohort students, without repeats, old leads or pending/refunded entries', async () => {
+  it('counts payments in the period for old and new leads, excluding repeats and invalid payments', async () => {
     await fixture.pool.query(`INSERT INTO academy_payments(student_id,paid_at,status,amount_uzs) VALUES
       (10,'2025-08-10','paid',100),(10,'2025-09-10','paid',100),
       (11,'2025-09-10','paid',100),(11,'2025-09-20','paid',100),
       (12,'2025-08-10','refunded',100),(13,'2025-08-10','pending',100),
       (14,'2025-08-10','paid',100),(12,'2025-08-11','paid',0),
+      (12,'2025-08-12','paid',100),(12,'2025-08-13','paid',100),
       (12,'2025-09-11','paid',100),(13,'2099-09-11','paid',100);`);
-    expect(await report()).toMatchObject({ successfulStudents: 3 });
+    const result = await report();
+    expect(result).toMatchObject({ successfulStudents: 3 });
+    expect(result.daily[9].successfulStudents).toBe(2);
+    expect(result.daily[11].successfulStudents).toBe(1);
+    expect(result.daily[12].successfulStudents).toBe(0);
     expect((await report(7, 1)).successfulStudents).toBe(2);
     expect((await report(7, 2)).successfulStudents).toBe(1);
   });
@@ -133,7 +138,7 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     await fixture.pool.query("UPDATE academy_leads SET created_at=$1 WHERE id=2", [range.end]);
     expect((await report()).newLeads).toBe(1);
   });
-  it('groups all later results by academy creation date and keeps the exact cohort boundaries', async () => {
+  it('keeps later demos out of the earlier period while preserving cohort contact and processing metrics', async () => {
     await fixture.pool.query(`UPDATE academy_leads SET created_at='2025-08-01 18:59:59' WHERE id=1;
       UPDATE academy_leads SET created_at='2025-08-01 19:00:00' WHERE id=3;
       UPDATE academy_leads SET created_at='2025-08-31 18:59:59' WHERE id=4;
@@ -147,12 +152,20 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
       (1,10,'attended','2025-09-02'),(1,11,'attended','2025-09-02'),(2,10,'attended','2025-09-03');`);
     const result = await report();
     expect(result.newLeads).toBe(3);
-    expect(result.daily[0]).toMatchObject({ newLeads: 1, reachedLeads: 1, processedLeads: 1, demoBookings: 2, demoAttendees: 2 });
+    expect(result).toMatchObject({ demoBookings: 0, demoAttendees: 0 });
+    expect(result.daily[0]).toMatchObject({ newLeads: 1, reachedLeads: 1, processedLeads: 1, demoBookings: 0, demoAttendees: 0 });
     expect(result.daily[1]).toMatchObject({ newLeads: 1, reachedLeads: 1, processedLeads: 1 });
     expect(result.daily[30]).toMatchObject({ reachedLeads: 1, processedLeads: 1 });
     const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
-    expect(students.map(student => student.studentId).sort()).toEqual([10, 11]);
-    expect(students.find(student => student.studentId === 10)?.visits).toHaveLength(2);
+    expect(students).toEqual([]);
+    const september = { from: '2025-09-01', to: '2025-09-30', start: new Date('2025-08-31T19:00:00Z'), end: new Date('2025-09-30T19:00:00Z') };
+    const nextReport = await buildSalesDashboardMetrics({ userId: 1, module: 'administration' }, september, 7, 1);
+    expect(nextReport).toMatchObject({ demoBookings: 2, demoAttendees: 2 });
+    expect(nextReport.daily[1].demoBookings).toBe(2);
+    expect(nextReport.daily[10].demoAttendees).toBe(2);
+    const nextStudents = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, september, 7, 1);
+    expect(nextStudents.map(student => student.studentId).sort()).toEqual([10, 11]);
+    expect(nextStudents.find(student => student.studentId === 10)?.visits).toHaveLength(2);
   });
   it('shows current archived cohort leads, including later closures, and excludes reopened and older leads', async () => {
     await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
@@ -208,15 +221,62 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     expect(await report()).toMatchObject({ newLeads: 3, reachedLeads: 2 });
     expect(await report(7, 1)).toMatchObject({ newLeads: 1, reachedLeads: 1, contactBreakdown: { firstAttempt: 1 } });
   });
-  it('keeps attendance drill-down restricted to children of the same lead cohort', async () => {
+  it('includes old leads in attendance while preserving manager, funnel and linked-lead scope', async () => {
     await fixture.pool.query(`INSERT INTO academy_students(id,lead_id,manager_id) VALUES(99,NULL,7);
-      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(1,'2025-09-10','completed');
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES(1,'2025-08-10','completed');
       INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
-      (1,10,'attended','2025-09-01'),(1,12,'attended','2025-09-01'),
-      (1,13,'attended','2025-09-01'),(1,99,'attended','2025-09-01');`);
-    expect(await report(7, 1)).toMatchObject({ newLeads: 1, demoBookings: 1, demoAttendees: 1 });
+      (1,10,'attended','2025-08-01'),(1,12,'attended','2025-07-01'),
+      (1,13,'attended','2025-08-01'),(1,99,'attended','2025-08-01');`);
+    expect(await report(7, 1)).toMatchObject({ newLeads: 1, processedLeads: 1, demoBookings: 1, demoAttendees: 2 });
     const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
-    expect(students.map(student => student.studentId)).toEqual([10]);
+    expect(students.map(student => student.studentId).sort()).toEqual([10, 12]);
+    expect((await report(7, 2)).demoAttendees).toBe(0);
+    const ownReport = await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range, 8, 1);
+    expect(ownReport.demoAttendees).toBe(2);
+    const ownStudents = await buildSalesDemoStudents({ userId: 7, module: 'sales' }, range, 8, 1);
+    expect(ownStudents.map(student => student.studentId).sort()).toEqual([10, 12]);
+  });
+  it('counts all 17 attending students even when only nine leads arrived in the period', async () => {
+    await fixture.pool.query(`INSERT INTO academy_leads(id,manager_id,funnel_id,created_at)
+      SELECT id,7,1,CASE WHEN id < 109 THEN '2025-08-01'::timestamp ELSE '2025-07-01'::timestamp END
+      FROM generate_series(100,116) id;
+      INSERT INTO academy_students(id,lead_id,manager_id,student_name)
+      SELECT id,id,7,'Student ' || id FROM generate_series(100,116) id;
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES
+      (1,'2025-08-10','completed'),(2,'2025-08-11','scheduled');
+      INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at)
+      SELECT 1,id,'attended','2025-08-05'::timestamp FROM generate_series(100,116) id;
+      INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at)
+      VALUES(2,100,'attended','2025-08-06');`);
+    const result = await report(7, 1);
+    expect(result).toMatchObject({ demoBookings: 17, demoAttendees: 17, processedLeads: 9 });
+    expect(result.daily[0].demoAttendees).toBe(0);
+    expect(result.daily[9].demoAttendees).toBe(17);
+    expect(result.daily[10].demoAttendees).toBe(0);
+    const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
+    expect(students).toHaveLength(result.demoAttendees);
+    expect(students.find(student => student.studentId === 100)?.visits).toHaveLength(2);
+  });
+  it('uses academy date boundaries independently for bookings, visits and payments', async () => {
+    await fixture.pool.query(`UPDATE academy_leads SET created_at='2025-07-01';
+      INSERT INTO academy_demo_lessons(id,scheduled_at,status) VALUES
+      (1,'2025-07-31 18:59:59','completed'),(2,'2025-07-31 19:00:00','completed'),
+      (3,'2025-08-31 18:59:59','completed'),(4,'2025-08-31 19:00:00','completed');
+      INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id,status,created_at) VALUES
+      (1,10,'attended','2025-07-31 18:59:59'),(2,10,'attended','2025-07-31 19:00:00'),
+      (3,11,'attended','2025-08-31 18:59:59'),(4,12,'attended','2025-08-31 19:00:00');
+      INSERT INTO academy_payments(student_id,paid_at,status,amount_uzs) VALUES
+      (10,'2025-07-31 18:59:59','paid',100),(10,'2025-07-31 19:00:00','paid',100),
+      (11,'2025-08-31 18:59:59','paid',100),(12,'2025-08-31 19:00:00','paid',100);`);
+    const result = await report(7, 1);
+    expect(result).toMatchObject({ newLeads: 0, processedLeads: 0, demoBookings: 2, demoAttendees: 2, successfulStudents: 2 });
+    for (const metric of ['demoBookings', 'demoAttendees', 'successfulStudents'] as const) {
+      expect(result.daily[0][metric]).toBe(1);
+      expect(result.daily[30][metric]).toBe(1);
+    }
+    const students = await buildSalesDemoStudents({ userId: 1, module: 'administration' }, range, 7, 1);
+    expect(students.map(student => student.studentId).sort()).toEqual([10, 11]);
+    expect(students.flatMap(student => student.visits.map(visit => visit.demoId)).sort()).toEqual([2, 3]);
   });
   it('uses qualification state as of the calculation time and includes later real confirmations', async () => {
     await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES

@@ -32,7 +32,10 @@ export function SalesReportTrend({ daily, metric, title, kind, cumulative = fals
   const date = (value: string) => formatAcademyDate(`${value}T00:00:00+05:00`, language,
     { day: 'numeric', month: 'short', ...(spansYears ? { year: 'numeric' } as const : {}) });
   const interval = (point: typeof active) => point.from === point.to ? date(point.from) : `${date(point.from)} — ${date(point.to)}`;
-  const label = cumulative ? t('salesReportCohortCumulative') : t('salesReportCohortDaily');
+  const label = metric === 'demoBookings' ? t('salesReportBookingDaily')
+    : metric === 'demoAttendees' ? t('salesReportAttendanceDaily')
+      : metric === 'successfulStudents' ? t('salesReportPaymentCumulative')
+        : cumulative ? t('salesReportCohortCumulative') : t('salesReportCohortDaily');
   const path = kind === 'steps'
     ? plotted.map((point, i) => i ? `H${point.x} V${point.y}` : `M${point.x},${point.y}`).join(' ')
     : smoothReportPath(plotted);

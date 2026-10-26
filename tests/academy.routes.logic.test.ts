@@ -265,7 +265,7 @@ describe('academy route logic boundaries', () => {
     expect(update?.[1]).not.toContain('replacement');
   });
 
-  it('returns unique demo attendees with real names and all visits through the SQL-to-JSON boundary', async () => {
+  it('returns unique demo attendees with real names and period visits through the SQL-to-JSON boundary', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[]) => {
       if (!sql.includes('FROM attended_demos attendance')) return emptyResult();
@@ -273,15 +273,15 @@ describe('academy route logic boundaries', () => {
       expect(sql).toContain("participant.status = 'attended'");
       expect(sql).toContain("demo.status IN ('scheduled', 'completed')");
       expect(sql).toContain('demo.scheduled_at <= clock.as_of');
-      expect(sql).toContain('lead.created_at >= $1 AND lead.created_at < $2');
-      expect(sql).toContain('JOIN cohort_leads lead ON lead.id = student.lead_id');
-      expect(sql).not.toContain('demo.scheduled_at >= $1 AND demo.scheduled_at < $2');
+      expect(sql).toContain('JOIN portfolio_leads lead ON lead.id = student.lead_id');
+      expect(sql).not.toContain('JOIN cohort_leads lead ON lead.id = student.lead_id');
+      expect(sql).toContain('demo.scheduled_at >= $1 AND demo.scheduled_at < $2');
       expect(sql).toContain('($3::int IS NULL OR lead.manager_id = $3)');
       expect(sql).not.toContain('academy_lead_stage_history');
       const row = { student_id: 10, lead_id: 20, student_name: 'Temur', contact_name: 'Parent', phone: '+998901234567',
         manager_id: 7, manager_name: 'Alice', course_name: 'Coding', school_name: 'Cyberpark', room_name: '101',
         teacher_name: 'Teacher', duration_minutes: 60, format: 'offline' };
-      return { rows: [{ ...row, participant_id: 2, demo_id: 5, scheduled_at: new Date('2026-09-10T10:00:00Z') },
+      return { rows: [{ ...row, participant_id: 2, demo_id: 5, scheduled_at: new Date('2026-08-10T10:00:00Z') },
         { ...row, participant_id: 1, demo_id: 4, scheduled_at: new Date('2026-07-31T19:00:00Z') }] };
     });
     const app = await createApp();
@@ -291,7 +291,7 @@ describe('academy route logic boundaries', () => {
     expect(response.body[0]).toMatchObject({ studentId: 10, leadId: 20, studentName: 'Temur', contactName: 'Parent',
       phone: '+998901234567', managerId: 7, managerName: 'Alice' });
     expect(response.body[0].visits).toEqual([
-      { participantId: 2, demoId: 5, scheduledAt: '2026-09-10T10:00:00.000Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
+      { participantId: 2, demoId: 5, scheduledAt: '2026-08-10T10:00:00.000Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
       { participantId: 1, demoId: 4, scheduledAt: '2026-07-31T19:00:00.000Z', durationMinutes: 60, format: 'offline', courseName: 'Coding', schoolName: 'Cyberpark', roomName: '101', teacherName: 'Teacher' },
     ]);
   });

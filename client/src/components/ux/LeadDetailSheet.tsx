@@ -450,6 +450,7 @@ export function LeadDetailSheet({
   const [focusTarget, setFocusTarget] = useState<LeadWorkspaceSectionId | 'comment' | 'task' | 'tasks' | null>(null);
   const [invalidField, setInvalidField] = useState<FieldPath<LeadFormValues> | null>(null);
   const [removePhoneIndex, setRemovePhoneIndex] = useState<number | null>(null);
+  const phoneRemovalFocusIndex = useRef<number | null>(null);
 
   const leadQuery = useLeadDetailsQuery<LeadDetails>(leadId, open);
   const transferOptionsQuery = useFunnelTransferOptions(open && funnelTransferOpen && leadQuery.isSuccess);
@@ -524,6 +525,7 @@ export function LeadDetailSheet({
     setFocusTarget(null);
     setInvalidField(null);
     setRemovePhoneIndex(null);
+    phoneRemovalFocusIndex.current = null;
   }, [clearPaymentFiles, leadId, taskForm]);
 
   const [versionConflict, setVersionConflict] = useState(false);
@@ -618,6 +620,7 @@ export function LeadDetailSheet({
       setFocusTarget(null);
       setInvalidField(null);
       setRemovePhoneIndex(null);
+      phoneRemovalFocusIndex.current = null;
       setPendingPaymentClaim(null);
       setDuplicateHint(null);
       setCreateStudentOpen(false);
@@ -848,26 +851,14 @@ export function LeadDetailSheet({
   ]);
   const phoneNumbersRaw = leadForm.watch('phoneNumbers');
   const phoneValues = useMemo(() => (phoneNumbersRaw && phoneNumbersRaw.length > 0 ? phoneNumbersRaw : ['']), [phoneNumbersRaw]);
-  // Parallel stable ids so deleting a middle phone does not shift input
-  // identity across rows (see matching logic in the new-lead form).
-  const phoneKeySequence = useRef(0);
-  const [phoneKeys, setPhoneKeys] = useState<string[]>(() => phoneValues.map((_, i) => `lead-phone-${i}`));
-  useEffect(() => {
-    setPhoneKeys((current) => {
-      if (current.length === phoneValues.length) return current;
-      if (current.length > phoneValues.length) return current.slice(0, phoneValues.length);
-      return [...current, ...phoneValues.slice(current.length).map(() => `lead-phone-new-${phoneKeySequence.current++}`)];
-    });
-  }, [phoneValues]);
   const addLeadPhoneRow = () => {
-    setPhoneKeys((current) => [...current, `lead-phone-new-${phoneKeySequence.current++}`]);
     const owners = phoneValues.map((_, index) => leadForm.getValues(`phoneOwnerNames.${index}`) ?? '');
     leadForm.setValue('phoneOwnerNames', [...owners, ''], { shouldDirty: true });
     leadForm.setValue('phoneNumbers', [...phoneValues, ''], { shouldDirty: true, shouldValidate: true });
   };
   const removeLeadPhoneRow = (index: number) => {
-    setPhoneKeys((current) => current.filter((_, i) => i !== index));
     const nextPhones = phoneValues.filter((__, phoneIndex) => phoneIndex !== index);
+    phoneRemovalFocusIndex.current = Math.max(0, Math.min(index, nextPhones.length - 1));
     const nextOwners = leadForm.getValues('phoneOwnerNames').filter((_, phoneIndex) => phoneIndex !== index);
     leadForm.setValue('phoneOwnerNames', nextOwners.length ? nextOwners : [''], { shouldDirty: true, shouldValidate: true });
     leadForm.setValue('phoneNumbers', nextPhones.length > 0 ? nextPhones : [''], {
@@ -1237,7 +1228,9 @@ export function LeadDetailSheet({
                           <div className="flex flex-col gap-2">
                             {phoneValues.map((_, index) => (
                               <div
-                                key={phoneKeys[index] ?? `lead-phone-fallback-${index}`}
+                                // Controller names are positional. Moving a mounted
+                                // Controller to a different index can clear a surviving phone.
+                                key={`lead-phone-${index}`}
                                 className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-2"
                               >
                                 <FormField
@@ -1851,7 +1844,14 @@ export function LeadDetailSheet({
         />
       ) : null}
       <AlertDialog open={removePhoneIndex !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setRemovePhoneIndex(null); }}>
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={(event) => {
+          const index = phoneRemovalFocusIndex.current;
+          if (index === null) return;
+          phoneRemovalFocusIndex.current = null;
+          event.preventDefault();
+          const nextPhone = sheetRef.current?.querySelector<HTMLInputElement>(`input[name="phoneNumbers.${index}"]`);
+          (nextPhone ?? sheetRef.current)?.focus({ preventScroll: true });
+        }}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('leadWorkspaceRemovePhoneTitle')}</AlertDialogTitle>
           </AlertDialogHeader>
@@ -1862,7 +1862,7 @@ export function LeadDetailSheet({
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (removePhoneIndex !== null) removeLeadPhoneRow(removePhoneIndex); }}>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (removePhoneIndex !== null) removeLeadPhoneRow(removePhoneIndex); }}>
               {t('removePhone')}
             </AlertDialogAction>
           </AlertDialogFooter>

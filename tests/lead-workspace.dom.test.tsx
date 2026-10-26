@@ -763,6 +763,48 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests[0].body.phoneNumbers).toEqual(['+998901234567']);
   });
 
+  it.each([[0, 2], [0, 3], [1, 3], [2, 3]])('keeps the remaining phones and owners after removing row %s of %s', async (index, count) => {
+    lead.phoneNumbers = ['+998901234567', '+998901234568', '+998901234569'].slice(0, count);
+    lead.phoneOwners = Object.fromEntries(lead.phoneNumbers.map((phone, i) => [phone, ['First', 'Second', 'Third'][i]]));
+    const remainingPhones = lead.phoneNumbers.filter((_, i) => i !== index);
+    const remainingOwners = Object.fromEntries(remainingPhones.map((phone) => [phone, lead.phoneOwners[phone]]));
+    queryClient.setQueryData(['/api/academy/leads', 15], lead);
+    const { user, onOpenChange } = renderSheet();
+    const contacts = screen.getByRole('button', { name: i18n.t('contactInformation') });
+    await user.click(screen.getAllByRole('button', { name: i18n.t('removePhone') })[index]);
+    const confirmation = await screen.findByRole('alertdialog');
+    await user.click(within(confirmation).getByRole('button', { name: i18n.t('removePhone') }));
+
+    const nextIndex = Math.min(index, remainingPhones.length - 1);
+    const nextPhone = screen.getByLabelText(nextIndex === 0 ? i18n.t('phone') : `${i18n.t('phone')} 2`);
+    await waitFor(() => expect(document.activeElement === nextPhone).toBe(true));
+    expect(contacts.getAttribute('aria-expanded')).toBe('true');
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(requests).toHaveLength(0);
+    expect(screen.getAllByRole('textbox', { name: i18n.t('phoneOwnerName') })
+      .map((input) => (input as HTMLInputElement).value)).toEqual(Object.values(remainingOwners));
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toMatchObject({ phoneNumbers: remainingPhones, phoneOwners: remainingOwners });
+  });
+
+  it('cancels phone removal with Escape without closing the card or changing the draft', async () => {
+    queryClient.setQueryData(['/api/academy/leads', 15], lead);
+    const { user, onOpenChange } = renderSheet();
+    const remove = screen.getAllByRole('button', { name: i18n.t('removePhone') })[0];
+    remove.focus();
+    await user.keyboard('{Enter}');
+    const confirmation = await screen.findByRole('alertdialog');
+    expect(document.activeElement).toBe(within(confirmation).getByRole('button', { name: i18n.t('cancel') }));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(remove));
+    expect(screen.getAllByRole('button', { name: i18n.t('removePhone') })).toHaveLength(2);
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(requests).toHaveLength(0);
+  });
+
   it('loads, saves and clears the owner of an individual phone', async () => {
     lead.phoneOwners = { '+998901234567': 'First parent', '+998901234568': 'Second parent' };
     queryClient.setQueryData(['/api/academy/leads', 15], lead);

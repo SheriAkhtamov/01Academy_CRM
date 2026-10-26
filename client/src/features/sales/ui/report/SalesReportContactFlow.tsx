@@ -23,13 +23,14 @@ const outcomes: ContactRow[] = [
 
 export function SalesReportContactFlow({ report }: { report?: SalesActivityReport }) {
   const { t, language } = useTranslation();
+  const total = report?.reportLeads ?? report?.newLeads ?? 0;
   const number = new Intl.NumberFormat(language);
   const percentage = new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 1 });
   const share = (value: number, total: number) => total > 0 ? percentage.format(value / total) : '—';
   return <section aria-label={t('salesReportFirstContact')} className="sales-report-contact min-w-0 overflow-hidden rounded-2xl border border-border/65 bg-card text-card-foreground shadow-sm">
     <header data-topographic="card" className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-5 py-4">
       <h3 className="flex items-center gap-2.5 text-sm font-semibold"><PhoneCall className="size-4 text-muted-foreground" aria-hidden="true" />{t('salesReportFirstContact')}</h3>
-      {report ? <span className="text-xs tabular-nums text-muted-foreground">{t('salesReportCohortSize', { count: number.format(report.newLeads) })}</span> : null}
+      {report ? <span className="text-xs tabular-nums text-muted-foreground">{t('salesReportPeriodLeadCount', { count: number.format(total) })}</span> : null}
     </header>
     {!report ? <div className="grid gap-6 p-5 md:grid-cols-2"><Skeleton className="h-64" /><Skeleton className="h-64" /></div> :
       <div className="grid gap-8 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -37,7 +38,7 @@ export function SalesReportContactFlow({ report }: { report?: SalesActivityRepor
           <thead><tr className="text-[11px] text-muted-foreground">
             <th scope="col" className="pb-2 text-left font-medium">{t('salesReportContactResult')}</th>
             <th scope="col" className="w-14 pb-2 text-right font-medium">{t('salesReportCount')}</th>
-            <th scope="col" className="w-20 pb-2 text-right font-medium">{t('salesReportShareOfNewHeading')}</th>
+            <th scope="col" className="w-20 pb-2 text-right font-medium">{t('salesReportShareOfPeriodHeading')}</th>
           </tr></thead>
           <tbody>{attempts.map((item, index) => {
             const count = report.contactBreakdown[item.key];
@@ -45,11 +46,11 @@ export function SalesReportContactFlow({ report }: { report?: SalesActivityRepor
               <th scope="row" className="py-2 pr-3 text-left font-normal">
                 <span className="block break-words leading-5">{t(item.labelKey)}</span>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted/70" aria-hidden="true">
-                  <div className="h-full rounded-full" style={{ width: `${report.newLeads > 0 ? count / report.newLeads * 100 : 0}%`, backgroundColor: item.color }} />
+                  <div className="h-full rounded-full" style={{ width: `${total > 0 ? count / total * 100 : 0}%`, backgroundColor: item.color }} />
                 </div>
               </th>
               <td className="text-right font-semibold tabular-nums">{number.format(count)}</td>
-              <td className="text-right tabular-nums text-muted-foreground">{share(count, report.newLeads)}</td>
+              <td className="text-right tabular-nums text-muted-foreground">{share(count, total)}</td>
             </tr>;
           })}</tbody>
         </table>

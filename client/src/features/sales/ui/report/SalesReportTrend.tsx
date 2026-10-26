@@ -1,6 +1,7 @@
 import { useId, useMemo, useState, type PointerEvent } from 'react';
 import type { SalesReportDailyPoint, SalesReportMetric } from '@shared/contracts/sales-report';
 import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/lib/i18n';
 import { formatAcademyDate } from '@/lib/localeFormat';
 import { salesReportChartPoints, smoothReportPath } from '../../report-charts';
 
@@ -11,6 +12,12 @@ const BASE = 104;
 const TOP = 14;
 const LEFT = 8;
 const RIGHT = 8;
+const dateLabels: Record<SalesReportMetric, TranslationKey> = {
+  newLeads: 'salesReportArrivalDaily', processedLeads: 'salesReportProcessedDaily',
+  reachedLeads: 'salesReportReachedDaily', qualifiedLeads: 'salesReportQualificationCumulative',
+  demoBookings: 'salesReportBookingDaily', demoAttendees: 'salesReportAttendanceDaily',
+  successfulStudents: 'salesReportPaymentCumulative',
+};
 
 export function SalesReportTrend({ daily, metric, title, kind, cumulative = false, featured = false }: {
   daily: SalesReportDailyPoint[]; metric: SalesReportMetric; title: string;
@@ -32,10 +39,7 @@ export function SalesReportTrend({ daily, metric, title, kind, cumulative = fals
   const date = (value: string) => formatAcademyDate(`${value}T00:00:00+05:00`, language,
     { day: 'numeric', month: 'short', ...(spansYears ? { year: 'numeric' } as const : {}) });
   const interval = (point: typeof active) => point.from === point.to ? date(point.from) : `${date(point.from)} — ${date(point.to)}`;
-  const label = metric === 'demoBookings' ? t('salesReportBookingDaily')
-    : metric === 'demoAttendees' ? t('salesReportAttendanceDaily')
-      : metric === 'successfulStudents' ? t('salesReportPaymentCumulative')
-        : cumulative ? t('salesReportCohortCumulative') : t('salesReportCohortDaily');
+  const label = t(dateLabels[metric]);
   const path = kind === 'steps'
     ? plotted.map((point, i) => i ? `H${point.x} V${point.y}` : `M${point.x},${point.y}`).join(' ')
     : smoothReportPath(plotted);

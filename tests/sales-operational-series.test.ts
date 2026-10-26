@@ -19,6 +19,7 @@ describe('sales report scope', () => {
   it('returns a measured zero report without fabricated legacy statistics', async () => {
     expect(await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range)).toEqual({
       asOf: expect.any(String),
+      reportLeads: 0,
       newLeads: 0, processedLeads: 0, reachedLeads: 0, qualifiedLeads: 0, demoBookings: 0, demoAttendees: 0,
       successfulStudents: 0, closedLeads: 0, closedReasons: [],
       contactBreakdown: { firstAttempt: 0, secondAttempt: 0, thirdAttempt: 0, laterAttempt: 0,

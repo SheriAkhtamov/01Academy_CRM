@@ -15,10 +15,10 @@ import { useSalesReportingRange } from '../client/src/features/sales/useSalesRep
 const report = { asOf: '2026-09-08T10:00:00Z', daily: [
   { date: '2026-08-01', newLeads: 4, processedLeads: 4, reachedLeads: 3, qualifiedLeads: 2, demoBookings: 2, demoAttendees: 1, successfulStudents: 1 },
   { date: '2026-08-02', newLeads: 6, processedLeads: 5, reachedLeads: 4, qualifiedLeads: 3, demoBookings: 3, demoAttendees: 3, successfulStudents: 2 },
-], newLeads: 10, processedLeads: 9, reachedLeads: 7, qualifiedLeads: 5, demoBookings: 5, demoAttendees: 4,
+], newLeads: 10, reportLeads: 20, processedLeads: 9, reachedLeads: 7, qualifiedLeads: 5, demoBookings: 5, demoAttendees: 4,
   successfulStudents: 3, closedLeads: 2, closedReasons: [{ reason: 'no_budget', count: 1 }, { reason: 'Moving away', count: 1 }],
   contactBreakdown: { firstAttempt: 2, secondAttempt: 2, thirdAttempt: 1, laterAttempt: 1, incomingFirst: 1,
-    attemptedUnreached: 2, notAttempted: 1, reachedArchived: 1, reachedQualifiedInWork: 4, reachedUnqualifiedInWork: 2 },
+    attemptedUnreached: 2, notAttempted: 11, reachedArchived: 1, reachedQualifiedInWork: 4, reachedUnqualifiedInWork: 2 },
 };
 let client: QueryClient;
 function Harness() {
@@ -77,20 +77,25 @@ describe('factual sales report', () => {
     fireEvent.keyDown(successes, { key: 'End' });
     expect(successes.getAttribute('aria-valuetext')).toBe('Aug 2: 3');
   });
-  it('shows first-contact buckets against new leads and outcomes against reached leads', async () => {
+  it('uses all period leads as the denominator, and reached leads for outcomes', async () => {
     mount(); await screen.findByRole('button', { name: 'Meetings attended: 4' });
-    const contact = within(screen.getByRole('region', { name: 'First connected call' }));
-    expect(contact.getByRole('row', { name: 'On the first attempt 2 20%' })).toBeTruthy();
-    expect(contact.getByRole('row', { name: 'Called, no conversation yet 2 20%' })).toBeTruthy();
-    expect(contact.getByRole('row', { name: 'No outgoing attempts 1 10%' })).toBeTruthy();
+    const contact = within(screen.getByRole('region', { name: 'First connected call in the period' }));
+    expect(contact.getByRole('row', { name: 'On the first attempt 2 10%' })).toBeTruthy();
+    expect(contact.getByRole('row', { name: 'Called, no conversation yet 2 10%' })).toBeTruthy();
+    expect(contact.getByRole('row', { name: 'No outgoing attempts 11 55%' })).toBeTruthy();
     const outcomes = within(contact.getByRole('region', { name: 'Current state of reached leads' }));
     expect(outcomes.getByText('57.1%')).toBeTruthy();
     expect(outcomes.getByText('Qualified, active')).toBeTruthy();
-    expect(screen.getByText('70% of new leads')).toBeTruthy();
+    expect(screen.getByText('35% of period leads')).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Reporting period' })).toBeTruthy();
+    expect(contact.getByText('Leads in period: 20')).toBeTruthy();
+    expect(screen.queryByText(/of new leads/)).toBeNull();
+    expect(screen.getByRole('slider', { name: 'Processed leads · By processing date' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Reached leads · By conversation date' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Qualified leads · Cumulative by qualification date' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: 'Meetings booked · By booking date' })).toBeTruthy();
     expect(screen.getByRole('slider', { name: 'Meetings attended · By demo date' })).toBeTruthy();
-    expect(screen.getByRole('slider', { name: 'Successful · Cumulative by payment date' })).toBeTruthy();
+    expect(screen.getByRole('slider', { name: 'Successful · Cumulative by first payment date' })).toBeTruthy();
   });
   it('updates arbitrary dates, manager, and funnel together', async () => {
     const user = userEvent.setup(); mount();

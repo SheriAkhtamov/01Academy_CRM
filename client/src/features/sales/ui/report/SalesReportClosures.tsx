@@ -12,6 +12,7 @@ export function SalesReportClosures({ report }: { report?: SalesActivityReport }
   const percentage = new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 1 });
   const reasons = report?.closedReasons ?? [];
   const total = report?.closedLeads ?? 0;
+  const leadTotal = report?.reportLeads ?? report?.newLeads ?? 0;
   const label = (reason: string) => {
     const known = LEAD_ARCHIVE_REASONS.find(item => item.code === reason);
     return known ? t(known.translationKey) : reason === 'unspecified' ? t('salesReportUnspecifiedReason') : reason;
@@ -45,8 +46,8 @@ export function SalesReportClosures({ report }: { report?: SalesActivityReport }
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1.5">
           <span className="text-5xl font-semibold tracking-tight tabular-nums">{number.format(total)}</span>
           <span className="text-xs text-muted-foreground">{t('salesReportClosedUnit')}</span>
-          {report.newLeads > 0 ? <span className="text-[11px] text-muted-foreground">
-            {t('salesReportShareOfNew', { percent: percentage.format(total / report.newLeads) })}
+          {leadTotal > 0 ? <span className="text-[11px] text-muted-foreground">
+            {t('salesReportShareOfPeriod', { percent: percentage.format(total / leadTotal) })}
           </span> : null}
         </div>
       </div>

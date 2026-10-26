@@ -64,7 +64,7 @@ export function SalesOverviewMetrics({ reportingRange, managerId, funnelId, onOp
           color={metric.color} kind={metric.kind} cumulative={'cumulative' in metric && metric.cumulative}
           featured={'featured' in metric && metric.featured} className={'featured' in metric ? 'sales-report-featured' : undefined}
           value={report.data?.[metric.key]} daily={report.data?.daily}
-          cohortTotal={metric.unit === 'leads' && metric.key !== 'newLeads' ? report.data?.newLeads : undefined}
+          leadTotal={metric.unit === 'leads' && metric.key !== 'newLeads' ? (report.data?.reportLeads ?? report.data?.newLeads) : undefined}
           onOpen={metric.key === 'demoAttendees' ? () => setShowStudents(true) : undefined} />
         {metric.key === 'reachedLeads' ? <SalesReportContactFlow report={report.data} /> : null}
       </Fragment>)}

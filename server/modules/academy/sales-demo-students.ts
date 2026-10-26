@@ -2,12 +2,12 @@ import { hasLeadershipAccess } from '@shared/academy';
 import type { SalesDemoStudent, SalesDemoVisit } from '@shared/contracts/sales-demo-students';
 import { query, type DatasetActor } from './academy-core';
 import { academyDateOnlyKey, type ReportingRange } from './academy-scheduling';
-import { salesCohortCte } from './sales-cohort-scope';
+import { salesReportScopeCte } from './sales-report-scope';
 
 // Attendance is an explicit participant mark. A scheduled lesson can already
 // have saved attendance; cancelled, not-conducted and future demos cannot.
 // The selected dates apply to the demo itself, regardless of lead creation date.
-export const salesDemoAttendanceCte = `${salesCohortCte}, attended_demos AS (
+export const salesDemoAttendanceCte = `${salesReportScopeCte}, attended_demos AS (
   SELECT participant.id AS participant_id, demo.id AS demo_id,
     demo.scheduled_at, demo.duration_minutes, demo.format,
     demo.course_id, demo.school_id, demo.room_id, demo.teacher_id,

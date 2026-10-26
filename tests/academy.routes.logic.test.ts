@@ -503,7 +503,7 @@ describe('academy route logic boundaries', () => {
 
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
     const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
-      String(sql).includes('processed_lead_ids AS')
+      String(sql).includes('processed_leads AS')
     ));
     expect(String(periodMetricCall?.[0])).toContain('($3::int IS NULL OR lead.manager_id = $3)');
     expect(periodMetricCall?.[1]?.[2]).toBe(7);
@@ -528,7 +528,7 @@ describe('academy route logic boundaries', () => {
 
     expect(allowed.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(200);
     const periodMetricCall = mocks.poolQuery.mock.calls.find(([sql]) => (
-      String(sql).includes('processed_lead_ids AS')
+      String(sql).includes('processed_leads AS')
     ));
     expect(periodMetricCall?.[1]?.[2]).toBe(8);
   });

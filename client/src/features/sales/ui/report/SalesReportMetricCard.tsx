@@ -6,11 +6,11 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { SalesReportTrend, type SalesReportChartKind } from './SalesReportTrend';
 
-export function SalesReportMetricCard({ title, unit, value, daily, metric, icon: Icon, color, kind, cumulative, featured, className, onOpen, cohortTotal }: {
+export function SalesReportMetricCard({ title, unit, value, daily, metric, icon: Icon, color, kind, cumulative, featured, className, onOpen, leadTotal }: {
   title: string; unit: string; value?: number; daily?: SalesReportDailyPoint[];
   metric: SalesReportMetric; icon: LucideIcon; color: string; kind: SalesReportChartKind;
   cumulative?: boolean; featured?: boolean; className?: string; onOpen?: () => void;
-  cohortTotal?: number;
+  leadTotal?: number;
 }) {
   const { t, language } = useTranslation();
   const number = new Intl.NumberFormat(language);
@@ -36,8 +36,8 @@ export function SalesReportMetricCard({ title, unit, value, daily, metric, icon:
             <ArrowUpRight className="size-5 text-muted-foreground transition-colors group-hover:text-[var(--metric-color)]" aria-hidden="true" />
           </button> : <p className={cn('font-semibold tracking-tight tabular-nums', featured ? 'text-5xl sm:text-[56px]' : 'text-4xl sm:text-[42px]')}>{number.format(value)}</p>}
           <span className="text-xs text-muted-foreground">{unit}</span>
-          {cohortTotal !== undefined && cohortTotal > 0 ? <span className="basis-full text-[11px] text-muted-foreground">
-            {t('salesReportShareOfNew', { percent: percentage.format(value / cohortTotal) })}
+          {leadTotal !== undefined && leadTotal > 0 ? <span className="basis-full text-[11px] text-muted-foreground">
+            {t('salesReportShareOfPeriod', { percent: percentage.format(value / leadTotal) })}
           </span> : null}
         </> : <Skeleton className="h-12 w-24" />}
       </div>

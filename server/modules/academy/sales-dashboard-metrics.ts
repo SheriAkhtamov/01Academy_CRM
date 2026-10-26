@@ -5,11 +5,13 @@ import { type DatasetActor, type Row, queryOne, ACADEMY_TIME_ZONE } from './acad
 import type { ReportingRange } from './academy-scheduling';
 import { fillSalesReportDays } from './sales-report-series';
 import { salesDemoAttendanceCte } from './sales-demo-students';
-import { salesCohortCallsCte } from './sales-cohort-calls';
+import { salesReportCallsCte } from './sales-report-calls';
+import { salesReportLeadFactsCte } from './sales-report-lead-facts';
+import { groupSalesClosureReasons } from './sales-report-reasons';
 
 /**
- * Lead metrics describe the creation-date cohort through the query's clock.
- * Student results count events within the period, including older leads.
+ * Every result is dated by its business event, including work on older leads.
+ * The denominator includes new leads and leads with activity during the period.
  * Each daily series uses the same date basis as its headline and drill-down.
  */
 export const buildSalesDashboardMetrics = async (
@@ -21,21 +23,8 @@ export const buildSalesDashboardMetrics = async (
   const managerId = hasLeadershipAccess(actor) ? requestedManagerId : actor.userId;
   const row = await queryOne<Row>(
     `${salesDemoAttendanceCte},
-     ${salesCohortCallsCte},
-     qualification_states AS (
-       SELECT DISTINCT ON (lead.id, lead.funnel_id)
-         fact.entity_id AS lead_id, fact.created_at, fact.action
-       FROM audit_logs fact
-       JOIN cohort_leads lead ON lead.id = fact.entity_id
-       CROSS JOIN report_clock clock
-       WHERE fact.entity_type = 'academy_lead' AND fact.action IN ($5, $6)
-         AND fact.new_values->0->>'funnelId' = lead.funnel_id::text
-         AND fact.created_at <= clock.as_of
-       ORDER BY lead.id, lead.funnel_id, fact.created_at DESC, fact.id DESC
-     ),
-     qualified_facts AS (
-       SELECT lead_id FROM qualification_states WHERE action = $5
-     ),
+     ${salesReportCallsCte},
+     ${salesReportLeadFactsCte},
      booked_students AS (
        SELECT student.id AS student_id, student.lead_id, MIN(participant.created_at) AS booked_at
        FROM academy_demo_lesson_participants participant
@@ -52,81 +41,51 @@ export const buildSalesDashboardMetrics = async (
        SELECT student_id, lead_id, MIN(scheduled_at) AS attended_at
        FROM attended_demos GROUP BY student_id, lead_id
      ),
-     successful_students AS (
-       SELECT student.id AS student_id, student.lead_id, MIN(payment.paid_at) AS paid_at
+     student_payments AS (
+       SELECT student.id AS student_id, student.lead_id, payment.paid_at
        FROM academy_students student
        JOIN portfolio_leads lead ON lead.id = student.lead_id
        JOIN academy_payments payment ON payment.student_id = student.id
        CROSS JOIN report_clock clock
        WHERE payment.status = 'paid' AND payment.amount_uzs > 0
-         AND payment.paid_at >= $1 AND payment.paid_at < $2
          AND payment.paid_at <= clock.as_of
-       GROUP BY student.id, student.lead_id
      ),
-     student_activity_leads AS (
-       -- Processing remains a lifetime result of the selected new leads.
-       -- Event-period student totals must not change that cohort or inflate it.
-       SELECT DISTINCT student.lead_id
-       FROM academy_students student JOIN cohort_leads lead ON lead.id = student.lead_id
-       CROSS JOIN report_clock clock
-       WHERE EXISTS (
-         SELECT 1 FROM academy_demo_lesson_participants participant
-         JOIN academy_demo_lessons demo ON demo.id = participant.demo_lesson_id
-         WHERE participant.student_id = student.id AND participant.created_at <= clock.as_of
-           AND participant.status <> 'cancelled' AND demo.status <> 'cancelled'
-       ) OR EXISTS (
-         SELECT 1 FROM academy_payments payment
-         WHERE payment.student_id = student.id AND payment.status = 'paid'
-           AND payment.amount_uzs > 0 AND payment.paid_at <= clock.as_of
-       )
+     successful_students AS (
+       SELECT student_id, lead_id, MIN(paid_at) AS paid_at
+       FROM student_payments GROUP BY student_id, lead_id
+       HAVING MIN(paid_at) >= $1 AND MIN(paid_at) < $2
      ),
-     closure_events AS (
-       SELECT fact.entity_id AS lead_id, fact.created_at AS closed_at, fact.id AS event_id,
-         NULLIF(BTRIM(fact.new_values->0->>'archiveReason'), '') AS reason
-       FROM audit_logs fact
-       JOIN cohort_leads lead ON lead.id = fact.entity_id
-       CROSS JOIN report_clock clock
-       WHERE fact.entity_type = 'academy_lead'
-         AND fact.action IN ('ARCHIVE_ACADEMY_LEAD', 'BULK_ARCHIVE_ACADEMY_LEAD')
-         AND fact.created_at <= clock.as_of
-     ),
-     latest_closure AS (
-       SELECT DISTINCT ON (lead_id) lead_id, reason
-       FROM closure_events ORDER BY lead_id, closed_at DESC, event_id DESC
-     ),
-     closed_leads AS (
-       SELECT lead.id AS lead_id,
-         COALESCE(NULLIF(BTRIM(lead.archive_reason), ''), latest.reason, 'unspecified') AS reason
-       FROM cohort_leads lead LEFT JOIN latest_closure latest ON latest.lead_id = lead.id
-       WHERE lead.is_archived = true
-     ),
-     processed_lead_ids AS (
-       SELECT report_lead_id AS lead_id FROM cohort_calls
+     processed_events AS (
+       SELECT report_lead_id AS lead_id, started_at AS happened_at FROM period_calls
        WHERE direction = 'outgoing' OR talk_seconds > 0
-       UNION
-       SELECT communication.lead_id FROM academy_communications communication
-       JOIN cohort_leads lead ON lead.id = communication.lead_id
+       UNION ALL
+       SELECT lead.id, communication.created_at FROM academy_communications communication
+       LEFT JOIN academy_students student ON student.id = communication.student_id
+       JOIN portfolio_leads lead ON lead.id = COALESCE(communication.lead_id, student.lead_id)
        CROSS JOIN report_clock clock
        WHERE communication.created_by IS NOT NULL AND communication.created_at <= clock.as_of
-       UNION
-       SELECT comment.lead_id FROM academy_lead_comments comment
-       JOIN cohort_leads lead ON lead.id = comment.lead_id
-       CROSS JOIN report_clock clock
-       WHERE comment.author_id IS NOT NULL AND comment.created_at <= clock.as_of
-       UNION SELECT lead_id FROM student_activity_leads
-       UNION SELECT lead_id FROM qualified_facts
-       UNION SELECT lead_id FROM closure_events
-       UNION SELECT lead_id FROM closed_leads
+         AND communication.created_at >= $1 AND communication.created_at < $2
+       UNION ALL SELECT lead_id, happened_at FROM manual_lead_events
+       UNION ALL SELECT lead_id, booked_at FROM booked_students
+       UNION ALL SELECT lead_id, attended_at FROM attended_students
+       UNION ALL SELECT lead_id, qualified_at FROM qualified_leads
+       UNION ALL SELECT lead_id, paid_at FROM student_payments WHERE paid_at >= $1 AND paid_at < $2
+       UNION ALL SELECT lead_id, closed_at FROM closure_events WHERE closed_at >= $1 AND closed_at < $2
+       UNION ALL SELECT lead_id, closed_at FROM closed_leads
      ),
-     lead_metric_entities AS (
-       SELECT 'newLeads' AS metric, id AS lead_id FROM cohort_leads
-       UNION ALL SELECT 'processedLeads', lead_id FROM processed_lead_ids
-       UNION ALL SELECT 'reachedLeads', report_lead_id FROM first_reached_calls
-       UNION ALL SELECT 'qualifiedLeads', lead_id FROM qualified_facts
+     processed_leads AS (
+       SELECT lead_id, MIN(happened_at) AS processed_at FROM processed_events GROUP BY lead_id
+     ),
+     period_lead_ids AS (
+       SELECT id AS lead_id FROM new_leads
+       UNION SELECT lead_id FROM processed_leads
+       UNION SELECT report_lead_id FROM period_calls
      ),
      metric_events AS (
-       SELECT entity.metric, lead.created_at AS happened_at
-       FROM lead_metric_entities entity JOIN cohort_leads lead ON lead.id = entity.lead_id
+       SELECT 'newLeads' AS metric, created_at AS happened_at FROM new_leads
+       UNION ALL SELECT 'processedLeads', processed_at FROM processed_leads
+       UNION ALL SELECT 'reachedLeads', started_at FROM first_reached_calls
+       UNION ALL SELECT 'qualifiedLeads', qualified_at FROM qualified_leads
        UNION ALL SELECT 'demoBookings', booked_at FROM booked_students
        UNION ALL SELECT 'demoAttendees', attended_at FROM attended_students
        UNION ALL SELECT 'successfulStudents', paid_at FROM successful_students
@@ -140,8 +99,7 @@ export const buildSalesDashboardMetrics = async (
          COUNT(*) FILTER (WHERE metric = 'demoBookings')::int AS demo_bookings,
          COUNT(*) FILTER (WHERE metric = 'demoAttendees')::int AS demo_attendees,
          COUNT(*) FILTER (WHERE metric = 'successfulStudents')::int AS successful_students
-       FROM metric_events
-       GROUP BY date
+       FROM metric_events GROUP BY date
      ),
      contact_breakdown AS (
        SELECT JSON_BUILD_OBJECT(
@@ -158,10 +116,10 @@ export const buildSalesDashboardMetrics = async (
          'reachedUnqualifiedInWork', COUNT(*) FILTER (WHERE first.report_lead_id IS NOT NULL
            AND NOT COALESCE(lead.is_archived, false) AND qualified.lead_id IS NULL)
        ) AS value
-       FROM cohort_leads lead
+       FROM period_lead_ids scope JOIN portfolio_leads lead ON lead.id = scope.lead_id
        LEFT JOIN first_reached_calls first ON first.report_lead_id = lead.id
        LEFT JOIN outgoing_attempts attempts ON attempts.report_lead_id = lead.id
-       LEFT JOIN qualified_facts qualified ON qualified.lead_id = lead.id
+       LEFT JOIN qualified_lead_states qualified ON qualified.lead_id = lead.id
      )
      SELECT
        (SELECT as_of AT TIME ZONE 'UTC' FROM report_clock) AS as_of,
@@ -171,10 +129,11 @@ export const buildSalesDashboardMetrics = async (
          'reachedLeads', reached_leads, 'qualifiedLeads', qualified_leads,
          'demoBookings', demo_bookings, 'demoAttendees', demo_attendees,
          'successfulStudents', successful_students) ORDER BY date) FROM daily_metrics), '[]'::json) AS daily,
-       (SELECT COUNT(*)::int FROM cohort_leads) AS new_leads,
-       (SELECT COUNT(*)::int FROM processed_lead_ids) AS processed_leads,
+       (SELECT COUNT(*)::int FROM new_leads) AS new_leads,
+       (SELECT COUNT(*)::int FROM period_lead_ids) AS report_leads,
+       (SELECT COUNT(*)::int FROM processed_leads) AS processed_leads,
        (SELECT COUNT(*)::int FROM first_reached_calls) AS reached_leads,
-       (SELECT COUNT(*)::int FROM qualified_facts) AS qualified_leads,
+       (SELECT COUNT(*)::int FROM qualified_leads) AS qualified_leads,
        (SELECT COUNT(*)::int FROM booked_students) AS demo_bookings,
        (SELECT COUNT(*)::int FROM attended_students) AS demo_attendees,
        (SELECT COUNT(*)::int FROM successful_students) AS successful_students,
@@ -188,11 +147,11 @@ export const buildSalesDashboardMetrics = async (
   return {
     asOf: new Date(row?.asOf ?? Date.now()).toISOString(),
     daily: fillSalesReportDays(row?.daily, range),
-    newLeads: count(row?.newLeads), processedLeads: count(row?.processedLeads),
+    newLeads: count(row?.newLeads), reportLeads: count(row?.reportLeads), processedLeads: count(row?.processedLeads),
     reachedLeads: count(row?.reachedLeads), qualifiedLeads: count(row?.qualifiedLeads),
     demoBookings: count(row?.demoBookings), demoAttendees: count(row?.demoAttendees),
     successfulStudents: count(row?.successfulStudents), closedLeads: count(row?.closedLeads),
-    closedReasons: Array.isArray(row?.closedReasons) ? row.closedReasons : [],
+    closedReasons: groupSalesClosureReasons(Array.isArray(row?.closedReasons) ? row.closedReasons : []),
     contactBreakdown: {
       firstAttempt: count(contact?.firstAttempt), secondAttempt: count(contact?.secondAttempt),
       thirdAttempt: count(contact?.thirdAttempt), laterAttempt: count(contact?.laterAttempt),

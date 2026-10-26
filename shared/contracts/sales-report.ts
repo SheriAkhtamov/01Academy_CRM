@@ -18,10 +18,11 @@ export type SalesContactBreakdown = {
   reachedUnqualifiedInWork: number;
 };
 
-/** Lead-cohort results plus student bookings, visits and payments in the period. */
+/** Business events within the period, with a shared distinct-lead denominator. */
 export type SalesActivityReport = {
   asOf: string;
   newLeads: number;
+  reportLeads: number;
   processedLeads: number;
   reachedLeads: number;
   qualifiedLeads: number;

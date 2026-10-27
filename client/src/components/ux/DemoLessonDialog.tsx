@@ -8,7 +8,6 @@ import {
   BookOpen,
   MessageSquare,
   Clock3,
-  LoaderCircle,
 } from 'lucide-react';
 import type { DemoLessonMutation } from '@shared/contracts/demo-lessons';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
@@ -21,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { QuantityStepper } from '@/components/ui/quantity-stepper';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -45,6 +45,7 @@ import { invalidateSalesLeadData } from '@/features/sales/queries';
 import { useTranslation } from '@/hooks/useTranslation';
 import { academyToday } from '@/lib/localeFormat';
 import { toast } from '@/hooks/use-toast';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export interface DemoLessonDialogLead {
   id: number;
@@ -397,7 +398,7 @@ export function DemoLessonDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="demo-duration">{t('demoDurationMinutes')}</Label>
-                <Input
+                <QuantityStepper
                   id="demo-duration"
                   type="number"
                   min={15}
@@ -446,7 +447,7 @@ export function DemoLessonDialog({
             <div aria-live="polite">
               {!availabilityRequest ? null : resourceAvailability.isFetching ? (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <LoaderCircle className="size-4 animate-spin" />{t('checkingAvailability')}
+                  <OrbitSpinner className="size-4" />{t('checkingAvailability')}
                 </p>
               ) : resourceAvailability.isError ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -479,7 +480,7 @@ export function DemoLessonDialog({
           </Button>
           <Button type="button" onClick={() => createDemo.mutate()} disabled={!canSubmit}>
             {createDemo.isPending
-              ? <LoaderCircle className="animate-spin" data-icon="inline-start" />
+              ? <OrbitSpinner className="" data-icon="inline-start" />
               : <CalendarPlus2 data-icon="inline-start" />}
             {createDemo.isPending ? t('saving') : t('bookDemoLesson')}
           </Button>

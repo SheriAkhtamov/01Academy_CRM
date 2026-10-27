@@ -132,7 +132,7 @@ export function FinanceQuestions({
         </Card>
       )}
       {query.hasNextPage && (
-        <Button
+        <Button loading={query.isFetchingNextPage}
           variant="outline"
           disabled={query.isFetchingNextPage}
           onClick={() => {
@@ -261,7 +261,7 @@ function FinanceQuestionForm({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button disabled={action.isPending || !title.trim() || !body.trim()}>
+          <Button loading={action.isPending} disabled={action.isPending || !title.trim() || !body.trim()}>
             {t("portalSend")}
           </Button>
         </DialogFooter>
@@ -357,7 +357,7 @@ function FinanceConversation({ id }: { id: number }) {
             </p>
           )}
           <DialogFooter className="border-t border-border/70 pt-4">
-            <Button disabled={action.isPending || !body.trim()}>
+            <Button loading={action.isPending} disabled={action.isPending || !body.trim()}>
               {t("portalSend")}
             </Button>
           </DialogFooter>

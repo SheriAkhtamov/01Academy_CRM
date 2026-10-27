@@ -110,7 +110,6 @@ import {
   CalendarPlus2,
   CalendarDays,
   History,
-  Loader2,
   MessageSquare,
   Plus,
   Trash2,
@@ -125,6 +124,9 @@ import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-wo
 import type { LeadChannelView } from '@shared/lead-channels';
 import type { LeadTagView } from '@shared/lead-tags';
 import type { TelephonyCallStatus } from '@/lib/telephony';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
+import { NativeCheckbox } from "@/components/ui/checkbox";
 
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
 const defaultOpenSections: Record<LeadWorkspaceSectionId, boolean> = {
@@ -908,6 +910,7 @@ export function LeadDetailSheet({
       toast({ title: t('phoneCopied'), description: phone });
     } catch {
       toast({ title: t('copyFailed'), variant: 'destructive' });
+      return false;
     }
   };
 
@@ -1045,14 +1048,14 @@ export function LeadDetailSheet({
             </Button>
           </div>
         ) : leadQuery.isLoading || !lead ? (
-          <div className="flex flex-col gap-4 overflow-y-auto p-4 sm:p-6">
+          <LoadingRegion className="flex flex-col gap-4 overflow-y-auto p-4 sm:p-6">
             <SheetTitle className="sr-only">{t('lead')}</SheetTitle>
             <SheetDescription className="sr-only">{t('loading')}</SheetDescription>
             <Skeleton className="h-16 w-full" />
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-72 w-full" />
-          </div>
+          </LoadingRegion>
         ) : (
           <>
             <LeadWorkspaceHeader
@@ -1204,7 +1207,7 @@ export function LeadDetailSheet({
                                     <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="flex flex-wrap gap-1.5 rounded-lg aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                       {LEAD_LANGUAGES.map((option) => (
                                         <label key={option} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border border-border-strong bg-background px-2.5 text-muted-foreground transition-colors hover:border-primary/30 has-[:checked]:border-primary/25 has-[:checked]:bg-primary/5 has-[:checked]:text-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-                                          <input
+                                          <NativeCheckbox
                                             type="checkbox"
                                             className="size-4 shrink-0 accent-primary"
                                             id={`lead-language-${option}`}
@@ -1445,7 +1448,7 @@ export function LeadDetailSheet({
                             disabled={addLeadComment.isPending || !commentDraft.trim()}
                           >
                             {addLeadComment.isPending ? (
-                              <Loader2 className="animate-spin" data-icon="inline-start" />
+                              <OrbitSpinner className="" data-icon="inline-start" />
                             ) : (
                               <MessageSquare data-icon="inline-start" />
                             )}
@@ -1589,7 +1592,7 @@ export function LeadDetailSheet({
                                     {task.status === 'accepted' ? t('colAccepted') : isDone ? t('taskDone') : isOverdue ? t('taskOverdue') : t('taskInProgress')}
                                   </Badge>
                                   {!isDone ? (
-                                    <Button
+                                    <Button loading={updateTask.isPending}
                                       type="button"
                                       variant="ghost"
                                       size="sm"
@@ -1754,7 +1757,7 @@ export function LeadDetailSheet({
                   </div>
                   <DialogFooter className="compact-modal-footer">
                     <Button type="button" variant="outline" disabled={createPayment.isPending} onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
-                    <Button type="submit" disabled={createPayment.isPending || paymentNeedsStudent}>
+                    <Button loading={createPayment.isPending} type="submit" disabled={createPayment.isPending || paymentNeedsStudent}>
                       <CreditCard data-icon="inline-start" />
                       {createPayment.isPending ? t('saving') : t('confirmPayment')}
                     </Button>
@@ -1821,7 +1824,7 @@ export function LeadDetailSheet({
                 <Button type="button" variant="outline" onClick={() => setTaskDialogOpen(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={createTask.isPending}>
                   {createTask.isPending
-                    ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                    ? <OrbitSpinner className="" data-icon="inline-start" />
                     : <ClipboardList data-icon="inline-start" />}
                   {t('createTask')}
                 </Button>
@@ -1907,7 +1910,7 @@ export function LeadDetailSheet({
                 event.preventDefault();
                 if (pendingManagerId !== null) assignLead.mutate(pendingManagerId);
               }}
-            >
+            >{(assignLead.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {assignLead.isPending ? t('saving') : confirmingSelfClaim ? t('assignLeadToMe') : t('transferLead')}
             </AlertDialogAction>
           </AlertDialogFooter>

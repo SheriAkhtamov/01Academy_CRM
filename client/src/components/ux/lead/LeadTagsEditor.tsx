@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leadsApi } from '@/features/leads/api';
 import { invalidateLeadData } from '@/features/leads/queries';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, LockKeyhole, Plus, Tag, X } from 'lucide-react';
+import { TagInputTag } from '@/components/ui/tag-input';
+import { LockKeyhole, Plus, Tag, X } from 'lucide-react';
 import {
   MAX_LEAD_TAG_NAME_LENGTH,
   leadTagNameKey,
@@ -14,6 +15,7 @@ import {
   type LeadTagOption,
   type LeadTagView,
 } from '@shared/lead-tags';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export interface LeadTagsEditorProps {
   leadId: number;
@@ -225,7 +227,7 @@ export function LeadTagsEditor({
 
       <div className="relative">
         <div
-          className="flex min-h-8 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-border/80 bg-card/70 px-2 py-1 transition-[background-color,border-color,box-shadow] hover:border-primary/30 focus-within:border-primary/30 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
+          className="relative flex min-h-8 w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-border/80 bg-card/70 px-2 py-1 transition-[background-color,border-color,box-shadow] hover:border-primary/30 focus-within:border-primary/30 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/15"
           onMouseDown={(event) => {
             const target = event.target as Element;
             if (target.closest('button, input')) return;
@@ -234,44 +236,47 @@ export function LeadTagsEditor({
           }}
         >
           <Tag className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          {automaticTag ? (
-            <Badge
-              variant="outline"
-              className="h-6 max-w-full shrink-0 gap-1 rounded-md border-border/60 bg-muted/50 px-2 py-0 text-[11px] font-medium"
-            >
-              <span className="truncate">{automaticTag}</span>
-              <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
-              <span className="sr-only">{t('automaticTag')}</span>
-            </Badge>
-          ) : null}
-          {manualTags.map((tag) => {
-            const isRemoving = removeTag.isPending && removeTag.variables?.id === tag.id;
-            return (
-              <Badge
-                key={tag.id}
-                variant="secondary"
-                className="h-6 max-w-full shrink-0 gap-1 rounded-md py-0 pl-2 pr-1 text-[11px] font-medium"
+          <AnimatePresence key={leadId} initial={false} mode="popLayout">
+            {automaticTag ? (
+              <TagInputTag
+                key={`automatic:${automaticTagKey}`}
+                variant="outline"
+                className="h-6 max-w-full shrink-0 gap-1 rounded-md border-border/60 bg-muted/50 px-2 py-0 text-[11px] font-medium"
               >
-                <span className="truncate">{tag.name}</span>
-                <button
-                  type="button"
-                  className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
-                  aria-label={`${t('removeLeadTag')} ${tag.name}`}
-                  disabled={isBusy}
-                  onClick={() => {
-                    setDropdownOpen(false);
-                    setTagToRemove(tag);
-                  }}
+                <span className="truncate">{automaticTag}</span>
+                <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
+                <span className="sr-only">{t('automaticTag')}</span>
+              </TagInputTag>
+            ) : null}
+            {manualTags.map((tag) => {
+              const isRemoving = removeTag.isPending && removeTag.variables?.id === tag.id;
+              return (
+                <TagInputTag
+                  key={`manual:${tag.id}`}
+                  variant="secondary"
+                  className="h-6 max-w-full shrink-0 gap-1 rounded-md py-0 pl-2 pr-1 text-[11px] font-medium"
                 >
-                  {isRemoving ? (
-                    <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <X className="size-3" aria-hidden="true" />
-                  )}
-                </button>
-              </Badge>
-            );
-          })}
+                  <span className="truncate">{tag.name}</span>
+                  <button
+                    type="button"
+                    className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                    aria-label={`${t('removeLeadTag')} ${tag.name}`}
+                    disabled={isBusy}
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      setTagToRemove(tag);
+                    }}
+                  >
+                    {isRemoving ? (
+                      <OrbitSpinner className="size-3" aria-hidden="true" />
+                    ) : (
+                      <X className="size-3" aria-hidden="true" />
+                    )}
+                  </button>
+                </TagInputTag>
+              );
+            })}
+          </AnimatePresence>
 
           <input
             ref={inputRef}
@@ -302,7 +307,7 @@ export function LeadTagsEditor({
             onKeyDown={handleInputKeyDown}
           />
           {addTag.isPending || tagOptionsQuery.isLoading ? (
-            <Loader2 className="mr-1 size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+            <OrbitSpinner className="mr-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           ) : null}
         </div>
 
@@ -315,7 +320,7 @@ export function LeadTagsEditor({
           >
             {tagOptionsQuery.isLoading ? (
               <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                <OrbitSpinner className="size-4" aria-hidden="true" />
                 {t('loading')}
               </div>
             ) : null}

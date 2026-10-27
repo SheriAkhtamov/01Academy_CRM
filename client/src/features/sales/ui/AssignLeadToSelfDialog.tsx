@@ -58,7 +58,7 @@ export function AssignLeadToSelfDialog({
           >
             {t('cancel')}
           </Button>
-          <Button type="button" disabled={isPending || confirmDisabled} onClick={onConfirm}>
+          <Button loading={isPending} type="button" disabled={isPending || confirmDisabled} onClick={onConfirm}>
             <UserCheck data-icon="inline-start" />
             {isPending ? t('saving') : confirmLabel}
           </Button>

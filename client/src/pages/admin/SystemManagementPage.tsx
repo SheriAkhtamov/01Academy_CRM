@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
   BellRing,
-  Loader2,
   MessageCircle,
   Search,
   Send,
@@ -57,6 +56,8 @@ import { cn } from '@/lib/utils';
 import { SYSTEM_MANAGEMENT_NAVIGATION_ITEMS } from '@/lib/moduleNavigation';
 import { messageQueryKeys } from '@/features/messages/api';
 import { listBroadcastEmployees, sendEmployeeBroadcast, type BroadcastEmployee } from '@/features/employee-broadcast/api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type SystemManagementSection = 'overview' | 'employee-notifications';
 type BroadcastChannel = EmployeeBroadcastRequest['channel'];
@@ -362,7 +363,7 @@ function EmployeeNotificationsPage() {
             {employeesQuery.isError || accessLost ? (
               <div role="alert" className="flex flex-wrap items-center justify-between gap-3 text-sm text-destructive">
                   <span>{t('failedToLoadData')}</span>
-                  <Button
+                  <Button loading={employeesQuery.isFetching}
                     type="button"
                     variant="outline"
                     size="sm"
@@ -373,11 +374,11 @@ function EmployeeNotificationsPage() {
                   </Button>
               </div>
             ) : employeesQuery.isLoading ? (
-              <div className="space-y-2">
+              <LoadingRegion className="space-y-2">
                 {Array.from({ length: 6 }, (_, index) => (
                   <Skeleton key={index} className="h-16 w-full rounded-lg" />
                 ))}
-              </div>
+              </LoadingRegion>
             ) : filteredEmployees.length === 0 ? (
               <div className="py-12 text-center">
                 <Users className="mx-auto size-10 text-muted-foreground/50" />
@@ -580,7 +581,7 @@ function EmployeeNotificationsPage() {
                 {t('cancel')}
               </Button>
               <Button type="submit" disabled={selectedEmployees.length === 0 || sendMutation.isPending}>
-                {sendMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {sendMutation.isPending ? <OrbitSpinner className="size-4" /> : <Send className="size-4" />}
                 {t('sendToSelectedEmployees').replace('{count}', String(selectedEmployees.length))}
               </Button>
             </DialogFooter>

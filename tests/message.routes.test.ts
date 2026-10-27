@@ -66,6 +66,41 @@ describe("message routes", () => {
     return app;
   };
 
+  const typing = { active: true, sourceId: '00000000-0000-4000-8000-000000000001', sequence: 1 };
+
+  it.each([true, false])('delivers typing=%s only to the authenticated sender’s colleague', async (active) => {
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 1 });
+    await agent.post('/api/messages/2/typing').send({ ...typing, active }).expect(204);
+    expect(mocks.broadcast).toHaveBeenCalledWith({
+      type: 'CHAT_TYPING',
+      data: { ...typing, active, kind: 'direct', targetId: 2, senderId: 1 },
+      audienceUserIds: [2],
+    });
+    expect(mocks.createMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects anonymous activity, forged senders, draft text and invalid conversations', async () => {
+    const app = await createApp();
+    await request(app).post('/api/messages/2/typing').send(typing).expect(401);
+    const agent = request.agent(app);
+    await agent.post('/test/session').send({ userId: 1 });
+    for (const input of [{ ...typing, senderId: 9 }, { ...typing, content: 'Draft' }, { ...typing, active: 'true' }, { ...typing, sequence: 0 }]) {
+      await agent.post('/api/messages/2/typing').send(input).expect(400);
+    }
+    await agent.post('/api/messages/1/typing').send(typing).expect(400);
+    await agent.post('/api/messages/2oops/typing').send(typing).expect(400);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { ...colleague, isActive: false }, { ...colleague, isArchived: true }])('does not announce typing to an unavailable recipient: %j', async (receiver) => {
+    mocks.getUser.mockImplementation(async (id: number) => id === 1 ? currentUser : receiver);
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session').send({ userId: 1 });
+    await agent.post('/api/messages/2/typing').send(typing).expect(404);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
   it("marks all inbound messages from one colleague in a single request", async () => {
     const agent = request.agent(await createApp());
     await agent.post("/test/session").send({ userId: currentUser.id });

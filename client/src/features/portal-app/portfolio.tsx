@@ -223,7 +223,7 @@ export function PortalPortfolio() {
         ))}
       </div>
       {query.hasNextPage && (
-        <Button
+        <Button loading={query.isFetchingNextPage}
           variant="outline"
           disabled={query.isFetchingNextPage}
           onClick={() => {
@@ -453,7 +453,7 @@ export function PortalPortfolio() {
                 </p>
               )}
               <DialogFooter className="border-t border-border/70 pt-4">
-                <Button
+                <Button loading={approveAction.isPending}
                   disabled={approveAction.isPending}
                   onClick={() => approveAction.mutate()}
                 >
@@ -733,7 +733,7 @@ function ProjectForm({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button disabled={action.isPending || busy}>{t("portalSave")}</Button>
+          <Button loading={action.isPending || busy} disabled={action.isPending || busy}>{t("portalSave")}</Button>
         </DialogFooter>
       </fieldset>
     </form>
@@ -811,7 +811,7 @@ function ShareForm({
           }))}
         />
         {loadMore && (
-          <Button
+          <Button loading={loadingMore}
             variant="outline"
             disabled={loadingMore || action.isPending}
             onClick={loadMore}
@@ -918,7 +918,7 @@ function ShareForm({
             <Button variant="outline" onClick={() => setPreview(false)}>
               {t("portalBack")}
             </Button>
-            <Button
+            <Button loading={action.isPending}
               disabled={
                 action.isPending ||
                 (subject?.studentClassification === "adult" && !consent)

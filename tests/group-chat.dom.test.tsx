@@ -17,6 +17,7 @@ beforeEach(()=>{
   Element.prototype.scrollIntoView=vi.fn();Element.prototype.hasPointerCapture=()=>false;Element.prototype.setPointerCapture=()=>undefined;Element.prototype.releasePointerCapture=()=>undefined;
   vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}});
   mocks.api.mockImplementation(async(method:string,path:string,data:any)=>{
+    if (path.endsWith('/typing')) return;
     if (method==='GET' && path==='/api/users') return [{id:1,fullName:'Me',isActive:true},{id:2,fullName:'Alice',isActive:true},{id:3,fullName:'Bob',isActive:true}];
     if (method==='GET' && path==='/api/chat-groups') return groups;
     if (method==='GET' && path.endsWith('/messages')) return messages;

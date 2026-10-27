@@ -32,6 +32,7 @@ import {
     type TaskOwnerFilter,
     type UserMini,
 } from '@/lib/boardTypes';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface ApiUser {
     id: number;
@@ -388,22 +389,22 @@ export default function TasksPage() {
                        four column stubs where a calendar is about to appear read
                        as the wrong screen for the second it is up. */
                     isArchiveView ? (
-                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                        <LoadingRegion className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                             {Array.from({ length: 8 }).map((_, i) => (
                                 <Skeleton key={i} className="h-32 w-full rounded-lg" />
                             ))}
-                        </div>
+                        </LoadingRegion>
                     ) : taskView === 'calendar' ? (
-                        <div className="mt-2 space-y-3">
+                        <LoadingRegion className="mt-2 space-y-3">
                             <Skeleton className="h-12 w-full rounded-xl" />
                             <div className="grid grid-cols-7 gap-2">
                                 {Array.from({ length: 21 }).map((_, i) => (
                                     <Skeleton key={i} className="h-24 w-full rounded-lg" />
                                 ))}
                             </div>
-                        </div>
+                        </LoadingRegion>
                     ) : (
-                        <div className="mt-2 flex gap-4 overflow-hidden">
+                        <LoadingRegion className="mt-2 flex gap-4 overflow-hidden">
                             {Array.from({ length: 4 }).map((_, i) => (
                                 <div key={i} className="w-80 shrink-0 space-y-3">
                                     <Skeleton className="h-10 w-full rounded-xl" />
@@ -411,7 +412,7 @@ export default function TasksPage() {
                                     <Skeleton className="h-24 w-full rounded-lg" />
                                 </div>
                             ))}
-                        </div>
+                        </LoadingRegion>
                     )
                 ) : isError ? (
                     <Alert variant="destructive" className="mt-4">
@@ -419,7 +420,7 @@ export default function TasksPage() {
                         <AlertTitle>{t('failedToLoadData')}</AlertTitle>
                         <AlertDescription className="flex flex-col items-start gap-3">
                             <span>{error instanceof Error ? error.message : t('errorOccurred')}</span>
-                            <Button
+                            <Button loading={isFetching}
                                 type="button"
                                 variant="outline"
                                 size="sm"

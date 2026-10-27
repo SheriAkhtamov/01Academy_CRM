@@ -25,7 +25,6 @@ import {
   Flame,
   GraduationCap,
   Layers3,
-  Loader2,
   Megaphone,
   Search,
   Users,
@@ -39,6 +38,7 @@ import {
   type AcademyModule,
 } from '@shared/academy';
 import { MODULE_NAVIGATION, SYSTEM_MANAGEMENT_NAVIGATION_ITEMS, TASKS_NAVIGATION_ITEM } from '@/lib/moduleNavigation';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface SearchItem {
   id: string;
@@ -250,7 +250,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         )}
         {showSearching && (
           <CommandEmpty className="py-8 text-center">
-            <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground mb-2" />
+            <OrbitSpinner className="mx-auto h-6 w-6 text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">{t('loading')}</p>
           </CommandEmpty>
         )}
@@ -321,7 +321,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         )}
         {normalizedSearch.length >= 2 && searchQuery.hasNextPage ? (
           <CommandItem value="load-more-results" disabled={searchQuery.isFetchingNextPage} onSelect={() => void searchQuery.fetchNextPage()}>
-            {searchQuery.isFetchingNextPage ? <Loader2 className="size-4 animate-spin" /> : null}
+            {searchQuery.isFetchingNextPage ? <OrbitSpinner className="size-4" /> : null}
             {t('loadMoreResults')}
           </CommandItem>
         ) : null}

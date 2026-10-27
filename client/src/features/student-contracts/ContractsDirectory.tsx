@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
 import { studentContractsApi } from './api';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export function ContractsDirectory({ enabled = true }: { enabled?: boolean }) {
   const { user } = useAuth();
@@ -59,9 +60,9 @@ function ContractsDirectoryContent({ accountId, enabled }: { accountId: number; 
         </TabsTrigger>)}
       </TabsList>
       <TabsContent value={query.status}>
-        {directory.isPending ? <div role="status" aria-label={t('loading')} className="space-y-3">
+        {directory.isPending ? <LoadingRegion role="status" aria-label={t('loading')} className="space-y-3">
           <Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" />
-        </div> : directory.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+        </LoadingRegion> : directory.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
           <p>{t('studentContractsLoadFailed')}</p><Button variant="outline" onClick={() => void directory.refetch()}>{t('retry')}</Button>
         </div> : rows.length === 0 ? <div className="rounded-lg border p-8 text-center text-sm">
           {query.q ? t('studentContractsNoResults') : query.status === 'missing' ? t('studentContractsMissingEmpty') : t('studentContractsEmpty')}

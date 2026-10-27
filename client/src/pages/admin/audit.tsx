@@ -1,3 +1,4 @@
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
@@ -262,7 +263,7 @@ export default function AuditPage() {
     <ModulePage contained>
       <PageHeader
         title={ceoCopy.audit.title}
-        titleActions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}><RefreshCw className={isFetching ? 'animate-spin' : ''} data-icon="inline-start" />{ceoCopy.audit.refresh}</Button>}
+        titleActions={<Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>{isFetching ? <OrbitSpinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}{ceoCopy.audit.refresh}</Button>}
       />
 
       <ModulePageBody contained ariaLabel={ceoCopy.audit.title}>

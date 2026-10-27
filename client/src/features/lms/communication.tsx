@@ -280,7 +280,7 @@ function HelpForm({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button
+          <Button loading={action.isPending || uploading}
             disabled={action.isPending || uploading || !course || !body.trim()}
           >
             {t("portalSend")}
@@ -532,7 +532,7 @@ function ThreadConversation({
       )}
       <div className="flex justify-between gap-3">
         <PortalStatus status={thread.status} />
-        <Button
+        <Button loading={status.isPending}
           variant="outline"
           disabled={status.isPending}
           onClick={() => status.mutate()}
@@ -582,7 +582,7 @@ function ThreadConversation({
             </p>
           )}
           <DialogFooter className="border-t border-border/70 pt-4">
-            <Button disabled={action.isPending || !body.trim()}>
+            <Button loading={action.isPending} disabled={action.isPending || !body.trim()}>
               {t("portalSend")}
             </Button>
           </DialogFooter>

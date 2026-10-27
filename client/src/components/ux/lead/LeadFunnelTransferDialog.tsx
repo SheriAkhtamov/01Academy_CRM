@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import type { SalesFunnelTransferOption } from '@shared/contracts/sales-funnels';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface LeadFunnelTransferDialogProps {
   open: boolean;
@@ -87,10 +89,10 @@ export function LeadFunnelTransferDialog({
             </Button>
           </div>
         ) : isLoading ? (
-          <div className="space-y-2" aria-label={t('loading')}>
+          <LoadingRegion className="space-y-2" aria-label={t('loading')}>
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
-          </div>
+          </LoadingRegion>
         ) : availableFunnels.length > 0 ? (
           <div className="grid gap-2" role="radiogroup" aria-label={t('availableSalesFunnels')}>
             {availableFunnels.map((funnel) => {
@@ -161,7 +163,7 @@ export function LeadFunnelTransferDialog({
               }
             }}
           >
-            {isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            {isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
             {isPending ? t('saving') : t('send')}
           </Button>
         </DialogFooter>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2, Paperclip, Send } from 'lucide-react';
+import { ChevronDown, Paperclip, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -15,12 +15,16 @@ import { ChatFileDrafts, ChatMessageAttachments } from './ChatAttachments';
 import { EmployeeAvatar } from '@/components/ux/EmployeeIdentity';
 import { ChatGroupAvatar } from './ChatGroupAvatar';
 import { ChatGroupDetailsDialog } from './ChatGroupDetailsDialog';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { TypingIndicator } from '@/components/ui/typing-indicator';
+import { useChatTyping } from '@/features/messages/useChatTyping';
 
 type Draft = { text: string; files: File[] };
 const EMPTY_DRAFT: Draft = { text: '', files: [] };
-export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
+export function GroupChatThread({ group, active = true }: { group: ChatGroupDto | null; active?: boolean }) {
   const { t, language } = useTranslation();
   const { user } = useAuth();
+  const { isTyping, reportTyping, stopTyping } = useChatTyping('group', group?.id ?? null, active);
   const client = useQueryClient();
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [readError, setReadError] = useState(false);
@@ -67,7 +71,11 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
   });
   if (!group) return null;
   const setDraft = (next: Partial<Draft>) => setDrafts((current) => ({ ...current, [group.id]: { ...(current[group.id] ?? EMPTY_DRAFT), ...next } }));
-  const submit = () => { if (!send.isPending && (draft.text.trim() || draft.files.length)) send.mutate({ groupId: group.id, ...draft }); };
+  const submit = () => {
+    if (send.isPending || (!draft.text.trim() && !draft.files.length)) return;
+    stopTyping();
+    send.mutate({ groupId: group.id, ...draft });
+  };
   return <div className="flex min-h-0 flex-1 flex-col">
     <button type="button" className="flex w-full shrink-0 items-center gap-3 border-b bg-teal-50/60 p-3 text-left dark:bg-teal-950/20 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => setDetailsOpen(true)} aria-haspopup="dialog" aria-label={t('chatGroupDetails')}>
@@ -75,7 +83,7 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
       <h3 className="truncate font-medium">{group.name}</h3><p className="text-xs text-muted-foreground">{t('chatGroupParticipantCount').replace('{count}', String(group.participantCount))}</p>
     </div><ChevronDown className="size-4 shrink-0" /></button>
     <ScrollArea className="min-h-0 flex-1"><div className="space-y-3 p-4">
-      {query.isLoading ? <Loader2 className="size-6 animate-spin" aria-label={t('loading')} /> : null}
+      {query.isLoading ? <OrbitSpinner className="size-6" aria-label={t('loading')} /> : null}
       {query.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void query.refetch()}>{t('retry')}</Button></div> : null}
       {readError ? <div role="alert">{t('updateFailed')} <Button variant="outline" onClick={() => { if (latestId) markRead({ groupId: group.id, messageId: latestId }); }}>{t('retry')}</Button></div> : null}
       {(query.isError ? [] : query.data ?? []).map((message) => <div key={message.id} className={`flex items-end gap-2 ${message.senderId===user?.id ? 'justify-end' : 'justify-start'}`}>
@@ -98,11 +106,13 @@ export function GroupChatThread({ group }: { group: ChatGroupDto | null }) {
         if (added.some((file) => file.size>MAX_MESSAGE_FILE_BYTES)) { toast({ title: t('messageFileTooLarge'), variant: 'destructive' }); return; }
         setDraft({ files: [...draft.files,...added] });
       }} />
+      <div className="flex h-6 items-center text-muted-foreground"><TypingIndicator active={isTyping} /></div>
       <div className="flex gap-2"><Button variant="outline" size="icon" aria-label={t('attachFile')} disabled={send.isPending} onClick={() => fileInput.current?.click()}><Paperclip className="size-4" /></Button>
-        <Input className="min-w-0 flex-1" aria-label={t('message')} placeholder={t('message')} value={draft.text} maxLength={10_000} onChange={(event) => setDraft({ text: event.target.value })} onKeyDown={(event) => {
+        <Input className="min-w-0 flex-1" aria-label={t('message')} placeholder={t('message')} value={draft.text} maxLength={10_000}
+          onChange={(event) => { setDraft({ text: event.target.value }); reportTyping(Boolean(event.target.value.trim())); }} onBlur={stopTyping} onKeyDown={(event) => {
           if (event.key==='Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); }
         }} />
-        <Button size="icon" aria-label={t('send')} disabled={send.isPending || (!draft.text.trim() && draft.files.length===0)} onClick={submit}>{send.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
+        <Button size="icon" aria-label={t('send')} disabled={send.isPending || (!draft.text.trim() && draft.files.length===0)} onClick={submit}>{send.isPending ? <OrbitSpinner className="size-4" /> : <Send className="size-4" />}</Button>
       </div>
     </div>
     {detailsOpen ? <ChatGroupDetailsDialog key={`${user?.id ?? ''}:${group.id}`} group={group} onClose={() => setDetailsOpen(false)} onLeft={() => {

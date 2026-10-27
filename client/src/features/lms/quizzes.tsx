@@ -233,7 +233,7 @@ function QuizSession({
       )}
       {allowed("quizzes.attempt", true) && (
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button
+          <Button loading={start.isPending}
             disabled={
               start.isPending ||
               (quiz.attemptsUsed >= quiz.maxAttempts && !quiz.activeAttemptId)
@@ -481,7 +481,7 @@ export function QuizAttempt({
             : t("portalSaved")}
       </p>
       {save.error && selection && (
-        <Button
+        <Button loading={save.isPending}
           variant="outline"
           disabled={save.isPending}
           onClick={() =>
@@ -492,7 +492,7 @@ export function QuizAttempt({
         </Button>
       )}
       <DialogFooter className="border-t border-border/70 pt-4 sm:justify-between">
-        <Button
+        <Button loading={save.isPending}
           variant="outline"
           disabled={index === 0 || save.isPending || selection !== null}
           onClick={() => {
@@ -503,7 +503,7 @@ export function QuizAttempt({
           {t("portalBack")}
         </Button>
         {index < attempt.questions.length - 1 ? (
-          <Button
+          <Button loading={save.isPending}
             disabled={save.isPending || selection !== null}
             onClick={() => {
               setIndex(index + 1);

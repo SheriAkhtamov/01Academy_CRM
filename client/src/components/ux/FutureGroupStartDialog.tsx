@@ -73,7 +73,7 @@ export function FutureGroupStartDialog<T extends FutureGroupValues>({
           }}>
             {t('changeStartDate')}
           </Button>
-          <Button type="button" variant="secondary" disabled={isPending} onClick={() => {
+          <Button loading={isPending} type="button" variant="secondary" disabled={isPending} onClick={() => {
             if (!values) return;
             onStatusChange('open');
             onDismiss();
@@ -81,7 +81,7 @@ export function FutureGroupStartDialog<T extends FutureGroupValues>({
           }}>
             {t('keepGroupPlanned')}
           </Button>
-          <Button type="button" disabled={isPending} onClick={() => {
+          <Button loading={isPending} type="button" disabled={isPending} onClick={() => {
             if (!values) return;
             onDismiss();
             onSave({ ...values, allowFutureStart: true });

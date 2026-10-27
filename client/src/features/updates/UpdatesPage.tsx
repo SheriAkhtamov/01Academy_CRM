@@ -42,6 +42,7 @@ import {
   getReadPostIds,
   markPostAsRead,
 } from './utils';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export default function UpdatesPage() {
   const { t, language } = useTranslation();
@@ -209,14 +210,14 @@ export default function UpdatesPage() {
       {postText && !postId ? (
         <p role="alert">{t('updatesPostMissing')}</p>
       ) : current.isPending ? (
-        <div role="status" aria-label={t('loading')} className="space-y-4">
+        <LoadingRegion role="status" aria-label={t('loading')} className="space-y-4">
           <Skeleton className="h-28 w-full rounded-xl" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Skeleton className="h-72 w-full rounded-xl" />
             <Skeleton className="h-72 w-full rounded-xl" />
             <Skeleton className="h-72 w-full rounded-xl" />
           </div>
-        </div>
+        </LoadingRegion>
       ) : current.isError ? (
         <div className="space-y-3" role="alert">
           <p>{t('failedToLoadData')}</p>

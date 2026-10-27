@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PortalApiError } from "./api";
 import { PortalAlertDialogContent } from "./modal-content";
+import { LoadingRegion } from '@/components/ui/loading-region';
 export {
   PortalDialogContent,
   PortalSheetContent,
@@ -66,19 +67,19 @@ export function PortalLoading({ variant = "page" }: { variant?: "page" | "sectio
   const { t } = useTranslation();
   if (variant === "section") {
     return (
-      <div role="status" aria-label={t("portalLoading")} className="space-y-3">
+      <LoadingRegion role="status" aria-label={t("portalLoading")} className="space-y-3">
         <Skeleton className="h-4 w-3/4" />
         <Skeleton className="h-4 w-1/2" />
         <Skeleton className="h-4 w-2/3" />
-      </div>
+      </LoadingRegion>
     );
   }
   return (
-    <div role="status" aria-label={t("portalLoading")} className="space-y-4">
+    <LoadingRegion role="status" aria-label={t("portalLoading")} className="space-y-4">
       <Skeleton className="h-9 w-48" />
       <Skeleton className="h-36 w-full" />
       <Skeleton className="h-36 w-full" />
-    </div>
+    </LoadingRegion>
   );
 }
 export function PortalError({
@@ -198,7 +199,7 @@ export function ConfirmAction({
             {t("portalCancel")}
           </AlertDialogCancel>
           <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onConfirm(); }}>
-            <Button
+            <Button loading={pending}
               type="button"
               variant={variant ?? (destructiveActions.has(action) ? "destructive" : "default")}
               disabled={pending}

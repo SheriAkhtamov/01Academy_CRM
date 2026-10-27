@@ -1,6 +1,6 @@
 import { TimePicker } from '@/components/ui/time-picker';
 import { useEffect } from 'react';
-import { Loader2, Phone } from 'lucide-react';
+import { Phone } from 'lucide-react';
 import { hasVoiceReminderConfirmationAudio, selectVoiceReminderAudioParts, voiceReminderLibraryForLanguage, type VoiceReminderSnapshot } from '@shared/contracts/voice-reminders';
 import { Badge } from '@/components/ui/badge';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
@@ -14,6 +14,7 @@ import { reminderOutcomeLabels, reminderReasonLabels } from '../results';
 import { VoiceReminderKindSelect } from './VoiceReminderKindSelect';
 import { VoiceReminderLanguageSelect } from './VoiceReminderLanguageSelect';
 import { testCallIsActive, useVoiceReminderTestCall } from '../test-call';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
   actorId: number;
@@ -65,7 +66,7 @@ function TestCallForm({ actorId, open, data, disabled, onPendingChange }: {
         disabled={disabled || call.locked} onChange={call.editLanguage} />
       <div className="sm:col-span-2">
         <Button type="submit" disabled={submitDisabled}>
-          {call.isSending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Phone data-icon="inline-start" />}
+          {call.isSending ? <OrbitSpinner className="" data-icon="inline-start" /> : <Phone data-icon="inline-start" />}
           {t(call.intent && !testCallIsActive(call.job) ? 'retry' : 'call')}
         </Button>
       </div>

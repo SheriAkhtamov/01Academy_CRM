@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock3,
-  Loader2,
   MessageSquare,
   Users,
   XCircle,
@@ -51,6 +50,8 @@ import {
   type TeacherStudent,
 } from '@/lib/teacherModule';
 import { cn } from '@/lib/utils';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export type AttendanceStatus = 'present' | 'absent';
 
@@ -292,12 +293,12 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
               editable={['scheduled', 'conducted'].includes(lesson.status)} disabled={mutationPending}
               onPendingChange={onStaffPendingChange} /> : null}
             {isRosterPending ? (
-              <div className="space-y-2">
+              <LoadingRegion className="space-y-2">
                 <Skeleton className="h-12 w-full rounded-lg" />
                 <Skeleton className="h-14 w-full rounded-lg" />
                 <Skeleton className="h-14 w-full rounded-lg" />
                 <Skeleton className="h-14 w-full rounded-lg" />
-              </div>
+              </LoadingRegion>
             ) : null}
 
             {isRosterError ? (
@@ -595,7 +596,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
               }}
               disabled={isRescheduling}
             >
-              {isRescheduling ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+              {isRescheduling ? <OrbitSpinner className="mr-1.5 size-4" /> : null}
               {isRescheduling ? t('saving') : t('rescheduleLesson')}
             </AlertDialogAction>
           </AlertDialogFooter>

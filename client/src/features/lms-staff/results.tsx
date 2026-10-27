@@ -33,6 +33,7 @@ import {
   useStaffError,
   useStaffFormat,
 } from "./ui";
+import { NativeCheckbox } from "@/components/ui/checkbox";
 function Metric({
   labelKey,
   value,
@@ -513,7 +514,7 @@ function ResultEditor({
                 key={project.id}
                 className="flex min-h-11 items-center gap-3 rounded-md border p-3"
               >
-                <input
+                <NativeCheckbox
                   type="checkbox"
                   checked={bestProjectIds.includes(project.id)}
                   disabled={
@@ -580,7 +581,7 @@ function ResultEditor({
           </p>
         )}
         <div className="flex justify-end">
-          <Button disabled={action.isPending}>
+          <Button loading={action.isPending} disabled={action.isPending}>
             {t(
               mode === "complete" || mode === "reopen"
                 ? mode === "reopen"

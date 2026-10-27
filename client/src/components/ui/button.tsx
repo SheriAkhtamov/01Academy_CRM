@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 import { NestedControlContext } from "@/lib/nested-control-context"
+import { OrbitSpinner } from "./orbit-spinner"
 
 /**
  * `sheen` is a light sweep that crosses a solid button on hover. It only goes
@@ -50,17 +51,22 @@ interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  loading?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
     return (
       <NestedControlContext.Provider value={true}><Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(buttonVariants({ variant, size, className }), loading && '[&>svg:not(.orbit-spinner)]:hidden')}
         ref={ref}
         {...props}
-      /></NestedControlContext.Provider>
+        disabled={disabled || loading}
+        aria-busy={loading || props['aria-busy'] || undefined}
+      >
+        {loading && !asChild ? <><OrbitSpinner data-icon="inline-start" />{children}</> : children}
+      </Comp></NestedControlContext.Provider>
     )
   }
 )

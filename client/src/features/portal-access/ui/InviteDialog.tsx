@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Check, Copy, KeyRound, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { Check, KeyRound, ShieldCheck, UserRound, UsersRound } from "lucide-react";
 import { z } from "zod";
 import {
   portalInvitationCreateSchema,
@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "@/hooks/useTranslation";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -99,7 +100,6 @@ export function InviteDialog({
   const channel = "manual";
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, setResult] = useState<PortalInvitationResultDto | null>(null);
-  const [copied, setCopied] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const dirty =
     !result &&
@@ -143,7 +143,6 @@ export function InviteDialog({
     setConsent(false);
     setErrors({});
     setResult(null);
-    setCopied(false);
     setIdempotencyKey(crypto.randomUUID());
     resetInvitation();
     resetLookup();
@@ -294,15 +293,15 @@ export function InviteDialog({
     } finally { submitting.current = false; }
   };
   const copy = async () => {
-    if (!result?.activationUrl) return;
+    if (!result?.activationUrl) return false;
     const epoch = session.current.epoch;
     try {
       await navigator.clipboard.writeText(result!.activationUrl!);
-      if (!session.current.open || session.current.epoch !== epoch) return;
-      setCopied(true);
+      if (!session.current.open || session.current.epoch !== epoch) return false;
       toast({ title: t("lmsStaffCopied") });
     } catch {
       if (session.current.open && session.current.epoch === epoch) setErrors({ form: t("lmsStaffSaveFailed") });
+      return false;
     }
   };
   const titles = [
@@ -351,18 +350,15 @@ export function InviteDialog({
                     value={result.activationUrl}
                     autoComplete="off"
                   />
-                  <Button
+                  <CopyButton
                     type="button"
                     variant="outline"
-                    onClick={() => void copy()}
+                    onCopy={copy}
+                    resetKey={result.activationUrl}
+                    copiedLabel={t("lmsStaffCopied")}
                   >
-                    {copied ? (
-                      <Check data-icon="inline-start" />
-                    ) : (
-                      <Copy data-icon="inline-start" />
-                    )}
-                    {copied ? t("lmsStaffCopied") : t("lmsStaffCopyLink")}
-                  </Button>
+                    {t("lmsStaffCopyLink")}
+                  </CopyButton>
                 </div>
               ) : null}
               {errors.form && (
@@ -727,7 +723,7 @@ export function InviteDialog({
                 >
                   {step ? t("lmsAccessBack") : t("lmsStaffCancel")}
                 </Button>
-                <Button type="submit" disabled={pending}>
+                <Button loading={pending} type="submit" disabled={pending}>
                   {step === 3
                     ? t("lmsStaffCreateInvitation")
                     : t("lmsAccessNext")}

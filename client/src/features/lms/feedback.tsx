@@ -109,7 +109,7 @@ export function PortalFeedback({ initialId }: { initialId?: number }) {
         </Card>
       )}
       {query.hasNextPage && (
-        <Button
+        <Button loading={query.isFetchingNextPage}
           variant="outline"
           disabled={query.isFetchingNextPage}
           onClick={() => {

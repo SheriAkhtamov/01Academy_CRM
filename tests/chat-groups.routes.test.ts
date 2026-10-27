@@ -83,6 +83,21 @@ describe('group membership management', () => {
   });
 });
 describe('staff group chat boundaries', () => {
+  const typing = { active: true, sourceId: '00000000-0000-4000-8000-000000000001', sequence: 1 };
+  it.each([true, false])('announces typing=%s only to other current group members', async (active) => {
+    await request(app).post('/api/chat-groups/4/typing').send({ ...typing, active }).expect(204);
+    expect(mocks.publish).toHaveBeenCalledWith({ type: 'CHAT_TYPING',
+      data: { ...typing, active, kind: 'group', targetId: 4, senderId: 7 }, audienceUserIds: [8] });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it('blocks typing from a non-member and rejects forged activity', async () => {
+    mocks.memberIds.mockResolvedValue(null);
+    await request(app).post('/api/chat-groups/4/typing').send(typing).expect(404);
+    expect(mocks.publish).not.toHaveBeenCalled();
+    mocks.memberIds.mockResolvedValue([7, 8]);
+    await request(app).post('/api/chat-groups/4/typing').send({ ...typing, senderId: 8 }).expect(400);
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
   it('lists only the authenticated user groups', async () => {
     await request(app).get('/api/chat-groups').expect(200); expect(mocks.list).toHaveBeenCalledWith(7);
   });

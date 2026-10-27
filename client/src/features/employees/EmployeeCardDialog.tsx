@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatUserModule } from '@/lib/auth';
 import { getEmployeeProfile } from './employees-api';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export default function EmployeeCardDialog({ userId, trigger, onClose }: {
   userId: number; trigger?: HTMLElement; onClose: () => void;
@@ -28,7 +29,7 @@ export default function EmployeeCardDialog({ userId, trigger, onClose }: {
     }}>
       <DialogHeader data-topographic="card" className="compact-modal-header"><DialogTitle>{t('employeeCard')}</DialogTitle></DialogHeader>
       <div className="compact-modal-body space-y-3 overflow-y-auto overscroll-contain">
-      {profile.isPending ? <div role="status" aria-label={t('loading')} className="space-y-4"><Skeleton className="size-20 rounded-full" /><Skeleton className="h-6 w-2/3" /><Skeleton className="h-12 w-full" /></div> : null}
+      {profile.isPending ? <LoadingRegion role="status" aria-label={t('loading')} className="space-y-4"><Skeleton className="size-20 rounded-full" /><Skeleton className="h-6 w-2/3" /><Skeleton className="h-12 w-full" /></LoadingRegion> : null}
       {profile.isError ? <div className="space-y-3" role="alert"><p>{t('employeeCardUnavailable')}</p><Button type="button" variant="outline" onClick={() => void profile.refetch()}>{t('retry')}</Button></div> : null}
       {employee ? <div className="space-y-3">
         <CompactModalSection title={t('employeeProfileSection')} icon={UserRound} tone="sky" collapsible={false} contentClassName="space-y-3">

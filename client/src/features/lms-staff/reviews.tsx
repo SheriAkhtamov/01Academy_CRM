@@ -745,7 +745,7 @@ export function ReviewContent({
             {errorText(addComment.error)}
           </p>
         )}
-        <Button disabled={addComment.isPending || !commentText.trim()}>
+        <Button loading={addComment.isPending} disabled={addComment.isPending || !commentText.trim()}>
           {t("lmsStaffAnswer")}
         </Button>
       </form>

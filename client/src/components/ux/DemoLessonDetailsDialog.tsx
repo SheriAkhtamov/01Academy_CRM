@@ -5,11 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpRight,
   CalendarClock,
-  Copy,
   ClipboardList,
   History,
   MessageSquare,
-  LoaderCircle,
   MapPin,
   Pencil,
   UsersRound,
@@ -38,6 +36,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import {
   Dialog,
   DialogContent,
@@ -77,6 +76,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import type { TranslationKey } from '@/lib/i18n';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface DemoLessonDetailsDialogProps {
   demo: DemoLesson | null;
@@ -150,7 +150,6 @@ export function DemoLessonDetailsDialog({
   const [changeTeacherOpen, setChangeTeacherOpen] = useState(false);
   const [teacherDraftId, setTeacherDraftId] = useState('');
   const [participantToRemove, setParticipantToRemove] = useState<DemoLessonParticipant | null>(null);
-  const [copyingReport, setCopyingReport] = useState(false);
   const draftIdentity = demo ? JSON.stringify({
     ...demo, participants: demo.participants.map(({
       reminderResponse: _reminderResponse, reminderRespondedAt: _reminderRespondedAt,
@@ -481,14 +480,12 @@ export function DemoLessonDetailsDialog({
       ].join('\n');
     }).join('\n\n');
 
-    setCopyingReport(true);
     try {
       await navigator.clipboard.writeText(report);
       toast({ title: t('demoReportCopied') });
     } catch {
       toast({ title: t('copyFailed'), variant: 'destructive' });
-    } finally {
-      setCopyingReport(false);
+      return false;
     }
   };
 
@@ -705,18 +702,17 @@ export function DemoLessonDetailsDialog({
               <CompactModalSection title={t('demoLessonActions')} icon={ClipboardList} tone="sky" collapsible={false} disabled={isMutating}>
                 <div className="flex flex-wrap gap-2 [&_button]:h-auto [&_button]:min-h-8 [&_button]:px-2.5 [&_button]:py-1.5 [&_button]:text-xs">
                   {context === 'sales' ? (
-                    <Button
+                    <CopyButton
                       type="button"
                       variant="outline"
                       className="max-w-full whitespace-normal"
-                      disabled={demo.participants.length === 0 || copyingReport}
-                      onClick={copyDemoReport}
+                      disabled={demo.participants.length === 0}
+                      onCopy={copyDemoReport}
+                      resetKey={`${demo.id}:${open}`}
+                      copiedLabel={t('lmsStaffCopied')}
                     >
-                      {copyingReport
-                        ? <LoaderCircle aria-hidden="true" className="mr-2 size-4 shrink-0 animate-spin" />
-                        : <Copy aria-hidden="true" className="mr-2 size-4 shrink-0" />}
                       {t('copyDemoReport')}
-                    </Button>
+                    </CopyButton>
                   ) : null}
                   {canManageScheduledDemo ? (
                     <>
@@ -777,7 +773,7 @@ export function DemoLessonDetailsDialog({
               {canEditAttendance && demo.participants.some((participant) => (
                 participant.canManage !== false
               )) ? (
-                <Button
+                <Button loading={isMutating}
                   type="button"
                   disabled={dirtyParticipantIds.size === 0 || isMutating}
                   onClick={() => saveAttendance.mutate()}
@@ -883,7 +879,7 @@ export function DemoLessonDetailsDialog({
             <AlertDialogAction
               disabled={!canMarkConducted || finalizeDemo.isPending}
               onClick={(event) => { event.preventDefault(); finalizeDemo.mutate({ status: 'completed' }); }}
-            >
+            >{(finalizeDemo.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {finalizeDemo.isPending ? t('saving') : t('markDemoConducted')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -916,7 +912,7 @@ export function DemoLessonDetailsDialog({
                 event.preventDefault();
                 if (participantToRemove) removeParticipant.mutate(participantToRemove.id);
               }}
-            >
+            >{(removeParticipant.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {removeParticipant.isPending ? t('deleting') : t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -990,7 +986,7 @@ export function DemoLessonDetailsDialog({
               <Button type="button" variant="outline" disabled={finalizeDemo.isPending} onClick={() => setNotConductedOpen(false)}>
                 {t('back')}
               </Button>
-              <Button type="submit" disabled={!notConductedReasonValid || finalizeDemo.isPending}>
+              <Button loading={finalizeDemo.isPending} type="submit" disabled={!notConductedReasonValid || finalizeDemo.isPending}>
                 {finalizeDemo.isPending ? t('saving') : t('markDemoNotConducted')}
               </Button>
             </DialogFooter>
@@ -1065,7 +1061,7 @@ export function DemoLessonDetailsDialog({
                 <div aria-live="polite">
                   {teacherOptions.isFetching ? (
                     <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <LoaderCircle className="size-4 animate-spin" />
+                      <OrbitSpinner className="size-4" />
                       {t('checkingAvailability')}
                     </p>
                   ) : teacherOptions.isError ? (
@@ -1101,7 +1097,7 @@ export function DemoLessonDetailsDialog({
               >
                 {t('back')}
               </Button>
-              <Button
+              <Button loading={teacherOptions.isFetching || changeDemoTeacher.isPending}
                 type="submit"
                 disabled={
                   !teacherSelectionValid
@@ -1171,7 +1167,7 @@ export function DemoLessonDetailsDialog({
               <Button type="button" variant="outline" disabled={rescheduleDemo.isPending} onClick={() => setRescheduleOpen(false)}>
                 {t('back')}
               </Button>
-              <Button type="submit" disabled={!rescheduleIsValid || rescheduleDemo.isPending}>
+              <Button loading={rescheduleDemo.isPending} type="submit" disabled={!rescheduleIsValid || rescheduleDemo.isPending}>
                 {rescheduleDemo.isPending ? t('saving') : t('rescheduleDemoLesson')}
               </Button>
             </DialogFooter>
@@ -1208,7 +1204,7 @@ export function DemoLessonDetailsDialog({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={!cancelReason.trim() || cancelDemo.isPending}
               onClick={(event) => { event.preventDefault(); confirmCancellation(); }}
-            >
+            >{(cancelDemo.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {cancelDemo.isPending ? t('saving') : t('cancelDemoLesson')}
             </AlertDialogAction>
           </AlertDialogFooter>

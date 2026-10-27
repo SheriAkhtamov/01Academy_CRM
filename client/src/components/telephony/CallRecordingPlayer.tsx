@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Headphones, Loader2, X } from 'lucide-react';
+import { Headphones, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { telephonyApi } from '@/features/telephony/api';
 import { translations, type TranslationKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type CallRecordingPlayerProps = {
   hasRecording: boolean;
@@ -92,7 +93,7 @@ export function CallRecordingPlayer({
         disabled={isLoading}
         onClick={() => void loadRecording()}
       >
-        {isLoading ? <Loader2 className="animate-spin" /> : <Headphones />}
+        {isLoading ? <OrbitSpinner className="" /> : <Headphones />}
         {isLoading ? t('loading') : t('telephonyPlayRecording')}
       </Button>
     );

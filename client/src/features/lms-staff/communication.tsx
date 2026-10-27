@@ -24,6 +24,7 @@ import {
 } from "./ui";
 import { StaffEditor } from "./editor";
 import { StaffFiles, StaffUploads } from "./files";
+import { NativeCheckbox } from "@/components/ui/checkbox";
 export function StaffAnnouncements({ runId }: { runId: number }) {
   const { t } = useTranslation();
   const date = useStaffFormat();
@@ -190,7 +191,7 @@ function AnnouncementEditor({
           </p>
         )}
         <div className="flex justify-end">
-          <Button disabled={action.isPending || busy}>
+          <Button loading={action.isPending || busy} disabled={action.isPending || busy}>
             {t("lmsStaffPublish")}
           </Button>
         </div>
@@ -326,7 +327,7 @@ function ThreadDialog({
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <StaffStatus state={query.data.status} />
-              <Button
+              <Button loading={status.isPending}
                 variant="outline"
                 disabled={status.isPending}
                 onClick={() => status.mutate()}
@@ -376,7 +377,7 @@ function ThreadDialog({
                 />
               </StaffField>
               <label className="flex min-h-11 items-center gap-2">
-                <input
+                <NativeCheckbox
                   type="checkbox"
                   checked={internal}
                   onChange={(event) => setInternal(event.target.checked)}
@@ -395,7 +396,7 @@ function ThreadDialog({
                   {message(answer.error ?? status.error)}
                 </p>
               )}
-              <Button disabled={answer.isPending || busy || !body.trim()}>
+              <Button loading={answer.isPending || busy} disabled={answer.isPending || busy || !body.trim()}>
                 {t("lmsStaffAnswer")}
               </Button>
             </form>

@@ -39,6 +39,7 @@ import {
 } from '@/lib/telephony';
 import { cn } from '@/lib/utils';
 import { hasOnlinePbxManagerAssignment } from '@shared/telephony';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type JournalCall = ReminderCallHistoryFields & {
   id: number | string;
@@ -227,9 +228,9 @@ export default function CallJournalPage() {
 
         <Card className="flex min-h-[26rem] shrink-0 flex-col overflow-hidden xl:min-h-[32rem] lg:flex-1">
           {journalQuery.isLoading ? (
-            <div className="space-y-3 p-5">
+            <LoadingRegion className="space-y-3 p-5">
               {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-14 w-full" />)}
-            </div>
+            </LoadingRegion>
           ) : journalQuery.isError ? (
             <div className="p-10 text-center">
               <p className="font-medium text-destructive">{t('failedToLoadData')}</p>

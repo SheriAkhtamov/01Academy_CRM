@@ -18,6 +18,7 @@ import {
 import { useChartEntrance } from '@/components/ux/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { SalesDashboardDailyPoint, SalesDashboardMetrics } from './types';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 /**
  * The three counted-by-the-server series over the days of the period.
@@ -59,7 +60,7 @@ export function SalesOverviewDynamics({
       footer={<AnalyticsChartLegend items={legendItems} />}
     >
       {isLoading ? (
-        <Skeleton className="h-full w-full rounded-lg" />
+        <LoadingRegion className="h-full w-full"><Skeleton className="h-full w-full rounded-lg" /></LoadingRegion>
       ) : (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={dailyData} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>

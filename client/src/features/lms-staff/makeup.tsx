@@ -183,12 +183,12 @@ function MakeupEditor({
             </p>
           )}
           <div className="flex flex-wrap gap-3">
-            <Button disabled={action.isPending}>{t("lmsStaffSave")}</Button>
+            <Button loading={action.isPending} disabled={action.isPending}>{t("lmsStaffSave")}</Button>
             {!assignment &&
               !quiz &&
               !plan.recipientId &&
               !plan.quizRecipientId && (
-                <Button
+                <Button loading={action.isPending}
                   type="button"
                   variant="outline"
                   disabled={action.isPending}

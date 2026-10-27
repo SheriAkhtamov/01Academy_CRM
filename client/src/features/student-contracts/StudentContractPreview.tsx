@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import type { StudentContract, StudentContractFile } from '@shared/contracts/student-contracts';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/useTranslation';
 import { studentContractsApi } from './api';
 import { StudentContractDocxPreview } from './StudentContractDocxPreview';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const docxMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const previewMimes = new Set(['application/pdf', 'image/png', 'image/jpeg', docxMime]);
@@ -48,7 +49,7 @@ function ContractFileContent({ contractId, file }: { contractId: string; file: S
   );
   if (!content) return (
     <div role="status" aria-label={t('loading')} className="flex min-h-32 items-center justify-center">
-      <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
+      <OrbitSpinner className="size-6 text-muted-foreground" aria-hidden="true" />
     </div>
   );
   if (file.mime === docxMime) return (

@@ -25,6 +25,7 @@ import {
   staffDateInput,
   staffDateIso,
 } from "./ui";
+import { NativeCheckbox } from "@/components/ui/checkbox";
 export function StaffProgram({
   runId,
   courseId,
@@ -238,7 +239,7 @@ function UnitPreviewEditor({
         }}
       >
         <label className="flex min-h-11 items-center gap-2">
-          <input
+          <NativeCheckbox
             type="checkbox"
             checked={enabled}
             onChange={(event) => setEnabled(event.target.checked)}
@@ -266,7 +267,7 @@ function UnitPreviewEditor({
             {invalid ? t("lmsDatesInvalid") : message(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("portalSave")}</Button>
+        <Button loading={action.isPending} disabled={action.isPending}>{t("portalSave")}</Button>
       </form>
     </StaffDialog>
   );
@@ -394,7 +395,7 @@ function ProgramEditor({
                 </StaffField>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <label className="flex min-h-11 items-center gap-2">
-                    <input
+                    <NativeCheckbox
                       type="checkbox"
                       checked={unit.required}
                       onChange={(event) =>
@@ -471,7 +472,7 @@ function ProgramEditor({
           {t("lmsStaffAddSection")}
         </Button>
         <label className="flex min-h-11 items-center gap-2">
-          <input
+          <NativeCheckbox
             type="checkbox"
             checked={publish}
             onChange={(event) => setPublish(event.target.checked)}
@@ -483,7 +484,7 @@ function ProgramEditor({
             {validation || message(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>
+        <Button loading={action.isPending} disabled={action.isPending}>
           {t(publish ? "lmsStaffPublish" : "lmsStaffSave")}
         </Button>
       </form>
@@ -614,7 +615,7 @@ function LessonBindingEditor({
             {validation || message(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("lmsStaffSave")}</Button>
+        <Button loading={action.isPending} disabled={action.isPending}>{t("lmsStaffSave")}</Button>
       </form>
     </StaffDialog>
   );

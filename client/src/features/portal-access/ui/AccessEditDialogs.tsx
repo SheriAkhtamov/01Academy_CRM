@@ -208,7 +208,7 @@ export function ClassificationDialog({
               >
                 {t("lmsStaffCancel")}
               </Button>
-              <Button type="submit" disabled={pending}>
+              <Button loading={pending} type="submit" disabled={pending}>
                 {t("lmsStaffSave")}
               </Button>
             </DialogFooter>
@@ -412,7 +412,7 @@ export function PermissionEditDialog({
               >
                 {t("lmsStaffCancel")}
               </Button>
-              <Button type="submit" disabled={pending}>
+              <Button loading={pending} type="submit" disabled={pending}>
                 {t("lmsStaffSave")}
               </Button>
             </DialogFooter>
@@ -614,7 +614,7 @@ export function StaffRecoveryDialog({
               >
                 {t("lmsStaffCancel")}
               </Button>
-              <Button type="submit" disabled={pending}>
+              <Button loading={pending} type="submit" disabled={pending}>
                 {t("lmsAccessReset")}
               </Button>
             </DialogFooter>

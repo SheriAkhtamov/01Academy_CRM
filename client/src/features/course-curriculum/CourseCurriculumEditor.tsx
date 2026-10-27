@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Copy,
   FileText,
   Layers,
   Link2,
@@ -29,6 +28,7 @@ import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -96,17 +96,16 @@ function ItemActions({ index, count, onMove, onDuplicate, onDelete, label, disab
   return (
     <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border-strong bg-background/90 p-0.5">
       {onDuplicate ? (
-        <Button
+        <CopyButton
           type="button"
           size="icon"
           variant="ghost"
           className="size-7 text-muted-foreground hover:text-foreground"
           disabled={disabled}
           aria-label={`${t('courseDuplicateItem')}: ${label}`}
-          onClick={onDuplicate}
-        >
-          <Copy className="size-3.5" />
-        </Button>
+          onCopy={onDuplicate}
+          iconClassName="size-3.5"
+        />
       ) : null}
       <Button
         type="button"

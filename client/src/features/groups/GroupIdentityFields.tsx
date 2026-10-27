@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Building2, Check, Copy, Globe, RotateCw, User, Users } from 'lucide-react';
+import { Building2, Globe, RotateCw, User, Users } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
@@ -8,6 +7,7 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/comp
 import { ProtectedGroupNameInput } from './ProtectedGroupNameInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Input } from '@/components/ui/input';
 
 export function GroupIdentityFields({ code, error, pending, editing, coded, onRetry }: {
@@ -15,17 +15,14 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
 }) {
   const { t } = useTranslation();
   const form = useFormContext<GroupValues>();
-  const [copied, setCopied] = useState(false);
-
   const handleCopyCode = async () => {
-    if (!code) return;
+    if (!code) return false;
     try {
-      await navigator.clipboard?.writeText(code);
-      setCopied(true);
+      await navigator.clipboard.writeText(code);
       toast({ title: t('groupCodeCopied'), description: code });
-      window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard may be unavailable in non-secure environments
+      toast({ title: t('copyFailed'), variant: 'destructive' });
+      return false;
     }
   };
 
@@ -77,19 +74,18 @@ export function GroupIdentityFields({ code, error, pending, editing, coded, onRe
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FormLabel>{t('groupName')}</FormLabel>
         {code ? (
-          <button
+          <CopyButton
             type="button"
-            onClick={() => { void handleCopyCode(); }}
+            unstyled
+            onCopy={handleCopyCode}
+            resetKey={code}
+            iconPosition="end"
+            iconClassName="size-3 opacity-75"
             aria-label={t('copyGroupCode')}
             className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/8 px-2 py-0.5 font-mono text-xs font-semibold text-primary transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span>{code}</span>
-            {copied ? (
-              <Check className="size-3 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-            ) : (
-              <Copy className="size-3 opacity-75" aria-hidden="true" />
-            )}
-          </button>
+            {code}
+          </CopyButton>
         ) : null}
       </div>
       <FormControl><ProtectedGroupNameInput ref={field.ref} code={code} addition={field.value}

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StaggerItem } from '@/components/ux/motion';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export function FinanceMetric({
   label,
@@ -67,7 +68,7 @@ export function FinanceLoading({
   metricCards?: number;
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <LoadingRegion className="flex flex-col gap-4">
       <div className={cn(
         'grid gap-3 md:grid-cols-2',
         showAnalytics ? 'xl:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))]' : 'xl:grid-cols-4',
@@ -77,7 +78,7 @@ export function FinanceLoading({
       <Skeleton className="h-[300px] rounded-xl" />
       {showAnalytics ? <AnalyticsChartsSkeleton cards={2} /> : null}
       <Skeleton className="h-56 rounded-xl" />
-    </div>
+    </LoadingRegion>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { FileText, Loader2, Paperclip, RefreshCw, Save, X } from 'lucide-react';
+import { FileText, Paperclip, RefreshCw, Save, X } from 'lucide-react';
 import { STUDENT_CONTRACT_FILE_ACCEPT } from '@shared/contracts/student-contracts';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { StudentContractControls } from './useStudentContract';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type Confirmation = { kind: 'cancel' } | { kind: 'regenerate' } | { kind: 'replaceFile'; file: File };
 
@@ -41,7 +42,7 @@ export function StudentContractFields({
     <div className="flex items-center gap-1.5">
       {controls.isLoading ? (
         <div role="status" aria-label={t('loading')}>
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          <OrbitSpinner className="size-3.5 text-muted-foreground" />
         </div>
       ) : null}
       {!contract && !controls.isLoading && !controls.loadError ? (
@@ -53,7 +54,7 @@ export function StudentContractFields({
           disabled={busy}
           onClick={() => void controls.create()}
         >
-          {controls.isPending ? <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" /> : null}
+          {controls.isPending ? <OrbitSpinner className="size-3.5" data-icon="inline-start" /> : null}
           {t('studentContractCreate')}
         </Button>
       ) : null}

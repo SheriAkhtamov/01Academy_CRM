@@ -129,7 +129,7 @@ export function AppRouter() {
         <Alert variant="destructive" className="max-w-lg">
           <AlertTitle>{t('sessionCheckFailedTitle')}</AlertTitle>
           <AlertDescription>
-            <Button className="mt-4" variant="outline" disabled={isRefetchingSession} onClick={() => void refetchSession().catch(() => undefined)}>
+            <Button loading={isRefetchingSession} className="mt-4" variant="outline" disabled={isRefetchingSession} onClick={() => void refetchSession().catch(() => undefined)}>
               {isRefetchingSession ? t('loading') : t('retry')}
             </Button>
           </AlertDescription>

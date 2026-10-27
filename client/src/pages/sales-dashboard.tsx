@@ -86,6 +86,7 @@ import {
 } from 'lucide-react';
 import type { LeadTagView } from '@shared/lead-tags';
 import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type SalesSection = 'overview' | 'pipeline' | 'archive' | 'schedule';
 type LeadSheetTab = 'deal' | 'activity' | 'payment' | 'tasks';
@@ -737,7 +738,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     return (
       <ModulePage contained={contained}>
         <ModulePageBody contained={contained} ariaLabel={t('loading')}>
-          <div className="space-y-6">
+          <LoadingRegion className="space-y-6">
             <Skeleton className="h-10 w-64" />
             <div className="grid grid-cols-tile gap-4">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -745,7 +746,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
               ))}
             </div>
             <AnalyticsChartsSkeleton />
-          </div>
+          </LoadingRegion>
         </ModulePageBody>
       </ModulePage>
     );
@@ -1265,7 +1266,7 @@ export function LeadForm({
           )}
         />
         <div className="flex justify-end md:col-span-2">
-          <Button type="submit" disabled={createLead.isPending}>
+          <Button loading={createLead.isPending} type="submit" disabled={createLead.isPending}>
             <Plus data-icon="inline-start" />
             {createLead.isPending ? t('saving') : t('createLead')}
           </Button>

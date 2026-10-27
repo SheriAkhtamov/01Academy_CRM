@@ -24,12 +24,12 @@ import {
   Clock3,
   CreditCard,
   History,
-  Loader2,
   MessageSquare,
   MessagesSquare,
   Phone,
   UserRoundCog,
 } from 'lucide-react';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type LeadComment = {
   id: number;
@@ -144,7 +144,7 @@ export function LeadCommentsCard({
           <div className="flex justify-end">
             <Button type="submit" disabled={isPending || !draft.trim()}>
               {isPending
-                ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                ? <OrbitSpinner className="" data-icon="inline-start" />
                 : <MessageSquare data-icon="inline-start" />}
               {t('send')}
             </Button>

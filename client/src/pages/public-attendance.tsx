@@ -17,6 +17,7 @@ import { AttendanceReport } from '@/features/public-attendance/components/Attend
 import type { PublicAttendanceMarkedStatus, PublicAttendanceRoster, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
 import '@/features/public-attendance/public-attendance.css';
 import '@/features/public-attendance/attendance-report.css';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 const bulkKeys = {
   present: { restKey: 'publicAttendanceBulkRestPresentTitle', allKey: 'publicAttendanceBulkAllPresentTitle', confirmKey: 'publicAttendanceBulkConfirmPresent' },
@@ -50,11 +51,11 @@ function AttendanceContextShell({ menu, children }: { menu: ReactNode; children:
 
 function AttendanceNavigationSkeleton({ menu }: { menu: ReactNode }) {
   return (
-    <div className="pa-context">
+    <LoadingRegion className="pa-context">
       <div className="pa-context-top"><span className="pa-skeleton pa-skeleton-streams" aria-hidden="true" />{menu}</div>
       <span className="pa-skeleton pa-skeleton-heading" aria-hidden="true" />
       <span className="pa-skeleton pa-skeleton-timeline" aria-hidden="true" />
-    </div>
+    </LoadingRegion>
   );
 }
 

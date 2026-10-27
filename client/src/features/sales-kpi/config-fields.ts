@@ -2,7 +2,7 @@ import type { KpiConfig, SingleKpiRole } from '@shared/sales-kpi';
 import type { TranslationKey } from '@/lib/i18n';
 
 export type KpiNumberField = { [K in keyof KpiConfig]: KpiConfig[K] extends number ? K : never }[keyof KpiConfig];
-type Field = { name: KpiNumberField; translationKey: TranslationKey; min?: number; max?: number; role?: SingleKpiRole };
+type Field = { name: KpiNumberField; translationKey: TranslationKey; min?: number; max?: number; role?: SingleKpiRole; quantity?: boolean };
 export type KpiPlanSection = 'targets' | 'pay' | 'work' | 'display';
 export const kpiPayFields: Field[] = [
   { name: 'baseSalaryUzs', translationKey: 'kpiBaseSalary' }, { name: 'variableSalaryUzs', translationKey: 'kpiVariableSalary' },
@@ -13,15 +13,15 @@ export const kpiPayFields: Field[] = [
   { name: 'upsellBonusUzs', translationKey: 'kpiUpsellBonus', role: 'closer' },
 ];
 export const kpiTargetFields: Field[] = [
-  { name: 'minimumVolume', translationKey: 'kpiMinimumVolume' }, { name: 'volumeTarget', translationKey: 'kpiVolumeTarget', min: 1 },
+  { name: 'minimumVolume', translationKey: 'kpiMinimumVolume', quantity: true }, { name: 'volumeTarget', translationKey: 'kpiVolumeTarget', min: 1, quantity: true },
   { name: 'conversionTargetPercent', translationKey: 'kpiConversionTarget', max: 100 }, { name: 'crmTargetPercent', translationKey: 'kpiCrmTarget', max: 100 },
-  { name: 'responseTargetMinutes', translationKey: 'kpiResponseTarget', min: 1, max: 1440, role: 'hunter' },
-  { name: 'responseBaseMinutes', translationKey: 'kpiResponseBase', min: 1, max: 1440, role: 'hunter' },
-  { name: 'reactivationDays', translationKey: 'kpiReactivationDays', min: 1, max: 365, role: 'hunter' },
+  { name: 'responseTargetMinutes', translationKey: 'kpiResponseTarget', min: 1, max: 1440, role: 'hunter', quantity: true },
+  { name: 'responseBaseMinutes', translationKey: 'kpiResponseBase', min: 1, max: 1440, role: 'hunter', quantity: true },
+  { name: 'reactivationDays', translationKey: 'kpiReactivationDays', min: 1, max: 365, role: 'hunter', quantity: true },
   { name: 'offerNextDayHour', translationKey: 'kpiOfferDeadline', max: 23, role: 'closer' },
-  { name: 'conversionWindowDays', translationKey: 'kpiConversionWindow', min: 1, max: 365, role: 'closer' },
+  { name: 'conversionWindowDays', translationKey: 'kpiConversionWindow', min: 1, max: 365, role: 'closer', quantity: true },
   { name: 'renewalTargetPercent', translationKey: 'kpiRenewalTarget', max: 100, role: 'closer' },
-  { name: 'upsellTarget', translationKey: 'kpiUpsellTarget', role: 'closer' },
+  { name: 'upsellTarget', translationKey: 'kpiUpsellTarget', role: 'closer', quantity: true },
   { name: 'npsTarget', translationKey: 'kpiNpsTarget', min: -100, max: 100, role: 'closer' },
 ];
 export const kpiScheduleFields: Field[] = [

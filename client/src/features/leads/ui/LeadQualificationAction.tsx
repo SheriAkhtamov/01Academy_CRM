@@ -72,7 +72,7 @@ export function LeadQualificationAction({ leadId, funnelId, disabled = false }: 
           </div>
           <DialogFooter className="compact-modal-footer">
             <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => guard.handleOpenChange(false)}>{t('cancel')}</Button>
-            <Button type="submit" disabled={mutation.isPending || !Object.values(criteria).every(Boolean)}>{t('salesQualifyLead')}</Button>
+            <Button loading={mutation.isPending} type="submit" disabled={mutation.isPending || !Object.values(criteria).every(Boolean)}>{t('salesQualifyLead')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

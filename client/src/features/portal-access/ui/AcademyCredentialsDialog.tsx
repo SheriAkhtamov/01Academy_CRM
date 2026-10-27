@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Copy, Eye, EyeOff, KeyRound, Pencil, WandSparkles } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Pencil, WandSparkles } from 'lucide-react';
 import { platformLoginHref, type LearningModule } from '@shared/platform-routes';
 import { academyPortalCredentialChangeSchema, type AcademyPortalAccount, type AcademyPortalCredentialChange, type AcademyPortalCredentialResult } from '@shared/contracts/academy-portal-access';
 import { useTranslation } from '@/hooks/useTranslation';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -14,6 +15,7 @@ import {
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { AcademyAccessStatus } from './AcademyAccessAccount';
 import { academyPortalApi, academyPortalError } from '../academy-api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type Validation = { field: 'login' | 'password'; message: string };
 
@@ -116,11 +118,14 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
     setConfirmation(parsed.data);
   };
   const copy = async () => {
-    if (!result?.password) return;
+    if (!result?.password) return false;
     try {
       await navigator.clipboard.writeText(`${signInLink}\n${t('portalIdentifier')}: ${result.account.login}\n${t('portalPassword')}: ${result.password}`);
       if (active.current) setNotice(t('academyAccessCredentialsCopied'));
-    } catch { if (active.current) setNotice(t('copyFailed')); }
+    } catch {
+      if (active.current) setNotice(t('copyFailed'));
+      return false;
+    }
   };
 
   return <>
@@ -176,18 +181,18 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
               <WandSparkles className="size-4" aria-hidden="true" />{t('academyAccessGeneratePassword')}
             </Button>}
           </div>
-          {show.isPending && <p role="status">{t('loading')}</p>}
+          {show.isPending && <p role="status"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p>}
           {(validation || show.error) && <div className="space-y-2">
             <p id="academy-credential-error" role="alert" className="text-sm text-destructive">{validation?.message || t(academyPortalError(show.error))}</p>
-            {show.error && <Button type="button" variant="outline" disabled={show.isPending} onClick={() => show.mutate()}>{t('retry')}</Button>}
+            {show.error && <Button loading={show.isPending} type="button" variant="outline" disabled={show.isPending} onClick={() => show.mutate()}>{t('retry')}</Button>}
           </div>}
           {notice && <p role="status" className="text-sm">{notice}</p>}
         </CompactModalSection>
         </div>
           <DialogFooter className="compact-modal-footer">
             <Button type="button" variant="outline" disabled={pending} onClick={editing ? cancelEditing : () => guard.handleOpenChange(false)}>{t(editing ? 'cancel' : 'close')}</Button>
-            {editing ? <Button type="submit" disabled={pending || !dirty}>{t('save')}</Button> : result?.password && (
-              <Button type="button" className="gap-2" onClick={() => void copy()}><Copy className="size-4" aria-hidden="true" />{t('academyAccessCopyCredentials')}</Button>
+            {editing ? <Button loading={pending} type="submit" disabled={pending || !dirty}>{t('save')}</Button> : result?.password && (
+              <CopyButton type="button" className="gap-2" onCopy={copy} resetKey={`${result.account.id}:${result.password}`} copiedLabel={t('lmsStaffCopied')}>{t('academyAccessCopyCredentials')}</CopyButton>
             )}
           </DialogFooter>
         </form>
@@ -206,7 +211,7 @@ export function AcademyCredentialsDialog({ leadId, account, initial, module, onC
         </AlertDialogBody>
         <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={change.isPending}>{t('cancel')}</AlertDialogCancel>
-          <Button type="button" disabled={change.isPending} onClick={() => {
+          <Button loading={change.isPending} type="button" disabled={change.isPending} onClick={() => {
             if (!confirmation || change.isPending || changing.current) return;
             changing.current = true;
             change.mutate(confirmation);

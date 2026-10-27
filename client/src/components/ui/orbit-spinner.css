@@ -1,0 +1,12 @@
+.orbit-spinner { vertical-align: middle; }
+.orbit-spinner-orbit {
+  transform-origin: 12px 12px;
+  animation: orbit-spinner-turn 0.8s linear infinite;
+}
+@keyframes orbit-spinner-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-spinner-orbit { animation: none; }
+}
+:root[data-motion='off'] .orbit-spinner-orbit { animation: none; }

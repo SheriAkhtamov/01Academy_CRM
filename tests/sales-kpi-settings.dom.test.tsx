@@ -60,6 +60,21 @@ describe('sales KPI settings dialogs', () => {
     expect(screen.getAllByLabelText(translations.kpiTierFrom.en)).toHaveLength(1);
     expect(hooks.save).not.toHaveBeenCalled();
   });
+  it('steps quantity targets while keeping percentages and monetary fields as direct inputs', async () => {
+    const user = userEvent.setup();
+    render(<KpiSettingsPanel />);
+    await user.click(screen.getByRole('button', { name: translations.kpiEditPlan.en }));
+    const volume = screen.getByLabelText(translations.kpiMonthlyBookings.en) as HTMLInputElement;
+    const previous = Number(volume.value);
+    await user.click(screen.getByRole('button', { name: `Increase: ${translations.kpiMonthlyBookings.en}` }));
+    expect(Number(volume.value)).toBe(previous + 1);
+    expect(screen.queryByRole('button', { name: `Increase: ${translations.kpiTrialAttendanceTarget.en}` })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: translations.kpiPaySettings.en }));
+    expect(screen.getByLabelText(translations.kpiBaseSalary.en)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `Increase: ${translations.kpiBaseSalary.en}` })).toBeNull();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: translations.save.en }));
+    expect(hooks.save).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ volumeTarget: previous + 1 }) }));
+  });
   it('rejects invalid salary values without losing the open draft', async () => {
     const user = userEvent.setup();
     render(<KpiSettingsPanel />);

@@ -62,6 +62,7 @@ import { LocalizedFormMessage } from '@/components/ux/lead/LeadSheetControls';
 import { buildUniqueCourseSlug } from '@/lib/slugify';
 import { formatLeadCount } from '@/lib/formatLeadCount';
 import { Input } from '@/components/ui/input';
+import { QuantityStepper } from '@/components/ui/quantity-stepper';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -99,7 +100,6 @@ import {
   Edit3,
   FileSignature,
   GitBranch,
-  Loader2,
   Plus,
   Trash2,
   Target,
@@ -107,6 +107,8 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 
 interface PipelineStatus {
@@ -646,11 +648,11 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     return (
       <ModulePage contained>
         <ModulePageBody contained ariaLabel={t('loading')}>
-          <div className="flex flex-col gap-6">
+          <LoadingRegion className="flex flex-col gap-6">
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-10 w-96 max-w-full" />
             <Skeleton className="h-[520px] w-full" />
-          </div>
+          </LoadingRegion>
         </ModulePageBody>
       </ModulePage>
     );
@@ -760,9 +762,9 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
         </TabsContent>
 
         <TabsContent value="groups" className="mt-0">
-          {groupsConfiguration.isPending ? <div role="status" aria-label={t('loading')} className="space-y-4">
+          {groupsConfiguration.isPending ? <LoadingRegion role="status" aria-label={t('loading')} className="space-y-4">
             <Skeleton className="h-44 w-full" /><Skeleton className="h-96 w-full" />
-          </div> : groupsConfiguration.isError || !groupsConfiguration.data ? <Card>
+          </LoadingRegion> : groupsConfiguration.isError || !groupsConfiguration.data ? <Card>
             <CardHeader><CardTitle>{t('failedToLoadData')}</CardTitle></CardHeader>
             <CardContent><Button onClick={() => void groupsConfiguration.refetch()}>{t('retry')}</Button></CardContent>
           </Card> : <GroupsWorkspace configuration={groupsConfiguration.data} basePath={`${basePath}?tab=groups`} scopeControl="select" />}
@@ -795,7 +797,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </button>
               ))}
-              {salesFunnels.isLoading ? <Skeleton className="h-20" /> : null}
+              {salesFunnels.isLoading ? <LoadingRegion className="inline-block align-middle"><Skeleton className="h-20" /></LoadingRegion> : null}
               {!salesFunnels.isLoading && salesFunnels.data?.length === 0 ? (
                 <EmptyTableState title={t('noSalesFunnels')}  />
               ) : null}
@@ -944,7 +946,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               <DialogFooter className="compact-modal-footer">
                 <Button type="button" variant="outline" disabled={saveSchool.isPending} onClick={() => schoolGuard.handleOpenChange(false)}>{t('cancel')}</Button>
                 <Button type="submit" disabled={saveSchool.isPending}>
-                  {saveSchool.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                  {saveSchool.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                   {saveSchool.isPending ? t('saving') : t('save')}
                 </Button>
               </DialogFooter>
@@ -992,7 +994,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   <FormField control={roomForm.control} name="capacity" render={({ field }) => (
                     <FormItem>
                       <FormLabel required>{t('roomCapacity')}</FormLabel>
-                      <FormControl><Input type="number" min="1" {...field} disabled={saveRoom.isPending} /></FormControl>
+                      <FormControl><QuantityStepper min="1" {...field} disabled={saveRoom.isPending} /></FormControl>
                       <LocalizedFormMessage />
                     </FormItem>
                   )} />
@@ -1008,7 +1010,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
               </div>
               <DialogFooter className="compact-modal-footer">
                 <Button type="button" variant="outline" disabled={saveRoom.isPending} onClick={() => roomGuard.handleOpenChange(false)}>{t('cancel')}</Button>
-                <Button type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
+                <Button loading={saveRoom.isPending} type="submit" disabled={saveRoom.isPending}>{saveRoom.isPending ? t('saving') : t('save')}</Button>
               </DialogFooter>
             </form>
           </Form>
@@ -1084,7 +1086,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                   type="submit"
                   disabled={saveStatus.isPending}
                 >
-                  {saveStatus.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                  {saveStatus.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                   {saveStatus.isPending ? t('saving') : t('save')}
                 </Button>
               </DialogFooter>
@@ -1180,7 +1182,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       targetStatusId: pipelineTransferTargetId,
                     });
                   }}
-                >
+                >{(transferAndDeletePipelineStatus.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
                   <ArrowRightLeft data-icon="inline-start" />
                   {transferAndDeletePipelineStatus.isPending ? t('saving') : t('transferLeadsAndDeleteStage')}
                 </AlertDialogAction>

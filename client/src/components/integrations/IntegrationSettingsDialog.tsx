@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { KeyRound, Link2, Loader2, Settings2, ShieldCheck } from 'lucide-react';
+import { KeyRound, Link2, Settings2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import {
   AlertDialogBody, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -15,6 +16,8 @@ import { getIntegrationSettings, issueWebsiteToken, saveIntegrationSettings, typ
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { queryClient } from '@/lib/queryClient';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type Field = { name: string; label: string; secret?: boolean; required?: boolean };
 
@@ -245,8 +248,8 @@ function IntegrationSettingsForm({
           <DialogHeader className="compact-modal-header">
             <DialogTitle>{titles[provider]}</DialogTitle>
           </DialogHeader>
-          {settings.isLoading ? <div className="compact-modal-body"><Skeleton className="h-48 w-full" /></div> : settings.isError && !settings.data ? (
-            <div className="compact-modal-body"><Button variant="outline" disabled={settings.isFetching} onClick={() => settings.refetch()}>{t('retry')}</Button></div>
+          {settings.isLoading ? <LoadingRegion className="compact-modal-body"><Skeleton className="h-48 w-full" /></LoadingRegion> : settings.isError && !settings.data ? (
+            <div className="compact-modal-body"><Button loading={settings.isFetching} variant="outline" disabled={settings.isFetching} onClick={() => settings.refetch()}>{t('retry')}</Button></div>
           ) : (
             <form onSubmit={(event) => {
               event.preventDefault();
@@ -275,14 +278,15 @@ function IntegrationSettingsForm({
                   <CompactModalSection title={t('integrationWebsiteToken')} icon={ShieldCheck} tone="teal" collapsible={false} contentClassName="space-y-2">
                     <Label htmlFor="integration-website-issued-token">{t('integrationWebsiteToken')}</Label>
                     <Input id="integration-website-issued-token" readOnly value={issuedToken} className="font-mono" />
-                    <Button type="button" variant="outline" disabled={pending} onClick={async () => {
+                    <CopyButton type="button" variant="outline" disabled={pending} resetKey={issuedToken} copiedLabel={t('lmsStaffCopied')} onCopy={async () => {
                       try {
                         await navigator.clipboard.writeText(issuedToken);
                         toast({ title: t('integrationWebsiteTokenCopied') });
                       } catch {
                         toast({ title: t('error'), variant: 'destructive' });
+                        return false;
                       }
-                    }}>{t('integrationWebsiteCopyToken')}</Button>
+                    }}>{t('integrationWebsiteCopyToken')}</CopyButton>
                   </CompactModalSection>
                 ) : null}
                 {safe && ((provider === 'instagram' && (safe.callbackUrl || safe.webhookUrl)) || ((provider === 'meta' || provider === 'onlinepbx') && safe.webhookUrl)) ? (
@@ -301,7 +305,7 @@ function IntegrationSettingsForm({
                   <Button type="button" disabled={pending} onClick={() => setRotateConfirmOpen(true)}>{t('integrationWebsiteRotateToken')}</Button>
                 ) : (
                   <Button type="submit" disabled={pending}>
-                    {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                    {pending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                     {provider === 'website' ? t('integrationWebsiteCreateToken') : t('save')}
                   </Button>
                 )}

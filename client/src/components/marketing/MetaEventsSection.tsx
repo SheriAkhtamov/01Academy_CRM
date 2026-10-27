@@ -18,6 +18,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { formatAcademyDate } from '@/lib/localeFormat';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 function EventMetric({ label, value, icon: Icon }: { label: string; value: string | number; icon: typeof ListChecks }) {
   return (
@@ -188,7 +189,7 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
     );
   }
   if (isLoading || !data) {
-    return <div className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>;
+    return <LoadingRegion className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></LoadingRegion>;
   }
 
   return (
@@ -243,7 +244,7 @@ export function MetaEventsSection({ reportingQuery }: { reportingQuery: string }
           <DialogFooter className="compact-modal-footer">
             <Button variant="outline" disabled={retryEvent.isPending} onClick={() => { if (!retryLocked.current) setSelected(null); }}>{t('cancel')}</Button>
             {selected && canRetry(selected) ? (
-              <Button onClick={() => {
+              <Button loading={retryEvent.isPending} onClick={() => {
                 if (!access.current.allowed || retryEvent.isPending || retryLocked.current) return;
                 retryLocked.current = true;
                 retryEvent.mutate({ eventId: selected.id, epoch: access.current.epoch });

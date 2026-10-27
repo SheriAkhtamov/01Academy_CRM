@@ -10,6 +10,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { endAuthenticatedSession, queryClient } from '@/lib/queryClient';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const LearningModules = lazy(() => import('@/features/portal-app/PortalApp').then((module) => ({ default: module.PortalApp })));
 const PublicPortfolio = lazy(() => import('@/features/portal-app/PortalApp').then((module) => ({ default: module.PublicPortfolioApp })));
@@ -17,7 +18,7 @@ type Entry = 'pending' | 'staff' | 'error';
 
 function EntryLoading() {
   const { t } = useTranslation();
-  return <div role="status" className="p-8">{t('loading')}</div>;
+  return <div role="status" className="p-8"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></div>;
 }
 
 /** Authentication domains stay isolated while sharing the platform's entry and UI. */

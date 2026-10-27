@@ -429,7 +429,7 @@ export function PortalMaterial({
             )}
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-4">
               {subject?.kind === "self" && (
-                <Button disabled={mark.isPending} onClick={() => mark.mutate()}>
+                <Button loading={mark.isPending} disabled={mark.isPending} onClick={() => mark.mutate()}>
                   {t(
                     material.read ? "portalUnmarkLearned" : "portalMarkLearned",
                   )}
@@ -522,7 +522,7 @@ function CourseAnnouncements({ id, period }: { id: number; period?: LmsEnrollmen
               {format.date(item.publishAt)}
             </p>
             {!item.read && (
-              <Button
+              <Button loading={read.isPending}
                 variant="outline"
                 disabled={read.isPending}
                 onClick={() => read.mutate(item.id)}

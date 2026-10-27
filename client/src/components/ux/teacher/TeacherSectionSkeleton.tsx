@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { AnalyticsChartsSkeleton } from '@/components/ux/analytics/AnalyticsChartCard';
 import type { TeacherSection } from '@/lib/teacherModule';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 /**
  * One generic skeleton used to promise six KPI tiles and four charts no matter
@@ -10,27 +11,27 @@ import type { TeacherSection } from '@/lib/teacherModule';
 export function TeacherSectionSkeleton({ section }: { section: TeacherSection }) {
   if (section === 'groups') {
     return (
-      <div className="space-y-4" aria-hidden="true">
+      <LoadingRegion className="space-y-4">
         <Skeleton className="h-16 w-full rounded-xl" />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-56 rounded-xl" />
           ))}
         </div>
-      </div>
+      </LoadingRegion>
     );
   }
 
   if (section === 'attendance') {
     return (
-      <div className="space-y-4" aria-hidden="true">
+      <LoadingRegion className="space-y-4">
         <Skeleton className="h-[34rem] w-full rounded-xl" />
-      </div>
+      </LoadingRegion>
     );
   }
 
   return (
-    <div className="space-y-4" aria-hidden="true">
+    <LoadingRegion className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Skeleton className="h-40 rounded-xl lg:col-span-2" />
         <Skeleton className="h-40 rounded-xl" />
@@ -48,6 +49,6 @@ export function TeacherSectionSkeleton({ section }: { section: TeacherSection })
         ))}
       </div>
       <AnalyticsChartsSkeleton />
-    </div>
+    </LoadingRegion>
   );
 }

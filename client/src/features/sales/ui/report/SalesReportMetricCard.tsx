@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { SalesReportTrend, type SalesReportChartKind } from './SalesReportTrend';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export function SalesReportMetricCard({ title, unit, value, daily, metric, icon: Icon, color, kind, cumulative, featured, className, onOpen, leadTotal }: {
   title: string; unit: string; value?: number; daily?: SalesReportDailyPoint[];
@@ -27,7 +28,7 @@ export function SalesReportMetricCard({ title, unit, value, daily, metric, icon:
         <Icon className="size-4" aria-hidden="true" />
       </span>
     </header>
-    <div className="flex flex-1 flex-col px-5 pb-5">
+    <LoadingRegion loading={!loaded || !daily} className="flex flex-1 flex-col px-5 pb-5">
       <div className="mb-5 flex min-h-16 flex-wrap items-baseline gap-x-3 gap-y-1">
         {loaded ? <>
           {onOpen ? <button type="button" onClick={onOpen} aria-label={`${title}: ${number.format(value)}`}
@@ -39,12 +40,12 @@ export function SalesReportMetricCard({ title, unit, value, daily, metric, icon:
           {leadTotal !== undefined && leadTotal > 0 ? <span className="basis-full text-[11px] text-muted-foreground">
             {t('salesReportShareOfPeriod', { percent: percentage.format(value / leadTotal) })}
           </span> : null}
-        </> : <Skeleton className="h-12 w-24" />}
+        </> : <LoadingRegion className="inline-block align-middle"><Skeleton className="h-12 w-24" /></LoadingRegion>}
       </div>
       <div className="mt-auto text-[var(--metric-color)]">
         {loaded && daily ? <SalesReportTrend daily={daily} metric={metric} title={title} kind={kind} cumulative={cumulative} featured={featured} /> :
-          <Skeleton className={cn('w-full rounded-xl', featured ? 'h-48' : 'h-40')} />}
+          <LoadingRegion className="w-full"><Skeleton className={cn('w-full rounded-xl', featured ? 'h-48' : 'h-40')} /></LoadingRegion>}
       </div>
-    </div>
+    </LoadingRegion>
   </article>;
 }

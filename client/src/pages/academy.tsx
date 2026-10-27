@@ -45,7 +45,6 @@ import {
   CheckCircle2,
   ExternalLink,
   Globe2,
-  Loader2,
   PhoneCall,
   PhoneForwarded,
   Plus,
@@ -57,6 +56,8 @@ import {
   Trash2,
   Unplug,
 } from 'lucide-react';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type AcademySection = 'integrations';
 
@@ -471,11 +472,11 @@ export default function AcademyPage({ section }: AcademyPageProps) {
         )}
       />
 
-      <div aria-label={t('navIntegrations')} className="space-y-3 pb-24">
+      <LoadingRegion loading={integrations.isLoading} aria-label={t('navIntegrations')} className="space-y-3 pb-24">
         {integrations.isError ? (
           <div className="flex flex-col items-start gap-3">
             <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
-            <Button variant="outline" onClick={() => integrations.refetch()} disabled={integrations.isFetching}>
+            <Button loading={integrations.isFetching} variant="outline" onClick={() => integrations.refetch()} disabled={integrations.isFetching}>
               {t('retry')}
             </Button>
           </div>
@@ -566,7 +567,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                           disabled={startInstagramConnection.isPending}
                         >
                           {startInstagramConnection.isPending
-                            ? <Loader2 className="animate-spin" data-icon="inline-start" />
+                            ? <OrbitSpinner className="" data-icon="inline-start" />
                             : <ExternalLink data-icon="inline-start" />}
                           {t('loginWithInstagram')}
                         </Button>
@@ -626,7 +627,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
             </Card>
           );
         })}
-      </div>
+      </LoadingRegion>
 
       <Dialog open={integrationCatalogOpen} onOpenChange={setIntegrationCatalogOpen}>
         <DialogContent aria-describedby={undefined} className="compact-modal flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-lg">
@@ -670,7 +671,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
 
           <div className="compact-modal-body flex-1 overflow-y-auto overscroll-contain">
           {onlinePbxRouting.isLoading ? (
-            <div className="flex flex-col gap-3 py-4">
+            <LoadingRegion className="flex flex-col gap-3 py-4">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div key={index} className="flex items-center gap-3 rounded-lg border p-4">
                   <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -680,9 +681,9 @@ export default function AcademyPage({ section }: AcademyPageProps) {
                   <Skeleton className="h-9 w-36" />
                 </div>
               ))}
-            </div>
+            </LoadingRegion>
           ) : onlinePbxRouting.isError && !onlinePbxRouting.data ? (
-            <div className="space-y-3"><p role="alert" className="text-sm text-destructive">{t('onlinePbxRoutingLoadFailed')}</p><Button variant="outline" disabled={onlinePbxRouting.isFetching} onClick={() => onlinePbxRouting.refetch()}>{t('retry')}</Button></div>
+            <div className="space-y-3"><p role="alert" className="text-sm text-destructive">{t('onlinePbxRoutingLoadFailed')}</p><Button loading={onlinePbxRouting.isFetching} variant="outline" disabled={onlinePbxRouting.isFetching} onClick={() => onlinePbxRouting.refetch()}>{t('retry')}</Button></div>
           ) : (
             <div className="space-y-3">
               <CompactModalSection title={t('onlinePbxManagersBlockTitle')} icon={PhoneCall} tone="sky" collapsible={false} disabled={updateOnlinePbxRouting.isPending} contentClassName="space-y-3">
@@ -926,7 +927,7 @@ export default function AcademyPage({ section }: AcademyPageProps) {
               }
             >
               {updateOnlinePbxRouting.isPending ? (
-                <Loader2 className="animate-spin" data-icon="inline-start" />
+                <OrbitSpinner className="" data-icon="inline-start" />
               ) : null}
               {t('save')}
             </Button>

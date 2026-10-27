@@ -32,6 +32,8 @@ import type {
   LmsStaffRunDto,
 } from "@shared/contracts/lms";
 import { LmsStaffApiError } from "./api";
+import { LoadingRegion } from '@/components/ui/loading-region';
+import { NativeCheckbox } from "@/components/ui/checkbox";
 export function useStaffError() {
   const { t } = useTranslation();
   return (error: unknown, fallback: TranslationKey = "lmsStaffSaveFailed") => {
@@ -48,10 +50,10 @@ export function useStaffError() {
 export function StaffLoading() {
   const { t } = useTranslation();
   return (
-    <div aria-label={t("portalLoading")} role="status" className="space-y-3">
+    <LoadingRegion aria-label={t("portalLoading")} role="status" className="space-y-3">
       <Skeleton className="h-28 w-full" />
       <Skeleton className="h-28 w-full" />
-    </div>
+    </LoadingRegion>
   );
 }
 export function StaffError({
@@ -201,7 +203,7 @@ export function StaffConfirm({
             {t("lmsStaffCancel")}
           </AlertDialogCancel>
           <AlertDialogAction asChild onClick={(event) => { event.preventDefault(); onConfirm(); }}>
-            <Button disabled={pending || disabled}>
+            <Button loading={pending} disabled={pending || disabled}>
               {pending ? t('confirmProcessing') : t(action)}
             </Button>
           </AlertDialogAction>
@@ -281,7 +283,7 @@ export function StaffRecipients({
         {t("lmsStaffRecipients")}
       </legend>
       <label className="flex min-h-11 items-center gap-3">
-        <input
+        <NativeCheckbox
           type="checkbox"
           checked={
             active.length > 0 &&
@@ -296,7 +298,7 @@ export function StaffRecipients({
       <div className="grid max-h-48 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
         {active.map((item) => (
           <label key={item.id} className="flex min-h-11 items-center gap-3">
-            <input
+            <NativeCheckbox
               type="checkbox"
               checked={selected.includes(item.id)}
               onChange={(event) =>

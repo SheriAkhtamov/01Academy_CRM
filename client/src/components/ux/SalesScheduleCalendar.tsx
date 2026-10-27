@@ -16,7 +16,6 @@ import { enUS, ru } from 'date-fns/locale';
 import {
   AlertCircle,
   CalendarDays,
-  LoaderCircle,
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -69,6 +68,7 @@ import {
   type SalesScheduleLesson,
   type SalesScheduleSchool,
 } from '@/lib/salesSchedule';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface SalesScheduleCalendarProps {
   groups: SalesScheduleGroup[];
@@ -372,7 +372,7 @@ export function SalesScheduleCalendar({
             label={rangeLabel}
             hint={demosQuery.isFetching ? (
               <span className="inline-flex items-center gap-1">
-                <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
+                <OrbitSpinner className="size-3" aria-hidden="true" />
                 {t('loading')}
               </span>
             ) : null}
@@ -459,7 +459,7 @@ export function SalesScheduleCalendar({
               >
                 <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
                 <span>{t('failedToLoadData')}</span>
-                <Button
+                <Button loading={demosQuery.isFetching}
                   type="button"
                   variant="outline"
                   size="sm"

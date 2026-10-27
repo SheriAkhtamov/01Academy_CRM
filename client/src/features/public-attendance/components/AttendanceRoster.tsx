@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import {
-  AlertTriangle, ArrowRight, Check, CheckCheck, ChevronDown, CircleDashed, CloudOff, Loader2, Lock, Search, SearchX, UsersRound, X,
+  AlertTriangle, ArrowRight, Check, CheckCheck, ChevronDown, CircleDashed, CloudOff, Lock, SearchX, UsersRound, X,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { ExpandingSearch } from '@/components/ui/expanding-search';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { PublicAttendanceLesson, PublicAttendanceMarkedStatus, PublicAttendanceStatus } from '@shared/contracts/public-attendance';
 import type { TranslationKey } from '@/lib/i18n';
 import type { AttendanceStudentView } from '../usePublicAttendance';
 import { attendanceDate, attendanceLessonLabel, attendanceLessonNumber, attendanceTime, type AttendanceFilter } from '../presentation';
 import { AttendanceRow } from './AttendanceRow';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface Props {
   /** The lesson chosen in the navigation; while its list loads, `students` still holds the previous lesson's. */
@@ -83,7 +87,7 @@ function useRecentlySaved(savedAt: number) {
 function SaveStatus({ state, waitingText, failedText, onRetry }: { state: SaveState; waitingText: string; failedText: string; onRetry: () => void }) {
   const { t } = useTranslation();
   if (state === 'waiting') return <span className="pa-save is-waiting"><CloudOff aria-hidden="true" /><span className="pa-save-text">{waitingText}</span></span>;
-  if (state === 'saving') return <span className="pa-save is-saving"><Loader2 className="animate-spin" aria-hidden="true" /><span className="pa-save-text">{t('saving')}</span></span>;
+  if (state === 'saving') return <span className="pa-save is-saving"><OrbitSpinner className="" aria-hidden="true" /><span className="pa-save-text">{t('saving')}</span></span>;
   if (state === 'failed') {
     return (
       <>
@@ -115,15 +119,14 @@ export function AttendanceRoster(props: Props) {
   const { filter, search, lesson, onMark, onSearch } = props;
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const searchToggleRef = useRef<HTMLButtonElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef<{ row: number; col: number } | null>(null);
-  const refocusAfterSearch = useRef(false);
   const leaveTimers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const [active, setActive] = useState<{ id: number | null; col: number }>({ id: null, col: 0 });
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(() => new Set());
   const [stuck, setStuck] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const compactSearch = useMediaQuery('(max-width: 760px)');
   const canMark = lesson.canMark && !props.placeholder;
   const locked = !lesson.canMark;
   const students = useMemo(() => props.placeholder ? props.students.map(blank) : props.students, [props.placeholder, props.students]);
@@ -276,28 +279,6 @@ export function AttendanceRoster(props: Props) {
   const activeId = filtered.some((student) => student.id === active.id) ? active.id : filtered[0]?.id;
   const tabColumn = (student: AttendanceStudentView) => (active.col === 2 && (student.shown === null || leaving.has(student.id)) ? 0 : active.col);
 
-  // On a phone the field folds back into its button; on a wide screen it stays where it is and keeps the focus.
-  const focusAfterSearch = () => {
-    const toggle = searchToggleRef.current;
-    if (toggle && toggle.offsetParent !== null) toggle.focus();
-    else searchRef.current?.focus();
-  };
-  // The press never took the focus (see the button), so the field itself is blurred; the effect below then places the focus.
-  const closeSearch = () => {
-    refocusAfterSearch.current = true;
-    searchRef.current?.blur();
-    onSearch('');
-  };
-  // Runs once the field has folded (or emptied), when its button can take the focus again.
-  useLayoutEffect(() => {
-    if (!refocusAfterSearch.current || searchFocused) return;
-    refocusAfterSearch.current = false;
-    focusAfterSearch();
-  }, [search, searchFocused]);
-  const onSearchBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSearchFocused(false);
-  };
-
   const reset = () => { onSearch(''); props.onFilter('all'); };
   const bulkLabel = (status: PublicAttendanceMarkedStatus) => t(props.bulkCount === counts.all ? bulkLabels[status].allKey : bulkLabels[status].restKey);
   const showBulk = canMark && props.bulkCount > 0;
@@ -327,9 +308,7 @@ export function AttendanceRoster(props: Props) {
           </div>
         )}
         {/* On a phone the field opens in place of the chips while it has the focus or holds a search. */}
-        <div className="pa-filter-row" data-search={search || searchFocused ? 'open' : undefined}>
-          <button ref={searchToggleRef} type="button" className="pa-search-toggle" aria-label={t('publicAttendanceSearch')}
-            onClick={() => searchRef.current?.focus()}><Search aria-hidden="true" /></button>
+        <div className="pa-filter-row" data-search={search || searchExpanded ? 'open' : undefined}>
           {locked ? null : (
             <div className="pa-filters" role="group" aria-label={t('publicAttendanceRosterTitle')}>
               {filters.map((key) => {
@@ -342,14 +321,18 @@ export function AttendanceRoster(props: Props) {
               })}
             </div>
           )}
-          <div className="pa-search" onFocus={() => setSearchFocused(true)} onBlur={onSearchBlur}>
-            <Search aria-hidden="true" />
-            <input ref={searchRef} type="search" value={search} onChange={(event) => onSearch(event.target.value)}
-              placeholder={t('publicAttendanceSearch')} aria-label={t('publicAttendanceSearch')} enterKeyHint="search" />
-            {/* Keeping the focus in the field on press stops a phone from folding it before the tap lands. */}
-            <button type="button" className="pa-search-clear" aria-label={search ? t('clearSearch') : t('close')}
-              onMouseDown={(event) => event.preventDefault()} onClick={closeSearch}><X aria-hidden="true" /></button>
-          </div>
+          <ExpandingSearch
+            ref={searchRef}
+            className="pa-search"
+            value={search}
+            onValueChange={onSearch}
+            expanded={searchExpanded}
+            onExpandedChange={setSearchExpanded}
+            alwaysExpanded={!compactSearch}
+            placeholder={t('publicAttendanceSearch')}
+            aria-label={t('publicAttendanceSearch')}
+            enterKeyHint="search"
+          />
         </div>
       </div>
       <div className="sr-only" aria-live="polite">{announcement}</div>
@@ -421,10 +404,8 @@ export function AttendanceRoster(props: Props) {
   not collapse and then jump when the names arrive.
 */
 export function AttendanceRosterSkeleton() {
-  const { t } = useTranslation();
   return (
-    <section className="pa-roster" aria-busy="true">
-      <p role="status" className="sr-only">{t('loading')}</p>
+    <LoadingRegion as="section" className="pa-roster" aria-busy="true">
       <div className="pa-skeleton-bar" aria-hidden="true">
         <span className="pa-skeleton pa-skeleton-line" /><span className="pa-skeleton pa-skeleton-progress" /><span className="pa-skeleton pa-skeleton-chips" />
       </div>
@@ -437,6 +418,6 @@ export function AttendanceRosterSkeleton() {
           </li>
         ))}
       </ul>
-    </section>
+    </LoadingRegion>
   );
 }

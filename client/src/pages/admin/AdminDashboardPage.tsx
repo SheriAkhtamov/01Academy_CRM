@@ -23,7 +23,6 @@ import {
   GraduationCap,
   Layers3,
   ListTodo,
-  Loader2,
   RefreshCw,
   TrendingDown,
   TrendingUp,
@@ -63,6 +62,8 @@ import {
   reportingRangeForPreset,
   reportingRangeQuery,
 } from '@/lib/reportingDateRange';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface DashboardTrendPoint {
   periodStart: string;
@@ -194,7 +195,7 @@ function KpiCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
+    <LoadingRegion className="mx-auto flex max-w-[1600px] flex-col gap-5 p-6 lg:p-8">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-4 w-28" />
@@ -217,7 +218,7 @@ function DashboardSkeleton() {
           <Skeleton key={index} className="h-32 rounded-xl" />
         ))}
       </div>
-    </div>
+    </LoadingRegion>
   );
 }
 
@@ -609,7 +610,7 @@ export default function AdminDashboardPage() {
                         createAlertTask.mutate(item.key);
                       }}
                     >
-                      {pendingAlertTaskKey === item.key ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                      {pendingAlertTaskKey === item.key ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                       {ceoCopy.dashboard.createTask}
                     </Button>
                   ) : null}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+
 import { useTranslation } from '@/hooks/useTranslation';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 // No scripts, forms, navigation, remote images or embedded HTML from a document.
 // Base64 images avoid persistent object URLs allocated by the DOCX renderer.
@@ -46,7 +47,7 @@ export function StudentContractDocxPreview({ blob, name, onError }: { blob: Blob
     <div className="relative">
       {!ready ? (
         <div role="status" aria-label={t('loading')} className="absolute inset-0 flex items-center justify-center bg-background">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
+          <OrbitSpinner className="size-6 text-muted-foreground" aria-hidden="true" />
         </div>
       ) : null}
       <iframe title={name} srcDoc={frameHtml} sandbox="allow-same-origin" referrerPolicy="no-referrer"

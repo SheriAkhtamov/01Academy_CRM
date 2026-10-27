@@ -43,6 +43,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingRegion } from '@/components/ui/loading-region';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface LeadMergeCandidate {
   id: number;
@@ -230,7 +232,7 @@ export function LeadMergePanel() {
                 </Select>
               </div>
 
-              {previewQuery.isLoading ? <Skeleton className="h-16 w-full" /> : null}
+              {previewQuery.isLoading ? <LoadingRegion className="w-full"><Skeleton className="h-16 w-full" /></LoadingRegion> : null}
               {previewQuery.isError ? (
                 <Alert variant="destructive">
                   <AlertTitle>{t('leadMergePreviewFailed')}</AlertTitle>
@@ -297,7 +299,7 @@ export function LeadMergePanel() {
             {search.trim().length < 2 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t('noMatchingLeads')}</p>
             ) : searchQuery.isLoading ? (
-              <><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></>
+              <LoadingRegion><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></LoadingRegion>
             ) : searchQuery.isError ? (
               <Alert variant="destructive">
                 <AlertTitle>{t('leadMergeSearchFailed')}</AlertTitle>
@@ -327,7 +329,7 @@ export function LeadMergePanel() {
           </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={mergeMutation.isPending}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction disabled={mergeMutation.isPending} onClick={(event) => { event.preventDefault(); mergeMutation.mutate(); }}>
+            <AlertDialogAction disabled={mergeMutation.isPending} onClick={(event) => { event.preventDefault(); mergeMutation.mutate(); }}>{(mergeMutation.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {mergeMutation.isPending ? t('confirmProcessing') : t('mergeLeads')}
             </AlertDialogAction>
           </AlertDialogFooter>

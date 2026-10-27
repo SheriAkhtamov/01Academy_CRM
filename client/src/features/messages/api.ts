@@ -4,6 +4,7 @@ import type {
   SendMessageRequest,
 } from '@shared/contracts/messages';
 import { apiRequest } from '@/lib/queryClient';
+import type { ChatTypingRequest } from '@shared/contracts/chat-typing';
 
 export const messageQueryKeys = {
   conversations: ['/api/messages/conversations'] as const,
@@ -12,6 +13,9 @@ export const messageQueryKeys = {
 };
 
 export const messagesApi = {
+  typing: (participantId: number, input: ChatTypingRequest): Promise<void> => (
+    apiRequest('POST', `/api/messages/${participantId}/typing`, input)
+  ),
   getConversations: () => (
     apiRequest('GET', '/api/messages/conversations') as Promise<ConversationUserDto[]>
   ),

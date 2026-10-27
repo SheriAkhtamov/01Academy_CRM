@@ -1,4 +1,4 @@
-import { CalendarRange, Loader2 } from 'lucide-react';
+import { CalendarRange } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRangeField } from '@/components/ux/DateRangeField';
@@ -10,6 +10,7 @@ import {
   type ReportingDateRange,
 } from '@/lib/reportingDateRange';
 import { cn } from '@/lib/utils';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const presetTranslationKeys = {
   today: 'today',
@@ -69,7 +70,7 @@ export function ReportingDateRangeFilter({
           </div>
           {isFetching ? (
             <span className="ml-auto shrink-0 xl:ml-0" role="status">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+              <OrbitSpinner className="size-4 text-muted-foreground" aria-hidden="true" />
               <span className="sr-only">{t('loading')}</span>
             </span>
           ) : null}

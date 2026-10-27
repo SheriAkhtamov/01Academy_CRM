@@ -4,6 +4,7 @@ import { storage } from '../storage';
 import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { chatTypingRequestSchema } from '@shared/contracts/chat-typing';
 import { messageFilePath, parseMessageUpload, removeMessageFiles, uploadedMessageAttachment } from '../middleware/message-upload.middleware';
 import {
     positiveIdSchema,
@@ -16,6 +17,29 @@ const parsePositiveId = (value: unknown): number | null => {
     const result = positiveIdSchema.safeParse(value);
     return result.success ? result.data : null;
 };
+
+router.post('/:receiverId/typing', requireAuth, async (req, res) => {
+    const receiverId = parsePositiveId(req.params.receiverId);
+    const input = chatTypingRequestSchema.safeParse(req.body);
+    if (!receiverId || receiverId === req.user!.id || !input.success) {
+        return res.status(400).json({ error: 'invalidData' });
+    }
+    try {
+        const receiver = await storage.getUser(receiverId);
+        if (!receiver || !receiver.isActive || receiver.isArchived) {
+            return res.status(404).json({ error: 'resourceNotFound' });
+        }
+        publishRealtimeEvent({
+            type: 'CHAT_TYPING',
+            data: { ...input.data, kind: 'direct', targetId: receiverId, senderId: req.user!.id },
+            audienceUserIds: [receiverId],
+        });
+        res.sendStatus(204);
+    } catch (error) {
+        logger.error('Failed to announce direct chat activity', { error, userId: req.user?.id });
+        res.status(500).json({ error: 'updateFailed' });
+    }
+});
 
 router.get('/conversations', requireAuth, async (req, res) => {
     try {

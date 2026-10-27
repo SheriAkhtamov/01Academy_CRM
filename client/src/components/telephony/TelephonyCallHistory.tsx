@@ -24,6 +24,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { CallNoteEditor } from '@/components/telephony/CallNoteEditor';
 import { CallRecordingPlayer } from '@/components/telephony/CallRecordingPlayer';
 import type { TranslationKey } from '@/lib/i18n';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const filterLabelKeys = {
   all: 'telephonyFilterAll',
@@ -258,7 +259,7 @@ export function TelephonyCallHistory({
           })}
 
           {historyQuery.isLoading ? (
-            <p className="px-6 py-16 text-center text-sm text-muted-foreground">{t('loading')}</p>
+            <p className="px-6 py-16 text-center text-sm text-muted-foreground"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p>
           ) : null}
           {historyQuery.isError ? (
             <div role="alert" className="space-y-2 px-6 py-6 text-center text-sm">
@@ -276,6 +277,7 @@ export function TelephonyCallHistory({
           {historyQuery.hasNextPage ? (
             <button type="button" className="flex w-full items-center justify-center px-3 py-3 text-xs text-primary hover:bg-accent/40 disabled:opacity-50"
               disabled={historyQuery.isFetchingNextPage} onClick={() => void historyQuery.fetchNextPage()}>
+              {historyQuery.isFetchingNextPage ? <OrbitSpinner className="mr-2 size-4" /> : null}
               {historyQuery.isFetchingNextPage ? t('loading') : t('loadMoreResults')}
             </button>
           ) : null}

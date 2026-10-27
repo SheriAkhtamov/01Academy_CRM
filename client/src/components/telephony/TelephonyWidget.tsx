@@ -1,3 +1,4 @@
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'wouter';
@@ -427,7 +428,7 @@ export function TelephonyWidget() {
                 disabled={telephony.isPending}
                 aria-label={t('telephonyAnswer')}
               >
-                <PhoneCall className="size-5" />
+                {telephony.isPending ? <OrbitSpinner className="size-5" /> : <PhoneCall className="size-5" />}
               </button>
               <button
                 type="button"

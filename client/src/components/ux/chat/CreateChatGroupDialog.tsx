@@ -16,6 +16,7 @@ import { chatGroupsApi, chatGroupKeys } from '@/features/messages/chat-groups-ap
 import type { ChatGroupDto } from '@shared/contracts/chat-groups';
 import type { ConversationUserDto } from '@shared/contracts/messages';
 import type { TranslationKey } from '@/lib/i18n';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const createErrors = new Set<TranslationKey>(['chatGroupNameRequired', 'chatGroupParticipantsRequired', 'chatGroupParticipantsUnavailable', 'chatGroupParticipantsLimit']);
 
@@ -98,7 +99,7 @@ export function CreateChatGroupDialog({ open, onOpenChange, onCreated, mode = 'g
                 <Label htmlFor="chat-group-search">{t('searchEmployees')}</Label>
                 <Input ref={searchInput} id="chat-group-search" value={search} onChange={(event) => setSearch(event.target.value)} disabled={create.isPending} />
                 <div className="max-h-64 space-y-1 overflow-y-auto" aria-label={t('chatGroupParticipants')}>
-                  {employees.isLoading ? <p className="text-sm text-muted-foreground">{t('loading')}</p> : null}
+                  {employees.isLoading ? <p className="text-sm text-muted-foreground"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : null}
                   {employees.isError ? <div role="alert">{t('failedToLoadData')} <Button type="button" variant="outline" onClick={() => void employees.refetch()}>{t('retry')}</Button></div> : null}
                   {visible.map((employee) => mode === 'direct'
                     ? <Button key={employee.id} type="button" variant="ghost" className="h-auto w-full justify-start py-2" onClick={() => guard.requestAction(() => { onSelectEmployee?.(employee.id); onOpenChange(false); })}><EmployeeIdentity interactive={false} userId={employee.id} name={employee.fullName} avatarUrl={employee.avatarUrl} avatarClassName="size-8" wrapName /></Button>
@@ -114,7 +115,7 @@ export function CreateChatGroupDialog({ open, onOpenChange, onCreated, mode = 'g
             {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
           </div>
           <DialogFooter className="compact-modal-footer"><Button type="button" variant="outline" disabled={create.isPending} onClick={() => close(false)}>{t('cancel')}</Button>
-            {mode === 'group' ? <Button type="submit" disabled={create.isPending || employees.isLoading || employees.isError}>{t(create.isPending ? 'saving' : 'createGroup')}</Button> : null}</DialogFooter>
+            {mode === 'group' ? <Button loading={create.isPending || employees.isLoading} type="submit" disabled={create.isPending || employees.isLoading || employees.isError}>{t(create.isPending ? 'saving' : 'createGroup')}</Button> : null}</DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

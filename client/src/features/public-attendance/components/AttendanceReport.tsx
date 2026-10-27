@@ -5,6 +5,7 @@ import { attendanceErrorKey } from '../presentation';
 import { usePublicAttendanceReport } from '../usePublicAttendanceReport';
 import { AttendanceReportDetails } from './AttendanceReportDetails';
 import { AttendanceCountCells, AttendanceCountHeaders, attendanceReportRate as rate } from './AttendanceReportCounts';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function AttendanceReport({ menu, onAccessLost }: { menu: ReactNode; onAccessLost: () => void }) {
   const { t } = useTranslation();
@@ -29,7 +30,7 @@ export function AttendanceReport({ menu, onAccessLost }: { menu: ReactNode; onAc
       {state.invalidPeriod ? <p role="alert">{t('publicAttendanceReportInvalidPeriod')}</p> : null}
       {state.report.isError ? <div className="pa-report-error"><p role="alert">{t(attendanceErrorKey(state.report.error, 'load'))}</p>
         <button type="button" className="pa-secondary" onClick={() => void state.report.refetch()}>{t('retry')}</button></div> : null}
-      {!data && state.report.isPending ? <p role="status">{t('loading')}</p> : null}
+      {!data && state.report.isPending ? <p role="status"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : null}
       {data ? (
         <>
           <dl className="pa-report-metrics">

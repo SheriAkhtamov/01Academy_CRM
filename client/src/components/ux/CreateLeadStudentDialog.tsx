@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { z } from 'zod';
-import { BookOpen, GraduationCap, Loader2, Plus, Save, UserRound, Users } from 'lucide-react';
+import { BookOpen, GraduationCap, Plus, Save, UserRound, Users } from 'lucide-react';
 import { leadsApi } from '@/features/leads/api';
 import { studentsApi } from '@/features/students/api';
 import { StudentContractFields } from '@/features/student-contracts/StudentContractFields';
@@ -38,6 +38,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CompactModalSection } from './CompactModalSection';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export type LeadStudentGroupOption = {
   id: number;
@@ -686,7 +687,7 @@ function LeadStudentFormDialog({
               ) : null}
               <Button type="submit" size="sm" className="h-8 text-xs" disabled={saveDisabled}>
                 {saveStudent.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" />
+                  <OrbitSpinner className="size-3.5" data-icon="inline-start" />
                 ) : isEditing ? (
                   <Save className="size-3.5" data-icon="inline-start" />
                 ) : (

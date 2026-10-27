@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { X, Settings, UserPlus, Loader2, Check } from 'lucide-react';
+import { X, Settings, UserPlus, Check } from 'lucide-react';
 import ChatSheet from './ux/ChatSheet';
 import ConfirmDialog from './ConfirmDialog';
 import SettingsModal from './modals/SettingsModal';
@@ -31,6 +31,7 @@ import {
 import type { ConversationUserDto } from '@shared/contracts/messages';
 import { chatGroupQueryOptions } from '@/features/messages/chat-groups-api';
 import type { SavedAccountEntry } from '@shared/auth';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface HeaderProps {
   title?: string;
@@ -140,7 +141,7 @@ export default function Header({
                           <EmployeeAvatar userId={account.accountUser.id} name={account.accountUser.fullName} avatarUrl={account.accountUser.avatarUrl} className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-semibold shrink-0" />
                           <span className="text-sm truncate flex-1">{account.accountUser.fullName}</span>
                           {isSwitching && (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                            <OrbitSpinner className="h-3.5 w-3.5 shrink-0" />
                           )}
                         </div>
                       </DropdownMenuItem>

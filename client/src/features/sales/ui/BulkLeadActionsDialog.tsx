@@ -36,6 +36,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type BulkAction = 'status' | 'manager' | 'archive' | 'delete';
 
@@ -314,19 +315,19 @@ export function BulkLeadActionsDialog({
                 {t('cancel')}
               </Button>
               {action === 'status' ? (
-                <Button ref={moveButtonRef} type="button" onClick={() => void runMove()} disabled={!targetStatusCode || isPending}>
+                <Button loading={isPending} ref={moveButtonRef} type="button" onClick={() => void runMove()} disabled={!targetStatusCode || isPending}>
                   <GitBranch data-icon="inline-start" />
                   {isPending ? t('saving') : t('bulkMoveLeads')}
                 </Button>
               ) : null}
               {action === 'manager' && canManageAllLeads ? (
-                <Button type="button" onClick={() => void runAssign()} disabled={!targetManagerId || isPending}>
+                <Button loading={isPending} type="button" onClick={() => void runAssign()} disabled={!targetManagerId || isPending}>
                   <ArrowRightLeft data-icon="inline-start" />
                   {isPending ? t('saving') : t('assignSelected')}
                 </Button>
               ) : null}
               {action === 'archive' ? (
-                <Button
+                <Button loading={isPending}
                   type="button"
                   onClick={() => setArchiveConfirmationOpen(true)}
                   disabled={!archiveFormValid || isPending}
@@ -377,7 +378,7 @@ export function BulkLeadActionsDialog({
                 event.preventDefault();
                 void confirmMoveClaim();
               }}
-            >
+            >{(isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {isPending ? t('saving') : t('assignToMeAndContinue')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -402,7 +403,7 @@ export function BulkLeadActionsDialog({
                 event.preventDefault();
                 void runArchive();
               }}
-            >
+            >{(isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {isPending ? t('saving') : t('bulkArchiveConfirmAction')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -455,7 +456,7 @@ export function BulkLeadActionsDialog({
                 event.preventDefault();
                 void runDelete();
               }}
-            >
+            >{(isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {isPending ? t('saving') : t('bulkDeleteFinalAction')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { canManageUsers, formatUserModule } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -99,6 +100,7 @@ import { EmployeeFunnelSelect } from '@/features/employees/EmployeeFunnelSelect'
 import { EmployeeAvatar, EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { allowNavigation } from '@/lib/navigationGuard';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 const formatDateInputValue = (value: unknown) => (
   academyDateInputValue(value as Date | string | number | null | undefined)
@@ -930,7 +932,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                         <FormField control={userForm.control} name="salesFunnelIds" render={({ field }) => (
                           <FormItem>
                             <FormLabel required>{t('salesFunnels')}</FormLabel>
-                            {salesFunnelsLoading ? <div className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-9 rounded-md" /><Skeleton className="h-9 rounded-md" /></div>
+                            {salesFunnelsLoading ? <LoadingRegion className="grid gap-2 sm:grid-cols-2"><Skeleton className="h-9 rounded-md" /><Skeleton className="h-9 rounded-md" /></LoadingRegion>
                               : salesFunnelsError ? <div className="flex items-center gap-2 text-sm text-destructive" role="alert">
                                 <span>{t('failedToLoadData')}</span>
                                 <Button type="button" variant="outline" size="sm" disabled={userFormPending} onClick={() => refetchSalesFunnels()}>{t('retry')}</Button>
@@ -980,7 +982,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                   <Button variant="outline" size="sm" onClick={() => refetchUsers()}>{t('retry')}</Button>
                 </div>
               ) : usersLoading ? (
-                <div className="p-4 space-y-3">
+                <LoadingRegion className="p-4 space-y-3">
                   {Array.from({ length: 5 }, (_, i) => (
                     <div key={i} className="flex items-center gap-4 rounded-lg border border-slate-100 p-3">
                       <Skeleton className="w-10 h-10 rounded-full" />
@@ -992,7 +994,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       <Skeleton className="h-8 w-24" />
                     </div>
                   ))}
-                </div>
+                </LoadingRegion>
               ) : (
                 <DataTable
                   className="overflow-x-auto"
@@ -1135,7 +1137,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
             >
               {t('cancel')}
             </Button>
-            <Button
+            <Button loading={updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending}
               type="button"
               disabled={!salesLeadTransferManagerId || updateUserMutation.isPending || deleteUserMutation.isPending || archiveUserMutation.isPending}
               onClick={() => {
@@ -1266,7 +1268,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
 
                 <div className="compact-modal-footer flex flex-wrap justify-end">
                   {userCredentials.id && (
-                    <Button
+                    <Button loading={resetUserPasswordMutation.isPending}
                       type="button"
                       variant="outline"
                       onClick={() => setPasswordResetUser(userCredentials)}
@@ -1276,11 +1278,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                       {resetUserPasswordMutation.isPending ? t('resettingPassword') : t('resetPassword')}
                     </Button>
                   )}
-                  <Button
+                  <CopyButton
                     type="button"
                     variant="outline"
                     disabled={credentialsPending}
-                    onClick={async () => {
+                    resetKey={`${userCredentials.id}:${userCredentials.email}:${userCredentials.temporaryPassword}`}
+                    copiedLabel={t('lmsStaffCopied')}
+                    onCopy={async () => {
                       const credentialLines = [`${t('loginLabel')}: ${userCredentials.email}`];
                       if (userCredentials.temporaryPassword) {
                         credentialLines.push(`${t('password')}: ${userCredentials.temporaryPassword}`);
@@ -1298,12 +1302,13 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
                           title: t('copyFailed'),
                           variant: 'destructive',
                         });
+                        return false;
                       }
                     }}
                   >
                     {t('copyCredentials')}
-                  </Button>
-                  <Button
+                  </CopyButton>
+                  <Button loading={updateUserCredentialsMutation.isPending}
                     type="submit"
                     disabled={credentialsPending}
                   >

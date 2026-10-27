@@ -1,6 +1,9 @@
 import { devLog } from '@/lib/debug';
 
 export const translations = {
+  chatTyping: { en: 'Someone is typing', ru: 'Собеседник печатает' },
+  quantityDecrease: { en: 'Decrease', ru: 'Уменьшить' },
+  quantityIncrease: { en: 'Increase', ru: 'Увеличить' },
   studentModule: { en: 'Student module', ru: 'Модуль студента' },
   parentModule: { en: 'Parent module', ru: 'Модуль родителя' },
   platformModules: { en: 'Modules', ru: 'Модули' },

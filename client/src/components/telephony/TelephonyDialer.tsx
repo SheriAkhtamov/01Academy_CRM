@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardPaste, Copy, Delete, Loader2, PhoneCall, RotateCcw, UserRound } from 'lucide-react';
+import { ClipboardPaste, Delete, PhoneCall, RotateCcw, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { telephonyApi, telephonyQueryKeys } from '@/features/telephony/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export const DIALPAD_KEYS = [
   { digit: '1', letters: '' },
@@ -111,6 +113,7 @@ export function TelephonyDialer({
       toast({ title: t('telephonyNumberCopied') });
     } catch {
       toast({ title: t('telephonyClipboardUnavailable'), variant: 'destructive' });
+      return false;
     }
   };
 
@@ -147,14 +150,21 @@ export function TelephonyDialer({
           aria-label={t('telephonyPhoneNumber')}
           aria-invalid={Boolean(validationCopy)}
         />
-        <button
+        {dialedNumber ? <CopyButton
+          unstyled
           type="button"
           className="absolute left-2.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={() => void (dialedNumber ? copyNumber() : pasteNumber())}
-          aria-label={dialedNumber ? t('telephonyCopyNumber') : t('telephonyPasteNumber')}
+          onCopy={copyNumber}
+          resetKey={dialedNumber}
+          aria-label={t('telephonyCopyNumber')}
+        /> : <button
+          type="button"
+          className="absolute left-2.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => void pasteNumber()}
+          aria-label={t('telephonyPasteNumber')}
         >
-          {dialedNumber ? <Copy className="size-4" /> : <ClipboardPaste className="size-4" />}
-        </button>
+          <ClipboardPaste className="size-4" />
+        </button>}
         {dialedNumber ? (
           <button
             type="button"
@@ -222,7 +232,7 @@ export function TelephonyDialer({
         disabled={!isDiallable || !isReady || isPending || isLineBusyWithReminder}
         onClick={placeCall}
       >
-        {isPending ? <Loader2 className="size-5 animate-spin" /> : <PhoneCall className="size-5" />}
+        {isPending ? <OrbitSpinner className="size-5" /> : <PhoneCall className="size-5" />}
         {isLineBusyWithReminder ? t('telephonyLineBusyWithReminder') : isPending ? t('telephonyStatusDialing') : t('call')}
       </Button>
     </div>

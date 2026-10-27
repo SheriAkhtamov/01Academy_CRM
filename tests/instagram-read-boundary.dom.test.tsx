@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '../client/src/components/ui/tooltip';
+import { i18n } from '../client/src/lib/i18n';
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), desktop: true }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 7, fullName: 'Test User', module: 'sales', modules: ['sales'] } }) }));
@@ -65,6 +66,22 @@ function mount(messages: () => Promise<ReturnType<typeof message>[]>, employees:
 }
 
 describe('Instagram acknowledgements after visible message loading', () => {
+  it('expands thread search, filters messages and restores the icon after Escape', async () => {
+    mount(async () => [message(31), message(37)]);
+    await screen.findByText('Customer message 37');
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('searchInConversation') }));
+    const search = screen.getByRole('searchbox', { name: i18n.t('searchInConversation') }) as HTMLInputElement;
+    expect(document.activeElement).toBe(search);
+    fireEvent.change(search, { target: { value: '37' } });
+    expect(screen.queryByText('Customer message 31')).toBeNull();
+    expect(screen.getByText('37', { selector: 'mark' }).parentElement?.textContent).toBe('Customer message 37');
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('clearSearch') }));
+    expect(search.value).toBe('');
+    expect(screen.getByText('Customer message 31')).toBeTruthy();
+    fireEvent.keyDown(search, { key: 'Escape' });
+    expect(screen.queryByRole('searchbox', { name: i18n.t('searchInConversation') })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: i18n.t('searchInConversation') }));
+  });
   it('labels every outbound message with its actual employee or Instagram account, including repeated senders', async () => {
     vi.stubGlobal('Image', class extends EventTarget {
       complete = false;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWatch, type UseFormReturn } from 'react-hook-form';
-import { FileText, GraduationCap, Loader2, SlidersHorizontal } from 'lucide-react';
+import { FileText, GraduationCap, SlidersHorizontal } from 'lucide-react';
 import type { CourseValues } from '@/lib/academyResourceSchemas';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { CourseCurriculumEditor } from './CourseCurriculumEditor';
 import { AGE_CATEGORY_PRESETS, summarizeCourseCurriculum } from './editor-model';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, onSubmit, curriculumUnavailable = false }: {
   open: boolean;
@@ -226,7 +227,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
                 {t('cancel')}
               </Button>
               <Button type="submit" disabled={saving || uploadPending}>
-                {saving ? <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" /> : null}
+                {saving ? <OrbitSpinner className="mr-1.5 size-4" aria-hidden="true" /> : null}
                 {saving ? t('saving') : t('save')}
               </Button>
             </div>

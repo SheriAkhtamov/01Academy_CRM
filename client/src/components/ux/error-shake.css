@@ -1,0 +1,27 @@
+[data-error-shake='a'] { animation: error-shake-a 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+[data-error-shake='b'] { animation: error-shake-b 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+
+/* Separate names allow a repeated failed submit to restart the same motion. */
+@keyframes error-shake-a {
+  0%, 100% { translate: 0 0; }
+  15% { translate: -6px 0; }
+  30% { translate: 6px 0; }
+  45% { translate: -4px 0; }
+  60% { translate: 4px 0; }
+  75% { translate: -2px 0; }
+  90% { translate: 2px 0; }
+}
+@keyframes error-shake-b {
+  0%, 100% { translate: 0 0; }
+  15% { translate: -6px 0; }
+  30% { translate: 6px 0; }
+  45% { translate: -4px 0; }
+  60% { translate: 4px 0; }
+  75% { translate: -2px 0; }
+  90% { translate: 2px 0; }
+}
+
+:root[data-motion='off'] [data-error-shake] { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  [data-error-shake] { animation: none; }
+}

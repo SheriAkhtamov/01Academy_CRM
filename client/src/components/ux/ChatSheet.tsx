@@ -18,7 +18,7 @@ import { UnreadCountBadge } from '@/components/ux/UnreadCountBadge';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, MessageCircle, Send, User, Circle, Search, Paperclip, Plus, UsersRound } from 'lucide-react';
+import { MessageCircle, Send, User, Circle, Search, Paperclip, Plus, UsersRound } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CreateChatGroupDialog } from './chat/CreateChatGroupDialog';
 import { GroupChatThread } from './chat/GroupChatThread';
@@ -36,6 +36,9 @@ import {
   messageQueryKeys,
   messagesApi,
 } from '@/features/messages/api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { TypingIndicator } from '@/components/ui/typing-indicator';
+import { useChatTyping } from '@/features/messages/useChatTyping';
 
 const EMPTY_FILES: File[] = [];
 
@@ -53,6 +56,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
   const [createChatMode, setCreateChatMode] = useState<'group' | 'direct' | null>(null);
   const groupsQuery = useQuery({ ...chatGroupQueryOptions, enabled: open });
   const selectedGroup = groupsQuery.data?.find((group) => group.id === selectedGroupId) ?? null;
+  const { isTyping, reportTyping, stopTyping } = useChatTyping('direct', selectedEmployeeId, open && !selectedGroup);
   useEffect(() => {
     if (selectedGroupId === null || !groupsQuery.isSuccess || selectedGroup) return;
     queryClient.removeQueries({ queryKey: ['/api/chat-groups', selectedGroupId] });
@@ -278,6 +282,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
   const handleSendMessage = () => {
     if ((!newMessage.trim() && selectedFiles.length === 0) || !selectedEmployeeId || sendMessageMutation.isPending) return;
+    stopTyping();
     sendMessageMutation.mutate({
       receiverId: selectedEmployeeId,
       content: newMessage.trim(),
@@ -410,7 +415,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 })}
                 {filteredEmployees.length === 0 && conversationsLoading && (
                   <div className="py-8 text-center text-muted-foreground" aria-live="polite">
-                    <Loader2 className="mx-auto mb-2 size-6 animate-spin opacity-50" />
+                    <OrbitSpinner className="mx-auto mb-2 size-6 opacity-50" />
                     <p className="text-sm">{t('loading')}</p>
                   </div>
                 )}
@@ -431,7 +436,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
 
           {/* Chat Area */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <GroupChatThread group={selectedGroup} />
+            <GroupChatThread group={selectedGroup} active={open} />
             {selectedGroup ? null : selectedEmployee ? (
               <>
                 {/* Chat Header */}
@@ -460,14 +465,14 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                 <ScrollArea className="min-h-0 flex-1 p-3 sm:p-4">
                   <div className="flex flex-col gap-4">
                     {readErrorFor === selectedEmployeeId ? <div role="alert" className="text-sm text-destructive">
-                      {t('messageReadFailed')} <Button variant="outline" size="sm" disabled={markConversationRead.isPending} onClick={() => markConversationRead.mutate(selectedEmployeeId!)}>{t('retryMarkRead')}</Button>
+                      {t('messageReadFailed')} <Button loading={markConversationRead.isPending} variant="outline" size="sm" disabled={markConversationRead.isPending} onClick={() => markConversationRead.mutate(selectedEmployeeId!)}>{t('retryMarkRead')}</Button>
                     </div> : null}
                     {messagesError ? <div role="alert" className="text-sm text-destructive">
                       {t('failedToLoadData')} <Button variant="outline" size="sm" onClick={() => void refetchMessages()}>{t('retry')}</Button>
                     </div> : null}
                     {messagesLoading ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        <p className="text-sm">{t('loadingMessages')}</p>
+                        <p className="text-sm"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loadingMessages')}</span></p>
                       </div>
                     ) : Array.isArray(messages) && messages.length > 0 ? (
                       messages.map((message: MessageDto) => {
@@ -528,13 +533,15 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                   <input ref={fileInputRef} type="file" multiple className="sr-only" aria-label={t('attachmentsLabel')} disabled={sendMessageMutation.isPending} onChange={(event) => {
                     attachFiles(Array.from(event.target.files ?? [])); event.target.value = '';
                   }} />
+                  <div className="flex h-6 items-center text-muted-foreground"><TypingIndicator active={isTyping} /></div>
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" size="icon" aria-label={t('attachFile')} disabled={sendMessageMutation.isPending} onClick={() => fileInputRef.current?.click()}><Paperclip className="size-4" /></Button>
                     <Input
                       className="min-w-0 flex-1"
                       aria-label={t('message')} placeholder={t('message')}
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={(e) => { setNewMessage(e.target.value); reportTyping(Boolean(e.target.value.trim())); }}
+                      onBlur={stopTyping}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
@@ -547,7 +554,7 @@ export default function ChatSheet({ open, onOpenChange }: ChatSheetProps) {
                       disabled={(!newMessage.trim() && selectedFiles.length === 0) || sendMessageMutation.isPending}
                       size="icon"
                     >
-                      {sendMessageMutation.isPending ? <Loader2 className="animate-spin" /> : <Send />}
+                      {sendMessageMutation.isPending ? <OrbitSpinner className="" /> : <Send />}
                       <span className="sr-only">{sendMessageMutation.isPending ? t('sendingMessage') : t('send')}</span>
                     </Button>
                   </div>

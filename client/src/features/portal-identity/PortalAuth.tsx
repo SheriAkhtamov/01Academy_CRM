@@ -6,6 +6,7 @@ import {
   learningSubjectHref,
 } from "@shared/platform-routes";
 import { setActivePlatformRealm } from "@/lib/platformSession";
+import { requestErrorShake } from "@/lib/errorShake";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/lib/i18n";
@@ -203,16 +204,19 @@ function PortalActivationForm({
       if (password.length < 12) {
         setValidation(t("portalPasswordLengthInvalid"));
         document.getElementById("portal-password")?.focus();
+        requestErrorShake(document.getElementById("portal-password"));
         return;
       }
       if (new TextEncoder().encode(password).length > 72) {
         setValidation(t("portalPasswordTooLong"));
         document.getElementById("portal-password")?.focus();
+        requestErrorShake(document.getElementById("portal-password"));
         return;
       }
       if (password !== repeat) {
         setValidation(t("portalPasswordMismatch"));
         document.getElementById("portal-repeat")?.focus();
+        requestErrorShake(document.getElementById("portal-repeat"));
         return;
       }
     }
@@ -286,7 +290,7 @@ function PortalActivationForm({
           <Button type="button" variant="outline" onClick={onClose}>
             {t("portalCancel")}
           </Button>
-          <Button
+          <Button loading={action.isPending}
             type="submit"
             disabled={action.isPending || !session?.csrfToken}
           >

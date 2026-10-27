@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Loader2, Shuffle } from 'lucide-react';
+import { AlertCircle, Shuffle } from 'lucide-react';
 import {
   AlertDialogBody,
   AlertDialog,
@@ -23,6 +23,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { leadQueryKeys } from '@/features/leads/api';
 import { salesQueryKeys } from '@/features/sales/queries';
 import { leadDistributionApi, leadDistributionQueryKey } from './api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export function LeadDistributionPanel() {
   const { t } = useTranslation();
@@ -62,7 +64,7 @@ export function LeadDistributionPanel() {
   });
 
   if (settings.isLoading) {
-    return <Skeleton className="h-52 w-full" />;
+    return <LoadingRegion className="w-full"><Skeleton className="h-52 w-full" /></LoadingRegion>;
   }
 
   if (settings.isError || !settings.data) {
@@ -101,7 +103,7 @@ export function LeadDistributionPanel() {
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
-          {update.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+          {update.isPending ? <OrbitSpinner className="size-4" /> : null}
           <Label htmlFor="auto-lead-distribution" className="cursor-pointer">
             {data.enabled
               ? t('autoLeadDistributionEnabled')
@@ -140,7 +142,7 @@ export function LeadDistributionPanel() {
               if (pendingEnabled !== null) update.mutate(pendingEnabled);
             }}
           >
-            {update.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            {update.isPending ? <OrbitSpinner className="size-4" /> : null}
             {pendingEnabled
               ? t('autoLeadDistributionEnableAction')
               : t('autoLeadDistributionDisableAction')}

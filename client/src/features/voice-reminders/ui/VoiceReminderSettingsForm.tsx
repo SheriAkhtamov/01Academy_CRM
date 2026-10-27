@@ -2,7 +2,7 @@ import { Clock3, PhoneCall, RotateCcw } from 'lucide-react';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { TimePicker } from '@/components/ui/time-picker';
 import type { VoiceReminderSettingsInput } from '@shared/contracts/voice-reminders';
-import { Input } from '@/components/ui/input';
+import { QuantityStepper } from '@/components/ui/quantity-stepper';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -47,7 +47,7 @@ export function VoiceReminderSettingsForm({
       <CompactModalSection title={t('voiceRemindersScheduleSection')} icon={Clock3} tone="teal" collapsible={false} disabled={disabled} contentClassName="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-lead">{t('voiceRemindersLeadMinutes')}</Label>
-          <Input
+          <QuantityStepper
             id="voice-reminders-lead"
             type="number"
             min={1}
@@ -104,7 +104,7 @@ export function VoiceReminderSettingsForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-attempts">{t('voiceRemindersAttempts')}</Label>
-          <Input
+          <QuantityStepper
             id="voice-reminders-attempts"
             type="number"
             min={1}
@@ -116,22 +116,22 @@ export function VoiceReminderSettingsForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-same-day-retry">{t('voiceRemindersSameDayRetryMinutes')}</Label>
-          <Input id="voice-reminders-same-day-retry" type="number" min={1} max={60} required
+          <QuantityStepper id="voice-reminders-same-day-retry" min={1} max={60} required
             value={draft.sameDayRetryMinutes} onChange={(event) => update('sameDayRetryMinutes', Number(event.target.value))} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-day-before-attempts">{t('voiceRemindersDayBeforeAttempts')}</Label>
-          <Input id="voice-reminders-day-before-attempts" type="number" min={1} max={5} required
+          <QuantityStepper id="voice-reminders-day-before-attempts" min={1} max={5} required
             value={draft.dayBeforeMaxAttempts} onChange={(event) => update('dayBeforeMaxAttempts', Number(event.target.value))} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-day-before-retry">{t('voiceRemindersDayBeforeRetryMinutes')}</Label>
-          <Input id="voice-reminders-day-before-retry" type="number" min={1} max={60} required
+          <QuantityStepper id="voice-reminders-day-before-retry" min={1} max={60} required
             value={draft.dayBeforeRetryMinutes} onChange={(event) => update('dayBeforeRetryMinutes', Number(event.target.value))} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="voice-reminders-retry">{t('voiceRemindersRetryMinutes')}</Label>
-          <Input
+          <QuantityStepper
             id="voice-reminders-retry"
             type="number"
             min={1}

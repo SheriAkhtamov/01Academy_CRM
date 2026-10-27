@@ -53,7 +53,7 @@ export function ChatGroupManageDialog({ group, onClose }: { group: ChatGroupDeta
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
         </div>
         <DialogFooter className="compact-modal-footer"><Button type="button" variant="outline" disabled={save.isPending} onClick={() => guard.handleOpenChange(false)}>{t('cancel')}</Button>
-          <Button type="submit" disabled={save.isPending || !dirty}>{t(save.isPending ? 'saving' : 'saveChanges')}</Button></DialogFooter>
+          <Button loading={save.isPending} type="submit" disabled={save.isPending || !dirty}>{t(save.isPending ? 'saving' : 'saveChanges')}</Button></DialogFooter>
       </form>
     </DialogContent></Dialog>
     <UnsavedChangesDialog open={guard.confirmationOpen} onOpenChange={guard.setConfirmationOpen} onDiscard={guard.discardChanges} />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, UserRound, Users, X } from 'lucide-react';
+import { Plus, UserRound, Users, X } from 'lucide-react';
 import type { LessonStaffTeacher } from '@shared/contracts/lesson-staff';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { useTranslation } from '@/hooks/useTranslation';
 import { lessonStaffApi, lessonStaffQueryKey } from './api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 function LessonTeacherIdentity({ teacher }: { teacher: LessonStaffTeacher }) {
   return <EmployeeIdentity userId={teacher.userId} name={teacher.fullName} wrapName showAvatar />;
@@ -50,7 +51,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
   return (
     <CompactModalSection title={t('teacher')} icon={UserRound} tone="sky" collapsible={false} contentClassName="space-y-2.5">
       <div>
-        {staff.isPending ? <div role="status" aria-label={t('loading')}><Loader2 className="size-4 animate-spin" /></div>
+        {staff.isPending ? <div role="status" aria-label={t('loading')}><OrbitSpinner className="size-4" /></div>
           : staff.data ? <p className="text-sm font-semibold">{staff.data.teacher
             ? <LessonTeacherIdentity teacher={staff.data.teacher} /> : t('lessonTeacherUnassigned')}</p> : null}
       </div>
@@ -68,7 +69,7 @@ export function LessonStaffSection({ lessonId, editable, disabled, onPendingChan
               <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 rounded-md text-xs" disabled={busy}>
-                    {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" aria-hidden="true" />}
+                    {pending ? <OrbitSpinner className="size-3.5" /> : <Plus className="size-3.5" aria-hidden="true" />}
                     {t('lessonAssistantAdd')}
                   </Button>
                 </DialogTrigger>

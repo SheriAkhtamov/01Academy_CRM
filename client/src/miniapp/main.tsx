@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { AlertCircle, Loader2, RotateCcw, X } from 'lucide-react';
+import { AlertCircle, RotateCcw, X } from 'lucide-react';
 import { AuthProvider } from '@/hooks/useAuth';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -12,6 +12,8 @@ import { clearMiniSession, launchMiniApp, miniAuthApi, syncTelegramTheme, telegr
 import { TasksApp } from './TasksApp';
 import '@/index.css';
 import './miniapp.css';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { ErrorShakeProvider } from '@/components/ux/ErrorShakeProvider';
 
 const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000, refetchOnWindowFocus: true }, mutations: { retry: false } } });
 
@@ -70,17 +72,19 @@ function MiniApp() {
     </div>
   );
   if (launch.isError) return <div className="mini-center" role="alert"><p>{!telegramApp()?.initData ? t('miniTasksOpenTelegram') : (launch.error as { status?: number }).status === 401 ? t('miniTasksSessionExpired') : t('miniTasksUnavailable')}</p><Button variant="outline" onClick={() => void launch.refetch()}><RotateCcw className="mr-2 size-4" />{t('retry')}</Button></div>;
-  if (!launch.data) return <div className="mini-center" role="status" aria-label={t('loading')}><Loader2 className="size-7 animate-spin" /><span className="text-sm text-muted-foreground">{t('miniTasksPreparing')}</span></div>;
+  if (!launch.data) return <div className="mini-center" role="status" aria-label={t('loading')}><OrbitSpinner className="size-7" /><span className="text-sm text-muted-foreground">{t('miniTasksPreparing')}</span></div>;
   return <AuthProvider api={miniAuthApi}><TasksApp /></AuthProvider>;
 }
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={client}>
-    <TooltipProvider>
-      <MiniErrorBoundary>
-        <MiniApp />
-        <Toaster />
-      </MiniErrorBoundary>
-    </TooltipProvider>
+    <ErrorShakeProvider>
+      <TooltipProvider>
+        <MiniErrorBoundary>
+          <MiniApp />
+          <Toaster />
+        </MiniErrorBoundary>
+      </TooltipProvider>
+    </ErrorShakeProvider>
   </QueryClientProvider>,
 );

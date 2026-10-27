@@ -5,7 +5,6 @@ import { Link } from 'wouter';
 import {
   ArrowUpRight,
   Grid3X3,
-  Loader2,
   Mic,
   MicOff,
   NotebookPen,
@@ -29,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CallNoteEditor } from '@/components/telephony/CallNoteEditor';
 import { DIALPAD_KEYS } from '@/components/telephony/TelephonyDialer';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export const FINISHED_CALL_STATUSES = ['ended', 'failed', 'declined', 'missed'] as const;
 
@@ -301,7 +301,7 @@ export function TelephonyActiveCall({
               className="mt-2 h-9 w-full justify-start gap-2"
               onClick={() => void runTransfer(transferTarget)}
             >
-              {isTransferring ? <Loader2 className="size-4 animate-spin" /> : <PhoneForwarded className="size-4" />}
+              {isTransferring ? <OrbitSpinner className="size-4" /> : <PhoneForwarded className="size-4" />}
               <span className="truncate">
                 {isTransferring ? t('telephonyTransferring') : t('telephonyTransferToNumber')}
               </span>
@@ -326,7 +326,7 @@ export function TelephonyActiveCall({
                 </button>
               ))}
               {extensionsQuery.isLoading ? (
-                <p className="px-3 py-4 text-center text-sm text-muted-foreground">{t('loading')}</p>
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p>
               ) : null}
               {!extensionsQuery.isLoading && matchingExtensions.length === 0 ? (
                 <p className="px-3 py-4 text-center text-sm text-muted-foreground">
@@ -368,7 +368,7 @@ export function TelephonyActiveCall({
             aria-label={t('telephonyAnswer')}
           >
             {isPending
-              ? <Loader2 className="size-6 animate-spin" />
+              ? <OrbitSpinner className="size-6" />
               : <PhoneCall className="size-6" />}
           </Button>
         ) : null}

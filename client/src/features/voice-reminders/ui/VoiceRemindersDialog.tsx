@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+
 import {
   VOICE_REMINDER_MAX_AUDIO_BYTES,
   hasReadyVoiceReminderLibrary,
@@ -27,6 +27,8 @@ import { useVoiceReminders } from '../hooks';
 import { emptyRecordingDraft, VoiceReminderRecordings, type VoiceReminderRecordingDraft, type VoiceReminderRecordingField } from './VoiceReminderRecordings';
 import { VoiceReminderTestCall } from './VoiceReminderTestCall';
 import { VoiceReminderSettingsForm } from './VoiceReminderSettingsForm';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 const errorKeys = new Set<TranslationKey>([
   'voiceReminderInvalidSettings', 'voiceReminderInvalidHours', 'voiceReminderInvalidDayBeforeHours', 'voiceReminderAudioRequired',
@@ -273,7 +275,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
           </DialogHeader>
           <div className="compact-modal-body flex-1 overflow-y-auto overscroll-contain">
           {snapshot.isLoading || (!draft && !snapshot.isError) ? (
-            <Skeleton className="h-72 w-full" />
+            <LoadingRegion className="w-full"><Skeleton className="h-72 w-full" /></LoadingRegion>
           ) : snapshot.isError && !snapshot.data ? (
             <div className="space-y-3">
               <p role="alert" className="text-sm text-destructive">{t('failedToLoadData')}</p>
@@ -331,7 +333,7 @@ export function VoiceRemindersDialog({ open, onOpenChange }: {
             {activeTab === 'settings' && draft && !snapshot.isError ? (
               <Button type="submit" form="voice-reminders-settings"
                 disabled={pending || JSON.stringify(draft) === savedSettings}>
-                {saveSettings.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                {saveSettings.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                 {t('save')}
               </Button>
             ) : null}

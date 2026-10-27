@@ -166,9 +166,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *:not(.animate-spin),
-  *:not(.animate-spin)::before,
-  *:not(.animate-spin)::after {
+  *,
+  *::before,
+  *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
@@ -184,14 +184,13 @@
    the keyframes in this file, tailwindcss-animate's utilities, the
    enter/exit classes Radix overlays use — is switched off here.
 
-   A spinner is exempt everywhere: it reports that work is in
-   flight, and a frozen one reads as a hung app rather than as a
-   calm one. Same reason the reduced-motion block above spares it.
+   Loading indicators keep their shape and labels visible when motion is off.
+   The shared Orbit Spinner also honours these preferences.
    ============================================================ */
 :root[data-motion='off'],
-:root[data-motion='off'] *:not(.animate-spin),
-:root[data-motion='off'] *:not(.animate-spin)::before,
-:root[data-motion='off'] *:not(.animate-spin)::after {
+:root[data-motion='off'] *,
+:root[data-motion='off'] *::before,
+:root[data-motion='off'] *::after {
   scroll-behavior: auto !important;
   animation-duration: 0.01ms !important;
   animation-delay: 0ms !important;

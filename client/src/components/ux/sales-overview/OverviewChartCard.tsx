@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export { AnalyticsChartEmpty, AnalyticsChartLegend, analyticsAxisTick, analyticsTooltipStyle } from '@/components/ux/analytics/AnalyticsChartCard';
 
@@ -23,5 +24,5 @@ export function AnalyticsChartCard({ title, description, summary, action, childr
 }
 
 export function OverviewSkeleton({ className }: { className: string }) {
-  return <div className={cn('animate-pulse bg-muted', className)} aria-hidden="true" />;
+  return <LoadingRegion className={cn('bg-muted', className)} />;
 }

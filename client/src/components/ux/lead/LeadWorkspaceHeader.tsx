@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import { Copy, ExternalLink, Loader2, MessageSquare, Phone } from 'lucide-react';
+import { ExternalLink, MessageSquare, Phone } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { LeadStageStepper, type StepperStageSource } from './LeadSheetControls';
 import { LeadCallDialog } from './LeadCallDialog';
@@ -11,6 +12,7 @@ import type { useOnlinePbxCall } from '@/hooks/useOnlinePbxCall';
 import type { leadMessageTarget } from '@/lib/leadContact';
 import { getInitials } from '@/lib/auth';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface LeadWorkspaceHeaderProps {
   actionsDisabled?: boolean;
@@ -24,7 +26,7 @@ interface LeadWorkspaceHeaderProps {
   statuses: StepperStageSource[];
   leadStatusName: (code: string) => string;
   onlinePbxCall: ReturnType<typeof useOnlinePbxCall>;
-  copyPhone: (phone: string) => void;
+  copyPhone: (phone: string) => Promise<void | boolean>;
   tagsEditor: ReactNode;
   archiveAction: ReactNode;
   workflowActions?: ReactNode;
@@ -76,15 +78,15 @@ export function LeadWorkspaceHeader({
                 >
                   {phone}
                 </a>
-                <button
+                <CopyButton
                   type="button"
+                  unstyled
+                  resetKey={phone}
+                  iconClassName="size-3"
                   aria-label={`${t('telephonyCopyNumber')}: ${phone}`}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => copyPhone(phone)}
-                >
-                  <Copy className="size-3" aria-hidden="true" />
-                  <span className="sr-only">{t('telephonyCopyNumber')}</span>
-                </button>
+                  onCopy={() => copyPhone(phone)}
+                />
               </span>
             ))
           ) : (
@@ -118,7 +120,7 @@ export function LeadWorkspaceHeader({
             }}
           >
             {onlinePbxCall.isPending ? (
-              <Loader2 className="animate-spin" data-icon="inline-start" />
+              <OrbitSpinner className="" data-icon="inline-start" />
             ) : (
               <Phone data-icon="inline-start" />
             )}

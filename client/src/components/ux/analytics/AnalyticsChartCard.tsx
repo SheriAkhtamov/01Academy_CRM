@@ -10,6 +10,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Reveal } from '@/components/ux/motion';
 import { cn } from '@/lib/utils';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export const analyticsAxisTick = {
   fill: 'var(--muted-foreground)',
@@ -88,14 +89,13 @@ export function AnalyticsChartsSkeleton({
   className?: string;
 }) {
   return (
-    <div
-      aria-hidden="true"
+    <LoadingRegion
       className={cn('grid grid-cols-1 gap-4 xl:grid-cols-2', className)}
     >
       {Array.from({ length: cards }, (_, index) => (
         <Skeleton key={index} className="h-[350px] rounded-xl" />
       ))}
-    </div>
+    </LoadingRegion>
   );
 }
 

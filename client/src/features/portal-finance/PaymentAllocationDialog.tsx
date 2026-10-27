@@ -19,6 +19,7 @@ import {
   PortalAlertDialogContent as AlertDialogContent,
 } from '@/features/learning-content/modal-content';
 import { portalFinanceApi, PortalFinanceApiError } from './api';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 function AllocationForm({ context, onClose, money }: {
   context: PortalPaymentAllocationDto;
@@ -99,7 +100,7 @@ function AllocationForm({ context, onClose, money }: {
         </div>
         <DialogFooter className="compact-modal-footer">
           <Button variant="outline" disabled={save.isPending} onClick={() => guard.handleOpenChange(false)}>{t('cancel')}</Button>
-          <Button disabled={save.isPending || !dirty || total <= 0 || total > baseline.amountUzs} onClick={requestSave}>{t('save')}</Button>
+          <Button loading={save.isPending} disabled={save.isPending || !dirty || total <= 0 || total > baseline.amountUzs} onClick={requestSave}>{t('save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -114,7 +115,7 @@ function AllocationForm({ context, onClose, money }: {
         </AlertDialogBody>
         <AlertDialogFooter className="compact-modal-footer">
           <AlertDialogCancel disabled={save.isPending}>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction disabled={save.isPending} onClick={event => { event.preventDefault(); setConfirm(false); save.mutate(); }}>{t('save')}</AlertDialogAction>
+          <AlertDialogAction disabled={save.isPending} onClick={event => { event.preventDefault(); setConfirm(false); save.mutate(); }}>{(save.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}{t('save')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -138,7 +139,7 @@ export function PaymentAllocationDialog({ paymentId, onClose, money }: {
     <DialogContent aria-describedby={undefined} className="compact-modal gap-0 overflow-hidden p-0">
       <DialogHeader className="compact-modal-header"><DialogTitle>{t('lmsPaymentAllocationTitle')}</DialogTitle></DialogHeader>
       <div className="compact-modal-body">
-        {query.isError ? <div role="alert"><p>{t('portalLoadError')}</p><Button onClick={() => void query.refetch()}>{t('retry')}</Button></div> : <p role="status">{t('loading')}</p>}
+        {query.isError ? <div role="alert"><p>{t('portalLoadError')}</p><Button onClick={() => void query.refetch()}>{t('retry')}</Button></div> : <p role="status"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p>}
       </div>
     </DialogContent>
   </Dialog>;

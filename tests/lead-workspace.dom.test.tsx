@@ -210,7 +210,7 @@ describe('calling from the lead workspace', () => {
     const { user } = renderSheet();
     const button = await screen.findByRole('button', { name: i18n.t('callShort') });
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.querySelector('.animate-spin')).toBeTruthy();
+    expect(button.querySelector('.orbit-spinner')).toBeTruthy();
     await user.click(button);
     expect(onlinePbxCall.startCall).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: i18n.t('chooseLeadCallPhone') })).toBeNull();

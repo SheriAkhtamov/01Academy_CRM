@@ -36,7 +36,6 @@ import {
     History,
     ListChecks,
     MessageSquare,
-    Loader2,
     Paperclip,
     Pencil,
     RotateCcw,
@@ -77,6 +76,7 @@ import {
     type TaskDetail,
     type UserMini,
 } from '@/lib/boardTypes';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface TaskDetailSheetProps {
     initialSection?: TelegramTaskSection;
@@ -442,7 +442,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                     <div className="flex h-full items-center justify-center">
                         <SheetTitle className="sr-only">{t('taskDetails')}</SheetTitle>
                         <SheetDescription className="sr-only">{t('taskDetails')}</SheetDescription>
-                        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                        <OrbitSpinner className="size-6 text-muted-foreground" />
                     </div>
                 ) : (
                     <>
@@ -477,7 +477,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                     {canEdit ? (
                                         editing ? (
                                             <>
-                                                <Button size="sm" onClick={saveChanges} disabled={pending}>{saveMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('saveChanges')}</Button>
+                                                <Button size="sm" onClick={saveChanges} disabled={pending}>{saveMutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{t('saveChanges')}</Button>
                                                 <Button size="icon" variant="ghost" className="size-8" aria-label={t('cancel')} disabled={pending} onClick={() => unsavedGuard.requestAction(() => setEditing(false))}><X className="size-4" /></Button>
                                             </>
                                         ) : (
@@ -492,7 +492,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                             {/* Status actions */}
                             <div className={cn('flex flex-wrap items-center gap-2', tasksOnly && 'mini-task-actions')}>
                                 {tasksOnly && canManage && (task.status === 'backlog' || task.status === 'todo' || task.status === 'in_progress') ? (
-                                    <Button
+                                    <Button loading={statusMutation.isPending}
                                         className="mini-task-primary-action"
                                         onClick={() => statusMutation.mutate(task.status === 'in_progress' ? 'done' : 'in_progress')}
                                         disabled={pending}
@@ -517,7 +517,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                 ) : <Badge variant="outline">{columnLabel(task.status, t)}</Badge>}
 
                                 {task.status === 'done' && canFinalize ? (
-                                    <Button
+                                    <Button loading={statusMutation.isPending}
                                         size="sm"
                                         className={cn('gap-1.5', tasksOnly && 'mini-task-primary-action order-first')}
                                         onClick={() => statusMutation.mutate('accepted')}
@@ -528,7 +528,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                 ) : null}
 
                                 {task.status === 'accepted' && canManage ? (
-                                    <Button
+                                    <Button loading={statusMutation.isPending}
                                         size="sm"
                                         variant="outline"
                                         className={cn('gap-1.5', tasksOnly && 'mini-task-primary-action order-first')}
@@ -642,7 +642,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                         className="resize-none"
                                                         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendComment(); } }}
                                                     />
-                                                    <Button size="sm" className="self-end" disabled={!commentText.trim() || pending} onClick={sendComment}>{commentMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('send')}</Button>
+                                                    <Button size="sm" className="self-end" disabled={!commentText.trim() || pending} onClick={sendComment}>{commentMutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{t('send')}</Button>
                                                 </div>
                                             </>
                                         ) : null}
@@ -683,7 +683,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                         aria-label={t('checklistLabel')}
                                                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); } }}
                                                     />
-                                                    <Button size="sm" disabled={!checklistText.trim() || pending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
+                                                    <Button size="sm" disabled={!checklistText.trim() || pending} onClick={addChecklistItem}>{addChecklistMutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{t('addChecklistItem')}</Button>
                                                 </div>
                                             </>
                                         ) : null}
@@ -711,7 +711,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                         sectionId="task-attachments" contentClassName="space-y-3">
                                         {canManage ? (
                                             <>
-                                                {failedUpload ? <div role="alert" className="flex items-center gap-2 text-sm text-destructive"><span className="min-w-0 break-all">{t('attachmentUploadFailed')}: {failedUpload.name}</span><Button variant="outline" disabled={pending} onClick={() => handleAttachmentSelected(failedUpload)}>{t('retry')}</Button></div> : null}
+                                                {failedUpload ? <div role="alert" className="flex items-center gap-2 text-sm text-destructive"><span className="min-w-0 break-all">{t('attachmentUploadFailed')}: {failedUpload.name}</span><Button loading={pending} variant="outline" disabled={pending} onClick={() => handleAttachmentSelected(failedUpload)}>{t('retry')}</Button></div> : null}
                                                 <input
                                                     ref={fileInputRef}
                                                     disabled={pending}
@@ -722,7 +722,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                                 />
                                                 <div className="flex flex-wrap items-center gap-3">
                                                     <Button variant="outline" size="sm" className="gap-1.5" disabled={pending} onClick={() => fileInputRef.current?.click()}>
-                                                        {uploadMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} {t('attachFile')}
+                                                        {uploadMutation.isPending ? <OrbitSpinner className="size-4" /> : <Paperclip className="size-4" />} {t('attachFile')}
                                                     </Button>
                                                 </div>
                                                 {uploadPercent !== null ? (

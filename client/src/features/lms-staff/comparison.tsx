@@ -226,7 +226,7 @@ function ComparisonEditor({
             {message(action.error)}
           </p>
         )}
-        <Button
+        <Button loading={action.isPending}
           disabled={
             action.isPending ||
             projects.length < 2 ||

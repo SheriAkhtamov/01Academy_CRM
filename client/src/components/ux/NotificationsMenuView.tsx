@@ -1,4 +1,4 @@
-import { AlertCircle, Bell, ExternalLink, Loader2, X } from 'lucide-react';
+import { AlertCircle, Bell, ExternalLink, X } from 'lucide-react';
 import type { Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -6,6 +6,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import { UnreadCountBadge } from './UnreadCountBadge';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export interface NotificationsMenuViewItem {
   id: number;
@@ -85,7 +87,7 @@ export function NotificationsMenuView({
           </div>
         </div>
         <DropdownMenuSeparator />
-        {loading ? <div role="status" aria-label={t('loading')} className="space-y-3 p-3"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-full" /></div> : null}
+        {loading ? <LoadingRegion role="status" aria-label={t('loading')} className="space-y-3 p-3"><Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-full" /></LoadingRegion> : null}
         {listError || unreadError ? <div role="alert" className="px-3 py-2 text-sm text-destructive">{t('failedToLoadData')}</div> : null}
         {listError || unreadError ? <DropdownMenuItem onSelect={(event) => {
           event.preventDefault();
@@ -107,7 +109,7 @@ export function NotificationsMenuView({
             </div>;
           })}
           {hasNextPage ? <DropdownMenuItem disabled={fetchingNextPage} onSelect={(event) => { event.preventDefault(); onLoadMore(); }}>
-            {fetchingNextPage ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}{t('loadOlderNotifications')}
+            {fetchingNextPage ? <OrbitSpinner className="mr-2 size-4" /> : null}{t('loadOlderNotifications')}
           </DropdownMenuItem> : null}
         </div>
       </DropdownMenuContent>

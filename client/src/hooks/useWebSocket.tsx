@@ -8,6 +8,7 @@ import { messageQueryKeys } from '@/features/messages/api';
 import { telephonyQueryKeys } from '@/features/telephony/api';
 import { boardQueryKeys } from '@/features/board/api';
 import { employeeIdentitiesQueryKey } from '@/features/employees/employee-identities';
+import { clearChatTyping, receiveChatTyping } from '@/features/messages/typing-events';
 
 /**
  * `connecting` covers both the first attempt and the backoff window, so the UI
@@ -40,6 +41,7 @@ export function useWebSocket() {
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
+        clearChatTyping();
         setStatus('connected');
         reconnectAttempts = 0;
         // Backoff may have run for minutes; anything that happened meanwhile
@@ -48,6 +50,7 @@ export function useWebSocket() {
       };
 
       ws.current.onclose = () => {
+        if (isMounted) clearChatTyping();
         if (isMounted && reconnectAttempts < maxReconnectAttempts) {
           setStatus('connecting');
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
@@ -66,6 +69,7 @@ export function useWebSocket() {
       };
 
       ws.current.onmessage = (event) => {
+        if (!isMounted) return;
         try {
           const message: WebSocketEvent = JSON.parse(event.data);
           handleWebSocketMessage(message);
@@ -77,6 +81,9 @@ export function useWebSocket() {
 
     const handleWebSocketMessage = (message: WebSocketEvent) => {
       switch (message.type) {
+        case 'CHAT_TYPING':
+          receiveChatTyping(message.data);
+          break;
         case 'ACADEMY_LEAD_CREATED':
         case 'ACADEMY_LEAD_UPDATED':
         case 'ACADEMY_STUDENT_CREATED':
@@ -198,6 +205,7 @@ export function useWebSocket() {
 
     return () => {
       isMounted = false;
+      clearChatTyping();
       reconnectNowRef.current = () => undefined;
       window.removeEventListener('online', restart);
       document.removeEventListener('visibilitychange', handleVisibility);

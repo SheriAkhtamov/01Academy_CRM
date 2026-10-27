@@ -1,7 +1,7 @@
 import '@/components/ux/compact-modal.css';
 import { useState } from 'react';
 import { Trigger as DialogTrigger } from '@radix-ui/react-dialog';
-import { Download, FileArchive, FileImage, FileMusic, FileSpreadsheet, FileText, FileVideo, Loader2 } from 'lucide-react';
+import { Download, FileArchive, FileImage, FileMusic, FileSpreadsheet, FileText, FileVideo } from 'lucide-react';
 import { attachmentExtension } from '@shared/board-attachments';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -9,6 +9,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import { paymentsApi } from './api';
 import { usePaymentAttachmentUrl, type PaymentAttachmentSource } from './usePaymentAttachmentUrl';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const imageTypes: Record<string, string> = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg',
@@ -30,7 +31,7 @@ function PdfPreview({ name, ...source }: PaymentAttachmentSource & { name: strin
   const { t } = useTranslation();
   const { src, failed, fail } = usePaymentAttachmentUrl(source, 'application/pdf');
   if (failed) return <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>;
-  if (!src) return <Loader2 className="size-8 animate-spin" aria-label={t('paymentPreviewLoading')} />;
+  if (!src) return <OrbitSpinner className="size-8" aria-label={t('paymentPreviewLoading')} />;
   return <iframe title={name} src={src} className="h-[65dvh] w-full rounded-md border" onError={fail} />;
 }
 
@@ -83,7 +84,7 @@ export function PaymentAttachmentPreview({ name, showName = false, disabled, ...
             {imageType ? (failed
               ? <p role="status" className="text-sm">{t('attachmentPreviewUnavailable')}</p>
               : src ? <img src={src} alt={name} className="max-h-[65dvh] max-w-full object-contain" onError={fail} />
-                : <Loader2 className="size-8 animate-spin" aria-label={t('paymentPreviewLoading')} />)
+                : <OrbitSpinner className="size-8" aria-label={t('paymentPreviewLoading')} />)
               : extension === '.pdf' ? <PdfPreview {...source} name={name} />
                 : <div className="flex flex-col items-center gap-3 py-8">
                   <Icon className="size-16 text-muted-foreground" aria-hidden="true" />

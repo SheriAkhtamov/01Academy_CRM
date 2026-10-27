@@ -11,6 +11,7 @@ import {
 } from "@shared/contracts/lms";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,7 @@ import {
 import { StaffEditor } from "./editor";
 import { StaffUploads } from "./files";
 import { ReviewSheet } from "./reviews";
+import { NativeCheckbox } from "@/components/ui/checkbox";
 export function StaffAssignments({
   runId,
   enrollments,
@@ -327,7 +329,7 @@ function AssignmentEditor({
           )}
         </div>
         <label className="flex min-h-11 items-center gap-3">
-          <input
+          <NativeCheckbox
             type="checkbox"
             checked={required}
             onChange={(event) => setRequired(event.target.checked)}
@@ -339,7 +341,7 @@ function AssignmentEditor({
           <div className="flex flex-wrap gap-4">
             {(["text", "links", "files"] as const).map((kind) => (
               <label key={kind} className="flex min-h-11 items-center gap-2">
-                <input
+                <NativeCheckbox
                   type="checkbox"
                   checked={allowed.includes(kind)}
                   onChange={(event) =>
@@ -456,7 +458,7 @@ function AssignmentEditor({
           </p>
         )}
         <div className="flex justify-end">
-          <Button disabled={action.isPending || busy}>
+          <Button loading={action.isPending || busy} disabled={action.isPending || busy}>
             {t("lmsStaffPublish")}
           </Button>
         </div>
@@ -598,9 +600,9 @@ function AssignmentDetails({
         ) : (
           query.data && (
             <div className="space-y-5">
-              <Button variant="outline" onClick={() => onCopy(query.data!)}>
+              <CopyButton variant="outline" onCopy={() => onCopy(query.data!)}>
                 {t("lmsStaffCopyAssignment")}
-              </Button>
+              </CopyButton>
               <LearningText text={query.data.body} />
               <div className="space-y-3">
                 {query.data.recipients.map((item) => (
@@ -771,7 +773,7 @@ function RecipientEditor({
             {errorText(action.error)}
           </p>
         )}
-        <Button
+        <Button loading={action.isPending}
           disabled={action.isPending || (status === "reopen" && !canReview)}
         >
           {t("lmsStaffSave")}
@@ -866,7 +868,7 @@ function AssignNewStudents({
           <legend>{t("lmsStaffAssignments")}</legend>
           {assignments.map((item) => (
             <label key={item.id} className="flex min-h-11 items-center gap-3">
-              <input
+              <NativeCheckbox
                 type="checkbox"
                 checked={selected.includes(item.assignmentVersionId)}
                 onChange={(event) =>
@@ -903,7 +905,7 @@ function AssignNewStudents({
             {validation || errorText(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("lmsStaffPublish")}</Button>
+        <Button loading={action.isPending} disabled={action.isPending}>{t("lmsStaffPublish")}</Button>
       </form>
     </StaffDialog>
   );

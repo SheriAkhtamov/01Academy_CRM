@@ -136,7 +136,7 @@ export function PortalNotifications({
         {t("portalNotificationSettings")}
       </Button>
       {query.data.pages[0].unreadCount > 0 && (
-        <Button
+        <Button loading={all.isPending}
           variant="outline"
           disabled={all.isPending}
           onClick={() => all.mutate()}
@@ -224,7 +224,7 @@ export function PortalNotifications({
                         </Button>
                       )}
                       {!item.readAt && (
-                        <Button
+                        <Button loading={read.isPending}
                           variant="ghost"
                           size="sm"
                           disabled={read.isPending}
@@ -241,7 +241,7 @@ export function PortalNotifications({
         </Card>
       )}
       {query.hasNextPage && (
-        <Button
+        <Button loading={query.isFetchingNextPage}
           variant="outline"
           disabled={query.isFetchingNextPage}
           onClick={() => {
@@ -399,7 +399,7 @@ function PreferencesForm({
         </p>
       )}
       <DialogFooter className="border-t border-border/70 pt-4">
-        <Button disabled={action.isPending}>{t("portalSave")}</Button>
+        <Button loading={action.isPending} disabled={action.isPending}>{t("portalSave")}</Button>
       </DialogFooter>
     </form>
   );

@@ -29,7 +29,7 @@ export const DateTimeInput = forwardRef<HTMLInputElement, DateTimeInputProps>(fu
     return minDate && today < minDate ? minDate : maxDate && today > maxDate ? maxDate : today;
   };
 
-  return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(6.5rem,0.7fr)] items-start gap-2" data-date-time-input>
+  return <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(6.5rem,0.7fr)] items-start gap-2" data-date-time-input data-error-shake-control>
     {name ? <input type="hidden" name={name} value={value} disabled={props.disabled} /> : null}
     <Input
       {...props}

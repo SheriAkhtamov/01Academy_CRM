@@ -190,7 +190,7 @@ export function PortalProfile({
                     {t("portalCancel")}
                   </Button>
                 )}
-                <Button disabled={save.isPending}>{t("portalSave")}</Button>
+                <Button loading={save.isPending} disabled={save.isPending}>{t("portalSave")}</Button>
               </DialogFooter>
             </form>
           </CardContent>
@@ -425,7 +425,7 @@ function PasswordForm({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button disabled={action.isPending}>{t("portalSave")}</Button>
+          <Button loading={action.isPending} disabled={action.isPending}>{t("portalSave")}</Button>
         </DialogFooter>
       </fieldset>
     </form>
@@ -521,7 +521,7 @@ function ChildCredentials({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button disabled={action.isPending}>{t("portalSave")}</Button>
+          <Button loading={action.isPending} disabled={action.isPending}>{t("portalSave")}</Button>
         </DialogFooter>
         <ConfirmAction
           open={confirm}
@@ -806,7 +806,7 @@ function PortalRepresentatives() {
                 <AlertDialogCancel type="button" disabled={action.isPending}>
                   {t("portalCancel")}
                 </AlertDialogCancel>
-                <Button
+                <Button loading={action.isPending}
                   variant={
                     selected?.status === "active" ? "destructive" : "default"
                   }

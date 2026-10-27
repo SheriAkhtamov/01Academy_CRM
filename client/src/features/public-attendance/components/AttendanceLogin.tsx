@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { AlertCircle, ArrowBigUp, ArrowRight, ClipboardCheck, Clock3, DoorClosed, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react';
+import { AlertCircle, ArrowBigUp, ArrowRight, ClipboardCheck, Clock3, DoorClosed, Eye, EyeOff, LockKeyhole } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface Props {
   password: string;
@@ -100,7 +101,7 @@ export function AttendanceLogin(props: Props) {
             {capsLock ? <p id="attendance-caps-lock" className="pa-field-hint"><ArrowBigUp aria-hidden="true" />{t('publicAttendanceCapsLock')}</p> : null}
             {props.error ? <p id="attendance-password-error" role="alert" className="pa-field-error"><AlertCircle aria-hidden="true" />{props.error}</p> : null}
             <button type="submit" className="pa-primary pa-login-submit" disabled={props.pending || !props.password}>
-              {props.pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+              {props.pending ? <OrbitSpinner className="" aria-hidden="true" /> : null}
               {t('publicAttendanceEnter')}
               {!props.pending ? <ArrowRight aria-hidden="true" /> : null}
             </button>

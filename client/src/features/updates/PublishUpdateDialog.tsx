@@ -674,7 +674,7 @@ export function PublishUpdateDialog({ onClose, onPublished }: { onClose: () => v
               <Button type="button" variant="outline" disabled={publish.isPending} onClick={() => guard.handleOpenChange(false)}>
                 {t('cancel')}
               </Button>
-              <Button type="submit" disabled={publish.isPending}>
+              <Button loading={publish.isPending} type="submit" disabled={publish.isPending}>
                 {publish.isPending ? t('saving') : t('updatesPublish')}
               </Button>
             </DialogFooter>

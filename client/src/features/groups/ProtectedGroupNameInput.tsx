@@ -1,7 +1,8 @@
 import { forwardRef, type ClipboardEvent } from 'react';
-import { Hash, Loader2 } from 'lucide-react';
+import { Hash } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 /** One copyable name field; all edits are constrained to the suffix. */
 export const ProtectedGroupNameInput = forwardRef<HTMLInputElement, {
@@ -29,7 +30,7 @@ export const ProtectedGroupNameInput = forwardRef<HTMLInputElement, {
   return (
     <div className="relative flex items-center">
       {pending ? (
-        <Loader2 className="pointer-events-none absolute left-3 size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+        <OrbitSpinner className="pointer-events-none absolute left-3 size-4 text-muted-foreground" aria-hidden="true" />
       ) : (
         <Hash className={cn('pointer-events-none absolute left-3 size-4 transition-colors', code ? 'text-primary' : 'text-muted-foreground/70')} aria-hidden="true" />
       )}

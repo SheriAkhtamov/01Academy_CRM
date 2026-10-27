@@ -23,9 +23,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Loader2, KeyRound } from 'lucide-react';
+import { UserPlus, KeyRound } from 'lucide-react';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface AddAccountModalProps {
   open: boolean;
@@ -175,7 +176,7 @@ export default function AddAccountModal({ open, onOpenChange }: AddAccountModalP
               </Button>
               <Button type="submit" disabled={pending}>
                 {pending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <OrbitSpinner className="h-4 w-4 mr-2" />
                 ) : (
                   <UserPlus className="h-4 w-4 mr-2" />
                 )}

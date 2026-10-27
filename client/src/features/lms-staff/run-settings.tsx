@@ -126,7 +126,7 @@ export function RunSettings({
             {validation || message(action.error)}
           </p>
         )}
-        <Button disabled={action.isPending}>{t("lmsStaffSave")}</Button>
+        <Button loading={action.isPending} disabled={action.isPending}>{t("lmsStaffSave")}</Button>
       </form>
       <StaffConfirm
         open={confirm !== null}

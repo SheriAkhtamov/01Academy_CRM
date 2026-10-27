@@ -1,3 +1,4 @@
+import { LoadingRegion } from '@/components/ui/loading-region';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyRound, ShieldCheck, UserPlus } from "lucide-react";
 import type { PortalAccessLinkDto } from "@shared/contracts/portal-identity";
@@ -151,10 +152,10 @@ function StudentPortalAccessSession({
   if (!enabled || !canManageAccess) return null;
   if (controls.query.isPending)
     return (
-      <div role="status" aria-label={t("loading")} className="space-y-2.5">
+      <LoadingRegion role="status" aria-label={t("loading")} className="space-y-2.5">
         <Skeleton className="h-12 w-full rounded-lg" />
         <Skeleton className="h-24 w-full rounded-lg" />
-      </div>
+      </LoadingRegion>
     );
   const queryError = controls.query.isError ? (
       <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs">

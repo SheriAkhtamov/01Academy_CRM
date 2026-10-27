@@ -12,6 +12,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { QuantityStepper } from "@/components/ui/quantity-stepper";
 import { Textarea } from "@/components/ui/textarea";
 import { lmsStaffApi } from "./api";
 import { useStaffQuery, useStaffInvalidate } from "./queries";
@@ -27,6 +28,7 @@ import {
   staffDateIso,
   useStaffError,
 } from "./ui";
+import { NativeCheckbox, NativeChoiceInput } from "@/components/ui/checkbox";
 export function StaffQuizzes({
   runId,
   enrollments,
@@ -197,7 +199,7 @@ function QuizResults({ id, onClose }: { id: number; onClose: () => void }) {
                 {message(action.error)}
               </p>
             )}
-            <Button disabled={action.isPending || !reason.trim()}>
+            <Button loading={action.isPending} disabled={action.isPending || !reason.trim()}>
               {t("lmsStaffExtraAttempt")}
             </Button>
           </form>
@@ -356,7 +358,7 @@ export function QuizEditor({
             />
           </StaffField>
           <StaffField id="quiz-attempts" labelKey="lmsStaffAttemptLimit">
-            <Input
+            <QuantityStepper
               id="quiz-attempts"
               type="number"
               min={1}
@@ -387,7 +389,7 @@ export function QuizEditor({
         </div>
         <div className="flex flex-wrap gap-4">
           <label className="flex min-h-11 items-center gap-2">
-            <input
+            <NativeCheckbox
               type="checkbox"
               checked={required}
               onChange={(event) => setRequired(event.target.checked)}
@@ -395,7 +397,7 @@ export function QuizEditor({
             {t("lmsStaffRequired")}
           </label>
           <label className="flex min-h-11 items-center gap-2">
-            <input
+            <NativeCheckbox
               type="checkbox"
               checked={timer}
               onChange={(event) => setTimer(event.target.checked)}
@@ -405,7 +407,7 @@ export function QuizEditor({
         </div>
         {timer && (
           <StaffField id="quiz-timer" labelKey="lmsStaffTimerSeconds">
-            <Input
+            <QuantityStepper
               id="quiz-timer"
               type="number"
               min={30}
@@ -418,7 +420,7 @@ export function QuizEditor({
         )}
         <div className="space-y-2">
           <label className="flex min-h-11 items-center gap-2">
-            <input
+            <NativeCheckbox
               type="checkbox"
               checked={shuffleQuestions}
               onChange={(event) => setShuffleQuestions(event.target.checked)}
@@ -426,7 +428,7 @@ export function QuizEditor({
             {t("lmsStaffShuffleQuestions")}
           </label>
           <label className="flex min-h-11 items-center gap-2">
-            <input
+            <NativeCheckbox
               type="checkbox"
               checked={shuffleOptions}
               onChange={(event) => setShuffleOptions(event.target.checked)}
@@ -532,7 +534,7 @@ export function QuizEditor({
                       />
                     </StaffField>
                     <label className="flex min-h-11 items-center gap-2">
-                      <input
+                      <NativeChoiceInput
                         type={
                           question.type === "multiple" ? "checkbox" : "radio"
                         }
@@ -616,7 +618,7 @@ export function QuizEditor({
           </p>
         )}
         <div className="flex justify-end">
-          <Button disabled={action.isPending}>{t("lmsStaffPublish")}</Button>
+          <Button loading={action.isPending} disabled={action.isPending}>{t("lmsStaffPublish")}</Button>
         </div>
       </form>
       <StaffConfirm

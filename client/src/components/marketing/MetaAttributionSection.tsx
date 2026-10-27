@@ -1,3 +1,4 @@
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
@@ -36,6 +37,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { getInitials } from '@/lib/auth';
 import { formatAcademyDate } from '@/lib/localeFormat';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 function AttributionMetric({
   label,
@@ -407,7 +409,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
     );
   }
   if (isLoading || !data) {
-    return <div className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>;
+    return <LoadingRegion className="space-y-4"><Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></LoadingRegion>;
   }
 
   const summary = data.summary;
@@ -441,7 +443,7 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
               onClick={() => syncCatalog.mutate()}
               disabled={syncCatalog.isPending}
             >
-              <RefreshCw className={`mr-2 size-4 ${syncCatalog.isPending ? 'animate-spin' : ''}`} />
+              {syncCatalog.isPending ? <OrbitSpinner className="mr-2 size-4" /> : <RefreshCw className="mr-2 size-4" />}
               {t('metaRefreshCatalog')}
             </Button>
           </div>
@@ -553,11 +555,11 @@ export function MetaAttributionSection({ reportingQuery }: { reportingQuery: str
             ) : null}
             <CompactModalSection key={`${selectedLeadsCreative?.attributionKey}-leads`} title={t('metaAttributedLeads')} icon={Users} tone="teal" collapsible={false}>
             {attributedLeads.isLoading ? (
-              <div className="space-y-3 py-2">
+              <LoadingRegion className="space-y-3 py-2">
                 <Skeleton className="h-20 w-full" />
                 <Skeleton className="h-20 w-full" />
                 <Skeleton className="h-20 w-full" />
-              </div>
+              </LoadingRegion>
             ) : attributedLeads.isError && !attributedLeads.data ? (
               <Alert variant="destructive" className="my-2">
                 <AlertTitle>{t('failedToLoadData')}</AlertTitle>

@@ -1,6 +1,6 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, CalendarClock, GraduationCap, Loader2, Search, Users, UsersRound } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, GraduationCap, Search, Users, UsersRound } from 'lucide-react';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,7 @@ import {
 } from '@/lib/teacherModule';
 import { cn } from '@/lib/utils';
 import { LearningGroupTabs } from '@/features/lms-staff/group-tabs';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type GroupSortKey = 'name' | 'progress' | 'students';
 
@@ -130,7 +131,7 @@ function GroupArchiveAction({
       onClick={() => (restoring ? onRestore(group) : onArchive(group))}
     >
       {isPending
-        ? <Loader2 className="mr-1.5 size-4 animate-spin" />
+        ? <OrbitSpinner className="mr-1.5 size-4" />
         : <Icon className="mr-1.5 size-4" />}
       {restoring ? t('restoreGroupFromArchive') : t('archiveGroup')}
     </Button>

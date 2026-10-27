@@ -1,6 +1,6 @@
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { useRef, type KeyboardEvent, type ReactNode } from 'react';
-import { Archive, ArchiveRestore, CalendarClock, CalendarRange, ChevronDown, ChevronUp, Edit3, GraduationCap, Loader2, Trash2, UsersRound } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarClock, CalendarRange, ChevronDown, ChevronUp, Edit3, GraduationCap, Trash2, UsersRound } from 'lucide-react';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -21,6 +21,7 @@ import {
 } from './presentation';
 import { useGroupLabels } from './useGroupLabels';
 import type { Group } from './types';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface QuickViewActions {
   onEdit: (group: Group) => void;
@@ -168,7 +169,7 @@ function QuickViewActionsBar({ group, onEdit, onArchive, onRestore, onDelete, bu
       {group.isArchived ? (
         <>
           <Button type="button" variant="outline" disabled={busy} onClick={() => onRestore(group)}>
-            {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <ArchiveRestore data-icon="inline-start" />}
+            {busy ? <OrbitSpinner className="" data-icon="inline-start" /> : <ArchiveRestore data-icon="inline-start" />}
             {t('restoreGroupFromArchive')}
           </Button>
           <Button type="button" variant="ghost" disabled={busy}
@@ -179,7 +180,7 @@ function QuickViewActionsBar({ group, onEdit, onArchive, onRestore, onDelete, bu
         </>
       ) : (
         <Button type="button" variant="outline" disabled={busy} onClick={() => onArchive(group)}>
-          {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
+          {busy ? <OrbitSpinner className="" data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
           {t('archiveGroup')}
         </Button>
       )}

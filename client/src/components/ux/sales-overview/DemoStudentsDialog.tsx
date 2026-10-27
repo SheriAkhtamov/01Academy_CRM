@@ -8,6 +8,7 @@ import { reportingRangeQuery } from '@/lib/reportingDateRange';
 import { salesQueryKeys } from '@/features/sales/queries';
 import { OverviewDialog, overviewButton } from './OverviewDialog';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function DemoStudentsDialog({ reportingRange, managerId, funnelId = null, onClose, onOpenLead }: {
   reportingRange: { from: string; to: string };
@@ -42,7 +43,7 @@ export function DemoStudentsDialog({ reportingRange, managerId, funnelId = null,
     {isError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4 text-sm">
       <span className="flex items-center gap-2 text-destructive"><AlertCircle className="size-4" aria-hidden="true" />{t('failedToLoadData')}</span>
       <button type="button" className={overviewButton} onClick={() => refetch()}>{t('retry')}</button>
-    </div> : isPending ? <p role="status" className="py-12 text-center text-sm text-muted-foreground">{t('loading')}</p> : <>
+    </div> : isPending ? <p role="status" className="py-12 text-center text-sm text-muted-foreground"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm tabular-nums" aria-live="polite">{t('students')}: {number.format(filtered.length)}{searchQuery.trim() ? ` / ${number.format(students.length)}` : ''}</p>
         <div className="relative w-full sm:max-w-sm">

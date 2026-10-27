@@ -2,7 +2,7 @@ import { readTelegramTaskDestination } from '@shared/telegram-task-links';
 import { BoardUserAvatar, BoardUserIdentity } from '@/components/ux/board/BoardUserAvatar';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, CalendarClock, CheckCheck, ClipboardList, ListChecks, Loader2, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
+import { Archive, CalendarClock, CheckCheck, ClipboardList, ListChecks, MessageCircle, Paperclip, Plus, RefreshCw, Search, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,6 +19,8 @@ import { BOARD_COLUMNS, formatBoardDateTime, isOverdue, type BoardStatus, type B
 import { cn } from '@/lib/utils';
 import { academyDateInputValue, academyToday } from '@/lib/localeFormat';
 import { isBoardTaskAwaitingAcceptance } from '@shared/board-permissions';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type TaskTab = 'mine' | 'assigned' | 'archive';
 type QuickFilter = 'all' | Exclude<BoardStatus, 'accepted'>;
@@ -54,7 +56,7 @@ function sortTasks(left: TaskSummary, right: TaskSummary): number {
 }
 
 function TaskSkeletons() {
-  return <div className="space-y-3" aria-hidden="true">{[0, 1, 2].map((index) => <div key={index} className="space-y-1.5"><Skeleton className="h-3 w-28" /><Skeleton className="h-28 w-full rounded-xl" /></div>)}</div>;
+  return <LoadingRegion className="space-y-3">{[0, 1, 2].map((index) => <div key={index} className="space-y-1.5"><Skeleton className="h-3 w-28" /><Skeleton className="h-28 w-full rounded-xl" /></div>)}</LoadingRegion>;
 }
 
 export function TasksApp() {
@@ -112,7 +114,7 @@ export function TasksApp() {
     return () => { app.BackButton.offClick(back); app.BackButton.hide(); };
   }, [creating, taskId]);
 
-  if (isLoading) return <div className="mini-center" role="status" aria-label={t('loading')}><Loader2 className="size-7 animate-spin" /></div>;
+  if (isLoading) return <div className="mini-center" role="status" aria-label={t('loading')}><OrbitSpinner className="size-7" /></div>;
   if (!user) return <div className="mini-center" role="alert"><p>{t('miniTasksSessionExpired')}</p></div>;
 
   const selectedOwnerId = owner === OWNER_SELF ? user.id : Number(owner);
@@ -213,7 +215,7 @@ export function TasksApp() {
   };
 
   return <div className="mini-shell" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-    <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">{pullDistance > 0 ? <RefreshCw className={cn('size-5', tasks.isFetching && 'animate-spin', !tasks.isFetching && !pullActive && 'opacity-50')} /> : null}</div>
+    <div className="mini-pull" style={{ height: pullDistance }} aria-hidden="true">{pullDistance > 0 ? tasks.isFetching ? <OrbitSpinner className="size-5" /> : <RefreshCw className={cn('size-5', !pullActive && 'opacity-50')} /> : null}</div>
     <header className="mini-header">
       <div className="mini-title-row">
         <div className="min-w-0 flex-1">
@@ -237,8 +239,8 @@ export function TasksApp() {
           <p className="mini-task-total">{t('miniTasksTasksCount')}: {active.length}</p>
         </div>
         <div className="mini-header-actions">
-          <Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}><RefreshCw className={cn('size-4', tasks.isFetching && 'animate-spin')} /></Button>
-          <Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button>
+          <Button variant="ghost" size="icon" aria-label={t('miniTasksRefresh')} onClick={refresh} disabled={tasks.isFetching}>{tasks.isFetching ? <OrbitSpinner className="size-4" /> : <RefreshCw className="size-4" />}</Button>
+          <Button className="mini-new-task" disabled={!users.data || users.isLoading} aria-label={users.isLoading ? t('miniTasksPreparing') : t('createTask')} onClick={() => { hapticImpact('light'); setCreating(true); }}>{users.isLoading ? <OrbitSpinner className="size-4" /> : <Plus className="size-4" />}<span>{t('newTask')}</span></Button>
         </div>
       </div>
       <div className="mini-search"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-10 pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('miniTasksSearch')} aria-label={t('miniTasksSearch')} type="search" /></div>

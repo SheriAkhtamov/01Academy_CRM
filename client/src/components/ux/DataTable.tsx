@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PaginationControls } from '@/components/ux/PaginationControls';
 import { useMotionFeature } from '@/components/ux/motion';
 import { DURATION, EASE } from '@/lib/motion';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -304,7 +305,7 @@ export function DataTable<T extends Record<string, any>>({
   const renderCards = () => {
     if (isLoading) {
       return (
-        <div className="divide-y divide-border/50">
+        <LoadingRegion className="divide-y divide-border/50">
           {Array.from({ length: Math.min(pageSize > 0 ? pageSize : 5, 5) }, (_, cardIndex) => (
             <div key={`skeleton-card-${cardIndex}`} className="space-y-2 p-4">
               <Skeleton className="h-4 w-1/2" />
@@ -312,7 +313,7 @@ export function DataTable<T extends Record<string, any>>({
               <Skeleton className="h-3 w-2/3" />
             </div>
           ))}
-        </div>
+        </LoadingRegion>
       );
     }
 
@@ -400,7 +401,7 @@ export function DataTable<T extends Record<string, any>>({
   };
 
   return (
-    <div className={cn(rootClassName)} aria-busy={isLoading}>
+    <LoadingRegion loading={isLoading} className={cn(rootClassName)} aria-busy={isLoading}>
       {isMobile ? renderSortBar() : null}
       {/*
         The pane keeps its height and its own scroll on a phone as well. Letting
@@ -531,7 +532,7 @@ export function DataTable<T extends Record<string, any>>({
           }}
         />
       ) : null}
-    </div>
+    </LoadingRegion>
   );
 }
 

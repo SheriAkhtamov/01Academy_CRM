@@ -30,6 +30,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   URL.createObjectURL = vi.fn(() => 'blob:chat-preview'); URL.revokeObjectURL = vi.fn();
   mocks.api.mockImplementation(async (method, path: string, data: FormData | { receiverId: number; content: string }) => {
+    if (path.endsWith('/typing')) return;
     if (method === 'GET') {
       if (path.endsWith('/conversations') || path.endsWith('/online-status')) return people;
       return threads[Number(path.split('/').at(-1))] ?? [];
@@ -51,7 +52,7 @@ const mount = async () => {
   await screen.findByText('Media');
 };
 const input = () => screen.getByLabelText(i18n.t('attachmentsLabel'), { selector: 'input' });
-const posts = () => mocks.api.mock.calls.filter(([method]) => method === 'POST');
+const posts = () => mocks.api.mock.calls.filter(([method, path]) => method === 'POST' && path === '/api/messages');
 
 describe('employee chat files and presence', () => {
   it('renders photo, video controls and document downloads and opens the photo in a dialog', async () => {

@@ -11,6 +11,7 @@ import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import { UnsavedChangesDialog, useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { ChatGroupParticipantDto } from '@shared/contracts/chat-groups';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function AddChatParticipantsDialog({ participants, pending, error, onClose, onAdd }: {
   participants: ChatGroupParticipantDto[]; pending: boolean; error: string;
@@ -39,7 +40,7 @@ export function AddChatParticipantsDialog({ participants, pending, error, onClos
               <Label htmlFor="chat-add-member-search">{t('searchEmployees')}</Label>
               <Input id="chat-add-member-search" value={search} onChange={(event) => setSearch(event.target.value)} disabled={pending} />
               <div className="max-h-72 space-y-1 overflow-y-auto">
-                {employees.isPending ? <p>{t('loading')}</p> : null}
+                {employees.isPending ? <p><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : null}
                 {employees.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void employees.refetch()}>{t('retry')}</Button></div> : null}
                 {visible.map((employee) => <label key={employee.id} className="flex items-center gap-3 rounded-lg p-2 hover:bg-muted">
                   <Checkbox aria-label={employee.fullName} checked={selected.has(employee.id)}
@@ -58,7 +59,7 @@ export function AddChatParticipantsDialog({ participants, pending, error, onClos
         </div>
         <DialogFooter className="compact-modal-footer">
           <Button variant="outline" onClick={() => close(false)} disabled={pending}>{t('cancel')}</Button>
-          <Button onClick={() => {
+          <Button loading={pending} onClick={() => {
             if (pending || submitting.current || employees.isError || !ids.length) return;
             submitting.current = true;
             onAdd(ids);

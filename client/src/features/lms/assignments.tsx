@@ -617,7 +617,7 @@ export function AssignmentContent({
                   </p>
                 )}
                 <DialogFooter className="pt-2">
-                  <Button disabled={commentAction.isPending || !comment.trim()}>
+                  <Button loading={commentAction.isPending} disabled={commentAction.isPending || !comment.trim()}>
                     {t("portalSendComment")}
                   </Button>
                 </DialogFooter>
@@ -803,7 +803,7 @@ function AssignmentAnswer({
           </p>
         )}
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button
+          <Button loading={submit.isPending || uploading}
             type="submit"
             disabled={submit.isPending || uploading || draft.saving}
           >

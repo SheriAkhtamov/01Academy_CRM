@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const SOCIAL_ACCOUNT_LIMIT = 20;
 
@@ -364,7 +365,7 @@ export function LeadSocialAccountsEditor({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDraft(null)}>{t('cancel')}</Button>
-            <Button type="button" disabled={!canSave || saveAccount.isPending} onClick={requestSave}>
+            <Button loading={saveAccount.isPending} type="button" disabled={!canSave || saveAccount.isPending} onClick={requestSave}>
               {saveAccount.isPending ? t('saving') : t('saveSocialAccount')}
             </Button>
           </DialogFooter>
@@ -391,7 +392,7 @@ export function LeadSocialAccountsEditor({
                 event.preventDefault();
                 if (deleteTarget) requestDelete(deleteTarget);
               }}
-            >
+            >{(deleteAccount.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {deleteAccount.isPending ? t('deleting') : t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

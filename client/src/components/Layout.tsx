@@ -12,6 +12,7 @@ import { PageTransition } from '@/components/ux/motion';
 import { SPRING } from '@/lib/motion';
 import { isContainedModuleRoute } from '@/lib/containedModuleRoutes';
 import { PlatformLayout } from '@/components/ux/PlatformLayout';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -114,26 +115,14 @@ export default function Layout({ children }: LayoutProps) {
 }
 
 /**
- * Two counter-rotating arcs instead of one spinner ring — it reads as an
- * intentional loading state rather than a stalled browser throbber, and the
- * label fades up underneath so the pair lands together.
+ * Shared loading animation for route and authentication transitions.
+ * The label stays visible when reduced motion stops the orbit.
  */
 export function AppSpinner({ label }: { label: string }) {
   return (
-    <div className="flex min-h-dvh items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center" role="status" aria-label={label} aria-busy="true">
       <div className="text-center">
-        <div className="relative mx-auto mb-4 h-11 w-11">
-          <motion.span
-            className="absolute inset-0 rounded-full border-[3px] border-muted border-t-primary-600"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 0.9, ease: 'linear', repeat: Infinity }}
-          />
-          <motion.span
-            className="absolute inset-[6px] rounded-full border-2 border-transparent border-b-primary-500/70"
-            animate={{ rotate: -360 }}
-            transition={{ duration: 1.4, ease: 'linear', repeat: Infinity }}
-          />
-        </div>
+        <OrbitSpinner className="mx-auto mb-4 size-11 text-primary-600" />
         <motion.p
           className="text-sm text-muted-foreground"
           initial={{ opacity: 0, y: 4 }}

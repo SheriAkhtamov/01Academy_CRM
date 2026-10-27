@@ -30,6 +30,7 @@ import {
 } from "./ui";
 import { StaffEditor } from "./editor";
 import { StaffUploads, StaffFiles } from "./files";
+import { NativeCheckbox } from "@/components/ui/checkbox";
 export function StaffMaterials({
   runId,
   enrollments,
@@ -328,7 +329,7 @@ export function MaterialEditor({
           onBusyChange={setBusy}
         />
         <label className="flex min-h-11 items-center gap-3">
-          <input
+          <NativeCheckbox
             type="checkbox"
             checked={publish}
             onChange={(event) => setPublish(event.target.checked)}
@@ -358,7 +359,7 @@ export function MaterialEditor({
           </p>
         )}
         <div className="flex flex-wrap justify-end gap-3">
-          <Button type="submit" disabled={action.isPending || busy}>
+          <Button loading={action.isPending || busy} type="submit" disabled={action.isPending || busy}>
             {t(publish ? "lmsStaffPublish" : "lmsStaffSave")}
           </Button>
         </div>

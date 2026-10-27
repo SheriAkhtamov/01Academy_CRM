@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { QuantityStepper } from '@/components/ui/quantity-stepper';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GroupStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
 import { UnsavedChangesDialog } from '@/components/ux/UnsavedChangesGuard';
@@ -305,7 +306,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('groupCapacity')}</FormLabel>
-                        <FormControl><Input type="number" min="1" max={autoNaming && trainingType === 'IND' ? 1 : undefined} {...field} /></FormControl>
+                        <FormControl><QuantityStepper min="1" max={autoNaming && trainingType === 'IND' ? 1 : undefined} {...field} /></FormControl>
                         {(!autoNaming || trainingType !== 'IND') ? (
                           <QuickNumberPresets
                             options={CAPACITY_PRESETS}
@@ -473,7 +474,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     <FormField control={groupForm.control} name="lessonDurationMinutes" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('lessonDurationMinutes')}</FormLabel>
-                        <FormControl><Input type="number" min="15" step="15" {...field} /></FormControl>
+                        <FormControl><QuantityStepper min="15" step="15" {...field} /></FormControl>
                         <QuickNumberPresets
                           options={DURATION_PRESETS}
                           currentValue={Number(field.value)}
@@ -543,7 +544,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                   </Button>
                   {/* Without a course and a branch there is no code yet; saving then
                       points at those two fields instead of sitting greyed out. */}
-                  <Button type="submit" disabled={saveGroup.isPending
+                  <Button loading={saveGroup.isPending || (!editingGroup && codeCatalogue.isFetching)} type="submit" disabled={saveGroup.isPending
                     || (!editingGroup && (Boolean(groupCodeError) || codeCatalogue.isFetching))}>
                     {saveGroup.isPending ? t('saving') : editingGroup ? t('saveChanges') : t('createGroup')}
                   </Button>

@@ -1,4 +1,5 @@
 import { apiRequest } from '@/lib/queryClient';
+import type { ChatTypingRequest } from '@shared/contracts/chat-typing';
 import type { ChatGroupDetailsDto, ChatGroupDto, GroupMessageDto, CreateChatGroupRequest, LeaveChatGroupRequest } from '@shared/contracts/chat-groups';
 
 export const chatGroupKeys = {
@@ -7,6 +8,7 @@ export const chatGroupKeys = {
   messages: (id: number) => ['/api/chat-groups', id, 'messages'] as const,
 };
 export const chatGroupsApi = {
+  typing: (id: number, input: ChatTypingRequest): Promise<void> => apiRequest('POST', `/api/chat-groups/${id}/typing`, input),
   list: (): Promise<ChatGroupDto[]> => apiRequest('GET', '/api/chat-groups'),
   create: (input: CreateChatGroupRequest): Promise<ChatGroupDto> => apiRequest('POST', '/api/chat-groups', input),
   detail: (id: number): Promise<ChatGroupDetailsDto> => apiRequest('GET', `/api/chat-groups/${id}`),

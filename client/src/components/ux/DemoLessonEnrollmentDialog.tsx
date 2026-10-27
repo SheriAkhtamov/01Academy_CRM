@@ -6,7 +6,6 @@ import {
   CalendarPlus2,
   Check,
   Clock3,
-  Loader2,
   MapPin,
   Search,
   UsersRound,
@@ -35,6 +34,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const ACTIVE_PARTICIPANT_STATUSES = new Set(['invited', 'confirmed', 'attended', 'no_show']);
 
@@ -206,7 +206,7 @@ export function DemoLessonEnrollmentDialog({
             >
               {leadDetailsQuery.isLoading ? (
                 <div className="flex min-h-16 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 size-4 animate-spin" /> {t('loading')}
+                  <OrbitSpinner className="mr-2 size-4" /> {t('loading')}
                 </div>
               ) : leadDetailsQuery.isError ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -281,7 +281,7 @@ export function DemoLessonEnrollmentDialog({
                 </div>
               ) : demoQuery.isLoading ? (
                 <div className="flex min-h-28 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 size-4 animate-spin" /> {t('loading')}
+                  <OrbitSpinner className="mr-2 size-4" /> {t('loading')}
                 </div>
               ) : visibleDemos.length > 0 ? (
                 <div role="radiogroup" className="flex flex-col gap-2 pb-1" aria-label={t('enrollInDemoLesson')}>
@@ -376,7 +376,7 @@ export function DemoLessonEnrollmentDialog({
                 onClick={() => enroll.mutate()}
                 disabled={selectedStudentIds.length === 0 || !selectedDemoId || enroll.isPending}
               >
-                {enroll.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                {enroll.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : <Check data-icon="inline-start" />}
                 {enroll.isPending ? t('saving') : t('enrollInDemoLesson')}
               </Button>
             </div>

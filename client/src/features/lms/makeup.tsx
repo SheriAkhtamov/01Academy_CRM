@@ -304,7 +304,7 @@ function MakeupDetail({
       )}
       <DialogFooter className="flex-wrap border-t border-border/70 pt-4">
         {plan.status === "needed" && subject?.kind === "self" && available && (
-          <Button disabled={begin.isPending} onClick={() => begin.mutate()}>
+          <Button loading={begin.isPending} disabled={begin.isPending} onClick={() => begin.mutate()}>
             {t("portalMakeupStart")}
           </Button>
         )}

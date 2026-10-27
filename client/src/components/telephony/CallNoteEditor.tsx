@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, NotebookPen } from 'lucide-react';
+import { NotebookPen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -8,6 +8,7 @@ import { translations, type TranslationKey } from '@/lib/i18n';
 import { telephonyApi, telephonyQueryKeys } from '@/features/telephony/api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 /**
  * The note belongs to one conversation, so it is written where the manager is
@@ -95,7 +96,7 @@ export function CallNoteEditor({
           disabled={isUnchanged || saveNote.isPending}
           onClick={() => saveNote.mutate()}
         >
-          {saveNote.isPending ? <Loader2 className="animate-spin" /> : <NotebookPen />}
+          {saveNote.isPending ? <OrbitSpinner className="" /> : <NotebookPen />}
           {t('telephonyNote')}
         </Button>
       </div>

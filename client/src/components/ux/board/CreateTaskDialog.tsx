@@ -2,7 +2,7 @@ import { DateTimeInput } from '@/components/ui/date-time-input';
 import { BoardUserAvatar, BoardUserIdentity } from './BoardUserAvatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Loader2, Paperclip } from 'lucide-react';
+import { ClipboardList, Paperclip } from 'lucide-react';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
     DialogFooter,
@@ -39,6 +39,7 @@ import {
 import { PRIORITY_ORDER, TASK_COLOR_META, type BoardPriority, type BoardTaskColor, type UserMini } from '@/lib/boardTypes';
 import { cn } from '@/lib/utils';
 import { useUnsavedChangesGuard } from '@/components/ux/UnsavedChangesGuard';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface CreateTaskDialogProps {
     open: boolean;
@@ -285,7 +286,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated, users, current
                             {t('cancel')}
                         </Button>
                         <Button type="submit" disabled={!title.trim() || !assigneeId || mutation.isPending}>
-                            {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                            {mutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                             {mutation.isPending ? activeFile ? t('attachmentUploading') : t('saving') : mutation.isError ? t('attachmentRetry') : t('createTask')}
                         </Button>
                     </DialogFooter>

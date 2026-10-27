@@ -19,6 +19,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuantityStepper } from '@/components/ui/quantity-stepper';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -64,14 +65,20 @@ function ConfigEditor({ form, kpiRole, section, onSectionChange, idPrefix, hideF
   const [removeIndex, setRemoveIndex] = useState<number | null>(null);
   const values = form.watch();
   const fields = (items: typeof kpiPlanFieldGroups.targets) => <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-    {items.filter((field) => !field.role || field.role === role).map((field) => <div key={field.name} className="space-y-1.5">
-      <Label htmlFor={`${idPrefix}-${field.name}`} className="text-sm">{t(kpiFieldLabel(field, role))}</Label>
-      <Input id={`${idPrefix}-${field.name}`} type="number" min={field.min ?? 0} max={field.max ?? 1_000_000_000}
-        step={field.name.endsWith('Percent') ? '0.1' : '1'} aria-invalid={Boolean(form.formState.errors[field.name])}
-        aria-describedby={form.formState.errors[field.name] ? `${idPrefix}-error-${field.name}` : undefined}
-        {...form.register(field.name, { valueAsNumber: true })} />
-      {form.formState.errors[field.name] ? <p id={`${idPrefix}-error-${field.name}`} role="alert" className="text-xs text-destructive">{t('invalidData')}</p> : null}
-    </div>)}
+    {items.filter((field) => !field.role || field.role === role).map((field) => {
+      const NumberControl = field.quantity ? QuantityStepper : Input;
+      return (
+        <div key={field.name} className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-${field.name}`} className="text-sm">{t(kpiFieldLabel(field, role))}</Label>
+          <NumberControl id={`${idPrefix}-${field.name}`} type="number" min={field.min ?? 0} max={field.max ?? 1_000_000_000}
+            step={field.name.endsWith('Percent') ? '0.1' : '1'} aria-invalid={Boolean(form.formState.errors[field.name])}
+            aria-describedby={form.formState.errors[field.name] ? `${idPrefix}-error-${field.name}` : undefined}
+            {...form.register(field.name, { valueAsNumber: true })}
+            {...(field.quantity ? { value: Number.isFinite(values[field.name]) ? values[field.name] : '' } : {})} />
+          {form.formState.errors[field.name] ? <p id={`${idPrefix}-error-${field.name}`} role="alert" className="text-xs text-destructive">{t('invalidData')}</p> : null}
+        </div>
+      );
+    })}
   </div>;
   const bonusFields = kpiPlanFieldGroups.pay.filter((field) => !['baseSalaryUzs', 'variableSalaryUzs', 'minimumVolume'].includes(field.name));
   return <>
@@ -95,7 +102,7 @@ function ConfigEditor({ form, kpiRole, section, onSectionChange, idPrefix, hideF
           </fieldset>
           <section className="space-y-3"><h3 className="text-sm font-semibold">{role === 'hunter' ? t('kpiTrialBonus') : t('kpiStudentBonus')}</h3>
             {tiers.fields.map((tier, index) => <div key={tier.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-lg bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]">
-              <div className="col-span-2 min-w-0 space-y-1.5 sm:col-span-1"><Label htmlFor={`${idPrefix}-tier-from-${tier.id}`} className="text-xs">{t('kpiTierFrom')}</Label><Input id={`${idPrefix}-tier-from-${tier.id}`} type="number" min={1} readOnly={index === 0} aria-invalid={Boolean(form.formState.errors.tiers?.[index]?.from)} {...form.register(`tiers.${index}.from`, { valueAsNumber: true })} /></div>
+              <div className="col-span-2 min-w-0 space-y-1.5 sm:col-span-1"><Label htmlFor={`${idPrefix}-tier-from-${tier.id}`} className="text-xs">{t('kpiTierFrom')}</Label><QuantityStepper id={`${idPrefix}-tier-from-${tier.id}`} min={1} readOnly={index === 0} aria-invalid={Boolean(form.formState.errors.tiers?.[index]?.from)} {...form.register(`tiers.${index}.from`, { valueAsNumber: true })} value={Number.isFinite(values.tiers[index]?.from) ? values.tiers[index].from : ''} /></div>
               <div className="min-w-0 space-y-1.5"><Label htmlFor={`${idPrefix}-tier-rate-${tier.id}`} className="text-xs">{t('kpiTierRate')}</Label><Input id={`${idPrefix}-tier-rate-${tier.id}`} type="number" min={0} aria-invalid={Boolean(form.formState.errors.tiers?.[index]?.rateUzs)} {...form.register(`tiers.${index}.rateUzs`, { valueAsNumber: true })} /></div>
               <Button type="button" variant="ghost" size="icon" disabled={index === 0} aria-label={t('kpiRemoveTier')} onClick={() => setRemoveIndex(index)}><Trash2 className="size-4" /></Button>
             </div>)}
@@ -148,7 +155,7 @@ function DialogFooter({ pending, error, onCancel }: { pending: boolean; error: E
   return <>
     {error ? <p role="alert" className="shrink-0 px-5 pb-3 text-sm text-destructive">{error.message === t('kpiVersionConflict') ? t('kpiVersionConflict') : t('kpiRequestFailed')}</p> : null}
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-background px-5 py-4">
-      <div className="flex gap-2"><Button type="button" variant="outline" disabled={pending} onClick={onCancel}>{t('cancel')}</Button><Button type="submit" disabled={pending}>{t(pending ? 'saving' : 'save')}</Button></div>
+      <div className="flex gap-2"><Button type="button" variant="outline" disabled={pending} onClick={onCancel}>{t('cancel')}</Button><Button loading={pending} type="submit" disabled={pending}>{t(pending ? 'saving' : 'save')}</Button></div>
     </div>
   </>;
 }

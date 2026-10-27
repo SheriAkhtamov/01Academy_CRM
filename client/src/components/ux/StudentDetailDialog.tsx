@@ -22,6 +22,7 @@ import { learningCapabilitiesQuery } from '@/features/learning-rollout/api';
 import { StudentPortalAccessTab } from '@/features/portal-access/StudentPortalAccessTab';
 import { StudentContractTab } from '@/features/student-contracts/StudentContractTab';
 import './compact-modal.css';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type StudentDetailTab = 'learning' | 'attendance' | 'portfolio' | 'payments' | 'contract' | 'access';
 type StudentDetailDialogProps = Pick<StudentManagementProps, 'onUpdateStatus' | 'onAddGroup' | 'onRemoveGroup'> & {
@@ -355,9 +356,9 @@ export function StudentDetailDialog({
 function LoadingSection() {
   const { t } = useTranslation();
   return (
-    <div role="status" aria-label={t('loading')} className="space-y-2">
+    <LoadingRegion role="status" aria-label={t('loading')} className="space-y-2">
       <Skeleton className="h-14 w-full rounded-lg" />
       <Skeleton className="h-16 w-full rounded-lg" />
-    </div>
+    </LoadingRegion>
   );
 }

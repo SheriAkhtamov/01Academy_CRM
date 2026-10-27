@@ -180,7 +180,7 @@ export function AcademyLeadRoleDialog({ lead, onClose, onGranted }: {
           </div>
           <DialogFooter className="compact-modal-footer">
             <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => close(false)}>{t('cancel')}</Button>
-            <Button type="submit" disabled={mutation.isPending || !role}>{t(mutation.isPending ? 'loading' : 'academyAccessIssue')}</Button>
+            <Button loading={mutation.isPending} type="submit" disabled={mutation.isPending || !role}>{t(mutation.isPending ? 'loading' : 'academyAccessIssue')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

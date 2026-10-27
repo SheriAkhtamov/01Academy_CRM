@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { requestErrorShake } from "@/lib/errorShake";
 
 type PortalSelectOption = {
   value: string;
@@ -86,6 +87,7 @@ export function PortalSelect({
           onInvalid={(event) => {
             event.preventDefault();
             trigger.current?.focus();
+            requestErrorShake(trigger.current);
           }}
         >
           {!options.some((option) => option.value === "") && <option value="" />}

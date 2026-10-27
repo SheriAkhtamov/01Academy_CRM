@@ -5,7 +5,6 @@ import {
   Edit3,
   GitBranch,
   Globe2,
-  Loader2,
   PhoneCall,
   Plus,
   RadioTower,
@@ -49,6 +48,7 @@ import {
   websiteIntegrationDomain,
   type LeadIntegrationProvider,
 } from '@shared/lead-integrations';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 const FIXED_LEAD_SOURCE_PROVIDERS = [
   { provider: 'instagram', Icon: Camera },
@@ -473,7 +473,7 @@ export function SalesFunnelsPanel() {
                 {t('cancel')}
               </Button>
               <Button type="submit" disabled={!draft.name.trim() || saveFunnel.isPending}>
-                {saveFunnel.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+                {saveFunnel.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
                 {saveFunnel.isPending ? t('saving') : t('save')}
               </Button>
             </DialogFooter>
@@ -538,7 +538,7 @@ export function SalesFunnelsPanel() {
                 deleteFunnel.mutate();
               }}
             >
-              {deleteFunnel.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              {deleteFunnel.isPending ? <OrbitSpinner className="mr-1.5 h-4 w-4" /> : null}
               {deleteNeedsTransfer ? t('transferAndDeleteSalesFunnel') : t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

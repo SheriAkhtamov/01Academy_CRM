@@ -20,6 +20,7 @@ import { ChatGroupAvatar } from './ChatGroupAvatar';
 import { ChatGroupManageDialog } from './ChatGroupManageDialog';
 import { ChatGroupMediaDialog, chatMediaIcons, chatMediaLabels } from './ChatGroupMediaDialog';
 import { AddChatParticipantsDialog } from './AddChatParticipantsDialog';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 type Change = { kind: 'add'; ids: number[] }
   | { kind: 'remove'; id: number } | { kind: 'leave'; nextOwnerId?: number };
@@ -119,7 +120,7 @@ export function ChatGroupDetailsDialog({ group, onClose, onLeft }: { group: Chat
               <p className="text-sm text-muted-foreground">{t('chatGroupParticipantCount', { count: detail?.participantCount ?? group.participantCount })}</p>
             </div>
           </CompactModalSection>
-        {query.isPending ? <p>{t('loading')}</p> : null}
+        {query.isPending ? <p><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : null}
         {query.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void query.refetch()}>{t('retry')}</Button></div> : null}
         {detail ? <>
           <div className="flex flex-wrap gap-2">
@@ -127,7 +128,7 @@ export function ChatGroupDetailsDialog({ group, onClose, onLeft }: { group: Chat
             <Button variant="outline" className="text-destructive" disabled={change.isPending} onClick={() => request({ kind: 'leave' })}><LogOut className="size-4" />{t('chatGroupLeave')}</Button>
           </div>
           <CompactModalSection title={t('chatGroupMedia')} icon={ImageIcon} tone="violet" defaultOpen contentClassName="space-y-1">
-            {messages.isPending ? <p>{t('loading')}</p> : messages.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void messages.refetch()}>{t('retry')}</Button></div>
+            {messages.isPending ? <p><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p> : messages.isError ? <div role="alert">{t('failedToLoadData')} <Button variant="outline" onClick={() => void messages.refetch()}>{t('retry')}</Button></div>
               : CHAT_MEDIA_CATEGORIES.every((key) => catalog[key].length === 0) ? <p className="py-3 text-center text-sm text-muted-foreground">{t('chatGroupMediaEmpty')}</p> : CHAT_MEDIA_CATEGORIES.filter((key) => catalog[key].length > 0).map((key) => { const Icon = chatMediaIcons[key]; return <button key={key} type="button" className="flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={`${t(chatMediaLabels[key])} ${catalog[key].length}`} onClick={() => setMediaCategory(key)}><Icon className="size-5 shrink-0 text-primary" /><span className="flex-1">{t(chatMediaLabels[key])}</span><span className="text-sm tabular-nums text-muted-foreground">{catalog[key].length}</span><ChevronRight className="size-4" /></button>; })}
           </CompactModalSection>

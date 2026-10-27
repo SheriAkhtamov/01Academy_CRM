@@ -1,3 +1,4 @@
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, RefreshCw, Search, UserRoundPlus, X } from 'lucide-react';
@@ -101,7 +102,7 @@ export function AcademyPortalAccess() {
     },
   ];
 
-  if (capabilities.isPending) return <p role="status">{t('loading')}</p>;
+  if (capabilities.isPending) return <p role="status"><span className="inline-flex items-center gap-2"><OrbitSpinner />{t('loading')}</span></p>;
   if (capabilities.error) return <div role="alert" className="space-y-3">
     <p>{t('failedToLoadData')}</p>
     <Button variant="outline" onClick={() => void capabilities.refetch()}>{t('retry')}</Button>
@@ -127,7 +128,7 @@ export function AcademyPortalAccess() {
       <div className="flex items-center gap-3 sm:ml-auto">
         {query.data && <p className="text-sm tabular-nums text-muted-foreground" role="status">{t('navLeads')}: <span className="font-medium text-foreground">{query.data.total}</span></p>}
         <Button type="button" variant="outline" size="icon" aria-label={t('lmsStaffReload')} disabled={query.isFetching} onClick={refresh}>
-          <RefreshCw className={`size-4 ${query.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+          {query.isFetching ? <OrbitSpinner className="size-4" /> : <RefreshCw className="size-4" aria-hidden="true" />}
         </Button>
       </div>
     </div>

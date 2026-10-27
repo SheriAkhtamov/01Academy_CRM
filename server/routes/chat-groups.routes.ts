@@ -8,6 +8,7 @@ import type { ChatGroupRepository } from '../modules/chat/application/ports';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
 import { addChatGroupParticipantsSchema, createChatGroupSchema, leaveChatGroupSchema, renameChatGroupSchema, sendGroupMessageSchema } from '@shared/contracts/chat-groups';
 import { positiveIdSchema } from '@shared/contracts/messages';
+import { chatTypingRequestSchema } from '@shared/contracts/chat-typing';
 import { messageFilePath, parseMessageUpload, removeMessageFiles, uploadedMessageAttachment } from '../middleware/message-upload.middleware';
 
 const managementErrors = new Set(['resourceNotFound', 'invalidData', 'chatGroupManagementDenied', 'chatGroupOwnerProtected',
@@ -74,6 +75,21 @@ router.use('/:id', async (req, res, next) => {
   } catch (error) { logger.error('Failed to check chat group access', { error }); res.status(500).json({ error: 'failedToLoadData' }); }
 });
 registerChatGroupProfileRoutes(router, chatGroupStorage, announceChange, managementFailure);
+router.post('/:id/typing', (req, res) => {
+  const input = chatTypingRequestSchema.safeParse(req.body);
+  if (!input.success) return res.status(400).json({ error: 'invalidData' });
+  try {
+    publishRealtimeEvent({
+      type: 'CHAT_TYPING',
+      data: { ...input.data, kind: 'group', targetId: res.locals.groupId, senderId: req.user!.id },
+      audienceUserIds: (res.locals.memberIds as number[]).filter((id) => id !== req.user!.id),
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    logger.error('Failed to announce group chat activity', { error, userId: req.user?.id });
+    res.status(500).json({ error: 'updateFailed' });
+  }
+});
 router.get('/:id', async (req, res) => {
   try {
     const group = await chatGroupStorage.detail(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user));

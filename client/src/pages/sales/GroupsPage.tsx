@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { GroupsWorkspace } from '@/features/groups/GroupsWorkspace';
 import { groupConfigurationKey } from '@/features/groups/queries';
 import type { GroupConfiguration } from '@/features/groups/types';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 export default function GroupsPage() {
   const { t } = useTranslation();
@@ -15,9 +16,9 @@ export default function GroupsPage() {
   return <ModulePage contained>
     <PageHeader title={t('navGroups')} />
     <ModulePageBody contained ariaLabel={t('navGroups')}>
-      {configuration.isPending ? <div role="status" aria-label={t('loading')} className="space-y-4">
+      {configuration.isPending ? <LoadingRegion role="status" aria-label={t('loading')} className="space-y-4">
         <Skeleton className="h-44 w-full" /><Skeleton className="h-96 w-full" />
-      </div> : configuration.isError || !configuration.data ? <Card>
+      </LoadingRegion> : configuration.isError || !configuration.data ? <Card>
         <CardHeader><CardTitle>{t('failedToLoadData')}</CardTitle></CardHeader>
         <CardContent><Button onClick={() => void configuration.refetch()}>{t('retry')}</Button></CardContent>
       </Card> : <GroupsWorkspace configuration={configuration.data} basePath="/sales/groups" showTitle={false} />}

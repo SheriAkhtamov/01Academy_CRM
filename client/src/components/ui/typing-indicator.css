@@ -1,0 +1,22 @@
+.typing-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+  animation: typing-indicator-hop 1.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.typing-indicator-dot:nth-last-child(2) { animation-delay: 160ms; }
+.typing-indicator-dot:last-child { animation-delay: 320ms; }
+
+@keyframes typing-indicator-hop {
+  0%, 40%, 100% { transform: translateY(0); opacity: 0.8; }
+  20% { transform: translateY(-4px); opacity: 1; }
+}
+
+.typing-indicator[data-typing-paused='true'] .typing-indicator-dot { animation-play-state: paused; }
+.typing-indicator[data-typing-motion='off'] .typing-indicator-dot,
+:root[data-motion='off'] .typing-indicator-dot { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator-dot { animation: none; }
+}

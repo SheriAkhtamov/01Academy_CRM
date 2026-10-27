@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,6 +23,7 @@ import { setActivePlatformRealm } from '@/lib/platformSession';
 import { isLearningModulePath, isLegacyLearningPath, isPlatformAccountPath, learningModuleBase, learningModuleForSubject, learningModuleFromPath, toLearningModuleHref } from '@shared/platform-routes';
 import { resolveLoginRealm } from '@/lib/session';
 import { localizeApiErrorMessage } from '@/lib/queryClient';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export default function Login() {
   const [error, setError] = useState('');
@@ -246,7 +247,7 @@ export default function Login() {
                       from resizing mid-submit, which would shift the card. */}
                   {(isLoading || isSubmitting) ? (
                     <>
-                      <Loader2 className="animate-spin" />
+                      <OrbitSpinner className="" />
                       {t('loading')}
                     </>
                   ) : t('signIn')}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Loader2, Save, Undo2 } from 'lucide-react';
+import { CheckCircle2, Save, Undo2 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,6 +7,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }: {
   dirty: boolean; pending: boolean; saveDisabled?: boolean; onDiscard: () => void;
@@ -29,7 +30,7 @@ export function LeadSaveBar({ dirty, pending, onDiscard, saveDisabled = false }:
           </Button>
         ) : null}
         <Button data-lead-processing type="submit" form="lead-details-form" size="sm" className="h-8 rounded-lg shadow-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100" disabled={!dirty || pending || saveDisabled}>
-          {pending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+          {pending ? <OrbitSpinner className="" data-icon="inline-start" /> : <Save data-icon="inline-start" />}
           {pending ? t('saving') : t('saveChanges')}
         </Button>
       </div>

@@ -1,4 +1,3 @@
-import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
     AlertDialog,
@@ -12,6 +11,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useTranslation } from '@/hooks/useTranslation';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface ConfirmDialogProps {
     open: boolean;
@@ -131,7 +131,7 @@ export default function ConfirmDialog({
                         }}
                         className={variant === 'destructive' ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : ''}
                     >
-                        {busy ? <Loader2 aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                        {busy ? <OrbitSpinner aria-hidden="true" className="mr-1.5 h-4 w-4" /> : null}
                         {busy ? t('confirmProcessing') : confirmLabel || t('ok')}
                     </AlertDialogAction>
                 </AlertDialogFooter>

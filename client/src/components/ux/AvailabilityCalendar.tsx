@@ -21,6 +21,7 @@ import {
   RefreshCw,
   UserRoundCheck,
 } from 'lucide-react';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface AvailabilityCalendarProps {
   schoolId?: number | null;
@@ -203,9 +204,9 @@ export function AvailabilityCalendar({
       </div>
 
       {availability.isLoading ? (
-        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
+        <LoadingRegion className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
           {days.map((day) => <Skeleton key={day.toISOString()} className="h-14 rounded-lg" />)}
-        </div>
+        </LoadingRegion>
       ) : (
         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
           {days.map((day) => {
@@ -306,11 +307,11 @@ export function AvailabilityCalendar({
       ) : null}
 
       {availability.isLoading ? (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+        <LoadingRegion className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
           {[0, 1, 2, 3, 4, 5].map((index) => (
             <Skeleton key={index} className="h-14 rounded-lg" />
           ))}
-        </div>
+        </LoadingRegion>
       ) : !availability.isError ? (
         groupedSlots.length > 0 ? (
           <div className="flex flex-col gap-2.5">

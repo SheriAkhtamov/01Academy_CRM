@@ -22,7 +22,6 @@ import {
   Check,
   CircleDollarSign,
   Clock3,
-  Loader2,
   Plus,
   ReceiptText,
   RotateCcw,
@@ -78,6 +77,7 @@ import {
 import { useStickyState } from '@/hooks/useStickyState';
 import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
 import { payrollEntryKey, type ExpenseRegistryRow, type Row } from '@/lib/financeRows';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface DashboardData {
   period: string;
@@ -748,7 +748,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               </FieldGroup>
             </CompactModalSection>
           </div>
-          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={createExpense.isPending} onClick={() => expenseGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={createExpense.isPending} onClick={() => expenseGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!canSaveExpense} onClick={() => createExpense.mutate()}>{createExpense.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.saveExpense}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -767,7 +767,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Field><FieldLabel htmlFor="salary-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
             </CompactModalSection>
           </div>
-          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={saveSalary.isPending} onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={saveSalary.isPending} onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -791,7 +791,7 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Field><FieldLabel htmlFor="payout-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
             </CompactModalSection>
           </div>
-          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={savePayout.isPending} onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={savePayout.isPending} onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

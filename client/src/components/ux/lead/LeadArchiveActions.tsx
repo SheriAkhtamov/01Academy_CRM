@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, Loader2 } from 'lucide-react';
+import { Archive, ArchiveRestore } from 'lucide-react';
 import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import type { ArchiveLeadRequest, RestoreLeadRequest } from '@shared/contracts/academy-leads';
 import { leadQueryKeys, leadsApi } from '@/features/leads/api';
@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface ArchiveActionLead {
   id: number;
@@ -134,7 +135,7 @@ export function LeadArchiveActions({
           className="min-w-0 px-1 text-xs sm:px-3 sm:text-sm [&>svg]:hidden sm:[&>svg]:block"
           disabled={mutation.isPending}
         >
-          {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" />
+          {mutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" />
             : isArchived ? <ArchiveRestore data-icon="inline-start" /> : <Archive data-icon="inline-start" />}
           {isArchived ? t('restoreLead') : t('archiveLeadShort')}
         </Button>
@@ -206,7 +207,7 @@ export function LeadArchiveActions({
             disabled={!valid || mutation.isPending}
             onClick={confirm}
           >
-            {mutation.isPending ? <Loader2 className="animate-spin" data-icon="inline-start" /> : null}
+            {mutation.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}
             {mutation.isPending ? t('saving') : isArchived ? t('restoreLead')
               : needsManager && canClaimUnassignedLead ? t('assignToMeAndArchive') : t('sendToArchive')}
           </Button>

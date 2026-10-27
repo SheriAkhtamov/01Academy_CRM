@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { UserPlus, Check, Loader2, Trash2, ArrowLeftRight } from 'lucide-react';
+import { UserPlus, Check, Trash2, ArrowLeftRight } from 'lucide-react';
 import AddAccountModal from '@/components/modals/AddAccountModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export default function AccountSwitcher() {
   const { user } = useAuth();
@@ -121,7 +122,7 @@ export default function AccountSwitcher() {
                       </p>
                     </div>
                     {isSwitching ? (
-                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      <OrbitSpinner className="h-4 w-4 shrink-0" />
                     ) : (
                       <button
                         onClick={(e) => handleRemoveClick(account, e)}

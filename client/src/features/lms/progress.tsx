@@ -315,7 +315,7 @@ export function PortalProgress() {
             </Card>
           )}
           {history.hasNextPage && (
-            <Button
+            <Button loading={history.isFetchingNextPage}
               variant="outline"
               disabled={history.isFetchingNextPage}
               onClick={() => {
@@ -823,7 +823,7 @@ function ComparisonEditor({
       )}
       {canEdit && (
         <DialogFooter className="border-t border-border/70 pt-4">
-          <Button
+          <Button loading={action.isPending}
             disabled={
               !valid || action.isPending || (Boolean(query.data) && !dirty)
             }

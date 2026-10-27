@@ -1,7 +1,8 @@
 import { TimePicker } from '@/components/ui/time-picker';
 import { useState } from 'react';
-import { CircleAlert, Clock, CopyCheck, RotateCcw } from 'lucide-react';
+import { CircleAlert, Clock, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -155,7 +156,7 @@ export function WeekScheduleEditor({
   };
 
   const copyFirstRow = () => {
-    if (!firstItem) return;
+    if (!firstItem) return false;
     onChange(value.map((item) => ({
       ...item,
       startTime: firstItem.startTime,
@@ -194,17 +195,18 @@ export function WeekScheduleEditor({
             </Button>
           );
         })}
-        <Button
+        <CopyButton
           type="button"
           variant="ghost"
           size="sm"
           className="h-7 gap-1.5 px-2 text-xs"
           disabled={disabled || value.length < 2}
-          onClick={copyFirstRow}
+          onCopy={copyFirstRow}
+          iconClassName="size-3.5"
+          copiedLabel={t('lmsStaffCopied')}
         >
-          <CopyCheck className="size-3.5" aria-hidden="true" />
           {t('scheduleCopyFirstRow')}
-        </Button>
+        </CopyButton>
         <Button
           type="button"
           variant="ghost"

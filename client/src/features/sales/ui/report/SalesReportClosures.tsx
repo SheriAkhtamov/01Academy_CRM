@@ -3,6 +3,7 @@ import { LEAD_ARCHIVE_REASONS } from '@shared/academy';
 import type { SalesActivityReport } from '@shared/contracts/sales-report';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Skeleton } from '@/components/ui/skeleton';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 const COLORS = ['#647bd6', '#9b7bd4', '#d29b55', '#4eaaa2', '#92a2bb', '#c57d99', '#83a779', '#8493c3'];
 
@@ -31,9 +32,9 @@ export function SalesReportClosures({ report }: { report?: SalesActivityReport }
       <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
       <h3 className="text-sm font-semibold">{t('salesReportClosedReasons')}</h3>
     </header>
-    {!report ? <div className="grid gap-6 p-6 sm:grid-cols-[240px_minmax(0,1fr)]">
+    {!report ? <LoadingRegion className="grid gap-6 p-6 sm:grid-cols-[240px_minmax(0,1fr)]">
       <Skeleton className="mx-auto size-52 rounded-full" /><Skeleton className="h-52 w-full rounded-xl" />
-    </div> : <div className="grid items-center gap-6 p-5 sm:p-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+    </LoadingRegion> : <div className="grid items-center gap-6 p-5 sm:p-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
       <div className="relative mx-auto flex size-56 items-center justify-center">
         <svg viewBox="0 0 200 200" className="size-full -rotate-90" role="img"
           aria-label={`${t('salesReportClosedReasons')}: ${segments.map(item => `${label(item.reason)} ${number.format(item.count)}`).join('; ') || number.format(0)}`}>

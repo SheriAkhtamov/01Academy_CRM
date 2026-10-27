@@ -1,0 +1,49 @@
+.checkbox-mark { pointer-events: none; }
+.checkbox-tick { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+.checkbox-mixed { opacity: 0; }
+
+.checkbox-root[data-state='checked'] .checkbox-tick,
+.native-checkbox:checked:not(:indeterminate) + .checkbox-mark .checkbox-tick {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition: stroke-dashoffset 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.checkbox-root[data-state='indeterminate'] .checkbox-mixed,
+.native-checkbox:indeterminate + .checkbox-mark .checkbox-mixed { opacity: 1; }
+
+/* Keep the platform palette for native inputs; explicit brand accents retain theirs. */
+.native-checkbox-frame { --native-checkbox-accent: Highlight; --native-checkbox-ink: HighlightText; }
+@supports (color: AccentColor) {
+  .native-checkbox-frame { --native-checkbox-accent: AccentColor; --native-checkbox-ink: AccentColorText; }
+}
+.native-checkbox-frame:has(> .accent-primary) {
+  --native-checkbox-accent: var(--primary);
+  --native-checkbox-ink: var(--primary-foreground);
+}
+.native-checkbox { background: Field; border-color: GrayText; }
+.native-checkbox:checked { background: var(--native-checkbox-accent); border-color: var(--native-checkbox-accent); }
+.native-checkbox-frame > .checkbox-mark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--native-checkbox-ink);
+}
+.native-checkbox:indeterminate { background: Field; }
+.native-checkbox:indeterminate + .checkbox-mark { color: var(--native-checkbox-accent); }
+.native-checkbox:disabled + .checkbox-mark { opacity: 0.5; }
+
+[data-checkbox-motion='off'] .checkbox-tick,
+:root[data-motion='off'] .checkbox-tick { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .checkbox-tick { transition: none !important; }
+}
+@media (forced-colors: active) {
+  .checkbox-root { forced-color-adjust: none; border-color: ButtonText !important; color: ButtonText !important; }
+  .checkbox-root[data-state='checked'] { background: Highlight !important; color: HighlightText !important; }
+  .native-checkbox-frame {
+    forced-color-adjust: none;
+    --native-checkbox-accent: Highlight !important;
+    --native-checkbox-ink: HighlightText !important;
+  }
+}

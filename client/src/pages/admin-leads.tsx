@@ -38,6 +38,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, ArrowRightLeft, Trash2, UsersRound } from 'lucide-react';
 import { getAssignedModules } from '@shared/academy';
 import type { SalesFunnel } from '@/features/sales-funnels/api';
+import { LoadingRegion } from '@/components/ui/loading-region';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export interface AdminLead {
   id: number;
@@ -489,11 +491,11 @@ export function LeadAssignmentContent() {
         <Card>
           <CardContent className="p-0">
             {leadsQuery.isLoading || usersQuery.isLoading || statusesQuery.isLoading || funnelsQuery.isLoading ? (
-              <div className="flex flex-col gap-3 p-4">
+              <LoadingRegion className="flex flex-col gap-3 p-4">
                 {Array.from({ length: 6 }, (_, index) => (
                   <Skeleton key={index} className="h-14 w-full" />
                 ))}
-              </div>
+              </LoadingRegion>
             ) : (
               <DataTable
                 columns={columns}
@@ -556,7 +558,7 @@ export function LeadAssignmentContent() {
                 event.preventDefault();
                 bulkAssign.mutate();
               }}
-            >
+            >{(bulkAssign.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {bulkAssign.isPending ? t('saving') : t('assignSelected')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -590,7 +592,7 @@ export function LeadAssignmentContent() {
                   assignLead.mutate({ leadId: reassignTarget.lead.id, managerId: reassignTarget.managerId });
                 }
               }}
-            >
+            >{(assignLead.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {t('transfer')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -618,7 +620,7 @@ export function LeadAssignmentContent() {
                 event.preventDefault();
                 if (deleteLeadTarget) deleteLead.mutate(deleteLeadTarget.id);
               }}
-            >
+            >{(deleteLead.isPending) && <OrbitSpinner className="mr-1.5 size-4" />}
               {deleteLead.isPending ? t('saving') : t('deleteLead')}
             </AlertDialogAction>
           </AlertDialogFooter>

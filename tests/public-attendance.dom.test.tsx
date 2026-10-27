@@ -219,6 +219,26 @@ it('filters the remaining students as marks are saved and restores the full list
   expect(screen.getByText('Adham Zokirov')).toBeTruthy();
 });
 
+it('expands mobile roster search from its icon and shortcut, filters and restores focus on close', async () => {
+  window.matchMedia = vi.fn((query) => ({ matches: query === '(max-width: 760px)', addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia;
+  const user = await setup();
+  const searchLabel = i18n.t('publicAttendanceSearch');
+  expect(screen.queryByRole('searchbox', { name: searchLabel })).toBeNull();
+  await user.click(screen.getByRole('button', { name: searchLabel }));
+  const search = screen.getByRole('searchbox', { name: searchLabel }) as HTMLInputElement;
+  expect(document.activeElement).toBe(search);
+  await user.type(search, 'Mikrokreditbank');
+  expect(screen.queryByText('Adham Zokirov')).toBeNull();
+  expect(screen.getByText('Albert Aliyev')).toBeTruthy();
+  await user.click(screen.getByRole('button', { name: i18n.t('clearSearch') }));
+  expect(search.value).toBe('');
+  expect(document.activeElement).toBe(search);
+  await user.keyboard('{Escape}');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: searchLabel }));
+  await user.keyboard('/');
+  expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: searchLabel }));
+});
+
 it('navigates to a past lesson with one click on its date', async () => {
   const user = await setup();
   await user.click(screen.getByRole('button', { name: /^Урок 1 ·/ }));

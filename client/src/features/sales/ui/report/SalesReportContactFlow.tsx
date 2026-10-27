@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
 import { salesReportUnitKey } from '../../report-labels';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 type ContactRow = { key: keyof SalesContactBreakdown; labelKey: TranslationKey; color: string };
 const attempts: ContactRow[] = [
@@ -32,7 +33,7 @@ export function SalesReportContactFlow({ report }: { report?: SalesActivityRepor
       <h3 className="flex items-center gap-2.5 text-sm font-semibold"><PhoneCall className="size-4 text-muted-foreground" aria-hidden="true" />{t('salesReportFirstContact')}</h3>
       {report ? <span className="text-xs tabular-nums text-muted-foreground">{t('salesReportPeriodLeadCount', { count: number.format(total) })}</span> : null}
     </header>
-    {!report ? <div className="grid gap-6 p-5 md:grid-cols-2"><Skeleton className="h-64" /><Skeleton className="h-64" /></div> :
+    {!report ? <LoadingRegion className="grid gap-6 p-5 md:grid-cols-2"><Skeleton className="h-64" /><Skeleton className="h-64" /></LoadingRegion> :
       <div className="grid gap-8 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <table className="w-full table-fixed text-xs">
           <thead><tr className="text-[11px] text-muted-foreground">

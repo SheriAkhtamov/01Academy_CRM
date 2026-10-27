@@ -565,7 +565,7 @@ export function PortalDay() {
               )}
               {!notice.read && (
                 <DialogFooter className="border-t border-border/70 pt-4">
-                  <Button
+                  <Button loading={readAnnouncement.isPending}
                     variant="outline"
                     disabled={readAnnouncement.isPending}
                     onClick={() => readAnnouncement.mutate(notice.id)}

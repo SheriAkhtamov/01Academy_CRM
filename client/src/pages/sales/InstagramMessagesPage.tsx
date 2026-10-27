@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy-button';
+import { ExpandingSearch } from '@/components/ui/expanding-search';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -37,11 +39,9 @@ import {
   CheckCheck,
   ChevronLeft,
   Clock3,
-  Copy,
   CornerUpLeft,
   ExternalLink,
   Image as ImageIcon,
-  Loader2,
   Maximize2,
   MessageCircle,
   Plus,
@@ -57,6 +57,8 @@ import {
   UserRoundCog,
   X,
 } from 'lucide-react';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
+import { LoadingRegion } from '@/components/ui/loading-region';
 
 interface InstagramConversation {
   id: number;
@@ -562,7 +564,7 @@ function AttachmentMedia({
 
 function MessagesSkeleton() {
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 p-6 lg:p-8">
+    <LoadingRegion className="mx-auto max-w-[1600px] space-y-6 p-6 lg:p-8">
       <Skeleton className="h-10 w-72" />
       <div className="grid h-[calc(100dvh-9rem)] min-h-[30rem] grid-cols-1 grid-rows-[minmax(0,1fr)] rounded-lg border border-border bg-card xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="hidden flex-col gap-3 border-r border-border p-4 xl:flex">
@@ -605,7 +607,7 @@ function MessagesSkeleton() {
           <Skeleton className="h-8 w-44" />
         </div>
       </div>
-    </div>
+    </LoadingRegion>
   );
 }
 
@@ -770,7 +772,6 @@ export default function MessagesPage() {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [replyToDelete, setReplyToDelete] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState('');
-  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [sortByUnread, setSortByUnread] = useState<boolean>(() => {
     try {
       return localStorage.getItem('ig_sort_unread_v1') === '1';
@@ -1277,17 +1278,15 @@ export default function MessagesPage() {
     });
   };
 
-  const copyMessage = async (text: string, id: number) => {
-    if (!text) return;
+  const copyMessage = async (text: string) => {
+    if (!text) return false;
     setActiveMessageId(null);
     try {
       await navigator.clipboard.writeText(text);
     } catch {
       toast({ title: t('copyFailed'), variant: 'destructive' });
-      return;
+      return false;
     }
-    setCopiedId(id);
-    window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 1400);
   };
 
   const replyToMessage = (message: ThreadMessage) => {
@@ -1386,7 +1385,7 @@ export default function MessagesPage() {
             disabled={syncRunning}
           >
             {syncRunning ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <OrbitSpinner className="h-4 w-4" />
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
@@ -1408,7 +1407,7 @@ export default function MessagesPage() {
         >
           <div className="flex min-w-0 items-center gap-2">
             {syncStatus?.status === 'running' ? (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              <OrbitSpinner className="h-4 w-4 shrink-0" />
             ) : (
               <Clock3 className="h-4 w-4 shrink-0" />
             )}
@@ -1437,7 +1436,7 @@ export default function MessagesPage() {
                 onClick={() => syncConversations.mutate()}
                 disabled={syncRunning}
               >
-                {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {syncRunning ? <OrbitSpinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                 {syncRunning ? t('instagramSyncing') : t('instagramSync')}
               </Button>
             </div>
@@ -1482,7 +1481,7 @@ export default function MessagesPage() {
                       onClick={() => syncConversations.mutate()}
                       disabled={syncRunning}
                     >
-                      {syncRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {syncRunning ? <OrbitSpinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
@@ -1663,7 +1662,7 @@ export default function MessagesPage() {
             >
               {selectedConversation ? (
                 <>
-                  <div className="flex items-center gap-3 border-b border-border bg-background p-3 sm:p-4">
+                  <div className="flex flex-wrap items-center gap-3 border-b border-border bg-background p-3 sm:p-4">
                     <Button
                       type="button"
                       variant="ghost"
@@ -1687,7 +1686,7 @@ export default function MessagesPage() {
                         )}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 basis-24">
                       <p className="truncate font-semibold text-foreground">
                         {selectedConversation.participantUsername
                           ? `@${selectedConversation.participantUsername}`
@@ -1711,18 +1710,22 @@ export default function MessagesPage() {
                         ].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    <div className="ml-auto flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t('search')}
-                        onClick={() => setConversationSearchOpen((value) => !value)}
-                        className={conversationSearchOpen ? 'bg-muted text-primary' : ''}
-                      >
-                        <Search className="h-4 w-4" />
-                      </Button>
-                      <span className="inline-flex">
+                    <div className={cn('ml-auto flex min-w-0 max-w-full items-center justify-end gap-1', conversationSearchOpen && 'max-sm:basis-full')}>
+                      <ExpandingSearch
+                        key={selectedConversation.id}
+                        value={conversationSearch}
+                        onValueChange={setConversationSearch}
+                        expanded={conversationSearchOpen}
+                        onExpandedChange={setConversationSearchOpen}
+                        placeholder={t('searchInConversation')}
+                        aria-label={t('searchInConversation')}
+                      />
+                      {conversationSearchQuery ? (
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground" aria-live="polite">
+                          {threadMatchCount}
+                        </span>
+                      ) : null}
+                      <span className="inline-flex shrink-0">
                         <Button
                           type="button"
                           variant="ghost"
@@ -1740,45 +1743,6 @@ export default function MessagesPage() {
                     </div>
                   </div>
 
-                  {conversationSearchOpen ? (
-                    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 sm:px-4">
-                      <div className="relative flex-1">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          autoFocus
-                          value={conversationSearch}
-                          onChange={(event) => setConversationSearch(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              setConversationSearch('');
-                              setConversationSearchOpen(false);
-                            }
-                          }}
-                          placeholder={t('searchInConversation')}
-                          aria-label={t('searchInConversation')}
-                          className="pl-9"
-                        />
-                      </div>
-                      {conversationSearchQuery ? (
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {threadMatchCount}
-                        </span>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t('close')}
-                        onClick={() => {
-                          setConversationSearch('');
-                          setConversationSearchOpen(false);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : null}
-
                   {!selectedCanReply ? (
                     <p role="status" className="mx-4 mt-4 text-sm text-muted-foreground">{t('instagramMessagingWindowExpiredTitle')}</p>
                   ) : null}
@@ -1788,7 +1752,7 @@ export default function MessagesPage() {
                       ref={conversationScrollRef}
                       className="h-full"
                     >
-                      <div className="space-y-1 px-4 py-4">
+                      <LoadingRegion loading={messagesQuery.isLoading} className="space-y-1 px-4 py-4">
                         {messagesQuery.isLoading ? (
                           Array.from({ length: 5 }).map((_, index) => (
                             <Skeleton key={index} className={`h-16 w-2/3 ${index % 2 ? 'ml-auto' : ''}`} />
@@ -1876,7 +1840,7 @@ export default function MessagesPage() {
                                 {message.pending ? (
                                   <span className="inline-flex items-center gap-1" title={t('sendingMessage')}>
                                     {t('sendingMessage')}
-                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    <OrbitSpinner className="h-3 w-3" />
                                   </span>
                                 ) : message.failed ? null : showReceiptCheck ? (
                                   <span
@@ -1943,18 +1907,15 @@ export default function MessagesPage() {
                                       >
                                         <CornerUpLeft className="h-3.5 w-3.5" />
                                       </button>
-                                      <button
+                                      <CopyButton
                                         type="button"
+                                        unstyled
+                                        iconClassName="size-3.5"
+                                        resetKey={message.content}
                                         className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-primary"
                                         aria-label={t('copy')}
-                                        onClick={() => copyMessage(message.content, message.id)}
-                                      >
-                                        {copiedId === message.id ? (
-                                          <Check className="h-3.5 w-3.5 text-emerald-600" />
-                                        ) : (
-                                          <Copy className="h-3.5 w-3.5" />
-                                        )}
-                                      </button>
+                                        onCopy={() => copyMessage(message.content)}
+                                      />
                                     </div>
                                   ) : null}
                                   {attachments.map((attachment, index) => (
@@ -1998,7 +1959,7 @@ export default function MessagesPage() {
                             );
                           })
                         )}
-                      </div>
+                      </LoadingRegion>
                     </ScrollArea>
 
                     {!atBottom && messages.length > 0 ? (
@@ -2191,7 +2152,7 @@ export default function MessagesPage() {
                         disabled={!draft.trim() || draft.length > composerMaxLength || !selectedCanReply || sendMessage.isPending}
                         aria-label={t('sendMessage')}
                       >
-                        {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        {sendMessage.isPending ? <OrbitSpinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>

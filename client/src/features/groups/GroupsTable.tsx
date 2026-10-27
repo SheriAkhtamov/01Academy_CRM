@@ -2,7 +2,7 @@ import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { DataTable, type DataTableColumn } from '@/components/ux/DataTable';
 import { Button } from '@/components/ui/button';
 import { GroupStatusBadge } from '@/components/ux/teacher/TeacherStatusBadge';
-import { Archive, ArchiveRestore, Edit3, Loader2, Trash2, UserX } from 'lucide-react';
+import { Archive, ArchiveRestore, Edit3, Trash2, UserX } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Group } from './types';
@@ -16,6 +16,7 @@ import {
   summarizeSchedule,
 } from './presentation';
 import { useGroupLabels } from './useGroupLabels';
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface GroupsTableProps {
   groups: Group[];
@@ -187,7 +188,7 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
                   onClick={() => onRestore(row)}
                 >
                   {restoringId === row.id ? (
-                    <Loader2 className="animate-spin" data-icon="inline-start" />
+                    <OrbitSpinner className="" data-icon="inline-start" />
                   ) : (
                     <ArchiveRestore data-icon="inline-start" />
                   )}
@@ -214,7 +215,7 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
                 onClick={() => onArchive(row)}
               >
                 {isArchiving ? (
-                  <Loader2 className="animate-spin" />
+                  <OrbitSpinner className="" />
                 ) : (
                   <Archive />
                 )}

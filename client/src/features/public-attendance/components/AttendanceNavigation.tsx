@@ -1,3 +1,4 @@
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, LogOut, MoreVertical, RotateCcw } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -49,12 +50,12 @@ export function AttendancePageMenu({ refreshing, onRefresh, onSignOut }: { refre
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button type="button" className="pa-menu-button" aria-label={t('publicAttendanceMenu')}>
-          {refreshing ? <RotateCcw className="animate-spin" aria-hidden="true" /> : <MoreVertical aria-hidden="true" />}
+          {refreshing ? <OrbitSpinner /> : <MoreVertical aria-hidden="true" />}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[13rem]">
         <DropdownMenuItem className="gap-2" disabled={refreshing} onSelect={onRefresh}>
-          <RotateCcw className={refreshing ? 'animate-spin' : undefined} aria-hidden="true" />{t('adminRefresh')}
+          {refreshing ? <OrbitSpinner /> : <RotateCcw aria-hidden="true" />}{t('adminRefresh')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuGroup aria-label={t('switchLanguage')}>

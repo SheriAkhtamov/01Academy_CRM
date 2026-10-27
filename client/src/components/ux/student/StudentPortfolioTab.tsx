@@ -4,7 +4,6 @@ import {
   File,
   FolderOpen,
   Link,
-  Loader2,
   Plus,
   Upload,
   X,
@@ -25,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompactModalSection } from "@/components/ux/CompactModalSection";
+import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 export function StudentPortfolioTab({
   studentId,
@@ -261,7 +261,7 @@ export function StudentPortfolioTab({
             </Button>
             <Button type="submit" size="sm" className="h-7 px-2.5 text-xs" disabled={save.isPending}>
               {save.isPending ? (
-                <Loader2 data-icon="inline-start" className="size-3.5 animate-spin" />
+                <OrbitSpinner data-icon="inline-start" className="size-3.5" />
               ) : (
                 <Plus className="size-3.5" data-icon="inline-start" />
               )}

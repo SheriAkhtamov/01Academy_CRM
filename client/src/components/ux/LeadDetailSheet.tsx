@@ -1,4 +1,5 @@
 import { LeadQualificationAction } from '@/features/leads/ui/LeadQualificationAction';
+import { LeadStageAction } from '@/features/leads/ui/LeadStageAction';
 import '@/components/ux/lead/lead-workspace.css';
 import { DateTimeInput } from '@/components/ui/date-time-input';
 import { useLeadVersionReview } from '@/features/leads/useLeadVersionReview';
@@ -1089,6 +1090,9 @@ export function LeadDetailSheet({
               )}
               workflowActions={(
                 <>
+                  <LeadStageAction key={`stage-${lead.id}-${lead.funnelId}`}
+                    lead={lead} statuses={funnelStatuses} onChanged={onChanged}
+                    disabled={leadReadOnly || updateLead.isPending || transferFunnel.isPending} />
                   <LeadQualificationAction key={`${lead.id}-${lead.funnelId}`} leadId={lead.id} funnelId={lead.funnelId}
                     disabled={leadReadOnly || Boolean(lead.isArchived)} />
                   {!lead.isArchived ? (

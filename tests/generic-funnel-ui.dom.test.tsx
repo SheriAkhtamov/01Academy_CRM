@@ -64,6 +64,25 @@ it('uses the archived row funnel for restoring even when other funnels are avail
   expect(onRestore).toHaveBeenCalledExactlyOnceWith(90, 'custom_b');
 });
 
+it('keeps archived lead rows in a scrollable pane with pagination outside that pane', () => {
+  render(<ArchiveTab t={(key) => i18n.t(key)} leads={[{ id: 90, funnelId: 8, contactName: 'Archived parent', statusCode: 'custom_b' }]}
+    funnels={funnels} activePipelineStatuses={statuses} leadStatusName={(code) => code}
+    archiveReasonName={(value) => value ?? ''} dateTime={(value) => value ?? ''}
+    onLeadClick={vi.fn()} onRestore={vi.fn()} isPending={false} />);
+  const scroller = screen.getByRole('table').closest('.overflow-auto')!;
+  expect(scroller).not.toBeNull();
+  for (const className of ['min-h-0', 'flex-1', 'overflow-auto']) {
+    expect(scroller.classList.contains(className)).toBe(true);
+  }
+  const root = scroller.parentElement!;
+  for (const className of ['flex', 'h-full', 'min-h-0', 'flex-col']) {
+    expect(root.classList.contains(className)).toBe(true);
+  }
+  expect(root.getAttribute('aria-busy')).toBe('false');
+  const pagination = within(root).getByRole('navigation');
+  expect(scroller.contains(pagination)).toBe(false);
+});
+
 it('highlights only the current stage without marking earlier stages as completed', () => {
   render(<LeadStageStepper statuses={statuses.filter((stage) => stage.funnelId === 7)} currentStatusCode="demo_attended" leadStatusName={(code) => statuses.find((stage) => stage.code === code)?.name ?? code} />);
   const stages = screen.getByRole('group', { name: i18n.t('pipelineStages') });

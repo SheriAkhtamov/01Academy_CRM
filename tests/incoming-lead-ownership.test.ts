@@ -512,6 +512,24 @@ describe('external lead ownership', () => {
     else expect(link).toBeUndefined();
   });
 
+  it('retains Meta attribution after navigation and assigns the course requested on the current page', async () => {
+    const landingPageUrl = 'https://01academy.uz/ru/meta/courses/explorer?utm_id=120250568461990410&utm_term=120250568462000410&utm_medium=ig';
+    const response = await request(createApp()).post('/api/incoming/website-lead')
+      .set('authorization', 'Bearer wsl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+      .send({ name: 'Navigation Client', phone: '+998904445566',
+        submissionId: '00000000-0000-4000-8000-000000000001',
+        pageUrl: 'https://01academy.uz/uz/courses/creator', landingPageUrl, courseId: 'creator' });
+    expect(response.status).toBe(201);
+    expect(response.body.comment).toContain('AI Creator');
+    expect(response.body.comment).toContain('https://01academy.uz/uz/courses/creator');
+    expect(mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('SELECT id FROM academy_courses'))?.[1])
+      .toEqual(['ai-creator']);
+    const attribution = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO meta_lead_attributions'))?.[1];
+    expect(attribution?.[2]).toBe(landingPageUrl);
+    expect(attribution?.[4]).toBe('120250568462000410');
+    expect(attribution?.[5]).toBe('120250568461990410');
+  });
+
   it('rolls back the lead and comment if its Meta acquisition cannot be saved', async () => {
     const defaultQuery = mocks.clientQuery.getMockImplementation()!;
     mocks.clientQuery.mockImplementation((sqlValue, params) => {

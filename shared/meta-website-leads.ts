@@ -28,7 +28,7 @@ export function resolveMetaWebsiteLanding(pageUrl: string | null, siteDomain: st
     if (!id || !(id in courses)) return null;
     const courseId = id as keyof typeof courses;
     const utm: Record<string, string> = {};
-    for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']) {
+    for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id']) {
       const value = url.searchParams.get(key)?.trim().slice(0, 500);
       if (value) utm[key] = value;
     }
@@ -37,10 +37,39 @@ export function resolveMetaWebsiteLanding(pageUrl: string | null, siteDomain: st
       return /^\d{3,120}$/.test(value) ? value : null;
     };
     return { courseId, ...courses[courseId], pageUrl, utm,
-      adId: metaId('ad_id'), adsetId: metaId('adset_id'), campaignId: metaId('campaign_id') };
+      adId: metaId('ad_id'), adsetId: metaId('adset_id') ?? metaId('utm_term'),
+      campaignId: metaId('campaign_id') ?? metaId('utm_id') };
   } catch {
     return null;
   }
+}
+
+/** Keep the advertising entry point even when the visitor changes page or language.
+ * The selected course describes the request; the source URL describes the ad visit.
+ */
+export function resolveMetaWebsiteSubmission(
+  pageUrl: string | null,
+  landingPageUrl: string | null,
+  siteDomain: string,
+  selectedCourseId?: unknown,
+): MetaWebsiteLanding | null {
+  const landing = resolveMetaWebsiteLanding(landingPageUrl, siteDomain)
+    ?? resolveMetaWebsiteLanding(pageUrl, siteDomain);
+  if (!landing) return null;
+  let currentCourseId: string | undefined;
+  try {
+    const current = new URL(pageUrl ?? '');
+    if (['https:', 'http:'].includes(current.protocol)
+      && current.hostname.toLowerCase().replace(/^www\./, '') === '01academy.uz') {
+      currentCourseId = /^\/(?:ru|uz)\/(?:meta\/)?courses\/(explorer|creator|professional)\/?$/
+        .exec(current.pathname)?.[1];
+    }
+  } catch { /* A missing current URL does not discard a valid advertising entry. */ }
+  const id = typeof selectedCourseId === 'string' && Object.prototype.hasOwnProperty.call(courses, selectedCourseId)
+    ? selectedCourseId : currentCourseId;
+  if (!id) return landing;
+  const courseId = id as keyof typeof courses;
+  return { ...landing, courseId, ...courses[courseId] };
 }
 
 export const isWebsiteSubmissionId = (value: unknown): value is string => typeof value === 'string'

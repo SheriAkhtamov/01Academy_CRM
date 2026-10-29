@@ -21,7 +21,7 @@ import { resolveLeadFunnelId } from '../services/lead-funnels';
 import { websiteIntegrationProvider } from '../services/website-integrations';
 import { authenticateWebsiteLeadToken } from '../services/website-lead-tokens';
 import { buildWebsiteLeadComment } from '../services/website-lead-comment';
-import { isWebsiteSubmissionId, META_WEBSITE_SOURCE, resolveMetaWebsiteLanding } from '@shared/meta-website-leads';
+import { isWebsiteSubmissionId, META_WEBSITE_SOURCE, resolveMetaWebsiteSubmission } from '@shared/meta-website-leads';
 import { findMetaWebsiteReceipt, resolveMetaWebsiteCourseId, saveMetaWebsiteAttribution } from '../services/meta-website-attribution';
 
 const router = Router();
@@ -357,11 +357,12 @@ router.post('/website-lead', websiteLeadLimiter, async (req, res) => {
     const team = nullableText(body.team, 255);
     const message = nullableText(body.message ?? body.comment, 2000);
     const pageUrl = nullableText(body.pageUrl ?? body.page, 2000);
+    const landingPageUrl = nullableText(body.landingPageUrl, 2000);
     const language = nullableText(body.locale ?? body.language, 20) ?? '';
     const campaign = nullableText(body.sourceLabel ?? body.source ?? pageUrl, 255);
     const integrationProvider = websiteIntegrationProvider(siteDomain);
     const integrationPayload = { ...body, siteDomain };
-    const metaLanding = resolveMetaWebsiteLanding(pageUrl, siteDomain);
+    const metaLanding = resolveMetaWebsiteSubmission(pageUrl, landingPageUrl, siteDomain, body.courseId);
     const submissionId = typeof body.submissionId === 'string' ? body.submissionId.toLowerCase() : '';
 
     if (!contactName) return res.status(400).json({ error: 'contactNameRequired' });

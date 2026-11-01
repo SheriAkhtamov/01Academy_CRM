@@ -98,7 +98,7 @@ describe('lead modal behavior', () => {
       id: 15,
       contactName: 'Initial parent',
       statusCode: 'new_request',
-      sourceId: 1,
+      sourceId: 1, language: 'ru',
       createdAt: '2026-08-01T08:00:00.000Z',
       updatedAt: '2026-08-01T08:00:00.000Z',
       phoneNumbers: [],
@@ -139,7 +139,7 @@ describe('lead modal behavior', () => {
       statusCode: 'paid',
       managerId: 1,
       managerName: 'Sales Manager',
-      sourceId: 1,
+      sourceId: 1, language: 'ru',
       expectedPaymentUzs: 100_000,
       createdAt: '2026-08-01T08:00:00.000Z',
       updatedAt: '2026-08-01T08:00:00.000Z',
@@ -222,7 +222,7 @@ describe('lead modal behavior', () => {
 
 it('preselects the student whose profile opened the lead payment form', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-    id: 15, contactName: 'Parent', statusCode: 'paid', managerId: 1, sourceId: 1,
+    id: 15, contactName: 'Parent', statusCode: 'paid', managerId: 1, sourceId: 1, language: 'ru',
     expectedPaymentUzs: 100_000, createdAt: '2026-10-01', updatedAt: '2026-10-01',
     phoneNumbers: [], payments: [], students: [
       { id: 50, studentName: 'First child', status: 'studying', expectedPaymentUzs: 100_000 },

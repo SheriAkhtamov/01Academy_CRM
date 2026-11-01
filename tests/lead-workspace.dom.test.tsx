@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LeadDetailSheet } from '../client/src/components/ux/LeadDetailSheet';
@@ -725,25 +725,106 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests[0].body.language).toBe('ru');
   });
 
-  it('keeps an unspecified language empty when saving other lead changes', async () => {
+  it('allows opening and browsing a lead without choosing a language', async () => {
     lead.language = '';
     const { user } = renderSheet();
     await screen.findByRole('heading', { name: 'Test parent' });
-    for (const checkbox of screen.getAllByRole('checkbox')) {
-      expect((checkbox as HTMLInputElement).checked).toBe(false);
-    }
-    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Updated parent' } });
-    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
-    await waitFor(() => expect(requests).toHaveLength(1));
-    expect(requests[0].body).toMatchObject({ language: '', languages: [] });
+    expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
+    expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull();
+    expect(requests).toEqual([]);
   });
 
-  it('allows clearing the last selected language and saves the empty selection', async () => {
+  it('requires and saves a language before the first edit without saving other fields', async () => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Updated parent' } });
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('selectCommunicationLanguage') });
+    expect(requests).toEqual([]);
+    expect((within(dialog).getByRole('button', { name: i18n.t('saveChanges') }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(within(dialog).getByRole('checkbox', { name: i18n.t('uzbekLang') }));
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].body).toEqual({ language: 'uz', languages: ['uz'], expectedUpdatedAt: lead.updatedAt });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull());
+    expect((screen.getByRole('checkbox', { name: i18n.t('uzbekLang') }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('does not allow saving an empty language selection after processing', async () => {
     const { user } = renderSheet();
     await user.click(await screen.findByRole('checkbox', { name: i18n.t('russian') }));
     await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await screen.findByText(i18n.t('selectCommunicationLanguage'));
+    expect(requests).toEqual([]);
+    expect(screen.getByRole('group', { name: i18n.t('communicationLanguage') }).getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('can choose a language in the main form and save it together with other changes', async () => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await user.click(await screen.findByRole('checkbox', { name: i18n.t('russian') }));
+    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Updated parent' } });
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
     await waitFor(() => expect(requests).toHaveLength(1));
-    expect(requests[0].body).toMatchObject({ language: '', languages: [] });
+    expect(requests[0].body).toMatchObject({ contactName: 'Updated parent', language: 'ru', languages: ['ru'] });
+    expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull();
+  });
+
+  it('saves the language before an independent action and keeps other edits as drafts', async () => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await user.click(await screen.findByRole('checkbox', { name: i18n.t('russian') }));
+    fireEvent.change(screen.getByLabelText(i18n.t('contactPersonName')), { target: { value: 'Unsaved parent' } });
+    await user.click(screen.getByRole('tab', { name: i18n.t('payment') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('recordPayment') }));
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('selectCommunicationLanguage') });
+    expect((within(dialog).getByRole('checkbox', { name: i18n.t('russian') }) as HTMLInputElement).checked).toBe(true);
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull());
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body).toEqual({ languages: ['ru'], language: 'ru', expectedUpdatedAt: initialLead.updatedAt });
+    expect(lead.contactName).toBe('Test parent');
+    await user.click(screen.getByRole('tab', { name: i18n.t('dealTab') }));
+    expect((screen.getByLabelText(i18n.t('contactPersonName')) as HTMLInputElement).value).toBe('Unsaved parent');
+    // A subsequent task/stage update must not turn this language-only save
+    // into a false conflict with the remaining contact draft.
+    await act(async () => {
+      lead.updatedAt = '2026-11-01T09:00:00.000Z';
+      await queryClient.refetchQueries({ queryKey: ['/api/academy/leads', 15] });
+    });
+    await user.click(screen.getByRole('button', { name: i18n.t('saveChanges') }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1].body.contactName).toBe('Unsaved parent');
+  });
+
+  it.each(['createTask', 'recordPayment', 'moveLeadToStage'] as const)('requires a language before %s', async action => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    if (action === 'createTask') await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('taskBoard')) }));
+    if (action === 'recordPayment') await user.click(screen.getByRole('tab', { name: i18n.t('payment') }));
+    await user.click(screen.getByRole('button', { name: i18n.t(action) }));
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('selectCommunicationLanguage') });
+    expect(requests).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('cancel') }));
+    expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull();
+    expect(requests).toEqual([]);
+  });
+
+  it('requires a language before writing a comment but allows a first call', async () => {
+    lead.language = '';
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('callShort') }));
+    const callDialog = await screen.findByRole('dialog', { name: i18n.t('chooseLeadCallPhone') });
+    await user.click(within(callDialog).getByRole('button', { name: i18n.t('cancel') }));
+    expect(screen.queryByRole('dialog', { name: i18n.t('selectCommunicationLanguage') })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: new RegExp(i18n.t('activityTab')) }));
+    await user.type(screen.getByRole('textbox', { name: i18n.t('leadWorkspaceNote') }), 'N');
+    await screen.findByRole('dialog', { name: i18n.t('selectCommunicationLanguage') });
+    expect(requests).toEqual([]);
   });
 
   it('requires confirmation before removing a phone and persists only on save', async () => {

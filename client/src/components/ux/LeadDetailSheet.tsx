@@ -9,8 +9,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, type FieldErrors, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
-import { leadsApi } from '@/features/leads/api';
+import { leadQueryKeys, leadsApi } from '@/features/leads/api';
 import { leadProcessingGuard } from '@/features/leads/lead-processing-guard';
+import { LeadLanguageDialog } from '@/features/leads/ui/LeadLanguageDialog';
 import { leadRequiredFieldKeys } from '@/features/leads/create-lead-form';
 import { phoneOwnerNamesFor, phoneOwnersFromRows } from '@shared/lead-phone-owners';
 import { invalidateLeadData, useLeadDetailsQuery, type LeadInvalidationOptions } from '@/features/leads/queries';
@@ -329,7 +330,7 @@ const leadSchema = z.object({
   phoneNumbers: z.array(optionalPhoneString).min(1).refine(uniquePhoneNumbers, 'duplicatePhoneInForm'),
   phoneOwnerNames: z.array(z.string().trim().max(255, 'invalidData')),
   sourceId: z.string().min(1, leadRequiredFieldKeys.sourceId),
-  languages: z.array(z.enum(LEAD_LANGUAGES)),
+  languages: z.array(z.enum(LEAD_LANGUAGES)).min(1, 'selectCommunicationLanguage'),
   locality: z.union([z.enum(LEAD_LOCALITIES), z.literal('')]),
   studyDays: z.union([z.enum(LEAD_STUDY_DAYS), z.literal('')]),
   studyTime: z.string().refine((value) => !value || LEAD_STUDY_TIMES.includes(value), 'invalidData'),
@@ -395,6 +396,20 @@ const leadToFormValues = (lead: LeadDetails): LeadFormValues => ({
   urgency: lead.urgency ?? '',
 });
 
+const leadFormSnapshotKey = (lead: LeadDetails) => [
+  lead.id,
+  lead.contactName,
+  (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
+  JSON.stringify(lead.phoneOwners ?? {}),
+  lead.sourceId ?? '',
+  selectedLeadLanguages(lead.languages, lead.language).join(','),
+  lead.locality ?? '',
+  lead.studyDays ?? '',
+  lead.studyTime ?? '',
+  lead.goal ?? '',
+  lead.urgency ?? '',
+].join('|');
+
 export function LeadDetailSheet({
   leadId,
   open,
@@ -442,6 +457,8 @@ export function LeadDetailSheet({
   const [commentDraft, setCommentDraft] = useState('');
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const [socialAccountsDirty, setSocialAccountsDirty] = useState(false);
+  const [languageDialogOpen, setLanguageDialogOpen] = useState(false);
+  useEffect(() => { setLanguageDialogOpen(false); }, [leadId, open]);
   const studentsCardRef = useRef<HTMLDetailsElement | null>(null);
   const contactsCardRef = useRef<HTMLDetailsElement | null>(null);
   const detailsCardRef = useRef<HTMLDetailsElement | null>(null);
@@ -540,19 +557,7 @@ export function LeadDetailSheet({
   const leadSnapshotKey = useMemo(() => {
     const lead = leadQuery.data;
     if (!lead) return null;
-    return [
-      lead.id,
-      lead.contactName,
-      (lead.phoneNumbers?.length ? lead.phoneNumbers : lead.phone ? [lead.phone] : ['']).join(','),
-      JSON.stringify(lead.phoneOwners ?? {}),
-      lead.sourceId ?? '',
-      selectedLeadLanguages(lead.languages, lead.language).join(','),
-      lead.locality ?? '',
-      lead.studyDays ?? '',
-      lead.studyTime ?? '',
-      lead.goal ?? '',
-      lead.urgency ?? '',
-    ].join('|');
+    return leadFormSnapshotKey(lead);
   }, [leadQuery.data]);
 
   const transientSnapshotKey = useMemo(() => {
@@ -1024,7 +1029,11 @@ export function LeadDetailSheet({
           event.preventDefault();
           sheetRef.current?.focus();
         }}
-        {...leadProcessingGuard(canClaimLead, () => { if (currentUserId) setPendingManagerId(currentUserId); })}
+        {...leadProcessingGuard(canClaimLead, () => { if (currentUserId) setPendingManagerId(currentUserId); }, {
+          required: Boolean(lead && !leadReadOnly && !selectedLeadLanguages(lead.languages, lead.language).length),
+          hasDraft: languages.length > 0,
+          requestSelection: () => setLanguageDialogOpen(true),
+        })}
         className="lead-workspace flex h-[100dvh] w-full flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-4xl"
         onKeyDown={(event) => {
           if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"]') !== event.currentTarget) return;
@@ -1205,7 +1214,7 @@ export function LeadDetailSheet({
                               control={leadForm.control}
                               name="languages"
                               render={({ field }) => (
-                                <FormItem className="space-y-1">
+                                <FormItem data-lead-language-field className="space-y-1">
                                   <FormLabel>{t('communicationLanguage')}</FormLabel>
                                   <FormControl>
                                     <div ref={field.ref} role="group" aria-label={t('communicationLanguage')} tabIndex={-1} className="flex flex-wrap gap-1.5 rounded-lg aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -1294,35 +1303,39 @@ export function LeadDetailSheet({
                               {t('addPhone')}
                             </Button>
                           </div>
-                          <LeadSocialAccountsEditor
-                            leadId={lead.id}
-                            leadName={lead.contactName}
-                            managerId={lead.managerId}
-                            channels={lead.channels}
-                            canClaimUnassignedLead={canClaimUnassignedLead}
-                            onDirtyChange={setSocialAccountsDirty}
-                            onChanged={async () => {
+                          <div data-lead-language-immediate>
+                            <LeadSocialAccountsEditor
+                              leadId={lead.id}
+                              leadName={lead.contactName}
+                              managerId={lead.managerId}
+                              channels={lead.channels}
+                              canClaimUnassignedLead={canClaimUnassignedLead}
+                              onDirtyChange={setSocialAccountsDirty}
+                              onChanged={async () => {
+                                await leadQuery.refetch();
+                                onChanged();
+                              }}
+                            />
+                          </div>
+                        </LeadWorkspaceSection>
+
+                        <div data-lead-language-immediate>
+                          <LeadStudentsCard
+                            cardRef={studentsCardRef}
+                            expanded={openSections.students}
+                            disabled={leadReadOnly || updateLead.isPending}
+                            onExpandedChange={(isOpen) => setSectionOpen('students', isOpen)}
+                            createStudentOpen={createStudentOpen}
+                            onCreateStudentOpenChange={setCreateStudentOpen}
+                            lead={lead}
+                            groups={groups}
+                            onRefresh={async () => {
+                              hydratedTransientKey.current = null;
                               await leadQuery.refetch();
                               onChanged();
                             }}
                           />
-                        </LeadWorkspaceSection>
-
-                        <LeadStudentsCard
-                          cardRef={studentsCardRef}
-                          expanded={openSections.students}
-                          disabled={leadReadOnly || updateLead.isPending}
-                          onExpandedChange={(isOpen) => setSectionOpen('students', isOpen)}
-                          createStudentOpen={createStudentOpen}
-                          onCreateStudentOpenChange={setCreateStudentOpen}
-                          lead={lead}
-                          groups={groups}
-                          onRefresh={async () => {
-                            hydratedTransientKey.current = null;
-                            await leadQuery.refetch();
-                            onChanged();
-                          }}
-                        />
+                        </div>
 
                         <LeadWorkspaceSection
                           section="details"
@@ -1980,6 +1993,30 @@ export function LeadDetailSheet({
           mergeLeads.mutate({ retainedLeadId: Number(duplicateHint.id), duplicateLeadId: lead.id });
         }}
       />
+      {languageDialogOpen && lead && open ? <LeadLanguageDialog
+        key={lead.id}
+        lead={lead}
+        initialLanguages={languages}
+        expectedUpdatedAt={editVersion.current ?? lead.updatedAt}
+        onClose={() => setLanguageDialogOpen(false)}
+        onConflict={() => { setVersionConflict(true); void leadQuery.refetch(); }}
+        onSaved={updated => {
+          const current = queryClient.getQueryData<LeadDetails>(leadQueryKeys.detail(updated.id));
+          if (current?.updatedAt && updated.updatedAt
+            && new Date(current.updatedAt).getTime() > new Date(updated.updatedAt).getTime()) {
+            setVersionConflict(true);
+            void leadQuery.refetch();
+            return;
+          }
+          editVersion.current = updated.updatedAt;
+          leadForm.reset(leadToFormValues(updated), { keepDirtyValues: true });
+          leadForm.setValue('languages', selectedLeadLanguages(updated.languages, updated.language), { shouldDirty: true, shouldValidate: true });
+          hydratedLeadKey.current = leadFormSnapshotKey(updated);
+          hydratedLeadId.current = updated.id;
+          queryClient.setQueryData(leadQueryKeys.detail(updated.id), updated);
+          onChanged();
+        }}
+      /> : null}
       <UnsavedChangesDialog
         open={unsavedGuard.confirmationOpen}
         onOpenChange={unsavedGuard.setConfirmationOpen}

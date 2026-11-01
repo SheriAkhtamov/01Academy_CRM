@@ -15,7 +15,7 @@ vi.mock('../client/src/hooks/use-toast', () => ({ toast }));
 
 const initialLead = {
   id: 15, funnelId: 7, contactName: 'Parent', statusCode: 'intake', sourceId: 1,
-  managerId: 18 as number | null, managerName: 'Manager', isArchived: false,
+  managerId: 18 as number | null, managerName: 'Manager', isArchived: false, language: 'ru',
   createdAt: '2026-10-01T08:00:00.000Z', updatedAt: '2026-10-01T08:00:00.000Z',
   phoneNumbers: ['+998901234567'], students: [], payments: [], tasks: [], comments: [],
 };

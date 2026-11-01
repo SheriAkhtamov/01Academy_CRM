@@ -110,6 +110,7 @@ export function LeadWorkspaceHeader({
       <fieldset data-lead-processing disabled={actionsDisabled} className="lead-workspace-actions flex flex-wrap gap-1.5">
         {primaryPhone ? (
           <Button
+            data-lead-language-optional
             type="button"
             size="sm" className="max-w-full whitespace-normal"
             variant="default"

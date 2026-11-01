@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
-import { Linter } from 'eslint';
+import { ESLint, Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { describe, expect, it } from 'vitest';
 import crmA11y from '../scripts/eslint-a11y.mjs';
@@ -66,6 +66,37 @@ describe('accessibility rules in ESLint', () => {
     expect(lint('<div onClick={close} aria-hidden="true"/>')).toEqual([]);
     expect(lint('<div onClick={(event) => event.stopPropagation()}/>')).toEqual([]);
     expect(lint('<div onClick={(event) => { event.stopPropagation(); save(); }}/>')).toHaveLength(1);
+  });
+});
+
+describe('ESLint dependency compatibility', () => {
+  it.each([
+    'client/src/LintDependencyFixture.tsx',
+    'server/modules/leads/LintDependencyFixture.ts',
+    'shared/contracts/LintDependencyFixture.ts',
+    'tests/LintDependencyFixture.test.ts',
+  ])('continues checking repository files after the minimatch update: %s', async (filePath) => {
+    const eslint = new ESLint({ cwd: root });
+    const config = await eslint.calculateConfigForFile(filePath);
+    expect(config.rules['react-hooks/rules-of-hooks'][0]).toBe(2);
+    const [result] = await eslint.lintText('export const value = 1;', { filePath });
+    expect(result.messages).toEqual([]);
+  });
+
+  it('still reports missing alternative text and invalid ARIA roles through the project config', async () => {
+    const eslint = new ESLint({ cwd: root });
+    const [result] = await eslint.lintText(
+      'export const View = () => <div role="invalid-role"><img /></div>;',
+      { filePath: 'client/src/LintDependencyFixture.tsx' },
+    );
+    expect(result.messages.map(message => message.ruleId).sort()).toEqual(['jsx-a11y/alt-text', 'jsx-a11y/aria-role']);
+  });
+
+  it('keeps generated files excluded by the project ignore patterns', async () => {
+    const eslint = new ESLint({ cwd: root });
+    expect(await eslint.isPathIgnored(path.join(root, 'dist/public/generated.js'))).toBe(true);
+    expect(await eslint.isPathIgnored(path.join(root, 'node_modules/example/index.js'))).toBe(true);
+    expect(await eslint.isPathIgnored(path.join(root, 'client/src/App.tsx'))).toBe(false);
   });
 });
 

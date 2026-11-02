@@ -4,6 +4,7 @@ import { apiRequest, throwIfResNotOk } from '@/lib/queryClient';
 export type CreatePaymentInput = {
   leadId: number;
   studentId: number;
+  groupId?: number;
   amountUzs: number;
   method: string;
   type: string;

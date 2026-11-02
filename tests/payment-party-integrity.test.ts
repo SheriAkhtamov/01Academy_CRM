@@ -127,15 +127,17 @@ describe('payment party integrity', () => {
     mocks.getWorkforcePolicy.mockResolvedValue({ salesPhoneVisibility: 'own_leads' });
   });
 
-  const prepareInvoices = (studentId: number | null, invoices: Record<string, any>[], ignoreScope = false) => {
+  const prepareInvoices = (studentId: number | null, invoices: Record<string, any>[], ignoreScope = false, allowGroup = true) => {
     const lead = leadFixture({ enrolled_group_id: 20 });
     const student = { id: studentId, lead_id: 42, manager_id: 1, group_id: 20, status: 'studying' };
     mocks.clientQuery.mockImplementation(async (sql: string, values: any[] = []) => {
       if (sql.includes('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE') || sql.includes('FROM academy_leads l')) return { rows: [lead] };
       if (sql.includes('SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE')) return { rows: [{ id: 42 }] };
+      if (sql.includes('SELECT * FROM academy_groups WHERE id=$1 FOR UPDATE')) return {rows:[{id:values[0],status:'planned',is_archived:false}]};
+      if (sql.includes('FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2')) return {rows:allowGroup ? [{id:7}] : []};
       if (sql.includes('SELECT * FROM academy_students')) return { rows: studentId ? [student] : [] };
       if (sql.includes("WHERE status IN ('pending', 'overdue')")) {
-        const selected = invoices.filter((invoice) => invoice.status === 'pending' && invoice.period === values[0])
+        const selected = invoices.filter((invoice) => invoice.status === 'pending' && invoice.period === values[0] && (values[3] == null || invoice.group_id === values[3]))
           .find((invoice) => ignoreScope || (values[2] != null
             ? invoice.student_id === values[2]
             : invoice.lead_id === values[1] && invoice.student_id == null));
@@ -191,6 +193,30 @@ describe('payment party integrity', () => {
     expect(invoices[0]).toMatchObject({ student_id: 5, status: 'pending', amount_uzs: 100000 });
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('UPDATE "academy_payments"'))).toBe(false);
+  });
+
+  it('keeps a future-group payment on that group when the pupil has another primary group', async () => {
+    const invoices = [pending(99, 6)];
+    prepareInvoices(6, invoices);
+    const response = await pay({leadId:42,studentId:6,groupId:31});
+    expect(response.status).toBe(201);
+    expect(invoices[0]).toMatchObject({group_id:20,status:'pending',amount_uzs:100000});
+    expect(invoices[1]).toMatchObject({group_id:31,student_id:6,status:'paid',amount_uzs:450000});
+  });
+
+  it('rejects an explicit invoice from another group without changing it', async () => {
+    const invoices = [pending(99,6)];
+    prepareInvoices(6,invoices);
+    expect((await pay({leadId:42,studentId:6,groupId:31,paymentId:99})).status).toBe(400);
+    expect(invoices[0]).toMatchObject({group_id:20,status:'pending'});
+    expect(mocks.clientQuery.mock.calls.some(([sql])=>sql.includes('UPDATE "academy_payments"'))).toBe(false);
+  });
+
+  it('rejects payment for a group where the pupil has no booking', async () => {
+    const invoices: Record<string, any>[] = [];
+    prepareInvoices(6,invoices,false,false);
+    expect((await pay({leadId:42,studentId:6,groupId:31})).status).toBe(409);
+    expect(invoices).toHaveLength(0);
   });
 
   it.each(['administration', 'sales'])('rejects an explicit empty legacy task assignee for %s', async (module) => {

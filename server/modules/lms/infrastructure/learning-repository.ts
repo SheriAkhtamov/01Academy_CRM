@@ -923,7 +923,7 @@ export class PgLearningRepository {
        FROM academy_groups g LEFT JOIN lms_group_runs run ON run.group_id=g.id LEFT JOIN lms_course_versions pinned ON pinned.id=run.course_version_id
        LEFT JOIN academy_courses course ON course.id=COALESCE(pinned.course_id,g.course_id) LEFT JOIN academy_courses crm_course ON crm_course.id=g.course_id
        LEFT JOIN LATERAL(SELECT new_value FROM lms_learning_audit WHERE entity_type='crm_group_preparation' AND entity_id=g.id AND action='crm.prepared' ORDER BY id DESC LIMIT 1) preparation ON true
-       LEFT JOIN academy_teachers teacher_name ON teacher_name.id=g.teacher_id WHERE ($1 OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$2 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$2 AND p.permission=ANY($3::text[]))) AND ($4::bigint[] IS NULL OR g.id=ANY($4)) ORDER BY g.name`,
+       LEFT JOIN academy_teachers teacher_name ON teacher_name.id=g.teacher_id WHERE ($1 OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=g.teacher_id AND teacher.user_id=$2 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions p WHERE p.user_id=$2 AND p.permission=ANY($3::text[]))) AND g.status <> 'planned' AND ($4::bigint[] IS NULL OR g.id=ANY($4)) ORDER BY g.name`,
       [
         actor.isLeadership,
         actor.userId,

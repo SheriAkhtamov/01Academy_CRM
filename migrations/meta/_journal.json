@@ -1184,6 +1184,13 @@
       "when": 1792936800000,
       "tag": "0168_meta_website_submissions",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1793620800000,
+      "tag": "0169_future_groups",
+      "breakpoints": true
     }
   ]
 }

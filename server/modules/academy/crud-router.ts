@@ -1,3 +1,4 @@
+import { startWaitingGroupStudents } from '../future-groups/infrastructure/student-start';
 import { allocateGroupName } from './group-code';
 import { reconcileGroupCourseLessons } from './course-curriculum';
 import { Router } from 'express';
@@ -398,6 +399,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             });
           }
           const updatedGroup = await updateRow(table, id, values);
+          if (updatedGroup?.status === 'in_progress') await startWaitingGroupStudents(id, req.user!.id);
           if (selectionChanged && updatedGroup) await reconcileGroupCourseLessons(updatedGroup, lockedRow, prepareLessonMutation, req.user!.id);
           if (updatedGroup && (
             (lockedRow.isArchived === true && values.isArchived === false)

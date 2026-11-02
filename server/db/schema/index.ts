@@ -243,7 +243,7 @@ export const academyGroups = pgTable("academy_groups", {
   name: varchar("name", { length: 255 }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "restrict" }).notNull(),
-  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }).notNull(),
+  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
   lessonCount: integer("lesson_count").notNull().default(0),
@@ -266,6 +266,7 @@ export const academyGroups = pgTable("academy_groups", {
   roomIdx: index("academy_groups_room_idx").on(table.roomId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
   archiveIdx: index("academy_groups_archive_idx").on(table.isArchived, table.archivedAt),
+  roomRequired: check("academy_groups_room_required_for_teaching", sql`${table.status} = 'planned' OR ${table.roomId} IS NOT NULL`),
   capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} >= 1`),
 }));
 

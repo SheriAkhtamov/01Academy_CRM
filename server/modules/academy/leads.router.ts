@@ -1431,7 +1431,7 @@ router.post('/leads/:id/students', async (req, res) => {
         schoolId: hasEnrollment ? Number(primaryGroup!.schoolId) : lead.schoolId ?? null,
         groupId: primaryGroupId,
         managerId: lead.managerId ?? req.user!.id,
-        status: hasEnrollment ? 'studying' : 'trial',
+        status: hasEnrollment ? (primaryGroup?.status === 'planned' ? 'waiting_start' : 'studying') : 'trial',
         enrolledAt,
         enrollmentDate: enrolledAt,
         nextPaymentAt: enrolledAt ? addDays(enrolledAt, 30) : null,
@@ -1452,7 +1452,7 @@ router.post('/leads/:id/students', async (req, res) => {
       await insertRow('academy_student_status_history', {
         studentId: createdStudent.id,
         fromStatus: null,
-        toStatus: hasEnrollment ? 'studying' : 'trial',
+        toStatus: hasEnrollment ? (primaryGroup?.status === 'planned' ? 'waiting_start' : 'studying') : 'trial',
         changedBy: req.user!.id,
         comment: demoOnly
           ? 'Пробный ученик создан для демо-урока'

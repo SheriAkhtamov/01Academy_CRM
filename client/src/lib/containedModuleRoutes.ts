@@ -6,6 +6,7 @@ const CONTAINED_MODULE_ROUTES = new Set([
   '/sales/schedule',
   '/sales/contracts',
   '/sales/groups',
+  '/sales/future-groups',
   '/sales/tasks',
   '/sales/messages',
   '/sales/calls',

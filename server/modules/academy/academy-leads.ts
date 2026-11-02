@@ -1,3 +1,5 @@
+import { ensureGroupCapacity } from './group-capacity';
+export { ensureGroupCapacity } from './group-capacity';
 import { loadStudentLearningMetrics } from "./student-learning-metrics";
 import { enqueueMetaLeadIntakeSafely } from '../../services/meta-marketing';
 import { qualifiesManualLeadStageMove } from '@shared/lead-qualification';
@@ -1151,54 +1153,6 @@ export const buildLeadStageDurations = (history: Row[]) => {
   });
 };
 
-export const ensureGroupCapacity = async (
-  groupId?: number | null,
-  excludeLeadId?: number | null,
-  excludeStudentId?: number | null,
-) => {
-  if (!groupId) return;
-  const capacity = await queryOne<{
-    currentStudents: number;
-    reservedStudents: number;
-    maxStudents: number;
-  }>(
-    `SELECT
-       COUNT(DISTINCT s.id)::int AS current_students,
-       COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students,
-       g.max_students
-     FROM academy_groups g
-     LEFT JOIN academy_student_group_enrollments enrollment
-       ON enrollment.group_id = g.id
-      AND enrollment.status = 'active'
-      AND ($3::int IS NULL OR enrollment.student_id <> $3)
-     LEFT JOIN academy_students s
-       ON s.id = enrollment.student_id
-      AND s.status = 'studying'
-     LEFT JOIN academy_lead_group_reservations reserved_membership
-      ON reserved_membership.group_id = g.id
-     LEFT JOIN academy_leads reserved
-      ON reserved.id = reserved_membership.lead_id
-      AND COALESCE(reserved.is_archived, false) = false
-      AND ($2::int IS NULL OR reserved.id <> $2)
-      AND NOT EXISTS (
-        SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
-      )
-     WHERE g.id = $1
-     GROUP BY g.id`,
-    [groupId, excludeLeadId ?? null, excludeStudentId ?? null],
-  );
-
-  if (!capacity) {
-    throw Object.assign(new Error('Group not found'), { statusCode: 404 });
-  }
-  if (
-    Number(capacity.currentStudents || 0) + Number(capacity.reservedStudents || 0)
-    >= Number(capacity.maxStudents)
-  ) {
-    throw Object.assign(new Error('groupIsFull'), { statusCode: 409 });
-  }
-};
-
 export const validateEnrollmentGroup = async (
   groupId?: number | null,
   excludeLeadId?: number | null,
@@ -1207,20 +1161,20 @@ export const validateEnrollmentGroup = async (
   if (!groupId) return null;
   const group = await queryOne(`SELECT * FROM academy_groups WHERE id = $1`, [groupId]);
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
-  if (group.isArchived === true || !['open', 'in_progress'].includes(String(group.status))) {
+  if (group.isArchived === true || !['planned', 'open', 'in_progress'].includes(String(group.status))) {
     throw Object.assign(new Error('groupNotOpen'), { statusCode: 409 });
   }
   const resources = await queryOne<{ resourcesActive: boolean }>(
     `SELECT (
        course.is_active = true
        AND school.is_active = true
-       AND room.is_active = true
-       AND room.school_id = academy_group.school_id
+       AND (academy_group.status = 'planned' AND academy_group.room_id IS NULL
+         OR room.is_active = true AND room.school_id = academy_group.school_id)
      ) AS resources_active
      FROM academy_groups academy_group
      JOIN academy_courses course ON course.id = academy_group.course_id
      JOIN academy_schools school ON school.id = academy_group.school_id
-     JOIN academy_rooms room ON room.id = academy_group.room_id
+     LEFT JOIN academy_rooms room ON room.id = academy_group.room_id
      WHERE academy_group.id = $1`,
     [groupId],
   );
@@ -1340,7 +1294,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
       await updateRow('academy_payments', paymentId, {
         leadId,
         studentId: existingStudent.id,
-        groupId: existingStudent.groupId ?? lead.enrolledGroupId ?? null,
+        groupId: sourcePayment?.groupId ?? existingStudent.groupId ?? lead.enrolledGroupId ?? null,
       });
     }
     if (sourcePayment?.status === 'paid') {
@@ -1349,13 +1303,14 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     }
     return resolvedStudent;
   }
-  if (!lead.enrolledGroupId) {
+  const targetGroupId = sourcePayment?.groupId ?? lead.enrolledGroupId;
+  if (!targetGroupId) {
     throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
   }
 
   const { groupIds: reservedGroupIds, primaryGroup: enrolledGroup } = await validateLeadSelectedGroups(
     leadId,
-    Number(lead.enrolledGroupId),
+    Number(targetGroupId),
   );
   if (!enrolledGroup) {
     throw Object.assign(new Error('Group not found'), { statusCode: 404 });
@@ -1375,9 +1330,9 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     expectedPaymentUzs: Number(lead.expectedPaymentUzs) >= 0 ? lead.expectedPaymentUzs ?? null : null,
     courseId: enrolledGroup?.courseId ?? lead.courseId ?? course?.id ?? null,
     schoolId: enrolledGroup?.schoolId ?? lead.schoolId ?? null,
-    groupId: lead.enrolledGroupId ?? null,
+    groupId: targetGroupId,
     managerId: lead.managerId ?? actor.userId,
-    status: 'studying',
+    status: enrolledGroup.status === 'planned' ? 'waiting_start' : 'studying',
     enrolledAt: new Date(),
     nextPaymentAt,
     referralCode: '', // Compatibility with the legacy non-null column.

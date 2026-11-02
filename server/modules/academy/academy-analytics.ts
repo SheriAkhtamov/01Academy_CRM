@@ -231,7 +231,7 @@ export const getAcademyDataset = async (
            JOIN academy_students s ON s.id = enrollment.student_id
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
-             AND s.status = 'studying') AS current_students,
+             AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))) AS current_students,
           (SELECT COUNT(DISTINCT l.id)::int
            FROM academy_lead_group_reservations reservation
            JOIN academy_leads l ON l.id = reservation.lead_id
@@ -244,7 +244,7 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
-          WHERE g.teacher_id = $1
+          WHERE g.teacher_id = $1 AND g.status <> 'planned'
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id,
           sc.name AS school_name, r.name AS room_name,
@@ -254,7 +254,7 @@ export const getAcademyDataset = async (
            JOIN academy_students s ON s.id = enrollment.student_id
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
-             AND s.status = 'studying') AS current_students,
+             AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))) AS current_students,
           (SELECT COUNT(DISTINCT l.id)::int
            FROM academy_lead_group_reservations reservation
            JOIN academy_leads l ON l.id = reservation.lead_id
@@ -267,6 +267,7 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
+          WHERE g.status <> 'planned'
           ORDER BY g.created_at DESC`)
     )),
     slice('leads', () => (

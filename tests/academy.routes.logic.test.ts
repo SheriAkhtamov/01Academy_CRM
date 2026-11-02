@@ -2709,7 +2709,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
   });
 
-  it('converts every reserved lead group into a student membership after payment', async () => {
+  it.each(['open', 'planned'])('converts every reserved lead group into a student membership after payment for %s', async (groupStatus) => {
     const lead = leadFixture({
       enrolled_group_id: 10,
       status_code: 'enrolled',
@@ -2759,7 +2759,7 @@ describe('academy route logic boundaries', () => {
         return {
           rows: [{
             id: Number(values[0]),
-            status: 'open',
+            status: groupStatus,
             max_students: 12,
             course_id: 3,
             school_id: 2,
@@ -2800,6 +2800,8 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => (
       String(sql).includes('INSERT INTO "academy_lead_stage_history"')
     ))).toBe(false);
+    const studentInsert = mocks.clientQuery.mock.calls.find(([sql])=>String(sql).includes('INSERT INTO "academy_students"'))!;
+    expect(readInsertValue(String(studentInsert[0]),studentInsert[1], 'status')).toBe(groupStatus === 'planned' ? 'waiting_start' : 'studying');
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 

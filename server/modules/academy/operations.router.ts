@@ -283,6 +283,16 @@ router.post('/payments', (req, res, next) => {
         }
       }
 
+      if (requestedGroupId) {
+        const targetGroup = await queryOne('SELECT * FROM academy_groups WHERE id=$1 FOR UPDATE', [requestedGroupId]);
+        const membership = existingStudent
+          ? await queryOne("SELECT id FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2 AND status='active'", [existingStudent.id,requestedGroupId])
+          : await queryOne('SELECT id FROM academy_lead_group_reservations WHERE lead_id=$1 AND group_id=$2', [leadId,requestedGroupId]);
+        if (!targetGroup || targetGroup.isArchived || !membership) {
+          throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 409 });
+        }
+      }
+
       const paymentLeadId = leadId ?? (existingStudent?.leadId ? Number(existingStudent.leadId) : null);
       const resolvedStudentId = existingStudent?.id ?? studentId ?? null;
       let pendingPayment: Row | undefined;
@@ -304,6 +314,7 @@ router.post('/payments', (req, res, next) => {
              FROM academy_payments
              WHERE status IN ('pending', 'overdue')
                AND COALESCE(period, '') = $1
+               AND ($4::int IS NULL OR group_id=$4)
                AND (
                  ($3::int IS NOT NULL AND student_id = $3)
                  OR ($3::int IS NULL AND $2::int IS NOT NULL AND lead_id = $2 AND student_id IS NULL)
@@ -311,7 +322,7 @@ router.post('/payments', (req, res, next) => {
              ORDER BY due_at NULLS LAST, created_at, id
              LIMIT 1
              FOR UPDATE`,
-            [paymentPeriod, paymentLeadId, resolvedStudentId],
+            [paymentPeriod, paymentLeadId, resolvedStudentId, requestedGroupId],
           );
         }
         if (pendingPayment) {
@@ -319,7 +330,7 @@ router.post('/payments', (req, res, next) => {
             || Number(pendingPayment.leadId) === Number(paymentLeadId);
           const sameStudent = !pendingPayment.studentId
             || Number(pendingPayment.studentId) === Number(resolvedStudentId);
-          if (!sameLead || !sameStudent) {
+          if (!sameLead || !sameStudent || (requestedGroupId && pendingPayment.groupId && Number(pendingPayment.groupId)!==requestedGroupId)) {
             throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
           }
         }
@@ -328,7 +339,7 @@ router.post('/payments', (req, res, next) => {
       const paymentValues = {
         leadId: paymentLeadId,
         studentId: resolvedStudentId,
-        groupId: existingStudent?.groupId ?? lead?.enrolledGroupId ?? requestedGroupId,
+        groupId: requestedGroupId ?? existingStudent?.groupId ?? lead?.enrolledGroupId ?? null,
         amountUzs,
         type: paymentType,
         method: paymentMethod,

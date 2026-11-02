@@ -98,6 +98,16 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
     expect((await pool.query("SELECT new_value FROM lms_learning_audit WHERE action='crm.source.linked' LIMIT 1")).rows[0].new_value).toMatchObject({actor:{kind:"system"},sourceHash:expect.stringMatching(/^[a-f0-9]{64}$/)});
   });
 
+  it("keeps planned groups out of teaching until the group is launched", async () => {
+    await pool.query("UPDATE academy_groups SET status='planned' WHERE id=1");
+    await repository().runOnce();
+    expect((await pool.query("SELECT id FROM lms_group_runs WHERE group_id=1")).rows).toHaveLength(0);
+    expect((await learning().managementGroups(administration)).some(group => group.groupId===1)).toBe(false);
+    await pool.query("UPDATE academy_groups SET status='in_progress' WHERE id=1");
+    await repository().runOnce();
+    expect((await pool.query("SELECT id FROM lms_group_runs WHERE group_id=1")).rows).toHaveLength(1);
+  });
+
   it("prepares valid groups concurrently exactly once, exposes exceptions and creates only private drafts", async () => {
     await pool.query("INSERT INTO academy_courses(id,name,program) VALUES(3,'Incomplete','[{\"lessonNumber\":1}]'); INSERT INTO academy_groups(id,name,course_id) VALUES(6,'CYP-AI-GRP-26-0006',3)");
     const before = await fingerprints();

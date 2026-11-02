@@ -1,3 +1,6 @@
+import { createFutureGroupsRouter } from '../future-groups/http/router';
+import { createFutureGroupsService } from '../future-groups/application/service';
+import { FutureGroupsRepository } from '../future-groups/infrastructure/repository';
 import { Router } from 'express';
 import { createLeadQualificationService } from '../leads/application/qualification-service';
 import { createLeadQualificationRouter } from '../leads/http/qualification.router';
@@ -41,6 +44,7 @@ import { registerLessonStaffRoutes } from './lesson-staff.router';
 const router = Router();
 router.use(requireAuth);
 router.use(attachActorContext);
+router.use(createFutureGroupsRouter(createFutureGroupsService(new FutureGroupsRepository())));
 router.use(createLeadQualificationRouter(createLeadQualificationService(new LegacyLeadQualificationRepository())));
 router.use(createSalesKpiRouter());
 

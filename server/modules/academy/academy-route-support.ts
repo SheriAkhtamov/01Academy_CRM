@@ -265,7 +265,7 @@ export const prepareGroupMutation = async (options: {
        LEFT JOIN academy_student_group_enrollments enrollment
          ON enrollment.group_id = g.id AND enrollment.status = 'active'
        LEFT JOIN academy_students s
-         ON s.id = enrollment.student_id AND s.status = 'studying'
+         ON s.id = enrollment.student_id AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))
        LEFT JOIN academy_lead_group_reservations reserved_membership
          ON reserved_membership.group_id = g.id
        LEFT JOIN academy_leads reserved
@@ -491,7 +491,7 @@ export const prepareGroupMetadataMutation = async (
      LEFT JOIN academy_student_group_enrollments enrollment
        ON enrollment.group_id = g.id AND enrollment.status = 'active'
      LEFT JOIN academy_students s
-       ON s.id = enrollment.student_id AND s.status = 'studying'
+       ON s.id = enrollment.student_id AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))
      LEFT JOIN academy_lead_group_reservations reserved_membership
        ON reserved_membership.group_id = g.id
      LEFT JOIN academy_leads reserved

@@ -81,7 +81,7 @@ export class PgCrmLearningPreparationRepository {
       if (actor.kind === "staff" && !await one(sql, "SELECT id FROM users WHERE id=$1 AND is_active=true AND is_archived=false", [actor.userId])) throw new Error("CRM_PREPARATION_ACTOR_INACTIVE");
       const group = await one<GroupSource>(sql,
         `SELECT g.id,g.name,course.id AS course_id,course.program,to_jsonb(g)->'selected_course_lesson_ids' AS selected_course_lesson_ids FROM academy_groups g
-         LEFT JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1 FOR UPDATE OF g`, [groupId]);
+         LEFT JOIN academy_courses course ON course.id=g.course_id WHERE g.id=$1 AND g.status <> 'planned' FOR UPDATE OF g`, [groupId]);
       if (!group) return null;
       const existing = await one<{ id: number; courseVersionId: number }>(sql, "SELECT id,course_version_id FROM lms_group_runs WHERE group_id=$1 FOR UPDATE", [groupId]);
       const format = existing ? null : crmGroupFormat(group.name, this.options.defaultFormat());

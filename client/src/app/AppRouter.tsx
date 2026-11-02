@@ -16,6 +16,7 @@ const Login = lazy(() => import('@/pages/login'));
 const AcademyPage = lazy(() => import('@/pages/academy'));
 const SalesDashboard = lazy(() => import('@/pages/sales-dashboard'));
 const MessagesPage = lazy(() => import('@/pages/sales/InstagramMessagesPage'));
+const FutureGroupsPage = lazy(() => import('@/pages/sales/FutureGroupsPage'));
 const GroupsPage = lazy(() => import('@/pages/sales/GroupsPage'));
 const ContractsPage = lazy(() => import('@/pages/sales/ContractsPage'));
 const CallJournalPage = lazy(() => import('@/pages/sales/CallJournalPage'));
@@ -177,6 +178,7 @@ export function AppRouter() {
             <SalesDashboard section="schedule" />
           </ModuleGuard>
         } />
+        <Route path="/sales/future-groups" children={<ModuleGuard module="sales"><FutureGroupsPage /></ModuleGuard>} />
         <Route path="/sales/groups" children={
           <ModuleGuard module="sales"><GroupsPage /></ModuleGuard>
         } />

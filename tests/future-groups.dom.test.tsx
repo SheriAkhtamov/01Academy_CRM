@@ -108,6 +108,19 @@ const open = async () => {
   await userEvent.click(screen.getByRole("button", { name: "Редактировать" }));
   return screen.getByRole("dialog");
 };
+it("offers launch directly on the future groups list without a group search", async () => {
+  wrap(<FutureGroupsPage />);
+  await screen.findByText(group.name);
+  expect(screen.queryByRole("textbox", { name: "Поиск" })).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Запустить группу" }),
+  );
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Запустить группу" }),
+  ).toBeTruthy();
+  expect(api.save).not.toHaveBeenCalled();
+});
 it("shows a list of future groups and opens editing in a modal", async () => {
   const dialog = await open();
   expect(

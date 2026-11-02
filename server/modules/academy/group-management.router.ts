@@ -15,6 +15,17 @@ export function registerGroupManagementRoutes(router: ReturnType<typeof Router>)
       res.status(500).json({ error: 'failedToLoadData' });
     }
   });
+  router.get('/enrollment-groups', async (req, res) => {
+    if (!ensureSalesAccess(req, res)) return;
+    try {
+      const dataset = await getAcademyDataset(undefined, { include: ['groups'], includePlannedGroups: true });
+      res.json(dataset.groups.filter(group => !group.isArchived && ['planned', 'open', 'in_progress'].includes(group.status))
+        .sort((a, b) => Number(b.status === 'planned') - Number(a.status === 'planned')));
+    } catch (error) {
+      logger.error('Failed to fetch enrollment groups', { error });
+      res.status(500).json({ error: 'failedToLoadData' });
+    }
+  });
   router.get('/group-configuration', async (req, res) => {
     if (!ensureSalesAccess(req, res)) return;
     try {

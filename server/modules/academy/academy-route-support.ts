@@ -168,7 +168,7 @@ export const prepareGroupMutation = async (options: {
   if (!GROUP_STATUSES.some((item) => item.code === status)) {
     throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
   }
-  if (!teacherId && (!options.oldRow || groupSchedulePreparationRequired(options.values, options.oldRow))) {
+  if (!teacherId && (!options.oldRow || options.oldRow.status === 'planned' || groupSchedulePreparationRequired(options.values, options.oldRow))) {
     throw Object.assign(new Error('teacherRequired'), { statusCode: 400 });
   }
   assertFutureGroupStartAcknowledged({
@@ -601,6 +601,7 @@ export const prepareLessonMutation = async (options: {
     ? await queryOne(`SELECT * FROM academy_groups WHERE id = $1 FOR SHARE`, [groupId])
     : null;
   if (!group) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+  if (group.status === 'planned') throw Object.assign(new Error('futureGroupNotLaunched'), { statusCode: 409 });
 
   const requiresAssignment = !options.oldRow || lessonAssignmentChanged(options.values, options.oldRow);
   const teacherId = Number(Object.prototype.hasOwnProperty.call(options.values, 'teacherId')

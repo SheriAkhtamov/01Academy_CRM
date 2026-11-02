@@ -716,15 +716,17 @@ router.post('/students/:id/groups', async (req, res) => {
 
       if (shouldMakePrimary) {
         const previousGroupId = lockedStudent.groupId ? Number(lockedStudent.groupId) : null;
-        const activatesTrialStudent = lockedStudent.status === 'trial';
+        const activatesTrialStudent = ['trial', 'waiting_start'].includes(lockedStudent.status);
+        const enrollmentStatus = group.status === 'planned' ? 'waiting_start' : 'studying';
+        const startsTeaching = activatesTrialStudent && group.status !== 'planned';
         const updated = await updateRow('academy_students', studentId, {
           groupId,
           courseId: Number(group.courseId),
           schoolId: Number(group.schoolId),
-          status: activatesTrialStudent ? 'studying' : lockedStudent.status,
-          enrolledAt: activatesTrialStudent ? enrolledAt : lockedStudent.enrolledAt,
-          enrollmentDate: activatesTrialStudent ? enrolledAt : lockedStudent.enrollmentDate,
-          nextPaymentAt: activatesTrialStudent ? addDays(enrolledAt, 30) : lockedStudent.nextPaymentAt,
+          status: activatesTrialStudent ? enrollmentStatus : lockedStudent.status,
+          enrolledAt: startsTeaching ? enrolledAt : lockedStudent.enrolledAt,
+          enrollmentDate: startsTeaching ? enrolledAt : lockedStudent.enrollmentDate,
+          nextPaymentAt: startsTeaching ? addDays(enrolledAt, 30) : lockedStudent.nextPaymentAt,
         });
         if (lockedStudent.leadId) {
           const leadUpdates: Row = {
@@ -743,13 +745,13 @@ router.post('/students/:id/groups', async (req, res) => {
             createdBy: req.user!.id,
           });
         }
-        if (activatesTrialStudent) {
+        if (activatesTrialStudent && enrollmentStatus !== lockedStudent.status) {
           await insertRow('academy_student_status_history', {
             studentId,
-            fromStatus: 'trial',
-            toStatus: 'studying',
+            fromStatus: lockedStudent.status,
+            toStatus: enrollmentStatus,
             changedBy: req.user!.id,
-            comment: 'Пробный ученик зачислен в учебную группу',
+            comment: group.status === 'planned' ? 'Запись в будущую группу' : 'Пробный ученик зачислен в учебную группу',
           });
         }
         await recalculateStudentMetrics(studentId);

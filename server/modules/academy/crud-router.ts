@@ -370,6 +370,17 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           if (!lockedRow) {
             throw Object.assign(new Error(`${path} not found`), { statusCode: 404 });
           }
+          if (lockedRow.status === 'planned' && values.status !== undefined && values.status !== 'planned') {
+            if (req.body.confirmFutureGroupLaunch !== true) {
+              throw Object.assign(new Error('futureGroupLaunchRequiresConfirmation'), { statusCode: 409 });
+            }
+            if (!(values.startDate ?? lockedRow.startDate)) throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+            if (values.status !== 'in_progress') throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+            const expectedUpdatedAt = new Date(req.body.expectedUpdatedAt ?? '').getTime();
+            if (!Number.isFinite(expectedUpdatedAt) || expectedUpdatedAt !== new Date(lockedRow.updatedAt).getTime()) {
+              throw Object.assign(new Error('futureGroupChanged'), { statusCode: 409 });
+            }
+          }
           // A full form submission must not overwrite unchanged dates with
           // midnight values or turn a capacity edit into a timetable change.
           for (const field of GROUP_SCHEDULE_PREPARATION_FIELDS) {
@@ -385,7 +396,8 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           if (options.beforeUpdate) {
             await options.beforeUpdate({ id, values, row: lockedRow, req });
           }
-          const prepareSchedule = groupSchedulePreparationRequired(values, lockedRow);
+          const prepareSchedule = lockedRow.status === 'planned' && values.status === 'in_progress'
+            || groupSchedulePreparationRequired(values, lockedRow);
           if (prepareSchedule) {
             await prepareGroupMutation({
               values,

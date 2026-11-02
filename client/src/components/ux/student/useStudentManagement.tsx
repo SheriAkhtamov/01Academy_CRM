@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { partitionEnrollmentGroups, useEnrollmentGroupOptions } from '@/features/groups/enrollment-options';
 import { GraduationCap, Plus, Star, Trash2 } from 'lucide-react';
 import type { StudentProfileStudent, StudentLearningGroup } from '@shared/contracts/student-profile';
 import { createStudentStatusDraft, reconcileStudentStatusDraft, studentStatusIsDirty } from '@/lib/studentStatusDraft';
@@ -67,6 +68,7 @@ export function useStudentManagement({
   const statusLabel = (value: string) =>
     ({
       trial: t('studentStatusTrial'),
+      waiting_start: t('studentStatusWaitingStart'),
       studying: copy.studying,
       paused: copy.paused,
       completed: copy.completed,
@@ -97,6 +99,7 @@ export function useStudentManagement({
       setSelectedGroupId('');
       setRemoveGroupId(null);
       onChanged();
+      void enrollmentGroups.refetch();
     } catch {
       /* The parent mutation displays its error. */
     } finally {
@@ -105,7 +108,8 @@ export function useStudentManagement({
   };
 
   const enrolled = new Set(groups.map((group) => group.groupId));
-  const available = availableGroups.filter((group) => !enrolled.has(group.id) && ['open', 'in_progress'].includes(group.status));
+  const enrollmentGroups = useEnrollmentGroupOptions(availableGroups, open && Boolean(onAddGroup));
+  const available = enrollmentGroups.options.filter((group) => !enrolled.has(group.id) && !group.isArchived && ['planned', 'open', 'in_progress'].includes(String(group.status)));
 
   const statusControl = onUpdateStatus ? (
     <CompactModalSection
@@ -157,7 +161,7 @@ export function useStudentManagement({
             value={workspace.status}
             onChange={(event) => setWorkspace((current) => ({ ...current, status: event.target.value }))}
           >
-            {['trial', 'studying', 'paused', 'completed', 'expelled'].map((value) => (
+            {['trial', 'waiting_start', 'studying', 'paused', 'completed', 'expelled'].map((value) => (
               <option key={value} value={value}>
                 {statusLabel(value)}
               </option>
@@ -212,8 +216,8 @@ export function useStudentManagement({
   ) : null;
 
   const groupAdditionControl =
-    onAddGroup && available.length > 0 ? (
-      <div className="flex items-center gap-1.5">
+    onAddGroup && (available.length > 0 || enrollmentGroups.isPending || enrollmentGroups.isError) ? (
+      <div className="flex flex-wrap items-center gap-1.5">
         <select
           aria-label={t('chooseGroup')}
           className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:w-48 sm:flex-none"
@@ -222,10 +226,12 @@ export function useStudentManagement({
           onChange={(event) => setSelectedGroupId(event.target.value)}
         >
           <option value="">{t('chooseGroup')}</option>
-          {available.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
+          {partitionEnrollmentGroups(available).map(section => (
+            <optgroup key={section.labelKey} label={t(section.labelKey)}>
+              {section.groups.map(group => (
+                <option key={group.id} value={group.id} disabled={group.maxStudents != null && Number(group.currentStudents || 0) + Number(group.reservedStudents || 0) >= group.maxStudents}>{group.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <Button
@@ -238,6 +244,7 @@ export function useStudentManagement({
           <Plus className="size-3.5" data-icon="inline-start" />
           {t('addStudentToGroup')}
         </Button>
+        {enrollmentGroups.isError ? <span role="alert" className="text-sm text-destructive">{t('failedToLoadData')} <Button type="button" variant="outline" size="sm" onClick={() => void enrollmentGroups.refetch()}>{t('retry')}</Button></span> : null}
       </div>
     ) : null;
 

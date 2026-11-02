@@ -12,6 +12,7 @@ export interface GroupTeacher {
 }
 
 export interface Group {
+  updatedAt?: string;
   id: number;
   name: string;
   courseId: number;
@@ -46,3 +47,17 @@ export interface GroupConfiguration {
   teachers: GroupTeacher[];
   groups: Group[];
 }
+
+export type EnrollmentGroupOption = {
+  id: number;
+  name: string;
+  status?: string;
+  courseId?: number | null;
+  courseName?: string | null;
+  schoolId?: number | null;
+  schoolName?: string | null;
+  isArchived?: boolean;
+  currentStudents?: number;
+  reservedStudents?: number;
+  maxStudents?: number;
+};

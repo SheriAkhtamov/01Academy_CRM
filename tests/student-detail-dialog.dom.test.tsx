@@ -8,9 +8,10 @@ import { StudentDetailDialog } from '../client/src/components/ux/StudentDetailDi
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
 import { i18n } from '../client/src/lib/i18n';
 
-const mocks = vi.hoisted(() => ({ profile: vi.fn(), addProject: vi.fn() }));
+const mocks = vi.hoisted(() => ({ profile: vi.fn(), addProject: vi.fn(), enrollmentGroups: vi.fn() }));
 const onlinePbxCall = vi.hoisted(() => ({ isPending: false, startCall: vi.fn(),
   isLineBusyWithReminder: false, callButtonLabel: '' }));
+vi.mock('../client/src/features/groups/api', () => ({groupsApi:{enrollmentOptions:mocks.enrollmentGroups}}));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: mocks }));
 vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () => onlinePbxCall }));
 const student = { id: 321, studentName: 'Child', contactName: 'Old parent name', status: 'studying', leadId: 12 };
@@ -26,7 +27,7 @@ function show(props = {}) {
   const view = render(content());
   return { onOpenLead, onOpenChange, onRecordPayment, refresh: () => view.rerender(content()) };
 }
-beforeEach(() => { vi.clearAllMocks(); i18n.setLanguage('ru'); mocks.profile.mockResolvedValue(profile); mocks.addProject.mockResolvedValue({ id: 45, title: 'Project', createdAt: '2026-10-05' }); HTMLElement.prototype.scrollIntoView = vi.fn();
+beforeEach(() => { mocks.enrollmentGroups.mockImplementation(()=>new Promise(()=>{})); vi.clearAllMocks(); i18n.setLanguage('ru'); mocks.profile.mockResolvedValue(profile); mocks.addProject.mockResolvedValue({ id: 45, title: 'Project', createdAt: '2026-10-05' }); HTMLElement.prototype.scrollIntoView = vi.fn();
   onlinePbxCall.isPending = false; onlinePbxCall.isLineBusyWithReminder = false;
   onlinePbxCall.callButtonLabel = i18n.t('telephonyLineBusyWithReminder');
 });
@@ -152,4 +153,24 @@ describe('new student detail dialog', () => {
     fireEvent.submit(screen.getByLabelText(i18n.t('studentProjectTitle')).closest('form')!);
     await waitFor(() => expect(mocks.addProject).toHaveBeenCalledWith(321, { title: 'project', file }, expect.any(Function)));
   });
+});
+
+it('separates future and regular group options and enrolls in the future group', async () => {
+  const onAddGroup = vi.fn().mockResolvedValue(undefined);
+  mocks.enrollmentGroups.mockResolvedValue([
+    { id: 7, name: 'Regular cohort', status: 'open' },
+    { id: 8, name: 'Future cohort', status: 'planned', maxStudents: 12 },
+    { id: 9, name: 'Full future cohort', status: 'planned', maxStudents: 1, reservedStudents: 1 },
+  ]);
+  show({ onAddGroup });
+  const picker = await screen.findByRole('combobox', { name: i18n.t('chooseGroup') });
+  await waitFor(() => expect(picker.querySelectorAll('optgroup')).toHaveLength(2));
+  expect(Array.from(picker.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+    i18n.t('futureGroupsTitle'),
+    i18n.t('regularGroups'),
+  ]);
+  expect((picker.querySelector('option[value="9"]') as HTMLOptionElement).disabled).toBe(true);
+  fireEvent.change(picker, { target: { value: '8' } });
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('addStudentToGroup') }));
+  await waitFor(() => expect(onAddGroup).toHaveBeenCalledWith(321, 8));
 });

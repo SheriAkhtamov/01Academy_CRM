@@ -1,3 +1,4 @@
+import { enrollmentGroupsKey } from "@/features/groups/queries";
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, Settings2, Users } from "lucide-react";
@@ -118,7 +119,10 @@ export function FutureGroupDialog({
     mutationFn: (input: FutureGroupInput) =>
       futureGroupsApi.save(input, group?.id),
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: futureGroupsKey });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: futureGroupsKey }),
+        client.invalidateQueries({ queryKey: enrollmentGroupsKey }),
+      ]);
       onClose();
     },
     onSettled: () => {
@@ -354,7 +358,7 @@ export function FutureGroupDialog({
                   disabled={saving.isPending}
                   onClick={() => guard.requestAction(() => onPrepare(group))}
                 >
-                  {t("futureGroupPrepare")}
+                  {t("futureGroupLaunch")}
                 </Button>
               )}
               <Button

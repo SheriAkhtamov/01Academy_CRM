@@ -1,3 +1,4 @@
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { EmployeeCardButton } from '@/features/employees/EmployeeCardTrigger';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -128,13 +129,14 @@ function computeWeeklyHours(schedule: WeekScheduleItem[], fallbackMinutes: numbe
 }
 
 export function GroupEditorDialog(props: GroupEditorProps) {
-  const { open, group: editingGroup } = props;
+  const { open, group: editingGroup, launchingFutureGroup = false } = props;
   const {
     t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     futureGroupStartValues, setFutureGroupStartValues,
+    launchGroupValues, setLaunchGroupValues,
     scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
     roomClashes, busyRoomIds, selectedTeacherConflict, groupTeachers,
     selectedCourse, updateSelectedCourse, updateSelectedLessons,
@@ -244,7 +246,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 </span>
                 <div className="min-w-0">
                   <DialogTitle className="text-base font-semibold tracking-tight sm:text-lg">
-                    {editingGroup ? t('editGroup') : t('createGroup')}
+                    {launchingFutureGroup ? t('futureGroupLaunch') : editingGroup ? t('editGroup') : t('createGroup')}
                   </DialogTitle>
                 </div>
               </div>
@@ -302,7 +304,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       onRetry={!editingGroup && codeCatalogue.isError ? () => { void codeCatalogue.refetch(); } : undefined} />
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <GroupStatusField />
+                    <GroupStatusField disabled={launchingFutureGroup} />
                     <FormField control={groupForm.control} name="maxStudents" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('groupCapacity')}</FormLabel>
@@ -546,7 +548,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                       points at those two fields instead of sitting greyed out. */}
                   <Button loading={saveGroup.isPending || (!editingGroup && codeCatalogue.isFetching)} type="submit" disabled={saveGroup.isPending
                     || (!editingGroup && (Boolean(groupCodeError) || codeCatalogue.isFetching))}>
-                    {saveGroup.isPending ? t('saving') : editingGroup ? t('saveChanges') : t('createGroup')}
+                    {saveGroup.isPending ? t('saving') : launchingFutureGroup ? t('futureGroupLaunch') : editingGroup ? t('saveChanges') : t('createGroup')}
                   </Button>
                 </div>
               </div>
@@ -554,6 +556,21 @@ export function GroupEditorDialog(props: GroupEditorProps) {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(launchGroupValues)}
+        onOpenChange={open => { if (!open && !saveGroup.isPending) setLaunchGroupValues(null); }}
+        title={t('futureGroupLaunchConfirm')}
+        description={t('futureGroupLaunchDescription')}
+        target={[editingGroup?.name, launchGroupValues?.startDate].filter(Boolean).join(' · ')}
+        confirmLabel={t('futureGroupLaunch')}
+        keepOpenOnConfirm
+        isPending={saveGroup.isPending}
+        error={saveGroup.isError ? t('futureGroupLaunchFailed') : undefined}
+        onConfirm={async () => {
+          if (launchGroupValues) await saveGroup.mutateAsync({ ...launchGroupValues, status: 'in_progress', allowFutureStart: true, confirmFutureGroupLaunch: true });
+        }}
+      />
 
       <FutureGroupStartDialog
         values={futureGroupStartValues}

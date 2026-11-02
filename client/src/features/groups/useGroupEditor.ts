@@ -18,15 +18,16 @@ import { groupCodeCatalogueKey, invalidateGroupData } from './queries';
 import { findTeacherConflict, findRoomClashes } from './editorInsights';
 import type { Group, GroupConfiguration } from './types';
 
-type GroupMutationValues = GroupValues & { allowFutureStart?: boolean };
+type GroupMutationValues = GroupValues & { allowFutureStart?: boolean; confirmFutureGroupLaunch?: boolean };
 export interface GroupEditorProps {
   open: boolean;
+  launchingFutureGroup?: boolean;
   group: Group | null;
   configuration: GroupConfiguration;
   onClose: () => void;
 }
 
-export function useGroupEditor({ open, group: editingGroup, configuration, onClose }: GroupEditorProps) {
+export function useGroupEditor({ open, group: editingGroup, configuration, onClose, launchingFutureGroup = false }: GroupEditorProps) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const existingCode = parseGroupName(editingGroup?.name);
@@ -39,6 +40,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const [groupSchedule, setGroupSchedule] = useState<WeekScheduleItem[]>([]);
   const [groupScheduleBaseline, setGroupScheduleBaseline] = useState<WeekScheduleItem[]>([]);
   const [futureGroupStartValues, setFutureGroupStartValues] = useState<GroupValues | null>(null);
+  const [launchGroupValues, setLaunchGroupValues] = useState<GroupValues | null>(null);
   const [scheduleError, setScheduleError] = useState<GroupScheduleValidationError | null>(null);
   /*
     The end date follows the start, the lesson count and the schedule until
@@ -49,7 +51,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const [endDateFollowsSchedule, setEndDateFollowsSchedule] = useState(true);
   const groupForm = useForm<GroupValues>({
     shouldFocusError: false,
-    resolver: zodResolver(useMemo(() => createGroupSchema(t, Boolean(editingGroup && !editingGroup.teacherId)), [t, editingGroup])),
+    resolver: zodResolver(useMemo(() => createGroupSchema(t, Boolean(editingGroup && !editingGroup.teacherId && !launchingFutureGroup)), [t, editingGroup, launchingFutureGroup])),
     defaultValues: {
       name: '',
       nameSuffix: '', deliveryMode: 'offline', trainingType: 'GRP',
@@ -69,6 +71,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
 
   useEffect(() => {
     if (!open) return;
+    setLaunchGroupValues(null);
     const group = editingGroup;
     groupForm.reset(group ? {
       name: group.name,
@@ -77,7 +80,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
       trainingType: parseGroupName(group.name)?.trainingType ?? 'GRP',
       courseId: String(group.courseId),
       schoolId: String(group.schoolId),
-      roomId: String(group.roomId),
+      roomId: group.roomId ? String(group.roomId) : '',
       teacherId: group.teacherId ? String(group.teacherId) : '',
       selectedCourseLessonIds: group.selectedCourseLessonIds ?? null,
       lessonCount: group.lessonCount || 10,
@@ -137,6 +140,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         startDate: values.startDate || null,
         endDate: values.endDate || null,
         allowFutureStart: values.allowFutureStart === true,
+        ...(launchingFutureGroup ? { confirmFutureGroupLaunch: values.confirmFutureGroupLaunch === true, expectedUpdatedAt: editingGroup?.updatedAt } : {}),
       };
       return editingGroup
         ? apiRequest('PATCH', `/api/academy/groups/${editingGroup.id}`, payload)
@@ -144,10 +148,11 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     },
     onSuccess: () => {
       toast({
-        title: editingGroup ? t('groupUpdated') : t('groupCreated'),
+        title: launchingFutureGroup ? t('futureGroupLaunched') : editingGroup ? t('groupUpdated') : t('groupCreated'),
       });
       onClose();
       setFutureGroupStartValues(null);
+      setLaunchGroupValues(null);
       void invalidateGroupData(queryClient);
     },
     onError: (error: Error & { rawMessage?: string; data?: { minimumEndDate?: string } }) => {
@@ -249,6 +254,11 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         groupForm.setError('teacherId', { type: 'required', message: t('teacherRequired') });
         return;
       }
+    }
+    if (launchingFutureGroup) {
+      saveGroup.reset();
+      setLaunchGroupValues(values);
+      return;
     }
     if (futureGroupStatusNeedsConfirmation(values)) {
       setFutureGroupStartValues(values);
@@ -357,6 +367,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate, formattedMinimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,
     futureGroupStartValues, setFutureGroupStartValues,
+    launchGroupValues, setLaunchGroupValues,
     scheduleError, setScheduleError, followEndDate, applyScheduleEndDate, releaseEndDate,
     roomClashes, busyRoomIds, selectedTeacherConflict, groupTeachers,
   };

@@ -1,3 +1,4 @@
+import { enrollmentGroupsKey } from "@/features/groups/queries";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, CreditCard, UserMinus } from "lucide-react";
@@ -38,6 +39,7 @@ export function FutureGroupMembers({ groupId }: { groupId: number }) {
   const changed = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: futureGroupsKey }),
+      client.invalidateQueries({ queryKey: enrollmentGroupsKey }),
       client.invalidateQueries({ queryKey: ["future-group-members", groupId] }),
       client.invalidateQueries({
         queryKey: ["/api/academy/group-configuration"],

@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { z } from 'zod';
 import { BookOpen, GraduationCap, Plus, Save, UserRound, Users } from 'lucide-react';
+import { partitionEnrollmentGroups, useEnrollmentGroupOptions } from '@/features/groups/enrollment-options';
 import { leadsApi } from '@/features/leads/api';
 import { studentsApi } from '@/features/students/api';
 import { StudentContractFields } from '@/features/student-contracts/StudentContractFields';
@@ -36,7 +37,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CompactModalSection } from './CompactModalSection';
 import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
@@ -227,8 +228,9 @@ function LeadStudentFormDialog({
   const primaryGroupId = form.watch('primaryGroupId');
   const contract = useStudentContract({ studentId: editedStudent?.id, leadId, open });
 
+  const enrollmentGroups = useEnrollmentGroupOptions(groups, open && purpose !== 'demo');
   const availableGroups = useMemo(() => {
-    const options = new Map(groups.map((group) => [group.id, group]));
+    const options = new Map(enrollmentGroups.options.map((group) => [group.id, group]));
     if (editedStudent) {
       for (const group of editedStudent.groups ?? []) {
         if (!options.has(group.groupId)) {
@@ -244,9 +246,9 @@ function LeadStudentFormDialog({
     }
     return Array.from(options.values()).filter((group) => (
       currentGroupIds.includes(String(group.id))
-      || ['open', 'in_progress'].includes(String(group.status))
+      || !group.isArchived && ['planned', 'open', 'in_progress'].includes(String(group.status))
     ));
-  }, [currentGroupIds, editedStudent, groups]);
+  }, [currentGroupIds, editedStudent, enrollmentGroups.options]);
   const selectedGroups = useMemo(() => availableGroups.filter((group) => (
     selectedGroupIds.includes(String(group.id))
   )), [availableGroups, selectedGroupIds]);
@@ -320,6 +322,7 @@ function LeadStudentFormDialog({
       });
     },
     onSuccess: async (student, variables) => {
+      if (purpose !== 'demo') void enrollmentGroups.refetch();
       if (modeProps.mode === 'edit') {
         await modeProps.onUpdated(student);
         toast({ title: t('studentUpdated') });
@@ -568,54 +571,67 @@ function LeadStudentFormDialog({
                         {t('selectedGroupsCount').replace('{count}', String(selectedGroupIds.length))}
                       </Badge>
                     </div>
-                    <div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto rounded-lg border border-border bg-muted/20 p-1.5 sm:grid-cols-2">
+                    {enrollmentGroups.isError ? (
+                      <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
+                        {t('failedToLoadData')}
+                        <Button type="button" variant="outline" size="sm" onClick={() => void enrollmentGroups.refetch()}>{t('retry')}</Button>
+                      </div>
+                    ) : null}
+                    <div className="max-h-60 space-y-3 overflow-y-auto rounded-lg border border-border bg-muted/20 p-2">
                       {availableGroups.length === 0 ? (
                         <div className="col-span-full flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground">
                           <Users className="size-3.5" />
-                          {t('noAvailableGroups')}
+                          {enrollmentGroups.isPending ? <OrbitSpinner aria-label={t('loading')} /> : t('noAvailableGroups')}
                         </div>
                       ) : (
-                        availableGroups.map((group) => {
-                          const value = String(group.id);
-                          const checked = selectedGroupIds.includes(value);
-                          const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
-                          const capacity = Number(group.maxStudents || 12);
-                          const full = occupied >= capacity;
-                          const labelId = `lead-student-group-${group.id}`;
-                          return (
-                            <label
-                              key={group.id}
-                              id={labelId}
-                              className={cn(
-                                'flex cursor-pointer items-start gap-2 rounded-md border border-transparent bg-background px-2.5 py-2 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5',
-                                !checked && full && 'cursor-not-allowed opacity-60',
-                                isEditing && currentGroupIds.includes(value) && 'cursor-default',
-                              )}
-                            >
-                              <Checkbox
-                                checked={checked}
-                                disabled={(!checked && full) || (isEditing && currentGroupIds.includes(value))}
-                                aria-labelledby={labelId}
-                                className="mt-0.5"
-                                onCheckedChange={(nextChecked) => {
-                                  const next = nextChecked
-                                    ? [...selectedGroupIds, value]
-                                    : selectedGroupIds.filter((id) => id !== value);
-                                  form.setValue('groupIds', next, { shouldDirty: true, shouldValidate: true });
-                                }}
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium leading-tight">{group.name}</span>
-                                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                                  {[group.courseName, group.schoolName].filter(Boolean).join(' · ') || t('group')}
-                                </span>
-                              </span>
-                              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                                {occupied}/{capacity}
-                              </span>
-                            </label>
-                          );
-                        })
+                        partitionEnrollmentGroups(availableGroups).map(section => (
+                          <section key={section.labelKey} aria-label={t(section.labelKey)}>
+                            <h4 className="mb-2 text-sm font-semibold">{t(section.labelKey)}</h4>
+                            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                              {section.groups.map((group) => {
+                                const value = String(group.id);
+                                const checked = selectedGroupIds.includes(value);
+                                const occupied = Number(group.currentStudents || 0) + Number(group.reservedStudents || 0);
+                                const capacity = Number(group.maxStudents || 12);
+                                const full = occupied >= capacity;
+                                const labelId = `lead-student-group-${group.id}`;
+                                return (
+                                  <label
+                                    key={group.id}
+                                    id={labelId}
+                                    className={cn(
+                                      'flex cursor-pointer items-start gap-2 rounded-md border border-transparent bg-background px-2.5 py-2 transition-colors hover:border-primary/30 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5',
+                                      !checked && full && 'cursor-not-allowed opacity-60',
+                                      isEditing && currentGroupIds.includes(value) && 'cursor-default',
+                                    )}
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      disabled={(!checked && full) || (isEditing && currentGroupIds.includes(value))}
+                                      aria-labelledby={labelId}
+                                      className="mt-0.5"
+                                      onCheckedChange={(nextChecked) => {
+                                        const next = nextChecked
+                                          ? [...selectedGroupIds, value]
+                                          : selectedGroupIds.filter((id) => id !== value);
+                                        form.setValue('groupIds', next, { shouldDirty: true, shouldValidate: true });
+                                      }}
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-xs font-medium leading-tight">{group.name}</span>
+                                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                        {[group.courseName, group.schoolName].filter(Boolean).join(' · ') || t('group')}
+                                      </span>
+                                    </span>
+                                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                                      {occupied}/{capacity}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))
                       )}
                     </div>
                     {groupError ? (
@@ -637,13 +653,14 @@ function LeadStudentFormDialog({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectGroup>
-                                {selectedGroups.map((group) => (
-                                  <SelectItem key={group.id} value={String(group.id)} className="text-xs">
-                                    {group.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
+                              {partitionEnrollmentGroups(selectedGroups).map(section => (
+                                <SelectGroup key={section.labelKey}>
+                                  <SelectLabel>{t(section.labelKey)}</SelectLabel>
+                                  {section.groups.map(group => (
+                                    <SelectItem key={group.id} value={String(group.id)} className="text-xs">{group.name}</SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              ))}
                             </SelectContent>
                           </Select>
                         </FormItem>

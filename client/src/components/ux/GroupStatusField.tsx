@@ -16,13 +16,13 @@ const STATUS_DOT_CLASSES: Record<'open' | 'in_progress' | 'frozen' | 'completed'
   completed: 'bg-slate-400',
 };
 
-export function GroupStatusField() {
+export function GroupStatusField({ disabled = false }: { disabled?: boolean } = {}) {
   const { t } = useTranslation();
   return (
     <FormField name="status" render={({ field }) => (
       <FormItem>
         <FormLabel>{t('status')}</FormLabel>
-        <Select value={field.value} onValueChange={field.onChange}>
+        <Select disabled={disabled} value={field.value} onValueChange={field.onChange}>
           <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
           <SelectContent>
             <SelectGroup>

@@ -118,6 +118,8 @@ interface AcademyDatasetOptions {
    */
   include?: readonly AcademyDatasetSlice[];
   includeInactiveSources?: boolean;
+  /** Enrollment choices may include groups that are still being filled. */
+  includePlannedGroups?: boolean;
 }
 
 const teacherStudentMembershipsSelect = `COALESCE((
@@ -244,7 +246,7 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
-          WHERE g.teacher_id = $1 AND g.status <> 'planned'
+          WHERE g.teacher_id = $1 ${options?.includePlannedGroups ? '' : "AND g.status <> 'planned'"}
           ORDER BY g.created_at DESC`, [teacherId])
       : query(`SELECT g.*, c.name AS course_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id,
           sc.name AS school_name, r.name AS room_name,
@@ -267,7 +269,7 @@ export const getAcademyDataset = async (
           LEFT JOIN academy_schools sc ON sc.id = g.school_id
           LEFT JOIN academy_rooms r ON r.id = g.room_id
           LEFT JOIN users archived_by_user ON archived_by_user.id = g.archived_by
-          WHERE g.status <> 'planned'
+          ${options?.includePlannedGroups ? '' : "WHERE g.status <> 'planned'"}
           ORDER BY g.created_at DESC`)
     )),
     slice('leads', () => (

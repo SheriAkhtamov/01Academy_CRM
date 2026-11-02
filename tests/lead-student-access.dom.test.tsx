@@ -9,11 +9,12 @@ import { CreateLeadStudentDialog, EditLeadStudentDialog } from '../client/src/co
 
 const mocks = vi.hoisted(() => ({
   user: { id: 7, module: 'administration', modules: ['administration'] } as { id: number; module: string; modules: string[] } | null,
-  status: vi.fn(), createStudent: vi.fn(), updateDetails: vi.fn(), addGroup: vi.fn(), created: vi.fn(), updated: vi.fn(), close: vi.fn(), toast: vi.fn(),
+  enrollmentGroups: vi.fn(), status: vi.fn(), createStudent: vi.fn(), updateDetails: vi.fn(), addGroup: vi.fn(), created: vi.fn(), updated: vi.fn(), close: vi.fn(), toast: vi.fn(),
   access: { get: vi.fn(), classify: vi.fn(), invite: vi.fn(), lookup: vi.fn(), checkContacts: vi.fn(), revoke: vi.fn(), permissions: vi.fn(), recover: vi.fn(), accountStatus: vi.fn() },
 }));
 vi.mock('../client/src/hooks/useAuth', () => ({ useAuth: () => ({ user: mocks.user }) }));
 vi.mock('../client/src/hooks/use-toast', () => ({ toast: mocks.toast, useToast: () => ({ toast: mocks.toast }) }));
+vi.mock('../client/src/features/groups/api', () => ({groupsApi:{enrollmentOptions:mocks.enrollmentGroups}}));
 vi.mock('../client/src/features/leads/api', () => ({ leadsApi: { createStudent: mocks.createStudent } }));
 vi.mock('../client/src/features/students/api', () => ({ studentsApi: { updateDetails: mocks.updateDetails, addGroup: mocks.addGroup } }));
 vi.mock('../client/src/features/student-contracts/api', () => ({
@@ -45,6 +46,7 @@ const enterName = (name: string) => fireEvent.change(screen.getByLabelText('Stud
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Create student' }));
 beforeEach(() => {
   i18n.setLanguage('en'); vi.clearAllMocks();
+  mocks.enrollmentGroups.mockImplementation(()=>new Promise(()=>{}));
   mocks.user = { id: 7, module: 'administration', modules: ['administration'] };
   mocks.status.mockRejectedValue(new Error('unavailable'));
   mocks.createStudent.mockImplementation(async (_leadId: number, input: { studentName: string }) => ({ id: 42, studentName: input.studentName }));
@@ -156,4 +158,28 @@ describe('Lead conversion learner and portal access choices', () => {
     expect(mocks.updateDetails).toHaveBeenCalledWith(42, { studentName: 'Renamed Learner', studentAge: null, phone: null, expectedStudentUpdatedAt: undefined });
     expect(mocks.createStudent).not.toHaveBeenCalled(); expect(mocks.status).not.toHaveBeenCalled(); expect(mocks.access.get).not.toHaveBeenCalled();
   });
+});
+
+it('offers future groups first, keeps full groups disabled, and books the selected group', async () => {
+  mocks.enrollmentGroups.mockResolvedValue([
+    { id: 2, name: 'Regular cohort', status: 'open', maxStudents: 12, currentStudents: 1 },
+    { id: 3, name: 'Future cohort', status: 'planned', maxStudents: 12, currentStudents: 0 },
+    { id: 4, name: 'Full future cohort', status: 'planned', maxStudents: 1, reservedStudents: 1 },
+  ]);
+  show();
+  enterName('Learner');
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('studentLearning') }));
+  const future = await screen.findByRole('region', { name: 'Future groups' });
+  const regular = screen.getByRole('region', { name: 'Regular groups' });
+  expect(future.compareDocumentPosition(regular) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(
+    within(future)
+      .getByRole('checkbox', { name: /Full future cohort/ })
+      .hasAttribute('disabled'),
+  ).toBe(true);
+  fireEvent.click(within(future).getByRole('checkbox', { name: /^Future cohort/ }));
+  save();
+  await waitFor(() =>
+    expect(mocks.createStudent).toHaveBeenCalledWith(12, expect.objectContaining({ groupIds: [3], primaryGroupId: 3 })),
+  );
 });

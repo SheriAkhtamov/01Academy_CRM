@@ -1,9 +1,8 @@
+import { enrollmentGroupsKey } from "@/features/groups/queries";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, CalendarDays, Pencil, Plus } from "lucide-react";
+import { Archive, CalendarDays, Pencil, Play, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadingRegion } from "@/components/ui/loading-region";
 import { PageHeader } from "@/components/ux/PageHeader";
@@ -20,7 +19,6 @@ import { FutureGroupDialog } from "./FutureGroupDialog";
 export function FutureGroupsWorkspace() {
   const { t, language } = useTranslation();
   const client = useQueryClient();
-  const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<{ group: FutureGroup | null } | null>(
     null,
   );
@@ -34,20 +32,15 @@ export function FutureGroupsWorkspace() {
     queryKey: futureGroupsKey,
     queryFn: futureGroupsApi.list,
   });
-  const filtered = useMemo(
-    () =>
-      groups.data?.filter((g) =>
-        `${g.name} ${g.courseName} ${g.schoolName} ${g.teacherName ?? ""}`
-          .toLocaleLowerCase()
-          .includes(search.toLocaleLowerCase()),
-      ) ?? [],
-    [groups.data, search],
-  );
+  const listedGroups = groups.data ?? [];
   const archive = useMutation({
     mutationFn: (id: number) => futureGroupsApi.archive(id),
     onSuccess: async () => {
       setArchiving(null);
-      await client.invalidateQueries({ queryKey: futureGroupsKey });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: futureGroupsKey }),
+        client.invalidateQueries({ queryKey: enrollmentGroupsKey }),
+      ]);
     },
     onError: (e: Error) =>
       setError(
@@ -76,18 +69,22 @@ export function FutureGroupsWorkspace() {
       .join(" · ");
   const loading = groups.isPending || configuration.isPending;
   const failed = groups.isError || configuration.isError;
-  const prepared: Group | null = preparing
-    ? {
-        ...preparing,
-        roomId: preparing.roomId ?? 0,
-        roomName: preparing.roomName ?? undefined,
-        lessonCount: 0,
-        selectedCourseLessonIds: [],
-        durationDays: 0,
-        status: "in_progress",
-        endDate: null,
-      }
-    : null;
+  const prepared = useMemo<Group | null>(
+    () =>
+      preparing
+        ? {
+            ...preparing,
+            roomId: preparing.roomId ?? 0,
+            roomName: preparing.roomName ?? undefined,
+            lessonCount: 0,
+            selectedCourseLessonIds: [],
+            durationDays: 0,
+            status: "in_progress",
+            endDate: null,
+          }
+        : null,
+    [preparing],
+  );
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <PageHeader
@@ -102,14 +99,6 @@ export function FutureGroupsWorkspace() {
           </Button>
         }
       />
-      <div className="max-w-md space-y-1">
-        <Label htmlFor="future-groups-search">{t("search")}</Label>
-        <Input
-          id="future-groups-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -135,23 +124,19 @@ export function FutureGroupsWorkspace() {
               {t("retry")}
             </Button>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : listedGroups.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title={search ? t("futureGroupsNoMatches") : t("futureGroupsEmpty")}
+            title={t("futureGroupsEmpty")}
             action={
-              <Button
-                onClick={() =>
-                  search ? setSearch("") : setEditing({ group: null })
-                }
-              >
-                {search ? t("resetFilters") : t("futureGroupCreate")}
+              <Button onClick={() => setEditing({ group: null })}>
+                {t("futureGroupCreate")}
               </Button>
             }
           />
         ) : (
           <ul className="divide-y" aria-label={t("futureGroupsTitle")}>
-            {filtered.map((group) => {
+            {listedGroups.map((group) => {
               const occupied = group.currentStudents + group.reservedStudents;
               return (
                 <li
@@ -199,7 +184,11 @@ export function FutureGroupsWorkspace() {
                       <strong>{group.paidMembers}</strong>
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="sm" onClick={() => setPreparing(group)}>
+                      <Play aria-hidden />
+                      {t("futureGroupLaunch")}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -242,6 +231,7 @@ export function FutureGroupsWorkspace() {
       {prepared && configuration.data && (
         <GroupEditorDialog
           open
+          launchingFutureGroup
           group={prepared}
           configuration={configuration.data}
           onClose={() => {

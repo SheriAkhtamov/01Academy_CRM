@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { GroupConfiguration } from '../client/src/features/groups/types';
+import { GroupEditorDialog } from '../client/src/features/groups/GroupEditorDialog';
 import GroupsPage from '../client/src/pages/sales/GroupsPage';
 import { i18n } from '../client/src/lib/i18n';
 import { allowNavigation } from '../client/src/lib/navigationGuard';
@@ -789,4 +791,42 @@ it('focuses an invalid time instead of an unrelated day when unfolding a broken 
   await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('saveChanges') }));
   await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByLabelText(`${i18n.t('wednesday')}: ${i18n.t('start')}`)));
   expect(apiRequest).not.toHaveBeenCalled();
+});
+
+it('requires confirmation before launching a future group and preserves the form on cancellation', async () => {
+  const onClose = vi.fn();
+  const prepared = { ...group, durationDays: 77, status: 'in_progress', updatedAt: '2026-11-03T00:00:00.000Z' };
+  render(
+    <QueryClientProvider client={client}>
+      <GroupEditorDialog
+        open
+        launchingFutureGroup
+        group={prepared}
+        configuration={configuration as unknown as GroupConfiguration}
+        onClose={onClose}
+      />
+    </QueryClientProvider>,
+  );
+  const dialog = screen.getByRole('dialog');
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('futureGroupLaunch') }));
+  const confirmation = await screen.findByRole('alertdialog');
+  expect(apiRequest).not.toHaveBeenCalled();
+  await userEvent.click(within(confirmation).getByRole('button', { name: i18n.t('cancel') }));
+  expect(apiRequest).not.toHaveBeenCalled();
+  await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('futureGroupLaunch') }));
+  await userEvent.click(
+    within(screen.getByRole('alertdialog')).getByRole('button', { name: i18n.t('futureGroupLaunch') }),
+  );
+  await waitFor(() =>
+    expect(apiRequest).toHaveBeenCalledWith(
+      'PATCH',
+      '/api/academy/groups/1',
+      expect.objectContaining({
+        status: 'in_progress',
+        confirmFutureGroupLaunch: true,
+        expectedUpdatedAt: prepared.updatedAt,
+      }),
+    ),
+  );
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
 });

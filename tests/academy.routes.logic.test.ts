@@ -2159,7 +2159,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
-  it('enrolls a group-free student while retaining the linked lead stage', async () => {
+  it.each(['open', 'planned'])('enrolls a group-free student into %s while retaining the linked lead stage', async (groupStatus) => {
     const initialLead = leadFixture({ status_code: 'qualified' });
     const enrolledLead = leadFixture({
       status_code: 'qualified',
@@ -2190,7 +2190,7 @@ describe('academy route logic boundaries', () => {
         return { rows: [{ id: 20 }] };
       }
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) {
-        return { rows: [{ id: 20, name: 'Group 20', status: 'open', max_students: 12, course_id: 9, school_id: 4 }] };
+        return { rows: [{ id: 20, name: 'Group 20', status: groupStatus, max_students: 12, course_id: 9, school_id: 4 }] };
       }
       if (sql.includes('AS resources_active')) return { rows: [{ resources_active: true }] };
       if (sql.includes('COUNT(DISTINCT s.id)::int AS current_students')) {
@@ -2229,6 +2229,10 @@ describe('academy route logic boundaries', () => {
     expect(mocks.poolQuery.mock.calls.some(([sql]) => (
       String(sql).includes('INSERT INTO "academy_payments"')
     ))).toBe(false);
+    const studentWrite=mocks.clientQuery.mock.calls.find(([sql])=>String(sql).includes('UPDATE "academy_students"') && String(sql).includes('"status" ='))!;
+    const statusPosition=String(studentWrite[0]).match(/"status" = \$(\d+)/)![1];
+    expect(studentWrite[1][Number(statusPosition)-1]).toBe(groupStatus==='planned'?'waiting_start':'studying');
+    if(groupStatus==='planned')expect(String(studentWrite[0])).not.toContain('"next_payment_at" =');
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -3614,6 +3618,120 @@ describe('academy route logic boundaries', () => {
       if (previousTimeZone === undefined) delete process.env.TZ;
       else process.env.TZ = previousTimeZone;
     }
+  });
+
+  it.each([{}, { confirmFutureGroupLaunch: true, expectedUpdatedAt: '2020-01-01T00:00:00.000Z' }])(
+    'rejects an unconfirmed or stale future-group launch before creating any lessons: %j',
+    async (confirmation) => {
+      const group = groupFixture({ status: 'planned', updated_at: new Date('2026-11-03T00:00:00Z') });
+      mocks.poolQuery.mockResolvedValue({ rows: [group] });
+      mocks.clientQuery.mockImplementation(async (sql: string) =>
+        sql.includes('SELECT * FROM academy_groups WHERE id = $1') ? { rows: [group] } : emptyResult(),
+      );
+      const response = await request(await createApp())
+        .patch('/api/academy/groups/20')
+        .send({ status: 'in_progress', ...confirmation });
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe(
+        'confirmFutureGroupLaunch' in confirmation ? 'futureGroupChanged' : 'futureGroupLaunchRequiresConfirmation',
+      );
+      expect(
+        mocks.clientQuery.mock.calls.some(
+          ([sql]) => sql.includes('UPDATE "academy_groups"') || sql.includes('INSERT INTO "academy_lessons"'),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('creates calendar lessons only after a confirmed launch of a fully prepared future group', async () => {
+    const group: Record<string, any> = groupFixture({
+      status: 'planned',
+      lesson_count: 2,
+      updated_at: new Date('2026-11-03T00:00:00Z'),
+      start_date: new Date('2030-07-01'),
+      end_date: new Date('2030-08-01'),
+    });
+    const lessons: Record<string, any>[] = [];
+    mocks.poolQuery.mockImplementation(async (sql: string) =>
+      sql.includes('FROM "academy_groups" WHERE id = $1') ? { rows: [group] } : emptyResult(),
+    );
+    mocks.clientQuery.mockImplementation(async (sql: string, values: any[] = []) => {
+      if (sql.includes('UPDATE "academy_groups"')) {
+        for (const [, column, position] of sql.matchAll(/"([a-z_]+)" = \$(\d+)/g))
+          group[column] = values[Number(position) - 1];
+        return { rows: [group] };
+      }
+      if (sql.includes('SELECT * FROM academy_groups WHERE id = $1')) return { rows: [group] };
+      if (sql.includes('FROM academy_courses'))
+        return {
+          rows: [
+            { id: 1, is_active: true, lesson_count: 2, lesson_duration_minutes: 60, duration_days: 30, program: [] },
+          ],
+        };
+      if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3, school_id: 2, is_active: true }] };
+      if (sql.includes('SELECT * FROM academy_teachers WHERE id = $1'))
+        return {
+          rows: [
+            {
+              id: 4,
+              status: 'active',
+              course_ids: [1],
+              school_ids: [2],
+              availability: [{ dayOfWeek: 1, startTime: '08:00', endTime: '18:00', schoolId: 2 }],
+            },
+          ],
+        };
+      if (sql.includes('SELECT id FROM academy_lessons WHERE group_id = $1 ORDER BY')) return { rows: lessons };
+      if (sql.includes('INSERT INTO "academy_lessons"')) {
+        const lesson = {
+          id: 10 + lessons.length,
+          group_id: 20,
+          scheduled_at: readInsertValue(sql, values, 'scheduled_at'),
+        };
+        lessons.push(lesson);
+        return { rows: [lesson] };
+      }
+      return emptyResult();
+    });
+    const app = await createApp();
+    expect((await request(app).patch('/api/academy/groups/20').send({ status: 'in_progress' })).status).toBe(409);
+    expect(lessons).toHaveLength(0);
+    const response = await request(app)
+      .patch('/api/academy/groups/20')
+      .send({
+        status: 'in_progress',
+        confirmFutureGroupLaunch: true,
+        expectedUpdatedAt: '2026-11-03T00:00:00.000Z',
+        allowFutureStart: true,
+      });
+    expect(
+      response.status,
+      String(
+        mocks.loggerError.mock.calls[mocks.loggerError.mock.calls.length - 1]?.[1]?.error?.stack ??
+          JSON.stringify(response.body),
+      ),
+    ).toBe(200);
+    expect(response.body.status).toBe('in_progress');
+    expect(lessons).toHaveLength(2);
+  });
+
+  it('does not materialize planned-group lessons and rejects manual lesson creation before launch', async () => {
+    const group = groupFixture({ status: 'planned' });
+    mocks.clientQuery.mockImplementation(async (sql: string) =>
+      sql.includes('SELECT * FROM academy_groups WHERE id = $1') ? { rows: [group] } : emptyResult(),
+    );
+    mocks.poolQuery.mockImplementation(async (sql: string) =>
+      sql.includes('SELECT * FROM academy_groups WHERE id = $1') ? { rows: [group] } : emptyResult(),
+    );
+    const { materializeGroupLessons, prepareLessonMutation } = await import(
+      '../server/modules/academy/academy-route-support'
+    );
+    expect(await materializeGroupLessons(20)).toEqual([]);
+    await expect(prepareLessonMutation({ values: { groupId: 20 } })).rejects.toMatchObject({
+      message: 'futureGroupNotLaunched',
+      statusCode: 409,
+    });
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO "academy_lessons"'))).toBe(false);
   });
 
   it('does not let group schedule-backed fields diverge from existing lessons', async () => {

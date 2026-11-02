@@ -90,6 +90,32 @@ describe.skipIf(!databaseUrl)('group teachers use active employee module assignm
     expect(result.body.groups[0]).toMatchObject({ teacherId: 1, teacherName: 'Archived teacher', name: 'Historical group' });
   });
 
+  it('offers planned groups first for enrollment while keeping them out of teaching configuration', async () => {
+    await fixture.pool
+      .query(`INSERT INTO academy_groups(id,name,course_id,school_id,room_id,status,is_archived,schedule) VALUES
+        (20,'Future group',1,1,NULL,'planned',false,'[]'),
+        (21,'Teaching group',1,1,1,'open',false,'[]'),
+        (22,'Archived future',1,1,NULL,'planned',true,'[]'),
+        (23,'Frozen group',1,1,1,'frozen',false,'[]');
+        INSERT INTO academy_students VALUES(31,41,'waiting_start');
+        INSERT INTO academy_student_group_enrollments VALUES(31,20,'active')`);
+    const app = express();
+    app.use((req, _res, next) => {
+      req.user = { id: 99, module: 'sales', modules: ['sales'] } as typeof req.user;
+      next();
+    });
+    const router = express.Router();
+    registerGroupManagementRoutes(router);
+    app.use('/api/academy', router);
+    const options = await request(app).get('/api/academy/enrollment-groups');
+    expect(options.status).toBe(200);
+    expect(options.body.map((group: { id: number }) => group.id)).toEqual([20, 21]);
+    expect(options.body[0]).toMatchObject({ status: 'planned', roomId: null, currentStudents: 1 });
+    const configuration = await request(app).get('/api/academy/group-configuration');
+    expect(configuration.status).toBe(200);
+    expect(configuration.body.groups.some((group: { status: string }) => group.status === 'planned')).toBe(false);
+  });
+
   it('requires an explicit teacher even when eligible employees are available', async () => {
     await expect(prepareGroupMutation({ values: { ...scheduleOptions, roomId: 1, teacherId: null } })).rejects.toMatchObject({ message: 'teacherRequired', statusCode: 400 });
     await expect(assertTeacherCanLeadGroupSchedule({ ...scheduleOptions, teacherId: 5 })).resolves.toMatchObject({ id: 5 });

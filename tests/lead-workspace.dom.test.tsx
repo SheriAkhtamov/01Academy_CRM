@@ -45,6 +45,7 @@ let transferOptions: SalesFunnelTransferOption[];
 let transferOptionsStatus: number;
 let transferOptionsRequests: number;
 let leadDetailRequests: number;
+let enrollmentGroupsResponse: unknown;
 
 beforeEach(() => {
   i18n.setLanguage('ru');
@@ -72,10 +73,14 @@ beforeEach(() => {
   transferOptionsStatus = 200;
   transferOptionsRequests = 0;
   leadDetailRequests = 0;
+  enrollmentGroupsResponse = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
     if (method === 'GET' && url === '/api/academy/leads/15') leadDetailRequests += 1;
+    if (method === 'GET' && url === '/api/academy/enrollment-groups') {
+      return new Response(JSON.stringify(enrollmentGroupsResponse), {status:200,headers:{'content-type':'application/json'}});
+    }
     if (url === '/api/academy/sales-funnels/transfer-options') {
       transferOptionsRequests += 1;
       return new Response(JSON.stringify(transferOptionsStatus === 200 ? transferOptions : { error: 'accessDenied' }), {
@@ -383,6 +388,24 @@ describe('lead workspace navigation and drafts', () => {
     expect(requests[1].body).not.toHaveProperty('expectedPaymentUzs');
     expect(lead.students[0].expectedPaymentUzs).toBe(250_000);
     expect(lead.expectedPaymentUzs).toBe(100_000);
+  });
+
+  it('keeps a student draft usable when group loading returns invalid data and allows retry', async () => {
+    enrollmentGroupsResponse = { unexpected: 'object' };
+    const { user } = renderSheet();
+    await screen.findByRole('heading', { name: 'Test parent' });
+    await user.click(screen.getByRole('button', { name: i18n.t('students') }));
+    await user.click(screen.getByRole('button', { name: i18n.t('createStudent') }));
+    const dialog = screen.getByRole('dialog', { name: i18n.t('createStudent') });
+    const name = within(dialog).getByRole('textbox', { name: i18n.t('studentName') }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Preserved learner' } });
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('studentLearning') }));
+    expect(await within(dialog).findByRole('alert')).toBeTruthy();
+    expect(name.value).toBe('Preserved learner');
+    enrollmentGroupsResponse = [];
+    await user.click(within(dialog).getByRole('button', { name: i18n.t('retry') }));
+    await waitFor(() => expect(within(dialog).queryByRole('alert')).toBeNull());
+    expect(name.value).toBe('Preserved learner');
   });
 
   it('starts every new student with a blank independent forecast', async () => {

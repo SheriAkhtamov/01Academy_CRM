@@ -60,6 +60,7 @@ describe('module navigation naming', () => {
         'Воронка продаж',
         'Архив лидов',
         'Расписание занятий',
+        'Будущие группы',
         'Группы',
         'Договоры',
         'Входящие',
@@ -88,6 +89,7 @@ describe('module navigation naming', () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/sales/contracts');
+    expect(hrefs).toContain('/sales/future-groups');
     expect(hrefs).not.toContain('/sales/clients');
     expect(hrefs).not.toContain('/teacher-module/schedule');
     expect(hrefs).toContain('/marketing-module/meta-attribution');

@@ -357,12 +357,14 @@ const transferAssignedSalesLeads = async ({
     toManagerId,
     changedBy,
     transferAllOpenTasks = false,
+    transferBoardTasks = true,
 }: {
     client: PoolClient;
     fromManagerId: number;
     toManagerId: number;
     changedBy: number;
     transferAllOpenTasks?: boolean;
+    transferBoardTasks?: boolean;
 }) => {
     const leads = await client.query<{ id: number }>(
             `SELECT id
@@ -415,7 +417,7 @@ const transferAssignedSalesLeads = async ({
             [toManagerId, leadIds, fromManagerId, transferAllOpenTasks, studentIds],
         );
     let boardTaskCount = 0;
-    if (transferAllOpenTasks) {
+    if (transferAllOpenTasks && transferBoardTasks) {
         const transferredBoardTasks = await client.query<{ id: number }>(
             `UPDATE board_tasks
              SET creator_id = CASE WHEN creator_id = $1 THEN $2 ELSE creator_id END,

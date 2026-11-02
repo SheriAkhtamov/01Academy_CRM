@@ -487,11 +487,12 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     setSalesLeadTransferManagerId(firstEligibleManager ? String(firstEligibleManager.id) : '');
   };
 
-  const getAssignedResponsibilityCount = async (employee: any, includeAllOpenTasks = false) => {
+  const getAssignedResponsibilityCount = async (employee: any, includeAllOpenTasks = false, archiveBoardTasks = false) => {
     const impact = await getEmployeeResponsibilityImpact(employee.id);
     const fallback = Number(impact?.leadCount ?? 0);
     return {
-      leadCount: Number(includeAllOpenTasks ? impact?.offboardingResponsibilityCount ?? fallback : impact?.salesResponsibilityCount ?? fallback),
+      leadCount: Math.max(0, Number(includeAllOpenTasks ? impact?.offboardingResponsibilityCount ?? fallback : impact?.salesResponsibilityCount ?? fallback)
+        - (archiveBoardTasks ? Number(impact?.boardTaskCount ?? 0) : 0)),
       requiresSales: Number(impact?.salesResponsibilityCount ?? fallback) > 0,
     };
   };
@@ -501,7 +502,7 @@ export default function Admin({ mode = 'admin' }: AdminProps) {
     offboardingLockRef.current = true;
     setCheckingResponsibilities(action);
     try {
-      const { leadCount, requiresSales } = await getAssignedResponsibilityCount(employee, true);
+      const { leadCount, requiresSales } = await getAssignedResponsibilityCount(employee, true, action === 'archive');
       if (leadCount > 0) {
         setUserToArchive(null);
         setUserToDelete(null);

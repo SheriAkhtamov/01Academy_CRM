@@ -51,6 +51,11 @@ export function TaskCard({ task, onClick, dragProps }: TaskCardProps) {
                 <Badge variant="secondary" className={cn('h-5 px-1.5 text-[10px] font-medium', priority.badge)}>
                     {t(priority.labelKey)}
                 </Badge>
+                {task.archivedWithEmployee ? (
+                    <Badge variant="outline" className="max-w-full whitespace-normal text-xs">
+                        {t('taskArchivedWithEmployee')}
+                    </Badge>
+                ) : null}
                 {task.lead ? (
                     <Badge variant="outline" className="h-5 max-w-full gap-1 px-1.5 text-[10px] font-medium">
                         <UserRound className="size-3 shrink-0" />

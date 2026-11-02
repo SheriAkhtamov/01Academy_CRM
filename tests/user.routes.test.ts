@@ -520,6 +520,47 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it('archives an employee with board tasks without transferring or marking those tasks completed', async () => {
+    const departing = { ...administrationUser, id: 16, module: 'marketing', modules: ['marketing'], isArchived: false };
+    mockStorage.getUser.mockResolvedValueOnce(administrationUser).mockResolvedValueOnce(departing)
+      .mockResolvedValueOnce({ ...departing, isArchived: true, isActive: false });
+    const statements: string[] = [];
+    const client = { release: vi.fn(), query: vi.fn(async (statement: string) => {
+      statements.push(statement);
+      if (statement.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
+      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0, board_task_count: 8 }] };
+      return { rows: [], rowCount: 0 };
+    }) };
+    mockPool.connect.mockResolvedValue(client);
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive');
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ isArchived: true, archivedTaskCount: 8, transferredResponsibilityCount: 0 });
+    expect(statements.some(sql => sql.includes('UPDATE board_tasks'))).toBe(false);
+    expect(statements.some(sql => sql.includes('DELETE FROM board_tasks'))).toBe(false);
+    expect(statements.some(sql => sql.includes('DELETE FROM "session"'))).toBe(true);
+    expect(statements).toContain('COMMIT');
+  });
+
+  it('still requires customer responsibility transfer when board tasks move into the archive', async () => {
+    const departing = { ...administrationUser, id: 16, module: 'sales', modules: ['sales'], isArchived: false };
+    mockStorage.getUser.mockResolvedValueOnce(administrationUser).mockResolvedValueOnce(departing);
+    const client = { release: vi.fn(), query: vi.fn(async (statement: string) => {
+      if (statement.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
+      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 2, board_task_count: 8 }] };
+      return { rows: [], rowCount: 0 };
+    }) };
+    mockPool.connect.mockResolvedValue(client);
+    const agent = request.agent(await createApp());
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive');
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ error: 'salesLeadTransferRequired', leadCount: 4 });
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('SET is_archived = true'))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
   it('blocks archiving the last active administrator inside the access lock', async () => {
     const target = { ...administrationUser, id: 16, isArchived: false };
     mockStorage.getUser
@@ -718,7 +759,7 @@ describe('user route validation', () => {
     );
     expect(insertCall?.[1]?.[5]).toBeNull();
   });
-  it('includes author and assignee board duties in offboarding and transfers them to an active teacher', async () => {
+  it('preserves both author and assignee board duties when archiving, even if an old client sends a transfer target', async () => {
     const departing = { ...administrationUser, id: 16, module: 'teacher', modules: ['teacher'], isArchived: false };
     const tasks = [
       { id: 100, creatorId: 16, assigneeId: 8, status: 'done' },
@@ -753,16 +794,18 @@ describe('user route validation', () => {
     await agent.post('/test/session');
     const response = await agent.post('/api/users/16/archive').send({ leadTransferManagerId: 30 });
     expect(response.status).toBe(200);
-    expect(response.body.transferredResponsibilityCount).toBe(3);
+    expect(response.body.transferredResponsibilityCount).toBe(0);
+    expect(response.body.archivedTaskCount).toBe(3);
     expect(tasks).toEqual([
-      { id: 100, creatorId: 30, assigneeId: 8, status: 'done' },
-      { id: 101, creatorId: 8, assigneeId: 30, status: 'todo' },
-      { id: 102, creatorId: 30, assigneeId: 30, status: 'in_progress' },
+      { id: 100, creatorId: 16, assigneeId: 8, status: 'done' },
+      { id: 101, creatorId: 8, assigneeId: 16, status: 'todo' },
+      { id: 102, creatorId: 16, assigneeId: 16, status: 'in_progress' },
       { id: 103, creatorId: 16, assigneeId: 16, status: 'accepted' },
     ]);
     const { canFinalizeBoardTask, canManageBoardTask } = await import('../shared/board-permissions');
-    expect(canFinalizeBoardTask({ id: 30 }, tasks[0])).toBe(true);
-    expect(canManageBoardTask({ id: 30 }, tasks[1])).toBe(true);
+    expect(canFinalizeBoardTask({ id: 16 }, { ...tasks[0], archivedWithEmployee: true })).toBe(false);
+    expect(canManageBoardTask({ id: 16 }, { ...tasks[1], archivedWithEmployee: true })).toBe(false);
+    expect(client.query.mock.calls.some(([statement]) => statement.includes('UPDATE board_tasks'))).toBe(false);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
 

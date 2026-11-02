@@ -192,6 +192,28 @@ it('blocks edits, duplicate saves and closing while an employee update is pendin
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 
+it('archives an employee and their board tasks without asking to transfer those tasks', async () => {
+  const writes: string[] = [];
+  vi.mocked(fetch).mockImplementation(async (url, options) => {
+    const target = String(url);
+    if (options?.method === 'POST') writes.push(target);
+    const payload = target.endsWith('/sales-lead-count')
+      ? { leadCount: 0, salesResponsibilityCount: 0, offboardingResponsibilityCount: 8, boardTaskCount: 8 }
+      : target.endsWith('/archive') ? { ...employee, isArchived: true, isActive: false }
+      : target === '/api/users' ? [employee] : [];
+    return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } });
+  });
+  mount();
+  const row = (await screen.findByText(employee.fullName)).closest('tr')!;
+  fireEvent.click(within(row).getByRole('button', { name: i18n.t('archiveEmployee') }));
+  const confirmation = screen.getByRole('alertdialog');
+  expect(confirmation.textContent).toContain('Tasks they created or were assigned');
+  fireEvent.click(within(confirmation).getByRole('button', { name: i18n.t('archiveEmployee') }));
+  await waitFor(() => expect(writes).toEqual(['/api/users/6/archive']));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  expect(screen.queryByRole('dialog', { name: i18n.t('employeeWorkTransferTitle') })).toBeNull();
+});
+
 it('keeps archive confirmation pending through the responsibility check and then opens the transfer dialog', async () => {
   let finish!: (response: Response) => void;
   const manager = { ...employee, id: 7, fullName: 'Transfer manager', module: 'sales', modules: ['sales'] };

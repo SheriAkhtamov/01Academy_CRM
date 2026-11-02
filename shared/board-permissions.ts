@@ -1,21 +1,27 @@
 type TaskActor = { id: number } | null | undefined;
 type TaskOwnership = {
   status?: string;
+  archivedWithEmployee?: boolean;
   creatorId?: number | null;
   creator?: { id: number } | null;
   assigneeId?: number | null;
   assignee?: { id: number } | null;
 } | null | undefined;
 
+/** Employee offboarding archives work without pretending it was completed. */
+export function isBoardTaskArchivedWithEmployee(task: TaskOwnership): boolean {
+  return task?.archivedWithEmployee === true;
+}
+
 /** Viewing the team board never grants permission to change someone else's work. */
 export function canManageBoardTask(actor: TaskActor, task: TaskOwnership): boolean {
-  if (!actor || !task) return false;
+  if (!actor || !task || isBoardTaskArchivedWithEmployee(task)) return false;
   const assigneeId = task.assigneeId !== undefined ? task.assigneeId : task.assignee?.id;
   return actor.id === assigneeId;
 }
 
 export function canEditBoardTask(actor: TaskActor, task: TaskOwnership): boolean {
-  if (!actor || !task) return false;
+  if (!actor || !task || isBoardTaskArchivedWithEmployee(task)) return false;
   const creatorId = task.creatorId !== undefined ? task.creatorId : task.creator?.id;
   return actor.id === creatorId;
 }
@@ -33,7 +39,7 @@ export function isSelfAssignedBoardTask(task: TaskOwnership): boolean {
 
 /** The author accepts delegated work or finalizes a task they created for themselves. */
 export function canFinalizeBoardTask(actor: TaskActor, task: TaskOwnership): boolean {
-  if (!actor || !task) return false;
+  if (!actor || !task || isBoardTaskArchivedWithEmployee(task)) return false;
   const creatorId = task.creatorId !== undefined ? task.creatorId : task.creator?.id;
   const assigneeId = task.assigneeId !== undefined ? task.assigneeId : task.assignee?.id;
   return actor.id === creatorId && assigneeId != null;

@@ -157,6 +157,10 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: boardQueryKeys.all });
           if (message.data?.id) {
             queryClient.invalidateQueries({ queryKey: [`/api/board/tasks/${message.data.id}`] });
+          } else if (message.data?.employeeId) {
+            queryClient.invalidateQueries({ predicate: (query) => (
+              typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/board/tasks/')
+            ) });
           }
           break;
         case 'TELEPHONY_CALL_UPDATED':

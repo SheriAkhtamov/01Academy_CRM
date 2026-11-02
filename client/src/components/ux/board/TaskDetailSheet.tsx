@@ -471,6 +471,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange, users, tasksOnly =
                                             </Button>
                                         ) : null}
                                         <Badge variant="outline" className="h-5 px-1.5 text-[10px]">{columnLabel(task.status, t)}</Badge>
+                                        {task.archivedWithEmployee ? <Badge variant="outline" className="max-w-full whitespace-normal text-xs">{t('taskArchivedWithEmployee')}</Badge> : null}
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">

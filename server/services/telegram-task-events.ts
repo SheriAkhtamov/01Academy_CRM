@@ -6,6 +6,7 @@ import { sendTelegramTaskReminder } from './telegram-task-delivery';
 import { t } from '../lib/i18n';
 import { logger } from '../lib/logger';
 import type { TaskNotice } from '../domain/board-task-notices';
+import { boardTaskEmployeeArchiveSql } from '../lib/board-task-archive';
 
 const noticeKeys = {
   created: 'telegramTaskCreated', assigned: 'telegramTaskAssigned', unassigned: 'telegramTaskUnassigned',
@@ -63,7 +64,8 @@ export async function processTelegramTaskEvents(): Promise<number> {
       let allowed = identity?.user.id === event.recipient_id;
       if (allowed && notice.kind !== 'deleted' && notice.kind !== 'unassigned') {
         const current = await client.query(
-          'SELECT 1 FROM board_tasks WHERE id = $1 AND (creator_id = $2 OR assignee_id = $2)', [notice.taskId, event.recipient_id]);
+          `SELECT 1 FROM board_tasks WHERE id = $1 AND (creator_id = $2 OR assignee_id = $2)
+            AND NOT ${boardTaskEmployeeArchiveSql('board_tasks')}`, [notice.taskId, event.recipient_id]);
         allowed = current.rows.length > 0;
       }
       if (allowed && notice.destination.commentId) {

@@ -3,6 +3,7 @@ import { pool } from '../db';
 import { appConfig, isProductionEnvironment } from '../config';
 import { logger } from '../lib/logger';
 import { hasLeadershipAccess } from '@shared/academy';
+import { boardTaskEmployeeArchiveSql } from '../lib/board-task-archive';
 import { getTelegramTaskIdentity } from './telegram-tasks';
 import { planTelegramTaskReminders, planTelegramWeeklyDigest, planTelegramOverdueReminders, type ReminderTask } from './telegram-task-reminder-plan';
 
@@ -51,6 +52,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
       const tasks = await client.query<ReminderTask>(
         `SELECT id, title, due_at, status FROM board_tasks
          WHERE assignee_id = $1 AND status <> 'accepted'
+           AND NOT ${boardTaskEmployeeArchiveSql('board_tasks')}
          ORDER BY due_at NULLS LAST, id`, [binding.user_id]);
       const daily = planTelegramWeeklyDigest(tasks.rows, now, timeZone);
       if (daily.length && hasLeadershipAccess(identity.user)) {
@@ -59,6 +61,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
            FROM board_tasks task
            JOIN users employee ON employee.id = task.assignee_id
            WHERE task.assignee_id <> $1 AND task.status <> 'accepted'
+             AND NOT ${boardTaskEmployeeArchiveSql('task')}
              AND employee.is_active = true AND employee.is_archived = false
            ORDER BY task.due_at NULLS LAST, employee.full_name, task.id`, [binding.user_id]);
         daily.push(...planTelegramWeeklyDigest(team.rows, now, timeZone, 'team'));
@@ -70,6 +73,7 @@ export async function processTelegramTaskReminders(timeZone: string, now = new D
       const overdueTasks = await client.query<ReminderTask>(
         `SELECT id, title, due_at, status, assignee_id, creator_id FROM board_tasks
          WHERE (assignee_id = $1 OR creator_id = $1) AND status IN ('backlog', 'todo', 'in_progress') AND due_at <= $2
+           AND NOT ${boardTaskEmployeeArchiveSql('board_tasks')}
          ORDER BY due_at, id`, [binding.user_id, now]);
       const overdue = planTelegramOverdueReminders(overdueTasks.rows, now, timeZone, binding.user_id);
       for (const reminder of [...daily, ...dueSoon, ...overdue]) {

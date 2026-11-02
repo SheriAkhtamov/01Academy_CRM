@@ -15,6 +15,7 @@ export interface UserMini {
 }
 
 export interface TaskSummary {
+    archivedWithEmployee?: boolean;
     id: number;
     boardId: number;
     title: string;
@@ -82,6 +83,7 @@ export interface TaskActivity {
 }
 
 export interface TaskDetail {
+    archivedWithEmployee?: boolean;
     id: number;
     boardId: number;
     title: string;
@@ -202,8 +204,8 @@ export function formatBoardDateTime(value: string | null, language: string): str
     });
 }
 
-export function isOverdue(task: { dueAt: string | null; status: BoardStatus }): boolean {
-    if (!task.dueAt || task.status === 'accepted' || task.status === 'done') return false;
+export function isOverdue(task: { dueAt: string | null; status: BoardStatus; archivedWithEmployee?: boolean }): boolean {
+    if (!task.dueAt || task.archivedWithEmployee || task.status === 'accepted' || task.status === 'done') return false;
     return new Date(task.dueAt).getTime() < Date.now();
 }
 

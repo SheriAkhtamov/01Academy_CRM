@@ -17,10 +17,11 @@ import {
     type InsertBoardTaskAttachment,
     type InsertBoardTaskActivity,
 } from '../db/schema';
-import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, ne, not, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { isBoardTaskAwaitingAcceptance } from '@shared/board-permissions';
 import { COMMENT_READ_ACTIVITY, unreadBoardCommentIds, saveBoardCommentRead, markBoardCommentsRead } from './board-comment-reads';
+import { boardTaskEmployeeArchiveSql } from '../lib/board-task-archive';
 
 // Minimal user shape embedded in task payloads. Accepts the `users` table or
 // any alias of it (creator/assignee/author/...), hence the loose column type.
@@ -37,6 +38,10 @@ const assignee = alias(users, 'assignee');
 const author = alias(users, 'author');
 const uploader = alias(users, 'uploader');
 const actor = alias(users, 'actor');
+
+// Archive membership follows the employee, so restoring them also restores their
+// unfinished work. Status, ownership, comments and attachments remain unchanged.
+const archivedWithEmployee = sql<boolean>`${sql.raw(boardTaskEmployeeArchiveSql('board_tasks'))}`;
 
 const requireTaskAssignee = (assigneeId: number | null | undefined) => {
     if (!Number.isSafeInteger(assigneeId) || (assigneeId ?? 0) <= 0) {
@@ -102,6 +107,7 @@ class BoardStorage {
                 eq(boardTasks.creatorId, creatorId),
                 ne(boardTasks.assigneeId, creatorId),
                 eq(boardTasks.status, 'done'),
+                not(archivedWithEmployee),
             ));
         return row?.count ?? 0;
     }
@@ -110,8 +116,8 @@ class BoardStorage {
         const visibilityWhere = and(
             eq(boardTasks.boardId, boardId),
             archived
-                ? eq(boardTasks.status, 'accepted')
-                : ne(boardTasks.status, 'accepted'),
+                ? or(eq(boardTasks.status, 'accepted'), archivedWithEmployee)
+                : and(ne(boardTasks.status, 'accepted'), not(archivedWithEmployee)),
             visibleToUserId
                 ? or(
                     eq(boardTasks.creatorId, visibleToUserId),
@@ -127,6 +133,7 @@ class BoardStorage {
                 title: boardTasks.title,
                 description: boardTasks.description,
                 status: boardTasks.status,
+                archivedWithEmployee,
                 priority: boardTasks.priority,
                 color: boardTasks.color,
                 position: boardTasks.position,
@@ -181,6 +188,7 @@ class BoardStorage {
             .where(and(
                 eq(boardTasks.assigneeId, assigneeId),
                 ne(boardTasks.status, 'accepted'),
+                not(archivedWithEmployee),
             ))
             .orderBy(sql`${boardTasks.dueAt} asc nulls last`, asc(boardTasks.id))
             .limit(Math.max(1, Math.min(limit, 100)));
@@ -207,6 +215,7 @@ class BoardStorage {
                 FROM ${boardTasks}
                 INNER JOIN ${users} ON ${users.id} = ${boardTasks.assigneeId}
                 WHERE ${boardTasks.status} <> 'accepted'
+                  AND NOT ${archivedWithEmployee}
                   AND ${users.isActive} IS TRUE
                   AND ${users.isArchived} IS FALSE
             ), employee_ranked AS (
@@ -291,6 +300,7 @@ class BoardStorage {
                 title: boardTasks.title,
                 description: boardTasks.description,
                 status: boardTasks.status,
+                archivedWithEmployee,
                 priority: boardTasks.priority,
                 color: boardTasks.color,
                 position: boardTasks.position,
@@ -381,8 +391,9 @@ class BoardStorage {
         };
     }
 
-    async getTask(id: number): Promise<BoardTask | undefined> {
-        const [row] = await db.select().from(boardTasks).where(eq(boardTasks.id, id));
+    async getTask(id: number): Promise<(BoardTask & { archivedWithEmployee: boolean }) | undefined> {
+        const [row] = await db.select({ ...getTableColumns(boardTasks), archivedWithEmployee })
+            .from(boardTasks).where(eq(boardTasks.id, id));
         return row;
     }
 

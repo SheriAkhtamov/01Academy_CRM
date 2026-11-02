@@ -6,12 +6,13 @@ import { sendHttpError } from '../lib/http-errors';
 import { authService } from '../services/auth';
 import { requireAdministration } from '../middleware/auth.middleware';
 import { revokeUserAuthenticationArtifacts } from '../services/session-security';
-import { disconnectRealtimeUser } from '../realtime/realtime-hub';
+import { disconnectRealtimeUser, publishRealtimeEvent } from '../realtime/realtime-hub';
 
 type QueryExecutor = Pick<PoolClient, 'query'>;
 
 type Workload = {
   offboardingResponsibilityCount: number;
+  boardTaskCount?: number;
 };
 
 type TransferResult = {
@@ -49,6 +50,7 @@ type RegisterUserArchiveRoutesDependencies = {
     toManagerId: number;
     changedBy: number;
     transferAllOpenTasks: boolean;
+    transferBoardTasks?: boolean;
   }) => Promise<TransferResult>;
   syncAcademyTeacherForUser: (user: {
     id: number;
@@ -90,6 +92,7 @@ export const registerUserArchiveRoutes = (
       let transferredResponsibilityCount = 0;
       let transferManagerId: number | null = null;
       let alreadyArchived = false;
+      let archivedTaskCount = 0;
       try {
         await client.query('BEGIN');
         await client.query('SELECT pg_advisory_xact_lock($1)', [userAccessAdvisoryLock]);
@@ -144,12 +147,16 @@ export const registerUserArchiveRoutes = (
           }
 
           const workload = await getAssignedWorkload(id, client);
-          if (workload.offboardingResponsibilityCount > 0) {
+          archivedTaskCount = workload.boardTaskCount ?? 0;
+          // Board tasks follow the employee into the task archive. Customer
+          // ownership and academy follow-ups still need an active replacement.
+          const transferCount = workload.offboardingResponsibilityCount - (workload.boardTaskCount ?? 0);
+          if (transferCount > 0) {
             transferManagerId = parsePositiveId(req.body?.leadTransferManagerId);
             if (!transferManagerId || transferManagerId === id) {
               throw Object.assign(new Error('salesLeadTransferRequired'), {
                 statusCode: 409,
-                leadCount: workload.offboardingResponsibilityCount,
+                leadCount: transferCount,
               });
             }
             const transferTarget = await getActiveSalesManagerForTransfer(transferManagerId, client, id);
@@ -162,6 +169,7 @@ export const registerUserArchiveRoutes = (
               toManagerId: transferManagerId,
               changedBy: req.user!.id,
               transferAllOpenTasks: true,
+              transferBoardTasks: false,
             });
             transferredResponsibilityCount = transferred.leadCount
               + transferred.studentCount
@@ -201,6 +209,7 @@ export const registerUserArchiveRoutes = (
 
       if (!alreadyArchived) {
         disconnectRealtimeUser(id);
+        publishRealtimeEvent({ type: 'BOARD_TASK_UPDATED', data: { employeeId: id } });
         await createAuditLog({
           userId: req.user!.id,
           action: 'ARCHIVE_USER',
@@ -211,6 +220,7 @@ export const registerUserArchiveRoutes = (
             ...authService.sanitizeUser(archivedUser),
             transferredResponsibilityCount,
             transferManagerId,
+            archivedTaskCount,
           }],
         }).catch((error) => logger.error('Failed to audit user archive', { error, userId: id }));
       }
@@ -219,6 +229,7 @@ export const registerUserArchiveRoutes = (
         ...authService.sanitizeUser(archivedUser),
         alreadyArchived,
         transferredResponsibilityCount,
+        archivedTaskCount,
       });
     } catch (error) {
       logger.error('Error archiving user', { error, userId: req.params.id });
@@ -317,6 +328,7 @@ export const registerUserArchiveRoutes = (
       if (!restoredUser) return res.status(404).json({ error: 'User not found' });
 
       if (!alreadyRestored) {
+        publishRealtimeEvent({ type: 'BOARD_TASK_UPDATED', data: { employeeId: id } });
         await createAuditLog({
           userId: req.user!.id,
           action: 'RESTORE_USER',

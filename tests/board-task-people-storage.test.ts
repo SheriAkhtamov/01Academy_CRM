@@ -16,11 +16,13 @@ const assignee = { id: 8, fullName: 'Task Assignee', avatarUrl: '/api/users/phot
 const nullPerson = { id: null, fullName: null, avatarUrl: null, position: null, module: null };
 let taskRows: Array<Record<string, unknown>>;
 let projections: Array<{ table: unknown; selection?: Record<string, any> }>;
+let filters: any[];
 
 beforeEach(() => {
   vi.clearAllMocks();
   taskRows = [{ id: 100, creator, assignee, lead: { id: null } }];
   projections = [];
+  filters = [];
   mocks.unread.mockResolvedValue(new Map());
   mocks.select.mockImplementation((selection?: Record<string, any>) => ({
     from: (table: unknown) => {
@@ -28,7 +30,7 @@ beforeEach(() => {
       const rows = table === boardTasks ? taskRows : [];
       const chain = {
         leftJoin: () => chain,
-        where: () => chain,
+        where: (condition: unknown) => { if (table === boardTasks) filters.push(condition); return chain; },
         orderBy: async () => rows,
         groupBy: async () => rows,
         then: (resolve: (result: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
@@ -47,6 +49,13 @@ function assertPeopleProjection() {
 }
 
 describe('embedded task people photos', () => {
+  it.each([false, true])('uses employee archive membership in the real task list query for archived=%s', async (archived) => {
+    await boardStorage.getTasks(1, undefined, archived, 7);
+    const sql = new PgDialect().sqlToQuery(filters[0]).sql;
+    expect(sql).toContain('archived_employee.is_archived IS TRUE');
+    expect(sql).toContain('board_tasks.creator_id, board_tasks.assignee_id');
+    expect(sql).toContain(archived ? ' or EXISTS' : 'not EXISTS');
+  });
   it.each([false, true])('includes creator and assignee photos in the current joined list for archived=%s', async (archived) => {
     const tasks = await boardStorage.getTasks(1, undefined, archived, 7);
     expect(tasks[0].creator).toEqual(creator);

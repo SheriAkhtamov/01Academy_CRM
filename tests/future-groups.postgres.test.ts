@@ -157,6 +157,7 @@ describe.skipIf(!url)("Future groups persistence", () => {
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id int,school_id int,room_id int NOT NULL,teacher_id int,
         max_students int,status text,start_date timestamp,end_date timestamp,schedule jsonb,lesson_duration_minutes int,lesson_count int,selected_course_lesson_ids jsonb,duration_days int,
         is_archived boolean DEFAULT false,archived_at timestamp,archived_by int,created_at timestamp DEFAULT now(),updated_at timestamp DEFAULT now());
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,course_id int);
       CREATE TABLE academy_leads(id int PRIMARY KEY,manager_id int,funnel_id int,student_name text,contact_name text,phone text,
         is_archived boolean DEFAULT false,enrolled_group_id int,course_id int,school_id int,updated_at timestamp DEFAULT now());
       CREATE TABLE academy_students(id int PRIMARY KEY,lead_id int,group_id int,student_name text,status text,course_id int,school_id int,updated_at timestamp DEFAULT now());
@@ -166,6 +167,11 @@ describe.skipIf(!url)("Future groups persistence", () => {
       CREATE TABLE academy_payments(id serial PRIMARY KEY,group_id int,lead_id int,student_id int,amount_uzs int,status text);
       CREATE TABLE academy_student_status_history(id serial PRIMARY KEY,student_id int,from_status text,to_status text,changed_by int,comment text);
     `);
+    // Include the existing curriculum constraint: an empty selection is invalid
+    // even for a future group. The old fixture silently omitted this migration.
+    await fixture.pool.query(
+      readFileSync("migrations/0155_course_curriculum.sql", "utf8"),
+    );
     await fixture.pool.query(
       readFileSync("migrations/0169_future_groups.sql", "utf8"),
     );
@@ -187,6 +193,39 @@ describe.skipIf(!url)("Future groups persistence", () => {
     }
   });
   const create = () => repository.save(actor, input);
+  it("saves the Sunday group before its curriculum is selected and retains the plan on edit", async () => {
+    const plan: FutureGroupInput = {
+      ...input,
+      nameSuffix: "Группа: Сарвиноз (15:00-17:00) (Дархан)",
+      maxStudents: 8,
+      startDate: "2026-11-15",
+      roomId: 1,
+      teacherId: 1,
+      schedule: [{ dayOfWeek: 7, startTime: "15:00", endTime: "17:00" }],
+    };
+    const group = await repository.save(actor, plan);
+    expect(group).toMatchObject({ status: "planned", selectedCourseLessonIds: null,
+      lessonCount: 0, maxStudents: 8, teacherId: 1, roomId: 1, schedule: plan.schedule });
+    expect((await repository.list())[0]).toMatchObject({ id: group.id, startDate: "2026-11-15" });
+    const edited = await repository.save(actor, {
+      ...plan, maxStudents: 9, expectedUpdatedAt: group.updatedAt.toISOString(),
+    }, group.id);
+    expect(edited).toMatchObject({ selectedCourseLessonIds: null, maxStudents: 9, schedule: plan.schedule });
+    expect((await fixture.pool!.query("SELECT count(*)::int AS count FROM academy_lessons")).rows[0].count).toBe(0);
+  });
+  it("keeps the curriculum constraint: no empty or non-array selections", async () => {
+    const group = await create();
+    for (const value of [[], {}, "invalid"]) {
+      await expect(fixture.pool!.query(
+        "UPDATE academy_groups SET selected_course_lesson_ids=$2::jsonb WHERE id=$1",
+        [group.id, JSON.stringify(value)],
+      )).rejects.toMatchObject({ code: "23514", constraint: "academy_groups_course_lessons_array" });
+    }
+    await fixture.pool!.query(
+      "UPDATE academy_groups SET selected_course_lesson_ids=$2::jsonb WHERE id=$1",
+      [group.id, JSON.stringify(["lesson-1"])],
+    );
+  });
   it("creates a future group without a date, teacher or room; teaching still requires a room", async () => {
     const group = await create();
     expect(group).toMatchObject({

@@ -169,6 +169,33 @@ it("preserves edited fields after a failed save and requires confirmation to dis
   await userEvent.click(within(dialog).getByRole("button", { name: "Отмена" }));
   expect(await screen.findByRole("alertdialog")).toBeTruthy();
 });
+it.each([
+  "futureGroupChanged", "groupCapacityBelowOccupancy", "groupHasInactiveResources",
+  "teacherNotFound", "groupCodeBranchMissing", "groupCodeCourseMissing", "accessDenied",
+] as const)("shows the translated reason for %s while retaining the draft", async (code) => {
+  // apiRequest localizes message but retains the original server code.
+  api.save.mockRejectedValue(Object.assign(Error(i18n.t(code)), { rawMessage: code }));
+  const dialog = await open();
+  const name = within(dialog).getByLabelText("Название группы");
+  fireEvent.change(name, { target: { value: "Черновик новой группы" } });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить изменения" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(i18n.t(code));
+  expect((name as HTMLInputElement).value).toBe("Черновик новой группы");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+it("hides internal errors and lets the manager retry the retained draft", async () => {
+  api.save.mockRejectedValueOnce(Object.assign(Error("Database constraint failed"), { rawMessage: "internalSqlError" }));
+  const dialog = await open();
+  const name = within(dialog).getByLabelText("Название группы");
+  fireEvent.change(name, { target: { value: "Воскресенье 15:00" } });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить изменения" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(i18n.t("futureGroupSaveFailed"));
+  expect(screen.queryByText("internalSqlError")).toBeNull();
+  api.save.mockResolvedValueOnce({ id: 1 });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить изменения" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(api.save.mock.calls[1][0].nameSuffix).toBe("Воскресенье 15:00");
+});
 it("blocks repeated submit while saving and does not overwrite a draft on a background refresh", async () => {
   let resolve!: (value: { id: number }) => void;
   api.save.mockReturnValue(

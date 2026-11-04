@@ -142,7 +142,9 @@ export class FutureGroupsRepository {
         Object.assign(values, {
           status: "planned",
           lessonCount: 0,
-          selectedCourseLessonIds: [],
+          // A future group's curriculum has not been selected yet. Empty
+          // selections are invalid under academy_groups_course_lessons_array.
+          selectedCourseLessonIds: null,
           durationDays: 0,
         });
         await allocateGroupName(values, { ...input, trainingType: "GRP" });

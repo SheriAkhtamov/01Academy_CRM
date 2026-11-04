@@ -128,14 +128,18 @@ export function FutureGroupDialog({
     onSettled: () => {
       saveLock.current = false;
     },
-    onError: (e: Error) =>
-      setError(
-        e.message.includes("futureGroupChanged")
-          ? t("futureGroupChanged")
-          : e.message.includes("groupCapacityBelowOccupancy")
-            ? t("groupCapacityBelowOccupancy")
-            : t("futureGroupSaveFailed"),
-      ),
+    onError: (e: Error & { rawMessage?: string }) => {
+      const code = e.rawMessage ?? e.message;
+      const knownError = [
+        "futureGroupChanged", "futureGroupUnavailable", "groupCapacityBelowOccupancy",
+        "groupHasInactiveResources", "teacherNotFound", "groupCodeBranchMissing",
+        "groupCodeCourseMissing", "groupCodeImmutable", "groupOnlineRequiresNewGroup",
+        "groupNameTooLong", "groupNameAdditionInvalid", "accessDenied",
+      ] as const;
+      const key = knownError.find((key) => key === code || t(key) === code);
+      setError(code === "invalidData" ? t("futureGroupRequiredFields")
+        : key ? t(key) : t("futureGroupSaveFailed"));
+    },
   });
   const guard = useUnsavedChangesGuard({
     open: true,

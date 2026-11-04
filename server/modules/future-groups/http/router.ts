@@ -10,6 +10,7 @@ import {
   getPublicErrorMessage,
 } from "../../../lib/http-errors";
 import type { FutureGroupsService } from "../application/service";
+import { logger } from "../../../lib/logger";
 
 const id = z.coerce.number().int().positive();
 const params = z.object({ id });
@@ -17,16 +18,22 @@ const params = z.object({ id });
 export function createFutureGroupsRouter(service: FutureGroupsService) {
   const router = Router();
   const run =
-    (handler: (req: Request) => Promise<unknown>, status = 200) =>
+    (handler: (req: Request) => Promise<unknown>, status = 200, fallback = "failedToLoadData") =>
     async (req: Request, res: Response) => {
       try {
         res.status(status).json(await handler(req));
       } catch (error) {
         if (error instanceof z.ZodError)
           return res.status(400).json({ error: "invalidData" });
+        const errorStatus = getHttpErrorStatus(error);
+        if (errorStatus >= 500) {
+          logger.error("Future group request failed", {
+            error, method: req.method, route: req.route.path, groupId: req.params.id,
+          });
+        }
         res
-          .status(getHttpErrorStatus(error))
-          .json({ error: getPublicErrorMessage(error, "failedToLoadData") });
+          .status(errorStatus)
+          .json({ error: getPublicErrorMessage(error, fallback) });
       }
     };
   router.get(
@@ -54,6 +61,7 @@ export function createFutureGroupsRouter(service: FutureGroupsService) {
           futureGroupInputSchema.parse(req.body),
         ),
       201,
+      "futureGroupSaveFailed",
     ),
   );
   router.patch(
@@ -64,6 +72,8 @@ export function createFutureGroupsRouter(service: FutureGroupsService) {
         futureGroupInputSchema.parse(req.body),
         params.parse(req.params).id,
       ),
+      200,
+      "futureGroupSaveFailed",
     ),
   );
   router.get(

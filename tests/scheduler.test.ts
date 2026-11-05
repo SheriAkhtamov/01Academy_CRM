@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   poolQuery: vi.fn(),
   runAutomations: vi.fn(),
   refreshTokens: vi.fn(),
-  runEscalations: vi.fn(),
   syncRecentMetaLeads: vi.fn(),
   telegramReminders: vi.fn().mockResolvedValue(0),
   licenseReminders: vi.fn().mockResolvedValue(0),
@@ -15,7 +14,6 @@ vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("../server/db", () => ({ pool: { query: mocks.poolQuery } }));
 vi.mock("../server/services/automations", () => ({ runAutomations: mocks.runAutomations }));
 vi.mock("../server/services/instagram", () => ({ refreshExpiringInstagramTokens: mocks.refreshTokens }));
-vi.mock("../server/services/escalations", () => ({ runEscalations: mocks.runEscalations }));
 vi.mock("../server/services/meta-lead-ads", () => ({ syncRecentMetaLeadAds: mocks.syncRecentMetaLeads }));
 vi.mock("../server/services/telegram-task-reminders", () => ({ processTelegramTaskReminders: mocks.telegramReminders }));
 vi.mock("../server/services/onlinepbx-license-reminders", () => ({ processOnlinePbxLicenseReminders: mocks.licenseReminders }));

@@ -111,7 +111,6 @@ const leadFixture = (overrides: Record<string, unknown> = {}) => ({
   manager_id: 1,
   enrolled_group_id: null,
   offer_course_id: 8,
-  referrer_student_id: 7,
   updated_at: new Date('2026-07-10T10:00:00.000Z'),
   ...overrides,
 });
@@ -136,16 +135,6 @@ describe('payment party integrity', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id=$1 FOR UPDATE')) return {rows:[{id:values[0],status:'planned',is_archived:false}]};
       if (sql.includes('FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2')) return {rows:allowGroup ? [{id:7}] : []};
       if (sql.includes('SELECT * FROM academy_students')) return { rows: studentId ? [student] : [] };
-      if (sql.includes("WHERE status IN ('pending', 'overdue')")) {
-        const selected = invoices.filter((invoice) => invoice.status === 'pending' && invoice.period === values[0] && (values[3] == null || invoice.group_id === values[3]))
-          .find((invoice) => ignoreScope || (values[2] != null
-            ? invoice.student_id === values[2]
-            : invoice.lead_id === values[1] && invoice.student_id == null));
-        // A real PostgreSQL query must express the same party boundary as this fixture.
-        expect(sql).toContain('($3::int IS NULL AND $2::int IS NOT NULL AND lead_id = $2 AND student_id IS NULL)');
-        expect(sql).toContain('($3::int IS NOT NULL AND student_id = $3)');
-        return { rows: selected ? [{ ...selected }] : [] };
-      }
       if (sql.includes('SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE')) {
         return { rows: invoices.filter((invoice) => invoice.id === values[0]).map((invoice) => ({ ...invoice })) };
       }
@@ -164,17 +153,24 @@ describe('payment party integrity', () => {
       return emptyResult();
     });
   };
-  const pending = (id: number, studentId: number | null) => ({ id, lead_id: 42, student_id: studentId, group_id: 20, status: 'pending', type: 'full', amount_uzs: 100000, period: 'month_1' });
+  const pending = (id: number, studentId: number | null) => ({ id, lead_id: 42, student_id: studentId, group_id: 20, status: 'pending', type: 'full', amount_uzs: 100000 });
   const pay = async (body: Record<string, unknown>) => request(await createApp()).post('/api/academy/payments').send({ amountUzs: 450000, type: 'prepayment', ...body });
 
-  it('confirms only the selected sibling invoice and preserves the other sibling debt', async () => {
+  it('confirms only the explicitly selected pending payment of a sibling', async () => {
     const invoices = [pending(99, 5), pending(100, 6)];
     prepareInvoices(6, invoices);
-    const response = await pay({ leadId: 42, studentId: 6 });
+    const response = await pay({ leadId: 42, studentId: 6, paymentId: 100 });
     expect(response.status).toBe(201);
     expect(invoices[0]).toMatchObject({ id: 99, student_id: 5, amount_uzs: 100000, status: 'pending' });
     expect(invoices[1]).toMatchObject({ id: 100, student_id: 6, amount_uzs: 450000, status: 'paid' });
-    expect(mocks.clientQuery.mock.calls.some(([sql, values]) => sql.includes("entity_type = 'payment'") && values[0] === 100)).toBe(true);
+  });
+
+  it('records a new payment instead of guessing which pending payment it settles', async () => {
+    const invoices = [pending(100, 6)];
+    prepareInvoices(6, invoices);
+    expect((await pay({ leadId: 42, studentId: 6 })).status).toBe(201);
+    expect(invoices[0]).toMatchObject({ id: 100, status: 'pending', amount_uzs: 100000 });
+    expect(invoices[1]).toMatchObject({ id: 101, student_id: 6, status: 'paid' });
   });
 
   it('creates a separate payment if only the sibling or an unbound lead invoice exists', async () => {
@@ -185,10 +181,10 @@ describe('payment party integrity', () => {
     expect(invoices[2]).toMatchObject({ id: 101, student_id: 6, status: 'paid' });
   });
 
-  it.each([false, true])('rejects a cross-party invoice before any write, explicit=%s', async (explicit) => {
+  it('rejects confirming a pending payment of another pupil before any write', async () => {
     const invoices = [pending(99, 5)];
     prepareInvoices(6, invoices, true);
-    const response = await pay({ leadId: 42, studentId: 6, ...(explicit ? { paymentId: 99 } : {}) });
+    const response = await pay({ leadId: 42, studentId: 6, paymentId: 99 });
     expect(response.status).toBe(400);
     expect(invoices[0]).toMatchObject({ student_id: 5, status: 'pending', amount_uzs: 100000 });
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
@@ -217,28 +213,6 @@ describe('payment party integrity', () => {
     prepareInvoices(6,invoices,false,false);
     expect((await pay({leadId:42,studentId:6,groupId:31})).status).toBe(409);
     expect(invoices).toHaveLength(0);
-  });
-
-  it.each(['administration', 'sales'])('rejects an explicit empty legacy task assignee for %s', async (module) => {
-    mocks.actor = { id: 1, module, modules: [module] };
-    const response = await request(await createApp()).post('/api/academy/tasks').send({ title: 'Follow up', responsibleId: null });
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('taskAssigneeRequired');
-    expect(mocks.poolQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO "academy_tasks"'))).toBe(false);
-  });
-
-  it('rejects a missing assignee in the task creation service before any database write', async () => {
-    const { createTask } = await import('../server/modules/academy/academy-core');
-    await expect(createTask('Follow up', { responsibleId: null })).rejects.toMatchObject({ statusCode: 400, message: 'taskAssigneeRequired' });
-    expect(mocks.poolQuery).not.toHaveBeenCalled();
-  });
-
-  it('rejects clearing a legacy task assignee even for a supervisor', async () => {
-    mocks.poolQuery.mockResolvedValue({ rows: [{ id: 8, responsible_id: 1, title: 'Follow up' }] });
-    const response = await request(await createApp()).patch('/api/academy/tasks/8').send({ responsibleId: null });
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('taskAssigneeRequired');
-    expect(mocks.poolQuery.mock.calls.some(([sql]) => sql.includes('UPDATE "academy_tasks"'))).toBe(false);
   });
 
 });

@@ -1,7 +1,7 @@
 import { Router, type Request, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { kpiMonthSchema, kpiRoleSchema, kpiSaleReviewSchema, parseKpiPlanConfig, type KpiOverviewEmployee } from '@shared/sales-kpi';
+import { kpiMonthSchema, kpiRoleSchema, parseKpiPlanConfig, type KpiOverviewEmployee } from '@shared/sales-kpi';
 import { calculateSalesKpi } from '@shared/sales-kpi-calculation';
 import { kpiMonth } from '@shared/sales-kpi-time';
 import { sendHttpError } from '../../../lib/http-errors';
@@ -9,7 +9,6 @@ import { logger } from '../../../lib/logger';
 import { getKpiReportingEmployees, kpiError, listKpiAssignments, listKpiPlans, saveKpiPlan } from '../../../infrastructure/sales-kpi/kpi-repository';
 import { readKpiFacts } from '../../../infrastructure/sales-kpi/kpi-facts';
 import { claimKpiLead, handoffKpiLead, readKpiLeadOwnership, recordKpiOffer } from '../../../infrastructure/sales-kpi/kpi-handoff';
-import { reviewKpiSale } from '../../../infrastructure/sales-kpi/kpi-sales-review';
 
 const idSchema = z.coerce.number().int().positive();
 const actor = (req: Request) => ({ id: Number(req.user!.id), isAdministration: hasLeadershipAccess(req.user) });
@@ -57,10 +56,6 @@ export function createSalesKpiRouter() {
       return version ? [{ ...employee, version, calculation: calculateSalesKpi(employee.role, employee.id, month, version.config, facts, asOf) }] : [];
     });
     res.json({ month, asOf, employees: result });
-  }));
-  router.patch('/sales-kpi/payments/:id', endpoint(async (req, res) => {
-    await reviewKpiSale(actor(req), idSchema.parse(req.params.id), kpiSaleReviewSchema.parse(req.body));
-    res.json({ success: true });
   }));
   router.get('/sales-kpi/leads/:id', endpoint(async (req, res) => {
     res.json(await readKpiLeadOwnership(actor(req), idSchema.parse(req.params.id)));

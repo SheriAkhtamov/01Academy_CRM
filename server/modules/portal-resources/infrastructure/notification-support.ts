@@ -82,8 +82,6 @@ export const PORTAL_NOTIFICATION_EVENT_CODES = {
   attendance_absent: "portalNoticeAttendanceAbsent",
   thread_answered: "portalNoticeThreadAnswered",
   assignment_feedback: "portalNoticeFeedback",
-  payment_due: "portalNoticePaymentDue",
-  payment_overdue: "portalNoticePaymentOverdue",
   report_published: "portalNoticeReportPublished",
   achievement_awarded: "portalNoticeAchievementAwarded",
   achievement_revoked: "portalNoticeAchievementRevoked",

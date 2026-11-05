@@ -26,17 +26,14 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -56,7 +53,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -583,6 +579,9 @@ router.post('/students/:id/transfer', async (req, res) => {
       if (!lockedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }
+      if (lockedStudent.isArchived) {
+        throw Object.assign(new Error('archivedStudentMustBeRestoredBeforeUpdate'), { statusCode: 409 });
+      }
       if (Number(lockedStudent.groupId) === Number(toGroupId)) return lockedStudent;
 
       await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [toGroupId]);
@@ -689,6 +688,9 @@ router.post('/students/:id/groups', async (req, res) => {
       if (!lockedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }
+      if (lockedStudent.isArchived) {
+        throw Object.assign(new Error('archivedStudentMustBeRestoredBeforeUpdate'), { statusCode: 409 });
+      }
       await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
       const group = await validateEnrollmentGroup(groupId, null, studentId);
       if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
@@ -726,7 +728,6 @@ router.post('/students/:id/groups', async (req, res) => {
           status: activatesTrialStudent ? enrollmentStatus : lockedStudent.status,
           enrolledAt: startsTeaching ? enrolledAt : lockedStudent.enrolledAt,
           enrollmentDate: startsTeaching ? enrolledAt : lockedStudent.enrollmentDate,
-          nextPaymentAt: startsTeaching ? addDays(enrolledAt, 30) : lockedStudent.nextPaymentAt,
         });
         if (lockedStudent.leadId) {
           const leadUpdates: Row = {
@@ -868,71 +869,102 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
   }
 });
 
+const STUDENT_STATUS_MODULES = new Set([...OPERATIONS_MODULES, 'teacher', 'sales']);
+/** Sending a pupil away and bringing them back is a decision of the office, not of a teacher. */
+const STUDENT_ARCHIVE_MODULES = new Set([...OPERATIONS_MODULES, 'sales']);
+
+/**
+ * Sales may change only their own pupils, a teacher only pupils of own groups.
+ * Archiving is an office or sales decision, so a teacher module never widens it.
+ */
+const studentChangeAccess = async (req: any, res: any, id: number, scope: 'learning' | 'archive' = 'learning') => {
+  const modules = getAssignedModules(req.user);
+  const salesOnly = modules.includes('sales') && !hasLeadershipAccess(req.user)
+    && !modules.includes('administration') && (scope === 'archive' || !modules.includes('teacher'));
+  const initialStudent = salesOnly ? await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [id]) : null;
+  if (salesOnly) {
+    if (!initialStudent) {
+      res.status(404).json({ error: 'Student not found' });
+      return null;
+    }
+    if (Number(initialStudent.managerId) !== Number(req.user!.id)) {
+      res.status(403).json({ error: 'Student update access required' });
+      return null;
+    }
+    const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
+    if (initialStudent.leadId && !lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return null;
+    }
+    if (lead && !ensureLeadMutationAccess(req, res, lead)) return null;
+  }
+  return { salesOnly, initialStudent, scope };
+};
+
+const lockStudentForChange = async (
+  req: any,
+  id: number,
+  access: { salesOnly: boolean; initialStudent?: Row | null; scope?: 'learning' | 'archive' },
+) => {
+  // Match the lead -> student lock order used by enrollment and payment changes.
+  const lockedLead = access.salesOnly && access.initialStudent?.leadId ? await queryOne(
+    `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [access.initialStudent.leadId],
+  ) : null;
+  const lockedStudent = await queryOne(
+    `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
+    [id],
+  );
+  if (!lockedStudent) {
+    throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+  }
+  if (access.salesOnly && (
+    Number(lockedStudent.managerId) !== Number(req.user!.id)
+    || lockedStudent.leadId !== access.initialStudent?.leadId
+    || (lockedStudent.leadId && (!lockedLead || !canMutateLeadRow(req, lockedLead)))
+  )) {
+    throw Object.assign(new Error('Student update access required'), { statusCode: 403 });
+  }
+  if (access.scope !== 'archive' && getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
+    const teacherId = await resolveTeacherId(req.user!.id);
+    // Archived pupils keep their suspended memberships and stay with the
+    // teacher of the group they left.
+    const ownsStudent = teacherId
+      ? await queryOne(
+        `SELECT enrollment.id
+         FROM academy_student_group_enrollments enrollment
+         JOIN academy_groups academy_group ON academy_group.id = enrollment.group_id
+         WHERE enrollment.student_id = $1
+           AND enrollment.status IN ('active', 'suspended')
+           AND academy_group.teacher_id = $2
+         LIMIT 1`,
+        [id, teacherId],
+      )
+      : null;
+    if (!ownsStudent) {
+      throw Object.assign(
+        new Error('Teacher can update only own students'),
+        { statusCode: 403 },
+      );
+    }
+  }
+  return lockedStudent;
+};
+
 router.patch('/students/:id/status', async (req, res) => {
-  if (!ensureModuleAccess(req, res, new Set([...OPERATIONS_MODULES, 'teacher', 'sales']), 'Student update access required')) return;
+  if (!ensureModuleAccess(req, res, STUDENT_STATUS_MODULES, 'Student update access required')) return;
   try {
     const id = parseId(req.params.id);
     const status = nullableText(req.body.status);
-    const exitReason = nullableText(req.body.exitReason);
     if (!id) return res.status(400).json({ error: 'Invalid student id' });
     if (!status || !STUDENT_STATUSES.some((item) => item.code === status)) {
       return res.status(400).json({ error: 'Invalid student status' });
     }
-    if (['paused', 'expelled'].includes(status) && (!exitReason || !CHURN_REASONS.includes(exitReason as typeof CHURN_REASONS[number]))) {
-      return res.status(400).json({ error: 'Churn reason is required for paused or expelled students' });
-    }
-    const modules = getAssignedModules(req.user);
-    const salesOnly = modules.includes('sales') && !hasLeadershipAccess(req.user)
-      && !modules.includes('administration') && !modules.includes('teacher');
-    const initialStudent = salesOnly ? await queryOne(`SELECT * FROM academy_students WHERE id = $1`, [id]) : null;
-    if (salesOnly) {
-      if (!initialStudent) return res.status(404).json({ error: 'Student not found' });
-      if (Number(initialStudent.managerId) !== Number(req.user!.id)) {
-        return res.status(403).json({ error: 'Student update access required' });
-      }
-      const lead = initialStudent.leadId ? await getLead(Number(initialStudent.leadId)) : null;
-      if (initialStudent.leadId && !lead) return res.status(404).json({ error: 'Lead not found' });
-      if (lead && !ensureLeadMutationAccess(req, res, lead)) return;
-    }
+    const access = await studentChangeAccess(req, res, id);
+    if (!access) return;
     const { current, student } = await withTransaction(async () => {
-      // Match the lead -> student lock order used by enrollment and payment changes.
-      const lockedLead = salesOnly && initialStudent?.leadId ? await queryOne(
-        `SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE`, [initialStudent.leadId],
-      ) : null;
-      const lockedStudent = await queryOne(
-        `SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`,
-        [id],
-      );
-      if (!lockedStudent) {
-        throw Object.assign(new Error('Student not found'), { statusCode: 404 });
-      }
-      if (salesOnly && (
-        Number(lockedStudent.managerId) !== Number(req.user!.id)
-        || lockedStudent.leadId !== initialStudent?.leadId
-        || (lockedStudent.leadId && (!lockedLead || !canMutateLeadRow(req, lockedLead)))
-      )) {
-        throw Object.assign(new Error('Student update access required'), { statusCode: 403 });
-      }
-      if (getAssignedModules(req.user).includes('teacher') && !hasLeadershipAccess(req.user)) {
-        const teacherId = await resolveTeacherId(req.user!.id);
-        const ownsStudent = teacherId
-          ? await queryOne(
-            `SELECT enrollment.id
-             FROM academy_student_group_enrollments enrollment
-             JOIN academy_groups academy_group ON academy_group.id = enrollment.group_id
-             WHERE enrollment.student_id = $1
-               AND enrollment.status = 'active'
-               AND academy_group.teacher_id = $2
-             LIMIT 1`,
-            [id, teacherId],
-          )
-          : null;
-        if (!ownsStudent) {
-          throw Object.assign(
-            new Error('Teacher can update only own students'),
-            { statusCode: 403 },
-          );
-        }
+      const lockedStudent = await lockStudentForChange(req, id, access);
+      if (lockedStudent.isArchived) {
+        throw Object.assign(new Error('archivedStudentMustBeRestoredBeforeUpdate'), { statusCode: 409 });
       }
       if (status === 'studying' && lockedStudent.status !== 'studying') {
         if (!lockedStudent.groupId) {
@@ -951,10 +983,7 @@ router.patch('/students/:id/status', async (req, res) => {
           await validateEnrollmentGroup(groupId, null, id);
         }
       }
-      const updatedStudent = await updateRow('academy_students', id, {
-        status,
-        exitReason: ['paused', 'expelled'].includes(status) ? exitReason : null,
-      });
+      const updatedStudent = await updateRow('academy_students', id, { status });
       if (!updatedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       }
@@ -975,6 +1004,165 @@ router.patch('/students/:id/status', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to update student status', { error });
     res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to update student status') });
+  }
+});
+
+/**
+ * A pupil who leaves for a while is archived, not paused. The archive frees the
+ * group places and takes the pupil out of future registers; past lessons,
+ * marks and payments stay untouched. Memberships are suspended rather than
+ * withdrawn, so a restore can return the pupil to the same groups.
+ */
+router.post('/students/:id/archive', async (req, res) => {
+  if (!ensureModuleAccess(req, res, STUDENT_ARCHIVE_MODULES, 'Student update access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid student id' });
+    const access = await studentChangeAccess(req, res, id, 'archive');
+    if (!access) return;
+    const { current, student } = await withTransaction(async () => {
+      const lockedStudent = await lockStudentForChange(req, id, access);
+      if (lockedStudent.isArchived) return { current: lockedStudent, student: lockedStudent };
+      await query(
+        `UPDATE academy_student_group_enrollments
+         SET status = 'suspended', ended_at = GREATEST(NOW(), enrolled_at), updated_at = NOW()
+         WHERE student_id = $1 AND status = 'active'`,
+        [id],
+      );
+      const archived = await updateRow('academy_students', id, {
+        isArchived: true,
+        archivedAt: new Date(),
+        archivedBy: req.user!.id,
+        groupId: null,
+      });
+      if (!archived) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      // Registers and attendance metrics read the status history at lesson
+      // time, so the archived interval must be recorded there as well.
+      await insertRow('academy_student_status_history', {
+        studentId: id,
+        fromStatus: lockedStudent.status,
+        toStatus: 'archived',
+        changedBy: req.user!.id,
+        comment: 'Отправлен в архив',
+      });
+      await recalculateStudentMetrics(id);
+      return { current: lockedStudent, student: archived };
+    });
+    if (current !== student) {
+      await createAudit(req, 'ARCHIVE_ACADEMY_STUDENT', 'academy_student', id, student, current);
+    }
+    res.json(student);
+  } catch (error: any) {
+    logger.error('Failed to archive student', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to archive student') });
+  }
+});
+
+router.post('/students/:id/restore', async (req, res) => {
+  if (!ensureModuleAccess(req, res, STUDENT_ARCHIVE_MODULES, 'Student update access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid student id' });
+    const returnToGroups = req.body?.returnToGroups !== false;
+    const access = await studentChangeAccess(req, res, id, 'archive');
+    if (!access) return;
+    const { current, student, restoredGroupIds, skippedGroupIds } = await withTransaction(async () => {
+      const lockedStudent = await lockStudentForChange(req, id, access);
+      if (!lockedStudent.isArchived) {
+        return { current: lockedStudent, student: lockedStudent, restoredGroupIds: [], skippedGroupIds: [] };
+      }
+      // Only the memberships suspended by the latest archive are candidates.
+      const suspended = await query<{ id: number; groupId: number; isPrimary: boolean }>(
+        `SELECT id, group_id, is_primary
+         FROM academy_student_group_enrollments
+         WHERE student_id = $1 AND status = 'suspended'
+           AND updated_at = (
+             SELECT MAX(updated_at) FROM academy_student_group_enrollments
+             WHERE student_id = $1 AND status = 'suspended'
+           )
+         ORDER BY group_id
+         FOR UPDATE`,
+        [id],
+      );
+      const restored: Array<{
+        groupId: number; isPrimary: boolean; planned: boolean; courseId: number; schoolId: number | null;
+      }> = [];
+      const skipped: number[] = [];
+      for (const membership of returnToGroups ? suspended : []) {
+        const groupId = Number(membership.groupId);
+        await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
+        try {
+          const group = await validateEnrollmentGroup(groupId, null, id);
+          if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
+          restored.push({
+            groupId, isPrimary: membership.isPrimary, planned: group.status === 'planned',
+            courseId: Number(group.courseId), schoolId: group.schoolId ? Number(group.schoolId) : null,
+          });
+        } catch (error: any) {
+          // A full or closed group is skipped; the pupil can join another one.
+          if (error?.statusCode !== 409 && error?.statusCode !== 404) throw error;
+          skipped.push(groupId);
+        }
+      }
+      // An active primary group cannot appear while archived, but never create a second one.
+      const activePrimary = await queryOne(
+        `SELECT id FROM academy_student_group_enrollments
+         WHERE student_id = $1 AND status = 'active' AND is_primary = true LIMIT 1`,
+        [id],
+      );
+      const primary = activePrimary ? null : restored.find((membership) => membership.isPrimary) ?? restored[0] ?? null;
+      for (const membership of restored) {
+        await query(
+          `INSERT INTO academy_student_group_enrollments
+             (student_id, group_id, status, is_primary, enrolled_at, created_by)
+           VALUES ($1, $2, 'active', $3, NOW(), $4)
+           ON CONFLICT (student_id, group_id) WHERE status = 'active' DO NOTHING`,
+          [id, membership.groupId, membership.groupId === primary?.groupId, req.user!.id],
+        );
+      }
+      await query(
+        `UPDATE academy_student_group_enrollments
+         SET status = 'withdrawn', is_primary = false, updated_at = NOW()
+         WHERE student_id = $1 AND status = 'suspended'`,
+        [id],
+      );
+      // A pupil returned to a running group studies again, and one returned only
+      // to planned groups waits for the start. Without a group the pupil waits
+      // for a new one as a trial pupil, like a newly created pupil.
+      const status = restored.length > 0
+        ? restored.some((membership) => !membership.planned) ? 'studying' : 'waiting_start'
+        : ['studying', 'waiting_start'].includes(lockedStudent.status) ? 'trial' : lockedStudent.status;
+      const restoredStudent = await updateRow('academy_students', id, {
+        isArchived: false,
+        archivedAt: null,
+        archivedBy: null,
+        status,
+        ...(primary ? { groupId: primary.groupId, courseId: primary.courseId, schoolId: primary.schoolId } : {}),
+      });
+      if (!restoredStudent) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
+      await insertRow('academy_student_status_history', {
+        studentId: id,
+        fromStatus: 'archived',
+        toStatus: status,
+        changedBy: req.user!.id,
+        comment: 'Восстановлен из архива',
+      });
+      await recalculateStudentMetrics(id);
+      return {
+        current: lockedStudent,
+        student: restoredStudent,
+        restoredGroupIds: restored.map((membership) => membership.groupId),
+        skippedGroupIds: skipped,
+      };
+    });
+    if (current !== student) {
+      await createAudit(req, 'RESTORE_ACADEMY_STUDENT', 'academy_student', id,
+        { ...student, restoredGroupIds, skippedGroupIds }, current);
+    }
+    res.json({ ...student, restoredGroupIds, skippedGroupIds });
+  } catch (error: any) {
+    logger.error('Failed to restore student', { error });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to restore student') });
   }
 });
 

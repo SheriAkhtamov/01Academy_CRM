@@ -10,7 +10,6 @@ import {
   calculateRoas,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasFinanceAccess,
   hasLeadershipAccess,
   normalizeMoney,
@@ -134,12 +133,6 @@ describe("01 Academy business rules", () => {
     expect(calculateAttendancePercent(-1, 10)).toBe(0);
     expect(calculateProgressPercent(-2, 10)).toBe(0);
     expect(calculateNps([10, 0, 11, Number.NaN])).toBe(0);
-  });
-
-  it("marks unpaid payments as overdue after due date", () => {
-    expect(getComputedPaymentStatus("paid", "2020-01-01")).toBe("paid");
-    expect(getComputedPaymentStatus("pending", "2020-01-01")).toBe("overdue");
-    expect(getComputedPaymentStatus("refunded", "2020-01-01")).toBe("refunded");
   });
 
 

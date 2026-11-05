@@ -40,7 +40,6 @@ import {
 } from '../../services/website-integrations';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
@@ -49,7 +48,6 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -70,7 +68,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -96,9 +93,10 @@ import {
   OPERATIONS_MODULES,
   Row,
   SALES_MODULES,
+  canAccessLeadRow,
+  canMutateLeadRow,
   createAudit,
   createNotification,
-  createTaskOnce,
   ensureAdministrationModuleAccess,
   ensureOperationsAccess,
   ensureSalesAccess,
@@ -117,7 +115,6 @@ import {
   withTransaction,
 } from './academy-core';
 import {
-  advanceStudentNextPaymentAt,
   createStudentFromLead,
   getActiveSalesManager,
   recalculateStudentMetrics,
@@ -172,24 +169,10 @@ router.post('/payments', (req, res, next) => {
       return res.status(400).json({ error: 'Invalid payment method' });
     }
 
+    // A payment records money received for one pupil; it has no due date,
+    // covered period or debt attached to it.
     const requestedPaidAt = parseOptionalDate(req.body.paidAt, 'paidAt');
-    const requestedPaidUntil = paymentType === 'prepayment'
-      ? null
-      : parseOptionalDate(req.body.paidUntil, 'paidUntil');
-    const requestedDueAt = parseOptionalDate(req.body.dueAt, 'dueAt');
-    const paymentPeriod = nullableText(req.body.period) ?? 'month_1';
     const paidAt = status === 'paid' ? requestedPaidAt ?? new Date() : requestedPaidAt;
-    const paidUntil = paymentType === 'prepayment'
-      ? null
-      : requestedPaidUntil
-        ?? (status === 'paid' && paidAt instanceof Date ? addDays(paidAt, 30) : null);
-    if (
-      paidAt instanceof Date
-      && paidUntil instanceof Date
-      && paidUntil.getTime() < paidAt.getTime()
-    ) {
-      return res.status(400).json({ error: 'paidUntilBeforePaidAt' });
-    }
 
     const result = await withTransaction(async () => {
       const isScopedSalesUser = getAssignedModules(req.user).includes('sales')
@@ -305,25 +288,9 @@ router.post('/payments', (req, res, next) => {
           if (!pendingPayment) {
             throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
           }
-          if (!['pending', 'overdue'].includes(String(pendingPayment.status))) {
+          if (String(pendingPayment.status) !== 'pending') {
             throw Object.assign(new Error('paymentAlreadyFinalized'), { statusCode: 409 });
           }
-        } else {
-          pendingPayment = await queryOne(
-            `SELECT *
-             FROM academy_payments
-             WHERE status IN ('pending', 'overdue')
-               AND COALESCE(period, '') = $1
-               AND ($4::int IS NULL OR group_id=$4)
-               AND (
-                 ($3::int IS NOT NULL AND student_id = $3)
-                 OR ($3::int IS NULL AND $2::int IS NOT NULL AND lead_id = $2 AND student_id IS NULL)
-               )
-             ORDER BY due_at NULLS LAST, created_at, id
-             LIMIT 1
-             FOR UPDATE`,
-            [paymentPeriod, paymentLeadId, resolvedStudentId, requestedGroupId],
-          );
         }
         if (pendingPayment) {
           const sameLead = !pendingPayment.leadId
@@ -344,11 +311,7 @@ router.post('/payments', (req, res, next) => {
         type: paymentType,
         method: paymentMethod,
         paidAt,
-        period: paymentPeriod,
-        discount: 'none',
         status,
-        dueAt: requestedDueAt,
-        paidUntil,
         comment: nullableText(req.body.comment),
         receiptUrl: nullableText(req.body.receiptUrl),
         confirmedBy: status === 'paid' ? req.user!.id : null,
@@ -357,17 +320,6 @@ router.post('/payments', (req, res, next) => {
         ? await updateRow('academy_payments', Number(pendingPayment.id), paymentValues)
         : await insertRow('academy_payments', paymentValues);
       if (!payment) throw Object.assign(new Error('Failed to save payment'), { statusCode: 500 });
-
-      if (pendingPayment) {
-        await query(
-          `UPDATE academy_tasks
-           SET status = 'done', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
-           WHERE entity_type = 'payment'
-             AND entity_id = $1
-             AND status <> 'done'`,
-          [pendingPayment.id],
-        );
-      }
 
       for (const file of receiptFiles) {
         await insertRow('academy_payment_attachments', {
@@ -380,18 +332,12 @@ router.post('/payments', (req, res, next) => {
         });
       }
 
+      // The first payment of a lead without a pupil creates the pupil and turns
+      // the lead's group reservations into memberships.
       let student = existingStudent ?? null;
       if (status === 'paid' && leadId) {
         student = await createStudentFromLead(req.actor!, leadId, payment.id);
       }
-      const paidStudentId = student?.id ?? studentId;
-      if (status === 'paid' && paidStudentId) {
-        await advanceStudentNextPaymentAt(
-          Number(paidStudentId),
-          payment.paidUntil ?? paidUntil,
-        );
-      }
-
       await createAudit(
         req,
         pendingPayment ? 'CONFIRM_ACADEMY_PAYMENT' : 'CREATE_ACADEMY_PAYMENT',
@@ -414,6 +360,56 @@ router.post('/payments', (req, res, next) => {
         logger.error('Failed to remove rejected payment files', { error });
       });
     }
+  }
+});
+
+// A refund keeps the original record and its receipt. Reports count only
+// `paid` money, so the refunded amount leaves net revenue automatically.
+router.post('/payments/:id/refund', async (req, res) => {
+  if (!ensureModuleAccess(req, res, SALES_MODULES, 'Payment access required')) return;
+  try {
+    const id = parseId(req.params.id);
+    const reason = nullableText(req.body.reason);
+    if (!id) return res.status(400).json({ error: 'invalidData' });
+    if (!reason || reason.length < 3) return res.status(400).json({ error: 'refundReasonRequired' });
+    if (reason.length > 1000) return res.status(400).json({ error: 'invalidData' });
+    const { previous, payment } = await withTransaction(async () => {
+      const locked = await queryOne(`SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE`, [id]);
+      if (!locked) throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
+      if (!hasLeadershipAccess(req.user)) {
+        const owner = await queryOne<{ leadId: number | null }>(
+          `SELECT COALESCE($1::int, student.lead_id) AS lead_id
+           FROM (SELECT 1) seed LEFT JOIN academy_students student ON student.id = $2::int`,
+          [locked.leadId ?? null, locked.studentId ?? null],
+        );
+        const lead = owner?.leadId
+          ? await queryOne(`SELECT * FROM academy_leads WHERE id = $1`, [owner.leadId])
+          : null;
+        if (!lead) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+        if (!canMutateLeadRow(req.actor!, lead)) {
+          // A visible unassigned lead is taken first, like before recording a payment.
+          throw !lead.managerId && canAccessLeadRow(req.actor!, lead)
+            ? Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 })
+            : Object.assign(new Error('accessDenied'), { statusCode: 403 });
+        }
+      }
+      if (String(locked.status) !== 'paid') {
+        throw Object.assign(new Error('paymentRefundRequiresPaid'), { statusCode: 409 });
+      }
+      const updated = await updateRow('academy_payments', id, {
+        status: 'refunded',
+        refundedBy: req.user!.id,
+        refundedAt: new Date(),
+        refundComment: reason,
+      });
+      if (!updated) throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
+      return { previous: locked, payment: updated };
+    });
+    await createAudit(req, 'REFUND_ACADEMY_PAYMENT', 'academy_payment', id, payment, previous);
+    res.json(payment);
+  } catch (error: any) {
+    logger.error('Failed to refund payment', { error, paymentId: req.params.id });
+    res.status(error.statusCode || 500).json({ error: getPublicErrorMessage(error, 'Failed to refund payment') });
   }
 });
 
@@ -743,7 +739,6 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   const slug = nullableText(body.slug);
   const ageCategory = nullableText(body.ageCategory);
   const description = nullableText(body.description) ?? null;
-  const basePriceUzs = body.basePriceUzs === undefined ? undefined : Number(body.basePriceUzs);
   if (!name || name.length > 255) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
@@ -751,9 +746,6 @@ const parseCourseWithTeachersPayload = (body: Row) => {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   if (!ageCategory || ageCategory.length > 100) {
-    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
-  }
-  if (basePriceUzs !== undefined && (!Number.isSafeInteger(basePriceUzs) || basePriceUzs < 0 || basePriceUzs > 2_147_483_647)) {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   if (typeof body.isActive !== 'boolean') {
@@ -769,7 +761,6 @@ const parseCourseWithTeachersPayload = (body: Row) => {
   const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
   return {
     courseValues: { name, slug, ageCategory, description, isActive: body.isActive,
-      ...(basePriceUzs === undefined ? {} : { basePriceUzs }),
       ...(body.program === undefined ? {} : { program: parseCourseCurriculum(body.program), lessonCount: flattenCourseCurriculum(body.program).length }),
     },
     teacherIds: body.teacherIds === undefined ? null : teacherIds,

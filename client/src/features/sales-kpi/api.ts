@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/queryClient';
-import type { KpiLeadOwnership, KpiOverview, KpiPlanConfig, KpiPlanSettings, KpiPlanVersion, KpiRole, KpiSaleReview } from '@shared/sales-kpi';
+import type { KpiLeadOwnership, KpiOverview, KpiPlanConfig, KpiPlanSettings, KpiPlanVersion, KpiRole } from '@shared/sales-kpi';
 
 const root = '/api/academy/sales-kpi';
 export const getKpiPlans = (): Promise<KpiPlanSettings> => apiRequest('GET', `${root}/plans`);
@@ -20,4 +20,3 @@ export const handoffKpiLead = ({ leadId, targetFunnelId, targetStageCode }: {
 );
 export const claimKpiLead = (leadId: number) => apiRequest('POST', `${root}/leads/${leadId}/claim`, {});
 export const recordKpiOffer = (leadId: number) => apiRequest('POST', `${root}/leads/${leadId}/offer`, {});
-export const reviewKpiPayment = (paymentId: number, input: KpiSaleReview) => apiRequest('PATCH', `${root}/payments/${paymentId}`, input);

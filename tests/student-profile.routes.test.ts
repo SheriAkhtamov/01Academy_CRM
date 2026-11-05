@@ -55,15 +55,15 @@ describe('student profile routes', () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes('SELECT membership.group_id')) return [{ groupId: 5, groupName: 'Group', isPrimary: true,
         plannedLessons: 16, groupConductedLessons: 10, conductedLessons: 3, attendedLessons: 2, missedLessons: 1 }];
-      if (sql.includes('FROM academy_payments')) return [{ id: 1, amountUzs: '100000', status: 'pending', dueAt: '2000-01-01' }];
+      if (sql.includes('FROM academy_payments')) return [{ id: 1, amountUzs: '100000', status: 'pending' }];
       return [];
     });
     const response = await request(app()).get('/api/academy/students/321/profile');
     expect(response.status).toBe(200);
     expect(response.body.lead).toEqual({ id: 12, contactName: 'Current parent', phone: '+998901234567' });
     expect(response.body.groups[0]).toMatchObject({ totalLessons: 9, completedLessons: 2, remainingLessons: 6 });
-    expect(response.body.payments[0].status).toBe('overdue');
-    expect(response.body.summary).toMatchObject({ remaining: 100_000, paid: 0 });
+    expect(response.body.payments[0].status).toBe('pending');
+    expect(response.body.summary).toMatchObject({ pending: 100_000, paid: 0 });
     const attendanceQuery = mocks.query.mock.calls.find(([sql]) => sql.includes('SELECT lesson.id AS lesson_id'))?.[0];
     expect(attendanceQuery).toContain('membership.ended_at');
     expect(attendanceQuery).toContain("lesson.status = 'conducted'");

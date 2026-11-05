@@ -58,7 +58,6 @@ type LeadImportOptions = {
   sourceCode?: string;
   sourceName?: string;
   allowMissingPhone?: boolean;
-  createFollowUpTask?: boolean;
   restoreArchivedMatches?: boolean;
 };
 
@@ -308,23 +307,6 @@ export const importLeadRecords = async (
           outcome = 'merged';
           summary.merged += 1;
         }
-      }
-
-      if (options.createFollowUpTask) {
-        await client.query(
-          `INSERT INTO academy_tasks
-             (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-           SELECT
-             'Первый контакт по заявке Meta',
-             'Связаться с лидом из Instant Form в течение 15 минут.',
-             lead.manager_id,
-             NOW() + INTERVAL '15 minutes',
-             'lead',
-             $1,
-             'new'
-            FROM academy_leads lead WHERE lead.id = $1 AND lead.manager_id IS NOT NULL`,
-          [matchedLead.id],
-        );
       }
 
       if (comment) await client.query(

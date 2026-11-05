@@ -24,17 +24,14 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -55,7 +52,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,

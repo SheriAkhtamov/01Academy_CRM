@@ -53,8 +53,8 @@ export async function readKpiFacts(employeeIds: number[], month: string, asOf: s
         payment.student_id AS "studentId", payment.group_id AS "groupId",
         COALESCE(student.student_name, student.contact_name) AS name,
         tracked.closer_id AS "closerId", COALESCE(payment.paid_at, payment.created_at) AS "paidAt",
-        payment.paid_until AS "paidUntil", payment.amount_uzs AS "amountUzs", payment.status,
-        tracked.kind, tracked.cycle_key AS "cycleKey", tracked.referral_initiated AS "referralInitiated"
+        payment.amount_uzs AS "amountUzs", payment.status,
+        tracked.kind, tracked.cycle_key AS "cycleKey"
        FROM academy_sales_kpi_sales tracked
        JOIN academy_payments payment ON payment.id = tracked.payment_id
        JOIN academy_students student ON student.id = payment.student_id

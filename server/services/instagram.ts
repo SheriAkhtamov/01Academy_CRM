@@ -1402,20 +1402,6 @@ const ensureLeadForConversation = async (
      VALUES ($1,NULL,(SELECT status_code FROM academy_leads WHERE id = $1),$2,$3)`,
     [lead.id, systemUserId, options.stageComment ?? 'Instagram Direct'],
   );
-  await client.query(
-    `INSERT INTO academy_tasks
-       (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-     SELECT
-       'Первый контакт по новой заявке',
-       'Ответить на новый диалог Instagram в течение 15 минут.',
-       lead.manager_id,
-       NOW() + INTERVAL '15 minutes',
-       'lead',
-       $1,
-       'new'
-      FROM academy_leads lead WHERE lead.id = $1 AND lead.manager_id IS NOT NULL`,
-    [lead.id],
-  );
 
   return attachInstagramChannel(lead);
 };

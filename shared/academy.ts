@@ -127,7 +127,6 @@ export const STUDENT_STATUSES = [
   { code: "waiting_start", translationKey: "studentStatusWaitingStart", color: "#0284c7" },
   { code: "trial", translationKey: "studentStatusTrial", color: "#7c3aed" },
   { code: "studying", translationKey: "studentStatusStudying", color: "#16a34a" },
-  { code: "paused", translationKey: "studentStatusPaused", color: "#f59e0b" },
   { code: "completed", translationKey: "studentStatusCompleted", color: "#2563eb" },
   { code: "expelled", translationKey: "studentStatusExpelled", color: "#dc2626" },
 ] as const;
@@ -138,16 +137,6 @@ export const FINAL_PROJECT_STATUSES = [
   { code: "completed", translationKey: "finalProjectStatusCompleted", color: "#2563eb" },
   { code: "presented", translationKey: "finalProjectStatusPresented", color: "#16a34a" },
 ] as const;
-
-export const REFERRAL_BENEFIT_TYPES = [
-  "referred_first_payment_discount_15",
-  "next_payment_discount_15",
-  "free_month",
-  "ai_ambassador_free_training",
-] as const;
-export type ReferralBenefitType = (typeof REFERRAL_BENEFIT_TYPES)[number];
-
-export const REFERRAL_BENEFIT_STATUSES = ["pending", "consumed", "superseded"] as const;
 
 export const TARGET_NPS = 50;
 export const TARGET_CAC_UZS = 300000;
@@ -171,29 +160,11 @@ export const LESSON_STATUSES = [
 export const PAYMENT_STATUSES = [
   { code: "paid", translationKey: "paymentStatusPaid", color: "#16a34a" },
   { code: "pending", translationKey: "paymentStatusPending", color: "#f59e0b" },
-  { code: "overdue", translationKey: "paymentStatusOverdue", color: "#dc2626" },
   { code: "refunded", translationKey: "paymentStatusRefunded", color: "#64748b" },
 ] as const;
 
-export const CHURN_REASONS = [
-  "relocation",
-  "price",
-  "quality",
-  "schedule_conflict",
-  "lost_interest",
-] as const;
-
-export const CHURN_REASON_LABELS: Record<(typeof CHURN_REASONS)[number], string> = {
-  relocation: "Переезд",
-  price: "Дорого",
-  quality: "Не понравилось качество",
-  schedule_conflict: "Конфликт расписания",
-  lost_interest: "Потеря интереса",
-};
-
 export const PAYMENT_TYPES = ["full", "prepayment", "monthly"] as const;
 export const PAYMENT_METHODS = ["cash", "transfer", "card"] as const;
-export const PAYMENT_DISCOUNTS = ["promo_20", "family_15", "none"] as const;
 
 export const DEFAULT_COURSES = [
   {
@@ -203,10 +174,6 @@ export const DEFAULT_COURSES = [
     lessonCount: 16,
     lessonDurationMinutes: 120,
     frequency: "1 раз в неделю",
-    basePriceUzs: 1500000,
-    discountedPriceUzs: 1200000,
-    ltvTargetMinUzs: 4800000,
-    ltvTargetMaxUzs: 6000000,
     program: [
       { lessonNumber: 1, topic: "Знакомство с AI", description: "Что такое искусственный интеллект и как дети уже используют его каждый день" },
       { lessonNumber: 2, topic: "Промпты и безопасность", description: "Как задавать вопросы AI и проверять ответы" },
@@ -221,10 +188,6 @@ export const DEFAULT_COURSES = [
     lessonCount: 24,
     lessonDurationMinutes: 120,
     frequency: "1 раз в неделю",
-    basePriceUzs: 1800000,
-    discountedPriceUzs: 1440000,
-    ltvTargetMinUzs: 8640000,
-    ltvTargetMaxUzs: 10080000,
     program: [
       { lessonNumber: 1, topic: "AI-инструменты создателя", description: "Тексты, изображения, видео и презентации" },
       { lessonNumber: 2, topic: "Контент-план", description: "Идея, аудитория, формат и публикация" },
@@ -239,10 +202,6 @@ export const DEFAULT_COURSES = [
     lessonCount: 60,
     lessonDurationMinutes: 120,
     frequency: "3 раза в неделю",
-    basePriceUzs: 2500000,
-    discountedPriceUzs: 2000000,
-    ltvTargetMinUzs: 10000000,
-    ltvTargetMaxUzs: 10000000,
     program: [
       { lessonNumber: 1, topic: "Vibe Coding workflow", description: "Как собирать продукт с AI-ассистентом" },
       { lessonNumber: 2, topic: "Frontend basics", description: "Интерфейсы, компоненты и состояние" },
@@ -264,16 +223,6 @@ export function suggestAgeGroup(age?: number | null): string | null {
   if (age <= 10) return "7-10";
   if (age <= 15) return "10-15";
   return "15+";
-}
-
-export function getComputedPaymentStatus(status: string, dueAt?: string | Date | null): string {
-  if (status !== "pending") return status;
-  if (!dueAt) return status;
-
-  const dueDate = dueAt instanceof Date ? dueAt : new Date(dueAt);
-  if (Number.isNaN(dueDate.getTime())) return status;
-
-  return dueDate.getTime() < Date.now() ? "overdue" : status;
 }
 
 export function calculateAttendancePercent(presentCount: number, conductedLessonsCount: number): number {

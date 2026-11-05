@@ -62,8 +62,6 @@ export function calculateSalesKpi(
       payLines,
       totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0),
       baseConditions,
-      reviewableSales: closer.reviewableSales,
-      unclassifiedSales: closer.unclassifiedSales,
     };
   }
   if (isFullCycleKpiConfig(config)) throw new Error('invalid single-role KPI config');
@@ -155,16 +153,6 @@ function calculateSingleSalesKpi(
   const recentContact = (lead: KpiLeadFact) => Boolean(lead.lastContactAt
     && timestamp(lead.lastContactAt) <= cutoff && timestamp(lead.lastContactAt) >= cutoff - config.reactivationDays * 86_400_000);
   const reactivatedAttendance = periodAttendance.filter((trial) => trial.reactivated);
-  // One renewal opportunity per expiring student/group/period. Second
-  // installments share the cycle and cannot inflate either side of the ratio.
-  const expiring = uniqueBy(liveSales.filter((sale) => sale.closerId === employeeId && inMonth(sale.paidUntil)
-    && sale.paidUntil && timestamp(sale.paidUntil) <= cutoff),
-  (sale) => `${sale.studentId}:${sale.groupId ?? 0}:${sale.paidUntil}`);
-  const hasRenewed = (old: KpiSaleFact) => extraSales.some((sale) => sale.kind === 'renewal'
-    && sale.studentId === old.studentId && sale.groupId === old.groupId && sale.id !== old.id
-    && timestamp(sale.paidAt) > timestamp(old.paidAt)
-    && timestamp(sale.paidAt) <= timestamp(old.paidUntil!) + config.conversionWindowDays * 86_400_000
-    && sale.paidUntil && timestamp(sale.paidUntil) > timestamp(old.paidUntil!));
   const surveys = uniqueBy([...facts.surveys.filter((survey) => survey.closerId === employeeId && inMonth(survey.createdAt))]
     .sort((a, b) => timestamp(a.createdAt) - timestamp(b.createdAt)), (survey) => survey.studentId);
   const nps = surveys.length ? 100 * (surveys.filter((s) => s.score >= 9).length - surveys.filter((s) => s.score <= 6).length) / surveys.length : null;
@@ -185,7 +173,6 @@ function calculateSingleSalesKpi(
     add('trialConversion', conversionRate, config.conversionTargetPercent, 'percent', periodAttendance.map((trial) => trialDetail(trial, converted.includes(trial))), converted.length, periodAttendance.length);
     add('offer', offerRate, 100, 'percent', offerTrials.map((trial) => trialDetail(trial, offerOnTime(trial))), offerTrials.filter((trial) => offerOnTime(trial)).length, offerTrials.length);
     add('renewals', renewals.length, null, 'count', renewals.map(saleDetail));
-    add('renewalConversion', ratio(expiring.filter(hasRenewed).length, expiring.length), config.renewalTargetPercent || null, 'percent', expiring.map((sale) => ({ ...saleDetail(sale), success: hasRenewed(sale) })), expiring.filter(hasRenewed).length, expiring.length);
     add('upsells', upsells.length, config.upsellTarget || null, 'count', upsells.map(saleDetail));
     add('nps', nps, config.npsTarget, 'score', surveys.map((survey) => ({ id: survey.studentId, entity: 'student', name: survey.name, date: survey.createdAt, value: survey.score })));
   }
@@ -202,8 +189,5 @@ function calculateSingleSalesKpi(
     reactivated: reactivatedAttendance.length, renewals: renewals.length,
     upsells: upsells.length, baseConditions,
   });
-  return { metrics, payLines, baseConditions, totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0),
-    reviewableSales: facts.sales.filter((sale) => sale.closerId === employeeId && sale.status === 'paid' && inMonth(sale.paidAt)),
-    unclassifiedSales: facts.sales.filter((sale) => sale.closerId === employeeId && sale.status === 'paid'
-      && sale.kind === 'unclassified' && inMonth(sale.paidAt)) };
+  return { metrics, payLines, baseConditions, totalUzs: payLines.reduce((sum, line) => sum + line.amountUzs, 0) };
 }

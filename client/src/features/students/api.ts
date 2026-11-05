@@ -15,8 +15,14 @@ export const studentsApi = {
   } & StudentExpectedPaymentRequest) => (
     apiRequest('PATCH', `/api/academy/students/${studentId}`, input) as Promise<T>
   ),
-  updateStatus: <T>(studentId: number, status: string, exitReason?: string) => (
-    apiRequest('PATCH', `/api/academy/students/${studentId}/status`, { status, exitReason }) as Promise<T>
+  updateStatus: <T>(studentId: number, status: string) => (
+    apiRequest('PATCH', `/api/academy/students/${studentId}/status`, { status }) as Promise<T>
+  ),
+  archive: <T>(studentId: number) => (
+    apiRequest('POST', `/api/academy/students/${studentId}/archive`, {}) as Promise<T>
+  ),
+  restore: <T>(studentId: number, returnToGroups: boolean) => (
+    apiRequest('POST', `/api/academy/students/${studentId}/restore`, { returnToGroups }) as Promise<T>
   ),
   addGroup: <T>(studentId: number, groupId: number, isPrimary?: boolean) => (
     apiRequest('POST', `/api/academy/students/${studentId}/groups`, { groupId, isPrimary }) as Promise<T>

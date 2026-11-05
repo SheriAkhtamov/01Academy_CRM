@@ -37,6 +37,7 @@ import { LeadWorkspaceSection, type LeadWorkspaceSectionId } from '@/components/
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
 import { LeadPaymentSummary } from '@/components/ux/lead/LeadPaymentSummary';
 import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
+import { PaymentRefundAction } from '@/components/ux/lead/PaymentRefundAction';
 import { usePaymentFiles } from '@/features/payments/usePaymentFiles';
 import { LeadPreferencesFields, localityKeys, studyDaysKeys } from '@/components/ux/lead/LeadPreferencesFields';
 import { LeadFunnelTransferDialog } from '@/components/ux/lead/LeadFunnelTransferDialog';
@@ -119,7 +120,7 @@ import {
   GraduationCap,
   Wallet,
 } from 'lucide-react';
-import { PAYMENT_DISCOUNTS, PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
+import { PAYMENT_METHODS, PAYMENT_TYPES } from '@shared/academy';
 import { LEAD_LOCALITIES, LEAD_STUDY_DAYS, LEAD_STUDY_TIMES } from '@shared/lead-preferences';
 import { LEAD_LANGUAGES, selectedLeadLanguages } from '@shared/lead-languages';
 import { salesFunnelStages, type SalesFunnelRole } from '@shared/sales-funnel-workflow';
@@ -265,7 +266,6 @@ interface LeadDetails {
     amountUzs: number;
     method: string;
     type?: string | null;
-    discount?: string | null;
     comment?: string | null;
     status: string;
     paidAt?: string | null;
@@ -347,12 +347,6 @@ const paymentSchema = z.object({
     .refine((value) => value <= academyToday(), 'invalidData'),
   comment: z.string(),
 });
-
-const paymentDiscountTranslationKeys = {
-  promo_20: 'paymentDiscountPromo20',
-  family_15: 'paymentDiscountFamily15',
-  none: 'paymentDiscountNone',
-} as const satisfies Record<(typeof PAYMENT_DISCOUNTS)[number], TranslationKey>;
 
 const paymentMethodTranslationKeys = {
   cash: 'paymentMethodCash',
@@ -1012,11 +1006,6 @@ export function LeadDetailSheet({
       ? t(paymentTypeTranslationKeys[type as keyof typeof paymentTypeTranslationKeys])
       : type ?? ''
   );
-  const paymentDiscountLabel = (discount?: string | null) => (
-    discount && discount in paymentDiscountTranslationKeys
-      ? t(paymentDiscountTranslationKeys[discount as keyof typeof paymentDiscountTranslationKeys])
-      : discount ?? ''
-  );
 
   return (
     <Sheet
@@ -1515,9 +1504,6 @@ export function LeadDetailSheet({
                                     {[
                                       paymentMethodLabel(payment.method),
                                       paymentTypeLabel(payment.type),
-                                      payment.discount && payment.discount !== 'none'
-                                        ? paymentDiscountLabel(payment.discount)
-                                        : null,
                                     ].filter(Boolean).join(' · ')}
                                   </p>
                                   {payment.studentName ? <p className="mt-0.5 text-xs text-muted-foreground">{t('student')}: {payment.studentName}</p> : null}
@@ -1526,14 +1512,24 @@ export function LeadDetailSheet({
                                 </div>
                               </div>
                               <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-                                <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'overdue' ? 'destructive' : 'warning'}>
+                                <Badge variant={payment.status === 'paid' ? 'success' : payment.status === 'refunded' ? 'secondary' : 'warning'}>
                                   {payment.status === 'paid'
                                     ? t('paymentStatusPaid')
-                                    : payment.status === 'overdue'
-                                      ? t('paymentStatusOverdue')
+                                    : payment.status === 'refunded'
+                                      ? t('paymentStatusRefunded')
                                       : t('paymentStatusPending')}
                                 </Badge>
                                 <p className="text-xs text-muted-foreground">{dateOnly(payment.paidAt || payment.createdAt)}</p>
+                                {payment.status === 'paid' ? (
+                                  <PaymentRefundAction
+                                    paymentId={payment.id}
+                                    amountLabel={money(payment.amountUzs)}
+                                    onRefunded={() => {
+                                      void leadQuery.refetch();
+                                      onChanged();
+                                    }}
+                                  />
+                                ) : null}
                               </div>
                             </div>
                           ))

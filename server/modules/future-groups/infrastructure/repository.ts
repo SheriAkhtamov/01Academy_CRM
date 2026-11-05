@@ -179,7 +179,7 @@ export class FutureGroupsRepository {
       SELECT 'student',s.id,l.id,s.student_name,l.contact_name,u.full_name,0,true
       FROM academy_students s JOIN academy_leads l ON l.id=s.lead_id LEFT JOIN users u ON u.id=l.manager_id
       WHERE NOT COALESCE(l.is_archived,false) AND ($2 OR l.manager_id=$3)
-        AND s.status IN ('trial','waiting_start','studying')
+        AND s.status IN ('trial','waiting_start','studying') AND NOT s.is_archived
         AND (l.contact_name ILIKE $1 OR s.student_name ILIKE $1 OR l.phone ILIKE $1)
       LIMIT 30`,
       [term, actor.isLeadership, actor.userId],
@@ -333,6 +333,8 @@ export class FutureGroupsRepository {
             }
           }
         } else if (!remove && !membership) {
+          // An archived pupil comes back through a restore, not a new booking.
+          if (student.isArchived) fail("archivedStudentMustBeRestoredBeforeUpdate");
           if (!["trial", "waiting_start", "studying"].includes(student.status))
             fail("futureGroupStudentUnavailable");
           await ensureGroupCapacity(groupId, null, party.id);

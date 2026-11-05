@@ -16,17 +16,17 @@ beforeAll(() => {
 });
 beforeEach(() => { i18n.setLanguage('en'); allowNavigation(() => history.replaceState(null, '', '/tasks')); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-const student = { id: 1, studentName: 'Student', contactName: 'Parent', status: 'studying', exitReason: '', attendancePercent: 80, progressPercent: 40 };
+const student = { id: 1, studentName: 'Student', contactName: 'Parent', status: 'studying', attendancePercent: 80, progressPercent: 40 };
 const studentQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const sheet = (record: typeof student, onClose = vi.fn(), save = vi.fn(), extras = {}) => <QueryClientProvider client={studentQueryClient}><StudentDetailDialog student={record} open onOpenChange={onClose} onUpdateStatus={save} dateTime={() => ''} {...extras} /></QueryClientProvider>;
-const changeStatus = () => fireEvent.change(screen.getByRole('combobox', { name: i18n.t('status') }), { target: { value: 'paused' } });
+const changeStatus = () => fireEvent.change(screen.getByRole('combobox', { name: i18n.t('status') }), { target: { value: 'expelled' } });
 
 it('protects a student status draft on close and allows cancellation or explicit discard', () => {
   const onClose = vi.fn(); render(sheet(student, onClose)); changeStatus();
   fireEvent.click(screen.getByRole('button', { name: i18n.t('close') }));
   expect(onClose).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: i18n.t('keepEditing') }));
-  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('paused');
+  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('expelled');
   fireEvent.click(screen.getByRole('button', { name: i18n.t('close') }));
   fireEvent.click(screen.getByRole('button', { name: i18n.t('discardChanges') }));
   expect(onClose).toHaveBeenCalledWith(false);
@@ -35,11 +35,11 @@ it('protects a student status draft on close and allows cancellation or explicit
 it('retains local changes during an external status update and requires a choice before saving', () => {
   const save = vi.fn(); const view = render(sheet(student, vi.fn(), save)); changeStatus();
   view.rerender(sheet({ ...student, status: 'completed' }, vi.fn(), save));
-  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('paused');
+  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('expelled');
   expect(screen.getByRole('button', { name: i18n.t('studentSaveStatus') }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: i18n.t('studentKeepChanges') }));
   expect(screen.queryByText(i18n.t('studentChangesDetected'))).toBeNull();
-  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('paused');
+  expect((screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement).value).toBe('expelled');
   expect(save).not.toHaveBeenCalled();
 });
 

@@ -26,7 +26,6 @@ import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import { attachSalesWorkflow } from '../../infrastructure/sales-kpi/sales-workflow-context';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
@@ -35,7 +34,6 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   addDays,
   addMinutes,
@@ -51,7 +49,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -140,7 +137,6 @@ export const TABLES_WITHOUT_UPDATED_AT = new Set([
   'academy_student_status_history',
   'academy_lesson_status_history',
   'academy_parent_surveys',
-  'academy_referral_rewards',
   'academy_payment_attachments',
 ]);
 
@@ -847,49 +843,6 @@ export const createNotification = async (userId: number | null | undefined, titl
       relatedEntityId: entityId,
     }).catch((error) => logger.error('Failed to create notification', { error, userId }));
   });
-};
-
-export const createTask = async (title: string, options: {
-  responsibleId?: number | null;
-  description?: string | null;
-  deadlineAt?: Date | null;
-  entityType?: string | null;
-  entityId?: number | null;
-}) => {
-  const responsibleId = Number(options.responsibleId);
-  if (!Number.isInteger(responsibleId) || responsibleId <= 0) {
-    throw Object.assign(new Error('taskAssigneeRequired'), { statusCode: 400 });
-  }
-  return insertRow('academy_tasks', {
-    title,
-    description: options.description ?? null,
-    responsibleId,
-    deadlineAt: options.deadlineAt ?? null,
-    entityType: options.entityType ?? null,
-    entityId: options.entityId ?? null,
-    status: 'new',
-  });
-};
-
-export const createTaskOnce = async (title: string, options: {
-  responsibleId?: number | null;
-  description?: string | null;
-  deadlineAt?: Date | null;
-  entityType?: string | null;
-  entityId?: number | null;
-}) => {
-  const existing = await queryOne(
-    `SELECT *
-     FROM academy_tasks
-     WHERE title = $1
-       AND entity_type IS NOT DISTINCT FROM $2::text
-       AND entity_id IS NOT DISTINCT FROM $3::integer
-     ORDER BY id
-     LIMIT 1`,
-    [title, options.entityType ?? null, options.entityId ?? null],
-  );
-  if (existing) return { task: existing, created: false };
-  return { task: await createTask(title, options), created: true };
 };
 
 export const logIntegration = async (provider: string, direction: string, status: string, payload: unknown, errorMessage?: string | null) =>

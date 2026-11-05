@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { partitionEnrollmentGroups, useEnrollmentGroupOptions } from '@/features/groups/enrollment-options';
-import { GraduationCap, Plus, Star, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, GraduationCap, Plus, Star, Trash2 } from 'lucide-react';
 import type { StudentProfileStudent, StudentLearningGroup } from '@shared/contracts/student-profile';
 import { createStudentStatusDraft, reconcileStudentStatusDraft, studentStatusIsDirty } from '@/lib/studentStatusDraft';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useCeoCopy } from '@/hooks/useCeoCopy';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 
@@ -16,7 +17,9 @@ export type StudentManagementProps = {
   groups: StudentLearningGroup[];
   open: boolean;
   availableGroups?: StudentGroupOption[];
-  onUpdateStatus?: (studentId: number, status: string, exitReason?: string) => Promise<unknown>;
+  onUpdateStatus?: (studentId: number, status: string) => Promise<unknown>;
+  onArchive?: (studentId: number) => Promise<unknown>;
+  onRestore?: (studentId: number, returnToGroups: boolean) => Promise<unknown>;
   onAddGroup?: (studentId: number, groupId: number, isPrimary?: boolean) => Promise<unknown>;
   onRemoveGroup?: (studentId: number, groupId: number) => Promise<unknown>;
   onChanged: () => void;
@@ -34,6 +37,8 @@ export function useStudentManagement({
   open,
   availableGroups = [],
   onUpdateStatus,
+  onArchive,
+  onRestore,
   onAddGroup,
   onRemoveGroup,
   onChanged,
@@ -42,9 +47,12 @@ export function useStudentManagement({
   const copy = useCeoCopy().student;
   const id = student?.id ?? null;
   const status = student?.status ?? 'studying';
-  const exitReason = student?.exitReason ?? '';
-  const [workspace, setWorkspace] = useState(() => createStudentStatusDraft({ id, status, exitReason }));
+  const archived = Boolean(student?.isArchived);
+  const [workspace, setWorkspace] = useState(() => createStudentStatusDraft({ id, status }));
   const [saving, setSaving] = useState(false);
+  const [archiveAction, setArchiveAction] = useState<'archive' | 'restore' | null>(null);
+  const [archivePending, setArchivePending] = useState(false);
+  const [returnToGroups, setReturnToGroups] = useState(true);
   const [groupPending, setGroupPending] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [removeGroupId, setRemoveGroupId] = useState<number | null>(null);
@@ -52,35 +60,36 @@ export function useStudentManagement({
   const [acceptChanges, setAcceptChanges] = useState(false);
 
   useEffect(() => {
-    const snapshot = { id, status, exitReason };
+    const snapshot = { id, status };
     setWorkspace((current) => (open ? reconcileStudentStatusDraft(current, snapshot) : createStudentStatusDraft(snapshot)));
-  }, [open, id, status, exitReason]);
+  }, [open, id, status]);
 
   useEffect(() => {
     setSelectedGroupId('');
     setRemoveGroupId(null);
     setConfirmStatus(false);
     setAcceptChanges(false);
+    setArchiveAction(null);
+    setReturnToGroups(true);
   }, [id, open]);
 
   const dirty = studentStatusIsDirty(workspace);
-  const blocked = saving || groupPending;
+  const blocked = saving || groupPending || archivePending;
   const statusLabel = (value: string) =>
     ({
       trial: t('studentStatusTrial'),
       waiting_start: t('studentStatusWaitingStart'),
       studying: copy.studying,
-      paused: copy.paused,
       completed: copy.completed,
       expelled: copy.expelled,
     })[value] ?? value;
 
   const saveStatus = async () => {
     if (!id || !onUpdateStatus || saving || workspace.incoming) return;
-    const saved = { id, status: workspace.status, exitReason: workspace.exitReason };
+    const saved = { id, status: workspace.status };
     setSaving(true);
     try {
-      await onUpdateStatus(id, saved.status, saved.exitReason || undefined);
+      await onUpdateStatus(id, saved.status);
       setWorkspace((current) => ({ ...current, baseline: saved, incoming: null }));
       setConfirmStatus(false);
       onChanged();
@@ -88,6 +97,24 @@ export function useStudentManagement({
       /* The parent mutation displays its error. */
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runArchiveAction = async () => {
+    if (!id || !archiveAction || archivePending) return;
+    const action = archiveAction === 'archive'
+      ? onArchive && (() => onArchive(id))
+      : onRestore && (() => onRestore(id, returnToGroups));
+    if (!action) return;
+    setArchivePending(true);
+    try {
+      await action();
+      setArchiveAction(null);
+      onChanged();
+    } catch {
+      /* The parent mutation displays its error. */
+    } finally {
+      setArchivePending(false);
     }
   };
 
@@ -111,10 +138,10 @@ export function useStudentManagement({
   const enrollmentGroups = useEnrollmentGroupOptions(availableGroups, open && Boolean(onAddGroup));
   const available = enrollmentGroups.options.filter((group) => !enrolled.has(group.id) && !group.isArchived && ['planned', 'open', 'in_progress'].includes(String(group.status)));
 
-  const statusControl = onUpdateStatus ? (
+  const statusControl = onUpdateStatus || onArchive || onRestore ? (
     <CompactModalSection
       title={copy.learningStatus}
-      summary={statusLabel(workspace.status)}
+      summary={archived ? t('leadInArchive') : statusLabel(workspace.status)}
       icon={GraduationCap}
       tone="violet"
       defaultOpen
@@ -152,66 +179,63 @@ export function useStudentManagement({
           </div>
         </div>
       ) : null}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1 space-y-1 text-[11px] font-medium text-muted-foreground">
-          {copy.status}
-          <select
-            className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            disabled={blocked}
-            value={workspace.status}
-            onChange={(event) => setWorkspace((current) => ({ ...current, status: event.target.value }))}
-          >
-            {['trial', 'waiting_start', 'studying', 'paused', 'completed', 'expelled'].map((value) => (
-              <option key={value} value={value}>
-                {statusLabel(value)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {['paused', 'expelled'].includes(workspace.status) ? (
+      {archived ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Badge variant="secondary" className="h-6 px-2 text-xs">{t('leadInArchive')}</Badge>
+          {onRestore ? (
+            <Button size="sm" className="h-8 shrink-0 px-3 text-xs" disabled={blocked} onClick={() => setArchiveAction('restore')}>
+              <ArchiveRestore data-icon="inline-start" />
+              {t('studentRestore')}
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          {onUpdateStatus ? (<>
           <label className="min-w-0 flex-1 space-y-1 text-[11px] font-medium text-muted-foreground">
-            {copy.churnReason}
+            {copy.status}
             <select
               className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               disabled={blocked}
-              value={workspace.exitReason}
-              onChange={(event) => setWorkspace((current) => ({ ...current, exitReason: event.target.value }))}
+              value={workspace.status}
+              onChange={(event) => setWorkspace((current) => ({ ...current, status: event.target.value }))}
             >
-              <option value="">{copy.chooseReason}</option>
-              {Object.entries({
-                relocation: copy.relocation,
-                price: copy.price,
-                quality: copy.quality,
-                schedule_conflict: copy.scheduleConflict,
-                lost_interest: copy.lostInterest,
-              }).map(([value, label]) => (
+              {['trial', 'waiting_start', 'studying', 'completed', 'expelled'].map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {statusLabel(value)}
                 </option>
               ))}
             </select>
           </label>
-        ) : null}
-        <Button
-          size="sm"
-          className="h-8 shrink-0 px-3 text-xs"
-          disabled={
-            !dirty ||
-            blocked ||
-            Boolean(workspace.incoming) ||
-            (['paused', 'expelled'].includes(workspace.status) && !workspace.exitReason)
-          }
-          onClick={() => {
-            if (workspace.status !== status && ['paused', 'completed', 'expelled'].includes(workspace.status)) {
-              setConfirmStatus(true);
-            } else {
-              void saveStatus();
-            }
-          }}
-        >
-          {saving ? copy.saving : copy.saveStatus}
-        </Button>
-      </div>
+          <Button
+            size="sm"
+            className="h-8 shrink-0 px-3 text-xs"
+            disabled={!dirty || blocked || Boolean(workspace.incoming)}
+            onClick={() => {
+              if (workspace.status !== status && ['completed', 'expelled'].includes(workspace.status)) {
+                setConfirmStatus(true);
+              } else {
+                void saveStatus();
+              }
+            }}
+          >
+            {saving ? copy.saving : copy.saveStatus}
+          </Button>
+          </>) : null}
+          {onArchive ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 px-3 text-xs"
+              disabled={blocked || dirty}
+              onClick={() => setArchiveAction('archive')}
+            >
+              <Archive data-icon="inline-start" />
+              {t('studentArchive')}
+            </Button>
+          ) : null}
+        </div>
+      )}
     </CompactModalSection>
   ) : null;
 
@@ -315,6 +339,43 @@ export function useStudentManagement({
         isPending={saving}
         onConfirm={() => void saveStatus()}
       />
+      <ConfirmDialog
+        open={archiveAction === 'archive'}
+        onOpenChange={(next) => {
+          if (!next && !archivePending) setArchiveAction(null);
+        }}
+        title={t('studentArchiveTitle')}
+        description={t('studentArchiveConfirm')}
+        target={student?.studentName || student?.contactName}
+        confirmLabel={archivePending ? t('saving') : t('studentArchive')}
+        variant="destructive"
+        keepOpenOnConfirm
+        isPending={archivePending}
+        onConfirm={() => void runArchiveAction()}
+      />
+      <ConfirmDialog
+        open={archiveAction === 'restore'}
+        onOpenChange={(next) => {
+          if (!next && !archivePending) setArchiveAction(null);
+        }}
+        title={t('studentRestoreTitle')}
+        description={t('studentRestoreConfirm')}
+        target={student?.studentName || student?.contactName}
+        confirmLabel={archivePending ? t('saving') : t('studentRestore')}
+        keepOpenOnConfirm
+        isPending={archivePending}
+        onConfirm={() => void runArchiveAction()}
+      >
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="student-restore-groups"
+            checked={returnToGroups}
+            disabled={archivePending}
+            onCheckedChange={(checked) => setReturnToGroups(checked === true)}
+          />
+          <label htmlFor="student-restore-groups" className="text-sm">{t('studentRestoreReturnGroups')}</label>
+        </div>
+      </ConfirmDialog>
       <ConfirmDialog
         open={acceptChanges}
         onOpenChange={setAcceptChanges}

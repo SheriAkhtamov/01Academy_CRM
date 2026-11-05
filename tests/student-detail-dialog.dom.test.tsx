@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_STUDENT_PROJECT_BYTES, summarizeStudentProfile, type StudentProfile } from '../shared/contracts/student-profile';
@@ -17,7 +17,7 @@ vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({ useOnlinePbxCall: () =>
 const student = { id: 321, studentName: 'Child', contactName: 'Old parent name', status: 'studying', leadId: 12 };
 const groups = [{ groupId: 5, groupName: 'CYP-VC-GRP-26-0001', courseName: 'Vibe Coding', schoolName: 'Cyberpark', teacherName: 'Teacher', isPrimary: true, enrolledAt: null, totalLessons: 16, completedLessons: 4, remainingLessons: 11, attendedLessons: 4, missedLessons: 1 }];
 const attendance = [{ lessonId: 8, topic: 'Project lesson', scheduledAt: '2026-10-04', groupName: 'Group', status: 'present' as const, note: null }, { lessonId: 9, topic: 'Unmarked lesson', scheduledAt: '2026-10-05', groupName: 'Group', status: null, note: null }];
-const payments = [{ id: 1, amountUzs: 1_500_000, status: 'paid', type: 'full', method: 'cash', period: null, paidAt: '2026-10-01', dueAt: null, paidUntil: null, createdAt: '2026-10-01', comment: null }, { id: 2, amountUzs: 300_000, status: 'overdue', type: 'full', method: 'transfer', period: null, paidAt: null, dueAt: '2026-09-30', paidUntil: null, createdAt: '2026-09-30', comment: null }];
+const payments = [{ id: 1, amountUzs: 1_500_000, status: 'paid', type: 'full', method: 'cash', paidAt: '2026-10-01', createdAt: '2026-10-01', comment: null }, { id: 2, amountUzs: 300_000, status: 'pending', type: 'full', method: 'transfer', paidAt: null, createdAt: '2026-09-30', comment: null }];
 const profile: StudentProfile = { student, lead: { id: 12, contactName: 'Current parent', phone: null }, groups, attendance, payments, projects: [], summary: summarizeStudentProfile(groups, attendance, payments) };
 const clients: QueryClient[] = [];
 function show(props = {}) {
@@ -94,24 +94,25 @@ describe('new student detail dialog', () => {
     await screen.findByText('Current parent');
     const disclosure = screen.getByRole('button', { name: i18n.t('studentLearningStatus') });
     const status = screen.getByRole('combobox', { name: i18n.t('status') }) as HTMLSelectElement;
-    fireEvent.change(status, { target: { value: 'paused' } });
+    fireEvent.change(status, { target: { value: 'expelled' } });
     disclosure.focus();
     await user.keyboard(' ');
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
     await user.keyboard('{Enter}');
     expect(screen.getByRole('combobox', { name: i18n.t('status') })).toBe(status);
-    expect(status.value).toBe('paused');
+    expect(status.value).toBe('expelled');
     expect(onUpdateStatus).not.toHaveBeenCalled();
   });
-  it('shows individual attendance marks and unpaid payment history', async () => {
+  it('shows individual attendance marks and pending payment history', async () => {
     const user = userEvent.setup(); show(); await screen.findByText('Current parent');
     await user.click(screen.getByRole('tab', { name: i18n.t('attendanceTab') }));
     expect(await screen.findByText('Unmarked lesson')).toBeTruthy();
     expect(screen.getByText('Project lesson')).toBeTruthy();
     expect(screen.getByText(i18n.t('present'))).toBeTruthy();
     await user.click(screen.getByRole('tab', { name: i18n.t('navPayments') }));
-    expect(await screen.findByText(i18n.t('paymentStatusOverdue'))).toBeTruthy();
+    expect((await screen.findAllByText(i18n.t('paymentStatusPending'))).length).toBeGreaterThan(0);
+    expect(screen.queryByText(i18n.t('paymentStatusOverdue'))).toBeNull();
     expect(screen.getByText('2026-09-30 · Перевод')).toBeTruthy();
   });
   it('retains a project draft across tabs and confirms discarding it before closing', async () => {
@@ -152,6 +153,32 @@ describe('new student detail dialog', () => {
     fireEvent.change(screen.getByLabelText(i18n.t('mediaFile')), { target: { files: [file] } });
     fireEvent.submit(screen.getByLabelText(i18n.t('studentProjectTitle')).closest('form')!);
     await waitFor(() => expect(mocks.addProject).toHaveBeenCalledWith(321, { title: 'project', file }, expect.any(Function)));
+  });
+  it('archives a student only after an explicit confirmation', async () => {
+    const onArchive = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup(); show({ onArchive }); await screen.findByText('Current parent');
+    await user.click(screen.getByRole('button', { name: i18n.t('studentArchive') }));
+    expect(onArchive).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole('alertdialog', { name: i18n.t('studentArchiveTitle') });
+    await user.click(within(confirmation).getByRole('button', { name: i18n.t('studentArchive') }));
+    await waitFor(() => expect(onArchive).toHaveBeenCalledExactlyOnceWith(321));
+    expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
+  });
+  it('restores an archived student and can leave the previous groups alone', async () => {
+    const archived = { ...student, isArchived: true };
+    mocks.profile.mockResolvedValue({ ...profile, student: archived });
+    const onRestore = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup(); show({ student: archived, onRestore, onUpdateStatus: vi.fn() });
+    await screen.findByText('Current parent');
+    expect(screen.getAllByText(i18n.t('leadInArchive')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('combobox', { name: i18n.t('status') })).toBeNull();
+    await user.click(screen.getByRole('button', { name: i18n.t('studentRestore') }));
+    const confirmation = screen.getByRole('alertdialog', { name: i18n.t('studentRestoreTitle') });
+    const returnToGroups = within(confirmation).getByRole('checkbox', { name: i18n.t('studentRestoreReturnGroups') });
+    expect(returnToGroups.getAttribute('aria-checked')).toBe('true');
+    await user.click(returnToGroups);
+    await user.click(within(confirmation).getByRole('button', { name: i18n.t('studentRestore') }));
+    await waitFor(() => expect(onRestore).toHaveBeenCalledExactlyOnceWith(321, false));
   });
 });
 

@@ -392,26 +392,14 @@ describe.skipIf(!databaseUrl)(
       now += 3 * DAY;
       await worker().runOnce();
     });
-    it("limits financial reminders to confirmed financial access and cancels them after payment", async () => {
+    it("never sends payment due or overdue reminders because payments have no due dates", async () => {
       now = new Date("2026-10-12T18:00:00Z").getTime();
-      const payment = (
-        await pool.query(
-          "INSERT INTO academy_payments(student_id,group_id,amount_uzs,status,due_at) VALUES(1,1,500000,'pending',$1) RETURNING id",
-          [new Date(now + 3 * DAY)],
-        )
-      ).rows[0];
-      await worker().runOnce();
-      expect(
-        (await notifications("portalNoticePaymentDue")).map((row) =>
-          Number(row.account_id),
-        ),
-      ).toEqual([2]);
       await pool.query(
-        "UPDATE academy_payments SET status='paid' WHERE id=$1",
-        [payment.id],
+        "INSERT INTO academy_payments(student_id,group_id,amount_uzs,status) VALUES(1,1,500000,'pending')",
       );
-      now = new Date("2026-10-13T03:00:00Z").getTime();
       await worker().runOnce();
+      expect(await notifications("portalNoticePaymentDue")).toHaveLength(0);
+      expect(await notifications("portalNoticePaymentOverdue")).toHaveLength(0);
     });
     it("excludes old imports and disabled pilot groups", async () => {
       await event("report_published", 1, { occurredAt: INITIAL - 10 * DAY });
@@ -610,12 +598,8 @@ describe.skipIf(!databaseUrl)(
         ).rows[0].href,
       ).toBe(`/parent-module/feedback?review=${review.id}&linkId=2`);
     });
-    it("sends overdue notices once, cancels cancelled lesson notices correctly and bypasses quiet hours for account security", async () => {
+    it("sends overdue assignment notices once, cancels cancelled lesson notices correctly and bypasses quiet hours for account security", async () => {
       const recipient = await assignment(now - 25 * HOUR, now - 26 * HOUR);
-      await pool.query(
-        "INSERT INTO academy_payments(student_id,group_id,amount_uzs,status,due_at) VALUES(1,1,500000,'overdue',$1)",
-        [new Date(now - 25 * HOUR)],
-      );
       const lesson = (
         await pool.query(
           "INSERT INTO academy_lessons(group_id,topic,scheduled_at,status) VALUES(1,'Cancelled class',$1,'cancelled') RETURNING id",
@@ -631,11 +615,6 @@ describe.skipIf(!databaseUrl)(
       expect(await notifications("portalNoticeAssignmentOverdue")).toHaveLength(
         3,
       );
-      expect(
-        (await notifications("portalNoticePaymentOverdue")).map((row) =>
-          Number(row.account_id),
-        ),
-      ).toEqual([2]);
       expect(await notifications("portalNoticeLessonCancelled")).toHaveLength(
         3,
       );

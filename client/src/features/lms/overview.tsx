@@ -729,15 +729,9 @@ export function FamilyOverview() {
                 ) : finance[index].data?.summary ? (
                   <div className="space-y-1">
                     <p>
-                      {t("portalDueAmount")}:{" "}
-                      {format.money(finance[index].data!.summary!.dueUzs)}
+                      {t("portalPaid")}:{" "}
+                      {format.money(finance[index].data!.summary!.paidUzs)}
                     </p>
-                    {finance[index].data?.summary?.paidUntil && (
-                      <p>
-                        {t("portalPaidUntil")}:{" "}
-                        {format.date(finance[index].data!.summary!.paidUntil!)}
-                      </p>
-                    )}
                   </div>
                 ) : null)}
               <Button onClick={() => selectSubject(subject.linkId)}>

@@ -27,17 +27,14 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -58,7 +55,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -117,19 +113,6 @@ import {
   prepareLessonMutation,
   restoreArchivedGroupLessons,
 } from './academy-route-support';
-
-const assertTaskLeadMutation = async (req: any, ...tasks: Row[]) => {
-  const leadIds = [...new Set(tasks.filter(task => task.entityType === 'lead')
-    .map(task => parseId(task.entityId)).filter((id): id is number => id !== null))].sort((a, b) => a - b);
-  for (const leadId of leadIds) {
-    const lead = await queryOne('SELECT * FROM academy_leads WHERE id = $1 FOR UPDATE', [leadId]);
-    if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-    if (!canMutateLeadRow(req.actor!, lead)) {
-      const needsClaim = !lead.managerId && canAccessLeadRow(req.actor!, lead);
-      throw Object.assign(new Error(needsClaim ? 'leadAssignmentRequired' : 'accessDenied'), { statusCode: needsClaim ? 409 : 403 });
-    }
-  }
-};
 
 export const createAcademyCrudRegistrar = (router: ReturnType<typeof Router>) => {
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
@@ -220,33 +203,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         }
       }
 
-      if (table === 'academy_tasks') {
-        if (Object.prototype.hasOwnProperty.call(req.body, 'responsibleId') && !parseId(req.body.responsibleId)) {
-          return res.status(400).json({ error: 'taskAssigneeRequired' });
-        }
-        if (hasLeadershipAccess(req.user) && !parseId(values.responsibleId)) {
-          return res.status(400).json({ error: 'taskAssigneeRequired' });
-        }
-      }
-      if (table === 'academy_tasks' && !hasLeadershipAccess(req.user)) {
-        const hasRequestedResponsible = req.body.responsibleId !== undefined
-          && req.body.responsibleId !== null
-          && req.body.responsibleId !== '';
-        const requestedResponsibleId = hasRequestedResponsible
-          ? parseId(req.body.responsibleId)
-          : req.user!.id;
-        if (!requestedResponsibleId) {
-          return res.status(400).json({ error: 'Invalid responsible user' });
-        }
-        if (Number(requestedResponsibleId) !== Number(req.user!.id)) {
-          return res.status(403).json({ error: 'Task mutation access required' });
-        }
-        // Staff-created tasks always remain in the creator's own scope. The old
-        // pre-check defaulted to self but left the value itself undefined, which
-        // inserted a NULL owner and made the new task immediately disappear.
-        values.responsibleId = req.user!.id;
-      }
-
       if (table === 'academy_marketing_expenses') {
         values.createdBy = req.user!.id;
         values.status = 'pending';
@@ -286,11 +242,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             const teacher = await insertRow(table, values);
             return teacher;
           })
-        : table === 'academy_tasks' && values.entityType === 'lead'
-          ? await withTransaction(async () => {
-            await assertTaskLeadMutation(req, values);
-            return insertRow(table, values);
-          })
         : await insertRow(table, values);
       await createAudit(req, `CREATE_${table.toUpperCase()}`, table, row.id, row);
       res.status(201).json(row);
@@ -318,9 +269,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       if (!id) return res.status(400).json({ error: `Invalid ${path} id` });
       const oldRow = await queryOne(`SELECT * FROM ${quoteIdent(table)} WHERE id = $1`, [id]);
       if (!oldRow) return res.status(404).json({ error: `${path} not found` });
-      if (table === 'academy_tasks' && !hasLeadershipAccess(req.user) && Number(oldRow.responsibleId) !== Number(req.user!.id)) {
-        return res.status(403).json({ error: 'Task mutation access required' });
-      }
       const values: Row = {};
       for (const column of columns) {
         if (!(column in req.body)) continue;
@@ -340,25 +288,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         } else {
           values[column] = nullableText(value);
         }
-      }
-      if (table === 'academy_tasks'
-        && Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
-        && !parseId(values.responsibleId)) {
-        return res.status(400).json({ error: 'taskAssigneeRequired' });
-      }
-      if (
-        table === 'academy_tasks'
-        && !hasLeadershipAccess(req.user)
-        && Object.prototype.hasOwnProperty.call(req.body, 'responsibleId')
-      ) {
-        const requestedResponsibleId = parseId(req.body.responsibleId);
-        if (!requestedResponsibleId) {
-          return res.status(400).json({ error: 'Invalid responsible user' });
-        }
-        if (Number(requestedResponsibleId) !== Number(req.user!.id)) {
-          return res.status(403).json({ error: 'Task mutation access required' });
-        }
-        values.responsibleId = req.user!.id;
       }
       const row = table === 'academy_groups'
         ? await withTransaction(async () => {
@@ -472,19 +401,6 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
             }
             const updatedTeacher = await updateRow(table, id, values);
             return updatedTeacher;
-          })
-        : table === 'academy_tasks' && (oldRow.entityType === 'lead' || values.entityType === 'lead')
-          ? await withTransaction(async () => {
-            await assertTaskLeadMutation(req, oldRow, { ...oldRow, ...values });
-            const lockedTask = await queryOne(`SELECT * FROM academy_tasks WHERE id = $1 FOR UPDATE`, [id]);
-            if (!lockedTask) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-            if (lockedTask.entityType !== oldRow.entityType || lockedTask.entityId !== oldRow.entityId) {
-              throw Object.assign(new Error('invalidData'), { statusCode: 409 });
-            }
-            if (!hasLeadershipAccess(req.user) && Number(lockedTask.responsibleId) !== Number(req.user!.id)) {
-              throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
-            }
-            return updateRow(table, id, values);
           })
         : options.beforeUpdate
           ? await withTransaction(async () => {

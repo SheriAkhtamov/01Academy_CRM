@@ -57,8 +57,8 @@ BEGIN
   UPDATE academy_leads SET is_archived = true WHERE id = lead_key;
   UPDATE academy_leads SET is_archived = false WHERE id = lead_key;
   ASSERT (SELECT reactivated_at IS NOT NULL FROM academy_sales_kpi_leads WHERE lead_id = lead_key), 'Archive restoration captures reactivation';
-  INSERT INTO academy_students (lead_id, contact_name, student_name, course_id, manager_id, referral_code)
-    VALUES (lead_key, 'KPI verification', 'KPI verification student', course_key, hunter, 'kpi-verify-' || hunter) RETURNING id INTO student_key;
+  INSERT INTO academy_students (lead_id, contact_name, student_name, course_id, manager_id)
+    VALUES (lead_key, 'KPI verification', 'KPI verification student', course_key, hunter) RETURNING id INTO student_key;
   INSERT INTO academy_demo_lessons (course_id, school_id, teacher_id, scheduled_at, format)
     VALUES (course_key, school_key, teacher_key, timezone('UTC', now()) - interval '2 hours', 'online') RETURNING id INTO lesson_key;
   INSERT INTO academy_demo_lesson_participants (demo_lesson_id, student_id, status)
@@ -89,7 +89,8 @@ BEGIN
   ASSERT (SELECT kind = 'installment' FROM academy_sales_kpi_sales WHERE payment_id = second_payment), 'Second installment is excluded';
   INSERT INTO academy_payments (lead_id, student_id, amount_uzs, type, status, paid_at)
     VALUES (lead_key, student_key, 200000, 'full', 'paid', timezone('UTC', now())) RETURNING id INTO renewal_payment;
-  ASSERT (SELECT kind = 'unclassified' FROM academy_sales_kpi_sales WHERE payment_id = renewal_payment), 'Subsequent sale requires classification';
+  ASSERT (SELECT kind = 'installment' AND cycle_key IS NULL FROM academy_sales_kpi_sales WHERE payment_id = renewal_payment),
+    'A further sale of the same group in the same month is classified as an installment automatically';
   UPDATE academy_sales_kpi_sales SET kind = 'renewal', cycle_key = month_key WHERE payment_id = renewal_payment;
 
   UPDATE academy_leads SET manager_id = another_closer WHERE id = lead_key;
@@ -97,8 +98,12 @@ BEGIN
   ASSERT (SELECT closer_id = closer FROM academy_sales_kpi_sales WHERE payment_id = payment_key), 'Changing manager preserves sale attribution';
   ASSERT (SELECT closer_id = closer FROM academy_sales_kpi_trials WHERE participant_id = participant_key), 'Changing manager preserves trial attribution';
   UPDATE academy_payments SET status = 'refunded' WHERE id = payment_key;
-  ASSERT NOT EXISTS (SELECT 1 FROM academy_sales_kpi_sales fact JOIN academy_payments payment ON payment.id = fact.payment_id
-    WHERE payment.student_id = student_key AND fact.kind = 'new' AND payment.status = 'paid'), 'Refund removes the paid new-sale fact';
+  ASSERT (SELECT kind = 'new' AND cycle_key IS NULL FROM academy_sales_kpi_sales WHERE payment_id = renewal_payment),
+    'Refunding the first sale hands the new pupil to the earliest sale that stayed paid';
+  ASSERT (SELECT kind = 'installment' FROM academy_sales_kpi_sales WHERE payment_id = second_payment),
+    'A second installment never becomes the first sale';
+  ASSERT (SELECT COUNT(*) = 1 FROM academy_sales_kpi_sales fact JOIN academy_payments payment ON payment.id = fact.payment_id
+    WHERE payment.student_id = student_key AND fact.kind = 'new' AND payment.status = 'paid'), 'A pupil keeps exactly one paid new sale';
 
   INSERT INTO academy_parent_surveys (student_id, period, nps_score)
     VALUES (student_key, month_key, 10) RETURNING id INTO survey_key;
@@ -119,8 +124,8 @@ BEGIN
     ASSERT EXISTS (SELECT 1 FROM academy_sales_kpi_activity WHERE lead_id = lead_key AND source_key = 'instagram:' || message_key), 'Sent Instagram message is captured';
   END IF;
 
-  INSERT INTO academy_students (contact_name, manager_id, referral_code)
-    VALUES ('KPI verification without lead', closer, 'kpi-verify-second-' || hunter) RETURNING id INTO second_student;
+  INSERT INTO academy_students (contact_name, manager_id)
+    VALUES ('KPI verification without lead', closer) RETURNING id INTO second_student;
   INSERT INTO academy_payments (student_id, amount_uzs, type, status, paid_at)
     VALUES (second_student, 100000, 'installment_2_2', 'paid', timezone('UTC', now())) RETURNING id INTO second_payment;
   ASSERT (SELECT kind = 'installment' AND closer_id = closer FROM academy_sales_kpi_sales WHERE payment_id = second_payment), 'Second installment stays excluded even without prior payment';

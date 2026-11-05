@@ -27,18 +27,16 @@ import { runAutomations } from '../../services/automations';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
+import { livePaymentSql } from '../../lib/student-payment-sql';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -59,7 +57,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -96,7 +93,6 @@ import {
   canMutateLeadRow,
   createAudit,
   createNotification,
-  createTask,
   ensureAdministrationModuleAccess,
   ensureLeadMutationAccess,
   ensureLeadRowAccess,
@@ -269,9 +265,6 @@ router.get('/leads', async (req, res) => {
 });
 
 router.post('/leads', async (req, res) => {
-  if (req.body.referrerStudentId != null || req.body.referralCode != null) {
-    return res.status(400).json({ error: 'invalidData' });
-  }
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const parsedInput = createAcademyLeadRequestSchema.safeParse(req.body);
@@ -462,21 +455,6 @@ router.post('/leads/bulk-assign', async (req, res) => {
         [lockedManager.id, changedIds],
       );
       await query(
-        `UPDATE academy_tasks
-         SET responsible_id = $1, updated_at = NOW()
-         WHERE status <> 'done'
-           AND (
-             (entity_type = 'lead' AND entity_id = ANY($2::int[]))
-             OR (
-               entity_type = 'student'
-               AND entity_id IN (
-                 SELECT id FROM academy_students WHERE lead_id = ANY($2::int[])
-               )
-             )
-           )`,
-        [lockedManager.id, changedIds],
-      );
-      await query(
         `UPDATE board_tasks
          SET assignee_id = $1, updated_at = NOW()
          WHERE lead_id = ANY($2::int[])
@@ -594,7 +572,7 @@ router.get('/leads/:id', async (req, res) => {
                 student.contact_name AS student_contact_name, ${paymentAttachmentsSelect('payment')}
          FROM academy_payments payment
          LEFT JOIN academy_students student ON student.id = payment.student_id
-         WHERE payment.lead_id = $1
+         WHERE payment.lead_id = $1 AND ${livePaymentSql()}
          ORDER BY payment.created_at DESC`,
         [id],
       ),
@@ -900,9 +878,6 @@ router.post('/leads/:id/restore', async (req, res) => {
 });
 
 router.patch('/leads/:id', async (req, res) => {
-  if (req.body.referrerStudentId != null || req.body.referralCode != null) {
-    return res.status(400).json({ error: 'invalidData' });
-  }
   if (!ensureModuleAccess(req, res, LEAD_MODULES, 'Lead write access required')) return;
   try {
     const parsedPhoneOwners = leadPhoneOwnersSchema.optional().safeParse(req.body.phoneOwners);
@@ -1087,6 +1062,9 @@ router.patch('/leads/:id', async (req, res) => {
             [id],
           )
         : null;
+      if (requestedGroupId && lockedStudent?.isArchived) {
+        throw Object.assign(new Error('archivedStudentMustBeRestoredBeforeUpdate'), { statusCode: 409 });
+      }
       if (requestedStatusCode && requestedStatusCode !== lockedLead.statusCode) {
         await assertSalesFunnelStage(lockedLead.funnelId, requestedStatusCode);
       }
@@ -1297,12 +1275,6 @@ router.post('/leads/:id/contact', async (req, res) => {
         firstContactResult: nullableText(req.body.result) ?? lead.firstContactResult ?? null,
       });
       if (!updatedLead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
-      if (String(req.body.result || '').toLowerCase().includes('не отвечает')) {
-        await createTask('Повторный контакт', {
-          responsibleId: updatedLead.managerId ?? req.user!.id,
-          deadlineAt: addDays(new Date(), 1), entityType: 'lead', entityId: id,
-        });
-      }
       return { communication, updatedLead };
     });
 
@@ -1434,8 +1406,6 @@ router.post('/leads/:id/students', async (req, res) => {
         status: hasEnrollment ? (primaryGroup?.status === 'planned' ? 'waiting_start' : 'studying') : 'trial',
         enrolledAt,
         enrollmentDate: enrolledAt,
-        nextPaymentAt: enrolledAt ? addDays(enrolledAt, 30) : null,
-        referralCode: '', // Compatibility with the legacy non-null column.
         marketingConsent: req.body.marketingConsent === true,
         riskFlags: [],
       });

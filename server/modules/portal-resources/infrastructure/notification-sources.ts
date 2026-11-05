@@ -599,21 +599,6 @@ export class PortalNotificationSources {
         ],
       )
     ).rows;
-    const payments = (
-      await sql.query<{
-        id: number;
-        student_id: number;
-        group_id: number | null;
-        due_at: Date;
-        amount_uzs: number;
-      }>(
-        `SELECT payment.id,COALESCE(allocation.student_id,payment.student_id) AS student_id,payment.group_id,payment.due_at,COALESCE(allocation.amount_uzs,payment.amount_uzs) AS amount_uzs FROM academy_payments payment LEFT JOIN academy_payment_student_allocations allocation ON allocation.payment_id=payment.id WHERE payment.status IN ('pending','overdue') AND payment.due_at IS NOT NULL AND payment.due_at>=$1 AND payment.due_at<=$2 AND COALESCE(allocation.student_id,payment.student_id) IS NOT NULL AND payment.amount_uzs>0 ORDER BY payment.due_at LIMIT 1000`,
-        [
-          new Date(Math.max(cutoff - DAY, now - 2 * DAY)),
-          new Date(now + 6 * DAY),
-        ],
-      )
-    ).rows;
     const candidates: Candidate[] = [];
     for (const row of assignments) {
       const dueAt = dateValue(row.due_at);
@@ -644,39 +629,6 @@ export class PortalNotificationSources {
             runId: number(row.run_id),
             dueAt: dueIso,
             title: row.title,
-          },
-          deliverAt: Math.max(now, scheduled),
-        });
-      }
-    }
-    for (const row of payments) {
-      const dueAt = dateValue(row.due_at);
-      const dueIso = new Date(dueAt).toISOString();
-      for (const overdue of [false, true]) {
-        const scheduled = dueAt + (overdue ? DAY : -3 * DAY);
-        if (
-          scheduled < cutoff ||
-          scheduled > now + 3 * DAY ||
-          (!overdue && dueAt <= now)
-        )
-          continue;
-        const type = overdue ? "payment_overdue" : "payment_due";
-        const sourceKey = `${type}:${row.id}:${dueIso}:student:${row.student_id}`;
-        candidates.push({
-          sourceKey,
-          eventKey: `${type}:${row.id}:${dueIso}`,
-          studentId: row.student_id,
-          runId: null,
-          groupId: row.group_id,
-          category: "finance",
-          code: code(type),
-          permission: "finance.read",
-          href: "/learn/payments",
-          params: {
-            sourceType: type,
-            paymentId: row.id,
-            dueAt: dueIso,
-            amountUzs: number(row.amount_uzs),
           },
           deliverAt: Math.max(now, scheduled),
         });

@@ -25,7 +25,7 @@ import './compact-modal.css';
 import { LoadingRegion } from '@/components/ui/loading-region';
 
 type StudentDetailTab = 'learning' | 'attendance' | 'portfolio' | 'payments' | 'contract' | 'access';
-type StudentDetailDialogProps = Pick<StudentManagementProps, 'onUpdateStatus' | 'onAddGroup' | 'onRemoveGroup'> & {
+type StudentDetailDialogProps = Pick<StudentManagementProps, 'onUpdateStatus' | 'onArchive' | 'onRestore' | 'onAddGroup' | 'onRemoveGroup'> & {
   student: StudentProfileStudent | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,6 +46,8 @@ export function StudentDetailDialog({
   onOpenLead,
   onRecordPayment,
   onUpdateStatus,
+  onArchive,
+  onRestore,
   onAddGroup,
   onRemoveGroup,
   data,
@@ -90,6 +92,8 @@ export function StudentDetailDialog({
     open,
     availableGroups: data?.groups,
     onUpdateStatus,
+    onArchive,
+    onRestore,
     onAddGroup,
     onRemoveGroup,
     onChanged: refresh,
@@ -136,15 +140,14 @@ export function StudentDetailDialog({
     ({
       trial: t('studentStatusTrial'),
       studying: t('studentStatusStudying'),
-      paused: t('studentStatusPaused'),
       completed: t('studentStatusCompleted'),
       expelled: t('studentStatusExpelled'),
     })[currentStudent.status] ?? t('noData');
   const statusBadgeVariant =
-    currentStudent.status === 'studying'
-      ? 'success'
-      : currentStudent.status === 'paused'
-        ? 'warning'
+    currentStudent.isArchived
+      ? 'secondary'
+      : currentStudent.status === 'studying'
+        ? 'success'
         : currentStudent.status === 'expelled'
           ? 'destructive'
           : 'secondary';
@@ -187,7 +190,7 @@ export function StudentDetailDialog({
               <div className="flex flex-wrap items-center gap-1.5">
                 <SheetTitle className="break-words text-base font-semibold leading-tight">{name}</SheetTitle>
                 <Badge variant={statusBadgeVariant} className="h-5 px-1.5 text-[10px]">
-                  {statusLabel}
+                  {currentStudent.isArchived ? t('leadInArchive') : statusLabel}
                 </Badge>
               </div>
               <SheetDescription asChild>

@@ -17,7 +17,7 @@ export function KpiMetricRow({ metric, onSelect, compact = false }: { metric: Kp
   const target = metric.target === null ? null : t('salesPlanLabel').replace('{value}', `${number.format(metric.target)}${suffix}`);
   const status = met ? t('salesPlanReached') : metric.value === null ? t('kpiPending') : remaining !== null && metric.unit === 'count'
     ? t('salesPlanRemaining').replace('{count}', number.format(remaining)) : metric.target !== null ? t('salesPlanProgress') : t('kpiNoTarget');
-  const color = metric.unit === 'count' ? 'text-blue-500 dark:text-blue-400' : metric.id === 'response' || metric.id === 'renewalConversion' ? 'text-violet-500 dark:text-violet-400' : 'text-emerald-500 dark:text-emerald-400';
+  const color = metric.unit === 'count' ? 'text-blue-500 dark:text-blue-400' : metric.id === 'response' ? 'text-violet-500 dark:text-violet-400' : 'text-emerald-500 dark:text-emerald-400';
   return <button type="button" onClick={() => onSelect(metric)} aria-haspopup="dialog"
     className={cn('group flex h-full w-full flex-col text-left transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', compact ? 'rounded-lg px-1 py-3' : 'rounded-xl border border-border/60 bg-card p-4 hover:border-primary/30')}
     aria-label={`${t('kpiDetailsTitle')}: ${t(metricKeys[metric.id])}`}>

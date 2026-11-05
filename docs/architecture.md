@@ -88,7 +88,7 @@ HTTP/Zod → ActorContext → application use case → UnitOfWork/repositories
 
 - `academy-core.ts` — общие правила доступа, транзакции и базовые операции;
 - `academy-scheduling.ts` — расписание, помещения и преподаватели;
-- `academy-leads.ts` — лиды, конвертация, платежные и реферальные эффекты;
+- `academy-leads.ts` — лиды, ученики внутри лида и связанные с ними операции;
 - `academy-analytics.ts` — read models и аналитика;
 - `*.router.ts` — HTTP-адаптеры по функциональным областям;
 - `academy.router.ts` — компактный публичный фасад модуля.

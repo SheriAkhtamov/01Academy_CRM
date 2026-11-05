@@ -1555,8 +1555,8 @@ describe('academy route logic boundaries', () => {
         return { rows: [{ id: 10, group_id: 20, status: 'conducted', scheduled_at: scheduledAt }] };
       }
       if (sql.includes('recent.statuses=')) return emptyResult();
-      if (sql.includes("FROM academy_tasks") && values[1] === "3 пропуска подряд: позвонить родителю") {
-        return { rows: [{ id: 70 }] };
+      if (sql.includes('UPDATE board_tasks') && values[0] === 'student_absence:5') {
+        return { rows: [{ id: 70, from_status: 'todo' }] };
       }
       return emptyResult();
     });
@@ -1569,10 +1569,12 @@ describe('academy route logic boundaries', () => {
       });
 
     expect(response.status).toBe(200);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
+      String(sql).includes('UPDATE board_tasks') && /status\s*=\s*'accepted'/.test(String(sql))
+    ))).toBe(true);
     expect(mocks.clientQuery.mock.calls.some(([sql, values]) => (
-      String(sql).includes('UPDATE academy_tasks')
-      && /status\s*=\s*'done'/.test(String(sql))
-      && values[0] === 70
+      String(sql).includes('INSERT INTO board_task_activity') && String(sql).includes("'accepted'")
+        && values[0] === 70 && values[1] === 'todo'
     ))).toBe(true);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
@@ -2340,10 +2342,11 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_students"'))).toBe(false);
   });
 
-  it.each([undefined, 'monthly'])('persists payment type %s, anchors paid-until to paidAt, and links the student payment to its lead', async (type) => {
+  it.each([undefined, 'monthly'])('persists payment type %s with its paid date and links the student payment to its lead', async (type) => {
     const paidAt = new Date('2026-01-15T10:00:00.000Z');
+    let insertSql = '';
     let insertedLeadId: unknown;
-    let insertedPaidUntil: unknown;
+    let insertedPaidAt: unknown;
     let insertedType: unknown;
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -2352,16 +2355,11 @@ describe('academy route logic boundaries', () => {
         return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
       }
       if (sql.includes('INSERT INTO "academy_payments"')) {
+        insertSql = sql;
         insertedLeadId = readInsertValue(sql, values, 'lead_id');
-        insertedPaidUntil = readInsertValue(sql, values, 'paid_until');
+        insertedPaidAt = readInsertValue(sql, values, 'paid_at');
         insertedType = readInsertValue(sql, values, 'type');
-        return { rows: [{ id: 99, lead_id: insertedLeadId, student_id: 5, type: insertedType, paid_until: insertedPaidUntil }] };
-      }
-      if (sql.includes('UPDATE "academy_students"')) {
-        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
-      }
-      if (sql.includes('FROM academy_leads l')) {
-        return { rows: [{ id: 42, referrer_student_id: null }] };
+        return { rows: [{ id: 99, lead_id: insertedLeadId, student_id: 5, type: insertedType, paid_at: insertedPaidAt }] };
       }
       return emptyResult();
     });
@@ -2374,8 +2372,10 @@ describe('academy route logic boundaries', () => {
     expect(insertedLeadId).toBe(42);
     expect(insertedType).toBe(type ?? 'full');
     expect(response.body.payment.type).toBe(type ?? 'full');
-    expect(insertedPaidUntil).toBeInstanceOf(Date);
-    expect((insertedPaidUntil as Date).toISOString()).toBe('2026-02-14T10:00:00.000Z');
+    expect((insertedPaidAt as Date).toISOString()).toBe(paidAt.toISOString());
+    // A payment is a fact of received money: no due date, covered period or discount.
+    expect(insertSql).not.toMatch(/paid_until|due_at|"period"|"discount"/);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('next_payment_at'))).toBe(false);
   });
 
   it.each([
@@ -2500,11 +2500,11 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(403);
   });
 
-  it('records the entered prepayment amount without granting a paid period', async () => {
+  it('records the entered prepayment amount as a plain payment fact', async () => {
     let insertedAmount: unknown;
     let insertedType: unknown;
-    let insertedPaidUntil: unknown;
-    const lead = leadFixture({ referrer_student_id: null });
+    let insertSql = '';
+    const lead = leadFixture();
     const student = { id: 5, lead_id: 42, group_id: 3, manager_id: 1 };
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
@@ -2517,14 +2517,12 @@ describe('academy route logic boundaries', () => {
       }
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1 AND lead_id = $2 FOR UPDATE')) return { rows: [student] };
       if (sql.includes('INSERT INTO "academy_payments"')) {
+        insertSql = sql;
         insertedAmount = readInsertValue(sql, values, 'amount_uzs');
         insertedType = readInsertValue(sql, values, 'type');
-        insertedPaidUntil = readInsertValue(sql, values, 'paid_until');
-        return { rows: [{ id: 99, lead_id: 42, student_id: 5, type: insertedType, paid_until: insertedPaidUntil }] };
+        return { rows: [{ id: 99, lead_id: 42, student_id: 5, type: insertedType }] };
       }
-      if (sql.includes('SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE')) {
-        return { rows: [{ id: 99, lead_id: 42, student_id: 5, type: 'prepayment', paid_until: null }] };
-      }
+      if (sql.includes('SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE')) return { rows: [{ id: 99, lead_id: 42, student_id: 5 }] };
       if (sql.includes('UPDATE "academy_payments"')) return { rows: [{ id: 99, lead_id: 42, student_id: 5 }] };
       return emptyResult();
     });
@@ -2542,10 +2540,8 @@ describe('academy route logic boundaries', () => {
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
     expect(insertedAmount).toBe(150_000);
     expect(insertedType).toBe('prepayment');
-    expect(insertedPaidUntil).toBeNull();
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('UPDATE academy_students') && String(sql).includes('SET next_payment_at')
-    ))).toBe(false);
+    expect(insertSql).not.toContain('paid_until');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('next_payment_at'))).toBe(false);
   });
 
   it('asks a sales manager to claim an unassigned lead before saving a payment', async () => {
@@ -2718,7 +2714,6 @@ describe('academy route logic boundaries', () => {
       enrolled_group_id: 10,
       status_code: 'enrolled',
       phone: '+998901234567',
-      referrer_student_id: null,
       is_archived: false,
     });
     const payment = {
@@ -2729,7 +2724,6 @@ describe('academy route logic boundaries', () => {
       amount_uzs: 250_000,
       status: 'paid',
       paid_at: new Date('2026-07-18T10:00:00.000Z'),
-      paid_until: new Date('2026-08-17T10:00:00.000Z'),
     };
     const student = {
       id: 5,
@@ -2779,7 +2773,6 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE')) return { rows: [payment] };
       if (sql.includes('INSERT INTO "academy_students"')) return { rows: [student] };
       if (sql.includes('UPDATE "academy_payments"')) return { rows: [{ ...payment, student_id: 5 }] };
-      if (sql.includes('UPDATE academy_students') && sql.includes('SET next_payment_at')) return { rows: [student] };
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1')) return { rows: [student] };
       return emptyResult();
     });
@@ -2930,7 +2923,7 @@ describe('academy route logic boundaries', () => {
     const studentInsert = mocks.clientQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO "academy_students"'));
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'status')).toBe('trial');
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'group_id')).toBeNull();
-    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'next_payment_at')).toBeNull();
+    expect(String(studentInsert?.[0])).not.toContain('next_payment_at');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => (
       String(sql).includes('INSERT INTO academy_student_group_enrollments')
     ))).toBe(false);
@@ -2990,7 +2983,7 @@ describe('academy route logic boundaries', () => {
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'expected_payment_uzs')).toBeNull();
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'status')).toBe('trial');
     expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'group_id')).toBeNull();
-    expect(readInsertValue(String(studentInsert?.[0]), studentInsert?.[1] ?? [], 'next_payment_at')).toBeNull();
+    expect(String(studentInsert?.[0])).not.toContain('next_payment_at');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => (
       String(sql).includes('INSERT INTO academy_student_group_enrollments')
     ))).toBe(false);
@@ -3047,53 +3040,16 @@ describe('academy route logic boundaries', () => {
     ]);
   });
 
-  it('ignores requested discounts and leaves old referral discount benefits unused', async () => {
-    let insertedDiscount: unknown;
-
-    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+  it('records a payment without a discount even when one is requested', async () => {
+    let insertSql = '';
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
       if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
-        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
-      }
-      if (
-        sql.includes('FROM academy_referral_benefits')
-        && sql.includes("benefit_type = 'next_payment_discount_15'")
-        && sql.includes("status = 'pending'")
-      ) {
-        return {
-          rows: [{
-            id: 77,
-            student_id: 5,
-            benefit_type: 'next_payment_discount_15',
-            status: 'pending',
-          }],
-        };
+        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
       }
       if (sql.includes('INSERT INTO "academy_payments"')) {
-        insertedDiscount = readInsertValue(sql, values, 'discount');
-        return {
-          rows: [{
-            id: 100,
-            lead_id: null,
-            student_id: 5,
-            discount: insertedDiscount,
-            paid_until: readInsertValue(sql, values, 'paid_until'),
-          }],
-        };
-      }
-      if (sql.includes('UPDATE academy_referral_benefits')) {
-        return {
-          rows: [{
-            id: 77,
-            student_id: 5,
-            benefit_type: 'next_payment_discount_15',
-            status: 'consumed',
-            consumed_by_payment_id: 100,
-          }],
-        };
-      }
-      if (sql.includes('UPDATE academy_students') && sql.includes('SET next_payment_at')) {
-        return { rows: [{ id: 5, lead_id: null, group_id: 3, manager_id: 1 }] };
+        insertSql = sql;
+        return { rows: [{ id: 100, student_id: 5, lead_id: 42 }] };
       }
       return emptyResult();
     });
@@ -3102,81 +3058,12 @@ describe('academy route logic boundaries', () => {
       .post('/api/academy/payments')
       .send({ studentId: 5, amountUzs: 100_000, discount: 'referral_15' });
 
-    expect(response.status).toBe(201);
-    expect(insertedDiscount).toBe('none');
-    expect(response.body.payment.discount).toBe('none');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('FROM academy_referral_benefits')
-      || String(sql).includes('UPDATE academy_referral_benefits')
-    ))).toBe(false);
-    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
-  });
-
-  it('records a payment without applying retired referral rewards', async () => {
-    let insertedDiscount: unknown;
-
-    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
-      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
-      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
-        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
-      }
-      if (sql.includes('INSERT INTO "academy_payments"')) {
-        insertedDiscount = readInsertValue(sql, values, 'discount');
-        return { rows: [{ id: 100, student_id: 5, lead_id: 42, paid_until: readInsertValue(sql, values, 'paid_until') }] };
-      }
-      if (sql.includes('SELECT id, referrer_student_id FROM academy_leads WHERE id = $1')) {
-        return { rows: [{ id: 42, referrer_student_id: 7 }] };
-      }
-      if (sql.includes('UPDATE academy_referral_rewards')) return { rows: [{ id: 77 }] };
-      if (sql.includes('COUNT(DISTINCT referred_student_id)::text AS count')) return { rows: [{ count: '1' }] };
-      if (sql.includes('UPDATE "academy_students"')) return { rows: [{ id: 7, referral_level: 'none' }] };
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .post('/api/academy/payments')
-      .send({ studentId: 5, amountUzs: 100_000 });
-
     expect(response.status, String(mocks.loggerError.mock.calls[0]?.[1]?.error?.stack)).toBe(201);
-    expect(insertedDiscount).toBe('none');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => (
-      String(sql).includes('academy_referral_benefits') || String(sql).includes('academy_referral_rewards')
-    ))).toBe(false);
-  });
-
-  it('does not grant the same referral reward on a later payment', async () => {
-    mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
-      if (sql === 'BEGIN' || sql === 'COMMIT') return emptyResult();
-      if (sql.includes('SELECT * FROM academy_students WHERE id = $1 FOR UPDATE')) {
-        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
-      }
-      if (sql.includes('INSERT INTO "academy_payments"')) {
-        return {
-          rows: [{
-            id: 100,
-            lead_id: 42,
-            student_id: 5,
-            paid_until: readInsertValue(sql, values, 'paid_until'),
-          }],
-        };
-      }
-      if (sql.includes('UPDATE "academy_students"')) {
-        return { rows: [{ id: 5, lead_id: 42, group_id: 3, manager_id: 1 }] };
-      }
-      if (sql.includes('FROM academy_leads l')) {
-        return { rows: [{ id: 42, referrer_student_id: 7 }] };
-      }
-      if (sql.includes('UPDATE academy_referral_rewards')) return emptyResult();
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .post('/api/academy/payments')
-      .send({ studentId: 5, amountUzs: 100_000 });
-
-    expect(response.status).toBe(201);
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('"referral_level"'))).toBe(false);
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('Бесплатный месяц'))).toBe(false);
+    expect(insertSql).toContain('"amount_uzs"');
+    expect(insertSql).not.toContain('"discount"');
+    expect(response.body.payment).not.toHaveProperty('discount');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => /referral/i.test(String(sql)))).toBe(false);
+    expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
   it('does not bulk-move leads into a non-pipeline status before deleting a stage', async () => {
@@ -3980,7 +3867,7 @@ describe('academy route logic boundaries', () => {
     expect(notificationSync).toBeDefined();
     expect(notificationSync?.[1]).toEqual([9, [42]]);
     expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'lead'");
-    expect(String(notificationSync?.[0])).toContain("notification.related_entity_type = 'academy_task'");
+    expect(String(notificationSync?.[0])).not.toContain('academy_tasks');
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -4956,7 +4843,6 @@ describe('academy route logic boundaries', () => {
     { method: 'post', path: '/leads/42/comments', body: { body: 'Private note' } },
     { method: 'post', path: '/leads/42/tags', body: { name: 'VIP' } },
     { method: 'post', path: '/leads/42/students', body: { studentName: 'Child' } },
-    { method: 'post', path: '/tasks', body: { title: 'Callback', entityType: 'lead', entityId: 42 } },
   ])('rejects processing an unassigned lead: $method $path $body', async ({ method, path, body }) => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { assignedFunnelIds: [3] } };
     const free = leadFixture({ funnel_id: 3, manager_id: null });
@@ -4988,20 +4874,6 @@ describe('academy route logic boundaries', () => {
     expect(response.status).toBe(403);
     expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
     expect(mocks.clientQuery.mock.calls.some(([sql]) => /INSERT INTO|UPDATE /.test(String(sql)))).toBe(false);
-  });
-
-  it.each([{ status: 'done' }, { entityType: 'other', entityId: 99 }])('rejects updating or detaching a task of an unassigned lead: %j', async body => {
-    mocks.actor = { id: 7, module: 'sales', modules: ['sales'], salesWorkflow: { assignedFunnelIds: [3] } };
-    mocks.poolQuery.mockImplementation(async (sql: string) => sql.includes('academy_tasks') ? { rows: [
-      { id: 101, responsible_id: 7, entity_type: 'lead', entity_id: 42, status: 'new' },
-    ] } : emptyResult());
-    mocks.clientQuery.mockImplementation(async (sql: string) => sql.includes('FROM academy_leads')
-      ? { rows: [leadFixture({ funnel_id: 3, manager_id: null })] } : emptyResult());
-    const response = await request(await createApp()).patch('/api/academy/tasks/101').send(body);
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('leadAssignmentRequired');
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => /^\s*(?:INSERT|UPDATE|DELETE)\b/.test(String(sql)))).toBe(false);
   });
 
   it('rejects an entire mixed bulk move when even one lead is unassigned', async () => {
@@ -5154,13 +5026,6 @@ describe('academy route logic boundaries', () => {
       expect(mocks.createAuditLog).not.toHaveBeenCalled();
       expect(mocks.createNotification).not.toHaveBeenCalled();
     });
-  });
-
-  it('rejects retired referral fields before any write: validates referrers and prevents self-referral under the lead lock', async () => {
-    const response = await request(await createApp()).patch('/api/academy/leads/42').send({ referrerStudentId: 5 });
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('invalidData');
-    expect(mocks.clientQuery).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -5316,29 +5181,6 @@ describe('academy route logic boundaries', () => {
     expect(rows[0].phoneOwners).toEqual({});
   });
 
-  it('rejects a lead whose referrer student does not exist', async () => {
-    mocks.clientQuery.mockImplementation(async (sql: string) => {
-      if (sql === 'BEGIN' || sql === 'ROLLBACK') return emptyResult();
-      return emptyResult();
-    });
-
-    const response = await request(await createApp())
-      .post('/api/academy/leads')
-      .send({ contactName: 'Parent', referrerStudentId: 999 });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('invalidData');
-    expect(mocks.clientQuery).not.toHaveBeenCalled();
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_lead_sources'))).toBe(false);
-  });
-
-  it('rejects retired referral fields before any write: does not change a referral link after a reward has been created', async () => {
-    const response = await request(await createApp()).patch('/api/academy/leads/42').send({ referrerStudentId: 5 });
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('invalidData');
-    expect(mocks.clientQuery).not.toHaveBeenCalled();
-  });
-
   it('uses case-insensitive messenger duplicate checks and excludes the same lead\'s student', async () => {
     const existing = leadFixture();
     mocks.poolQuery.mockImplementation(async (sql: string) => {
@@ -5475,7 +5317,6 @@ describe('academy route logic boundaries', () => {
       phone: '+998901010101',
       manager_id: null,
       is_archived: false,
-      referral_code: null,
     });
     const duplicate = leadFixture({
       id: 202,
@@ -5483,9 +5324,8 @@ describe('academy route logic boundaries', () => {
       phone: '+998902020202',
       manager_id: null,
       is_archived: false,
-      referral_code: 'REF-202',
     });
-    const merged = { ...retained, phone: '+998901010101', referral_code: 'REF-202' };
+    const merged = { ...retained, phone: '+998901010101' };
 
     mocks.clientQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
@@ -5531,7 +5371,8 @@ describe('academy route logic boundaries', () => {
     expect(response.body.retainedLead).toEqual(expect.objectContaining({ id: 101 }));
     const statements = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
     expect(statements.some((sql) => sql.includes('UPDATE instagram_conversations'))).toBe(true);
-    expect(statements.some((sql) => sql.includes('UPDATE academy_tasks'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('UPDATE board_tasks'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('academy_tasks'))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith(
       'UPDATE voice_reminder_call_details SET lead_id=$1,updated_at=now() WHERE lead_id=$2', [101,202],
     );

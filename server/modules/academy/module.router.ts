@@ -1,6 +1,7 @@
 import { buildSalesDemoStudents } from './sales-demo-students';
 import { GROUP_CODE_STATE_ENTITY } from './group-code';
 import { Router } from 'express';
+import { createSystemBoardTask } from './system-board-tasks';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../../db';
@@ -33,17 +34,14 @@ import {
 } from '../../services/meta-marketing';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -64,7 +62,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -92,7 +89,6 @@ import {
   academyConstants,
   applyLeadVisibilityForActor,
   createAudit,
-  createTask,
   ensureAdministrationModuleAccess,
   ensureMarketingModuleAccess,
   ensureSalesAccess,
@@ -104,6 +100,7 @@ import {
   parseId,
   query,
   queryOne,
+  withTransaction,
 } from './academy-core';
 import {
   academyDateOnlyKey,
@@ -500,12 +497,6 @@ router.post('/dashboard/alerts/:key/task', async (req, res) => {
   try {
     const key = String(req.params.key);
     const tasks: Record<string, { title: string; description: string; entityType: string; targetModule: string }> = {
-      payments: {
-        title: 'Позвонить должникам',
-        description: 'Проверить и закрыть просроченные оплаты из CEO Dashboard.',
-        entityType: 'payment',
-        targetModule: 'sales',
-      },
       attendance: {
         title: 'Связаться с учениками с низкой посещаемостью',
         description: 'Разобрать причины посещаемости ниже установленной нормы.',
@@ -522,16 +513,20 @@ router.post('/dashboard/alerts/:key/task', async (req, res) => {
     const definition = tasks[key];
     if (!definition) return res.status(404).json({ error: 'Unknown dashboard alert' });
     const responsible = await queryOne(
-      `SELECT id FROM users WHERE module = $1 AND is_active = true ORDER BY id LIMIT 1`,
+      `SELECT id FROM users WHERE module = $1 AND is_active = true AND is_archived = false ORDER BY id LIMIT 1`,
       [definition.targetModule],
     );
-    const task = await createTask(definition.title, {
-      responsibleId: responsible ? Number(responsible.id) : req.user!.id,
+    // The administrator asked for this work, so they own and accept the card.
+    const task = await withTransaction(() => createSystemBoardTask(query, {
+      title: definition.title,
       description: definition.description,
-      entityType: definition.entityType,
-      deadlineAt: addDays(new Date(), 1),
-    });
-    await createAudit(req, 'CREATE_DASHBOARD_ACTION_TASK', 'academy_task', Number(task.id), task);
+      assigneeId: responsible ? Number(responsible.id) : req.user!.id,
+      creatorId: req.user!.id,
+      dueAt: addDays(new Date(), 1),
+      source: `dashboard_${key}`,
+    }));
+    if (!task) return res.status(409).json({ error: 'taskAssigneeRequired' });
+    await createAudit(req, 'CREATE_DASHBOARD_ACTION_TASK', 'board_task', Number(task.id), task);
     res.status(201).json(task);
   } catch (error) {
     logger.error('Failed to create dashboard task', { error });
@@ -770,7 +765,6 @@ router.get('/search', async (req, res) => {
         LOWER(COALESCE(st.student_name, '')) LIKE $${params.length + 1}
         OR LOWER(st.contact_name) LIKE $${params.length + 1}
         OR LOWER(st.phone) LIKE $${params.length + 1}
-        OR LOWER(COALESCE(st.referral_code, '')) LIKE $${params.length + 1}
         OR CAST(st.id AS text) LIKE $${params.length + 1}
       )`;
 

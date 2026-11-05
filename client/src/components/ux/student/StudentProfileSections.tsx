@@ -40,10 +40,6 @@ export function StudentLearningSection({
               label={t('managerLabel')}
               value={<EmployeeIdentity userId={student.managerId} name={student.managerName || t('noData')} avatarClassName="size-5" />}
             />
-            <Detail
-              label={t('nextPaymentLabel')}
-              value={student.nextPaymentAt ? dateTime(student.nextPaymentAt) : t('noData')}
-            />
           </>
         ) : (
           <Detail
@@ -224,7 +220,6 @@ export function StudentPaymentsSection({
     ({
       paid: t('paymentStatusPaid'),
       pending: t('paymentStatusPending'),
-      overdue: t('paymentStatusOverdue'),
       refunded: t('paymentStatusRefunded'),
     })[value] ?? t('noData');
   const methodLabel = (value: string) =>
@@ -236,14 +231,11 @@ export function StudentPaymentsSection({
 
   return (
     <CompactModalSection title={t('navPayments')} icon={CreditCard} tone="amber" collapsible={false} contentClassName="space-y-3">
-      <dl
-        className={`grid gap-2 rounded-lg border border-amber-600/15 bg-amber-600/5 px-3 py-2 text-xs ${
-          profile.summary.refunded > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
-        }`}
-      >
+      <dl className="grid grid-cols-3 gap-2 rounded-lg border border-amber-600/15 bg-amber-600/5 px-3 py-2 text-xs">
         <Detail label={t('paymentStatusPaid')} value={money(profile.summary.paid)} />
-        <Detail label={t('studentPaymentRemaining')} value={money(profile.summary.remaining)} />
-        <Detail label={t('studentPaymentCharged')} value={money(profile.summary.charged)} />
+        {profile.summary.pending > 0 ? (
+          <Detail label={t('paymentStatusPending')} value={money(profile.summary.pending)} />
+        ) : null}
         {profile.summary.refunded > 0 ? (
           <Detail label={t('paymentStatusRefunded')} value={money(profile.summary.refunded)} />
         ) : null}
@@ -258,13 +250,8 @@ export function StudentPaymentsSection({
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold tabular-nums leading-tight">{money(payment.amountUzs)}</p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {dateTime(payment.paidAt || payment.dueAt || payment.createdAt)} · {methodLabel(payment.method)}
+                  {dateTime(payment.paidAt || payment.createdAt)} · {methodLabel(payment.method)}
                 </p>
-                {payment.paidUntil ? (
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {t('studentPaidUntil')}: {dateTime(payment.paidUntil)}
-                  </p>
-                ) : null}
                 {payment.comment ? (
                   <p className="mt-1 whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
                     {payment.comment}
@@ -275,11 +262,9 @@ export function StudentPaymentsSection({
                 variant={
                   payment.status === 'paid'
                     ? 'success'
-                    : payment.status === 'overdue'
-                      ? 'destructive'
-                      : payment.status === 'refunded'
-                        ? 'secondary'
-                        : 'warning'
+                    : payment.status === 'refunded'
+                      ? 'secondary'
+                      : 'warning'
                 }
                 className="h-5 shrink-0 px-1.5 text-[10px]"
               >

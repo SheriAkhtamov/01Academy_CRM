@@ -65,10 +65,7 @@ export type StudentPayment = {
   status: string;
   type: string;
   method: string;
-  period: string | null;
   paidAt: string | null;
-  dueAt: string | null;
-  paidUntil: string | null;
   createdAt: string;
   comment: string | null;
 };
@@ -79,11 +76,10 @@ export type StudentProfileStudent = {
   phone?: string | null;
   studentAge?: number | null;
   status: string;
-  exitReason?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string | null;
   managerName?: string | null;
   managerId?: number | null;
-  nextPaymentAt?: string | null;
-  referralCode?: string | null;
   createdAt?: string;
   updatedAt?: string;
   leadId?: number | null;
@@ -129,8 +125,9 @@ export function summarizeStudentProfile(
   const paid = payments
     .filter((payment) => payment.status === "paid")
     .reduce((sum, payment) => sum + payment.amountUzs, 0);
-  const remaining = payments
-    .filter((payment) => ["pending", "overdue"].includes(payment.status))
+  // Payments awaiting confirmation; there is no debt or billed amount.
+  const pending = payments
+    .filter((payment) => payment.status === "pending")
     .reduce((sum, payment) => sum + payment.amountUzs, 0);
   const refunded = payments
     .filter((payment) => payment.status === "refunded")
@@ -147,8 +144,7 @@ export function summarizeStudentProfile(
       ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
       : null,
     paid,
-    remaining,
-    charged: paid + remaining,
+    pending,
     refunded,
   };
 }

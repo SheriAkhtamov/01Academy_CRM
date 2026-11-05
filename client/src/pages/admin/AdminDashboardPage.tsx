@@ -13,9 +13,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  Activity,
   AlertTriangle,
-  Banknote,
   BookOpenCheck,
   CalendarClock,
   CheckCircle2,
@@ -81,8 +79,6 @@ interface DashboardRiskRow {
   managerName?: string | null;
   managerId?: number | null;
   attendancePercent?: number | null;
-  dueAt?: string | null;
-  amountUzs?: number | string | null;
 }
 
 interface DashboardCourseLoad {
@@ -113,18 +109,15 @@ interface AdministrationDashboardData {
     revenueChangePercent: number;
     leadsChangePercent: number;
     studentsChangePercent: number;
-    overdueAmount: number;
   };
   trends: DashboardTrendPoint[];
   courseLoad: DashboardCourseLoad[];
   alerts: {
-    overduePayments: number;
     lowAttendanceStudents: number;
     overdueTasks: number;
     groupsWithoutTeacher: number;
   };
   alertDetails?: {
-    overduePayments: DashboardRiskRow[];
     lowAttendanceStudents: DashboardRiskRow[];
   };
   escalatedTasks: Array<{ id: number; title: string; responsibleName?: string | null }>;
@@ -239,7 +232,7 @@ export default function AdminDashboardPage() {
 
   const locale = language === 'ru' ? 'ru-RU' : 'en-US';
   const [pendingAlertTaskKey, setPendingAlertTaskKey] = useState<string | null>(null);
-  const [riskDialog, setRiskDialog] = useState<'payments' | 'attendance' | null>(null);
+  const [riskDialog, setRiskDialog] = useState<'attendance' | null>(null);
   const createAlertTask = useMutation({
     mutationFn: (key: string) => apiRequest('POST', `/api/academy/dashboard/alerts/${key}/task`),
     onSuccess: () => toast({ title: ceoCopy.dashboard.taskCreated }),
@@ -329,16 +322,10 @@ export default function AdminDashboardPage() {
     + `${t('navLeads')} ${Number(point.leads || 0)}`
   )).join('; ')}`;
 
-  const alerts = [
-    {
-      key: 'payments',
-      title: t('overduePayments'),
-      detail: fullMoney(summary.overdueAmount),
-      value: data.alerts.overduePayments,
-      icon: Banknote,
-      tone: 'bg-destructive/10 text-destructive',
-      href: null,
-    },
+  const alerts: Array<{
+    key: string; title: string; detail?: string; value: number;
+    icon: typeof UserRoundX; tone: string; href: string | null;
+  }> = [
     {
       key: 'attendance',
       title: t('adminLowAttendance'),
@@ -366,17 +353,6 @@ export default function AdminDashboardPage() {
   ];
 
   const pulseCards = [
-    {
-      title: t('overduePayments'),
-      value: data.alerts.overduePayments === 0 ? t('adminStatusHealthy') : t('adminStatusAttention'),
-      detail: data.alerts.overduePayments === 0
-        ? t('adminNoOverduePayments')
-        : `${data.alerts.overduePayments} · ${fullMoney(summary.overdueAmount)}`,
-      icon: Activity,
-      tone: data.alerts.overduePayments === 0
-        ? 'bg-emerald-100 text-emerald-600'
-        : 'bg-amber-100 text-amber-600',
-    },
     {
       title: t('adminStaffActivity'),
       value: summary.activeUsers > 0
@@ -578,7 +554,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (item.key === 'payments' || item.key === 'attendance') setRiskDialog(item.key);
+                      if (item.key === 'attendance') setRiskDialog('attendance');
                       else if (item.href) navigate(item.href);
                     }}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -599,7 +575,7 @@ export default function AdminDashboardPage() {
                       {item.value}
                     </Badge>
                   </button>
-                  {['payments', 'attendance', 'teachers'].includes(item.key) && item.value > 0 ? (
+                  {['attendance', 'teachers'].includes(item.key) && item.value > 0 ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -691,23 +667,18 @@ export default function AdminDashboardPage() {
       <Dialog open={riskDialog !== null} onOpenChange={(open) => { if (!open) setRiskDialog(null); }}>
         <DialogContent aria-describedby={undefined} className="flex max-h-[calc(100dvh-2rem)] max-w-4xl flex-col overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
-            <DialogTitle>{riskDialog === 'payments' ? t('overduePayments') : t('adminLowAttendance')}</DialogTitle>
+            <DialogTitle>{t('adminLowAttendance')}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
             <DataTable
               columns={[
                 { key: 'studentName', header: t('studentName'), accessor: (row: DashboardRiskRow) => row.studentName || row.contactName || row.leadName || t('noData'), sortable: true },
                 { key: 'contactName', header: t('contactPersonName'), accessor: (row: DashboardRiskRow) => row.contactName || row.leadName || t('noData') },
-                ...(riskDialog === 'payments' ? [
-                  { key: 'dueAt', header: t('adminRiskPaymentDue'), accessor: (row: DashboardRiskRow) => row.dueAt, render: (row: DashboardRiskRow) => formatAcademyDate(row.dueAt, language) || t('noData'), sortable: true },
-                  { key: 'amountUzs', header: t('amount'), accessor: (row: DashboardRiskRow) => Number(row.amountUzs || 0), render: (row: DashboardRiskRow) => fullMoney(Number(row.amountUzs || 0)), sortable: true },
-                ] : [
-                  { key: 'courseName', header: t('course'), accessor: (row: DashboardRiskRow) => row.courseName || t('noData') },
-                  { key: 'managerName', header: t('manager'), accessor: (row: DashboardRiskRow) => row.managerName || t('notAssigned'), render: (row: DashboardRiskRow) => <EmployeeIdentity userId={row.managerId} name={row.managerName || t('notAssigned')} /> },
-                  { key: 'attendancePercent', header: t('attendanceLabel'), accessor: (row: DashboardRiskRow) => Number(row.attendancePercent || 0), render: (row: DashboardRiskRow) => `${Number(row.attendancePercent || 0)}%`, sortable: true },
-                ]),
+                { key: 'courseName', header: t('course'), accessor: (row: DashboardRiskRow) => row.courseName || t('noData') },
+                { key: 'managerName', header: t('manager'), accessor: (row: DashboardRiskRow) => row.managerName || t('notAssigned'), render: (row: DashboardRiskRow) => <EmployeeIdentity userId={row.managerId} name={row.managerName || t('notAssigned')} /> },
+                { key: 'attendancePercent', header: t('attendanceLabel'), accessor: (row: DashboardRiskRow) => Number(row.attendancePercent || 0), render: (row: DashboardRiskRow) => `${Number(row.attendancePercent || 0)}%`, sortable: true },
               ]}
-              data={riskDialog === 'payments' ? data.alertDetails?.overduePayments ?? [] : data.alertDetails?.lowAttendanceStudents ?? []}
+              data={data.alertDetails?.lowAttendanceStudents ?? []}
               keyExtractor={(row: DashboardRiskRow) => String(row.id)}
               emptyState={<p className="py-8 text-center text-sm text-muted-foreground">{t('adminNoIssues')}</p>}
             />

@@ -45,7 +45,7 @@ describe.skipIf(!databaseUrl)("student finance consistency across CRM and the po
       CREATE TABLE academy_attendance(id integer PRIMARY KEY,lesson_id integer,student_id integer,status text,note text);
       CREATE TABLE academy_student_status_history(id integer PRIMARY KEY,student_id integer,to_status text,created_at timestamptz);
       CREATE TABLE academy_portfolio_projects(id integer PRIMARY KEY,student_id integer,title text,url text,file_url text,created_at timestamptz);
-      CREATE TABLE academy_payments(id integer PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,type text,method text,period text,paid_at timestamptz,due_at timestamptz,paid_until timestamptz,created_at timestamptz DEFAULT now(),comment text);
+      CREATE TABLE academy_payments(id integer PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,type text,method text,paid_at timestamptz,created_at timestamptz DEFAULT now(),comment text);
       CREATE TABLE academy_payment_student_allocations(payment_id integer,student_id integer,amount_uzs bigint,PRIMARY KEY(payment_id,student_id));
       CREATE TABLE lms_learning_events(id integer,student_id integer);
       CREATE TABLE lms_resource_audit(id integer,student_id integer);
@@ -65,25 +65,24 @@ describe.skipIf(!databaseUrl)("student finance consistency across CRM and the po
     if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); }
   });
 
-  it("shows the same allocated, direct, overdue and refunded amounts in all student read models", async () => {
-    await fixture.pool.query(`INSERT INTO academy_payments(id,student_id,lead_id,amount_uzs,status,due_at,paid_until) VALUES
-      (1,NULL,10,100000,'paid',NULL,now()+interval '30 days'),
-      (2,1,10,50000,'paid',NULL,now()+interval '30 days'),
-      (3,2,10,30000,'pending',now()-interval '1 day',NULL),
-      (4,2,10,10000,'refunded',NULL,NULL);
+  it("shows the same allocated, direct, pending and refunded amounts in all student read models", async () => {
+    await fixture.pool.query(`INSERT INTO academy_payments(id,student_id,lead_id,amount_uzs,status) VALUES
+      (1,NULL,10,100000,'paid'),
+      (2,1,10,50000,'paid'),
+      (3,2,10,30000,'pending'),
+      (4,2,10,10000,'refunded');
       INSERT INTO academy_payment_student_allocations VALUES(1,1,40000),(1,2,60000)`);
     for (const studentId of [1, 2, 3]) {
       const profile = await loadStudentProfileData(studentId);
       const portal = await repository.payments(actor(studentId));
       expect(portal.state).toBe("ready");
-      expect(profile.summary).toMatchObject({ paid: portal.summary!.paidUzs, remaining: portal.summary!.dueUzs, refunded: portal.summary!.refundedUzs });
+      expect(profile.summary).toMatchObject({ paid: portal.summary!.paidUzs, refunded: portal.summary!.refundedUzs });
       const list = await fixture.pool.query(`SELECT ${studentPaidAmountSelect("student")} FROM academy_students student WHERE student.id=$1`, [studentId]);
       expect(list.rows[0].paid_amount_uzs).toBe(profile.summary.paid);
-      expect(profile.payments.find((payment) => payment.id === 1)?.paidUntil).toBe(portal.items.find((payment) => payment.id === 1)?.paidUntil);
     }
     expect((await loadStudentProfileData(1)).summary.paid).toBe(90000);
-    expect((await loadStudentProfileData(2)).summary).toMatchObject({ paid: 60000, remaining: 30000, refunded: 10000 });
-    expect((await loadStudentProfileData(2)).payments.find((payment) => payment.id === 3)?.status).toBe("overdue");
+    expect((await loadStudentProfileData(2)).summary).toMatchObject({ paid: 60000, pending: 30000, refunded: 10000 });
+    expect((await loadStudentProfileData(2)).payments.find((payment) => payment.id === 3)?.status).toBe("pending");
   });
   it("replaces a direct attribution with allocations and follows subsequent redistribution", async () => {
     await fixture.pool.query(`INSERT INTO academy_payments(id,student_id,lead_id,amount_uzs,status) VALUES(1,1,10,100000,'paid');

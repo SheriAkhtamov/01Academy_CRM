@@ -88,8 +88,7 @@ try {
   const lead = await insertRow('academy_leads', { contactName: 'Test parent', phone: `test-${suffix}`, sourceId: source.id,
     funnelId: funnelA.id, managerId: employee.id, courseId: course.id, statusCode: funnelA.initialStageCode });
   const student = await insertRow('academy_students', { contactName: 'Test parent', studentName: 'Test student',
-    leadId: lead.id, managerId: employee.id, courseId: course.id, referralCode: suffix });
-  const task = await insertRow('academy_tasks', { title: 'Follow up', entityType: 'lead', entityId: lead.id, responsibleId: employee.id });
+    leadId: lead.id, managerId: employee.id, courseId: course.id });
   const demo = await insertRow('academy_demo_lessons', { courseId: course.id, schoolId: school.id, teacherId: teacher.id,
     format: 'online', scheduledAt: new Date(Date.now() - 30 * 60_000), durationMinutes: 60 });
   const participant = await insertRow('academy_demo_lesson_participants', { demoLessonId: demo.id, studentId: student.id });
@@ -117,7 +116,6 @@ try {
     assert.deepEqual([(await readLead())?.funnelId, (await readLead())?.statusCode, (await readLead())?.managerId],
       [funnelA.id, funnelA.initialStageCode, employee.id], 'Attendance and correction preserve stage, funnel and owner');
   }
-  assert.equal((await queryOne('SELECT responsible_id FROM academy_tasks WHERE id=$1', [task.id]))?.responsibleId, employee.id);
   assert.equal((await queryOne('SELECT manager_id FROM academy_students WHERE id=$1', [student.id]))?.managerId, employee.id);
   await insertRow('academy_payments', { studentId: student.id, leadId: lead.id, amountUzs: 500000, status: 'paid', paidAt: new Date() });
   assert.equal((await readLead())?.statusCode, funnelA.initialStageCode, 'Payment is an independent fact');
@@ -157,18 +155,18 @@ try {
   assert.equal(latestHistory?.toStatusName, 'Any label b');
 
   const sibling = await insertRow('academy_students', { contactName: 'Test parent', studentName: 'Second child',
-    leadId: lead.id, managerId: employee.id, courseId: course.id, referralCode: `${suffix}-second` });
-  const invoiceA = await insertRow('academy_payments', { studentId: student.id, leadId: lead.id,
-    amountUzs: 100000, status: 'pending', period: 'month_1' });
-  const invoiceB = await insertRow('academy_payments', { studentId: sibling.id, leadId: lead.id,
-    amountUzs: 200000, status: 'pending', period: 'month_1' });
+    leadId: lead.id, managerId: employee.id, courseId: course.id });
+  const pendingA = await insertRow('academy_payments', { studentId: student.id, leadId: lead.id,
+    amountUzs: 100000, status: 'pending' });
+  const pendingB = await insertRow('academy_payments', { studentId: sibling.id, leadId: lead.id,
+    amountUzs: 200000, status: 'pending' });
   const paidSibling = await request(apps[0]).post('/api/academy/payments')
-    .send({ leadId: lead.id, studentId: sibling.id, amountUzs: 450000, type: 'prepayment' });
+    .send({ leadId: lead.id, studentId: sibling.id, paymentId: pendingB.id, amountUzs: 450000, type: 'prepayment' });
   checkResponse(paidSibling, 201);
-  assert.equal(paidSibling.body.payment.id, invoiceB.id, 'Payment confirms the chosen child invoice');
-  const unchangedInvoice = await queryOne('SELECT * FROM academy_payments WHERE id=$1', [invoiceA.id]);
-  assert.deepEqual([unchangedInvoice?.studentId, unchangedInvoice?.status, unchangedInvoice?.amountUzs],
-    [student.id, 'pending', 100000], 'The other child invoice and debt remain unchanged');
+  assert.equal(paidSibling.body.payment.id, pendingB.id, 'Payment confirms the chosen child payment');
+  const unchangedPayment = await queryOne('SELECT * FROM academy_payments WHERE id=$1', [pendingA.id]);
+  assert.deepEqual([unchangedPayment?.studentId, unchangedPayment?.status, unchangedPayment?.amountUzs],
+    [student.id, 'pending', 100000], 'The other child payment remains unchanged');
   assert.equal((await readLead())?.statusCode, funnelB.nextStageCode, 'Payment does not change the stage');
 
   // Each KPI role, including an employee with sales as an extra module and no

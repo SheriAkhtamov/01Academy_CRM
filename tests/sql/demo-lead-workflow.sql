@@ -10,7 +10,7 @@ DECLARE
   intake_a text := 'verify_a_' || txid_current(); intake_b text := 'verify_b_' || txid_current();
   ordinary_a text := 'verify_next_' || txid_current(); source_key integer; course_key integer;
   school_key integer; teacher_key integer; lead_key integer; student_key integer;
-  sibling_key integer; demo_key integer; participant_key integer; sibling_participant integer; task_key integer;
+  sibling_key integer; demo_key integer; participant_key integer; sibling_participant integer;
   month_key text := to_char(now() AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM'); rejected boolean;
   first_intake_owner integer; second_intake_owner integer; ordinary_owner integer;
 BEGIN
@@ -38,12 +38,10 @@ BEGIN
   INSERT INTO academy_teachers(full_name) VALUES('Test teacher') RETURNING id INTO teacher_key;
   INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code,manager_id)
     VALUES('Test parent','workflow-' || txid_current(),source_key,funnel_a,intake_a,employee_key) RETURNING id INTO lead_key;
-  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id,referral_code)
-    VALUES('Test parent','Student',lead_key,course_key,employee_key,'workflow-' || txid_current()) RETURNING id INTO student_key;
-  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id,referral_code)
-    VALUES('Test parent','Sibling',lead_key,course_key,employee_key,'workflow-sibling-' || txid_current()) RETURNING id INTO sibling_key;
-  INSERT INTO academy_tasks(title,entity_type,entity_id,responsible_id)
-    VALUES('Follow up','lead',lead_key,employee_key) RETURNING id INTO task_key;
+  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id)
+    VALUES('Test parent','Student',lead_key,course_key,employee_key) RETURNING id INTO student_key;
+  INSERT INTO academy_students(contact_name,student_name,lead_id,course_id,manager_id)
+    VALUES('Test parent','Sibling',lead_key,course_key,employee_key) RETURNING id INTO sibling_key;
   INSERT INTO academy_demo_lessons(course_id,school_id,teacher_id,scheduled_at,format)
     VALUES(course_key,school_key,teacher_key,timezone('UTC',now()) - interval '1 hour','online') RETURNING id INTO demo_key;
   INSERT INTO academy_demo_lesson_participants(demo_lesson_id,student_id)
@@ -56,7 +54,6 @@ BEGIN
   UPDATE academy_demo_lesson_participants SET status = 'attended' WHERE id = participant_key;
   ASSERT (SELECT status_code = intake_a AND funnel_id = funnel_a AND manager_id = employee_key FROM academy_leads WHERE id = lead_key),
     'Attendance, no-show and retry must preserve the chosen stage/funnel/owner';
-  ASSERT (SELECT responsible_id = employee_key FROM academy_tasks WHERE id = task_key), 'Attendance must keep the task executor';
   ASSERT (SELECT bool_and(manager_id = employee_key) FROM academy_students WHERE lead_id = lead_key), 'Attendance must keep student owners';
   ASSERT (SELECT count(*) = 2 FROM academy_sales_kpi_trials WHERE participant_id IN (participant_key,sibling_participant)),
     'Bookings remain actual participant facts';

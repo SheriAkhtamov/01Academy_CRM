@@ -78,40 +78,25 @@ export function PortalPayments() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs font-medium text-muted-foreground">
-                {t("portalPaidUntil")}
+                {t("portalPaid")}
               </p>
               <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
-                {summary.paidUntil ? format.date(summary.paidUntil) : "—"}
+                {format.money(summary.paidUzs)}
               </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-medium text-muted-foreground">
-                {t("portalDueAmount")}
-              </p>
-              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
-                {format.money(summary.dueUzs)}
-              </p>
-              {summary.nextPaymentAt && (
-                <p className="text-sm text-muted-foreground">
-                  {format.date(summary.nextPaymentAt)}
+          {summary.refundedUzs > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t("paymentStatusRefunded")}
                 </p>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs font-medium text-muted-foreground">
-                {t("portalNextPayment")}
-              </p>
-              <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
-                {summary.nextPaymentAt
-                  ? format.date(summary.nextPaymentAt)
-                  : "—"}
-              </p>
-            </CardContent>
-          </Card>
+                <p className="mt-1 text-xl font-bold tabular-nums tracking-tight">
+                  {format.money(summary.refundedUzs)}
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
       {items.length === 0 ? (
@@ -135,20 +120,9 @@ export function PortalPayments() {
                 {
                   key: "date",
                   header: t("portalDate"),
-                  accessor: (item) => item.paidAt ?? item.dueAt,
+                  accessor: (item) => item.paidAt,
                   sortable: true,
-                  render: (item) => (
-                    <div>
-                      {item.paidAt || item.dueAt
-                        ? format.date(item.paidAt ?? item.dueAt!)
-                        : "—"}
-                      {item.period && (
-                        <p className="text-xs text-muted-foreground">
-                          {item.period}
-                        </p>
-                      )}
-                    </div>
-                  ),
+                  render: (item) => (item.paidAt ? format.date(item.paidAt) : "—"),
                 },
                 {
                   key: "amountUzs",
@@ -219,19 +193,15 @@ function PaymentStatus({ item }: { item: PortalPaymentDto }) {
   const status =
     item.status === "refunded"
       ? "paymentStatusRefunded"
-      : item.status === "overdue"
-        ? "paymentStatusOverdue"
-        : ["paid", "completed", "confirmed"].includes(item.status)
-          ? "portalPaid"
-          : "portalUnpaid";
+      : ["paid", "completed", "confirmed"].includes(item.status)
+        ? "portalPaid"
+        : "paymentStatusPending";
   const variant =
     status === "portalPaid"
       ? "success"
-      : status === "paymentStatusOverdue"
-        ? "destructive"
-        : status === "portalUnpaid"
-          ? "warning"
-          : "secondary";
+      : status === "paymentStatusPending"
+        ? "warning"
+        : "secondary";
   return <Badge variant={variant}>{t(status)}</Badge>;
 }
 function PaymentDetails({ item }: { item: PortalPaymentDto }) {
@@ -284,36 +254,12 @@ function PaymentDetails({ item }: { item: PortalPaymentDto }) {
           <dt className="text-sm text-muted-foreground">{t("paymentType")}</dt>
           <dd>{t(type)}</dd>
         </div>
-        {item.period && (
-          <div>
-            <dt className="text-sm text-muted-foreground">
-              {t("portalPaymentPeriod")}
-            </dt>
-            <dd>{item.period}</dd>
-          </div>
-        )}
         {item.paidAt && (
           <div>
             <dt className="text-sm text-muted-foreground">
               {t("portalPaymentDate")}
             </dt>
             <dd>{format.date(item.paidAt)}</dd>
-          </div>
-        )}
-        {item.dueAt && (
-          <div>
-            <dt className="text-sm text-muted-foreground">
-              {t("portalPaymentDueDate")}
-            </dt>
-            <dd>{format.date(item.dueAt)}</dd>
-          </div>
-        )}
-        {item.paidUntil && (
-          <div>
-            <dt className="text-sm text-muted-foreground">
-              {t("portalPaidUntil")}
-            </dt>
-            <dd>{format.date(item.paidUntil)}</dd>
           </div>
         )}
       </dl>
@@ -352,16 +298,9 @@ export function PortalPaymentSummary() {
         <CardTitle className="text-base">{t("portalPayments")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-0">
-        {summary?.paidUntil && (
+        {summary && (
           <p>
-            {t("portalPaidUntil")}: {format.date(summary.paidUntil)}
-          </p>
-        )}
-        {summary && summary.dueUzs > 0 && (
-          <p>
-            {t("portalNextPayment")}: {format.money(summary.dueUzs)}
-            {summary.nextPaymentAt &&
-              ` · ${format.date(summary.nextPaymentAt)}`}
+            {t("portalPaid")}: {format.money(summary.paidUzs)}
           </p>
         )}
         <Button

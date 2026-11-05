@@ -5,14 +5,15 @@ const group: StudentLearningGroup = { groupId: 1, groupName: 'Group', courseName
   teacherName: null, isPrimary: true, enrolledAt: null, totalLessons: 16, completedLessons: 4,
   remainingLessons: 11, attendedLessons: 4, missedLessons: 1 };
 const payment = (status: string, amountUzs: number): StudentPayment => ({ id: 1, status, amountUzs,
-  type: 'full', method: 'cash', period: null, paidAt: null, dueAt: null, paidUntil: null,
-  createdAt: '', comment: null });
+  type: 'full', method: 'cash', paidAt: null, createdAt: '', comment: null });
 
 describe('student profile totals', () => {
-  it('keeps paid, pending, overdue and refunded amounts separate', () => {
+  it('keeps paid, pending and refunded amounts separate without a debt total', () => {
     const summary = summarizeStudentProfile([group], [], [payment('paid', 1_500_000), payment('pending', 200_000),
-      payment('overdue', 300_000), payment('refunded', 400_000), payment('cancelled', 900_000)]);
-    expect(summary).toMatchObject({ paid: 1_500_000, remaining: 500_000, charged: 2_000_000, refunded: 400_000 });
+      payment('refunded', 400_000), payment('cancelled', 900_000)]);
+    expect(summary).toMatchObject({ paid: 1_500_000, pending: 200_000, refunded: 400_000 });
+    expect(summary).not.toHaveProperty('remaining');
+    expect(summary).not.toHaveProperty('charged');
   });
   it('does not treat missing attendance marks as absences', () => {
     const attendance = ['present', 'present', 'absent', null].map((status, lessonId) => ({

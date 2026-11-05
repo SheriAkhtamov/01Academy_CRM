@@ -60,11 +60,11 @@ export function createSalesKpiTables(ref: {
   const academySalesKpiSales = pgTable('academy_sales_kpi_sales', {
     paymentId: integer('payment_id').primaryKey().references(() => ref.payment, { onDelete: 'cascade' }),
     closerId: owner('closer_id'), kind: text('kind').$type<KpiSaleKind>().notNull(),
-    cycleKey: text('cycle_key'), referralInitiated: boolean('referral_initiated').notNull().default(false),
+    cycleKey: text('cycle_key'),
     reviewedBy: owner('reviewed_by'), reviewedAt: timestamp('reviewed_at'), createdAt: createdAt(),
   }, (t) => [
     index('academy_sales_kpi_sales_closer_idx').on(t.closerId),
-    check('academy_sales_kpi_sales_kind_check', sql`${t.kind} IN ('new', 'renewal', 'upsell', 'installment', 'unclassified')`),
+    check('academy_sales_kpi_sales_kind_check', sql`${t.kind} IN ('new', 'renewal', 'upsell', 'installment')`),
     check('academy_sales_kpi_sales_cycle_key_check', sql`${t.cycleKey} IS NULL OR length(${t.cycleKey}) BETWEEN 1 AND 120`),
     check('academy_sales_kpi_sales_check', sql`${t.kind} NOT IN ('renewal', 'upsell') OR ${t.cycleKey} IS NOT NULL`),
   ]);

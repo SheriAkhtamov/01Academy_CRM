@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, handoffKpiLead, recordKpiOffer, reviewKpiPayment, saveKpiRules } from './api';
-import type { KpiSaleReview } from '@shared/sales-kpi';
+import { getKpiLeadOwnership, getKpiOverview, getKpiPlans, claimKpiLead, handoffKpiLead, recordKpiOffer, saveKpiRules } from './api';
 import { invalidateSalesLeadData } from '@/features/sales/queries';
 
 export const KPI_QUERY_KEY = ['/api/academy/sales-kpi'] as const;
@@ -13,11 +12,6 @@ export const useKpiOverview = (month: string, managerId: number | null) => useQu
 export const useSaveKpiRules = () => {
   const client = useQueryClient();
   return useMutation({ mutationFn: saveKpiRules,
-    onSuccess: () => client.invalidateQueries({ queryKey: KPI_QUERY_KEY }) });
-};
-export const useReviewKpiPayment = () => {
-  const client = useQueryClient();
-  return useMutation({ mutationFn: ({ id, input }: { id: number; input: KpiSaleReview }) => reviewKpiPayment(id, input),
     onSuccess: () => client.invalidateQueries({ queryKey: KPI_QUERY_KEY }) });
 };
 export const useKpiLead = (leadId: number) => useQuery({

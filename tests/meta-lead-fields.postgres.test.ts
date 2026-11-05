@@ -47,15 +47,13 @@ describe.skipIf(!url)('Meta form fields in PostgreSQL', () => {
         created_at timestamptz DEFAULT now());
       CREATE TABLE academy_lead_stage_history(id serial PRIMARY KEY, lead_id int, from_status_code text,
         to_status_code text, entered_at timestamptz, comment text);
-      CREATE TABLE academy_tasks(id serial PRIMARY KEY, title text, description text, responsible_id int,
-        deadline_at timestamptz, entity_type text, entity_id int, status text);
       INSERT INTO academy_sales_funnels VALUES(1,'new',true,true);
       INSERT INTO academy_integration_funnel_settings VALUES('meta',1);
     `);
   });
   beforeEach(async () => {
     await pool.query(`TRUNCATE academy_leads, academy_lead_phones, academy_lead_import_records,
-      academy_lead_comments, academy_lead_stage_history, academy_lead_sources, academy_students, academy_tasks RESTART IDENTITY CASCADE`);
+      academy_lead_comments, academy_lead_stage_history, academy_lead_sources, academy_students RESTART IDENTITY CASCADE`);
   });
   afterAll(async () => {
     if (pool) await pool.end();

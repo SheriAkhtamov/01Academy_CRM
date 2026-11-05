@@ -314,31 +314,8 @@ export class PortalNotificationWorker {
         ? dateValue(recipient.due_at) > now
         : dateValue(recipient.due_at) + DAY <= now;
     }
-    if (["payment_due", "payment_overdue"].includes(type)) {
-      const payment = (
-        await sql.query<{
-          status: string;
-          due_at: Date | null;
-          group_id: number | null;
-          amount_uzs: number;
-        }>(
-          `SELECT payment.status,payment.due_at,payment.group_id,COALESCE(allocation.amount_uzs,payment.amount_uzs) AS amount_uzs FROM academy_payments payment LEFT JOIN academy_payment_student_allocations allocation ON allocation.payment_id=payment.id AND allocation.student_id=$2 WHERE payment.id=$1 AND (allocation.student_id=$2 OR (payment.student_id=$2 AND NOT EXISTS(SELECT 1 FROM academy_payment_student_allocations any_allocation WHERE any_allocation.payment_id=payment.id)))`,
-          [params.paymentId, actor?.studentId],
-        )
-      ).rows[0];
-      if (
-        !payment ||
-        !["pending", "overdue"].includes(payment.status) ||
-        !payment.due_at ||
-        new Date(payment.due_at).toISOString() !== params.dueAt ||
-        !(await this.allowedGroup(payment.group_id))
-      )
-        return false;
-      row.params.amountUzs = number(payment.amount_uzs);
-      return type === "payment_due"
-        ? dateValue(payment.due_at) > now
-        : dateValue(payment.due_at) + DAY <= now;
-    }
+    // Payments have no due dates any more; reminders queued before that change are dropped.
+    if (["payment_due", "payment_overdue"].includes(type)) return false;
     if (type === "material_published")
       return Boolean(
         (

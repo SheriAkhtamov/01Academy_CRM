@@ -4,7 +4,6 @@ import { pool } from "../db";
 import { logger } from "../lib/logger";
 import { runAutomations } from "./automations";
 import { refreshExpiringInstagramTokens } from "./instagram";
-import { runEscalations } from "./escalations";
 import { syncRecentMetaLeadAds } from "./meta-lead-ads";
 import {
   enqueueRecentMetaLeadIntakes,
@@ -132,18 +131,7 @@ export const startScheduler = () => {
 
   cron.schedule('5 * * * *', recoverIntakes, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
-  // The escalation monitor makes overdue work and cash risks push themselves to leadership.
-  cron.schedule("0 * * * *", async () => {
-    await refreshOnlinePbxLicenses();
-    try {
-      const actions = await runEscalations();
-      if (actions.length > 0) {
-        logger.warn(`[scheduler] escalations raised (${actions.join(', ')})`);
-      }
-    } catch (error) {
-      logger.error("[scheduler] escalation monitor error", { error });
-    }
-  }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
+  cron.schedule("0 * * * *", refreshOnlinePbxLicenses, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   // Daily automations at 09:00.
   cron.schedule("0 9 * * *", async () => {
@@ -164,7 +152,7 @@ export const startScheduler = () => {
   }, { timezone: SCHEDULER_TIME_ZONE, noOverlap: true });
 
   logger.info(
-    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, Lead Ads fallback: 5m, spend: 15m, escalations: hourly, automations: daily 09:00)`,
+    `Scheduler started (timezone: ${SCHEDULER_TIME_ZONE}; Meta: 1m, Lead Ads fallback: 5m, spend: 15m, OnlinePBX licenses: hourly, automations: daily 09:00)`,
   );
 };
 

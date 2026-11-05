@@ -49,7 +49,7 @@ describe('locked lead assignment', () => {
       leadId: 2718, fromManagerId: null, toManagerId: 18, changedBy: 18,
     }));
     expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE academy_students'), [18, 2718]);
-    expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE academy_tasks'), [18, 2718]);
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('academy_tasks'))).toBe(false);
     expect(mocks.createNotification).toHaveBeenCalledOnce();
   });
 

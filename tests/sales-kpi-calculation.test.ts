@@ -12,8 +12,8 @@ const trial = (id: number, overrides: Partial<KpiTrialFact> = {}): KpiTrialFact 
 });
 const sale = (id: number, overrides: Partial<KpiSaleFact> = {}): KpiSaleFact => ({
   id, studentId: id, leadId: id, groupId: 1, name: `Student ${id}`, closerId: 8,
-  paidAt: at(4), paidUntil: null, amountUzs: 250_000, status: 'paid',
-  kind: 'new', cycleKey: null, referralInitiated: false, ...overrides,
+  paidAt: at(4), amountUzs: 250_000, status: 'paid',
+  kind: 'new', cycleKey: null, ...overrides,
 });
 const lead = (id: number, overrides: Partial<KpiLeadFact> = {}): KpiLeadFact => ({
   id, name: `Lead ${id}`, hunterId: 7, closerId: 8, receivedAt: at(7), trackedAt: at(1),
@@ -50,14 +50,16 @@ describe('sales KPI pay rules', () => {
     expect(sum(calculateKpiPay('hunter', defaultKpiConfig('hunter'), payInput({ attendees: 31, reactivated: 2 })))).toBe(6_300_000);
     expect(sum(calculateKpiPay('closer', defaultKpiConfig('closer'), payInput({ volume: 28, renewals: 4, upsells: 3 })))).toBe(9_225_000);
   });
-  it('reads legacy saved plans without exposing or paying referral bonuses', () => {
-    const parsed = kpiConfigSchema.parse({ ...defaultKpiConfig('closer'), referralBonusUzs: 125_000,
-      enabledMetrics: ['newStudents', 'referrals', 'upsells'] });
+  it('reads legacy saved plans without exposing referral bonuses or renewal conversion', () => {
+    const parsed = kpiConfigSchema.parse({ ...defaultKpiConfig('closer'), referralBonusUzs: 125_000, renewalTargetPercent: 40,
+      enabledMetrics: ['newStudents', 'referrals', 'renewalConversion', 'upsells'] });
     expect(parsed.enabledMetrics).toEqual(['newStudents', 'upsells']);
     expect(kpiConfigSchema.parse({ ...defaultKpiConfig('closer'), enabledMetrics: ['referrals'] }).enabledMetrics).toEqual(['newStudents']);
     expect(kpiConfigSchema.safeParse({ ...defaultKpiConfig('closer'), enabledMetrics: [] }).success).toBe(false);
+    expect(defaultKpiConfig('closer')).not.toHaveProperty('referralBonusUzs');
+    expect(defaultKpiConfig('closer')).not.toHaveProperty('renewalTargetPercent');
     const lines = calculateKpiPay('closer', parsed, payInput());
-    expect(lines.some((line) => line.key === 'referral')).toBe(false);
+    expect(lines.map((line) => String(line.key))).not.toContain('referral');
   });
   it('shows missing base conditions without withholding the guaranteed base', () => {
     const config = defaultKpiConfig('hunter');
@@ -136,7 +138,7 @@ describe('sales KPI attribution and month accounting', () => {
   });
   it('uses first actual installment for a new student and excludes pending, refunded and zero payments', () => {
     const result = calc(facts({ sales: [sale(1, { amountUzs: 100_000 }), sale(2, { studentId: 1, kind: 'installment' }),
-      sale(3, { status: 'refunded', referralInitiated: true }), sale(4, { status: 'pending' }), sale(5, { amountUzs: 0 })] }), 'closer');
+      sale(3, { status: 'refunded' }), sale(4, { status: 'pending' }), sale(5, { amountUzs: 0 })] }), 'closer');
     expect(metric(result, 'newStudents').value).toBe(1);
     expect(result.metrics.some((m) => String(m.id) === 'referrals')).toBe(false);
     expect(result.payLines.find((p) => p.key === 'tier')?.amountUzs).toBe(150_000);
@@ -160,21 +162,17 @@ describe('sales KPI attribution and month accounting', () => {
       sale(2, { paidAt: '2026-10-05T10:00:00+05:00' })] }), 'closer', '2026-10-06T10:00:00+05:00');
     expect(metric(result, 'trialConversion').value).toBe(0);
   });
-  it('deduplicates renewal/upsell cycles and ignores retired referral flags', () => {
-    const result = calc(facts({ sales: [sale(1, { referralInitiated: true }),
+  it('deduplicates automatically classified renewal/upsell cycles without referral pay', () => {
+    const result = calc(facts({ sales: [sale(1),
       sale(2, { kind: 'renewal', cycleKey: '2026-10' }), sale(3, { studentId: 2, kind: 'upsell', cycleKey: '2026-10', paidAt: at(5) }),
-      sale(4, { kind: 'upsell', cycleKey: '2026-10' }), sale(5, { kind: 'unclassified' })] }), 'closer');
+      sale(4, { kind: 'upsell', cycleKey: '2026-10' })] }), 'closer');
     expect(metric(result, 'renewals').value).toBe(1);
     expect(metric(result, 'upsells').value).toBe(1);
     expect(result.metrics.some((m) => String(m.id) === 'referrals')).toBe(false);
-    expect(result.payLines.some((line) => line.key === 'referral')).toBe(false);
-    expect(result.unclassifiedSales.map((s) => s.id)).toEqual([5]);
-  });
-  it('counts renewal opportunities once across split payments', () => {
-    const result = calc(facts({ sales: [sale(1, { paidAt: '2026-08-01T10:00:00+05:00', paidUntil: at(10) }),
-      sale(2, { studentId: 1, kind: 'installment', paidAt: '2026-08-15T10:00:00+05:00', paidUntil: at(10) }),
-      sale(3, { studentId: 1, kind: 'renewal', cycleKey: '2026-10', paidAt: at(9), paidUntil: '2026-10-10T10:00:00+05:00' })] }), 'closer');
-    expect(metric(result, 'renewalConversion')).toMatchObject({ value: 100, denominator: 1, numerator: 1 });
+    expect(result.metrics.some((m) => String(m.id) === 'renewalConversion')).toBe(false);
+    expect(result.payLines.map((line) => String(line.key))).not.toContain('referral');
+    expect(result).not.toHaveProperty('unclassifiedSales');
+    expect(result).not.toHaveProperty('reviewableSales');
   });
   it('uses the latest NPS response per student and never leaks another closer’s scores', () => {
     const response = (id: number, studentId: number, score: number, day: number, closerId = 8) => ({ id, studentId, name: 'Student', score, createdAt: at(day), closerId });

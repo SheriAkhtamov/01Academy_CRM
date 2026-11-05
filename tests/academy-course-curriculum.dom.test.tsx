@@ -31,7 +31,7 @@ beforeEach(() => {
       ? { courses, schools: [], rooms: [], groups: [], statuses: [], teachers: [] } : [],
   } } });
   mocks.api.mockImplementation(async (method, _path, payload) => {
-    const saved: Course = { basePriceUzs: 0, ...courses.find(course => course.id === 7), id: 7, ...payload };
+    const saved: Course = { ...courses.find(course => course.id === 7), id: 7, ...payload } as Course;
     courses = method === 'POST' ? [...courses, saved] : courses.map(course => course.id === saved.id ? saved : course);
     return saved;
   });
@@ -83,7 +83,7 @@ it('saves the curriculum through course creation, reloads it for editing and pre
 });
 
 it('opens a legacy course program with stable lesson IDs and retains its existing lesson content when saving', async () => {
-  courses = [{ id: 7, name: 'Legacy course', slug: 'legacy-course', ageCategory: '12+', basePriceUzs: 1_500_000, isActive: true,
+  courses = [{ id: 7, name: 'Legacy course', slug: 'legacy-course', ageCategory: '12+', isActive: true,
     program: [{ lessonNumber: 1, topic: 'Existing lesson', description: 'Existing notes' }] }];
   const user = mount();
   await user.click(await screen.findByRole('button', { name: i18n.t('edit') }));
@@ -95,12 +95,11 @@ it('opens a legacy course program with stable lesson IDs and retains its existin
   await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
   await waitFor(() => expect(mocks.api).toHaveBeenCalledOnce());
   expect(mocks.api.mock.calls[0][2]).not.toHaveProperty('basePriceUzs');
-  expect(courses[0].basePriceUzs).toBe(1_500_000);
   expect(flattenCourseCurriculum(mocks.api.mock.calls[0][2].program)).toMatchObject([{ id: 'legacy-lesson-1', title: 'Existing lesson', materials: [{ content: 'Existing notes' }] }]);
 });
 
 it('saves an uploaded computer file in the course and restores its filename and download link on reopen', async () => {
-  courses = [{ id: 7, name: 'Course with files', slug: 'course-with-files', ageCategory: '12+', basePriceUzs: 0, isActive: true,
+  courses = [{ id: 7, name: 'Course with files', slug: 'course-with-files', ageCategory: '12+', isActive: true,
     program: { version: 1, blocks: [{ id: 'block-files', title: 'Documents', lessons: [{ id: 'lesson-files', title: 'Workbook lesson', materials: [
       { id: 'material-files', type: 'file', title: 'Workbook material', content: 'https://academy.example/previous.pdf' },
     ] }] }] } }];
@@ -128,7 +127,7 @@ it.each([
   { program: [{ lessonNumber: 1, topic: 'Preserved lesson', description: 'Preserved notes' }, { lessonNumber: 2 }] },
   { program: { version: 1, blocks: [{ id: 'block', title: 'Preserved block', lessons: [] }] } },
 ])('preserves malformed stored curriculum while saving course metadata', async ({ program }) => {
-  courses = [{ id: 7, name: 'Existing course', slug: 'existing-course', ageCategory: '12+', basePriceUzs: 0, isActive: true, program }];
+  courses = [{ id: 7, name: 'Existing course', slug: 'existing-course', ageCategory: '12+', isActive: true, program }];
   const user = mount();
   await user.click(await screen.findByRole('button', { name: i18n.t('edit') }));
   const dialog = within(screen.getByRole('dialog', { name: i18n.t('editCourse') }));

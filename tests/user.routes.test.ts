@@ -195,7 +195,7 @@ describe('user route validation', () => {
           return { rows: [{ id: 20, full_name: existingUser.fullName, module: 'marketing', is_active: true, is_archived: false }] };
         }
         if (statement.includes('SELECT module FROM user_modules')) return { rows: [{ module: 'marketing' }] };
-        if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0 }] };
+        if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0 }] };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -341,7 +341,7 @@ describe('user route validation', () => {
           return { rows: [{ module: 'administration' }, { module: 'sales' }] };
         }
         if (statement.includes('AS lead_count')) {
-          return { rows: [{ lead_count: 1, student_count: 0, open_task_count: 0 }] };
+          return { rows: [{ lead_count: 1, student_count: 0 }] };
         }
         if (statement.includes('SELECT u.id, u.full_name')) {
           return { rows: [{ id: 8, full_name: 'Sales Manager' }] };
@@ -352,7 +352,6 @@ describe('user route validation', () => {
         if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
           return { rows: [] };
         }
-        if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 0 };
         if (statement.includes('SELECT id FROM academy_teachers')) return { rows: [] };
         return { rows: [], rowCount: 1 };
       }),
@@ -403,7 +402,7 @@ describe('user route validation', () => {
           return { rows: [{ id: 16, is_active: true, has_leadership: false }] };
         }
         if (statement.includes('AS lead_count')) {
-          return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 1 }] };
+          return { rows: [{ lead_count: 1, student_count: 1 }] };
         }
         if (statement.includes('SELECT u.id, u.full_name')) {
           return { rows: [{ id: 8, full_name: 'Replacement Sales User' }] };
@@ -414,8 +413,7 @@ describe('user route validation', () => {
         if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
           return { rows: [{ id: 20 }] };
         }
-        if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
-        if (statement.includes('UPDATE board_tasks')) return { rows: [], rowCount: 0 };
+        if (statement.includes('UPDATE board_tasks')) return { rows: [{ id: 30 }], rowCount: 1 };
         return { rows: [], rowCount: 1 };
       }),
     };
@@ -430,7 +428,8 @@ describe('user route validation', () => {
     expect(response.body.transferredLeadCount).toBe(3);
     const leadTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
     const studentTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_students'));
-    const taskTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_tasks'));
+    expect(statements.some((statement) => statement.includes('academy_tasks'))).toBe(false);
+    const taskTransferIndex = statements.findIndex((statement) => statement.includes('UPDATE board_tasks'));
     const historyIndex = statements.findIndex((statement) => statement.includes('INSERT INTO academy_lead_assignment_history'));
     const deleteIndex = statements.findIndex((statement) => statement.includes('DELETE FROM users'));
     const commitIndex = statements.findIndex((statement) => statement === 'COMMIT');
@@ -482,7 +481,7 @@ describe('user route validation', () => {
           return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
         }
         if (statement.includes('AS lead_count')) {
-          return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 1 }] };
+          return { rows: [{ lead_count: 1, student_count: 1 }] };
         }
         if (statement.includes('SELECT u.id, u.full_name')) {
           return { rows: [{ id: 8, full_name: 'Replacement Sales User' }] };
@@ -493,7 +492,6 @@ describe('user route validation', () => {
         if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
           return { rows: [{ id: 20 }] };
         }
-        if (statement.includes('UPDATE academy_tasks')) return { rows: [], rowCount: 1 };
         if (statement.includes('UPDATE board_tasks')) return { rows: [], rowCount: 0 };
         return { rows: [], rowCount: 1 };
       }),
@@ -506,7 +504,7 @@ describe('user route validation', () => {
     const response = await agent.post('/api/users/16/archive').send({ leadTransferManagerId: 8 });
 
     expect(response.status).toBe(200);
-    expect(response.body.transferredResponsibilityCount).toBe(3);
+    expect(response.body.transferredResponsibilityCount).toBe(2);
     const transferIndex = statements.findIndex((statement) => statement.includes('UPDATE academy_leads'));
     const transferStatement = statements[transferIndex];
     const archiveIndex = statements.findIndex((statement) => statement.includes('SET is_archived = true'));
@@ -520,6 +518,62 @@ describe('user route validation', () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it('moves open cards about the transferred leads to the replacement manager', async () => {
+    const departingUser = {
+      ...administrationUser,
+      id: 16,
+      fullName: 'Departing Sales User',
+      module: 'sales',
+      modules: ['sales'],
+      isArchived: false,
+    };
+    const archivedUser = { ...departingUser, isActive: false, isArchived: true };
+    mockStorage.getUser
+      .mockResolvedValueOnce(administrationUser)
+      .mockResolvedValueOnce(departingUser)
+      .mockResolvedValueOnce(archivedUser);
+
+    const statements: string[] = [];
+    const client = {
+      release: vi.fn(),
+      query: vi.fn(async (statement: string) => {
+        statements.push(statement.trim());
+        if (statement.includes('AS has_leadership')) {
+          return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
+        }
+        if (statement.includes('AS lead_count')) {
+          return { rows: [{ lead_count: 1, student_count: 1 }] };
+        }
+        if (statement.includes('SELECT u.id, u.full_name')) {
+          return { rows: [{ id: 8, full_name: 'Replacement Sales User' }] };
+        }
+        if (statement.includes('FROM academy_leads') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 10 }] };
+        }
+        if (statement.includes('FROM academy_students') && statement.includes('FOR UPDATE')) {
+          return { rows: [{ id: 20 }] };
+        }
+        if (statement.includes('UPDATE board_tasks')) return { rows: [{ id: 31 }], rowCount: 1 };
+        return { rows: [], rowCount: 1 };
+      }),
+    };
+    mockPool.connect.mockResolvedValue(client);
+
+    const app = await createApp();
+    const agent = request.agent(app);
+    await agent.post('/test/session');
+    const response = await agent.post('/api/users/16/archive').send({ leadTransferManagerId: 8 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.transferredResponsibilityCount).toBe(3);
+    const cardTransfer = statements.find((statement) => statement.includes('lead_id = ANY($3::int[])'))!;
+    expect(cardTransfer).toContain('assignee_id = $2');
+    expect(cardTransfer).toContain('WHERE assignee_id = $1 AND lead_id = ANY($3::int[])');
+    expect(cardTransfer).not.toContain('creator_id');
+    expect(statements.some((statement) => statement.includes('INSERT INTO board_task_activity'))).toBe(true);
+    expect(statements).toContain('COMMIT');
+  });
+
   it('archives an employee with board tasks without transferring or marking those tasks completed', async () => {
     const departing = { ...administrationUser, id: 16, module: 'marketing', modules: ['marketing'], isArchived: false };
     mockStorage.getUser.mockResolvedValueOnce(administrationUser).mockResolvedValueOnce(departing)
@@ -528,7 +582,7 @@ describe('user route validation', () => {
     const client = { release: vi.fn(), query: vi.fn(async (statement: string) => {
       statements.push(statement);
       if (statement.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
-      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0, board_task_count: 8 }] };
+      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 0, student_count: 0, board_task_count: 8 }] };
       return { rows: [], rowCount: 0 };
     }) };
     mockPool.connect.mockResolvedValue(client);
@@ -537,7 +591,11 @@ describe('user route validation', () => {
     const response = await agent.post('/api/users/16/archive');
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ isArchived: true, archivedTaskCount: 8, transferredResponsibilityCount: 0 });
-    expect(statements.some(sql => sql.includes('UPDATE board_tasks'))).toBe(false);
+    // Only cards the CRM filed under the departing name change their author.
+    const reauthoring = statements.filter(sql => sql.includes('activity.actor_id IS NULL'));
+    expect(reauthoring).toHaveLength(1);
+    expect(reauthoring[0]).toContain('SET creator_id = $2');
+    expect(statements.some(sql => sql.includes('UPDATE board_tasks') && !sql.includes('activity.actor_id IS NULL'))).toBe(false);
     expect(statements.some(sql => sql.includes('DELETE FROM board_tasks'))).toBe(false);
     expect(statements.some(sql => sql.includes('DELETE FROM "session"'))).toBe(true);
     expect(statements).toContain('COMMIT');
@@ -548,7 +606,7 @@ describe('user route validation', () => {
     mockStorage.getUser.mockResolvedValueOnce(administrationUser).mockResolvedValueOnce(departing);
     const client = { release: vi.fn(), query: vi.fn(async (statement: string) => {
       if (statement.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
-      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 1, student_count: 1, open_task_count: 2, board_task_count: 8 }] };
+      if (statement.includes('AS lead_count')) return { rows: [{ lead_count: 1, student_count: 1, board_task_count: 8 }] };
       return { rows: [], rowCount: 0 };
     }) };
     mockPool.connect.mockResolvedValue(client);
@@ -556,7 +614,7 @@ describe('user route validation', () => {
     await agent.post('/test/session');
     const response = await agent.post('/api/users/16/archive');
     expect(response.status).toBe(409);
-    expect(response.body).toMatchObject({ error: 'salesLeadTransferRequired', leadCount: 4 });
+    expect(response.body).toMatchObject({ error: 'salesLeadTransferRequired', leadCount: 2 });
     expect(client.query.mock.calls.some(([sql]) => sql.includes('SET is_archived = true'))).toBe(false);
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
   });
@@ -773,9 +831,13 @@ describe('user route validation', () => {
       if (sql.includes('AS has_leadership')) return { rows: [{ id: 16, is_active: true, is_archived: false, has_leadership: false }] };
       if (sql.includes('AS lead_count')) {
         expect(sql).toContain('FROM board_tasks WHERE (creator_id = $1 OR assignee_id = $1)');
-        return { rows: [{ lead_count: 0, student_count: 0, open_task_count: 0, board_task_count: 3 }] };
+        return { rows: [{ lead_count: 0, student_count: 0, board_task_count: 3 }] };
       }
       if (sql.includes('SELECT id, full_name FROM users')) return { rows: [{ id: 30, full_name: 'Teacher replacement' }] };
+      if (sql.includes('activity.actor_id IS NULL')) {
+        expect(params).toEqual([16, administrationUser.id]);
+        return { rows: [], rowCount: 0 };
+      }
       if (sql.includes('UPDATE board_tasks')) {
         expect(params).toEqual([16, 30]);
         expect(sql).toContain('creator_id = CASE WHEN creator_id = $1 THEN $2 ELSE creator_id END');
@@ -805,7 +867,8 @@ describe('user route validation', () => {
     const { canFinalizeBoardTask, canManageBoardTask } = await import('../shared/board-permissions');
     expect(canFinalizeBoardTask({ id: 16 }, { ...tasks[0], archivedWithEmployee: true })).toBe(false);
     expect(canManageBoardTask({ id: 16 }, { ...tasks[1], archivedWithEmployee: true })).toBe(false);
-    expect(client.query.mock.calls.some(([statement]) => statement.includes('UPDATE board_tasks'))).toBe(false);
+    expect(client.query.mock.calls.some(([statement]) => statement.includes('UPDATE board_tasks')
+      && !statement.includes('activity.actor_id IS NULL'))).toBe(false);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
   });
 

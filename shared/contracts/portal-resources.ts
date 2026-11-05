@@ -54,8 +54,7 @@ export type PortalPublicProjectDto = {
   coverUrl: string | null; publishedAt: string;
 };
 export type PortalPaymentDto = {
-  id: number; amountUzs: number; status: string; method: string; type: string;
-  period: string | null; paidAt: string | null; dueAt: string | null; paidUntil: string | null;
+  id: number; amountUzs: number; status: string; method: string; type: string; paidAt: string | null;
 };
 export type PortalResourcePageDto<T> = { items: T[]; nextCursor: number | null; hasMore: boolean };
 export const portalResourcePageSchema = z.object({
@@ -66,7 +65,7 @@ export const portalResourcePageSchema = z.object({
 export type PortalProjectPageDto = PortalResourcePageDto<PortalProjectDto>;
 export type PortalPaymentsDto = {
   state: 'ready' | 'needs_review'; items: PortalPaymentDto[];nextCursor?:number|null;
-  summary: { paidUzs: number; dueUzs: number; refundedUzs: number; paidUntil: string | null; nextPaymentAt: string | null } | null;
+  summary: { paidUzs: number; refundedUzs: number } | null;
 };
 export type PortalPaymentsPageDto = Omit<PortalPaymentsDto, 'items' | 'nextCursor'> & PortalResourcePageDto<PortalPaymentDto>;
 export const portalFinanceQuestionSchema = z.object({ paymentId: id.nullable().default(null), subject: z.string().trim().min(1).max(255), body: z.string().trim().min(1).max(10000), idempotencyKey: z.string().uuid().optional() }).strict();

@@ -351,10 +351,7 @@ const mergeSummary = (target: LeadImportSummary, source: LeadImportSummary) => {
   target.alreadyImported += source.alreadyImported;
 };
 
-const importMetaLeadValue = async (
-  value: MetaLeadWebhookValue,
-  createFollowUpTask: boolean,
-) => {
+const importMetaLeadValue = async (value: MetaLeadWebhookValue) => {
   const leadgenId = text(value.leadgen_id, 255);
   if (!leadgenId) throw new Error('Meta Lead Ads lead ID is required');
   const lead = await fetchMetaLead(leadgenId);
@@ -366,7 +363,6 @@ const importMetaLeadValue = async (
     sourceCode: 'meta_lead_ads',
     sourceName: 'Meta Lead Ads',
     allowMissingPhone: true,
-    createFollowUpTask,
     restoreArchivedMatches: true,
   });
   await linkMetaLeadAttribution(record);
@@ -385,14 +381,13 @@ export const importMetaLeadAdsByIds = async (leadgenIds: string[]) => {
 
   const summary = emptySummary();
   for (const leadgenId of ids) {
-    mergeSummary(summary, await importMetaLeadValue({ leadgen_id: leadgenId }, true));
+    mergeSummary(summary, await importMetaLeadValue({ leadgen_id: leadgenId }));
   }
   return { processed: ids.length, summary };
 };
 
 export const importHistoricalMetaLeadAds = async (options: {
   since?: Date;
-  createFollowUpTask?: boolean;
 } = {}): Promise<MetaLeadAdsBackfillResult> => {
   const config = metaLeadAdsConfig();
   if (!config.accessToken || !config.pageId) {
@@ -435,7 +430,6 @@ export const importHistoricalMetaLeadAds = async (options: {
         sourceCode: 'meta_lead_ads',
         sourceName: 'Meta Lead Ads',
         allowMissingPhone: true,
-        createFollowUpTask: options.createFollowUpTask ?? false,
         restoreArchivedMatches: Boolean(options.since),
       });
       for (const record of leadRecords) {
@@ -473,7 +467,7 @@ export const syncRecentMetaLeadAds = async (lookbackHours = 24) => {
   const since = new Date(Date.now() - boundedLookbackHours * 60 * 60 * 1_000);
   return {
     skipped: false,
-    ...(await importHistoricalMetaLeadAds({ since, createFollowUpTask: true })),
+    ...(await importHistoricalMetaLeadAds({ since })),
   };
 };
 
@@ -504,7 +498,7 @@ export const processMetaLeadAdsWebhook = async (payload: JsonObject) => {
 
   const summary = emptySummary();
   for (const value of values) {
-    mergeSummary(summary, await importMetaLeadValue(value, true));
+    mergeSummary(summary, await importMetaLeadValue(value));
   }
 
   return { processed: values.length, summary };

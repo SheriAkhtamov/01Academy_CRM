@@ -15,13 +15,8 @@ export class LegacyLeadLifecycleRepository implements LeadLifecycleRepository {
       throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     }
 
-    const deletedTasks = await withTransaction(async () => {
-      const taskRows = await query<{ id: number }>(
-        `DELETE FROM academy_tasks
-         WHERE entity_type = 'lead' AND entity_id = $1
-         RETURNING id`,
-        [leadId],
-      );
+    await withTransaction(async () => {
+      // Board cards outlive the lead: the foreign key only clears their link.
       const deletedLead = await queryOne(
         `DELETE FROM academy_leads WHERE id = $1 RETURNING id`,
         [leadId],
@@ -37,13 +32,10 @@ export class LegacyLeadLifecycleRepository implements LeadLifecycleRepository {
            WHERE assignment.tag_id = tag.id
          )`,
       );
-      return taskRows;
     });
 
-    await createAudit(actor, 'DELETE_ACADEMY_LEAD', 'academy_lead', leadId, {
-      deletedTaskCount: deletedTasks.length,
-    }, lead);
-    return { ok: true as const, deletedTaskCount: deletedTasks.length };
+    await createAudit(actor, 'DELETE_ACADEMY_LEAD', 'academy_lead', leadId, {}, lead);
+    return { ok: true as const };
   }
 
   async bulkDelete(leadIds: readonly number[], actor: ActorContext) {
@@ -61,12 +53,6 @@ export class LegacyLeadLifecycleRepository implements LeadLifecycleRepository {
         throw Object.assign(new Error('One or more leads were not found'), { statusCode: 404 });
       }
 
-      const deletedTasks = await query<{ id: number }>(
-        `DELETE FROM academy_tasks
-         WHERE entity_type = 'lead' AND entity_id = ANY($1::int[])
-         RETURNING id`,
-        [uniqueLeadIds],
-      );
       const deletedLeads = await query<{ id: number }>(
         `DELETE FROM academy_leads
          WHERE id = ANY($1::int[])
@@ -84,7 +70,7 @@ export class LegacyLeadLifecycleRepository implements LeadLifecycleRepository {
            WHERE assignment.tag_id = tag.id
          )`,
       );
-      return { leads, deletedTaskCount: deletedTasks.length };
+      return { leads };
     });
 
     await Promise.all(result.leads.map((lead) => createAudit(
@@ -99,7 +85,6 @@ export class LegacyLeadLifecycleRepository implements LeadLifecycleRepository {
     return {
       ok: true as const,
       deletedCount: result.leads.length,
-      deletedTaskCount: result.deletedTaskCount,
     };
   }
 }

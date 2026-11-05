@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { hasLeadershipAccess, getComputedPaymentStatus } from "@shared/academy";
+import { hasLeadershipAccess } from "@shared/academy";
 import {
   summarizeStudentProfile,
   type StudentLearningGroup,
@@ -20,7 +20,7 @@ import { getLead } from "./academy-leads";
 import { studentProjectFileInfo } from "../../middleware/student-project-upload.middleware";
 import { logger } from "../../lib/logger";
 import { studentLessonCountsSql, studentWasStudyingSql } from "../../lib/student-learning-sql";
-import { studentPaymentAmountSql, studentPaymentPaidUntilSql, studentPaymentSourceSql } from "../../lib/student-payment-sql";
+import { studentPaymentAmountSql, studentPaymentSourceSql } from "../../lib/student-payment-sql";
 
 export type StudentProfileLearningActor = {
   userId: number;
@@ -221,8 +221,8 @@ export async function loadStudentProfileData(
       ? Promise.resolve<StudentPayment[]>([])
       : query<StudentPayment>(
           `SELECT payment.id,${studentPaymentAmountSql} AS amount_uzs,payment.status,payment.type,payment.method,
-          payment.period,payment.paid_at,payment.due_at,${studentPaymentPaidUntilSql} AS paid_until,payment.created_at,payment.comment
-          ${studentPaymentSourceSql()} ORDER BY COALESCE(payment.paid_at,payment.due_at,payment.created_at) DESC,payment.id DESC`,
+          payment.paid_at,payment.created_at,payment.comment
+          ${studentPaymentSourceSql()} ORDER BY COALESCE(payment.paid_at,payment.created_at) DESC,payment.id DESC`,
           [studentId],
         ),
     query<StudentProject>(
@@ -263,7 +263,6 @@ export async function loadStudentProfileData(
   const payments = paymentRows.map((payment) => ({
     ...payment,
     amountUzs: Number(payment.amountUzs),
-    status: getComputedPaymentStatus(payment.status, payment.dueAt),
   }));
   const learningProjects = learningActor
     ? await loadLearningStudentPortfolio(studentId, learningActor)

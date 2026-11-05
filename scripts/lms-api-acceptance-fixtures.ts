@@ -192,7 +192,7 @@ export async function seedAcceptanceFixture(
       const groupId = groups[index === 3 ? 0 : index % groups.length];
       const studentId = await id(
         sql,
-        "INSERT INTO academy_students(group_id,course_id,school_id,manager_id,contact_name,student_name,student_age,referral_code,enrolled_at) VALUES($1,$2,$3,$4,$5,$5,$6,$7,now()-interval '30 days') RETURNING id",
+        "INSERT INTO academy_students(group_id,course_id,school_id,manager_id,contact_name,student_name,student_age,enrolled_at) VALUES($1,$2,$3,$4,$5,$5,$6,now()-interval '30 days') RETURNING id",
         [
           groupId,
           courseId,
@@ -200,7 +200,6 @@ export async function seedAcceptanceFixture(
           staff.admin.id,
           fakeLabel(tag, label),
           classification === "minor" ? 12 : 30,
-          `acceptance-${tag}-${index}`,
         ],
       );
       const enrollmentId = await id(
@@ -213,12 +212,11 @@ export async function seedAcceptanceFixture(
         index < 4
           ? await id(
               sql,
-              "INSERT INTO academy_payments(student_id,group_id,amount_uzs,status,paid_at,paid_until,period,comment) VALUES($1,$2,$3,'paid',now(),now()+interval '30 days',$4,$5) RETURNING id",
+              "INSERT INTO academy_payments(student_id,group_id,amount_uzs,status,paid_at,comment) VALUES($1,$2,$3,'paid',now(),$4) RETURNING id",
               [
                 studentId,
                 groupId,
                 500_000 * (index + 1),
-                fakeLabel(tag, "paid period"),
                 fakeLabel(tag, "PRIVATE payment note"),
               ],
             )

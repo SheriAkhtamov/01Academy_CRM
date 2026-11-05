@@ -1,8 +1,7 @@
 import type { Pool } from 'pg';
 import { runUnitSelectionSql } from '../../lms/infrastructure/postgres-base';
 import { learningSubjectHref } from '@shared/platform-routes';
-import { getComputedPaymentStatus } from '@shared/academy';
-import { studentPaymentAmountSql, studentPaymentPaidUntilSql, studentPaymentSourceSql } from '../../../lib/student-payment-sql';
+import { livePaymentSql, studentPaymentAmountSql, studentPaymentSourceSql } from '../../../lib/student-payment-sql';
 import {
   PORTAL_FILE_QUOTA_BYTES, PORTAL_NOTIFICATION_CATEGORIES,
   type PortalNotificationDto, type PortalNotificationPageDto, type PortalNotificationPreferencesDto,
@@ -227,24 +226,24 @@ ${unreferencedLearningFile}
     });
   }
   async payments(actor: PortalActorContext,cursor:number|null=null,limit=100): Promise<PortalPaymentsDto> {
-    const student = await resourceOne<{ nextPaymentAt: string | null; unresolved: boolean }>(this.pool, `SELECT student.next_payment_at,
-      EXISTS(SELECT 1 FROM academy_payments payment WHERE payment.lead_id=student.lead_id AND payment.student_id IS NULL
+    const student = await resourceOne<{ unresolved: boolean }>(this.pool, `SELECT
+      EXISTS(SELECT 1 FROM academy_payments payment WHERE payment.lead_id=student.lead_id AND payment.student_id IS NULL AND ${livePaymentSql()}
       AND (SELECT COALESCE(sum(allocation.amount_uzs),0) FROM academy_payment_student_allocations allocation WHERE allocation.payment_id=payment.id)<payment.amount_uzs) AS unresolved
       FROM academy_students student WHERE student.id=$1`, [actor.studentId]);
     const values = await resourceRows<PortalPaymentDto>(this.pool, `SELECT payment.id,${studentPaymentAmountSql} AS amount_uzs,payment.status,payment.method,payment.type,
-      payment.period,payment.paid_at,payment.due_at,${studentPaymentPaidUntilSql} AS paid_until
+      payment.paid_at
       ${studentPaymentSourceSql()}
       AND ($2::integer IS NULL OR payment.id<$2) ORDER BY payment.id DESC LIMIT $3`, [actor.studentId,cursor,limit+1]);
-    const items = values.map((payment) => ({ ...payment, amountUzs: Number(payment.amountUzs), status: getComputedPaymentStatus(payment.status, payment.dueAt) }));
-    const totals = await resourceRows<{ status: string; dueAt: string | null; amountUzs: number; paidUntil: string | null }>(this.pool, `SELECT payment.status,payment.due_at,
-      ${studentPaymentAmountSql} AS amount_uzs,${studentPaymentPaidUntilSql} AS paid_until
+    const items = values.map((payment) => ({ ...payment, amountUzs: Number(payment.amountUzs) }));
+    const totals = await resourceRows<{ status: string; amountUzs: number }>(this.pool, `SELECT payment.status,
+      ${studentPaymentAmountSql} AS amount_uzs
       ${studentPaymentSourceSql()}`, [actor.studentId]);
-    const summary = { paidUzs: 0, dueUzs: 0, refundedUzs: 0, paidUntil: null as string | null, nextPaymentAt: student?.nextPaymentAt ?? null };
+    // Payments are facts of received money; the portal shows no debt or due date.
+    const summary = { paidUzs: 0, refundedUzs: 0 };
     for (const payment of totals) {
-      const status = getComputedPaymentStatus(payment.status, payment.dueAt), amount = Number(payment.amountUzs);
-      if (status === 'paid') { summary.paidUzs += amount; if (payment.paidUntil && (!summary.paidUntil || payment.paidUntil > summary.paidUntil)) summary.paidUntil = payment.paidUntil; }
-      else if (status === 'refunded') summary.refundedUzs += amount;
-      else if (['pending', 'overdue'].includes(status)) summary.dueUzs += amount;
+      const amount = Number(payment.amountUzs);
+      if (payment.status === 'paid') summary.paidUzs += amount;
+      else if (payment.status === 'refunded') summary.refundedUzs += amount;
     }
     return {nextCursor:items.length>limit?items[limit-1].id:null,state: student?.unresolved ? 'needs_review' : 'ready', items:items.slice(0,limit), summary: student?.unresolved ? null : summary };
   }

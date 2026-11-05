@@ -29,17 +29,14 @@ import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
 import { prepareGroupCourseLessons } from './course-curriculum';
 import { courseLessonFileIds, courseLessonMaterialsText, orderSelectedCourseLessons } from '@shared/contracts/course-curriculum';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -60,7 +57,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -123,14 +119,6 @@ export const buildCrudScope = async (req: any, table: string, firstParamIndex = 
     const teacherId = await resolveTeacherId(req.user!.id);
     return teacherId ? pushParam(teacherId) : null;
   };
-
-  if (table === 'academy_tasks') {
-    if (hasLeadershipAccess(req.user)) return { whereSql: '', params };
-    if (!assignedModules.some((module) => ['sales', 'teacher', 'marketing'].includes(module))) {
-      return { whereSql: 'FALSE', params, denied: true };
-    }
-    return { whereSql: `responsible_id = ${ownUserParam()}`, params };
-  }
 
   if (table === 'academy_lessons') {
     if (hasLeadershipAccess(req.user)) return { whereSql: '', params };

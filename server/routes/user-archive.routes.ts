@@ -146,10 +146,19 @@ export const registerUserArchiveRoutes = (
             }
           }
 
+          // Cards the CRM filed under this administrator's name stay with their
+          // assignees: the employee who archives becomes their author instead.
+          await client.query(
+            `UPDATE board_tasks task SET creator_id = $2, updated_at = NOW()
+             WHERE task.creator_id = $1 AND task.assignee_id IS DISTINCT FROM $1 AND task.status <> 'accepted'
+               AND EXISTS (SELECT 1 FROM board_task_activity activity
+                 WHERE activity.task_id = task.id AND activity.type = 'created' AND activity.actor_id IS NULL)`,
+            [id, req.user!.id],
+          );
           const workload = await getAssignedWorkload(id, client);
           archivedTaskCount = workload.boardTaskCount ?? 0;
           // Board tasks follow the employee into the task archive. Customer
-          // ownership and academy follow-ups still need an active replacement.
+          // ownership still needs an active replacement.
           const transferCount = workload.offboardingResponsibilityCount - (workload.boardTaskCount ?? 0);
           if (transferCount > 0) {
             transferManagerId = parsePositiveId(req.body?.leadTransferManagerId);

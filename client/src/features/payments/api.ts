@@ -36,6 +36,9 @@ export const paymentsApi = {
     for (const file of files) form.append('files', file);
     return apiRequest('POST', '/api/academy/payments', form) as Promise<T>;
   },
+  refund: (paymentId: number, reason: string) => (
+    apiRequest('POST', `/api/academy/payments/${paymentId}/refund`, { reason })
+  ),
   downloadAttachment: async (paymentId: number, attachmentId: number, name: string) => {
     const response = await apiRequest('GET', `/api/academy/payments/${paymentId}/attachments/${attachmentId}/download`);
     if (!(response instanceof Response)) throw new Error('attachmentDownloadFailed');

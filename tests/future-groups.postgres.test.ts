@@ -160,7 +160,7 @@ describe.skipIf(!url)("Future groups persistence", () => {
       CREATE TABLE academy_lessons(id serial PRIMARY KEY,course_id int);
       CREATE TABLE academy_leads(id int PRIMARY KEY,manager_id int,funnel_id int,student_name text,contact_name text,phone text,
         is_archived boolean DEFAULT false,enrolled_group_id int,course_id int,school_id int,updated_at timestamp DEFAULT now());
-      CREATE TABLE academy_students(id int PRIMARY KEY,lead_id int,group_id int,student_name text,status text,course_id int,school_id int,updated_at timestamp DEFAULT now());
+      CREATE TABLE academy_students(id int PRIMARY KEY,lead_id int,group_id int,student_name text,status text,course_id int,school_id int,updated_at timestamp DEFAULT now(),is_archived boolean DEFAULT false);
       CREATE TABLE academy_lead_group_reservations(id serial PRIMARY KEY,group_id int,lead_id int,created_by int,UNIQUE(group_id,lead_id));
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id int,group_id int,status text,is_primary boolean,enrolled_at timestamp,ended_at timestamp,created_by int,updated_at timestamp DEFAULT now());
       CREATE UNIQUE INDEX future_enrollment_active_unique ON academy_student_group_enrollments(student_id,group_id) WHERE status='active';

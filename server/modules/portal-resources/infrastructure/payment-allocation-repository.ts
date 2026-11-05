@@ -1,6 +1,7 @@
 import type { PortalPaymentAllocationDto, PortalPaymentAllocationInput,PortalUnallocatedPaymentsDto } from '@shared/contracts/portal-resources';
 import { PortalResourceError, type ResourceStaffActor } from '../domain/policy';
 import { FinanceQuestionRepository } from './finance-question-repository';
+import { livePaymentSql } from '../../../lib/student-payment-sql';
 import { resourceRows, resourceOne, resourceTransaction, resourceAudit, type ResourceSql } from './sql';
 
 type Payment = { amountUzs: number; leadId: number | null; studentId: number | null; allocationVersion: number };
@@ -20,7 +21,7 @@ export class PaymentAllocationRepository extends FinanceQuestionRepository {
     staff(actor);
     const values = await resourceRows<{id:number;amountUzs:number;name:string|null}>(this.pool,`SELECT payment.id,payment.amount_uzs,
       (SELECT string_agg(COALESCE(student.student_name,student.contact_name),', ' ORDER BY student.id) FROM academy_students student WHERE student.lead_id=payment.lead_id) AS name
-      FROM academy_payments payment WHERE payment.student_id IS NULL AND payment.lead_id IS NOT NULL AND ($1::integer IS NULL OR payment.id<$1)
+      FROM academy_payments payment WHERE payment.student_id IS NULL AND payment.lead_id IS NOT NULL AND ${livePaymentSql()} AND ($1::integer IS NULL OR payment.id<$1)
       AND (SELECT COALESCE(sum(allocation.amount_uzs),0) FROM academy_payment_student_allocations allocation WHERE allocation.payment_id=payment.id)<payment.amount_uzs
       AND ($2 OR (EXISTS(SELECT 1 FROM academy_students student WHERE student.lead_id=payment.lead_id AND student.manager_id=$3)
         AND NOT EXISTS(SELECT 1 FROM academy_students student WHERE student.lead_id=payment.lead_id AND student.manager_id IS DISTINCT FROM $3)))

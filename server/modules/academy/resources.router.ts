@@ -26,17 +26,14 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
-  REFERRAL_BENEFIT_TYPES,
   STUDENT_STATUSES,
   TARGET_ATTENDANCE_PERCENT,
   TARGET_CAC_UZS,
@@ -57,7 +54,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -166,8 +162,7 @@ registerSimpleCrud('rooms', 'academy_rooms', [
 
 registerSimpleCrud('courses', 'academy_courses', [
   'name', 'slug', 'ageCategory',
-  'description', 'basePriceUzs', 'discountedPriceUzs',
-  'ltvTargetMinUzs', 'ltvTargetMaxUzs', 'program', 'isActive',
+  'description', 'program', 'isActive',
 ], {
   orderBy: 'is_active DESC, name',
   requireAdministration: true,
@@ -382,9 +377,5 @@ registerSimpleCrud('lessons', 'academy_lessons', [
     if (usage?.inUse) throw Object.assign(new Error('lessonHistoryCannotBeDeleted'), { statusCode: 409 });
   },
 });
-
-registerSimpleCrud('tasks', 'academy_tasks', [
-  'title', 'description', 'responsibleId', 'deadlineAt', 'status', 'entityType', 'entityId', 'completedAt',
-], { orderBy: 'COALESCE(deadline_at, created_at)' });
 
 };

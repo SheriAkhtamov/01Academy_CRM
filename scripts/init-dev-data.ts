@@ -198,13 +198,11 @@ async function seedCourses() {
     } else {
       const ins = await exec(
         `INSERT INTO academy_courses
-          (name, slug, age_category, lesson_count, lesson_duration_minutes, frequency,
-           base_price_uzs, discounted_price_uzs, ltv_target_min_uzs, ltv_target_max_uzs, program, is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)
+          (name, slug, age_category, lesson_count, lesson_duration_minutes, frequency, program, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,true)
          RETURNING id`,
         [
           c.name, c.slug, c.ageCategory, c.lessonCount, c.lessonDurationMinutes, c.frequency,
-          c.basePriceUzs, c.discountedPriceUzs, c.ltvTargetMinUzs, c.ltvTargetMaxUzs,
           JSON.stringify(c.program),
         ],
       );
@@ -399,12 +397,10 @@ async function seedStudents(
     }
 
     const courseId = courseMap[courseSlug];
-    const refCode = `REF-${String(i + 1).padStart(4, '0')}`;
-    const balance = (i % 3 === 0) ? 0 : basePrice;
     const attendance = 75 + (i * 7) % 25;
     const progress = 20 + (i * 5) % 75;
     const managerId = (i % 2 === 0) ? azizId : madinaId;
-    const status = (i % 15 === 0) ? 'trial' : (i % 25 === 0 ? 'paused' : 'studying');
+    const status = (i % 15 === 0) ? 'trial' : 'studying';
 
     const exist = await exec(
       `SELECT id FROM academy_students WHERE phone = $1 OR student_name = $2 LIMIT 1`,
@@ -419,9 +415,9 @@ async function seedStudents(
       const ins = await exec(
         `INSERT INTO academy_students
           (contact_name, phone, student_name, student_age, course_id, school_id,
-           group_id, manager_id, status, balance_uzs, attendance_percent,
-           progress_percent, referral_code, enrolled_at, enrollment_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() - ($14 || ' days')::interval, now() - ($14 || ' days')::interval)
+           group_id, manager_id, status, expected_payment_uzs, attendance_percent,
+           progress_percent, enrolled_at, enrollment_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now() - ($13 || ' days')::interval, now() - ($13 || ' days')::interval)
          RETURNING id`,
         [
           person.parentName,
@@ -433,10 +429,9 @@ async function seedStudents(
           assignedGroupId,
           managerId,
           status,
-          balance,
+          basePrice,
           attendance,
           progress,
-          refCode,
           String(daysAgo),
         ],
       );

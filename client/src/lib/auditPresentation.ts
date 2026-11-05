@@ -93,14 +93,15 @@ export const auditValue = (field: string, value: unknown, context: {
     if (entity.includes('lead')) {
       return context.statuses?.find((stage) => stage.code === value)?.name || t('statusNotSpecified');
     }
+    // Retired values (paused pupils, overdue payments) still label old audit entries.
     const studentStatusKeys: Record<string, TranslationKey> = {
       studying: 'studentStatusStudying', paused: 'studentStatusPaused',
       completed: 'studentStatusCompleted', expelled: 'studentStatusExpelled', trial: 'studentStatusTrial',
-    };
+    } satisfies Record<string, TranslationKey>;
     const paymentStatusKeys: Record<string, TranslationKey> = {
       paid: 'paymentStatusPaid', pending: 'paymentStatusPending', refunded: 'paymentStatusRefunded',
       overdue: 'paymentStatusOverdue', planned: 'financeCenterPlanned', cancelled: 'cancelled',
-    };
+    } satisfies Record<string, TranslationKey>;
     const key = entity.includes('student') || name === 'learningstatus'
       ? studentStatusKeys[String(value)]
       : entity.includes('group') ? groupStatusLabelKey(String(value))

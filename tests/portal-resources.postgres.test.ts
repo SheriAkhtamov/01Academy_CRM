@@ -61,7 +61,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       CREATE TABLE user_modules(user_id integer,module text);
       CREATE TABLE audit_logs(id serial PRIMARY KEY,user_id integer,action text,entity_type text,entity_id integer,old_values jsonb,new_values jsonb);
       CREATE TABLE notifications(id serial PRIMARY KEY,user_id integer,type varchar(50),title varchar(255),message text,related_entity_type varchar(50),related_entity_id integer);
-      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text,manager_id integer,lead_id integer,next_payment_at timestamptz);
+      CREATE TABLE academy_students(id serial PRIMARY KEY,student_name text,contact_name text,manager_id integer,lead_id integer,is_archived boolean DEFAULT false);
       CREATE TABLE academy_courses(id serial PRIMARY KEY,name text,program jsonb DEFAULT '[]');
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer,full_name text,status text DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id integer,teacher_id integer,status text DEFAULT 'open');
@@ -69,7 +69,7 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,lesson_number integer,topic text,materials text,scheduled_at timestamptz,duration_minutes integer DEFAULT 120,status text);
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer,student_id integer,status text);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY,student_id integer,title text,group_id integer,course_id integer,url text,file_url text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
-      CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,period text,paid_at timestamptz,due_at timestamptz,paid_until timestamptz,created_at timestamptz DEFAULT now());`);
+      CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,paid_at timestamptz,created_at timestamptz DEFAULT now());`);
     await pool.query('CREATE TABLE academy_leads(id serial PRIMARY KEY)');
     for (const file of ['0134_portal_identity','0135_lms_learning','0136_portal_resources','0138_manual_portal_credentials']) await pool.query(readFileSync(`migrations/${file}.sql`,'utf8'));
     repository = new PostgresPortalResourceRepository(pool, async () => true);

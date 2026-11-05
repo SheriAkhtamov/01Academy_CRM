@@ -15,6 +15,8 @@ import { storage } from '../../storage';
 import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
+import { livePaymentSql } from '../../lib/student-payment-sql';
+import { boardTaskEmployeeArchiveSql } from '../../lib/board-task-archive';
 import {
   getZonedDateTimeParts,
   getZonedDateOnlyRange,
@@ -31,13 +33,11 @@ import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
 import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import {
-  CHURN_REASONS,
   FINAL_PROJECT_STATUSES,
   GROUP_STATUSES,
   LEAD_ARCHIVE_REASON_CODES,
   LEAD_STATUSES,
   LESSON_STATUSES,
-  PAYMENT_DISCOUNTS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
@@ -57,7 +57,6 @@ import {
   calculateTrend,
   canAccessAcademyModule,
   getAssignedModules,
-  getComputedPaymentStatus,
   hasLeadershipAccess,
   normalizeMoney,
   resolveStudentRiskFlags,
@@ -350,17 +349,24 @@ export const getAcademyDataset = async (
       FROM academy_payments p
       LEFT JOIN academy_students st ON st.id = p.student_id
       LEFT JOIN academy_leads l ON l.id = p.lead_id
-      WHERE 1=1
+      WHERE ${livePaymentSql('p')}
         ${isManagerScoped ? 'AND (st.manager_id = $1 OR p.lead_id IN (SELECT id FROM academy_leads WHERE manager_id = $1))' : ''}
         ${isTeacherScoped ? 'AND FALSE' : ''}
       ORDER BY p.created_at DESC`, isTeacherScoped ? [] : managerParams)
     )),
+    // Employee work lives on the shared task board; only open cards with a due
+    // date can become overdue, so closed and undated ones are left out here, and
+    // so are cards archived together with their employee.
     slice('tasks', () => (
-      query(`SELECT t.*, u.full_name AS responsible_name
-      FROM academy_tasks t
-      LEFT JOIN users u ON u.id = t.responsible_id
-      WHERE 1=1 ${isManagerScoped || isTeacherScoped ? 'AND t.responsible_id = $1' : ''}
-      ORDER BY COALESCE(t.deadline_at, t.created_at)`,
+      query(`SELECT task.id, task.title, task.status, task.due_at AS deadline_at, task.assignee_id AS responsible_id,
+        u.full_name AS responsible_name
+      FROM board_tasks task
+      JOIN boards board ON board.id = task.board_id AND board.is_archived = false
+      LEFT JOIN users u ON u.id = task.assignee_id
+      WHERE task.status IN ('backlog', 'todo', 'in_progress') AND task.due_at IS NOT NULL
+        AND NOT ${boardTaskEmployeeArchiveSql('task')}
+        ${isManagerScoped || isTeacherScoped ? 'AND task.assignee_id = $1' : ''}
+      ORDER BY task.due_at, task.id`,
     isTeacherScoped ? [actor!.userId] : managerParams)
     )),
     slice('parentSurveys', () => (
@@ -497,6 +503,9 @@ export const hasStudentRiskFlag = (student: Row, flag: string) => {
   }
 };
 
+/** An archived pupil keeps the last status but is not part of the current cohort. */
+export const isActiveStudent = (student: Row) => student.status === 'studying' && !student.isArchived;
+
 export const studentBelongsToGroup = (student: Row, groupId: number) => {
   if (Array.isArray(student.groupIds)) {
     return student.groupIds.some((candidate: unknown) => Number(candidate) === Number(groupId));
@@ -550,7 +559,7 @@ export const buildAnalytics = async (
   const periodAttendance = data.attendance.filter((record) => periodLessonIds.has(Number(record.lessonId)));
   const periodParentSurveys = data.parentSurveys.filter((survey) => valueInMetricRange(survey.createdAt));
 
-  const paidPayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid'
+  const paidPayments = data.payments.filter((payment) => payment.status === 'paid'
     && Number(payment.amountUzs || 0) > 0
     && (getValidDate(payment.paidAt ?? payment.createdAt)?.getTime() ?? Infinity) <= now.getTime());
   const periodPaidPayments = paidPayments.filter((payment) => valueInMetricRange(payment.paidAt ?? payment.createdAt));
@@ -588,17 +597,16 @@ export const buildAnalytics = async (
     ltv: Number(student.paidAmountUzs ?? 0),
   }));
   const averageLtv = calculateAverage(ltvByStudent.map((item) => item.ltv)) ?? 0;
-  const overduePayments = data.payments.filter((payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'overdue');
-  const overdueTasks = data.tasks.filter((task) => task.status !== 'done' && task.deadlineAt && new Date(task.deadlineAt) < now);
+  const overdueTasks = data.tasks.filter((task) => task.deadlineAt && new Date(task.deadlineAt) < now);
   const activeStudentsWithAttendance = data.students.filter((student) => (
-    student.status === 'studying'
+    isActiveStudent(student)
     && (
       Number(student.attendancePercent || 0) > 0
       || hasStudentRiskFlag(student, 'attendance_below_70')
     )
   ));
   const lowAttendanceStudents = data.students.filter((student) => (
-    student.status === 'studying'
+    isActiveStudent(student)
     && (
       student.groups?.some((group: Row) => group.attendancePercent != null && Number(group.attendancePercent) < TARGET_ATTENDANCE_PERCENT)
       || (!student.groups?.length && (hasStudentRiskFlag(student, 'attendance_below_70')
@@ -616,18 +624,6 @@ export const buildAnalytics = async (
     .filter((survey) => survey.npsScore !== null && survey.npsScore !== undefined && survey.npsScore !== '')
     .map((survey) => Number(survey.npsScore))
     .filter((score) => Number.isFinite(score) && score >= 0 && score <= 10)) ?? 0;
-  const churnByReason = data.students
-    .filter((student) => ['paused', 'expelled'].includes(String(student.status))
-      && student.exitReason
-      && student.updatedAt
-      && new Date(student.updatedAt) >= metricStart
-      && new Date(student.updatedAt) < metricEnd)
-    .reduce<Record<string, number>>((acc, student) => {
-      const reason = String(student.exitReason);
-      acc[reason] = (acc[reason] ?? 0) + 1;
-      return acc;
-    }, {});
-
   const groupsWithCapacity = data.groups.map((group) => ({
     ...group,
     currentStudents: Number(group.currentStudents || 0),
@@ -697,7 +693,7 @@ export const buildAnalytics = async (
     ) ?? 0,
     progressAvg: calculateAverage(
       data.students.filter((student) => (
-        studentBelongsToGroup(student, Number(group.id)) && student.status === 'studying'
+        studentBelongsToGroup(student, Number(group.id)) && isActiveStudent(student)
       ))
         .flatMap((student) => {
           const groupMetrics = student.groups?.find((membership: Row) => Number(membership.groupId) === Number(group.id));
@@ -707,11 +703,11 @@ export const buildAnalytics = async (
   }));
 
   // --- Retention by course: completed students are successful outcomes, while
-  // paused/expelled students represent churn from the enrolled cohort. ---
+  // archived/expelled students represent churn from the enrolled cohort. ---
   const retentionByCourse = data.courses.map((course) => {
     const courseStudents = data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)));
     const retainedStudents = courseStudents.filter((student) => (
-      student.status === 'studying' || student.status === 'completed'
+      isActiveStudent(student) || student.status === 'completed'
     ));
     const monthsValues = courseStudents
       .filter((student) => student.enrolledAt)
@@ -734,7 +730,7 @@ export const buildAnalytics = async (
         : cohortLeads.filter((lead) => new Date(lead.createdAt) >= weekStart).length,
       newLeadsMonth: acquisitionCount,
       activeLeads: periodLeads.filter((lead) => !lead.isArchived).length,
-      activeStudents: data.students.filter((student) => student.status === 'studying').length,
+      activeStudents: data.students.filter((student) => isActiveStudent(student)).length,
       revenueMonth,
       revenueTotal,
       avgCheck,
@@ -754,13 +750,11 @@ export const buildAnalytics = async (
       teacherHours,
       avgDealCycleDays,
       leadToPaidConversion,
-      overduePayments: overduePayments.length,
       overdueTasks: overdueTasks.length,
       newPaidStudents: newPaidCustomersThisMonth.size },
     groups: groupsWithCapacity,
     risks: {
       lowAttendanceStudents,
-      overduePayments,
       overdueTasks },
     byCourse: data.courses.map((course) => {
       const coursePaidCustomers = new Set(periodPaidPayments
@@ -782,7 +776,7 @@ export const buildAnalytics = async (
         courseId: course.id,
         courseName: course.name,
         leads: periodLeads.filter((lead) => Number(lead.courseId) === Number(course.id)).length,
-        students: data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying').length,
+        students: data.students.filter((student) => studentBelongsToCourse(student, Number(course.id)) && isActiveStudent(student)).length,
         revenue: periodPaidPayments
           .filter((payment) => {
             const studentCourseId = studentById.get(Number(payment.studentId))?.courseId;
@@ -795,8 +789,6 @@ export const buildAnalytics = async (
             .filter((item) => Number(studentById.get(Number(item.studentId))?.courseId) === Number(course.id))
             .map((item) => item.ltv),
         ) ?? 0,
-        ltvTargetMinUzs: course.ltvTargetMinUzs,
-        ltvTargetMaxUzs: course.ltvTargetMaxUzs,
         cac: calculateCac(courseExpenses, coursePaidCustomers.size) ?? 0 };
     }),
     bySource: buildMarketingSourceMetrics({
@@ -813,7 +805,6 @@ export const buildAnalytics = async (
     byTeacher,
     byGroupProgress,
     retentionByCourse,
-    churnByReason,
     reportingRange: reportingRange
       ? { from: reportingRange.from, to: reportingRange.to }
       : { from: academyDateOnlyKey(monthStart), to: academyDateOnlyKey(new Date(nextMonthStart.getTime() - 1)) },
@@ -834,16 +825,17 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
     start: new Date(currentRange.start.getTime() - rangeDuration),
     end: currentRange.start,
   };
-  const [analytics, users, escalatedTasks] = await Promise.all([
+  const [analytics, users] = await Promise.all([
     buildAnalytics(currentRange),
     storage.getUsers(),
-    query(`SELECT t.id, t.title, t.deadline_at, u.full_name AS responsible_name
-           FROM academy_tasks t
-           LEFT JOIN users u ON u.id = t.responsible_id
-           WHERE t.status <> 'done' AND t.escalated_at IS NOT NULL
-           ORDER BY t.escalated_at DESC
-           LIMIT 20`),
   ]);
+  // The dashboard escalates cards that are overdue by at least a day.
+  const escalationCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const escalatedTasks = analytics.risks.overdueTasks
+    .filter((task: Row) => new Date(task.deadlineAt).getTime() <= escalationCutoff)
+    .slice(0, 20).map((task: Row) => ({
+      id: task.id, title: task.title, deadlineAt: task.deadlineAt, responsibleName: task.responsibleName,
+    }));
   const data = analytics.data;
   const currentMonthStart = currentRange.start;
   const nextMonthStart = currentRange.end;
@@ -865,7 +857,7 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
   };
 
   const paidPayments = data.payments.filter(
-    (payment) => getComputedPaymentStatus(payment.status, payment.dueAt) === 'paid' && payment.paidAt,
+    (payment) => payment.status === 'paid' && payment.paidAt,
   );
   const currentMonthRevenue = paidPayments
     .filter((payment) => inRange(payment.paidAt, currentMonthStart, nextMonthStart))
@@ -904,7 +896,7 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
       const courseGroups = activeGroups.filter((group) => Number(group.courseId) === Number(course.id));
       const capacity = courseGroups.reduce((sum, group) => sum + Number(group.maxStudents || 0), 0);
       const students = data.students.filter(
-        (student) => studentBelongsToCourse(student, Number(course.id)) && student.status === 'studying',
+        (student) => studentBelongsToCourse(student, Number(course.id)) && isActiveStudent(student),
       ).length;
       return {
         courseId: course.id,
@@ -977,10 +969,6 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
       new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
     .slice(0, 6);
 
-  const overdueAmount = analytics.risks.overduePayments.reduce(
-    (sum: number, payment: Row) => sum + Number(payment.amountUzs || 0),
-    0,
-  );
   const groupsWithoutTeacher = activeGroups.filter((group) => !group.teacherId).length;
   const totalActiveCapacity = activeGroups.reduce(
     (sum, group) => sum + Number(group.maxStudents || 0),
@@ -990,16 +978,6 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
     (sum, group) => sum + Number(group.currentStudents || 0),
     0,
   );
-  const churnByReason = data.students
-    .filter((student) => ['paused', 'expelled'].includes(String(student.status))
-      && student.exitReason
-      && inRange(student.updatedAt, currentMonthStart, nextMonthStart))
-    .reduce<Record<string, number>>((acc, student) => {
-      const reason = String(student.exitReason);
-      acc[reason] = (acc[reason] ?? 0) + 1;
-      return acc;
-    }, {});
-
   return {
     summary: {
       ...analytics.summary,
@@ -1019,24 +997,20 @@ export const buildAdministrationDashboard = async (requestedRange: ReportingRang
       revenueChangePercent: percentageChange(currentMonthRevenue, previousMonthRevenue),
       leadsChangePercent: percentageChange(currentMonthLeads, previousMonthLeads),
       studentsChangePercent: percentageChange(currentMonthStudents, previousMonthStudents),
-      overdueAmount,
       groupsWithoutTeacher,
     },
     trends,
     courseLoad,
     alerts: {
-      overduePayments: analytics.risks.overduePayments.length,
       lowAttendanceStudents: analytics.risks.lowAttendanceStudents.length,
       overdueTasks: escalatedTasks.length,
       groupsWithoutTeacher,
     },
     alertDetails: {
-      overduePayments: analytics.risks.overduePayments,
       lowAttendanceStudents: analytics.risks.lowAttendanceStudents,
     },
     recentActivity,
     upcomingLessons,
-    churnByReason,
     escalatedTasks,
     reportingRange: { from: currentRange.from, to: currentRange.to },
     generatedAt: now.toISOString(),

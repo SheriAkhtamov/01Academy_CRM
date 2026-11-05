@@ -18,6 +18,7 @@ type LeadStudent = {
   studentAge?: number | null;
   phone?: string | null;
   expectedPaymentUzs?: number | null;
+  isArchived?: boolean;
   updatedAt?: string | null;
   courseId?: number | null;
   courseName?: string | null;
@@ -107,6 +108,7 @@ export function LeadStudentsCard({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium">{student.studentName || t('student')}</p>
                       {student.studentAge ? <Badge variant="outline">{t('ageLabel')} {student.studentAge}</Badge> : null}
+                      {student.isArchived ? <Badge variant="secondary">{t('leadInArchive')}</Badge> : null}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {[student.courseName, student.schoolName, student.phone].filter(Boolean).join(' · ') || t('noData')}

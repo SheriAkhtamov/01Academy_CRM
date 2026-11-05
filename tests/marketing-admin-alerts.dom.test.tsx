@@ -48,20 +48,16 @@ it('preserves custom marketing dates across reloads', async () => {
   expect((await screen.findByLabelText(i18n.t('dateTo')) as HTMLInputElement).value).toBe('2026-09-04');
 });
 
-it('opens payment and attendance alert records in admin dialogs without requiring sales navigation', async () => {
+it('opens attendance alert records in an admin dialog and shows no overdue payment alerts', async () => {
   history.replaceState(null, '', '/admin');
   mocks.api.mockResolvedValue({
-    summary: { activeStudents: 1, newLeadsMonth: 0, revenueMonth: 0, avgAttendance: 45, attendanceMarks: 2, activeGroups: 0, activeTeachers: 0, activeUsers: 1, totalUsers: 1, onlineUsers: 1, newStudentsMonth: 0, groupLoadPercent: 0, lessonsToday: 0, lessonsTomorrow: 0, revenueChangePercent: 0, leadsChangePercent: 0, studentsChangePercent: 0, overdueAmount: 500000 },
-    trends: [], courseLoad: [], alerts: { overduePayments: 1, lowAttendanceStudents: 1, overdueTasks: 0, groupsWithoutTeacher: 0 }, escalatedTasks: [],
-    alertDetails: { overduePayments: [{ id: 7, studentName: 'Payment Student', leadName: 'Payment Parent', dueAt: '2026-10-01T08:00:00Z', amountUzs: 500000 }], lowAttendanceStudents: [{ id: 8, studentName: 'Attendance Student', contactName: 'Attendance Parent', courseName: 'Robotics', managerName: 'Assigned Manager', attendancePercent: 45 }] },
+    summary: { activeStudents: 1, newLeadsMonth: 0, revenueMonth: 0, avgAttendance: 45, attendanceMarks: 2, activeGroups: 0, activeTeachers: 0, activeUsers: 1, totalUsers: 1, onlineUsers: 1, newStudentsMonth: 0, groupLoadPercent: 0, lessonsToday: 0, lessonsTomorrow: 0, revenueChangePercent: 0, leadsChangePercent: 0, studentsChangePercent: 0 },
+    trends: [], courseLoad: [], alerts: { lowAttendanceStudents: 1, overdueTasks: 0, groupsWithoutTeacher: 0 }, escalatedTasks: [],
+    alertDetails: { lowAttendanceStudents: [{ id: 8, studentName: 'Attendance Student', contactName: 'Attendance Parent', courseName: 'Robotics', managerName: 'Assigned Manager', attendancePercent: 45 }] },
   });
   mount(<AdminDashboardPage />); const user = userEvent.setup();
-  await user.click(await screen.findByRole('button', { name: new RegExp(i18n.t('overduePayments')) }));
-  const payments = screen.getByRole('dialog', { name: i18n.t('overduePayments') });
-  expect(within(payments).getByText('Payment Student')).toBeTruthy(); expect(within(payments).getByText('Payment Parent')).toBeTruthy();
-  expect(within(payments).getByText(`500,000${i18n.t('uzs')}`)).toBeTruthy(); expect(location.pathname).toBe('/admin');
-  await user.click(within(payments).getByRole('button', { name: i18n.t('close') }));
-  await user.click(screen.getByRole('button', { name: new RegExp(i18n.t('adminLowAttendance')) }));
+  await user.click(await screen.findByRole('button', { name: new RegExp(i18n.t('adminLowAttendance')) }));
+  expect(screen.queryByText(/Просроченные оплаты|Overdue payments/i)).toBeNull();
   const attendance = screen.getByRole('dialog', { name: i18n.t('adminLowAttendance') });
   expect(within(attendance).getByText('Attendance Student')).toBeTruthy(); expect(within(attendance).getByText('Robotics')).toBeTruthy();
   expect(within(attendance).getByText('45%')).toBeTruthy(); expect(location.pathname).toBe('/admin');

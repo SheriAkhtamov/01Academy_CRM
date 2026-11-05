@@ -45,7 +45,6 @@ describe.skipIf(!databaseUrl)('manual sales funnel transfer with PostgreSQL owne
       CREATE TABLE academy_integration_funnel_settings(provider text,funnel_id integer);
       CREATE TABLE academy_leads(id integer PRIMARY KEY,manager_id integer REFERENCES users(id),funnel_id integer REFERENCES academy_sales_funnels(id),status_code text,is_archived boolean DEFAULT false,first_viewed_at timestamp,first_viewed_by integer,updated_at timestamp DEFAULT now());
       CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer,manager_id integer,updated_at timestamp);
-      CREATE TABLE academy_tasks(id integer PRIMARY KEY,title text,entity_type text,entity_id integer,responsible_id integer,status text DEFAULT 'new',updated_at timestamp);
       CREATE TABLE board_tasks(id integer PRIMARY KEY,lead_id integer,assignee_id integer,status text DEFAULT 'new',updated_at timestamp);
       CREATE TABLE notifications(id integer PRIMARY KEY,user_id integer,related_entity_type text,related_entity_id integer,is_read boolean DEFAULT false);
       CREATE TABLE academy_lead_assignment_history(id serial PRIMARY KEY,lead_id integer,from_manager_id integer,to_manager_id integer,changed_by integer,comment text);
@@ -91,9 +90,8 @@ describe.skipIf(!databaseUrl)('manual sales funnel transfer with PostgreSQL owne
       INSERT INTO academy_leads(id,manager_id,funnel_id,status_code,first_viewed_at,first_viewed_by) VALUES(10,7,1,'intake_a',now(),7);
       INSERT INTO academy_sales_kpi_leads(lead_id,hunter_id) VALUES(10,7);
       INSERT INTO academy_students(id,lead_id,manager_id) VALUES(20,10,7),(21,10,7);
-      INSERT INTO academy_tasks(id,title,entity_type,entity_id,responsible_id,status) VALUES(30,'Lead task','lead',10,7,'new'),(31,'Student task','student',20,7,'new'),(32,'Completed task','lead',10,7,'done');
       INSERT INTO board_tasks(id,lead_id,assignee_id,status) VALUES(40,10,7,'new'),(41,10,7,'done'),(42,10,7,'accepted');
-      INSERT INTO notifications(id,user_id,related_entity_type,related_entity_id) VALUES(50,7,'lead',10),(51,7,'student',20),(52,7,'academy_task',30);
+      INSERT INTO notifications(id,user_id,related_entity_type,related_entity_id) VALUES(50,7,'lead',10),(51,7,'student',20),(52,7,'board_task',40);
     `);
   });
   afterAll(async () => {
@@ -137,7 +135,6 @@ describe.skipIf(!databaseUrl)('manual sales funnel transfer with PostgreSQL owne
     expect(result.status, result.text).toBe(200);
     expect(await lead()).toMatchObject({ funnel_id: 2, status_code: 'intake_b', manager_id: null, first_viewed_at: null, first_viewed_by: null });
     expect((await fixture.pool.query('SELECT manager_id FROM academy_students ORDER BY id')).rows).toEqual([{ manager_id: null }, { manager_id: null }]);
-    expect((await fixture.pool.query('SELECT responsible_id FROM academy_tasks ORDER BY id')).rows).toEqual([{ responsible_id: null }, { responsible_id: null }, { responsible_id: 7 }]);
     expect((await fixture.pool.query('SELECT assignee_id FROM board_tasks ORDER BY id')).rows).toEqual([{ assignee_id: null }, { assignee_id: 7 }, { assignee_id: 7 }]);
     expect((await fixture.pool.query('SELECT from_manager_id,to_manager_id,changed_by FROM academy_lead_assignment_history')).rows).toEqual([{ from_manager_id: 7, to_manager_id: null, changed_by: 7 }]);
     expect((await fixture.pool.query('SELECT from_funnel_id,to_funnel_id,from_status_name,to_status_name FROM academy_lead_stage_history')).rows).toEqual([{ from_funnel_id: 1, to_funnel_id: 2, from_status_name: 'Main intake', to_status_name: 'Closer intake' }]);
@@ -178,7 +175,6 @@ describe.skipIf(!databaseUrl)('manual sales funnel transfer with PostgreSQL owne
     expect(result.status, result.text).toBe(200);
     expect(await lead()).toMatchObject({ funnel_id: 2, manager_id: null });
     expect((await fixture.pool.query('SELECT manager_id FROM academy_students ORDER BY id')).rows).toEqual([{ manager_id: null }, { manager_id: null }]);
-    expect((await fixture.pool.query('SELECT responsible_id FROM academy_tasks WHERE status<>\'done\' ORDER BY id')).rows).toEqual([{ responsible_id: null }, { responsible_id: null }]);
     expect((await fixture.pool.query('SELECT assignee_id FROM board_tasks WHERE status=\'new\'')).rows[0].assignee_id).toBe(null);
     expect((await fixture.pool.query('SELECT to_manager_id FROM academy_lead_assignment_history')).rows[0].to_manager_id).toBe(null);
     expect((await fixture.pool.query('SELECT auto_lead_distribution_cursor FROM academy_company_settings')).rows[0].auto_lead_distribution_cursor).toBe('0');

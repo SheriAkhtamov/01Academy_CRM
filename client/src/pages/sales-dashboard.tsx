@@ -167,14 +167,13 @@ interface Student {
   status: string;
   attendancePercent: number;
   progressPercent: number;
-  nextPaymentAt?: string;
   enrolledAt?: string;
   createdAt: string;
   paymentStatus?: string;
   paidAmountUzs?: number | null;
   expectedPaymentUzs?: number | null;
   riskFlags?: string[];
-  referralCode?: string;
+  isArchived?: boolean;
 }
 
 interface PipelineStatus {
@@ -567,10 +566,43 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   });
 
   const updateStudentStatus = useMutation({
-    mutationFn: ({ id, status, exitReason }: { id: number; status: string; exitReason?: string }) =>
-      studentsApi.updateStatus<Student>(id, status, exitReason),
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      studentsApi.updateStatus<Student>(id, status),
     onSuccess: (student) => {
       toast({ title: ceoCopy.student.updated });
+      setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: ceoCopy.student.updateFailed,
+      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+      variant: 'destructive',
+    }),
+  });
+
+  const archiveStudent = useMutation({
+    mutationFn: (id: number) => studentsApi.archive<Student>(id),
+    onSuccess: (student) => {
+      toast({ title: t('studentArchivedToast') });
+      setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
+      invalidate();
+    },
+    onError: (error: Error) => toast({
+      title: ceoCopy.student.updateFailed,
+      description: localizeApiErrorMessage(error.message, (error as { status?: number }).status ?? 0),
+      variant: 'destructive',
+    }),
+  });
+
+  const restoreStudent = useMutation({
+    mutationFn: ({ id, returnToGroups }: { id: number; returnToGroups: boolean }) =>
+      studentsApi.restore<Student & { skippedGroupIds?: number[] }>(id, returnToGroups),
+    onSuccess: (student) => {
+      const skipped = student.skippedGroupIds?.length ?? 0;
+      toast({
+        title: t('studentRestoredToast'),
+        ...(skipped > 0 ? { description: t('studentRestoreGroupsSkipped', { count: skipped }) } : {}),
+      });
       setSelectedStudent((current) => current?.id === student.id ? { ...current, ...student } : current);
       invalidate();
     },
@@ -995,8 +1027,10 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
         onOpenLead={leadId => openLead(leadId)}
         onRecordPayment={(leadId, studentId) => openLead(leadId, 'payment', studentId)}
         onUpdateStatus={isAdministrationModule
-          ? (id, status, exitReason) => updateStudentStatus.mutateAsync({ id, status, exitReason })
+          ? (id, status) => updateStudentStatus.mutateAsync({ id, status })
           : undefined}
+        onArchive={(id) => archiveStudent.mutateAsync(id)}
+        onRestore={(id, returnToGroups) => restoreStudent.mutateAsync({ id, returnToGroups })}
         onAddGroup={isAdministrationModule
           ? (id, groupId, isPrimary) => addStudentGroup.mutateAsync({ id, groupId, isPrimary })
           : undefined}

@@ -59,14 +59,10 @@ export interface LeadGroupRepository {
 }
 
 export interface LeadLifecycleRepository {
-  delete(leadId: number, actor: ActorContext): Promise<{
-    ok: true;
-    deletedTaskCount: number;
-  }>;
+  delete(leadId: number, actor: ActorContext): Promise<{ ok: true }>;
   bulkDelete(leadIds: readonly number[], actor: ActorContext): Promise<{
     ok: true;
     deletedCount: number;
-    deletedTaskCount: number;
   }>;
 }
 

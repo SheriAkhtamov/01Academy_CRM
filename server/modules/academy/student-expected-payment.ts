@@ -27,10 +27,11 @@ export const assertStudentLeadAccess = (lead: Row | null | undefined, actor: Act
 
 // Keep legacy amounts intact; they only describe leads without students now.
 // SUM ignores unspecified amounts and remains null when none are entered.
+// Once a lead has pupils, only the pupils who still study are expected to pay.
 export const leadExpectedPaymentTotalSelect = (alias: string) => `CASE
   WHEN EXISTS (SELECT 1 FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id)
   THEN (SELECT SUM(forecast.expected_payment_uzs)::double precision
-        FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id)
+        FROM academy_students forecast WHERE forecast.lead_id = ${alias}.id AND forecast.is_archived = false)
   ELSE COALESCE(${alias}.expected_payment_uzs, ${alias}.offer_price_uzs)
   END AS expected_payment_total_uzs`;
 
@@ -40,8 +41,7 @@ export const studentPaidAmountSelect = (alias: string) => `COALESCE((
 ), 0)::double precision AS paid_amount_uzs`;
 
 export const studentPaymentStatusSelect = (alias: string) => `(
-  SELECT CASE WHEN payment.status = 'pending' AND payment.due_at IS NOT NULL AND payment.due_at < NOW()
-    THEN 'overdue' ELSE payment.status END
+  SELECT payment.status
   ${studentPaymentSourceSql(`${alias}.id`)}
   ORDER BY payment.created_at DESC,payment.id DESC LIMIT 1
 ) AS payment_status`;

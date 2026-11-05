@@ -12,10 +12,10 @@ export const metricKeys = {
   attendance: 'kpiAttendanceMetric', crm: 'kpiCrmMetric', reactivation: 'kpiReactivationMetric',
   reactivatedAttendance: 'kpiReactivatedAttendanceMetric', newStudents: 'kpiNewStudentsMetric',
   trialConversion: 'kpiTrialConversionMetric', offer: 'kpiOfferMetric', renewals: 'kpiRenewalsMetric',
-  renewalConversion: 'kpiRenewalConversionMetric', upsells: 'kpiUpsellsMetric', nps: 'kpiNpsMetric',
+  upsells: 'kpiUpsellsMetric', nps: 'kpiNpsMetric',
 } satisfies Record<KpiMetricId, TranslationKey>;
 export const saleKindKeys = {
-  new: 'kpiSaleNew', renewal: 'kpiSaleRenewal', upsell: 'kpiSaleUpsell', installment: 'kpiSaleInstallment', unclassified: 'kpiSaleUnclassified',
+  new: 'kpiSaleNew', renewal: 'kpiSaleRenewal', upsell: 'kpiSaleUpsell', installment: 'kpiSaleInstallment',
 } satisfies Record<KpiSaleKind, TranslationKey>;
 export const kpiMoney = (value: number, language: string) => new Intl.NumberFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
   style: 'currency', currency: 'UZS', maximumFractionDigits: 0,

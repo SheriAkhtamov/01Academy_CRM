@@ -421,18 +421,12 @@ beforeEach(() => {
         status: "paid",
         method: "card",
         type: "full",
-        period: "October",
         paidAt: "2026-10-01T10:00:00Z",
-        dueAt: null,
-        paidUntil: "2026-11-01T10:00:00Z",
       },
     ],
     summary: {
       paidUzs: 500000,
-      dueUzs: 0,
       refundedUzs: 0,
-      paidUntil: "2026-11-01T10:00:00Z",
-      nextPaymentAt: null,
     },
   });
   mocks.financeQuestions.mockResolvedValue([]);
@@ -632,7 +626,7 @@ it("keeps a child's existing dashboard visible while the family overview refresh
 it("does not show a dashboard loader for a family member with only finance access", async () => {
   mocks.session.mockResolvedValue({ account, subjects: [{ ...parent, permissions: ["finance.read"] }], csrfToken: "test-csrf" });
   mount(<FamilyOverview />);
-  await screen.findByText((text) => text.startsWith(`${i18n.t("portalDueAmount")}:`));
+  await screen.findByText((text) => text.startsWith(`${i18n.t("portalPaid")}:`));
   expect(mocks.dashboard).not.toHaveBeenCalled();
   expect(screen.queryByRole("status", { name: i18n.t("portalLoading") })).toBeNull();
 });
@@ -1597,10 +1591,7 @@ it.each([
       status: "paid",
       method: "card",
       type,
-      period: null,
       paidAt: "2026-10-01T10:00:00Z",
-      dueAt: null,
-      paidUntil: null,
     }],
     summary: null,
   });
@@ -1763,24 +1754,21 @@ it("loads older payment history using the server cursor without replacing the su
     .mockResolvedValueOnce({ ...first, nextCursor: 88 })
     .mockResolvedValue({
       ...first,
-      items: [{ ...first.items[0], id: 87, period: "September" }],
+      items: [{ ...first.items[0], id: 87, paidAt: "2026-09-01T10:00:00Z" }],
       nextCursor: null,
     });
   mount(<PortalPayments />);
-  await screen.findAllByText("October");
+  await screen.findAllByRole("button", { name: i18n.t("portalOpen") });
   await userEvent.click(
     screen.getByRole("button", { name: i18n.t("portalLoadMore") }),
   );
-  await screen.findAllByText("September");
+  const history = within(screen.getByRole("table"));
+  await waitFor(() => expect(history.getAllByRole("button", { name: i18n.t("portalOpen") })).toHaveLength(2));
   expect(mocks.paymentsPage).toHaveBeenLastCalledWith(
     10,
     expect.any(AbortSignal),
     88,
   );
-  const history = within(screen.getByRole("table"));
-  expect(history.getByText("October")).toBeTruthy();
-  expect(history.getByText("September")).toBeTruthy();
-  expect(history.getAllByRole("button", { name: /October|September/ })).toHaveLength(2);
   expect(
     screen.queryByRole("button", { name: i18n.t("portalLoadMore") }),
   ).toBeNull();
@@ -1799,7 +1787,7 @@ it("selects the child specified by a finance notification before requesting paym
   });
   history.replaceState(null, "", "/learn/payments?linkId=11");
   render(<PortalApp />);
-  await screen.findAllByText("October");
+  await screen.findAllByRole("button", { name: i18n.t("portalOpen") });
   expect(mocks.payments).toHaveBeenCalledWith(11, expect.any(AbortSignal));
   expect(mocks.payments.mock.calls.every(([link]) => link === 11)).toBe(true);
   expect(mocks.financeQuestions.mock.calls.every(([link]) => link === 11)).toBe(
@@ -1826,7 +1814,7 @@ it("denies a removed child notification without loading the currently selected c
 it("opens a new finance question when navigation changes only the query string", async () => {
   history.replaceState(null, "", "/learn/payments?linkId=10");
   render(<PortalApp />);
-  await screen.findAllByText("October");
+  await screen.findAllByRole("button", { name: i18n.t("portalOpen") });
   expect(mocks.financeQuestion).not.toHaveBeenCalled();
   await act(async () => {
     history.pushState(null, "", "/learn/payments?question=99&linkId=10");
@@ -3130,18 +3118,17 @@ it.each(["course", "material"])("keeps the lesson enrollment when opening its %s
 
 it("updates a payment already open in a Dialog when its confirmation arrives", async () => {
   const payment = {
-    id: 88, amountUzs: 500000, status: "pending", method: "card", type: "full", period: null,
-    paidAt: null, dueAt: null, paidUntil: null,
+    id: 88, amountUzs: 500000, status: "pending", method: "card", type: "full", paidAt: null,
   };
   mocks.payments.mockResolvedValue({ state: "ready", items: [payment], summary: null });
   mount(<PortalPayments />);
   await userEvent.click(await screen.findByRole("button", { name: i18n.t("portalOpen") }));
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText(i18n.t("portalUnpaid"))).toBeTruthy();
+  expect(within(dialog).getByText(i18n.t("paymentStatusPending"))).toBeTruthy();
   mocks.payments.mockResolvedValue({ state: "ready", items: [{ ...payment, status: "paid", paidAt: "2026-10-22T10:00:00Z" }], summary: null });
   await act(async () => { await client.invalidateQueries({ queryKey: portalSubjectKey(account, own, "payments-history") }); });
   await waitFor(() => expect(within(dialog).getByText(i18n.t("portalPaid"))).toBeTruthy());
-  expect(within(dialog).queryByText(i18n.t("portalUnpaid"))).toBeNull();
+  expect(within(dialog).queryByText(i18n.t("paymentStatusPending"))).toBeNull();
 });
 
 

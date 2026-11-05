@@ -271,7 +271,7 @@ export const leadMergeCandidateSelect = (whereSql: string) => `
         AS payment_count,
       (SELECT COUNT(*)::int FROM academy_communications communication WHERE communication.lead_id = l.id)
         AS communication_count,
-      (SELECT COUNT(*)::int FROM academy_tasks task WHERE task.entity_type = 'lead' AND task.entity_id = l.id)
+      (SELECT COUNT(*)::int FROM board_tasks task WHERE task.lead_id = l.id)
         AS task_count
    FROM academy_leads l
    LEFT JOIN users manager ON manager.id = l.manager_id
@@ -358,14 +358,13 @@ export const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_lead_stage_history WHERE lead_id = $1) AS stage_history,
        (SELECT COUNT(*)::int FROM academy_lead_comments WHERE lead_id = $1) AS comments,
        (SELECT COUNT(*)::int FROM academy_payments WHERE lead_id = $1) AS payments,
-       (SELECT COUNT(*)::int FROM academy_referral_rewards WHERE referred_lead_id = $1) AS referral_rewards,
        (SELECT COUNT(*)::int FROM academy_students WHERE lead_id = $1) AS students,
        (SELECT COUNT(*)::int FROM academy_lead_phones WHERE lead_id = $1) AS phones,
        (SELECT COUNT(*)::int FROM academy_lead_channels WHERE lead_id = $1) AS channels,
        (SELECT COUNT(*)::int FROM academy_lead_tag_assignments WHERE lead_id = $1) AS manual_tags,
        (SELECT COUNT(*)::int FROM telephony_calls WHERE lead_id = $1) AS calls,
        (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
-       (SELECT COUNT(*)::int FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1) AS tasks,
+       (SELECT COUNT(*)::int FROM board_tasks WHERE lead_id = $1) AS tasks,
        (SELECT COUNT(*)::int FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
          AS escalation_events,
        (SELECT COUNT(*)::int FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1) AS notifications`,
@@ -475,10 +474,6 @@ export const mergeLeadRecords = async (
     [retainedLeadId, duplicateLeadId],
   );
   await query(
-    `UPDATE academy_referral_rewards SET referred_lead_id = $1 WHERE referred_lead_id = $2`,
-    [retainedLeadId, duplicateLeadId],
-  );
-  await query(
     `UPDATE academy_students SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
     [retainedLeadId, duplicateLeadId],
   );
@@ -497,7 +492,8 @@ export const mergeLeadRecords = async (
     `SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
     [retainedLeadId],
   );
-  if (mergedStudents.length === 1) {
+  // An archived pupil keeps no group places until restored from the archive.
+  if (mergedStudents.length === 1 && !mergedStudents[0].isArchived) {
     const mergedStudent = mergedStudents[0];
     await query(
       `INSERT INTO academy_student_group_enrollments
@@ -582,12 +578,6 @@ export const mergeLeadRecords = async (
   );
 
   await query(
-    `UPDATE academy_tasks
-     SET entity_id = $1, updated_at = NOW()
-     WHERE entity_type = 'lead' AND entity_id = $2`,
-    [retainedLeadId, duplicateLeadId],
-  );
-  await query(
     `UPDATE board_tasks
      SET lead_id = $1, updated_at = NOW()
      WHERE lead_id = $2`,
@@ -650,8 +640,6 @@ export const mergeLeadRecords = async (
     warmReason: preferLeadValue(retainedLead.warmReason, duplicateLead.warmReason),
     warmMovedAt: earliestLeadDate(retainedLead.warmMovedAt, duplicateLead.warmMovedAt),
     noMailing: Boolean(retainedLead.noMailing || duplicateLead.noMailing),
-    referralCode: preferLeadValue(retainedLead.referralCode, duplicateLead.referralCode),
-    referrerStudentId: preferLeadValue(retainedLead.referrerStudentId, duplicateLead.referrerStudentId),
   });
   if (!updatedRetainedLead) {
     throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
@@ -664,22 +652,12 @@ export const mergeLeadRecords = async (
        WHERE lead_id = $2`,
       [updatedRetainedLead.managerId, retainedLeadId],
     );
-    await query(
-      `UPDATE academy_tasks
-       SET responsible_id = $1, updated_at = NOW()
-       WHERE entity_type = 'lead'
-         AND entity_id = $2
-         AND status <> 'done'`,
-      [updatedRetainedLead.managerId, retainedLeadId],
-    );
     await syncLeadOwnedNotifications(Number(updatedRetainedLead.managerId), [retainedLeadId]);
   }
 
   await updateRow('academy_leads', duplicateLeadId, {
     phone: null,
     messenger: null,
-    referralCode: null,
-    referrerStudentId: null,
     enrolledGroupId: null,
     isArchived: true,
     archiveReason: 'duplicate_or_invalid',
@@ -714,14 +692,13 @@ export const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_lead_stage_history WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_comments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_payments WHERE lead_id = $1)
-       + (SELECT COUNT(*) FROM academy_referral_rewards WHERE referred_lead_id = $1)
        + (SELECT COUNT(*) FROM academy_students WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_phones WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_channels WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_tag_assignments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM telephony_calls WHERE lead_id = $1 OR (contact_type = 'lead' AND contact_id = $1))
        + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
-       + (SELECT COUNT(*) FROM academy_tasks WHERE entity_type = 'lead' AND entity_id = $1)
+       + (SELECT COUNT(*) FROM board_tasks WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1)
      )::int AS total`,
@@ -992,25 +969,6 @@ export const syncLeadOwnedNotifications = async (managerId: number, leadIds: num
              WHERE student.lead_id = ANY($2::int[])
            )
          )
-         OR (
-           notification.related_entity_type = 'academy_task'
-           AND notification.related_entity_id IN (
-             SELECT task.id
-             FROM academy_tasks task
-             WHERE task.status <> 'done'
-               AND (
-                 (task.entity_type = 'lead' AND task.entity_id = ANY($2::int[]))
-                 OR (
-                   task.entity_type = 'student'
-                   AND task.entity_id IN (
-                     SELECT student.id
-                     FROM academy_students student
-                     WHERE student.lead_id = ANY($2::int[])
-                   )
-                 )
-               )
-           )
-         )
        )`,
     [managerId, leadIds],
   );
@@ -1040,19 +998,6 @@ export const syncLeadManagerRelations = async (
     `UPDATE academy_students
      SET manager_id = $1, updated_at = NOW()
      WHERE lead_id = $2`,
-    [managerId, leadId],
-  );
-  await query(
-    `UPDATE academy_tasks
-     SET responsible_id = $1, updated_at = NOW()
-     WHERE status <> 'done'
-       AND (
-         (entity_type = 'lead' AND entity_id = $2)
-         OR (
-           entity_type = 'student'
-           AND entity_id IN (SELECT id FROM academy_students WHERE lead_id = $2)
-         )
-       )`,
     [managerId, leadId],
   );
   await query(
@@ -1221,28 +1166,6 @@ export const recalculateStudentMetrics = async (studentId: number) => {
   });
 };
 
-export const advanceStudentNextPaymentAt = async (
-  studentId: number,
-  candidate: Date | string | null | undefined,
-) => {
-  if (!candidate) return queryOne(`SELECT * FROM academy_students WHERE id = $1`, [studentId]);
-  const candidateDate = candidate instanceof Date ? candidate : new Date(candidate);
-  if (Number.isNaN(candidateDate.getTime())) {
-    throw Object.assign(new Error('Invalid paidUntil'), { statusCode: 400 });
-  }
-  return queryOne(
-    `UPDATE academy_students
-     SET next_payment_at = CASE
-           WHEN next_payment_at IS NULL OR next_payment_at < $2 THEN $2
-           ELSE next_payment_at
-         END,
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [studentId, candidateDate],
-  );
-};
-
 export const createStudentFromLead = async (source: ActorSource, leadId: number, paymentId?: number | null): Promise<Row> => {
   const actor = actorContextFrom(source);
   if (!transactionContext.getStore()) {
@@ -1264,14 +1187,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
   if (sourcePayment?.leadId && Number(sourcePayment.leadId) !== Number(leadId)) {
     throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
   }
-  const nextPaymentAt = sourcePayment?.type === 'prepayment'
-    ? null
-    : sourcePayment?.paidUntil
-      ? new Date(sourcePayment.paidUntil)
-      : sourcePayment?.paidAt
-        ? addDays(new Date(sourcePayment.paidAt), 30)
-        : addDays(new Date(), 30);
-
   const existingStudents = sourcePayment?.studentId
     ? await query(
         `SELECT * FROM academy_students WHERE id = $1 AND lead_id = $2 FOR UPDATE`,
@@ -1289,7 +1204,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
   }
   const existingStudent = existingStudents[0];
   if (existingStudent) {
-    let resolvedStudent = existingStudent;
     if (paymentId) {
       await updateRow('academy_payments', paymentId, {
         leadId,
@@ -1297,11 +1211,7 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
         groupId: sourcePayment?.groupId ?? existingStudent.groupId ?? lead.enrolledGroupId ?? null,
       });
     }
-    if (sourcePayment?.status === 'paid') {
-      resolvedStudent = await advanceStudentNextPaymentAt(Number(existingStudent.id), nextPaymentAt)
-        ?? existingStudent;
-    }
-    return resolvedStudent;
+    return existingStudent;
   }
   const targetGroupId = sourcePayment?.groupId ?? lead.enrolledGroupId;
   if (!targetGroupId) {
@@ -1334,8 +1244,6 @@ export const createStudentFromLead = async (source: ActorSource, leadId: number,
     managerId: lead.managerId ?? actor.userId,
     status: enrolledGroup.status === 'planned' ? 'waiting_start' : 'studying',
     enrolledAt: new Date(),
-    nextPaymentAt,
-    referralCode: '', // Compatibility with the legacy non-null column.
     riskFlags: [] });
 
   await query(

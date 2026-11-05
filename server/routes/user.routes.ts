@@ -315,13 +315,11 @@ const getAssignedWorkload = async (managerId: number, executor: QueryExecutor = 
     const result = await executor.query<{
         lead_count: number | string;
         student_count: number | string;
-        open_task_count: number | string;
         board_task_count: number | string;
     }>(
         `SELECT
            (SELECT COUNT(*)::int FROM academy_leads WHERE manager_id = $1) AS lead_count,
            (SELECT COUNT(*)::int FROM academy_students WHERE manager_id = $1) AS student_count,
-           (SELECT COUNT(*)::int FROM academy_tasks WHERE responsible_id = $1 AND status <> 'done') AS open_task_count,
            (SELECT COUNT(*)::int FROM board_tasks WHERE (creator_id = $1 OR assignee_id = $1) AND status <> 'accepted') AS board_task_count`,
         [managerId],
     );
@@ -329,7 +327,7 @@ const getAssignedWorkload = async (managerId: number, executor: QueryExecutor = 
     const leadCount = Number(row?.lead_count ?? 0);
     const studentCount = Number(row?.student_count ?? 0);
     const boardTaskCount = Number(row?.board_task_count ?? 0);
-    const openTaskCount = Number(row?.open_task_count ?? 0) + boardTaskCount;
+    const openTaskCount = boardTaskCount;
     return {
         leadCount,
         studentCount,
@@ -399,26 +397,9 @@ const transferAssignedSalesLeads = async ({
              WHERE id = ANY($2::int[])`,
             [toManagerId, studentIds],
         );
-    const taskUpdate = await client.query(
-            `UPDATE academy_tasks
-             SET responsible_id = $1, updated_at = NOW()
-             WHERE status <> 'done'
-               AND (
-                 ($4::boolean = true AND responsible_id = $3)
-                 OR (
-                   $4::boolean = false
-                   AND (
-                     (entity_type = 'lead' AND entity_id = ANY($2::int[]))
-                     OR (entity_type = 'student' AND entity_id = ANY($5::int[]))
-                   )
-                 )
-               )
-            `,
-            [toManagerId, leadIds, fromManagerId, transferAllOpenTasks, studentIds],
-        );
     let boardTaskCount = 0;
-    if (transferAllOpenTasks && transferBoardTasks) {
-        const transferredBoardTasks = await client.query<{ id: number }>(
+    const transferredBoardTasks = transferAllOpenTasks && transferBoardTasks
+        ? await client.query<{ id: number }>(
             `UPDATE board_tasks
              SET creator_id = CASE WHEN creator_id = $1 THEN $2 ELSE creator_id END,
                  assignee_id = CASE WHEN assignee_id = $1 THEN $2 ELSE assignee_id END,
@@ -426,7 +407,16 @@ const transferAssignedSalesLeads = async ({
              WHERE status <> 'accepted' AND (creator_id = $1 OR assignee_id = $1)
              RETURNING id`,
             [fromManagerId, toManagerId],
-        );
+        )
+        // Open work about the transferred leads, such as a call after three
+        // absences, goes to the new manager together with the leads.
+        : leadIds.length > 0 ? await client.query<{ id: number }>(
+            `UPDATE board_tasks SET assignee_id = $2, updated_at = NOW()
+             WHERE assignee_id = $1 AND lead_id = ANY($3::int[]) AND status NOT IN ('done', 'accepted')
+             RETURNING id`,
+            [fromManagerId, toManagerId, leadIds],
+        ) : null;
+    if (transferredBoardTasks) {
         boardTaskCount = transferredBoardTasks.rowCount ?? 0;
         if (boardTaskCount > 0) await client.query(
             `INSERT INTO board_task_activity (task_id, actor_id, type, from_value, to_value, meta)
@@ -453,7 +443,7 @@ const transferAssignedSalesLeads = async ({
     return {
         leadCount: leadIds.length,
         studentCount: studentIds.length,
-        taskCount: (taskUpdate.rowCount ?? 0) + boardTaskCount,
+        taskCount: boardTaskCount,
     };
 };
 

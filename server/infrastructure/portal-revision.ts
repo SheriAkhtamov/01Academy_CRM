@@ -30,7 +30,7 @@ export async function readPortalRevision(
       (SELECT md5(jsonb_agg(run ORDER BY run.id)::text) FROM lms_group_runs run JOIN scoped_groups scope ON scope.group_id=run.group_id),
       (SELECT md5(jsonb_agg(lesson ORDER BY lesson.id)::text) FROM academy_lessons lesson JOIN scoped_groups scope ON scope.group_id=lesson.group_id),
       (SELECT md5(jsonb_agg(mark ORDER BY mark.id)::text) FROM academy_attendance mark WHERE mark.student_id=ANY($1::integer[])),
-      (SELECT md5(jsonb_agg(jsonb_build_array(to_jsonb(payment),payment.status='pending' AND payment.due_at<now()) ORDER BY payment.id)::text) FROM scoped_payments payment),
+      (SELECT md5(jsonb_agg(payment ORDER BY payment.id)::text) FROM scoped_payments payment),
       (SELECT md5(jsonb_agg(allocation ORDER BY allocation.payment_id,allocation.student_id)::text)
         FROM academy_payment_student_allocations allocation JOIN scoped_payments payment ON payment.id=allocation.payment_id)
     )::text) AS revision`,

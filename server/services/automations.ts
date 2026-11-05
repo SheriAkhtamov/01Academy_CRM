@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { addDays, resolveStudentRiskFlags } from "@shared/academy";
+import { resolveStudentRiskFlags } from "@shared/academy";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
 import { DEFAULT_ACADEMY_TIME_ZONE } from '@shared/scheduling';
@@ -9,25 +9,10 @@ const AUTOMATION_TIME_ZONE = process.env.ACADEMY_TIME_ZONE?.trim() || DEFAULT_AC
 
 type QueryExecutor = Pick<PoolClient, "query">;
 
-const withTransaction = async <T>(client: PoolClient, work: () => Promise<T>): Promise<T> => {
-  await client.query("BEGIN");
-  try {
-    const result = await work();
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK").catch((rollbackError) => {
-      logger.error("Automation transaction rollback failed", { rollbackError });
-    });
-    throw error;
-  }
-};
-
 /**
  * Runs the periodic CRM automations. The advisory lock and all automation SQL
  * share one connection, while each multi-step entity action is committed as a
- * transaction. A crash therefore cannot leave a state change without its task,
- * history entry, or internal task.
+ * transaction.
  */
 export const runAutomations = async (actorUserId: number): Promise<string[]> => {
   if (!pool) return [];
@@ -45,88 +30,15 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
     }
     lockHeld = true;
 
-    const now = new Date();
     const actions: string[] = [];
 
     // Lead stages are never changed by a background job. A stage change is a
     // business decision and must be made explicitly by an employee.
 
-    // 1. Renewal reminders follow the student's effective coverage end, not an
-    // arbitrary older payment row. Only active students need a renewal task.
-    const { rows: renewalCandidates } = await client.query<{ id: number }>(
-      `SELECT id
-       FROM academy_students
-       WHERE status = 'studying'
-         AND next_payment_at BETWEEN NOW() AND NOW() + INTERVAL '5 days'`,
-    );
-    for (const candidate of renewalCandidates) {
-      const created = await withTransaction(client, async () => {
-        const { rows } = await client.query<{
-          id: number;
-          manager_id: number | null;
-        }>(
-          `SELECT id, manager_id
-           FROM academy_students
-           WHERE id = $1
-             AND status = 'studying'
-             AND next_payment_at BETWEEN NOW() AND NOW() + INTERVAL '5 days'
-           FOR UPDATE`,
-          [candidate.id],
-        );
-        const student = rows[0];
-        if (!student) return false;
-
-        return createTaskOnce(client, "Напоминание о продлении оплаты", student.manager_id ?? actorUserId, {
-          description: "Позвонить и уточнить продление.",
-          entityType: "student",
-          entityId: student.id,
-          deadlineAt: addDays(now, 1),
-        });
-      });
-      if (created) actions.push(`student:${candidate.id}:renewal_reminder`);
-    }
-
-    // 2. Only pending payments become overdue. The task and status transition
-    // commit together, so a retry cannot strand either half of the action.
-    const { rows: overdueCandidates } = await client.query<{ id: number }>(
-      `SELECT id
-       FROM academy_payments
-       WHERE status = 'pending'
-         AND due_at < NOW() - INTERVAL '3 days'`,
-    );
-    for (const candidate of overdueCandidates) {
-      const transitioned = await withTransaction(client, async () => {
-        const { rows } = await client.query<{ id: number; manager_id: number | null }>(
-          `SELECT p.id, COALESCE(s.manager_id, l.manager_id) AS manager_id
-           FROM academy_payments p
-           LEFT JOIN academy_students s ON s.id = p.student_id
-           LEFT JOIN academy_leads l ON l.id = p.lead_id
-           WHERE p.id = $1
-             AND p.status = 'pending'
-             AND p.due_at < NOW() - INTERVAL '3 days'
-           FOR UPDATE OF p`,
-          [candidate.id],
-        );
-        const payment = rows[0];
-        if (!payment) return false;
-
-        await createTaskOnce(client, "Просрочена оплата", payment.manager_id ?? actorUserId, {
-          entityType: "payment",
-          entityId: payment.id,
-          deadlineAt: addDays(now, 1),
-        });
-        await client.query(
-          "UPDATE academy_payments SET status = 'overdue', updated_at = NOW() WHERE id = $1",
-          [payment.id],
-        );
-        return true;
-      });
-      if (transitioned) actions.push(`payment:${candidate.id}:overdue`);
-    }
-
-    // 3. Recompute attendance/progress/risk flags for all active students.
+    // Recompute attendance/progress/risk flags for all active students. Payments
+    // never create reminders: a payment is only the record of money received.
     const { rows: activeStudents } = await client.query<{ id: number }>(
-      "SELECT id FROM academy_students WHERE status = 'studying'",
+      "SELECT id FROM academy_students WHERE status = 'studying' AND is_archived = false",
     );
     for (const student of activeStudents) {
       try {
@@ -152,37 +64,6 @@ export const runAutomations = async (actorUserId: number): Promise<string[]> => 
     }
     client.release();
   }
-};
-
-const createTaskOnce = async (
-  executor: QueryExecutor,
-  title: string,
-  responsibleId: number,
-  options: { description?: string; entityType?: string; entityId?: number; deadlineAt?: Date | null },
-) => {
-  const { rows } = await executor.query(
-    `INSERT INTO academy_tasks (title, description, responsible_id, deadline_at, entity_type, entity_id, status)
-     SELECT $1,$2,$3,$4,$5,$6,'new'
-     WHERE EXISTS (SELECT 1 FROM users WHERE id = $3 AND is_active = true AND is_archived = false)
-       AND NOT EXISTS (
-       SELECT 1
-       FROM academy_tasks
-       WHERE title = $1
-         AND entity_type IS NOT DISTINCT FROM $5::text
-         AND entity_id IS NOT DISTINCT FROM $6::integer
-         AND status <> 'done'
-     )
-     RETURNING id`,
-    [
-      title,
-      options.description ?? null,
-      responsibleId,
-      options.deadlineAt ?? null,
-      options.entityType ?? null,
-      options.entityId ?? null,
-    ],
-  );
-  return Boolean(rows[0]?.id);
 };
 
 const recalcStudent = async (executor: QueryExecutor, studentId: number): Promise<boolean> => {

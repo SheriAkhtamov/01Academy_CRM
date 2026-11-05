@@ -12,16 +12,16 @@ export const isFullCycleKpiRole = (role: string | null | undefined): role is Ful
 export const KPI_METRICS = [
   'response', 'bookings', 'attendance', 'crm', 'reactivation',
   'reactivatedAttendance', 'newStudents', 'trialConversion', 'offer',
-  'renewals', 'renewalConversion', 'upsells', 'nps',
+  'renewals', 'upsells', 'nps',
 ] as const;
 export type KpiMetricId = (typeof KPI_METRICS)[number];
 export const ROLE_METRICS: Record<KpiRole, KpiMetricId[]> = {
   hunter: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance'],
-  closer: ['newStudents', 'trialConversion', 'offer', 'crm', 'renewals', 'renewalConversion', 'upsells', 'nps'],
+  closer: ['newStudents', 'trialConversion', 'offer', 'crm', 'renewals', 'upsells', 'nps'],
   full_cycle: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
-    'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'nps'],
+    'newStudents', 'trialConversion', 'offer', 'renewals', 'upsells', 'nps'],
   full_cycle_3500: ['response', 'bookings', 'attendance', 'crm', 'reactivation', 'reactivatedAttendance',
-    'newStudents', 'trialConversion', 'offer', 'renewals', 'renewalConversion', 'upsells', 'nps'],
+    'newStudents', 'trialConversion', 'offer', 'renewals', 'upsells', 'nps'],
 };
 
 const money = z.number().int().min(0).max(1_000_000_000);
@@ -53,15 +53,16 @@ export const kpiConfigSchema = z.object({
   reactivationBonusUzs: money,
   renewalBonusUzs: money,
   upsellBonusUzs: money,
-  // Retained only to read existing saved plans; referral bonuses are no longer paid.
-  referralBonusUzs: money.default(0).nonoptional(),
-  renewalTargetPercent: percent,
+  // Retained only to read existing saved plans. Referral bonuses are no longer
+  // paid, and renewal conversion needed the removed "paid until" dates.
+  referralBonusUzs: money.optional(),
+  renewalTargetPercent: percent.optional(),
   upsellTarget: count,
   npsTarget: z.number().min(-100).max(100),
   tiers: z.array(z.object({ from: count.min(1), rateUzs: money }).strict()).min(1).max(12),
   enabledMetrics: z.preprocess((value: KpiMetricId[]) => {
     if (!Array.isArray(value)) return value;
-    const metrics = value.filter((metric: string) => metric !== 'referrals' && metric !== 'qualified');
+    const metrics = value.filter((metric: string) => !['referrals', 'qualified', 'renewalConversion'].includes(metric));
     // A saved plan may have displayed only the removed metric. Keep it readable.
     return value.length > 0 && metrics.length === 0 ? ['newStudents'] : metrics;
   }, z.array(z.enum(KPI_METRICS)).min(1).max(KPI_METRICS.length)),
@@ -135,8 +136,6 @@ export function defaultKpiConfig(role: SingleKpiRole): KpiConfig {
     reactivationBonusUzs: hunter ? 100_000 : 0,
     renewalBonusUzs: hunter ? 0 : 100_000,
     upsellBonusUzs: hunter ? 0 : 75_000,
-    referralBonusUzs: 0,
-    renewalTargetPercent: 0,
     upsellTarget: 0,
     npsTarget: 50,
     tiers: hunter
@@ -179,13 +178,14 @@ export type KpiTrialFact = {
   bookedAt: string; scheduledAt: string; durationMinutes: number;
   status: string; lessonStatus: string; reactivated: boolean;
 };
-export const KPI_SALE_KINDS = ['new', 'renewal', 'upsell', 'installment', 'unclassified'] as const;
+// Every paid sale is classified automatically from the payment history.
+export const KPI_SALE_KINDS = ['new', 'renewal', 'upsell', 'installment'] as const;
 export type KpiSaleKind = (typeof KPI_SALE_KINDS)[number];
 export type KpiSaleFact = {
   id: number; leadId: number | null; studentId: number; groupId: number | null;
   name: string; closerId: number | null; paidAt: string;
-  paidUntil: string | null; amountUzs: number; status: string;
-  kind: KpiSaleKind; cycleKey: string | null; referralInitiated: boolean;
+  amountUzs: number; status: string;
+  kind: KpiSaleKind; cycleKey: string | null;
 };
 export type KpiSurveyFact = {
   id: number; studentId: number; name: string; closerId: number | null;
@@ -204,15 +204,13 @@ export type KpiMetric = {
   details: KpiDetail[];
 };
 export type KpiPayLine = {
-  key: 'base' | 'variable' | 'tier' | 'quality' | 'reactivation' | 'renewal' | 'upsell' | 'referral';
+  key: 'base' | 'variable' | 'tier' | 'quality' | 'reactivation' | 'renewal' | 'upsell';
   quantity: number; rateUzs: number; amountUzs: number;
   status: 'earned' | 'not_met' | 'pending'; from?: number; to?: number; phase?: SingleKpiRole;
 };
 export type KpiCalculation = {
   metrics: KpiMetric[]; payLines: KpiPayLine[]; totalUzs: number;
   baseConditions: { volume: boolean; crm: boolean | null; timing: boolean | null };
-  unclassifiedSales: KpiSaleFact[];
-  reviewableSales: KpiSaleFact[];
 };
 export type KpiOverviewEmployee = {
   id: number; name: string; role: KpiRole; assignedAt: string;
@@ -232,14 +230,3 @@ export type KpiLeadOwnership = {
   canRecordOffer: boolean;
   offerAt: string | null;
 };
-export const kpiSaleReviewSchema = z.object({
-  kind: z.enum(['new', 'renewal', 'upsell', 'installment']),
-  cycleKey: z.string().trim().max(120).nullable(),
-  referralInitiated: z.literal(false).default(false),
-  reason: z.string().trim().min(3).max(500),
-}).strict().superRefine((value, ctx) => {
-  if (['renewal', 'upsell'].includes(value.kind) && !value.cycleKey) {
-    ctx.addIssue({ code: 'custom', path: ['cycleKey'], message: 'kpiCycleRequired' });
-  }
-});
-export type KpiSaleReview = z.infer<typeof kpiSaleReviewSchema>;

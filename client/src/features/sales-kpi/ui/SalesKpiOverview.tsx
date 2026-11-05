@@ -8,18 +8,14 @@ import { SalesTargetBullet } from '@/components/ux/sales-overview/SalesMetricGau
 import { metricKeys } from '../copy';
 import { KpiMetricsGrid, KpiMetricRow } from './KpiMetricsGrid';
 import { KpiMetricDetails } from './KpiMetricDetails';
-import { KpiSaleReviewDialog } from './KpiSaleReviewDialog';
 import { EmployeeCardTrigger } from '@/features/employees/EmployeeCardTrigger';
 
 function EmployeeDetails({ employee, periodLabel, onClose }: { employee: KpiOverviewEmployee; periodLabel: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [metric, setMetric] = useState<KpiMetric | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  if (reviewOpen) return <KpiSaleReviewDialog sales={employee.calculation.reviewableSales} onClose={() => setReviewOpen(false)} />;
   return <>
     <OverviewDialog title={<EmployeeCardTrigger userId={employee.id} name={employee.name} className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true"><EmployeeAvatar interactive={false} userId={employee.id} name={employee.name} className="size-9" /></span><span>{t('salesEmployeeResult').replace('{name}', employee.name)}</span></EmployeeCardTrigger>} description={periodLabel} onClose={onClose}>
       <KpiMetricsGrid metrics={employee.calculation.metrics} onSelect={setMetric} />
-      {employee.calculation.reviewableSales.length ? <button type="button" className={`${overviewButton} border`} onClick={() => setReviewOpen(true)}>{t('kpiSalesReview')}</button> : null}
     </OverviewDialog>
     {metric ? <KpiMetricDetails metric={metric} onClose={() => setMetric(null)} /> : null}
   </>;
@@ -37,7 +33,7 @@ export function SalesKpiOverview({ month, employees, loading, failed, onRetry }:
   const selected = employees.find((item) => item.id === selectedId);
   const primaryIds: KpiMetricId[] = employee?.role === 'hunter' ? ['bookings', 'attendance', 'response']
     : isFullCycleKpiRole(employee?.role) ? ['bookings', 'attendance', 'newStudents']
-      : ['newStudents', 'trialConversion', 'renewalConversion'];
+      : ['newStudents', 'trialConversion', 'renewals'];
   const primary = primaryIds.flatMap((id) => employee?.calculation.metrics.find((item) => item.id === id) ?? []);
   if (!loading && !failed && !employees.length) return null;
   return <section className="min-w-0 border-b border-border/60 py-7 xl:col-span-12" aria-label={t('salesMonthPlan')}>

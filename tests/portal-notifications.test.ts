@@ -46,8 +46,6 @@ describe("LMS notification time and default-off policies", () => {
         lesson_cancelled: expect.any(String),
         attendance_absent: expect.any(String),
         thread_answered: expect.any(String),
-        payment_due: expect.any(String),
-        payment_overdue: expect.any(String),
         report_published: expect.any(String),
         achievement_awarded: expect.any(String),
         password_changed: expect.any(String),

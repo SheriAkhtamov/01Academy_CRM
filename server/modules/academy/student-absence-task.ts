@@ -1,7 +1,10 @@
 import { addDays } from "@shared/academy";
-import { createNotification, createTask, leadershipUserAccessSql, query, queryOne, type Row } from "./academy-core";
+import { boardTaskEmployeeArchiveSql } from "../../lib/board-task-archive";
+import { createNotification, leadershipUserAccessSql, query, queryOne, type Row } from "./academy-core";
+import { createSystemBoardTask } from "./system-board-tasks";
 
-const absenceTaskTitle = "3 пропуска подряд: позвонить родителю";
+const absenceTaskTitle = (studentName: string | null | undefined) =>
+  `3 пропуска подряд: позвонить родителю${studentName ? ` (${studentName})` : ""}`;
 
 /** The task is about the pupil: resolve it only after every active group is clear. */
 export async function reconcileStudentAbsenceTask(
@@ -31,22 +34,36 @@ export async function reconcileStudentAbsenceTask(
       AND recent.statuses=ARRAY['absent','absent','absent']::text[]`,
     [student.id],
   );
-  const existingTask = await queryOne(
-    `SELECT id FROM academy_tasks WHERE entity_type='student' AND entity_id=$1
-      AND title=$2 AND status<>'done' LIMIT 1`,
-    [student.id, absenceTaskTitle],
-  );
+  // The card belongs to the pupil, not to its title: a renamed pupil or card and
+  // a sibling with the same name never match another pupil's call.
+  const onceKey = `student_absence:${Number(currentStudent.id)}`;
   if (!risks.length) {
-    if (existingTask) await query(
-      `UPDATE academy_tasks SET status='done',completed_at=COALESCE(completed_at,NOW()),updated_at=NOW()
-        WHERE id=$1 AND status<>'done'`,
-      [existingTask.id],
+    // A corrected register removes the streak, so its open call card is
+    // finalized: there is nothing left for anybody to do or accept.
+    const closed = await query<{ id: number; fromStatus: string }>(
+      `UPDATE board_tasks target SET status = 'accepted', accepted_at = NOW(), updated_at = NOW()
+       FROM (SELECT task.id, task.status FROM board_tasks task
+         WHERE task.status IN ('backlog', 'todo', 'in_progress')
+           AND NOT ${boardTaskEmployeeArchiveSql("task")}
+           AND EXISTS (SELECT 1 FROM board_task_activity activity
+             WHERE activity.task_id = task.id AND activity.type = 'created' AND activity.meta->>'onceKey' = $1)
+         FOR UPDATE) previous
+       WHERE target.id = previous.id
+       RETURNING target.id, previous.status AS from_status`,
+      [onceKey],
     );
+    for (const task of closed) {
+      await query(
+        `INSERT INTO board_task_activity (task_id, actor_id, type, from_value, to_value, meta)
+         VALUES ($1, NULL, 'accepted', $2, 'accepted', $3::jsonb)`,
+        [task.id, task.fromStatus, JSON.stringify({ source: "student_absence" })],
+      );
+    }
     return;
   }
   // Only a newly recorded absence in the current streak creates a new call.
-  // Re-saving an unchanged mark or editing an older lesson cannot repeat a done call.
-  if (existingTask || !risks.some(risk => Number(risk.groupId) === currentGroupId
+  // Re-saving an unchanged mark or editing an older lesson cannot repeat it.
+  if (!risks.some(risk => Number(risk.groupId) === currentGroupId
     && risk.lessonIds.some(lessonId => newAbsenceLessonIds.includes(Number(lessonId))))) return;
   const responsible = await queryOne<{ id: number }>(
     `SELECT u.id FROM users u WHERE u.is_active=true AND u.is_archived=false
@@ -56,12 +73,16 @@ export async function reconcileStudentAbsenceTask(
   );
   if (!responsible) return;
   const responsibleId = Number(responsible.id);
-  await createTask(absenceTaskTitle, {
-    responsibleId,
-    entityType: "student",
-    entityId: Number(student.id),
-    deadlineAt: addDays(new Date(), 1),
+  // While the call card is still open, a longer streak does not add another.
+  const task = await createSystemBoardTask(query, {
+    title: absenceTaskTitle(currentStudent.studentName),
+    assigneeId: responsibleId,
+    leadId: currentStudent.leadId ? Number(currentStudent.leadId) : null,
+    dueAt: addDays(new Date(), 1),
+    source: "student_absence",
+    onceKey,
   });
+  if (!task) return;
   await createNotification(responsibleId, "Риск по посещаемости",
     `${currentStudent.studentName ?? "Ученик"} пропустил 3 занятия подряд`, "student", Number(student.id));
 }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultKpiConfig, defaultKpiPlanConfig, type KpiPlanVersion } from '../shared/sales-kpi';
 
 const mocks = vi.hoisted(() => ({ employees: vi.fn(), plans: vi.fn(), save: vi.fn(), assignments: vi.fn(), facts: vi.fn(),
-  claim: vi.fn(), handoff: vi.fn(), ownership: vi.fn(), offer: vi.fn(), review: vi.fn() }));
+  claim: vi.fn(), handoff: vi.fn(), ownership: vi.fn(), offer: vi.fn() }));
 vi.mock('../server/infrastructure/sales-kpi/kpi-repository', () => ({
   getKpiReportingEmployees: mocks.employees, listKpiPlans: mocks.plans, saveKpiPlan: mocks.save, listKpiAssignments: mocks.assignments,
   kpiError: (error: Error, statusCode = 400) => Object.assign(error, { statusCode }),
@@ -16,7 +16,6 @@ vi.mock('../server/infrastructure/sales-kpi/kpi-handoff', () => ({
   readKpiLeadOwnership: mocks.ownership,
   recordKpiOffer: mocks.offer,
 }));
-vi.mock('../server/infrastructure/sales-kpi/kpi-sales-review', () => ({ reviewKpiSale: mocks.review }));
 vi.mock('../server/lib/logger', () => ({ logger: { error: vi.fn() } }));
 import { createSalesKpiRouter } from '../server/modules/sales-kpi/http/kpi-router';
 
@@ -108,13 +107,10 @@ describe('sales KPI HTTP access and version selection', () => {
     expect((await request(app).post(`${path}/plans/full_cycle_3500`).send(body)).status).toBe(201);
     expect(mocks.save).toHaveBeenCalledWith(7, 'full_cycle_3500', body.config, '2026-09', 5);
   });
-  it('requires a cycle and an audit reason when classifying a renewal', async () => {
+  it('offers no manual sale classification endpoint', async () => {
     const app = appFor();
-    expect((await request(app).patch(`${path}/payments/10`).send({ kind: 'renewal', cycleKey: null, referralInitiated: false, reason: 'Renewal' })).status).toBe(400);
-    expect(mocks.review).not.toHaveBeenCalled();
-    const body = { kind: 'renewal', cycleKey: '2026-10', referralInitiated: false, reason: 'Confirmed renewal' };
-    expect((await request(app).patch(`${path}/payments/10`).send(body)).status).toBe(200);
-    expect(mocks.review).toHaveBeenCalledWith({ id: 7, isAdministration: false }, 10, body);
+    const response = await request(app).patch(`${path}/payments/10`).send({ kind: 'renewal', cycleKey: '2026-10', reason: 'Confirmed renewal' });
+    expect(response.status).toBe(404);
   });
   it('claims for the authenticated closer and sends a hunter lead to the closer queue', async () => {
     mocks.claim.mockResolvedValue({ id: 10 });

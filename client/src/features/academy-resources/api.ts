@@ -25,7 +25,6 @@ export interface Course {
   slug: string;
   ageCategory: string;
   description?: string | null;
-  basePriceUzs: number;
   isActive: boolean;
   isArchived?: boolean;
   program?: unknown;

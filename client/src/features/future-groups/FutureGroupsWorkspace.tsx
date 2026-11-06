@@ -74,7 +74,7 @@ export function FutureGroupsWorkspace() {
       preparing
         ? {
             ...preparing,
-            roomId: preparing.roomId ?? 0,
+            roomId: preparing.roomId ?? null,
             roomName: preparing.roomName ?? undefined,
             lessonCount: 0,
             selectedCourseLessonIds: [],
@@ -152,7 +152,8 @@ export function FutureGroupsWorkspace() {
                       {group.name}
                     </span>
                     <span className="mt-1 block break-words text-sm">
-                      {group.courseName} · {group.schoolName}
+                      {[group.courseName, group.deliveryMode === "online" ? t("online") : "", group.schoolName]
+                        .filter(Boolean).join(" · ")}
                     </span>
                     <span className="mt-2 block text-sm">
                       {t("startDate")}: {formatDate(group.startDate)}

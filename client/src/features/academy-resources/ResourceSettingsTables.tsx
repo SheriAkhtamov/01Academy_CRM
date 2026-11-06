@@ -45,7 +45,10 @@ export function SchoolSettingsTable(props: ResourceTableProps<School>) {
   const { mutation, openArchive, actionLabel: archiveActionLabel, dialogProps } = useResourceArchive<School>('schools', props.onChanged);
   const columns: DataTableColumn<School>[] = [
     { key: 'name', header: t('school'), sortable: true, accessor: (row) => row.name,
-      render: (row) => <p className="truncate font-medium text-foreground">{row.name}</p> },
+      render: (row) => <div className="flex min-w-0 items-center gap-2">
+        <p className="truncate font-medium text-foreground">{row.name}</p>
+        {row.shortCode ? <Badge variant="outline" className="shrink-0 font-mono text-xs">{row.shortCode}</Badge> : null}
+      </div> },
     { key: 'address', header: t('address'), sortable: true, accessor: (row) => row.address,
       render: (row) => <div className="flex max-w-md items-center gap-2"><MapPin className="shrink-0 text-muted-foreground" /><span className="truncate">{row.address}</span></div> },
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
@@ -106,7 +109,13 @@ export function CourseSettingsTable(props: ResourceTableProps<Course>) {
   const { mutation, openArchive, actionLabel, dialogProps } = useResourceArchive<Course>('courses', props.onChanged);
   const columns: DataTableColumn<Course>[] = [
     { key: 'name', header: t('course'), sortable: true, accessor: (row) => row.name,
-      render: (row) => <div><p className="font-medium text-foreground">{row.name}</p><p className="text-xs text-muted-foreground">{row.ageCategory}</p></div> },
+      render: (row) => <div>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="font-medium text-foreground">{row.name}</p>
+          {row.shortCode ? <Badge variant="outline" className="shrink-0 font-mono text-xs">{row.shortCode}</Badge> : null}
+        </div>
+        <p className="text-xs text-muted-foreground">{row.ageCategory}</p>
+      </div> },
     { key: 'status', header: t('status'), accessor: (row) => row.isActive ? 1 : 0, render: (row) => <ResourceStatus row={row} /> },
     { key: 'actions', header: t('actions'), render: (row) => <div className="flex justify-end gap-1">
       {!row.isArchived ? <Button variant="ghost" size="icon" onClick={() => props.onEdit(row)} aria-label={t('edit')}><Edit3 /></Button> : null}

@@ -204,7 +204,9 @@ export async function loadStudentProfileData(
     ),
     query<StudentLessonAttendance>(
       `SELECT lesson.id AS lesson_id, lesson.topic, lesson.scheduled_at, g.name AS group_name,
-      mark.status, mark.note FROM academy_lessons lesson
+      mark.status,
+      -- The pupil's own note, else the teacher's note about the lesson.
+      COALESCE(NULLIF(btrim(mark.note), ''), lesson.note) AS note FROM academy_lessons lesson
       JOIN academy_groups g ON g.id = lesson.group_id
       LEFT JOIN academy_attendance mark ON mark.lesson_id = lesson.id AND mark.student_id = $1
       WHERE lesson.status = 'conducted' AND (

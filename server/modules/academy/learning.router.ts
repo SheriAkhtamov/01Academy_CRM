@@ -120,11 +120,7 @@ router.get('/lessons/:id/attendance-roster', async (req, res) => {
     const actor = req.actor ?? actorContextFrom(req.user);
     const result = await withTransaction(async () => {
       const lesson = await queryOne(
-        `SELECT lesson.*, teacher.user_id AS teacher_user_id,
-           (lesson.status <> 'conducted' AND EXISTS (
-             SELECT 1 FROM academy_lessons previous_lesson WHERE previous_lesson.group_id=lesson.group_id
-               AND previous_lesson.status='scheduled' AND previous_lesson.scheduled_at<lesson.scheduled_at
-           )) AS has_previous_incomplete_lesson
+        `SELECT lesson.*, teacher.user_id AS teacher_user_id
          FROM academy_lessons lesson
          LEFT JOIN academy_teachers teacher
            ON teacher.id = lesson.teacher_id AND teacher.status = 'active'
@@ -389,17 +385,28 @@ router.post('/lessons/:id/attendance', async (req, res) => {
     if (!['scheduled', 'conducted'].includes(String(requestedLessonStatus))) {
       return res.status(400).json({ error: 'Invalid lesson status' });
     }
+    // The teacher's note about the lesson as a whole lives on the lesson; a
+    // note about one pupil stays on that pupil's mark.
+    const hasLessonNote = Object.prototype.hasOwnProperty.call(req.body, 'lessonNote');
+    const lessonNote = hasLessonNote ? nullableText(req.body.lessonNote) ?? null : null;
+    if (hasLessonNote && (
+      (req.body.lessonNote !== null && typeof req.body.lessonNote !== 'string')
+      || (lessonNote?.length ?? 0) > 5000
+    )) {
+      return res.status(400).json({ error: 'invalidData' });
+    }
 
     const normalizedItems: Array<Row & {
       studentId: number;
-      status: 'present' | 'absent';
+      /** Null clears a mistaken mark. */
+      status: 'present' | 'absent' | null;
       hasProjectUrl: boolean;
       hasNote: boolean;
     }> = [];
     const seenStudentIds = new Set<number>();
     for (const item of req.body.attendance) {
       const studentId = parseId(item?.studentId);
-      if (!studentId || !['present', 'absent'].includes(String(item?.status))) {
+      if (!studentId || !(item?.status === null || ['present', 'absent'].includes(String(item?.status)))) {
         return res.status(400).json({ error: 'Invalid attendance item' });
       }
       if (seenStudentIds.has(studentId)) {
@@ -445,22 +452,7 @@ router.post('/lessons/:id/attendance', async (req, res) => {
       ) {
         throw Object.assign(new Error('lessonNotStarted'), { statusCode: 409 });
       }
-      if (requestedLessonStatus === 'conducted' && lesson.status !== 'conducted') {
-        const previousIncompleteLesson = await queryOne(
-          `SELECT previous_lesson.id
-           FROM academy_lessons previous_lesson
-           WHERE previous_lesson.group_id = $1
-             AND previous_lesson.status = 'scheduled'
-             AND previous_lesson.scheduled_at < $2
-           ORDER BY previous_lesson.scheduled_at, previous_lesson.id
-           LIMIT 1
-           FOR UPDATE`,
-          [lesson.groupId, lesson.scheduledAt],
-        );
-        if (previousIncompleteLesson) {
-          throw Object.assign(new Error('previousLessonMustBeCompleted'), { statusCode: 409 });
-        }
-      }
+      // An earlier lesson still waiting for its marks never blocks this one.
 
       const groupStudents = await getLessonRoster(
         Number(lesson.groupId),
@@ -477,10 +469,18 @@ router.post('/lessons/:id/attendance', async (req, res) => {
           { statusCode: 403 },
         );
       }
+      // A lesson is conducted with the whole roster marked; afterwards only the
+      // marks that change need to be sent.
       if (
         requestedLessonStatus === 'conducted'
+        && lesson.status !== 'conducted'
         && normalizedItems.length !== groupStudents.length
       ) {
+        throw Object.assign(new Error('attendanceIncomplete'), { statusCode: 409 });
+      }
+      // A lesson is conducted once every pupil has a mark; afterwards a
+      // mistaken mark may be cleared and the lesson stays conducted.
+      if (lesson.status !== 'conducted' && normalizedItems.some((item) => item.status === null)) {
         throw Object.assign(new Error('attendanceIncomplete'), { statusCode: 409 });
       }
 
@@ -489,8 +489,18 @@ router.post('/lessons/:id/attendance', async (req, res) => {
         [lessonId],
       );
       const previousStatus = new Map(previousMarks.map(mark => [Number(mark.studentId), mark.status]));
+      // Older saves copied the lesson note onto every mark. A changed lesson note
+      // takes those copies with it; notes about single pupils stay.
+      const previousLessonNote = nullableText(lesson.note);
+      if (hasLessonNote && previousLessonNote && previousLessonNote !== lessonNote) {
+        await query('UPDATE academy_attendance SET note = NULL WHERE lesson_id = $1 AND btrim(note) = $2', [lessonId, previousLessonNote]);
+      }
       const saved: Row[] = [];
       for (const item of normalizedItems) {
+        if (item.status === null) {
+          await query('DELETE FROM academy_attendance WHERE lesson_id = $1 AND student_id = $2', [lessonId, item.studentId]);
+          continue;
+        }
         const rows = await query(
           `INSERT INTO academy_attendance (lesson_id, student_id, status, project_url, note, marked_by)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -507,6 +517,10 @@ router.post('/lessons/:id/attendance', async (req, res) => {
              END,
              marked_by = EXCLUDED.marked_by,
              updated_at = NOW()
+           -- An unchanged mark keeps its revision, so saving again notifies nobody.
+           WHERE academy_attendance.status IS DISTINCT FROM EXCLUDED.status
+             OR ($7::boolean AND academy_attendance.project_url IS DISTINCT FROM EXCLUDED.project_url)
+             OR ($8::boolean AND academy_attendance.note IS DISTINCT FROM EXCLUDED.note)
            RETURNING *`,
           [
             lessonId,
@@ -519,11 +533,12 @@ router.post('/lessons/:id/attendance', async (req, res) => {
             item.hasNote,
           ],
         );
-        saved.push(rows[0]);
+        if (rows[0]) saved.push(rows[0]);
       }
 
       const updatedLesson = await updateRow('academy_lessons', lessonId, {
         status: requestedLessonStatus,
+        ...(hasLessonNote ? { note: lessonNote } : {}),
       });
       if (lesson.status !== updatedLesson?.status) {
         await insertRow('academy_lesson_status_history', {
@@ -627,10 +642,12 @@ router.post('/students/:id/transfer', async (req, res) => {
         [studentId, toGroupId, req.user!.id],
       );
 
+      // An online group has no branch: the pupil and the lead keep theirs.
+      const targetBranch = targetGroup.schoolId ? { schoolId: Number(targetGroup.schoolId) } : {};
       const updatedStudent = await updateRow('academy_students', studentId, {
         groupId: toGroupId,
         courseId: Number(targetGroup.courseId),
-        schoolId: Number(targetGroup.schoolId),
+        ...targetBranch,
       });
       if (!updatedStudent) {
         throw Object.assign(new Error('Student not found'), { statusCode: 404 });
@@ -639,7 +656,7 @@ router.post('/students/:id/transfer', async (req, res) => {
       if (lockedStudent.leadId) {
         await updateRow('academy_leads', Number(lockedStudent.leadId), {
           courseId: Number(targetGroup.courseId),
-          schoolId: Number(targetGroup.schoolId),
+          ...targetBranch,
         });
       }
       await insertRow('academy_student_transfers', {
@@ -720,10 +737,12 @@ router.post('/students/:id/groups', async (req, res) => {
         const activatesTrialStudent = ['trial', 'waiting_start'].includes(lockedStudent.status);
         const enrollmentStatus = group.status === 'planned' ? 'waiting_start' : 'studying';
         const startsTeaching = activatesTrialStudent && group.status !== 'planned';
+        // An online group has no branch: the pupil and the lead keep theirs.
+        const groupBranch = group.schoolId ? { schoolId: Number(group.schoolId) } : {};
         const updated = await updateRow('academy_students', studentId, {
           groupId,
           courseId: Number(group.courseId),
-          schoolId: Number(group.schoolId),
+          ...groupBranch,
           status: activatesTrialStudent ? enrollmentStatus : lockedStudent.status,
           enrolledAt: startsTeaching ? enrolledAt : lockedStudent.enrolledAt,
           enrollmentDate: startsTeaching ? enrolledAt : lockedStudent.enrollmentDate,
@@ -731,7 +750,7 @@ router.post('/students/:id/groups', async (req, res) => {
         if (lockedStudent.leadId) {
           const leadUpdates: Row = {
             courseId: Number(group.courseId),
-            schoolId: Number(group.schoolId),
+            ...groupBranch,
           };
           await updateRow('academy_leads', Number(lockedStudent.leadId), leadUpdates);
         }
@@ -838,15 +857,18 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
           [replacement.id],
         );
       }
+      // An online replacement group has no branch: the pupil and the lead keep theirs.
+      const replacementBranch = !replacement ? { schoolId: null }
+        : replacement.schoolId ? { schoolId: Number(replacement.schoolId) } : {};
       const updated = await updateRow('academy_students', studentId, {
         groupId: replacement?.groupId ?? null,
         courseId: replacement?.courseId ? Number(replacement.courseId) : null,
-        schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
+        ...replacementBranch,
       });
       if (lockedStudent.leadId) {
         await updateRow('academy_leads', Number(lockedStudent.leadId), {
           courseId: replacement?.courseId ? Number(replacement.courseId) : null,
-          schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
+          ...replacementBranch,
         });
       }
       await insertRow('academy_student_transfers', {
@@ -1134,7 +1156,9 @@ router.post('/students/:id/restore', async (req, res) => {
         archivedAt: null,
         archivedBy: null,
         status,
-        ...(primary ? { groupId: primary.groupId, courseId: primary.courseId, schoolId: primary.schoolId } : {}),
+        ...(primary ? { groupId: primary.groupId, courseId: primary.courseId } : {}),
+        // An online group has no branch: the pupil keeps theirs.
+        ...(primary?.schoolId ? { schoolId: primary.schoolId } : {}),
       });
       if (!restoredStudent) throw Object.assign(new Error('Student not found'), { statusCode: 404 });
       await insertRow('academy_student_status_history', {

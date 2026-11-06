@@ -63,18 +63,3 @@ export function createLeadFunnelHandoffTable(ref: {
     returnedAt: timestamp('returned_at'),
   });
 }
-
-export function createLeadFunnelQualificationTable(ref: { lead: AnyPgColumn; funnel: AnyPgColumn; user: AnyPgColumn }) {
-  return pgTable('academy_lead_funnel_qualifications', {
-    leadId: integer('lead_id').notNull().references(() => ref.lead, { onDelete: 'cascade' }),
-    funnelId: integer('funnel_id').notNull(),
-    funnelName: varchar('funnel_name', { length: 120 }).notNull(),
-    qualifiedAt: timestamp('qualified_at').notNull().default(sql`timezone('UTC', now())`),
-    qualifiedBy: integer('qualified_by').references(() => ref.user, { onDelete: 'set null' }),
-    fromStageCode: varchar('from_stage_code', { length: 80 }).notNull(),
-    toStageCode: varchar('to_stage_code', { length: 80 }).notNull(),
-  }, (table) => ({
-    pk: primaryKey({ columns: [table.leadId, table.funnelId] }),
-    funnelDateIdx: index('academy_lead_funnel_qualifications_funnel_date_idx').on(table.funnelId, table.qualifiedAt),
-  }));
-}

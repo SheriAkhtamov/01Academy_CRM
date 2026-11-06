@@ -13,7 +13,7 @@ vi.mock('@/lib/queryClient', () => ({ apiRequest: mocks.api }));
 vi.mock('@/hooks/use-toast', () => ({ toast: vi.fn(), useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 1, module: 'administration', modules: ['administration'] } }) }));
 
-const school = { id: 1, name: 'Cyberpark', address: 'Tashkent', timezone: 'Asia/Tashkent', isActive: true };
+const school = { id: 1, name: 'Cyberpark', shortCode: 'CYP', address: 'Tashkent', timezone: 'Asia/Tashkent', isActive: true };
 const room = { id: 2, schoolId: 1, name: 'Room A', capacity: 12, isActive: true };
 const statuses = [
   { id: 3, code: 'intake', funnelId: 7, name: 'Intake', color: '#2563eb', sortOrder: 0, isActive: true, isPipeline: true, isSystem: false },

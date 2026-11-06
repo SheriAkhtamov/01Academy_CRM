@@ -16,7 +16,8 @@ export const futureGroupInputSchema = z
   .object({
     nameSuffix: z.string().trim().max(120).default(""),
     courseId: id,
-    schoolId: id,
+    // An online group needs no branch and holds no room.
+    schoolId: id.nullable(),
     deliveryMode: z.enum(["offline", "online"]).default("offline"),
     maxStudents: z.number().int().min(1).max(200),
     startDate: date.nullable(),
@@ -37,13 +38,16 @@ export const futureGroupInputSchema = z
       .default([]),
     expectedUpdatedAt: z.string().datetime().optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.deliveryMode === "online" || value.schoolId !== null, {
+    path: ["schoolId"],
+  });
 export type FutureGroupInput = z.infer<typeof futureGroupInputSchema>;
 export type FutureGroup = Omit<FutureGroupInput, "expectedUpdatedAt"> & {
   id: number;
   name: string;
   courseName: string;
-  schoolName: string;
+  schoolName: string | null;
   teacherName: string | null;
   roomName: string | null;
   updatedAt: string;

@@ -1,4 +1,5 @@
-import { preserveGroupCode, rememberDeletedGroupCode } from './group-code';
+import { preserveGroupCode } from './group-code';
+import { normalizeShortCode } from './short-code';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -91,15 +92,17 @@ import { createAcademyCrudRegistrar } from './crud-router';
 export const registerAcademyResourceRoutes = (router: ReturnType<typeof Router>) => {
   const registerSimpleCrud = createAcademyCrudRegistrar(router);
 registerSimpleCrud('schools', 'academy_schools', [
-  'name', 'address', 'timezone', 'isActive',
+  'name', 'address', 'timezone', 'isActive', 'shortCode',
 ], {
   orderBy: 'is_active DESC, name',
   requireAdministration: true,
   beforeCreate: async ({ values }) => {
     values.code = `school-${randomUUID()}`;
+    await normalizeShortCode('academy_schools', values);
   },
   beforeUpdate: async ({ id, values, row }) => {
     if (row.isArchived) throw Object.assign(new Error('schoolIsArchived'), { statusCode: 409 });
+    await normalizeShortCode('academy_schools', values, id);
     if (row.isActive !== false && values.isActive === false) {
       const usage = await queryOne<{ inUse: boolean }>(
         `SELECT (
@@ -236,7 +239,7 @@ registerSimpleCrud('teachers', 'academy_teachers', [
 });
 
 registerSimpleCrud('groups', 'academy_groups', [
-  'name', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',
+  'name', 'deliveryMode', 'courseId', 'schoolId', 'roomId', 'teacherId', 'schedule',
   'lessonCount', 'lessonDurationMinutes', 'durationDays', 'frequency',
   'selectedCourseLessonIds',
   'maxStudents', 'status', 'startDate', 'endDate',
@@ -245,6 +248,19 @@ registerSimpleCrud('groups', 'academy_groups', [
   allowedModules: SALES_MODULES,
   beforeUpdate: async ({ id, values, row, req }) => {
     preserveGroupCode(row, values, req.body);
+    // A group keeps the format it was created with; a permanent move online
+    // is a new ONL group (docs/course-group-naming.md).
+    if (values.deliveryMode != null && values.deliveryMode !== (row.deliveryMode ?? 'offline')) {
+      throw Object.assign(new Error(values.deliveryMode === 'online' ? 'groupOnlineRequiresNewGroup' : 'groupCodeImmutable'), { statusCode: 400 });
+    }
+    delete values.deliveryMode;
+    // A frozen or archived group gets its lessons back from the timetable when it
+    // runs again; its lesson count changes after that.
+    if (values.lessonCount !== undefined && Number(values.lessonCount) !== Number(row.lessonCount)
+      && row.selectedCourseLessonIds == null && (row.isArchived === true || row.status === 'frozen')
+      && await queryOne(`SELECT 1 AS present FROM academy_lessons WHERE group_id = $1 LIMIT 1`, [id])) {
+      throw Object.assign(new Error('groupCourseLessonsHistoryLocked'), { statusCode: 409 });
+    }
     await assertGroupLifecycleUpdateAllowed({
       id,
       values,
@@ -280,7 +296,6 @@ registerSimpleCrud('groups', 'academy_groups', [
       [id],
     );
     if (usage?.inUse) throw Object.assign(new Error('groupHistoryCannotBeDeleted'), { statusCode: 409 });
-    await rememberDeletedGroupCode(row);
   },
 });
 

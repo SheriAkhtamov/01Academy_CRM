@@ -119,7 +119,7 @@ function QuickViewBody({ group, rooms, todayKey }: { group: Group; rooms: Room[]
       </CompactModalSection>
 
       <CompactModalSection title={t('groupEditorPlaceSection')} icon={GraduationCap} tone="teal" defaultOpen
-        summary={[group.courseName, group.schoolName, group.roomName].filter(Boolean).join(' · ')}>
+        summary={[group.courseName, group.deliveryMode === 'online' ? t('online') : '', group.schoolName, group.roomName].filter(Boolean).join(' · ')}>
         <dl className="divide-y divide-border/60">
           <Detail label={t('course')}>{group.courseName ?? '—'}</Detail>
           <Detail label={t('school')}>{group.schoolName ?? '—'}</Detail>

@@ -28,7 +28,7 @@ const regularLessonFixture = {
 };
 const clients: QueryClient[] = [];
 let demos: DemoLesson[];
-let regularLesson: typeof regularLessonFixture & { teacherUserId?: number; canManageLesson?: boolean; hasPreviousIncompleteLesson?: boolean };
+let regularLesson: typeof regularLessonFixture & { teacherUserId?: number; canManageLesson?: boolean };
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -185,8 +185,8 @@ describe('teacher demo attendance', () => {
     await waitFor(() => expect(within(reopened).getByRole('button', { name: translations.present.en }).getAttribute('aria-pressed')).toBe('true'));
   });
 
-  it('blocks completing an assistant lesson when an earlier unassigned lesson is incomplete', async () => {
-    regularLesson = { ...regularLesson, canManageLesson: false, hasPreviousIncompleteLesson: true };
+  it('lets an assistant complete a lesson while an earlier lesson still waits for marks', async () => {
+    regularLesson = { ...regularLesson, canManageLesson: false };
     const existing = apiMock.getMockImplementation()!;
     apiMock.mockImplementation((method, url, payload) => {
       if (url === '/api/academy/lessons/17/attendance-roster') return Promise.resolve({ lesson: regularLesson,
@@ -196,8 +196,9 @@ describe('teacher demo attendance', () => {
     });
     mount('/teacher-module/attendance?lesson=17');
     const dialog = await screen.findByRole('dialog', { name: regularLesson.topic });
-    expect(await within(dialog).findByText(translations.previousLessonMustBeCompleted.en)).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: translations.finishLessonAndSaveAttendance.en }) as HTMLButtonElement).disabled).toBe(true);
+    const finish = await within(dialog).findByRole('button', { name: translations.finishLessonAndSaveAttendance.en }) as HTMLButtonElement;
+    expect(within(dialog).queryByText('Earlier lessons are incomplete')).toBeNull();
+    await waitFor(() => expect(finish.disabled).toBe(false));
   });
 
   it('keeps the lesson modal open while an assistant assignment is saving', async () => {

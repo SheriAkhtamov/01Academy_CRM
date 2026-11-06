@@ -25,7 +25,7 @@ BEGIN
   SELECT min(id) INTO account_key FROM instagram_accounts;
   ASSERT course_key IS NOT NULL AND school_key IS NOT NULL AND teacher_key IS NOT NULL AND lead_source_key IS NOT NULL AND funnel_key IS NOT NULL,
     'The restored database needs reference records';
-  ASSERT initial_code IS NOT NULL AND to_regclass('academy_lead_funnel_qualifications') IS NOT NULL, 'Apply migration 0128 first';
+  ASSERT initial_code IS NOT NULL AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid = 'academy_leads'::regclass AND attname = 'is_qualified' AND NOT attisdropped), 'Apply every registered migration first';
   INSERT INTO academy_lead_statuses(code,name,color,sort_order,funnel_id,is_pipeline)
     VALUES(ordinary_code,'Any stage label','#112233',10000,funnel_key,true);
 
@@ -44,7 +44,7 @@ BEGIN
     VALUES ('KPI verification', 'test-' || hunter, 'KPI verification student', 12, lead_source_key, funnel_key, initial_code, course_key, hunter) RETURNING id INTO lead_key;
   ASSERT (SELECT hunter_id = hunter AND closer_id IS NULL AND qualified_at IS NULL AND crm_completed_at IS NOT NULL
     FROM academy_sales_kpi_leads WHERE lead_id = lead_key), 'CRM completion remains independent from manual qualification';
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key), 'Creation does not qualify';
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key), 'Creation does not qualify';
   INSERT INTO academy_communications (lead_id, channel, result, created_by)
     VALUES (lead_key, 'call', 'KPI verification', hunter);
   ASSERT (SELECT first_response_at IS NOT NULL FROM academy_sales_kpi_leads WHERE lead_id = lead_key), 'First response capture';
@@ -52,7 +52,7 @@ BEGIN
   UPDATE academy_leads SET status_code = ordinary_code WHERE id = lead_key;
   ASSERT (SELECT reactivated_at IS NULL AND qualified_at IS NULL FROM academy_sales_kpi_leads WHERE lead_id = lead_key),
     'An arbitrary stage move has no cold/reactivation or legacy qualification effect';
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key),
     'A database/integration stage change cannot impersonate an employee manual move';
   UPDATE academy_leads SET is_archived = true WHERE id = lead_key;
   UPDATE academy_leads SET is_archived = false WHERE id = lead_key;

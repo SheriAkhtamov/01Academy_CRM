@@ -73,6 +73,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
   const program = useWatch({ control: form.control, name: 'program' });
   const isActive = useWatch({ control: form.control, name: 'isActive' });
   const name = useWatch({ control: form.control, name: 'name' });
+  const shortCode = useWatch({ control: form.control, name: 'shortCode' });
   const ageCategory = useWatch({ control: form.control, name: 'ageCategory' });
   const description = useWatch({ control: form.control, name: 'description' });
   const stats = summarizeCourseCurriculum(program);
@@ -122,7 +123,8 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
                   if (uploading.current.size === 0 && !saving) onSubmit(values);
                 },
                 (errors) => {
-                  if (errors.name || errors.ageCategory || errors.isActive) setParametersOpen(true);
+                  if (errors.name || errors.shortCode || errors.ageCategory || errors.lessonCount
+                    || errors.lessonDurationMinutes || errors.isActive) setParametersOpen(true);
                   if (errors.description) setDescriptionOpen(true);
 
                 },
@@ -132,7 +134,7 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
             <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
               <CompactModalSection
                 title={t('courseBasicParameters')}
-                summary={[name, ageCategory].filter(Boolean).join(' · ')}
+                summary={[name, shortCode, ageCategory].filter(Boolean).join(' · ')}
                 icon={SlidersHorizontal}
                 tone="sky"
                 open={parametersOpen}
@@ -153,9 +155,23 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
                 />
                 <FormField
                   control={form.control}
-                  name="ageCategory"
+                  name="shortCode"
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
+                      <FormLabel required>{t('courseShortCode')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} maxLength={10} autoCapitalize="characters" spellCheck={false} className="font-mono uppercase"
+                          onChange={(event) => field.onChange(event.target.value.toUpperCase())} />
+                      </FormControl>
+                      <FormMessage role="alert" />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="ageCategory"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5 sm:col-span-2">
                       <FormLabel required>{t('ageCategory')}</FormLabel>
                       <FormControl><Input {...field} /></FormControl>
                       <div className="flex flex-wrap gap-1.5">
@@ -173,6 +189,33 @@ export function CourseEditorDialog({ open, onOpenChange, form, editing, saving, 
                           </Button>
                         ))}
                       </div>
+                      <FormMessage role="alert" />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="lessonCount"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>{t('courseLessonCount')}</FormLabel>
+                      <FormControl>
+                        {/* A curriculum with lessons decides the count itself. */}
+                        <Input {...field} type="number" inputMode="numeric" min={0} max={2000}
+                          value={stats.lessonCount > 0 ? stats.lessonCount : field.value}
+                          disabled={stats.lessonCount > 0} />
+                      </FormControl>
+                      <FormMessage role="alert" />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="lessonDurationMinutes"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel required>{t('lessonDurationMinutes')}</FormLabel>
+                      <FormControl><Input {...field} type="number" inputMode="numeric" min={15} max={480} step={5} /></FormControl>
                       <FormMessage role="alert" />
                     </FormItem>
                   )}

@@ -39,7 +39,7 @@ describe('disposable current-workflow verification', () => {
       const sql = workflowFixtureSql(source);
       expect(sql).toContain('BEGIN;');
       expect(sql).toContain('ROLLBACK;');
-      expect(sql).toContain('academy_lead_funnel_qualifications');
+      expect(sql).toContain('is_qualified');
       expect(sql).not.toMatch(/^\s*\\/m);
     }
     expect(() => workflowFixtureSql('\\ir ../../migrations/0115_demo_attendance_workflow.sql')).toThrow('unsupported psql command');

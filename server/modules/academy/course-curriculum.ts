@@ -45,6 +45,20 @@ export function prepareGroupCourseLessons(values: Row, oldRow: Row | null | unde
 
 type PrepareLesson = (options: { values: Row; oldRow?: Row; excludeLessonId?: number; excludeLessonIds?: number[] }) => Promise<void>;
 
+/** Whether any of these lessons carries authored or published learning content of the run. */
+export async function hasProtectedLearningContent(runId: number, lessonIds: number[]) {
+  if (lessonIds.length === 0) return false;
+  const protectedContent = await queryOne(`SELECT binding.lesson_id FROM lms_lesson_bindings binding
+    WHERE binding.run_id=$1 AND binding.lesson_id=ANY($2::int[]) AND (
+      EXISTS(SELECT 1 FROM lms_materials material WHERE material.run_id=binding.run_id AND material.unit_id=binding.unit_id
+        AND (material.created_by IS NOT NULL OR material.state<>'draft'
+          OR EXISTS(SELECT 1 FROM lms_material_publications publication WHERE publication.material_id=material.id)))
+      OR EXISTS(SELECT 1 FROM lms_assignments assignment WHERE assignment.run_id=binding.run_id AND assignment.unit_id=binding.unit_id)
+      OR EXISTS(SELECT 1 FROM lms_quizzes quiz WHERE quiz.run_id=binding.run_id AND quiz.unit_id=binding.unit_id)) LIMIT 1`,
+  [runId, lessonIds]);
+  return Boolean(protectedContent);
+}
+
 /** Preserve every row and any started lesson. Only unused future timetable slots may change. */
 export async function reconcileGroupCourseLessons(group: Row, previous: Row, prepareLesson: PrepareLesson, actorId: number | null = null) {
   if (group.selectedCourseLessonIds == null) return;
@@ -69,15 +83,7 @@ export async function reconcileGroupCourseLessons(group: Row, previous: Row, pre
   const run = await queryOne('SELECT id,course_version_id FROM lms_group_runs WHERE group_id=$1 FOR UPDATE', [group.id]);
   if (run) {
     // Authored and published learning content remains attached to its original lesson.
-    const protectedContent = await queryOne(`SELECT binding.lesson_id FROM lms_lesson_bindings binding
-      WHERE binding.run_id=$1 AND binding.lesson_id=ANY($2::int[]) AND (
-        EXISTS(SELECT 1 FROM lms_materials material WHERE material.run_id=binding.run_id AND material.unit_id=binding.unit_id
-          AND (material.created_by IS NOT NULL OR material.state<>'draft'
-            OR EXISTS(SELECT 1 FROM lms_material_publications publication WHERE publication.material_id=material.id)))
-        OR EXISTS(SELECT 1 FROM lms_assignments assignment WHERE assignment.run_id=binding.run_id AND assignment.unit_id=binding.unit_id)
-        OR EXISTS(SELECT 1 FROM lms_quizzes quiz WHERE quiz.run_id=binding.run_id AND quiz.unit_id=binding.unit_id)) LIMIT 1`,
-    [run.id, pending.map(lesson => lesson.id)]);
-    if (protectedContent) invalid('groupCourseLessonsHistoryLocked', 409);
+    if (await hasProtectedLearningContent(Number(run.id), pending.map(lesson => Number(lesson.id)))) invalid('groupCourseLessonsHistoryLocked', 409);
     const pinned = await queryOne('SELECT program FROM lms_course_versions WHERE id=$1', [run.courseVersionId]);
     const pinnedIds = new Set(flattenCourseCurriculum(pinned?.program).map(lesson => lesson.id));
     if (remaining.some(lesson => !pinnedIds.has(lesson.id))) invalid('groupCourseLessonsVersionLocked', 409);
@@ -122,7 +128,7 @@ export async function reconcileGroupCourseLessons(group: Row, previous: Row, pre
         reason: 'Изменение программы группы', changedBy: actorId,
       });
     } else {
-      Object.assign(values, { groupId: Number(group.id), courseId: Number(group.courseId), schoolId: Number(group.schoolId), roomId: Number(group.roomId), teacherId: Number(group.teacherId), topic: lesson.title, materials: courseLessonMaterialsText(lesson), materialFileIds: courseLessonFileIds(lesson), status: 'scheduled' });
+      Object.assign(values, { groupId: Number(group.id), courseId: Number(group.courseId), schoolId: Number(group.schoolId) || null, roomId: Number(group.roomId) || null, teacherId: Number(group.teacherId), topic: lesson.title, materials: courseLessonMaterialsText(lesson), materialFileIds: courseLessonFileIds(lesson), status: 'scheduled' });
       await prepareLesson({ values, excludeLessonIds: excluded });
       await insertRow('academy_lessons', values);
     }

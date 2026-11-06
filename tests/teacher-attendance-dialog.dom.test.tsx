@@ -30,10 +30,11 @@ function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) 
     })),
     draft: { 1: 'present', 2: 'absent', 4: 'present' },
     note: 'Shared note',
-    noteDirty: false,
-    hasDivergingNotes: false,
     onNoteChange: vi.fn(),
+    studentNotes: { 2: 'Was ill' },
+    onStudentNoteChange: vi.fn(),
     onToggleStudent: vi.fn(),
+    onMarkRestPresent: vi.fn(),
     onSave: vi.fn(),
     canSave: true,
     isSaving: false,
@@ -42,7 +43,6 @@ function renderAttendance(overrides: Partial<AttendanceLessonDialogProps> = {}) 
     onRetryRoster: vi.fn(),
     mutationPending: false,
     lessonHasStarted: true,
-    hasPreviousIncompleteLesson: false,
     rescheduleOpen: false,
     onRescheduleOpenChange: vi.fn(),
     rescheduleAt: '',
@@ -91,62 +91,49 @@ describe('teacher attendance dialog', () => {
     expect(screen.queryByText(/Marked:|Present:|Absent:/)).toBeNull();
   });
 
-  it('saves marks directly when existing student notes are untouched', async () => {
+  it('saves the lesson note and marks at once, without replacing pupils\' notes', async () => {
     const user = userEvent.setup();
-    const { props } = renderAttendance({ hasDivergingNotes: true });
+    const { props } = renderAttendance();
     await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
     expect(props.onSave).toHaveBeenCalledOnce();
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
-  it('saves an edited shared note directly when student notes do not diverge', async () => {
+  it('keeps a note for each pupil apart from the lesson note', async () => {
     const user = userEvent.setup();
-    const { props } = renderAttendance({ noteDirty: true });
-    await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
-    expect(props.onSave).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-  });
-
-  it('requires confirmation before replacing different notes and preserves the draft on cancel', async () => {
-    const user = userEvent.setup();
-    const { props } = renderAttendance({ hasDivergingNotes: true, noteDirty: true });
-    await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
-    let confirmation = await screen.findByRole('alertdialog', { name: translations.lessonNoteOverwriteTitle.en });
-    expect(props.onSave).not.toHaveBeenCalled();
-    await user.click(within(confirmation).getByRole('button', { name: translations.cancel.en }));
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(props.onSave).not.toHaveBeenCalled();
+    const { props } = renderAttendance();
+    const toggle = screen.getByRole('button', { name: `${translations.comment.en}: Bonu` });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await user.click(toggle);
+    const input = screen.getByLabelText(`${translations.comment.en}: Bonu`, { selector: 'input' }) as HTMLInputElement;
+    expect(input.value).toBe('Was ill');
+    fireEvent.change(input, { target: { value: 'Was ill, catching up' } });
+    expect(props.onStudentNoteChange).toHaveBeenCalledWith(2, 'Was ill, catching up');
     expect(props.onNoteChange).not.toHaveBeenCalled();
-    expect((screen.getByLabelText(translations.lessonNoteLabel.en, { selector: 'textarea' }) as HTMLTextAreaElement).value).toBe('Shared note');
-
-    await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
-    confirmation = await screen.findByRole('alertdialog', { name: translations.lessonNoteOverwriteTitle.en });
-    await user.click(within(confirmation).getByRole('button', { name: translations.confirmAction.en }));
-    expect(props.onSave).toHaveBeenCalledOnce();
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it.each([{ mutationPending: true }, { canSave: false }])('blocks a stale confirmation when saving becomes unavailable: %j', async (changes) => {
+  it('marks the rest present and clears a mark only by clicking it', async () => {
     const user = userEvent.setup();
-    const { props, update } = renderAttendance({ hasDivergingNotes: true, noteDirty: true });
-    await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
-    const confirmation = await screen.findByRole('alertdialog');
-    update(changes);
-    const confirm = within(confirmation).getByRole('button', { name: translations.confirmAction.en }) as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true);
-    await user.click(confirm);
-    expect(props.onSave).not.toHaveBeenCalled();
+    const { props, update } = renderAttendance();
+    await user.click(screen.getByRole('button', { name: translations.attendanceMarkRestPresent.en }));
+    expect(props.onMarkRestPresent).toHaveBeenCalledOnce();
+    const row = within(screen.getByTestId('attendance-student-row-1'));
+    await user.click(row.getByRole('button', { name: translations.present.en, pressed: true }));
+    expect(props.onToggleStudent).toHaveBeenCalledWith(1, 'present');
+    const first = screen.getByTestId('attendance-student-row-1');
+    first.focus();
+    fireEvent.keyDown(first, { code: 'KeyP' });
+    expect(props.onToggleStudent).toHaveBeenCalledTimes(1);
+    update({ draft: { 1: 'present', 2: 'absent', 3: 'present', 4: 'present' } });
+    expect(screen.queryByRole('button', { name: translations.attendanceMarkRestPresent.en })).toBeNull();
   });
 
-  it('clears a pending note confirmation when the selected lesson changes', async () => {
-    const user = userEvent.setup();
-    const { props, update } = renderAttendance({ hasDivergingNotes: true, noteDirty: true });
-    await user.click(screen.getByRole('button', { name: translations.updateAttendance.en }));
-    await screen.findByRole('alertdialog');
-    update({ lesson: { ...props.lesson!, id: 18, topic: 'Loops' } });
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(await screen.findByRole('dialog', { name: 'Loops' })).toBeTruthy();
-    expect(props.onSave).not.toHaveBeenCalled();
+  it('never blocks a lesson on an earlier one that still waits for marks', () => {
+    renderAttendance({ lesson: { id: 17, groupId: 20, groupName: 'Coding group', lessonNumber: 2, topic: 'Functions',
+      scheduledAt: '2026-10-15T05:00:00Z', durationMinutes: 60, status: 'scheduled' },
+    draft: { 1: 'present', 2: 'absent', 3: 'present', 4: 'present' } });
+    expect(screen.queryByText('Earlier lessons are incomplete')).toBeNull();
+    expect((screen.getByRole('button', { name: translations.finishLessonAndSaveAttendance.en }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('keeps comment and reschedule fields mounted while their sections are folded', async () => {

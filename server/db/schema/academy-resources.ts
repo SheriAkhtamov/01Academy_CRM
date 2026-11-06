@@ -5,6 +5,8 @@ export const academySchools = pgTable("academy_schools", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   code: varchar("code", { length: 100 }).notNull(),
+  // The branch part of group codes, e.g. CYP in CYP-VC-GRP-26-0001.
+  shortCode: varchar("short_code", { length: 10 }),
   address: text("address").notNull(),
   rooms: jsonb("rooms").$type<string[]>().notNull().default([]),
   timezone: varchar("timezone", { length: 80 }).notNull().default("Asia/Tashkent"),
@@ -15,6 +17,9 @@ export const academySchools = pgTable("academy_schools", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   codeUnique: uniqueIndex("academy_schools_code_unique").on(table.code),
+  shortCodeUnique: uniqueIndex("academy_schools_short_code_unique").on(table.shortCode).where(sql`${table.shortCode} IS NOT NULL`),
+  shortCodeFormat: check("academy_schools_short_code_format",
+    sql`${table.shortCode} IS NULL OR (${table.shortCode} ~ '^[A-Z0-9]{1,10}$' AND ${table.shortCode} <> 'ONL')`),
   archivedInactive: check("academy_schools_archived_inactive", sql`NOT ${table.isArchived} OR NOT ${table.isActive}`),
 }));
 

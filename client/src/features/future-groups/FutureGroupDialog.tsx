@@ -97,7 +97,7 @@ export function FutureGroupDialog({
   const [initial] = useState<FutureGroupInput>(() => ({
     nameSuffix: group?.nameSuffix ?? "",
     courseId: group?.courseId ?? 0,
-    schoolId: group?.schoolId ?? 0,
+    schoolId: group?.schoolId ?? null,
     deliveryMode: group?.deliveryMode ?? "offline",
     maxStudents: group?.maxStudents ?? 12,
     startDate: group?.startDate ?? null,
@@ -219,10 +219,11 @@ export function FutureGroupDialog({
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        schoolId: value ?? 0,
+                        schoolId: value,
                         roomId: null,
                       }))
                     }
+                    optional={form.deliveryMode === "online"}
                     disabled={saving.isPending || Boolean(group)}
                   />
                   <div className="space-y-1">
@@ -257,7 +258,12 @@ export function FutureGroupDialog({
                     <Select
                       value={form.deliveryMode}
                       onValueChange={(v) =>
-                        set("deliveryMode", v as "offline" | "online")
+                        setForm((prev) => ({
+                          ...prev,
+                          deliveryMode: v as "offline" | "online",
+                          // An online group never holds a room.
+                          roomId: v === "online" ? null : prev.roomId,
+                        }))
                       }
                       disabled={saving.isPending || Boolean(group)}
                     >
@@ -301,19 +307,21 @@ export function FutureGroupDialog({
                     optional
                     disabled={saving.isPending}
                   />
-                  <Choice
-                    id="future-room"
-                    label={t("room")}
-                    value={form.roomId}
-                    options={configuration.rooms.filter(
-                      (room) =>
-                        room.schoolId === form.schoolId &&
-                        room.isActive !== false,
-                    )}
-                    onChange={(value) => set("roomId", value)}
-                    optional
-                    disabled={saving.isPending}
-                  />
+                  {form.deliveryMode !== "online" ? (
+                    <Choice
+                      id="future-room"
+                      label={t("room")}
+                      value={form.roomId}
+                      options={configuration.rooms.filter(
+                        (room) =>
+                          room.schoolId === form.schoolId &&
+                          room.isActive !== false,
+                      )}
+                      onChange={(value) => set("roomId", value)}
+                      optional
+                      disabled={saving.isPending}
+                    />
+                  ) : null}
                   <div className="space-y-1">
                     <Label htmlFor="future-duration">
                       {t("lessonDurationMinutes")}

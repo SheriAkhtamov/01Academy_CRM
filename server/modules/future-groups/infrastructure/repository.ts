@@ -42,7 +42,7 @@ export class FutureGroupsRepository {
       await query(`SELECT g.*,c.name AS course_name,sc.name AS school_name,
       t.full_name AS teacher_name,room.name AS room_name,${counts}
       FROM academy_groups g JOIN academy_courses c ON c.id=g.course_id
-      JOIN academy_schools sc ON sc.id=g.school_id
+      LEFT JOIN academy_schools sc ON sc.id=g.school_id
       LEFT JOIN academy_rooms room ON room.id=g.room_id
       LEFT JOIN academy_teachers t ON t.id=g.teacher_id
       WHERE g.status='planned' AND NOT COALESCE(g.is_archived,false)
@@ -50,7 +50,7 @@ export class FutureGroupsRepository {
     return rows.map((row) => ({
       ...row,
       nameSuffix: parseGroupName(row.name)?.addition ?? "",
-      deliveryMode: parseGroupName(row.name)?.deliveryMode ?? "offline",
+      deliveryMode: row.deliveryMode ?? parseGroupName(row.name)?.deliveryMode ?? "offline",
       startDate: row.startDate
         ? new Date(row.startDate).toISOString().slice(0, 10)
         : null,
@@ -69,15 +69,21 @@ export class FutureGroupsRepository {
   }
 
   private async validateResources(input: FutureGroupInput) {
+    // An online group needs no branch and holds no room.
+    const online = input.deliveryMode === "online";
     const refs = await queryOne(
       `SELECT
       EXISTS(SELECT 1 FROM academy_courses WHERE id=$1 AND is_active) AS course,
-      EXISTS(SELECT 1 FROM academy_schools WHERE id=$2 AND is_active) AS school,
-      ($3::int IS NULL OR EXISTS(SELECT 1 FROM academy_rooms WHERE id=$3 AND school_id=$2 AND is_active)) AS room`,
-      [input.courseId, input.schoolId, input.roomId],
+      ($2::int IS NULL OR EXISTS(SELECT 1 FROM academy_schools WHERE id=$2 AND is_active)) AS school,
+      ($3::int IS NULL OR EXISTS(SELECT 1 FROM academy_rooms WHERE id=$3 AND school_id=$2 AND is_active)) AS room,
+      (SELECT capacity FROM academy_rooms WHERE id=$3) AS room_capacity`,
+      [input.courseId, input.schoolId, online ? null : input.roomId],
     );
-    if (!refs?.course || !refs.school || !refs.room)
+    if (!refs?.course || !refs.school || !refs.room || (!online && !input.schoolId))
       fail("groupHasInactiveResources", 400);
+    // An offline group never takes more pupils than its room seats.
+    if (Number(refs.roomCapacity) > 0 && input.maxStudents > Number(refs.roomCapacity))
+      fail("groupCapacityExceedsRoom");
     if (
       input.teacherId &&
       !(await listEligibleGroupTeachers()).some(
@@ -103,7 +109,7 @@ export class FutureGroupsRepository {
         name: "",
         courseId: input.courseId,
         schoolId: input.schoolId,
-        roomId: input.roomId,
+        roomId: input.deliveryMode === "online" ? null : input.roomId,
         teacherId: input.teacherId,
         maxStudents: input.maxStudents,
         startDate: input.startDate
@@ -115,7 +121,7 @@ export class FutureGroupsRepository {
       if (old) {
         if (
           Number(old.courseId) !== input.courseId ||
-          Number(old.schoolId) !== input.schoolId
+          (Number(old.schoolId) || null) !== input.schoolId
         )
           fail("groupCodeImmutable");
         const occupancy = await queryOne(
@@ -244,9 +250,9 @@ export class FutureGroupsRepository {
               );
             await updateRow("academy_students", party.id, {
               groupId: next?.groupId ?? null,
-              ...(next
-                ? { courseId: next.courseId, schoolId: next.schoolId }
-                : {}),
+              ...(next ? { courseId: next.courseId } : {}),
+              // An online group has no branch: the pupil keeps theirs.
+              ...(next?.schoolId ? { schoolId: next.schoolId } : {}),
               ...(!next && student.status === "waiting_start"
                 ? { status: "trial" }
                 : {}),
@@ -275,7 +281,8 @@ export class FutureGroupsRepository {
             await updateRow("academy_students", party.id, {
               groupId,
               courseId: group.courseId,
-              schoolId: group.schoolId,
+              // An online group has no branch: the pupil keeps theirs.
+              ...(group.schoolId ? { schoolId: group.schoolId } : {}),
               status: "waiting_start",
             });
             if (student.status !== "waiting_start") {

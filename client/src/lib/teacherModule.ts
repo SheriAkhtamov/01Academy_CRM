@@ -24,7 +24,8 @@ export type TeacherLesson = {
   teacherName?: string;
   teacherUserId?: number | null;
   canManageLesson?: boolean;
-  hasPreviousIncompleteLesson?: boolean;
+  /** The teacher's note about the lesson as a whole. */
+  note?: string | null;
   schoolId?: number;
   schoolName?: string;
   lessonNumber: number;

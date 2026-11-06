@@ -11,7 +11,7 @@ BEGIN
   IF current_database() NOT LIKE '%\_test' ESCAPE '\' AND current_database() NOT LIKE 'crm_demo_workflow_test_%' THEN
     RAISE EXCEPTION 'Use a disposable workflow test database';
   END IF;
-  ASSERT to_regclass('academy_lead_funnel_qualifications') IS NOT NULL, 'Apply migration 0128 first';
+  ASSERT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid = 'academy_leads'::regclass AND attname = 'is_qualified' AND NOT attisdropped), 'Apply every registered migration first';
   ASSERT to_regprocedure('academy_transition_demo_lead(integer,text,boolean,integer,integer,text)') IS NULL,
     'Legacy automatic demo transition must be removed';
   ASSERT to_regprocedure('academy_sales_stage_role(text)') IS NULL, 'Stages must not determine workforce roles';

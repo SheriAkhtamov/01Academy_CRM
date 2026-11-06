@@ -10,9 +10,11 @@ const journal = JSON.parse(read('migrations/meta/_journal.json')) as { entries: 
 
 describe('stage 2 migrations', () => {
   it('follow the stage 1 cleanup in the journal with increasing timestamps', () => {
-    const tags = journal.entries.slice(-3).map((entry) => [entry.idx, entry.tag]);
-    expect(tags).toEqual([[170, '0170_platform_cleanup'], [171, '0171_platform_cleanup_contract'], [172, '0172_lead_outcomes']]);
-    const times = journal.entries.slice(-3).map((entry) => entry.when);
+    const start = journal.entries.findIndex((entry) => entry.tag === '0170_platform_cleanup');
+    const entries = journal.entries.slice(start, start + 3);
+    expect(entries.map((entry) => [entry.idx, entry.tag])).toEqual([
+      [170, '0170_platform_cleanup'], [171, '0171_platform_cleanup_contract'], [172, '0172_lead_outcomes']]);
+    const times = journal.entries.map((entry) => entry.when);
     expect([...times].sort((left, right) => left - right)).toEqual(times);
   });
 

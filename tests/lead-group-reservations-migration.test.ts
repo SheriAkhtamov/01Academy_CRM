@@ -20,8 +20,8 @@ describe('0050 lead group reservations migration', () => {
     expect(compactSql).toContain('FOREIGN KEY ("lead_id") REFERENCES "public"."academy_leads"("id")');
     expect(compactSql).toContain('FOREIGN KEY ("group_id") REFERENCES "public"."academy_groups"("id")');
     expect(compactSql).toContain('CREATE UNIQUE INDEX "academy_lead_group_reservations_lead_group_unique"');
-    expect(schema).toContain('academyLeadGroupReservations');
-    expect(schema).toContain('uniqueIndex("academy_lead_group_reservations_lead_group_unique")');
+    // Migration 0173 drops the table once no release uses it.
+    expect(schema).not.toContain('academyLeadGroupReservations');
   });
 
   it('backfills the legacy group only for leads that are not students yet', () => {
@@ -32,7 +32,7 @@ describe('0050 lead group reservations migration', () => {
   });
 
   it('is no longer used: only a pupil created inside a lead joins a group', () => {
-    // The table stays until its drop migration; no route books or converts lead groups any more.
+    // No route books or converts lead groups any more.
     expect(routes).not.toContain('academy_lead_group_reservations');
     expect(routes).not.toContain('convert-to-student');
     expect(routes).not.toContain('enrolled_group_id');

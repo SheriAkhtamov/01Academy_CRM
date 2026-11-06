@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('@/lib/queryClient', () => ({ apiRequest: mocks.api }));
 vi.mock('@/hooks/use-toast', () => ({ toast: vi.fn(), useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 1, module: 'administration', modules: ['administration'] } }) }));
-const school = { id: 7, name: 'Cyberpark', address: 'Tashkent', timezone: 'Asia/Tashkent', isActive: true };
+const school = { id: 7, name: 'Cyberpark', shortCode: 'CYP', address: 'Tashkent', timezone: 'Asia/Tashkent', isActive: true };
 const clients: QueryClient[] = [];
 const writes = () => mocks.api.mock.calls.filter(([method]) => method === 'POST' || method === 'PATCH');
 async function mountPage(timezone = school.timezone) {
@@ -53,6 +53,7 @@ describe('school timezone dropdown', () => {
     const timezone = dialog.getByRole('combobox', { name: i18n.t('timezone') });
     expect((timezone as HTMLInputElement).value).toContain('Asia/Tashkent');
     await user.type(dialog.getByRole('textbox', { name: i18n.t('schoolName') }), 'New school');
+    await user.type(dialog.getByRole('textbox', { name: i18n.t('schoolShortCode') }), 'smk');
     await user.type(dialog.getByRole('textbox', { name: i18n.t('address') }), 'Samarkand');
     await user.click(timezone);
     await user.type(timezone, 'Самарканд');
@@ -61,7 +62,7 @@ describe('school timezone dropdown', () => {
     expect(dialog.queryByRole('listbox')).toBeNull();
     await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('POST', '/api/academy/schools', {
-      name: 'New school', address: 'Samarkand', timezone: 'Asia/Samarkand', isActive: true,
+      name: 'New school', shortCode: 'SMK', address: 'Samarkand', timezone: 'Asia/Samarkand', isActive: true,
     }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
@@ -77,7 +78,7 @@ describe('school timezone dropdown', () => {
     await user.click(dialog.getByRole('option', { name: new RegExp(alias) }));
     expect(writes()).toEqual([]);
     await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
-    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/academy/schools/7', { name: school.name, address: school.address, timezone: alias, isActive: true }));
+    await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/academy/schools/7', { name: school.name, shortCode: 'CYP', address: school.address, timezone: alias, isActive: true }));
   });
 
   it.each(['ru', 'en'] as const)('searches city labels and raw IANA identifiers in %s without permitting arbitrary query values', async language => {
@@ -97,7 +98,7 @@ describe('school timezone dropdown', () => {
     expect(dialog.queryByRole('listbox')).toBeNull();
     await user.click(dialog.getByRole('button', { name: i18n.t('save') }));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('PATCH', '/api/academy/schools/7', {
-      name: school.name, address: school.address, timezone: 'Asia/Tashkent', isActive: true,
+      name: school.name, shortCode: 'CYP', address: school.address, timezone: 'Asia/Tashkent', isActive: true,
     }));
   });
 

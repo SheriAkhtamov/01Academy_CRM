@@ -131,7 +131,7 @@ function computeWeeklyHours(schedule: WeekScheduleItem[], fallbackMinutes: numbe
 export function GroupEditorDialog(props: GroupEditorProps) {
   const { open, group: editingGroup, launchingFutureGroup = false } = props;
   const {
-    t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
+    t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule, deliveryMode,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate,
     isGroupEndDateTooEarly, groupRooms, saveGroup, submitGroupValues,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
@@ -325,7 +325,8 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                 <CompactModalSection disabled={saveGroup.isPending} contentClassName="space-y-3"
                   title={t('groupEditorPlaceSection')} icon={GraduationCap} tone="teal"
                   open={openSections.place} onOpenChange={(expanded) => setSectionOpen('place', expanded)}
-                  summary={[selectedCourse?.name, selectedSchool?.name, selectedRoom?.name,
+                  summary={[selectedCourse?.name, deliveryMode === 'online' ? t('online') : '', selectedSchool?.name,
+                    deliveryMode === 'online' ? '' : selectedRoom?.name,
                     selectedTeacher?.fullName || (watchedTeacherId === String(editingGroup?.teacherId) ? editingGroup?.teacherName : '')].filter(Boolean).join(' · ')}
                 >
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -347,7 +348,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                     )} />
                     <FormField control={groupForm.control} name="schoolId" render={({ field }) => (
                       <FormItem>
-                        <FormLabel required>{t('school')}</FormLabel>
+                        <FormLabel required={deliveryMode !== 'online'}>{t('school')}</FormLabel>
                         <Select value={field.value} onValueChange={(value) => {
                           field.onChange(value);
                           if (value !== selectedGroupSchoolId) groupForm.setValue('roomId', '');
@@ -364,7 +365,8 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={groupForm.control} name="roomId" render={({ field }) => (
+                    {/* An online group takes no room, so it never blocks one. */}
+                    {deliveryMode !== 'online' ? <FormField control={groupForm.control} name="roomId" render={({ field }) => (
                       <FormItem>
                         <FormLabel required>{t('room')}</FormLabel>
                         <Select value={field.value} onValueChange={field.onChange} disabled={!selectedGroupSchoolId}>
@@ -396,7 +398,7 @@ export function GroupEditorDialog(props: GroupEditorProps) {
                         ) : null}
                         <FormMessage />
                       </FormItem>
-                    )} />
+                    )} /> : null}
                     <FormField control={groupForm.control} name="teacherId" render={({ field }) => (
                       <FormItem>
                         <div className="flex items-center justify-between gap-2"><FormLabel required={!editingGroup || Boolean(editingGroup.teacherId)}>{t('teacher')}</FormLabel><EmployeeCardButton

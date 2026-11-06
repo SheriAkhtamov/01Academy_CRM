@@ -23,7 +23,7 @@ import { createTelegramTaskRemindersTable } from "./telegram-task-reminders";
 import { createOnlinePbxLicenseIssuesTable, createOnlinePbxLicenseTasksTable } from './onlinepbx-license-tasks';
 import { createSalesKpiTables } from "./sales-kpi";
 import { createAcademyPaymentAttachmentsTable } from './payment-attachments';
-import { createLeadFunnelHandoffTable, createLeadFunnelQualificationTable, createSalesFunnelTables } from "./sales-funnels";
+import { createLeadFunnelHandoffTable, createSalesFunnelTables } from "./sales-funnels";
 import { createLearningTables, type LearningTables } from "./learning";
 import { createPortalCredentialTables } from "./portal-credentials";
 import { createAcademyPortfolioProjectsTable, createPublicAcademyPortfolioProjectInsertSchema } from "./portfolio-projects";
@@ -148,6 +148,8 @@ export const academyCourses = pgTable("academy_courses", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull(),
+  // The course part of group codes, e.g. VC in CYP-VC-GRP-26-0001.
+  shortCode: varchar("short_code", { length: 10 }),
   ageCategory: varchar("age_category", { length: 100 }).notNull(),
   lessonCount: integer("lesson_count").notNull().default(0),
   lessonDurationMinutes: integer("lesson_duration_minutes").notNull().default(120),
@@ -162,6 +164,8 @@ export const academyCourses = pgTable("academy_courses", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   slugUnique: uniqueIndex("academy_courses_slug_unique").on(table.slug),
+  shortCodeUnique: uniqueIndex("academy_courses_short_code_unique").on(table.shortCode).where(sql`${table.shortCode} IS NOT NULL`),
+  shortCodeFormat: check("academy_courses_short_code_format", sql`${table.shortCode} IS NULL OR ${table.shortCode} ~ '^[A-Z0-9]{1,10}$'`),
   archivedInactive: check("academy_courses_archived_inactive", sql`NOT ${table.isArchived} OR NOT ${table.isActive}`),
 }));
 
@@ -238,7 +242,9 @@ export const academyGroups = pgTable("academy_groups", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "restrict" }).notNull(),
-  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "restrict" }).notNull(),
+  // An online group needs neither a branch nor a room.
+  deliveryMode: varchar("delivery_mode", { length: 20 }).notNull().default("offline"),
+  schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "restrict" }),
   roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   schedule: jsonb("schedule").$type<AcademyScheduleItem[]>().notNull().default([]),
@@ -262,7 +268,11 @@ export const academyGroups = pgTable("academy_groups", {
   roomIdx: index("academy_groups_room_idx").on(table.roomId),
   teacherIdx: index("academy_groups_teacher_idx").on(table.teacherId),
   archiveIdx: index("academy_groups_archive_idx").on(table.isArchived, table.archivedAt),
-  roomRequired: check("academy_groups_room_required_for_teaching", sql`${table.status} = 'planned' OR ${table.roomId} IS NOT NULL`),
+  roomRequired: check("academy_groups_room_required_for_teaching",
+    sql`${table.status} = 'planned' OR ${table.deliveryMode} = 'online' OR ${table.roomId} IS NOT NULL`),
+  deliveryModeCheck: check("academy_groups_delivery_mode_check", sql`${table.deliveryMode} IN ('offline', 'online')`),
+  branchRequiredOffline: check("academy_groups_branch_required_offline",
+    sql`${table.deliveryMode} = 'online' OR ${table.schoolId} IS NOT NULL`),
   capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} >= 1`),
 }));
 
@@ -300,7 +310,6 @@ export const academyLeads = pgTable("academy_leads", {
   offerPriceUzs: integer("offer_price_uzs"),
   offerDiscount: varchar("offer_discount", { length: 120 }),
   offerAt: timestamp("offer_at"),
-  enrolledGroupId: integer("enrolled_group_id").references(() => academyGroups.id, { onDelete: "set null" }),
   expectedPaymentUzs: integer("expected_payment_uzs"),
   paymentMethod: varchar("payment_method", { length: 80 }),
   warmReason: text("warm_reason"),
@@ -388,20 +397,6 @@ export const academyLeadChannels = pgTable("academy_lead_channels", {
   channelCheck: check("academy_lead_channels_channel_check", sql`${table.channel} ~ '^[a-z][a-z0-9_-]{1,39}$'`),
 }));
 
-export const academyLeadGroupReservations = pgTable("academy_lead_group_reservations", {
-  id: serial("id").primaryKey(),
-  leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
-  groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
-  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  leadIdx: index("academy_lead_group_reservations_lead_idx").on(table.leadId),
-  groupIdx: index("academy_lead_group_reservations_group_idx").on(table.groupId),
-  leadGroupUnique: uniqueIndex("academy_lead_group_reservations_lead_group_unique")
-    .on(table.leadId, table.groupId),
-}));
-
 export const academyLeadStageHistory = pgTable("academy_lead_stage_history", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").references(() => academyLeads.id, { onDelete: "cascade" }).notNull(),
@@ -441,10 +436,6 @@ export const academyLeadComments = pgTable("academy_lead_comments", {
   leadCreatedIdx: index("academy_lead_comments_lead_created_idx").on(table.leadId, table.createdAt),
   authorIdx: index("academy_lead_comments_author_idx").on(table.authorId),
 }));
-
-export const academyLeadFunnelQualifications = createLeadFunnelQualificationTable({
-  lead: academyLeads.id, funnel: academySalesFunnels.id, user: users.id,
-});
 
 export const academyStudents = pgTable("academy_students", {
   id: serial("id").primaryKey(),
@@ -578,7 +569,7 @@ export const academyLessons = pgTable("academy_lessons", {
   groupId: integer("group_id").references(() => academyGroups.id, { onDelete: "cascade" }).notNull(),
   courseId: integer("course_id").references(() => academyCourses.id, { onDelete: "set null" }),
   schoolId: integer("school_id").references(() => academySchools.id, { onDelete: "set null" }),
-  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }).notNull(),
+  roomId: integer("room_id").references(() => academyRooms.id, { onDelete: "restrict" }),
   teacherId: integer("teacher_id").references(() => academyTeachers.id, { onDelete: "set null" }),
   lessonNumber: integer("lesson_number").notNull(),
   courseLessonId: varchar("course_lesson_id", { length: 100 }),
@@ -588,6 +579,8 @@ export const academyLessons = pgTable("academy_lessons", {
   scheduledAt: timestamp("scheduled_at").notNull(),
   durationMinutes: integer("duration_minutes").notNull().default(120),
   status: varchar("status", { length: 50 }).notNull().default("scheduled"),
+  // The teacher's note about the lesson as a whole; notes about a pupil stay in attendance.
+  note: text("note"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({

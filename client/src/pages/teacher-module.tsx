@@ -56,7 +56,12 @@ type SaveAttendanceVariables = {
   lessonId: number;
   roster: Array<{ id: number }>;
   draft: TeacherAttendanceDraft;
+  /** The lesson's own note; sent only when the teacher changed it. */
   note?: string;
+  /** Notes about single pupils that the teacher changed. */
+  studentNotes: Record<number, string>;
+  /** Pupils whose mark the teacher cleared; any other pupil left unmarked is not sent. */
+  cleared: number[];
 };
 
 type RescheduleLessonVariables = {
@@ -152,10 +157,13 @@ function localDateKey(value: string): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Only what the teacher changed is kept, so restoring it never overrides marks saved meanwhile. */
 type PersistedAttendanceDraft = {
   draft: TeacherAttendanceDraft;
+  cleared: number[];
   note: string;
   noteDirty: boolean;
+  studentNotes: Record<number, string>;
 };
 
 const attendanceDraftStorageKey = (lessonId: number) => (
@@ -173,8 +181,15 @@ function readPersistedAttendanceDraft(lessonId: number): PersistedAttendanceDraf
       if (status === 'present' || status === 'absent') draft[Number(studentId)] = status;
     }
     const note = typeof parsed.note === 'string' ? parsed.note : '';
-    if (Object.keys(draft).length === 0 && !note.trim()) return null;
-    return { draft, note, noteDirty: parsed.noteDirty === true };
+    const studentNotes: Record<number, string> = {};
+    for (const [studentId, value] of Object.entries(parsed.studentNotes ?? {})) {
+      if (typeof value === 'string') studentNotes[Number(studentId)] = value;
+    }
+    const cleared = Array.isArray(parsed.cleared)
+      ? parsed.cleared.map(Number).filter((studentId) => Number.isSafeInteger(studentId) && studentId > 0)
+      : [];
+    if (Object.keys(draft).length === 0 && cleared.length === 0 && !note.trim() && Object.keys(studentNotes).length === 0) return null;
+    return { draft, cleared, note, noteDirty: parsed.noteDirty === true, studentNotes };
   } catch {
     return null;
   }
@@ -244,6 +259,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
 
   const [attendanceDraft, setAttendanceDraft] = useState<TeacherAttendanceDraft>({});
   const [attendanceNote, setAttendanceNote] = useState('');
+  // Only the pupils' notes the teacher touched are sent, so nobody else's is overwritten.
+  const [attendanceStudentNotes, setAttendanceStudentNotes] = useState<Record<number, string>>({});
   const [rescheduleAt, setRescheduleAt] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
@@ -254,6 +271,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const [now, setNow] = useState(() => Date.now());
   const attendanceDraftDirty = useRef(false);
   const attendanceNoteDirty = useRef(false);
+  const changedStudentNotes = useRef(new Set<number>());
+  const changedMarks = useRef(new Set<number>());
   const hydratedAttendanceLessonId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -290,19 +309,26 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   );
 
   const saveAttendance = useMutation<unknown, Error, SaveAttendanceVariables>({
-    mutationFn: ({ lessonId, roster, draft, note }) =>
+    mutationFn: ({ lessonId, roster, draft, note, studentNotes, cleared }) =>
       apiRequest('POST', `/api/academy/lessons/${lessonId}/attendance`, {
         lessonStatus: 'conducted',
-        attendance: roster.map((student) => ({
-          studentId: student.id,
-          status: draft[student.id],
-          ...(note !== undefined ? { note } : {}),
-        })),
+        ...(note !== undefined ? { lessonNote: note } : {}),
+        attendance: roster.flatMap((student) => {
+          // A conducted lesson's pupil without a mark is sent only when the teacher cleared it.
+          const status = draft[student.id] ?? (cleared.includes(student.id) ? null : undefined);
+          return status === undefined ? [] : [{
+            studentId: student.id,
+            status,
+            ...(Object.prototype.hasOwnProperty.call(studentNotes, student.id) ? { note: studentNotes[student.id] } : {}),
+          }];
+        }),
       }),
     onSuccess: (_result, variables) => {
       toast({ title: t('attendanceSaved')});
       attendanceDraftDirty.current = false;
       attendanceNoteDirty.current = false;
+      changedStudentNotes.current = new Set();
+      changedMarks.current = new Set();
       writePersistedAttendanceDraft(variables.lessonId, null);
       queryClient.invalidateQueries({
         queryKey: ['/api/academy/lessons', variables.lessonId, 'attendance-roster'],
@@ -541,19 +567,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     [lessons, nowMinute, teacherDemosQuery.data, t],
   );
 
-  const previousIncompleteLesson = useMemo(() => {
-    if (!selectedLesson || selectedLesson.status === 'conducted') return null;
-    return lessons
-      .filter((lesson) => (
-        lesson.groupId === selectedLesson.groupId
-        && lesson.status === 'scheduled'
-        && new Date(lesson.scheduledAt).getTime() < new Date(selectedLesson.scheduledAt).getTime()
-      ))
-      .sort((left, right) => (
-        new Date(left.scheduledAt).getTime() - new Date(right.scheduledAt).getTime()
-      ))[0] ?? null;
-  }, [lessons, selectedLesson]);
-
   const attendanceRosterQuery = useQuery<{
     lesson: TeacherLesson;
     students: TeacherStudent[];
@@ -624,25 +637,25 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
         draft[record.studentId] = record.status;
       }
     }
-    const distinctNotes = new Set(
-      selectedAttendanceRecords
-        .map((record) => record.note?.trim())
-        .filter((value): value is string => Boolean(value)),
-    );
-    return {
-      lessonId,
-      draft,
-      note: [...distinctNotes][0] ?? '',
-      hasDivergingNotes: distinctNotes.size > 1,
-    };
-  }, [selectedAttendanceRecords, selectedLessonId, selectedLessonStudents]);
+    // Older lessons copied the lesson note onto every mark; such a copy is not a note about the pupil.
+    const note = selectedLessonId ? attendanceRosterQuery.data?.lesson?.note?.trim() ?? '' : '';
+    const studentNotes: Record<number, string> = {};
+    for (const record of selectedAttendanceRecords) {
+      const studentNote = record.note?.trim() ?? '';
+      if (studentIds.has(record.studentId) && studentNote && studentNote !== note) studentNotes[record.studentId] = studentNote;
+    }
+    return { lessonId, draft, note, studentNotes };
+  }, [attendanceRosterQuery.data?.lesson?.note, selectedAttendanceRecords, selectedLessonId, selectedLessonStudents]);
 
   useEffect(() => {
     if (attendanceHydration.lessonId == null) {
       setAttendanceDraft({});
       setAttendanceNote('');
+      setAttendanceStudentNotes({});
       attendanceDraftDirty.current = false;
       attendanceNoteDirty.current = false;
+      changedStudentNotes.current = new Set();
+      changedMarks.current = new Set();
       hydratedAttendanceLessonId.current = null;
       return;
     }
@@ -650,13 +663,21 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     if (!changedLesson && attendanceDraftDirty.current) return;
     setAttendanceDraft(attendanceHydration.draft);
     setAttendanceNote(attendanceHydration.note);
+    setAttendanceStudentNotes(attendanceHydration.studentNotes);
     hydratedAttendanceLessonId.current = attendanceHydration.lessonId;
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
+    changedStudentNotes.current = new Set();
+    changedMarks.current = new Set();
     const restored = readPersistedAttendanceDraft(attendanceHydration.lessonId);
     if (restored) {
-      setAttendanceDraft(restored.draft);
+      const merged = { ...attendanceHydration.draft, ...restored.draft };
+      for (const studentId of restored.cleared) delete merged[studentId];
+      setAttendanceDraft(merged);
+      changedMarks.current = new Set([...Object.keys(restored.draft).map(Number), ...restored.cleared]);
       setAttendanceNote(restored.note);
+      setAttendanceStudentNotes({ ...attendanceHydration.studentNotes, ...restored.studentNotes });
+      changedStudentNotes.current = new Set(Object.keys(restored.studentNotes).map(Number));
       attendanceDraftDirty.current = true;
       attendanceNoteDirty.current = restored.noteDirty;
     }
@@ -666,26 +687,31 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     const lessonId = hydratedAttendanceLessonId.current;
     if (!lessonId) return;
     if (!attendanceDraftDirty.current && !attendanceNoteDirty.current) return;
+    const changed = [...changedMarks.current];
     writePersistedAttendanceDraft(lessonId, {
-      draft: attendanceDraft,
+      draft: Object.fromEntries(changed.filter((studentId) => attendanceDraft[studentId])
+        .map((studentId) => [studentId, attendanceDraft[studentId]])),
+      cleared: changed.filter((studentId) => !attendanceDraft[studentId]),
       note: attendanceNote,
       noteDirty: attendanceNoteDirty.current,
+      studentNotes: Object.fromEntries([...changedStudentNotes.current]
+        .map((studentId) => [studentId, attendanceStudentNotes[studentId] ?? ''])),
     });
-  }, [attendanceDraft, attendanceNote]);
+  }, [attendanceDraft, attendanceNote, attendanceStudentNotes]);
 
   const allAttendanceMarked = selectedLessonStudents.every(
     (student) => attendanceDraft[student.id] !== undefined,
   );
-  const hasPreviousIncompleteLesson = Boolean(previousIncompleteLesson || selectedLessonDetails?.hasPreviousIncompleteLesson);
   const selectedLessonHasStarted = Boolean(
     selectedLessonDetails && new Date(selectedLessonDetails.scheduledAt).getTime() <= now,
   );
+  // A lesson is finished with every pupil marked; a conducted lesson may lose a mistaken mark.
+  // An earlier lesson still waiting for marks never blocks this one.
   const canSaveAttendance = Boolean(
     selectedLessonDetails
-    && allAttendanceMarked
+    && (allAttendanceMarked || selectedLessonDetails.status === 'conducted')
     && !attendanceRosterQuery.isPending
     && !attendanceRosterQuery.isError
-    && !hasPreviousIncompleteLesson
     && (selectedLessonDetails.status === 'conducted' || selectedLessonHasStarted),
   );
   const parsedRescheduleAt = rescheduleAt ? academyWallClockToDate(rescheduleAt) : null;
@@ -749,7 +775,37 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
   const handleToggleAttendance = useCallback((studentId: number, status: 'present' | 'absent') => {
     if (lessonMutationPending) return;
     attendanceDraftDirty.current = true;
-    setAttendanceDraft((previous) => ({ ...previous, [studentId]: status }));
+    changedMarks.current.add(studentId);
+    setAttendanceDraft((previous) => {
+      // Choosing the current mark again clears a mistaken one.
+      if (previous[studentId] === status) {
+        const next = { ...previous };
+        delete next[studentId];
+        return next;
+      }
+      return { ...previous, [studentId]: status };
+    });
+  }, [lessonMutationPending]);
+
+  const handleMarkRestPresent = useCallback(() => {
+    if (lessonMutationPending) return;
+    attendanceDraftDirty.current = true;
+    setAttendanceDraft((previous) => {
+      const next = { ...previous };
+      for (const student of selectedLessonStudents) {
+        if (next[student.id]) continue;
+        next[student.id] = 'present';
+        changedMarks.current.add(student.id);
+      }
+      return next;
+    });
+  }, [lessonMutationPending, selectedLessonStudents]);
+
+  const handleStudentNoteChange = useCallback((studentId: number, value: string) => {
+    if (lessonMutationPending) return;
+    attendanceDraftDirty.current = true;
+    changedStudentNotes.current.add(studentId);
+    setAttendanceStudentNotes((previous) => ({ ...previous, [studentId]: value }));
   }, [lessonMutationPending]);
 
   const handleSaveAttendance = useCallback(() => {
@@ -759,10 +815,14 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
       roster: selectedLessonStudents.map(({ id }) => ({ id })),
       draft: { ...attendanceDraft },
       note: attendanceNoteDirty.current ? attendanceNote : undefined,
+      studentNotes: Object.fromEntries([...changedStudentNotes.current]
+        .map((studentId) => [studentId, attendanceStudentNotes[studentId] ?? ''])),
+      cleared: [...changedMarks.current].filter((studentId) => !attendanceDraft[studentId]),
     });
   }, [
     attendanceDraft,
     attendanceNote,
+    attendanceStudentNotes,
     canSaveAttendance,
     lessonMutationPending,
     saveAttendance,
@@ -813,6 +873,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     }
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
+    changedStudentNotes.current = new Set();
+    changedMarks.current = new Set();
     replaceParams({ lesson: null });
   }, [lessonMutationPending, replaceParams, rescheduleDraftDirty]);
 
@@ -822,6 +884,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
+    changedStudentNotes.current = new Set();
+    changedMarks.current = new Set();
     replaceParams({ lesson: null });
   }, [lessonMutationPending, replaceParams]);
 
@@ -830,6 +894,8 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     writePersistedAttendanceDraft(hydratedAttendanceLessonId.current, null);
     attendanceDraftDirty.current = false;
     attendanceNoteDirty.current = false;
+    changedStudentNotes.current = new Set();
+    changedMarks.current = new Set();
     replaceParams({ lesson: pendingLessonSwitch });
     setPendingLessonSwitch(null);
   }, [lessonMutationPending, pendingLessonSwitch, replaceParams]);
@@ -1039,14 +1105,15 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             students={selectedLessonStudents}
             draft={attendanceDraft}
             note={attendanceNote}
-            noteDirty={attendanceNoteDirty.current}
-            hasDivergingNotes={attendanceHydration.hasDivergingNotes}
             onNoteChange={(value) => {
               attendanceDraftDirty.current = true;
               attendanceNoteDirty.current = true;
               setAttendanceNote(value);
             }}
+            studentNotes={attendanceStudentNotes}
+            onStudentNoteChange={handleStudentNoteChange}
             onToggleStudent={handleToggleAttendance}
+            onMarkRestPresent={handleMarkRestPresent}
             onSave={handleSaveAttendance}
             canSave={canSaveAttendance}
             isSaving={saveAttendance.isPending}
@@ -1055,7 +1122,6 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
             onRetryRoster={() => attendanceRosterQuery.refetch()}
             mutationPending={lessonMutationPending}
             lessonHasStarted={selectedLessonHasStarted}
-            hasPreviousIncompleteLesson={hasPreviousIncompleteLesson}
             rescheduleOpen={isRescheduleOpen}
             onRescheduleOpenChange={setIsRescheduleOpen}
             rescheduleAt={rescheduleAt}

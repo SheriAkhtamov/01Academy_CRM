@@ -76,10 +76,10 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
     groupForm.reset(group ? {
       name: group.name,
       nameSuffix: parseGroupName(group.name)?.addition ?? '',
-      deliveryMode: parseGroupName(group.name)?.deliveryMode ?? 'offline',
+      deliveryMode: group.deliveryMode ?? parseGroupName(group.name)?.deliveryMode ?? 'offline',
       trainingType: parseGroupName(group.name)?.trainingType ?? 'GRP',
       courseId: String(group.courseId),
-      schoolId: String(group.schoolId),
+      schoolId: group.schoolId ? String(group.schoolId) : '',
       roomId: group.roomId ? String(group.roomId) : '',
       teacherId: group.teacherId ? String(group.teacherId) : '',
       selectedCourseLessonIds: group.selectedCourseLessonIds ?? null,
@@ -124,12 +124,14 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         throw new Error(t('failedToLoadData'));
       }
       const teacherId = values.teacherId ? Number(values.teacherId) : null;
+      const online = values.deliveryMode === 'online';
       const payload = {
         name: values.name,
         ...(autoNaming ? { nameSuffix: values.nameSuffix, deliveryMode: values.deliveryMode, trainingType: values.trainingType } : {}),
         courseId: Number(values.courseId),
-        schoolId: Number(values.schoolId),
-        roomId: Number(values.roomId),
+        // An online group needs no branch and never holds a room.
+        schoolId: values.schoolId ? Number(values.schoolId) : null,
+        roomId: online || !values.roomId ? null : Number(values.roomId),
         teacherId,
         schedule: groupSchedule,
         ...(values.selectedCourseLessonIds !== null ? { selectedCourseLessonIds: values.selectedCourseLessonIds } : {}),
@@ -166,9 +168,7 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
           timeZone: 'UTC',
         }).format(new Date(`${backendMinimumEndDate}T00:00:00Z`))
         : '';
-      const description = errorCode === 'groupLessonsLockSchedule'
-        ? t('groupLessonsLockSchedule')
-        : errorCode === 'futureGroupInProgressRequiresConfirmation'
+      const description = errorCode === 'futureGroupInProgressRequiresConfirmation'
           ? t('futureGroupInProgressRequiresConfirmation')
         : errorCode === 'groupHasScheduledLessons'
           ? t('groupHasScheduledLessons')
@@ -235,6 +235,16 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
         groupForm.setError('selectedCourseLessonIds', {
           type: 'courseLesson', message: t('groupCourseLessonsUnavailable'),
         });
+        return;
+      }
+    }
+    // The server refuses a group bigger than its room; say so on the field.
+    if (values.deliveryMode === 'offline' && values.roomId) {
+      const room = rooms.find((candidate) => String(candidate.id) === values.roomId);
+      const seatsChanged = !editingGroup || Number(values.roomId) !== Number(editingGroup.roomId)
+        || Number(values.maxStudents) !== Number(editingGroup.maxStudents);
+      if (room && seatsChanged && Number(values.maxStudents) > room.capacity) {
+        groupForm.setError('maxStudents', { type: 'roomCapacity', message: t('groupCapacityExceedsRoom') });
         return;
       }
     }
@@ -354,12 +364,13 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
   const selectedTeacherId = groupForm.watch('teacherId');
   const selectedTeacherConflict = useMemo(() => {
     const teacher = groupTeachers.find((candidate) => String(candidate.id) === selectedTeacherId);
-    if (!teacher || !scheduleChecksApply || !selectedGroupSchoolId || groupSchedule.length === 0) return null;
-    return findTeacherConflict(teacher, { ...plannedGroup, schoolId: Number(selectedGroupSchoolId) }, configuration.groups);
-  }, [configuration.groups, groupSchedule.length, groupTeachers, plannedGroup, scheduleChecksApply,
+    if (!teacher || !scheduleChecksApply || groupSchedule.length === 0) return null;
+    if (deliveryMode !== 'online' && !selectedGroupSchoolId) return null;
+    return findTeacherConflict(teacher, { ...plannedGroup, schoolId: Number(selectedGroupSchoolId) || 0 }, configuration.groups);
+  }, [configuration.groups, deliveryMode, groupSchedule.length, groupTeachers, plannedGroup, scheduleChecksApply,
     selectedTeacherId, selectedGroupSchoolId]);
   return {
-    t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule,
+    t, language, schools, courses, groupForm, groupGuard, groupSchedule, updateGroupSchedule, deliveryMode,
     selectedCourse, updateSelectedCourse, updateSelectedLessons,
     autoNaming, groupCode, groupCodeError, codeCatalogue, trainingType,
     selectedGroupSchoolId, selectedGroupStartDate, minimumGroupEndDate, formattedMinimumGroupEndDate,

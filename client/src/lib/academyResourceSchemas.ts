@@ -9,8 +9,13 @@ type Translate = (key: TranslationKey) => string;
   are factories so <LocalizedFormMessage /> renders localized text instead of
   raw English zod defaults in the RU UI.
 */
+/** The branch or course part of group codes, e.g. CYP or VC. */
+const shortCodeSchema = (t: Translate) => z.string().trim().min(1, t('fieldRequired'))
+  .regex(/^[A-Z0-9]{1,10}$/, t('shortCodeInvalid'));
+
 export const createSchoolSchema = (t: Translate) => z.object({
   name: z.string().trim().min(1, t('fieldRequired')),
+  shortCode: shortCodeSchema(t).refine((value) => value !== 'ONL', t('shortCodeReserved')),
   address: z.string().trim().min(1, t('fieldRequired')),
   timezone: z.string().trim().min(1, t('fieldRequired')),
   isActive: z.boolean(),
@@ -25,7 +30,12 @@ export const createRoomSchema = (t: Translate) => z.object({
 
 export const createCourseSchema = (t: Translate) => z.object({
   name: z.string().trim().min(1, t('fieldRequired')),
+  shortCode: shortCodeSchema(t),
   ageCategory: z.string().trim().min(1, t('fieldRequired')),
+  lessonCount: z.coerce.number<number>({ error: t('invalidDataFormat') }).int(t('invalidDataFormat'))
+    .min(0, t('invalidDataFormat')).max(2000, t('invalidDataFormat')),
+  lessonDurationMinutes: z.coerce.number<number>({ error: t('invalidDataFormat') }).int(t('invalidDataFormat'))
+    .min(15, t('invalidDataFormat')).max(480, t('invalidDataFormat')),
   description: z.string(),
   isActive: z.boolean(),
   program: z.custom<CourseCurriculum>().transform((value, context) => {
@@ -61,8 +71,9 @@ export const createGroupSchema = (t: Translate, allowUnassignedTeacher = false) 
   deliveryMode: z.enum(['offline', 'online']).default('offline').nonoptional(),
   trainingType: z.enum(['GRP', 'IND']).default('GRP').nonoptional(),
   courseId: z.string().min(1, t('fieldRequired')),
-  schoolId: z.string().min(1, t('fieldRequired')),
-  roomId: z.string().min(1, t('fieldRequired')),
+  // An online group needs neither a branch nor a room (checked below).
+  schoolId: z.string(),
+  roomId: z.string(),
   teacherId: z.string().regex(/^(?:[1-9]\d*)?$/, t('invalidDataFormat'))
     .refine((value) => allowUnassignedTeacher || value.length > 0, t('teacherRequired')),
   selectedCourseLessonIds: z.array(z.string().min(1)).min(1, t('groupLessonsRequired')).nullable().default(null).nonoptional(),
@@ -73,6 +84,12 @@ export const createGroupSchema = (t: Translate, allowUnassignedTeacher = false) 
   startDate: z.string().min(1, t('fieldRequired')),
   endDate: z.string(),
 }).superRefine((values, context) => {
+  if (values.deliveryMode === 'offline' && !values.schoolId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['schoolId'], message: t('fieldRequired') });
+  }
+  if (values.deliveryMode === 'offline' && !values.roomId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['roomId'], message: t('fieldRequired') });
+  }
   if (values.trainingType === 'IND' && values.maxStudents !== 1) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxStudents'], message: t('groupIndividualCapacity') });
   }

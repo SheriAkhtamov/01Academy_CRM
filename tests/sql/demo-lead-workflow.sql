@@ -17,7 +17,7 @@ BEGIN
   IF current_database() NOT LIKE '%\_test' ESCAPE '\' AND current_database() NOT LIKE 'crm_demo_workflow_test_%' THEN
     RAISE EXCEPTION 'Use a disposable workflow test database';
   END IF;
-  ASSERT to_regclass('academy_lead_funnel_qualifications') IS NOT NULL, 'Apply migration 0128 first';
+  ASSERT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid = 'academy_leads'::regclass AND attname = 'is_qualified' AND NOT attisdropped), 'Apply every registered migration first';
   INSERT INTO users(email,password,full_name,module) VALUES
     ('workflow-' || txid_current() || '@example.test','disabled-test-hash','Two-funnel employee','sales') RETURNING id INTO employee_key;
   INSERT INTO users(email,password,full_name,module) VALUES
@@ -58,18 +58,18 @@ BEGIN
   ASSERT (SELECT count(*) = 2 FROM academy_sales_kpi_trials WHERE participant_id IN (participant_key,sibling_participant)),
     'Bookings remain actual participant facts';
   ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_stage_history WHERE lead_id = lead_key), 'Attendance must not fabricate a manual stage move';
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key), 'Automatic facts must not qualify intake';
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key), 'Automatic facts must not qualify intake';
 
   INSERT INTO academy_payments(lead_id,student_id,amount_uzs,status,paid_at)
     VALUES(lead_key,student_key,100000,'paid',timezone('UTC',now()));
   ASSERT (SELECT status_code = intake_a AND funnel_id = funnel_a AND manager_id = employee_key FROM academy_leads WHERE id = lead_key),
     'Payment must preserve the selected stage/funnel/owner';
   UPDATE academy_leads SET status_code = ordinary_a WHERE id = lead_key;
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key),
     'Bare SQL/integration moves cannot invent a manual qualification';
   UPDATE academy_leads SET funnel_id = funnel_b, status_code = intake_b WHERE id = lead_key;
   UPDATE academy_leads SET is_archived = true WHERE id = lead_key;
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key),
     'Transfer and archive on the destination intake must not qualify';
   ASSERT (SELECT count(*) = 2 FROM academy_sales_funnel_users WHERE user_id = employee_key), 'Both selected funnel memberships remain';
   rejected := false;
@@ -108,7 +108,7 @@ BEGIN
   INSERT INTO academy_leads(contact_name,phone,source_id,funnel_id,status_code)
     VALUES('Ordinary label','ordinary-' || txid_current(),source_key,funnel_a,ordinary_a) RETURNING manager_id INTO ordinary_owner;
   ASSERT ordinary_owner IS NULL, 'Ordinary stages must not trigger automatic intake distribution';
-  ASSERT NOT EXISTS(SELECT 1 FROM academy_lead_funnel_qualifications WHERE lead_id = lead_key),
+  ASSERT NOT (SELECT is_qualified FROM academy_leads WHERE id = lead_key),
     'Intake distribution cannot change the original unqualified lead';
   RAISE NOTICE 'PASS: demo and payment facts keep ownership/stages; transfer and archive do not qualify; both selected funnels remain available';
 END $$;

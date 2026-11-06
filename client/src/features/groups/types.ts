@@ -17,10 +17,12 @@ export interface Group {
   name: string;
   courseId: number;
   courseName?: string;
-  schoolId: number;
-  schoolName?: string;
-  roomId: number;
-  roomName?: string;
+  deliveryMode?: 'offline' | 'online';
+  /** Null for an online group, which needs neither a branch nor a room. */
+  schoolId: number | null;
+  schoolName?: string | null;
+  roomId: number | null;
+  roomName?: string | null;
   teacherId?: number | null;
   teacherName?: string | null;
   teacherUserId?: number | null;

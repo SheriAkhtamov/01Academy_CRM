@@ -74,7 +74,7 @@ export function GroupsTable({ groups, isGroupArchive, filterKey, todayKey, empty
       render: (row) => (
         <div className="min-w-0">
           <p className="font-medium text-foreground">{row.courseName ?? '—'}</p>
-          <p className="text-xs text-muted-foreground">{[row.schoolName, row.roomName].filter(Boolean).join(' · ') || '—'}</p>
+          <p className="text-xs text-muted-foreground">{[row.deliveryMode === 'online' ? t('online') : '', row.schoolName, row.roomName].filter(Boolean).join(' · ') || '—'}</p>
         </div>
       ),
     },

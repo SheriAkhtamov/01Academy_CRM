@@ -152,7 +152,7 @@ describe.skipIf(!url)("Future groups persistence", () => {
       CREATE TABLE users(id int PRIMARY KEY,full_name text);
       CREATE TABLE academy_courses(id int PRIMARY KEY,name text,is_active boolean);
       CREATE TABLE academy_schools(id int PRIMARY KEY,name text,is_active boolean);
-      CREATE TABLE academy_rooms(id int PRIMARY KEY,school_id int,name text,is_active boolean);
+      CREATE TABLE academy_rooms(id int PRIMARY KEY,school_id int,name text,is_active boolean,capacity int);
       CREATE TABLE academy_teachers(id int PRIMARY KEY,full_name text);
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id int,school_id int,room_id int NOT NULL,teacher_id int,
         max_students int,status text,start_date timestamp,end_date timestamp,schedule jsonb,lesson_duration_minutes int,lesson_count int,selected_course_lesson_ids jsonb,duration_days int,
@@ -182,7 +182,7 @@ describe.skipIf(!url)("Future groups persistence", () => {
       INSERT INTO users VALUES(1,'Manager'),(2,'Other manager') ON CONFLICT DO NOTHING;
       INSERT INTO academy_courses VALUES(1,'AI Kids',true) ON CONFLICT DO NOTHING;
       INSERT INTO academy_schools VALUES(1,'Cyberpark',true) ON CONFLICT DO NOTHING;
-      INSERT INTO academy_rooms VALUES(1,1,'101',true) ON CONFLICT DO NOTHING;
+      INSERT INTO academy_rooms VALUES(1,1,'101',true,10) ON CONFLICT DO NOTHING;
       INSERT INTO academy_leads(id,manager_id,funnel_id,contact_name,student_name) VALUES(11,1,1,'Parent A','Child A'),(12,1,1,'Parent B','Child B'),(13,2,1,'Private parent','Private child');`);
   });
   afterAll(async () => {
@@ -212,6 +212,15 @@ describe.skipIf(!url)("Future groups persistence", () => {
     }, group.id);
     expect(edited).toMatchObject({ selectedCourseLessonIds: null, maxStudents: 9, schedule: plan.schedule });
     expect((await fixture.pool!.query("SELECT count(*)::int AS count FROM academy_lessons")).rows[0].count).toBe(0);
+  });
+  it("never plans more places than the room seats, while an online group needs neither room nor branch", async () => {
+    await expect(repository.save(actor, { ...input, roomId: 1, maxStudents: 11 }))
+      .rejects.toMatchObject({ message: "groupCapacityExceedsRoom", statusCode: 409 });
+    expect((await fixture.pool!.query("SELECT count(*)::int AS count FROM academy_groups")).rows[0].count).toBe(0);
+    await expect(repository.save(actor, { ...input, roomId: 1, maxStudents: 10 })).resolves.toMatchObject({ maxStudents: 10 });
+    // Naming is mocked here; an online group simply keeps no room and needs no branch.
+    const online = await repository.save(actor, { ...input, deliveryMode: "online", schoolId: null, roomId: 1, maxStudents: 30 });
+    expect(online).toMatchObject({ schoolId: null, roomId: null, maxStudents: 30 });
   });
   it("keeps the curriculum constraint: no empty or non-array selections", async () => {
     const group = await create();

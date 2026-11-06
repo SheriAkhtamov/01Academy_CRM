@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { assertCourseCurriculumUpdateAllowed, parseCourseCurriculum } from './course-curriculum';
+import { isShortCodeConflict, normalizeShortCode } from './short-code';
 import { attachCourseMaterialFiles, validateCourseMaterialFiles } from './course-material-files';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -758,10 +759,26 @@ const parseCourseWithTeachersPayload = (body: Row) => {
     throw Object.assign(new Error('invalidData'), { statusCode: 400 });
   }
   const teacherIds = [...new Set(parsedTeacherIds as number[])].sort((left, right) => left - right);
+  const wholeNumber = (value: unknown, minimum: number, maximum: number) => {
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+      throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+    }
+    return parsed;
+  };
+  // A curriculum with lessons decides the count; without one the form's number does.
+  const curriculumLessons = body.program === undefined ? 0 : flattenCourseCurriculum(body.program).length;
+  const requestedCount = body.lessonCount === undefined || body.lessonCount === null ? null : wholeNumber(body.lessonCount, 0, 2000);
+  const lessonCount = curriculumLessons > 0 ? curriculumLessons
+    : requestedCount !== null ? requestedCount
+      : body.program === undefined ? undefined : 0;
   return {
     courseValues: { name, slug, ageCategory, description, isActive: body.isActive,
-      ...(body.program === undefined ? {} : { program: parseCourseCurriculum(body.program), lessonCount: flattenCourseCurriculum(body.program).length }),
-    },
+      ...(body.shortCode === undefined ? {} : { shortCode: body.shortCode }),
+      ...(body.lessonDurationMinutes === undefined ? {} : { lessonDurationMinutes: wholeNumber(body.lessonDurationMinutes, 15, 480) }),
+      ...(body.program === undefined ? {} : { program: parseCourseCurriculum(body.program) }),
+      ...(lessonCount === undefined ? {} : { lessonCount }),
+    } as Row,
     teacherIds: body.teacherIds === undefined ? null : teacherIds,
   };
 };
@@ -842,6 +859,7 @@ const saveCourseWithTeachers = async (req: any, courseId?: number) => {
       throw Object.assign(new Error('courses not found'), { statusCode: 404 });
     }
     if (oldCourse?.isArchived) throw Object.assign(new Error('courseIsArchived'), { statusCode: 409 });
+    await normalizeShortCode('academy_courses', courseValues, courseId);
     if (courseId && 'program' in courseValues) await assertCourseCurriculumUpdateAllowed(courseId, courseValues.program);
     const fileIds = courseValues.program ? await validateCourseMaterialFiles(courseValues.program, req.user!.id, courseId) : [];
     if (courseId && oldCourse?.isActive !== false && courseValues.isActive === false) {
@@ -877,6 +895,7 @@ router.post('/courses/with-teachers', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to create course with teacher assignments', { error });
     const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
+    if (isShortCodeConflict(error)) return res.status(409).json({ error: 'shortCodeTaken' });
     res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
       error: duplicateSlug ? 'courseSlugAlreadyExists' : getPublicErrorMessage(error, 'Failed to create courses'),
     });
@@ -901,6 +920,7 @@ router.patch('/courses/:id/with-teachers', async (req, res) => {
   } catch (error: any) {
     logger.error('Failed to update course with teacher assignments', { error, courseId });
     const duplicateSlug = error?.code === '23505' && String(error?.constraint ?? '').includes('academy_courses_slug');
+    if (isShortCodeConflict(error)) return res.status(409).json({ error: 'shortCodeTaken' });
     res.status(duplicateSlug ? 409 : error.statusCode || 500).json({
       error: duplicateSlug ? 'courseSlugAlreadyExists' : getPublicErrorMessage(error, 'Failed to update courses'),
     });

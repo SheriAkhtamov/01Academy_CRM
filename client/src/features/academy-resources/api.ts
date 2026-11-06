@@ -4,6 +4,7 @@ export interface School {
   id: number;
   name: string;
   code: string;
+  shortCode?: string | null;
   address: string;
   timezone: string;
   isActive: boolean;
@@ -23,6 +24,9 @@ export interface Course {
   id: number;
   name: string;
   slug: string;
+  shortCode?: string | null;
+  lessonCount?: number;
+  lessonDurationMinutes?: number;
   ageCategory: string;
   description?: string | null;
   isActive: boolean;

@@ -247,6 +247,7 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     resolver: zodResolver(schoolSchemaMemo),
     defaultValues: {
       name: '',
+      shortCode: '',
       address: '',
       timezone: ACADEMY_TIME_ZONE,
       isActive: true,
@@ -267,7 +268,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     resolver: zodResolver(courseSchemaMemo),
     defaultValues: {
       name: '',
+      shortCode: '',
       ageCategory: '',
+      lessonCount: 0,
+      lessonDurationMinutes: 120,
       description: '',
       isActive: true,
       program: { version: 1, blocks: [] },
@@ -548,11 +552,13 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setEditingSchool(school ?? null);
     schoolForm.reset(school ? {
       name: school.name,
+      shortCode: school.shortCode ?? '',
       address: school.address,
       timezone: school.timezone,
       isActive: school.isActive,
     } : {
       name: '',
+      shortCode: '',
       address: '',
       timezone: ACADEMY_TIME_ZONE,
       isActive: true,
@@ -580,7 +586,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
     setEditingCourse(course ?? null);
     courseForm.reset(course ? {
       name: course.name,
+      shortCode: course.shortCode ?? '',
       ageCategory: course.ageCategory,
+      lessonCount: course.lessonCount ?? 0,
+      lessonDurationMinutes: course.lessonDurationMinutes ?? 120,
       description: course.description ?? '',
       isActive: course.isActive,
       program: {
@@ -591,7 +600,10 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
       },
     } : {
       name: '',
+      shortCode: '',
       ageCategory: '',
+      lessonCount: 0,
+      lessonDurationMinutes: 120,
       description: '',
       isActive: true,
       program: { version: 1, blocks: [] },
@@ -919,8 +931,17 @@ export default function AcademySettings({ mode = 'academy' }: AcademySettingsPro
                       <LocalizedFormMessage />
                     </FormItem>
                   )} />
-                  <FormField control={schoolForm.control} name="address" render={({ field }) => (
+                  <FormField control={schoolForm.control} name="shortCode" render={({ field }) => (
                     <FormItem>
+                      <FormLabel required>{t('schoolShortCode')}</FormLabel>
+                      <FormControl><Input {...field} maxLength={10} autoCapitalize="characters" spellCheck={false}
+                        className="font-mono uppercase" disabled={saveSchool.isPending}
+                        onChange={(event) => field.onChange(event.target.value.toUpperCase())} /></FormControl>
+                      <LocalizedFormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={schoolForm.control} name="address" render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
                       <FormLabel required>{t('address')}</FormLabel>
                       <FormControl><Input {...field} disabled={saveSchool.isPending} /></FormControl>
                       <LocalizedFormMessage />

@@ -267,7 +267,8 @@ export const ensureTeacherCourseAssignment = async (teacher: Row, courseId: numb
 export const assertTeacherCanLeadGroupSchedule = async (options: {
   teacherId: number;
   courseId: number;
-  schoolId: number;
+  /** Null for an online group: its teacher may work from any branch. */
+  schoolId: number | null;
   schedule: unknown;
   startDate?: Date | null;
   endDate?: Date | null;
@@ -287,7 +288,7 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
 
   const requestedSchedule = normalizeScheduleItems(options.schedule);
   const schoolIds = readJsonArray(teacher.schoolIds).map(Number);
-  if (schoolIds.length > 0 && !schoolIds.includes(options.schoolId)) {
+  if (options.schoolId && schoolIds.length > 0 && !schoolIds.includes(options.schoolId)) {
     throw Object.assign(new Error('teacherUnavailableForGroup'), { statusCode: 409 });
   }
 
@@ -378,7 +379,8 @@ export const assertTeacherCanLeadGroupSchedule = async (options: {
 export const assertTeacherCanLeadLesson = async (options: {
   teacherId: number;
   courseId: number;
-  schoolId: number;
+  /** Null for an online lesson. */
+  schoolId: number | null;
   scheduledAt: Date;
   durationMinutes: number;
   excludeGroupId?: number | null;
@@ -400,7 +402,7 @@ export const assertTeacherCanLeadLesson = async (options: {
   if (
     options.enforceAssignments !== false
     && ((courseIds.length > 0 && !courseIds.includes(options.courseId))
-    || (schoolIds.length > 0 && !schoolIds.includes(options.schoolId)))
+    || (options.schoolId && schoolIds.length > 0 && !schoolIds.includes(options.schoolId)))
   ) {
     throw Object.assign(new Error('teacherUnavailableForLesson'), { statusCode: 409 });
   }
@@ -576,6 +578,33 @@ export const assertRoomScheduleAvailable = async (options: {
   }
 };
 
+/** Two lessons of one group never overlap, whatever their rooms. */
+export const assertGroupLessonSlotFree = async (options: {
+  groupId: number;
+  scheduledAt: Date;
+  durationMinutes: number;
+  excludeLessonId?: number | null;
+  excludeLessonIds?: number[];
+}) => {
+  const startsAt = new Date(options.scheduledAt);
+  const endsAt = addMinutes(startsAt, options.durationMinutes);
+  const overlap = await queryOne(
+    `SELECT id
+     FROM academy_lessons
+     WHERE group_id = $1
+       AND NOT EXISTS (SELECT 1 FROM academy_groups archived
+         WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
+       AND status <> 'cancelled'
+       AND scheduled_at < $3
+       AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
+       AND ($4::int IS NULL OR id <> $4)
+       AND NOT (id = ANY($5::int[]))
+     LIMIT 1`,
+    [options.groupId, startsAt, endsAt, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
+  );
+  if (overlap) throw Object.assign(new Error('groupLessonOverlap'), { statusCode: 409 });
+};
+
 export const assertLessonRoomAvailable = async (options: {
   schoolId: number;
   roomId: number;
@@ -594,7 +623,7 @@ export const assertLessonRoomAvailable = async (options: {
     options.durationMinutes,
   );
 
-  const [lessonConflict, demoConflict, groupLessonConflict, groups] = await Promise.all([
+  const [lessonConflict, demoConflict, groups] = await Promise.all([
     queryOne(
       `SELECT id FROM academy_lessons
        WHERE room_id = $1
@@ -618,22 +647,6 @@ export const assertLessonRoomAvailable = async (options: {
        LIMIT 1`,
       [options.roomId, startsAt, endsAt, options.excludeDemoLessonId ?? null],
     ),
-    options.excludeGroupId
-      ? queryOne(
-        `SELECT id
-         FROM academy_lessons
-         WHERE group_id = $1
-           AND NOT EXISTS (SELECT 1 FROM academy_groups archived
-             WHERE archived.id = academy_lessons.group_id AND (archived.is_archived = true OR archived.status = 'frozen'))
-           AND status <> 'cancelled'
-           AND scheduled_at < $3
-           AND scheduled_at + (duration_minutes * INTERVAL '1 minute') > $2
-           AND ($4::int IS NULL OR id <> $4)
-           AND NOT (id = ANY($5::int[]))
-         LIMIT 1`,
-        [options.excludeGroupId, startsAt, endsAt, options.excludeLessonId ?? null, options.excludeLessonIds ?? []],
-      )
-      : Promise.resolve(null),
     query(
       `SELECT * FROM academy_groups
        WHERE room_id = $1
@@ -646,8 +659,14 @@ export const assertLessonRoomAvailable = async (options: {
 
   if (lessonConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
   if (demoConflict) throw Object.assign(new Error('roomOccupied'), { statusCode: 409 });
-  if (groupLessonConflict) {
-    throw Object.assign(new Error('groupLessonOverlap'), { statusCode: 409 });
+  if (options.excludeGroupId) {
+    await assertGroupLessonSlotFree({
+      groupId: options.excludeGroupId,
+      scheduledAt: startsAt,
+      durationMinutes: options.durationMinutes,
+      excludeLessonId: options.excludeLessonId,
+      excludeLessonIds: options.excludeLessonIds,
+    });
   }
 
   const recurringConflict = groups.some((group) =>

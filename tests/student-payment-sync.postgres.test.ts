@@ -41,7 +41,7 @@ describe.skipIf(!databaseUrl)("student finance consistency across CRM and the po
       CREATE TABLE academy_teachers(id integer PRIMARY KEY,full_name text,user_id integer);
       CREATE TABLE academy_groups(id integer PRIMARY KEY,name text,course_id integer,school_id integer,teacher_id integer,lesson_count integer,is_archived boolean DEFAULT false,status text DEFAULT 'open');
       CREATE TABLE academy_student_group_enrollments(id integer PRIMARY KEY,student_id integer,group_id integer,status text DEFAULT 'active',is_primary boolean DEFAULT true,enrolled_at timestamptz,ended_at timestamptz);
-      CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,topic text,scheduled_at timestamptz,status text);
+      CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,topic text,scheduled_at timestamptz,status text,note text);
       CREATE TABLE academy_attendance(id integer PRIMARY KEY,lesson_id integer,student_id integer,status text,note text);
       CREATE TABLE academy_student_status_history(id integer PRIMARY KEY,student_id integer,to_status text,created_at timestamptz);
       CREATE TABLE academy_portfolio_projects(id integer PRIMARY KEY,student_id integer,title text,url text,file_url text,created_at timestamptz);

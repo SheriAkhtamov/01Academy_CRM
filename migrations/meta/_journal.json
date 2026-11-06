@@ -1212,6 +1212,20 @@
       "when": 1793880000000,
       "tag": "0172_lead_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1793966400000,
+      "tag": "0173_lead_outcomes_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1794052800000,
+      "tag": "0174_academic_setup",
+      "breakpoints": true
     }
   ]
 }

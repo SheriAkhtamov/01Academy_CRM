@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BookOpen,
   Calendar,
+  CheckCheck,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -61,11 +62,15 @@ export interface AttendanceLessonDialogProps {
   lesson?: TeacherLesson;
   students: TeacherStudent[];
   draft: TeacherAttendanceDraft;
+  /** The teacher's note about the lesson as a whole. */
   note: string;
-  noteDirty: boolean;
-  hasDivergingNotes: boolean;
   onNoteChange: (value: string) => void;
+  /** Notes about single pupils, kept on their marks. */
+  studentNotes: Record<number, string>;
+  onStudentNoteChange: (studentId: number, value: string) => void;
+  /** Choosing a pupil's current mark again clears it. */
   onToggleStudent: (studentId: number, status: AttendanceStatus) => void;
+  onMarkRestPresent: () => void;
   onSave: () => void;
   canSave: boolean;
   isSaving: boolean;
@@ -74,7 +79,6 @@ export interface AttendanceLessonDialogProps {
   onRetryRoster: () => void;
   mutationPending: boolean;
   lessonHasStarted: boolean;
-  hasPreviousIncompleteLesson: boolean;
   rescheduleOpen: boolean;
   onRescheduleOpenChange: (open: boolean) => void;
   rescheduleAt: string;
@@ -105,10 +109,11 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     students,
     draft,
     note,
-    noteDirty,
-    hasDivergingNotes,
     onNoteChange,
+    studentNotes,
+    onStudentNoteChange,
     onToggleStudent,
+    onMarkRestPresent,
     onSave,
     canSave,
     isSaving,
@@ -117,7 +122,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
     onRetryRoster,
     mutationPending,
     lessonHasStarted,
-    hasPreviousIncompleteLesson,
     rescheduleOpen,
     onRescheduleOpenChange,
     rescheduleAt,
@@ -136,7 +140,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   const { t, language } = useTranslation();
   const rowRefs = useRef<Array<HTMLLIElement | null>>([]);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
-  const [noteOverwriteConfirmOpen, setNoteOverwriteConfirmOpen] = useState(false);
+  const [openStudentNotes, setOpenStudentNotes] = useState<ReadonlySet<number>>(() => new Set());
 
   const firstUnmarkedIndex = students.findIndex((student) => draft[student.id] === undefined);
 
@@ -146,8 +150,16 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
   }, [students.length]);
 
   useEffect(() => {
-    setNoteOverwriteConfirmOpen(false);
+    setOpenStudentNotes(new Set());
   }, [open, lesson?.id]);
+  const toggleStudentNote = useCallback((studentId: number) => {
+    setOpenStudentNotes((current) => {
+      const next = new Set(current);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }, []);
 
   /* Roving tabindex. Fifteen students used to mean 15 rows plus 30 buttons —
      45 stops between the modal header and the Save button. Exactly one row is
@@ -207,19 +219,19 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
       event.preventDefault();
       const student = students[index];
       if (!student || mutationPending) return;
-      onToggleStudent(student.id, event.code === 'KeyP' ? 'present' : 'absent');
+      const status = event.code === 'KeyP' ? 'present' : 'absent';
+      // Keys only set a mark; clearing one is a deliberate click on it.
+      if (draft[student.id] !== status) onToggleStudent(student.id, status);
       focusRow(index + 1);
     }
-  }, [focusRow, mutationPending, onToggleStudent, students]);
+  }, [draft, focusRow, mutationPending, onToggleStudent, students]);
 
   const unmarkedCount = students.filter(student => !draft[student.id]).length;
+  const canMark = Boolean(lesson) && (lesson?.status === 'conducted' || lessonHasStarted);
   const blocking = (() => {
     if (!lesson) return null;
     if (lesson.status === 'scheduled' && !lessonHasStarted) {
       return { message: t('attendanceAvailableAfterLessonStart'), canJump: false };
-    }
-    if (hasPreviousIncompleteLesson) {
-      return { message: t('previousLessonMustBeCompleted'), canJump: false };
     }
     if (firstUnmarkedIndex >= 0) {
       return {
@@ -319,6 +331,15 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
             {!isRosterPending && !isRosterError && students.length > 0 ? (
               <>
                 <CompactModalSection title={t('attendanceChecklist')} icon={ClipboardCheck} tone="teal" count={students.length} collapsible={false}>
+                  {unmarkedCount > 0 && canMark ? (
+                    <div className="mb-2 flex justify-end">
+                      <Button type="button" variant="outline" size="sm" className="h-8 rounded-md text-xs font-medium"
+                        disabled={mutationPending} onClick={onMarkRestPresent}>
+                        <CheckCheck className="mr-1.5 size-3.5" aria-hidden="true" />
+                        {t('attendanceMarkRestPresent')}
+                      </Button>
+                    </div>
+                  ) : null}
                   <ul
                     className="space-y-1.5"
                     aria-label={t('groupStudentsCount').replace('{count}', String(students.length))}
@@ -345,7 +366,8 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                           aria-label={`${name}. ${statusLabel}`}
                           ref={(element) => { rowRefs.current[index] = element; }}
                           className={cn(
-                            'flex flex-col gap-2 rounded-lg border px-3 py-2 transition-colors sm:flex-row sm:items-center sm:justify-between',
+                            'flex flex-wrap gap-2 rounded-lg border px-3 py-2 transition-colors sm:items-center sm:justify-between',
+                            'flex-col sm:flex-row',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             status === 'present' && 'border-emerald-500/40 bg-emerald-500/[0.06]',
                             status === 'absent' && 'border-rose-500/40 bg-rose-500/[0.06]',
@@ -375,6 +397,19 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                           </div>
 
                           <div className="flex shrink-0 items-center gap-1.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              disabled={mutationPending}
+                              tabIndex={-1}
+                              aria-label={`${t('comment')}: ${name}`}
+                              aria-expanded={openStudentNotes.has(student.id)}
+                              onClick={() => toggleStudentNote(student.id)}
+                              className={cn('size-9 shrink-0 rounded-md', studentNotes[student.id]?.trim() ? 'text-primary' : 'text-muted-foreground')}
+                            >
+                              <MessageSquare className="size-4" aria-hidden="true" />
+                            </Button>
                             <Button
                               type="button"
                               variant="outline"
@@ -410,6 +445,19 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
                               {t('absent')}
                             </Button>
                           </div>
+                          {openStudentNotes.has(student.id) ? (
+                            <div className="w-full basis-full">
+                              <Label htmlFor={`attendance-student-note-${student.id}`} className="sr-only">{`${t('comment')}: ${name}`}</Label>
+                              <Input
+                                id={`attendance-student-note-${student.id}`}
+                                value={studentNotes[student.id] ?? ''}
+                                maxLength={1000}
+                                disabled={mutationPending}
+                                onChange={(event) => onStudentNoteChange(student.id, event.target.value)}
+                                className="h-9 text-sm"
+                              />
+                            </div>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -514,10 +562,7 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
 
               <Button
                 className="min-h-9 w-full rounded-md py-2 text-sm font-semibold"
-                onClick={() => {
-                  if (hasDivergingNotes && noteDirty) setNoteOverwriteConfirmOpen(true);
-                  else onSave();
-                }}
+                onClick={onSave}
                 disabled={mutationPending || !canSave}
               >
                 {isSaving
@@ -530,28 +575,6 @@ export function AttendanceLessonDialog(props: AttendanceLessonDialogProps) {
           ) : null}
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={open && noteOverwriteConfirmOpen} onOpenChange={setNoteOverwriteConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('lessonNoteOverwriteTitle')}</AlertDialogTitle>
-          </AlertDialogHeader>
-          <AlertDialogBody>
-            <AlertDialogDescription>{t('lessonNoteOverwriteConfirm')}</AlertDialogDescription>
-          </AlertDialogBody>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={mutationPending || !canSave}
-              onClick={() => {
-                if (!mutationPending && canSave) onSave();
-              }}
-            >
-              {t('confirmAction')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={rescheduleConfirmOpen} onOpenChange={onRescheduleConfirmOpenChange} pending={isRescheduling}>
         <AlertDialogContent>

@@ -27,7 +27,7 @@ function Editor({ program = { version: 1, blocks: [] }, onSubmit = vi.fn(), edit
 }) {
   const form = useForm<CourseValues>({
     resolver: zodResolver(createCourseSchema(key => i18n.t(key))),
-    defaultValues: { name: 'Programming', ageCategory: '12+', description: '', isActive: true, program },
+    defaultValues: { name: 'Programming', shortCode: 'PR', ageCategory: '12+', lessonCount: 0, lessonDurationMinutes: 120, description: '', isActive: true, program },
   });
   return <CourseEditorDialog open onOpenChange={vi.fn()} form={form} editing={editing} saving={saving} onSubmit={onSubmit} />;
 }

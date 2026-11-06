@@ -187,10 +187,9 @@ describe('academy route logic boundaries', () => {
   it('allows sales to preview approved group codes without exposing configuration settings', async () => {
     mocks.actor = { id: 1, module: 'sales', modules: ['sales'] };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('SELECT name, school_id')) return { rows: [{ name: 'CYP-AI-GRP-26-0035', school_id: 2, course_id: 1 }] };
-      if (sql.startsWith('SELECT id, code')) return { rows: [{ id: 2, code: 'cyberpark' }] };
-      if (sql.startsWith('SELECT id, slug')) return { rows: [{ id: 1, slug: 'ai-kids' }] };
-      if (sql.includes('AS maximum_number')) return { rows: [{ maximum_number: 35 }] };
+      if (sql.startsWith('SELECT id, short_code FROM academy_schools')) return { rows: [{ id: 2, short_code: 'CYP' }] };
+      if (sql.startsWith('SELECT id, short_code FROM academy_courses')) return { rows: [{ id: 1, short_code: 'AI' }] };
+      if (sql.includes('AS next_number')) return { rows: [{ next_number: 36 }] };
       return emptyResult();
     });
     const response = await request(await createApp()).get('/api/academy/group-code-catalogue');
@@ -1360,7 +1359,6 @@ describe('academy route logic boundaries', () => {
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FOR SHARE OF lesson')) return { rows: [{
         id: 10, group_id: 20, teacher_user_id: 99, status: 'scheduled', scheduled_at: new Date(),
-        has_previous_incomplete_lesson: true,
       }] };
       if (sql.includes('FROM academy_lesson_assistants assistant')) return { rows: assigned ? [{ teacher_id: 5 }] : [] };
       if (sql.includes('FROM academy_students student')) return { rows: [{ id: 5, student_name: 'Assigned student',
@@ -1370,7 +1368,8 @@ describe('academy route logic boundaries', () => {
     const response = await request(await createApp()).get('/api/academy/lessons/10/attendance-roster');
     expect(response.status).toBe(assigned ? 200 : 403);
     if (assigned) {
-      expect(response.body.lesson).toMatchObject({ canManageLesson: false, hasPreviousIncompleteLesson: true });
+      expect(response.body.lesson).toMatchObject({ canManageLesson: false });
+      expect(response.body.lesson).not.toHaveProperty('hasPreviousIncompleteLesson');
       expect(response.body.students).toEqual([{ id: 5, studentName: 'Assigned student', contactName: 'Parent' }]);
     } else {
       expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('FROM academy_students student'))).toBe(false);
@@ -1404,7 +1403,7 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_attendance'))).toBe(false);
   });
 
-  it('requires earlier scheduled lessons in the same group to be completed first', async () => {
+  it('never blocks a lesson on an earlier one that still waits for marks', async () => {
     const scheduledAt = new Date(Date.now() - 60 * 60 * 1000);
     mocks.clientQuery.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql.includes('pg_advisory_xact_lock')) return emptyResult();
@@ -1428,10 +1427,8 @@ describe('academy route logic boundaries', () => {
       .post('/api/academy/lessons/11/attendance')
       .send({ lessonStatus: 'conducted', attendance: [] });
 
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('previousLessonMustBeCompleted');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO academy_attendance'))).toBe(false);
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(response.body.error).not.toBe('previousLessonMustBeCompleted');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('previous_lesson'))).toBe(false);
   });
 
   it('does not reopen a conducted lesson through the attendance endpoint', async () => {
@@ -3474,8 +3471,9 @@ describe('academy route logic boundaries', () => {
     expect(mocks.clientQuery.mock.calls.some(([sql]) => sql.includes('INSERT INTO "academy_lessons"'))).toBe(false);
   });
 
-  it('does not let group schedule-backed fields diverge from existing lessons', async () => {
+  it('lets a group with lessons change its room, checking the new room instead of locking', async () => {
     const group = groupFixture();
+    const course = { id: 1, is_active: true, lesson_count: 10, lesson_duration_minutes: 120, duration_days: 30, program: null };
     mocks.poolQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM "academy_groups" WHERE id = $1')) return { rows: [group] };
       return emptyResult();
@@ -3487,16 +3485,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
         return { rows: [group] };
       }
-      if (sql.includes('AS has_lessons')) {
-        return {
-          rows: [{
-            has_lessons: true,
-            has_scheduled_lessons: false,
-            has_studying_students: false,
-            has_reserved_leads: false,
-          }],
-        };
-      }
+      if (sql.includes('FROM academy_courses')) return { rows: [course] };
       return emptyResult();
     });
 
@@ -3504,10 +3493,10 @@ describe('academy route logic boundaries', () => {
       .patch('/api/academy/groups/20')
       .send({ roomId: 9 });
 
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe('groupLessonsLockSchedule');
-    expect(mocks.clientQuery).toHaveBeenCalledWith('ROLLBACK');
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('UPDATE "academy_groups"'))).toBe(false);
+    // The fixture has no room 9, so the edit stops at the room check, not at a lock.
+    expect(response.body.error).not.toBe('groupLessonsLockSchedule');
+    expect(response.body.error).toBe('roomNotFound');
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('has_lessons'))).toBe(false);
   });
 
   it('expands selected lessons through group PATCH and extends the previous short end date', async () => {
@@ -3621,7 +3610,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1') || sql.includes('UPDATE "academy_groups"')) return { rows: [updatedGroup] };
       if (sql.includes('AS current_students')) return { rows: [{ current_students: 2, reserved_students: 1 }] };
       if (sql.includes('FROM academy_rooms room')) return { rows: [{ id: 3 }] };
-      if (sql.includes('AS has_lessons')) return { rows: [{ has_lessons: true }] };
+      if (sql.includes('AS has_scheduled_lessons')) return { rows: [{ has_scheduled_lessons: false }] };
       return emptyResult();
     });
     const response = await request(await createApp()).patch('/api/academy/groups/20').send({
@@ -3683,7 +3672,7 @@ describe('academy route logic boundaries', () => {
       name: updatedGroup.name,
       teacherId: null,
     });
-    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('AS has_lessons'))).toBe(false);
+    expect(mocks.clientQuery.mock.calls.some(([sql]) => String(sql).includes('AS has_scheduled_lessons'))).toBe(false);
     expect(mocks.clientQuery).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -3805,7 +3794,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
         return { rows: [group] };
       }
-      if (sql.includes('AS has_lessons')) {
+      if (sql.includes('AS has_scheduled_lessons')) {
         return {
           rows: [{
             has_lessons: false,
@@ -3856,7 +3845,7 @@ describe('academy route logic boundaries', () => {
         groupLockCount += 1;
         return { rows: [groupLockCount === 1 ? group : completedGroup] };
       }
-      if (sql.includes('AS has_lessons')) {
+      if (sql.includes('AS has_scheduled_lessons')) {
         return {
           rows: [{
             has_lessons: true,
@@ -3960,7 +3949,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
         return { rows: [group] };
       }
-      if (sql.includes('AS has_lessons')) {
+      if (sql.includes('AS has_scheduled_lessons')) {
         return { rows: [{ has_lessons: true, has_scheduled_lessons: false, has_reserved_leads: false }] };
       }
       if (sql.includes('UPDATE "academy_groups"')) {
@@ -3992,7 +3981,7 @@ describe('academy route logic boundaries', () => {
       if (sql.includes('SELECT * FROM academy_groups WHERE id = $1 FOR UPDATE')) {
         return { rows: [group] };
       }
-      if (sql.includes('AS has_lessons')) {
+      if (sql.includes('AS has_scheduled_lessons')) {
         return { rows: [{ has_lessons: true, has_scheduled_lessons: true, has_reserved_leads: true }] };
       }
       if (sql.includes('UPDATE "academy_groups"')) return { rows: [{ ...group, is_archived: true }] };

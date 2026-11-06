@@ -131,7 +131,7 @@ try {
     WHERE stage.id IS NULL OR stage.funnel_id<>funnel.id OR NOT stage.is_active OR NOT stage.is_pipeline OR stage.sort_order<>0`)).rows[0].count, 0,
   'All funnels have an explicit active first stage, including the previously empty funnel');
   assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_statuses WHERE funnel_id IS NULL OR is_system')).rows[0].count, 0);
-  assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_funnel_qualifications')).rows[0].count, 0,
+  assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_leads WHERE is_qualified')).rows[0].count, 0,
     'Legacy profile completion or old stage codes cannot fabricate manual qualification');
   assert.equal((await client.query('SELECT manager_id FROM academy_students WHERE id=90001')).rows[0].manager_id, 90001);
   assert.equal((await client.query("SELECT to_regclass('public.academy_tasks') AS legacy")).rows[0].legacy, null,

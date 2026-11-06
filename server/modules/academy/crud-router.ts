@@ -1,6 +1,7 @@
 import { startWaitingGroupStudents } from '../future-groups/infrastructure/student-start';
 import { allocateGroupName } from './group-code';
 import { reconcileGroupCourseLessons } from './course-curriculum';
+import { isShortCodeConflict } from './short-code';
 import { Router } from 'express';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
@@ -113,6 +114,7 @@ import {
   prepareLessonMutation,
   restoreArchivedGroupLessons,
 } from './academy-route-support';
+import { reconcileGroupScheduleLessons } from './group-lesson-schedule';
 
 export const createAcademyCrudRegistrar = (router: ReturnType<typeof Router>) => {
 const registerSimpleCrud = (path: string, table: string, columns: string[], options: {
@@ -247,6 +249,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
       res.status(201).json(row);
     } catch (error: any) {
       logger.error(`Failed to create ${path}`, { error });
+      if (isShortCodeConflict(error)) return res.status(409).json({ error: 'shortCodeTaken' });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, `Failed to create ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),
@@ -341,11 +344,14 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
           }
           const updatedGroup = await updateRow(table, id, values);
           if (updatedGroup?.status === 'in_progress') await startWaitingGroupStudents(id, req.user!.id);
+          const restoring = (lockedRow.isArchived === true && values.isArchived === false)
+            || (lockedRow.status === 'frozen' && ['open', 'in_progress'].includes(String(values.status)));
+          // Runs before restoring, so the restored lessons are checked with the new teacher and room.
+          if (prepareSchedule && updatedGroup) {
+            await reconcileGroupScheduleLessons(updatedGroup, lockedRow, prepareLessonMutation, req.user!.id);
+          }
           if (selectionChanged && updatedGroup) await reconcileGroupCourseLessons(updatedGroup, lockedRow, prepareLessonMutation, req.user!.id);
-          if (updatedGroup && (
-            (lockedRow.isArchived === true && values.isArchived === false)
-            || (lockedRow.status === 'frozen' && ['open', 'in_progress'].includes(String(values.status)))
-          )) {
+          if (updatedGroup && restoring) {
             await restoreArchivedGroupLessons(updatedGroup, req.user!.id, new Date(),
               lockedRow.status === 'frozen' ? 'Возобновление занятий после заморозки' : 'Возвращение группы из архива');
           } else if (prepareSchedule || (values.status !== undefined && values.status !== lockedRow.status)) {
@@ -427,6 +433,7 @@ const registerSimpleCrud = (path: string, table: string, columns: string[], opti
         resourceId: req.params.id,
         errorCode: getPublicErrorMessage(error, `Failed to update ${path}`),
       });
+      if (isShortCodeConflict(error)) return res.status(409).json({ error: 'shortCodeTaken' });
       res.status(error.statusCode || 500).json({
         error: getPublicErrorMessage(error, `Failed to update ${path}`),
         ...(error.minimumEndDate ? { minimumEndDate: error.minimumEndDate } : {}),

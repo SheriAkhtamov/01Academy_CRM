@@ -1045,13 +1045,15 @@ export const validateEnrollmentGroup = async (
   const resources = await queryOne<{ resourcesActive: boolean }>(
     `SELECT (
        course.is_active = true
-       AND school.is_active = true
-       AND (academy_group.status = 'planned' AND academy_group.room_id IS NULL
+       -- An online group needs neither a branch nor a room.
+       AND (academy_group.school_id IS NULL AND academy_group.delivery_mode = 'online' OR school.is_active = true)
+       AND (academy_group.delivery_mode = 'online'
+         OR academy_group.status = 'planned' AND academy_group.room_id IS NULL
          OR room.is_active = true AND room.school_id = academy_group.school_id)
      ) AS resources_active
      FROM academy_groups academy_group
      JOIN academy_courses course ON course.id = academy_group.course_id
-     JOIN academy_schools school ON school.id = academy_group.school_id
+     LEFT JOIN academy_schools school ON school.id = academy_group.school_id
      LEFT JOIN academy_rooms room ON room.id = academy_group.room_id
      WHERE academy_group.id = $1`,
     [groupId],

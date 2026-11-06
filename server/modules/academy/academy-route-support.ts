@@ -10,7 +10,6 @@ import { logger } from '../../lib/logger';
 import { getPublicErrorMessage } from '../../lib/http-errors';
 import { isGeneratedInstagramLeadName } from '../../lib/instagram-lead';
 import {
-  getZonedDateTimeParts,
   getZonedDateOnlyRange,
   getZonedDayRange,
   getZonedMonthRange,
@@ -19,7 +18,6 @@ import {
 import {
   buildFollowingRecurringLessonSchedule,
   buildRecurringLessonSchedule,
-  type CalendarDate,
 } from '../../lib/lesson-schedule';
 import { runAutomations } from '../../services/automations';
 import { onlinePbxClient, OnlinePbxError } from '../../services/onlinepbx';
@@ -27,6 +25,13 @@ import { syncLeadSourceChannel } from '../../services/lead-channels';
 import { getWorkforcePolicy, maskPhone } from '../../services/workforce-policy';
 import { assertEligibleGroupTeacher } from './group-teacher-eligibility';
 import { prepareGroupCourseLessons } from './course-curriculum';
+import {
+  calendarDateFromDateOnly,
+  calendarDateFromInstant,
+  calendarDateToUtcMarker,
+  groupLessonBackedFieldChanged,
+  normalizedGroupScheduleForComparison,
+} from './group-lesson-schedule';
 import { courseLessonFileIds, courseLessonMaterialsText, orderSelectedCourseLessons } from '@shared/contracts/course-curriculum';
 import {
   FINAL_PROJECT_STATUSES,
@@ -92,16 +97,24 @@ import {
 } from './academy-core';
 import {
   assertActiveRoomInSchool,
+  assertGroupLessonSlotFree,
   assertLessonRoomAvailable,
   assertRoomScheduleAvailable,
   assertTeacherCanLeadGroupSchedule,
   assertTeacherCanLeadLesson,
-  normalizeScheduleItems,
   readJsonArray,
 } from './academy-scheduling';
 import {
   resolveTeacherId,
 } from './academy-analytics';
+
+export {
+  calendarDateFromDateOnly,
+  calendarDateFromInstant,
+  calendarDateToUtcMarker,
+  groupLessonBackedFieldChanged,
+  normalizedGroupScheduleForComparison,
+};
 
 export const buildCrudScope = async (req: any, table: string, firstParamIndex = 1): Promise<{
   whereSql: string;
@@ -141,18 +154,31 @@ export const prepareGroupMutation = async (options: {
   const teacherId = Number(Object.prototype.hasOwnProperty.call(options.values, 'teacherId')
     ? options.values.teacherId
     : options.oldRow?.teacherId) || null;
+  // The format is chosen once, with the group's code; an online group needs
+  // neither a branch nor a room and never holds one.
+  const deliveryMode = String(options.oldRow?.deliveryMode ?? options.values.deliveryMode ?? 'offline');
+  if (!['offline', 'online'].includes(deliveryMode)) {
+    throw Object.assign(new Error('invalidData'), { statusCode: 400 });
+  }
+  const online = deliveryMode === 'online';
+  if (options.oldRow) delete options.values.deliveryMode;
+  else options.values.deliveryMode = deliveryMode;
   const courseId = Number(options.values.courseId ?? options.oldRow?.courseId);
-  const schoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId);
-  const roomId = Number(options.values.roomId ?? options.oldRow?.roomId);
+  const schoolId = Number(Object.prototype.hasOwnProperty.call(options.values, 'schoolId')
+    ? options.values.schoolId
+    : options.oldRow?.schoolId) || null;
+  const roomId = online ? null : Number(options.values.roomId ?? options.oldRow?.roomId) || null;
+  if (online) options.values.roomId = null;
   const schedule = options.values.schedule ?? options.oldRow?.schedule;
   const maxStudents = Number(options.values.maxStudents ?? options.oldRow?.maxStudents ?? 12);
   const status = String(options.values.status ?? options.oldRow?.status ?? 'open');
-  if (!courseId || !schoolId) {
+  if (!courseId || (!online && !schoolId)) {
     throw Object.assign(new Error('schoolAndCourseRequired'), { statusCode: 400 });
   }
-  if (!roomId) {
+  if (!online && !roomId) {
     throw Object.assign(new Error('roomRequired'), { statusCode: 400 });
   }
+  options.values.schoolId = schoolId;
   if (!GROUP_STATUSES.some((item) => item.code === status)) {
     throw Object.assign(new Error('Invalid group status'), { statusCode: 400 });
   }
@@ -170,7 +196,7 @@ export const prepareGroupMutation = async (options: {
     options.oldRow
     && (
       Number(options.oldRow.courseId) !== courseId
-      || Number(options.oldRow.schoolId) !== schoolId
+      || (Number(options.oldRow.schoolId) || null) !== schoolId
     )
   ) {
     const usage = await queryOne<{ hasEnrollments: boolean }>(
@@ -266,9 +292,15 @@ export const prepareGroupMutation = async (options: {
     }
   }
   options.values.maxStudents = maxStudents;
-  // The room is checked for existence only: its seat count is a hint for the
-  // branch, never a ceiling on how many students a group may take.
-  await assertActiveRoomInSchool(roomId, schoolId);
+  if (roomId && schoolId) {
+    const room = await assertActiveRoomInSchool(roomId, schoolId);
+    // An offline group never takes more pupils than its room seats. Checked
+    // when the room or the capacity changes, so an older group stays editable.
+    const seatsChanged = !options.oldRow || options.oldRow.status === 'planned'
+      || Number(options.oldRow.maxStudents) !== maxStudents
+      || (Number(options.oldRow.roomId) || null) !== roomId;
+    assertGroupFitsRoom(maxStudents, room, seatsChanged);
+  }
   const startDate = (options.values.startDate ?? options.oldRow?.startDate) as Date | null | undefined;
   if (options.oldRow && options.values.selectedCourseLessonIds && startDate) {
     const end = getMinimumGroupEndDate({ startDate: new Date(startDate).toISOString().slice(0, 10), lessonCount: Math.round(lessonCount), schedule });
@@ -294,7 +326,12 @@ export const prepareGroupMutation = async (options: {
     }
   }
 
-  await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
+  // An edited group keeps its past lessons as they were, so only the days
+  // from today on may clash with other groups, lessons and demos.
+  // Both are calendar-day markers (UTC midnight of the academy's date).
+  const checkFrom = options.oldRow && startDate
+    ? new Date(Math.max(new Date(startDate).getTime(), calendarDateToUtcMarker(calendarDateFromInstant(new Date())).getTime()))
+    : startDate;
   if (status === 'completed') {
     const validationError = getGroupScheduleValidationError(schedule);
     if (validationError) {
@@ -302,12 +339,21 @@ export const prepareGroupMutation = async (options: {
         statusCode: validationError === 'groupScheduleOverlap' ? 409 : 400,
       });
     }
+  } else if (!roomId || !schoolId) {
+    // An online group holds no room, so only its own timetable is checked.
+    const validationError = getGroupScheduleValidationError(schedule);
+    if (validationError) {
+      throw Object.assign(new Error(validationError), {
+        statusCode: validationError === 'groupScheduleRequired' || validationError === 'groupScheduleInvalid' ? 400 : 409,
+      });
+    }
   } else {
+    await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
     await assertRoomScheduleAvailable({
       schoolId,
       roomId,
       schedule,
-      startDate,
+      startDate: checkFrom,
       endDate,
       excludeGroupId: options.excludeGroupId,
     });
@@ -331,51 +377,19 @@ export const prepareGroupMutation = async (options: {
     courseId,
     schoolId,
     schedule,
-    startDate,
+    startDate: checkFrom,
     endDate,
     excludeGroupId: options.excludeGroupId,
   });
   options.values.teacherId = teacherId;
 };
 
-export const normalizedGroupScheduleForComparison = (value: unknown) =>
-  normalizeScheduleItems(value)
-    .map((item) => ({
-      dayOfWeek: item.dayOfWeek,
-      startMinutes: item.startMinutes,
-      endMinutes: item.endMinutes,
-      schoolId: item.schoolId,
-    }))
-    .sort((left, right) =>
-      left.dayOfWeek - right.dayOfWeek
-      || left.startMinutes - right.startMinutes
-      || left.endMinutes - right.endMinutes
-      || Number(left.schoolId ?? 0) - Number(right.schoolId ?? 0));
-
-export const groupLessonBackedFieldChanged = (field: string, nextValue: unknown, previousValue: unknown) => {
-  if (field === 'selectedCourseLessonIds') return JSON.stringify(nextValue ?? null) !== JSON.stringify(previousValue ?? null);
-  if (field === 'schedule') {
-    return JSON.stringify(normalizedGroupScheduleForComparison(nextValue))
-      !== JSON.stringify(normalizedGroupScheduleForComparison(previousValue));
+/** A room's seats cap an offline group; online groups have no room. */
+export const assertGroupFitsRoom = (maxStudents: number, room: Row, seatsChanged = true) => {
+  const seats = Number(room.capacity);
+  if (seatsChanged && Number.isSafeInteger(seats) && seats > 0 && maxStudents > seats) {
+    throw Object.assign(new Error('groupCapacityExceedsRoom'), { statusCode: 409, roomCapacity: seats });
   }
-  if (field === 'startDate' || field === 'endDate') {
-    const calendarDay = (value: unknown) => {
-      if (value === null || value === undefined || value === '') return null;
-      const parsed = new Date(value as string | number | Date);
-      if (Number.isNaN(parsed.getTime())) return null;
-      const { year, month, day } = getZonedDateTimeParts(parsed, ACADEMY_TIME_ZONE);
-      return `${year}-${month}-${day}`;
-    };
-    return calendarDay(nextValue) !== calendarDay(previousValue);
-  }
-  if (field === 'frequency') {
-    return nullableText(nextValue) !== nullableText(previousValue);
-  }
-  if (field === 'roomId' || field === 'teacherId') {
-    const id = (value: unknown) => Number(value) || null;
-    return id(nextValue) !== id(previousValue);
-  }
-  return Number(nextValue) !== Number(previousValue);
 };
 
 export const GROUP_LESSON_BACKED_FIELDS = [
@@ -483,7 +497,9 @@ export const prepareGroupMetadataMutation = async (
     throw Object.assign(new Error('groupCapacityBelowOccupancy'), { statusCode: 409 });
   }
 
-  await assertActiveRoomInSchool(Number(row.roomId), Number(row.schoolId));
+  if (row.deliveryMode !== 'online' && Number(row.roomId) && Number(row.schoolId)) {
+    assertGroupFitsRoom(maxStudents, await assertActiveRoomInSchool(Number(row.roomId), Number(row.schoolId)));
+  }
   values.maxStudents = maxStudents;
 };
 
@@ -492,34 +508,18 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
   values: Row;
   row: Row;
 }) => {
-  const changesLessonBackedField = groupFieldsChanged(
-    GROUP_LESSON_BACKED_FIELDS,
-    options.values,
-    options.row,
-  );
   const completesGroup = options.row.status !== 'completed' && options.values.status === 'completed';
-  if (!changesLessonBackedField && !completesGroup) return;
 
-  const lifecycle = await queryOne<{
-    hasLessons: boolean;
-    hasScheduledLessons: boolean;
-  }>(
-    `SELECT
-       EXISTS (
-         SELECT 1 FROM academy_lessons lesson
-         WHERE lesson.group_id = $1
-       ) AS has_lessons,
-       EXISTS (
-         SELECT 1 FROM academy_lessons lesson
-         WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
-       ) AS has_scheduled_lessons`,
+  // Timetable, teacher and room edits are always allowed: future lessons
+  // follow them (reconcileGroupScheduleLessons) and history stays as it was.
+  if (!completesGroup) return;
+  const lifecycle = await queryOne<{ hasScheduledLessons: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM academy_lessons lesson
+       WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
+     ) AS has_scheduled_lessons`,
     [options.id],
   );
-
-  if (lifecycle?.hasLessons && changesLessonBackedField) {
-    throw Object.assign(new Error('groupLessonsLockSchedule'), { statusCode: 409 });
-  }
-  if (!completesGroup) return;
   if (lifecycle?.hasScheduledLessons) {
     throw Object.assign(new Error('groupHasScheduledLessons'), { statusCode: 409 });
   }
@@ -567,14 +567,16 @@ export const prepareLessonMutation = async (options: {
   }
   options.values.teacherId = teacherId;
 
+  const online = group.deliveryMode === 'online';
   const requestedCourseId = Number(options.values.courseId ?? options.oldRow?.courseId ?? group.courseId);
-  const requestedSchoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId);
-  if (requestedCourseId !== Number(group.courseId) || requestedSchoolId !== Number(group.schoolId)) {
+  const requestedSchoolId = Number(options.values.schoolId ?? options.oldRow?.schoolId ?? group.schoolId) || null;
+  if (requestedCourseId !== Number(group.courseId) || requestedSchoolId !== (Number(group.schoolId) || null)) {
     throw Object.assign(new Error('lessonGroupMismatch'), { statusCode: 409 });
   }
   const courseId = Number(group.courseId);
-  const schoolId = Number(group.schoolId);
-  const roomId = Number(options.values.roomId ?? options.oldRow?.roomId ?? group.roomId);
+  const schoolId = Number(group.schoolId) || null;
+  // Online lessons take no room.
+  const roomId = online ? null : Number(options.values.roomId ?? options.oldRow?.roomId ?? group.roomId) || null;
   const scheduledAt = new Date(options.values.scheduledAt ?? options.oldRow?.scheduledAt);
   const status = String(options.values.status ?? options.oldRow?.status ?? 'scheduled');
   const durationMinutes = Number(
@@ -588,8 +590,7 @@ export const prepareLessonMutation = async (options: {
 
   if (
     !courseId
-    || !schoolId
-    || !roomId
+    || (!online && (!schoolId || !roomId))
     || !Number.isSafeInteger(lessonNumber)
     || lessonNumber < 1
     || Number.isNaN(scheduledAt.getTime())
@@ -622,20 +623,30 @@ export const prepareLessonMutation = async (options: {
 
   // Cancelling an already conflicting lesson must always be possible.
   if (status === 'cancelled') {
-    await assertActiveRoomInSchool(roomId, schoolId);
+    if (roomId && schoolId) await assertActiveRoomInSchool(roomId, schoolId);
     return;
   }
 
-  await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
-  await assertLessonRoomAvailable({
-    schoolId,
-    roomId,
-    scheduledAt,
-    durationMinutes,
-    excludeLessonId: options.excludeLessonId,
-    excludeLessonIds: options.excludeLessonIds,
-    excludeGroupId: groupId,
-  });
+  if (roomId && schoolId) {
+    await query(`SELECT pg_advisory_xact_lock($1)`, [roomId]);
+    await assertLessonRoomAvailable({
+      schoolId,
+      roomId,
+      scheduledAt,
+      durationMinutes,
+      excludeLessonId: options.excludeLessonId,
+      excludeLessonIds: options.excludeLessonIds,
+      excludeGroupId: groupId,
+    });
+  } else {
+    await assertGroupLessonSlotFree({
+      groupId,
+      scheduledAt,
+      durationMinutes,
+      excludeLessonId: options.excludeLessonId,
+      excludeLessonIds: options.excludeLessonIds,
+    });
+  }
 
   if (!teacherId) return;
   await assertTeacherCanLeadLesson({
@@ -649,20 +660,6 @@ export const prepareLessonMutation = async (options: {
     excludeLessonIds: options.excludeLessonIds,
   });
 };
-
-export const calendarDateFromDateOnly = (value: Date): CalendarDate => ({
-  year: value.getUTCFullYear(),
-  month: value.getUTCMonth() + 1,
-  day: value.getUTCDate(),
-});
-
-export const calendarDateFromInstant = (value: Date): CalendarDate => {
-  const parts = getZonedDateTimeParts(value, ACADEMY_TIME_ZONE);
-  return { year: parts.year, month: parts.month, day: parts.day };
-};
-
-export const calendarDateToUtcMarker = (value: CalendarDate) =>
-  new Date(Date.UTC(value.year, value.month - 1, value.day));
 
 export const materializeGroupLessons = async (groupId: number, after?: Date): Promise<Row[]> => {
   if (!transactionContext.getStore()) {
@@ -726,8 +723,8 @@ export const materializeGroupLessons = async (groupId: number, after?: Date): Pr
     const values: Row = {
       groupId,
       courseId: Number(group.courseId),
-      schoolId: Number(group.schoolId),
-      roomId: Number(group.roomId),
+      schoolId: Number(group.schoolId) || null,
+      roomId: Number(group.roomId) || null,
       teacherId: Number(group.teacherId),
       lessonNumber: slot.lessonNumber,
       courseLessonId: selectedLesson?.id ?? null,

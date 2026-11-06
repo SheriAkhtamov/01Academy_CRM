@@ -75,6 +75,42 @@ describe('salary calendar dates', () => {
     expect(backdated.status).toBe(409);
     expect(backdated.body.error).toBe('salaryRateCannotBeBackdated');
   });
+
+  it('allows zero fixed salary for hourly teachers when lesson rate is configured', async () => {
+    let insertedValues: unknown[] = [];
+    mocks.query.mockImplementation(async (sql: string, values: unknown[]) => {
+      if (sql.includes('SELECT id, full_name, is_active')) return result([{ id: 7, full_name: 'Hourly Teacher', is_active: true }]);
+      if (sql.includes('SELECT * FROM academy_salary_rates')) return result([]);
+      if (sql.includes('INSERT INTO academy_salary_rates')) {
+        insertedValues = values;
+        return result([{
+          id: 12, employee_user_id: 7, amount_uzs: 0,
+          lesson_rate_uzs: 180_000, assistant_lesson_rate_uzs: 90_000,
+          effective_from: '2026-08-01', effective_to: null,
+        }]);
+      }
+      return result();
+    });
+    const response = await request(app).post('/api/finance/salary-rates').send({
+      employeeUserId: 7, amountUzs: 0, lessonRateUzs: 180_000, assistantLessonRateUzs: 90_000, effectiveFrom: '2026-08-01',
+    });
+    expect(response.status).toBe(201);
+    expect(response.body.amountUzs).toBe(0);
+    expect(response.body.lessonRateUzs).toBe(180_000);
+    expect(response.body.assistantLessonRateUzs).toBe(90_000);
+    expect(insertedValues[2]).toBe(0); // amountUzs
+    expect(insertedValues[3]).toBe('2026-08-01'); // effectiveFrom
+    expect(insertedValues[6]).toBe(180_000); // lessonRateUzs
+    expect(insertedValues[7]).toBe(90_000); // assistantLessonRateUzs
+  });
+
+  it('rejects salary rates where all base salary, lesson rate, and assistant rate are zero', async () => {
+    const response = await request(app).post('/api/finance/salary-rates').send({
+      employeeUserId: 7, amountUzs: 0, lessonRateUzs: 0, assistantLessonRateUzs: 0, effectiveFrom: '2026-08-01',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('salaryRateMustBePositive');
+  });
 });
 
 describe('expense edit transaction', () => {

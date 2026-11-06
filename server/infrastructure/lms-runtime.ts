@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { Server, IncomingMessage } from "node:http";
 import {
   Router,
@@ -259,6 +260,7 @@ export function createLearningRuntime(
       publicPortfolioEnabled: (studentId) =>
         flags.enabledForStudent("public_portfolio", studentId),
     },
+    new LocalResourceFileStore(path.resolve("uploads/contracts")),
   );
   const learning: PgLearningRepository = new PgLearningRepository(
     pool,

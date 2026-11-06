@@ -303,7 +303,18 @@ describe('Meta CRM stage events', () => {
     expect(service).toContain("actionSource: 'system_generated',");
     expect(service).toContain('if (!userData.lead_id) return null;');
     expect(service).toContain("matchKey: 'leadgen_id'");
-    expect(service).toContain('userData: { lead_id: userData.lead_id }');
+    expect(service).toContain('userData,');
+  });
+
+  it('queues QualifiedLead and Purchase events for Meta CAPI', () => {
+    const service = read('../server/services/meta-marketing.ts');
+    expect(service).toContain('export const enqueueMetaLeadQualified');
+    expect(service).toContain("'QualifiedLead'");
+    expect(service).toContain('lead-qualified:');
+    expect(service).toContain('export const enqueueMetaLeadPurchase');
+    expect(service).toContain("'Purchase'");
+    expect(service).toContain('lead-purchase:');
+    expect(service).toContain("currency: 'UZS'");
   });
 
   it('omits the messaging channel for events that had no conversation', () => {

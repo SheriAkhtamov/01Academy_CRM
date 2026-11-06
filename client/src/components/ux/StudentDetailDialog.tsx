@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, BookOpen, CheckCircle2, CreditCard, FileSignature, FolderOpen, Phone, UserRound, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, BookOpen, CheckCircle2, CreditCard, FileSignature, FolderOpen, Phone, Send, UserRound, ShieldCheck } from 'lucide-react';
 import type { StudentProfileStudent } from '@shared/contracts/student-profile';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -56,7 +56,8 @@ export function StudentDetailDialog({
   const { t } = useTranslation();
   const { user } = useAuth();
   const canManageContract = context !== 'teacher' && getAssignedModules(user).some(module =>
-    ['administration', 'sales', 'marketing'].includes(module));
+    ['administration', 'sales', 'marketing', 'finance'].includes(module));
+  const isContractReadOnly = !hasLeadershipAccess(user) && !getAssignedModules(user).some(m => ['administration', 'sales'].includes(m));
   const initialVisibleTab = initialTab === 'contract' && !canManageContract ? 'learning' : initialTab;
   const queryClient = useQueryClient();
   const onlinePbxCall = useOnlinePbxCall();
@@ -196,16 +197,27 @@ export function StudentDetailDialog({
               <SheetDescription asChild>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                   {context !== 'teacher' && currentStudent.phone ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 max-w-full gap-1 whitespace-normal px-2 py-0.5 text-[11px] font-medium"
-                      disabled={onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
-                      onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}
-                    >
-                      <Phone className="size-3 shrink-0" data-icon="inline-start" />
-                      {onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : currentStudent.phone}
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 max-w-full gap-1 whitespace-normal px-2 py-0.5 text-[11px] font-medium"
+                        disabled={onlinePbxCall.isPending || onlinePbxCall.isLineBusyWithReminder}
+                        onClick={() => onlinePbxCall.startCall(currentStudent.phone!)}
+                      >
+                        <Phone className="size-3 shrink-0" data-icon="inline-start" />
+                        {onlinePbxCall.isLineBusyWithReminder ? onlinePbxCall.callButtonLabel : currentStudent.phone}
+                      </Button>
+                      <a
+                        href={`https://t.me/+${currentStudent.phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={t('telegram')}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded border bg-background/80 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <Send className="size-3" aria-hidden="true" />
+                      </a>
+                    </>
                   ) : null}
                   {context !== 'teacher' ? (
                     <span className="inline-flex min-w-0 items-center gap-1 rounded-md border bg-background/80 px-2 py-0.5 text-[11px]">
@@ -310,10 +322,10 @@ export function StudentDetailDialog({
                 projects={profile?.projects ?? []}
                 open={open}
                 loading={!profile}
-                readOnly={context === 'teacher'}
                 requestAction={guard.requestAction}
                 onDraftChange={onProjectDraftChange}
                 dateTime={dateTime}
+                context={context}
               />
             </TabsContent>
 
@@ -340,7 +352,8 @@ export function StudentDetailDialog({
             {canManageContract ? (
               <TabsContent value="contract" className="mt-0" forceMount hidden={activeTab !== 'contract'}>
                 <StudentContractTab key={`${user?.id}:${currentStudent.id}`} studentId={currentStudent.id}
-                  leadId={leadId} open={open} active={activeTab === 'contract'} compact onDraftChange={onContractDraftChange} />
+                  leadId={leadId} open={open} active={activeTab === 'contract'} compact
+                  readOnly={isContractReadOnly} onDraftChange={onContractDraftChange} />
               </TabsContent>
             ) : null}
           </div>

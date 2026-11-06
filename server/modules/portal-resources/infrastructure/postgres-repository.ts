@@ -247,6 +247,30 @@ ${unreferencedLearningFile}
     }
     return {nextCursor:items.length>limit?items[limit-1].id:null,state: student?.unresolved ? 'needs_review' : 'ready', items:items.slice(0,limit), summary: student?.unresolved ? null : summary };
   }
+  async studentContract(studentId: number) {
+    const row = await resourceOne<{
+      id: string;
+      number: string;
+      file_name: string | null;
+      file_mime: string | null;
+      file_size: number | null;
+      file_key: string | null;
+      created_at: Date;
+      updated_at: Date;
+    }>(this.pool, `SELECT id, number, file_name, file_mime, file_size, file_key, created_at, updated_at
+      FROM academy_student_contracts WHERE student_id = $1`, [studentId]);
+    if (!row) return null;
+    return {
+      id: row.id,
+      number: row.number,
+      fileName: row.file_name,
+      fileMime: row.file_mime,
+      fileSize: row.file_size ? Number(row.file_size) : null,
+      fileKey: row.file_key,
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+    };
+  }
   async notifications(accountId: number, cursor: number | null, limit: number): Promise<PortalNotificationPageDto> {
     const rows = await resourceRows<PortalNotificationDto & { linkKind: "self" | "representative" | null }>(this.pool, `SELECT notification.id,notification.link_id,notification.category,notification.code,notification.params,notification.href,notification.created_at,notification.read_at,notification_link.kind AS link_kind
       FROM portal_notifications notification LEFT JOIN portal_student_links notification_link ON notification_link.id=notification.link_id AND notification_link.account_id=notification.account_id

@@ -54,6 +54,7 @@ describe.skipIf(!databaseUrl)('private course material upload, attachment owners
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id integer,teacher_id integer,status text DEFAULT 'open',is_archived boolean DEFAULT false,end_date timestamptz,updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,status text DEFAULT 'active',enrolled_at timestamptz,ended_at timestamptz);
       CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,course_id integer,lesson_number integer,topic text,materials text,scheduled_at timestamptz DEFAULT now(),duration_minutes integer DEFAULT 60,status text DEFAULT 'scheduled',teacher_id integer);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY,student_id integer,title text,group_id integer,course_id integer,url text,file_url text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,period text,paid_at timestamptz,due_at timestamptz,paid_until timestamptz,created_at timestamptz DEFAULT now());
     `);

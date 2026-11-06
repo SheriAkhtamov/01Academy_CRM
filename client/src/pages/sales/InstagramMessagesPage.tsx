@@ -4,7 +4,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearch } from 'wouter';
 import type { SanitizedUser } from '@shared/auth';
 import { getAssignedModules, hasLeadershipAccess } from '@shared/academy';
-import { apiRequest, localizeApiErrorMessage } from '@/lib/queryClient';
+import { localizeApiErrorMessage } from '@/lib/queryClient';
+import {
+  createQuickReplyApi,
+  deleteQuickReplyApi,
+  fetchInstagramMessages,
+  fetchInstagramSyncStatus,
+  fetchQuickReplies,
+  linkInstagramLeadApi,
+  markInstagramConversationReadApi,
+  searchLeadsForInstagramApi,
+  sendInstagramMediaMessageApi,
+  sendInstagramTextMessageApi,
+  syncInstagramConversations,
+  type QuickReplyItem,
+  fetchInstagramSuggestedLead,
+  type InstagramSuggestedLead,
+} from '@/features/sales/instagram-inbox-api';
 import { SPRING } from '@/lib/motion';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAuth } from '@/hooks/useAuth';
@@ -42,8 +58,10 @@ import {
   CornerUpLeft,
   ExternalLink,
   Image as ImageIcon,
+  Link2,
   Maximize2,
   MessageCircle,
+  Paperclip,
   Plus,
   Play,
   RefreshCw,
@@ -656,39 +674,44 @@ const readStoredDrafts = (): Record<number, string> => {
   }
 };
 
-function useQuickReplies() {
-  const { t } = useTranslation();
-  const [replies, setReplies] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem(QUICK_REPLIES_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      /* ignore */
-    }
-    return defaultQuickReplies(t);
+function useQuickReplies(initialLang: 'ru' | 'uz' = 'ru') {
+  const [selectedLang, setSelectedLang] = useState<'ru' | 'uz'>(initialLang);
+  const queryClient = useQueryClient();
+  const { data: loadedReplies } = useQuery<QuickReplyItem[]>({
+    queryKey: ['/api/instagram/quick-replies', selectedLang],
+    queryFn: () => fetchQuickReplies(selectedLang),
+  });
+  // Templates are optional: an unexpected answer must never take the inbox down.
+  const serverReplies = Array.isArray(loadedReplies) ? loadedReplies : [];
+
+  const addMutation = useMutation({
+    mutationFn: (text: string) => createQuickReplyApi(text, selectedLang),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/quick-replies'] });
+    },
   });
 
-  const persist = (next: string[]) => {
-    setReplies(next);
-    try {
-      localStorage.setItem(QUICK_REPLIES_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  };
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteQuickReplyApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/quick-replies'] });
+    },
+  });
+
+  const replies = serverReplies.map((r) => r.text);
 
   const addReply = (text: string) => {
     const value = text.trim();
     if (!value || replies.includes(value)) return;
-    persist([...replies, value]);
+    addMutation.mutate(value);
   };
 
-  const removeReply = (text: string) => persist(replies.filter((item) => item !== text));
+  const removeReply = (text: string) => {
+    const item = serverReplies.find((r) => r.text === text);
+    if (item) deleteMutation.mutate(item.id);
+  };
 
-  return { replies, addReply, removeReply };
+  return { replies, selectedLang, setSelectedLang, addReply, removeReply };
 }
 
 function Popover({
@@ -797,7 +820,7 @@ export default function MessagesPage() {
     return () => document.removeEventListener('visibilitychange', updateVisibility);
   }, []);
 
-  const { replies: quickReplies, addReply, removeReply } = useQuickReplies();
+  const { replies: quickReplies, selectedLang: quickReplyLang, setSelectedLang: setQuickReplyLang, addReply, removeReply } = useQuickReplies();
   const draft = selectedConversationId ? draftsByConversation[selectedConversationId] ?? '' : '';
   const replyQuotePrefix = replyTarget ? `«${replyTarget.text}»\n` : '';
   const composerMaxLength = Math.max(0, 1000 - replyQuotePrefix.length);
@@ -836,7 +859,7 @@ export default function MessagesPage() {
 
   const syncStatusQuery = useQuery<InstagramSyncStatus>({
     queryKey: ['/api/instagram/conversations/sync/status'],
-    queryFn: () => apiRequest('GET', '/api/instagram/conversations/sync/status'),
+    queryFn: () => fetchInstagramSyncStatus(),
     refetchInterval: (query) => (
       query.state.data?.status === 'running' ? 5000 : false
     ),
@@ -968,7 +991,7 @@ export default function MessagesPage() {
     queryKey: messagesKey,
     queryFn: async () => {
       const conversationId = selectedConversationId!;
-      const received = await apiRequest('GET', `/api/instagram/conversations/${conversationId}/messages`) as InstagramMessage[];
+      const received = await fetchInstagramMessages(conversationId) as InstagramMessage[];
       const messageId = received.reduce((latest, message) => (
         message.conversationId === conversationId && Number.isSafeInteger(message.id) && message.id > 0
           ? Math.max(latest, message.id)
@@ -1017,7 +1040,7 @@ export default function MessagesPage() {
 
   const { mutate: markRead } = useMutation({
     mutationFn: ({ conversationId, messageId }: { conversationId: number; messageId: number }) =>
-      apiRequest('POST', `/api/instagram/conversations/${conversationId}/read`, { lastReadMessageId: messageId }),
+      markInstagramConversationReadApi(conversationId, messageId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
     },
@@ -1102,7 +1125,7 @@ export default function MessagesPage() {
 
   const sendMessage = useMutation({
     mutationFn: ({ conversationId, content }: { conversationId: number; content: string }) =>
-      apiRequest('POST', `/api/instagram/conversations/${conversationId}/messages`, { content }),
+      sendInstagramTextMessageApi(conversationId, content),
     onMutate: async ({ conversationId, content }) => {
       const optimisticId = -Date.now();
       const queryKey = ['/api/instagram/conversations', conversationId, 'messages'] as const;
@@ -1158,6 +1181,66 @@ export default function MessagesPage() {
     },
   });
 
+  const mediaFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const sendMedia = useMutation({
+    mutationFn: ({ conversationId, file }: { conversationId: number; file: File }) =>
+      sendInstagramMediaMessageApi(conversationId, file),
+    onSuccess: (message: InstagramMessage, { conversationId }) => {
+      const queryKey = ['/api/instagram/conversations', conversationId, 'messages'] as const;
+      queryClient.setQueryData<ThreadMessage[]>(queryKey, (previous = []) => [...previous, message]);
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+      requestAnimationFrame(() => scrollToBottom('auto'));
+    },
+    onError: (error: any) => {
+      toast({
+        title: t('instagramMessageNotSent'),
+        description: localizeApiErrorMessage(error.message, error.status ?? 0) || t('instagramSendFailed'),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const [linkLeadDialogOpen, setLinkLeadDialogOpen] = useState(false);
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+
+  // Asked only for the open conversation: an existing lead whose phone the customer wrote.
+  const suggestedLeadQuery = useQuery<InstagramSuggestedLead | null>({
+    queryKey: ['/api/instagram/conversations', selectedConversationId, 'suggested-lead'],
+    queryFn: () => fetchInstagramSuggestedLead(selectedConversationId!),
+    enabled: Boolean(selectedConversationId),
+    staleTime: 60_000,
+  });
+  const suggestedLead = suggestedLeadQuery.data && typeof suggestedLeadQuery.data.leadId === 'number'
+    ? suggestedLeadQuery.data : null;
+
+  const linkLeadMutation = useMutation({
+    mutationFn: ({ conversationId, targetLeadId }: { conversationId: number; targetLeadId: number }) =>
+      linkInstagramLeadApi(conversationId, targetLeadId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/instagram/conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/academy/modules/sales'] });
+      setLinkLeadDialogOpen(false);
+      setLeadSearchQuery('');
+      toast({
+        title: t('instagramLeadLinkedSuccess'),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t('error'),
+        description: localizeApiErrorMessage(error.message, error.status ?? 0) || t('error'),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const { data: leadSearchResults = [] } = useQuery<{ id: number; contactName: string; phone: string | null }[]>({
+    queryKey: ['/api/academy/leads/search', leadSearchQuery],
+    queryFn: () => searchLeadsForInstagramApi(leadSearchQuery),
+    enabled: linkLeadDialogOpen && leadSearchQuery.trim().length >= 2,
+  });
+
   const retryMessage = (message: ThreadMessage) => {
     const queryKey = ['/api/instagram/conversations', message.conversationId, 'messages'] as const;
     queryClient.setQueryData<ThreadMessage[]>(queryKey, (previous = []) =>
@@ -1167,7 +1250,7 @@ export default function MessagesPage() {
   };
 
   const syncConversations = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/instagram/conversations/sync'),
+    mutationFn: () => syncInstagramConversations(),
     onSuccess: (status: InstagramSyncStatus) => {
       queryClient.setQueryData(['/api/instagram/conversations/sync/status'], status);
       if (status.status === 'running') {
@@ -1725,7 +1808,16 @@ export default function MessagesPage() {
                           {threadMatchCount}
                         </span>
                       ) : null}
-                      <span className="inline-flex shrink-0">
+                      <span className="inline-flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('instagramLinkToExistingLead')}
+                          onClick={() => setLinkLeadDialogOpen(true)}
+                        >
+                          <Link2 className="h-5 w-5" />
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1745,6 +1837,25 @@ export default function MessagesPage() {
 
                   {!selectedCanReply ? (
                     <p role="status" className="mx-4 mt-4 text-sm text-muted-foreground">{t('instagramMessagingWindowExpiredTitle')}</p>
+                  ) : null}
+
+                  {suggestedLead && suggestedLead.leadId !== selectedConversation.leadId ? (
+                    <div className="mx-4 mt-3 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary shrink-0" />
+                        <span>
+                          {t('instagramSuggestedLeadDetected')}: <strong>{suggestedLead.contactName}</strong> ({suggestedLead.phone})
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => linkLeadMutation.mutate({ conversationId: selectedConversation.id, targetLeadId: suggestedLead.leadId })}
+                        disabled={linkLeadMutation.isPending}
+                      >
+                        {t('instagramMergeLeadAction')}
+                      </Button>
+                    </div>
                   ) : null}
 
                   <div className="relative min-h-0 flex-1 bg-muted/40">
@@ -1998,6 +2109,28 @@ export default function MessagesPage() {
                       >
                         <div className="flex items-center justify-between px-2 pb-1">
                           <span className="text-xs font-semibold text-slate-700">{t('quickReplies')}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              className={cn(
+                                'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                quickReplyLang === 'ru' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+                              )}
+                              onClick={() => setQuickReplyLang('ru')}
+                            >
+                              {t('languageShortRu')}
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                quickReplyLang === 'uz' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+                              )}
+                              onClick={() => setQuickReplyLang('uz')}
+                            >
+                              {t('languageShortUz')}
+                            </button>
+                          </div>
                         </div>
                         <div className="max-h-56 overflow-y-auto overscroll-contain">
                           <div className="space-y-1 pr-1">
@@ -2099,6 +2232,31 @@ export default function MessagesPage() {
                           ))}
                         </div>
                       </Popover>
+
+                      <input
+                        type="file"
+                        ref={mediaFileInputRef}
+                        className="hidden"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file && selectedConversationId) {
+                            sendMedia.mutate({ conversationId: selectedConversationId, file });
+                          }
+                          event.target.value = '';
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label={t('instagramSendMedia')}
+                        disabled={!selectedCanReply || sendMedia.isPending}
+                        onClick={() => mediaFileInputRef.current?.click()}
+                      >
+                        {sendMedia.isPending ? <OrbitSpinner className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
+                      </Button>
 
                       <span
                         className={cn(
@@ -2253,6 +2411,51 @@ export default function MessagesPage() {
           setReplyToDelete(null);
         }}
       />
+
+      <Dialog open={linkLeadDialogOpen} onOpenChange={setLinkLeadDialogOpen}>
+        <DialogContent className="compact-modal sm:max-w-md">
+          <DialogTitle>{t('instagramLinkToExistingLead')}</DialogTitle>
+          <div className="space-y-3 pt-2">
+            <Input
+              value={leadSearchQuery}
+              onChange={(e) => setLeadSearchQuery(e.target.value)}
+              placeholder={t('instagramLinkLeadSearchPlaceholder')}
+              autoFocus
+            />
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {leadSearchResults.length === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  {leadSearchQuery.trim().length < 2 ? t('search') : t('noSearchResults')}
+                </p>
+              ) : (
+                leadSearchResults.map((lead) => (
+                  <div
+                    key={lead.id}
+                    className="flex items-center justify-between rounded-lg p-2 hover:bg-muted text-xs"
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="font-medium text-foreground truncate">{lead.contactName}</p>
+                      <p className="text-muted-foreground truncate">{lead.phone || t('leadSheetNoContactInfo')}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs shrink-0"
+                      disabled={linkLeadMutation.isPending || !selectedConversationId}
+                      onClick={() => {
+                        if (selectedConversationId) {
+                          linkLeadMutation.mutate({ conversationId: selectedConversationId, targetLeadId: lead.id });
+                        }
+                      }}
+                    >
+                      {linkLeadMutation.isPending ? <OrbitSpinner className="h-3 w-3" /> : t('linkAction')}
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </ModulePage>
   );
 }

@@ -208,7 +208,11 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
               payout.id AS payout_id, COALESCE(payout.bonus_uzs, 0) AS bonus_uzs,
               COALESCE(payout.deduction_uzs, 0) AS deduction_uzs,
               payout.amount_uzs, payout.method, payout.note AS payout_note,
-              payout.status, payout.paid_at, payer.full_name AS paid_by_name
+              payout.status, payout.paid_at, payer.full_name AS paid_by_name,
+              COALESCE(payout.conducted_lessons_count, teacher_stats.conducted_main_lessons, 0) AS conducted_lessons_count,
+              COALESCE(payout.lesson_rate_uzs, rate.lesson_rate_uzs, 0) AS lesson_rate_uzs,
+              COALESCE(payout.conducted_assistant_lessons_count, teacher_stats.conducted_assistant_lessons, 0) AS conducted_assistant_lessons_count,
+              COALESCE(payout.assistant_lesson_rate_uzs, rate.assistant_lesson_rate_uzs, 0) AS assistant_lesson_rate_uzs
        FROM users u
        LEFT JOIN LATERAL (
          SELECT sr.*
@@ -219,6 +223,41 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
          ORDER BY sr.effective_from DESC, sr.id DESC
          LIMIT 1
        ) rate ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT t.id AS teacher_record_id
+         FROM academy_teachers t
+         WHERE t.user_id = u.id
+         ORDER BY t.id
+         LIMIT 1
+       ) teacher_rec ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT
+           (
+             COALESCE((SELECT COUNT(*)::int
+              FROM academy_lessons l
+              WHERE l.teacher_id = teacher_rec.teacher_record_id
+                AND l.status = 'conducted'
+                AND l.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC'
+                AND l.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC')
+             ), 0)
+             +
+             COALESCE((SELECT COUNT(*)::int
+              FROM academy_demo_lessons dl
+              WHERE dl.teacher_id = teacher_rec.teacher_record_id
+                AND dl.status = 'completed'
+                AND dl.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC'
+                AND dl.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC')
+             ), 0)
+           ) AS conducted_main_lessons,
+           COALESCE((SELECT COUNT(*)::int
+            FROM academy_lesson_assistants la
+            JOIN academy_lessons l ON l.id = la.lesson_id
+            WHERE la.teacher_id = teacher_rec.teacher_record_id
+              AND l.status = 'conducted'
+              AND l.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC'
+              AND l.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC')
+           ), 0) AS conducted_assistant_lessons
+       ) teacher_stats ON teacher_rec.teacher_record_id IS NOT NULL
        LEFT JOIN academy_payroll_payouts payout
          ON payout.employee_user_id = u.id AND payout.period = $2
        LEFT JOIN users payer ON payer.id = payout.paid_by
@@ -237,7 +276,11 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
               rate.effective_from::text, rate.effective_to::text, rate.note AS salary_note,
               payout.id AS payout_id, payout.bonus_uzs, payout.deduction_uzs,
               payout.amount_uzs, payout.method, payout.note AS payout_note,
-              payout.status, payout.paid_at, payer.full_name AS paid_by_name
+              payout.status, payout.paid_at, payer.full_name AS paid_by_name,
+              COALESCE(payout.conducted_lessons_count, 0) AS conducted_lessons_count,
+              COALESCE(payout.lesson_rate_uzs, 0) AS lesson_rate_uzs,
+              COALESCE(payout.conducted_assistant_lessons_count, 0) AS conducted_assistant_lessons_count,
+              COALESCE(payout.assistant_lesson_rate_uzs, 0) AS assistant_lesson_rate_uzs
        FROM academy_payroll_payouts payout
        LEFT JOIN academy_salary_rates rate ON rate.id = payout.salary_rate_id
        LEFT JOIN users payer ON payer.id = payout.paid_by
@@ -246,7 +289,8 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
        SELECT NULL::integer, rate.employee_name, NULL::varchar, NULL::varchar, false,
               rate.id, rate.amount_uzs, rate.effective_from::text, rate.effective_to::text, rate.note,
               NULL::integer, 0, 0, NULL::integer, NULL::varchar, NULL::text,
-              NULL::varchar, NULL::timestamp, NULL::varchar
+              NULL::varchar, NULL::timestamp, NULL::varchar,
+              0, rate.lesson_rate_uzs, 0, rate.assistant_lesson_rate_uzs
        FROM academy_salary_rates rate
        WHERE rate.employee_user_id IS NULL
          AND rate.effective_from <= $1::date
@@ -267,24 +311,42 @@ const getPayrollDataset = async (executor: Executor, period: string) => {
     ),
   ]);
 
-  const normalizedEntries = [...entries, ...deletedEntries].map<Row>((entry) => ({
-    ...entry,
-    employeeKey: entry.employeeUserId ? `user:${entry.employeeUserId}`
-      : entry.salaryRateId ? `rate:${entry.salaryRateId}` : `payout:${entry.payoutId}`,
-    baseSalaryUzs: Number(entry.baseSalaryUzs || 0),
-    bonusUzs: Number(entry.bonusUzs || 0),
-    deductionUzs: Number(entry.deductionUzs || 0),
-    amountUzs: entry.amountUzs === null || entry.amountUzs === undefined
-      ? null
-      : Number(entry.amountUzs),
-    status: entry.payoutId ? 'paid' : entry.salaryRateId ? 'pending' : 'unconfigured',
-  }));
+  const normalizedEntries = [...entries, ...deletedEntries].map<Row>((entry) => {
+    const baseSalaryUzs = Number(entry.baseSalaryUzs || 0);
+    const bonusUzs = Number(entry.bonusUzs || 0);
+    const deductionUzs = Number(entry.deductionUzs || 0);
+    const conductedLessonsCount = Number(entry.conductedLessonsCount || 0);
+    const lessonRateUzs = Number(entry.lessonRateUzs || 0);
+    const conductedAssistantLessonsCount = Number(entry.conductedAssistantLessonsCount || 0);
+    const assistantLessonRateUzs = Number(entry.assistantLessonRateUzs || 0);
+    const isPaid = Boolean(entry.payoutId);
+    const isConfigured = Boolean(entry.salaryRateId);
+    const amountUzs = isPaid
+      ? (entry.amountUzs === null || entry.amountUzs === undefined ? null : Number(entry.amountUzs))
+      : (isConfigured
+          ? calculatePayrollAmount(baseSalaryUzs, bonusUzs, deductionUzs, conductedLessonsCount, lessonRateUzs, conductedAssistantLessonsCount, assistantLessonRateUzs)
+          : null);
+    return {
+      ...entry,
+      employeeKey: entry.employeeUserId ? `user:${entry.employeeUserId}`
+        : entry.salaryRateId ? `rate:${entry.salaryRateId}` : `payout:${entry.payoutId}`,
+      baseSalaryUzs,
+      bonusUzs,
+      deductionUzs,
+      conductedLessonsCount,
+      lessonRateUzs,
+      conductedAssistantLessonsCount,
+      assistantLessonRateUzs,
+      amountUzs,
+      status: isPaid ? 'paid' : isConfigured ? 'pending' : 'unconfigured',
+    };
+  });
   const paidAmountUzs = normalizedEntries.reduce(
     (sum, entry) => sum + (entry.status === 'paid' ? Number(entry.amountUzs || 0) : 0),
     0,
   );
   const pendingAmountUzs = normalizedEntries.reduce(
-    (sum, entry) => sum + (entry.status === 'pending' ? Number(entry.baseSalaryUzs || 0) : 0),
+    (sum, entry) => sum + (entry.status === 'pending' ? Number(entry.amountUzs || 0) : 0),
     0,
   );
 
@@ -806,7 +868,12 @@ router.post('/salary-rates', async (req, res) => {
   try {
     const employeeUserId = parsePositiveId(req.body.employeeUserId);
     if (!employeeUserId) throw httpError('employeeRequired');
-    const amountUzs = parseMoney(req.body.amountUzs, 'amountUzs', { allowZero: false });
+    const amountUzs = parseMoney(req.body.amountUzs ?? 0, 'amountUzs', { allowZero: true });
+    const lessonRateUzs = parseMoney(req.body.lessonRateUzs ?? 0, 'lessonRateUzs', { allowZero: true });
+    const assistantLessonRateUzs = parseMoney(req.body.assistantLessonRateUzs ?? 0, 'assistantLessonRateUzs', { allowZero: true });
+    if (amountUzs === 0 && lessonRateUzs === 0 && assistantLessonRateUzs === 0) {
+      throw httpError('salaryRateMustBePositive');
+    }
     const effectiveFrom = String(req.body.effectiveFrom ?? '');
     if (!isFinanceDate(effectiveFrom) || !effectiveFrom.endsWith('-01')) {
       throw httpError('salaryMustStartOnFirstDay');
@@ -845,9 +912,10 @@ router.post('/salary-rates', async (req, res) => {
         const updated = await queryOne<Row>(
           client,
           `UPDATE academy_salary_rates
-           SET amount_uzs = $2, note = $3, employee_name = $4, updated_at = NOW()
+           SET amount_uzs = $2, lesson_rate_uzs = $3, assistant_lesson_rate_uzs = $4,
+               note = $5, employee_name = $6, updated_at = NOW()
            WHERE id = $1 RETURNING *`,
-          [latest.id, amountUzs, note, employee.fullName],
+          [latest.id, amountUzs, lessonRateUzs, assistantLessonRateUzs, note, employee.fullName],
         );
         await createAudit(client, req.user!.id, 'UPDATE_SALARY_RATE', 'academy_salary_rate', updated.id, updated, latest);
         return updated;
@@ -863,10 +931,10 @@ router.post('/salary-rates', async (req, res) => {
       const inserted = await queryOne<Row>(
         client,
         `INSERT INTO academy_salary_rates
-           (employee_user_id, employee_name, amount_uzs, effective_from, note, created_by)
-         VALUES ($1, $2, $3, $4::date, $5, $6)
+           (employee_user_id, employee_name, amount_uzs, effective_from, note, created_by, lesson_rate_uzs, assistant_lesson_rate_uzs)
+         VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8)
          RETURNING *`,
-        [employeeUserId, employee.fullName, amountUzs, effectiveFrom, note, req.user!.id],
+        [employeeUserId, employee.fullName, amountUzs, effectiveFrom, note, req.user!.id, lessonRateUzs, assistantLessonRateUzs],
       );
       await createAudit(client, req.user!.id, 'CREATE_SALARY_RATE', 'academy_salary_rate', inserted.id, inserted);
       return inserted;
@@ -902,10 +970,11 @@ const createPayrollPayout = async (
   const employee = employeeUserId
     ? await queryOne<Row>(
       client,
-      `SELECT u.id, u.full_name, u.position, rate.id AS salary_rate_id, rate.amount_uzs
+      `SELECT u.id, u.full_name, u.position, rate.id AS salary_rate_id, rate.amount_uzs,
+              rate.lesson_rate_uzs, rate.assistant_lesson_rate_uzs
        FROM users u
        LEFT JOIN LATERAL (
-         SELECT sr.id, sr.amount_uzs FROM academy_salary_rates sr
+         SELECT sr.id, sr.amount_uzs, sr.lesson_rate_uzs, sr.assistant_lesson_rate_uzs FROM academy_salary_rates sr
          WHERE sr.employee_user_id = u.id AND sr.effective_from <= $2::date
            AND (sr.effective_to IS NULL OR sr.effective_to >= $2::date)
          ORDER BY sr.effective_from DESC, sr.id DESC LIMIT 1
@@ -919,7 +988,7 @@ const createPayrollPayout = async (
     : await queryOne<Row>(
       client,
       `SELECT NULL::integer AS id, sr.employee_name AS full_name, NULL::varchar AS position,
-              sr.id AS salary_rate_id, sr.amount_uzs
+              sr.id AS salary_rate_id, sr.amount_uzs, sr.lesson_rate_uzs, sr.assistant_lesson_rate_uzs
        FROM academy_salary_rates sr
        WHERE sr.id = $1 AND sr.employee_user_id IS NULL AND sr.effective_from <= $2::date
          AND (sr.effective_to IS NULL OR sr.effective_to >= $2::date)
@@ -929,18 +998,61 @@ const createPayrollPayout = async (
     );
   if (!employee) throw httpError('employeeNotFound', 404);
   if (!employee.salaryRateId) throw httpError('salaryNotConfigured', 409);
+
+  let lessonCounts: Row | undefined;
+  if (employeeUserId) {
+    lessonCounts = await queryOne<Row>(
+      client,
+      `SELECT
+         (
+           COALESCE((SELECT COUNT(*)::int FROM academy_lessons l
+            WHERE l.teacher_id = t.id AND l.status = 'conducted'
+              AND l.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC'
+              AND l.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC')
+           ), 0)
+           +
+           COALESCE((SELECT COUNT(*)::int FROM academy_demo_lessons dl
+            WHERE dl.teacher_id = t.id AND dl.status = 'completed'
+              AND dl.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC'
+              AND dl.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC')
+           ), 0)
+         ) AS conducted_lessons_count,
+         COALESCE((SELECT COUNT(*)::int FROM academy_lesson_assistants la
+          JOIN academy_lessons l ON l.id = la.lesson_id
+          WHERE la.teacher_id = t.id AND l.status = 'conducted'
+            AND l.scheduled_at >= (($1::date)::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC'
+            AND l.scheduled_at < ((($1::date + INTERVAL '1 month')::timestamp AT TIME ZONE $2) AT TIME ZONE 'UTC')
+         ), 0) AS conducted_assistant_lessons_count
+       FROM academy_teachers t
+       WHERE t.user_id = $3
+       ORDER BY t.id LIMIT 1`,
+      [`${period}-01`, ACADEMY_TIME_ZONE, employeeUserId],
+    );
+  }
+
   const baseSalaryUzs = Number(employee.amountUzs || 0);
-  if (deductionUzs > baseSalaryUzs + bonusUzs) throw httpError('deductionExceedsPayroll', 409);
-  const amountUzs = calculatePayrollAmount(baseSalaryUzs, bonusUzs, deductionUzs);
+  const lessonRateUzs = Number(employee.lessonRateUzs || 0);
+  const assistantLessonRateUzs = Number(employee.assistantLessonRateUzs || 0);
+  const conductedLessonsCount = Number(lessonCounts?.conductedLessonsCount || 0);
+  const conductedAssistantLessonsCount = Number(lessonCounts?.conductedAssistantLessonsCount || 0);
+  const grossSalary = baseSalaryUzs + (conductedLessonsCount * lessonRateUzs) + (conductedAssistantLessonsCount * assistantLessonRateUzs);
+  if (deductionUzs > grossSalary + bonusUzs) throw httpError('deductionExceedsPayroll', 409);
+  const amountUzs = calculatePayrollAmount(
+    baseSalaryUzs, bonusUzs, deductionUzs,
+    conductedLessonsCount, lessonRateUzs,
+    conductedAssistantLessonsCount, assistantLessonRateUzs,
+  );
   const inserted = await queryOne<Row>(
     client,
     `INSERT INTO academy_payroll_payouts
        (period, employee_user_id, employee_name, position, salary_rate_id,
-        base_salary_uzs, bonus_uzs, deduction_uzs, amount_uzs, method, note, paid_by, paid_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+        base_salary_uzs, bonus_uzs, deduction_uzs, amount_uzs, method, note, paid_by,
+        conducted_lessons_count, lesson_rate_uzs, conducted_assistant_lessons_count, assistant_lesson_rate_uzs, paid_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
      RETURNING *`,
     [period, employee.id, employee.fullName, employee.position, employee.salaryRateId,
-      baseSalaryUzs, bonusUzs, deductionUzs, amountUzs, method, note, actorId],
+      baseSalaryUzs, bonusUzs, deductionUzs, amountUzs, method, note, actorId,
+      conductedLessonsCount, lessonRateUzs, conductedAssistantLessonsCount, assistantLessonRateUzs],
   );
   await createAudit(client, actorId, 'PAY_EMPLOYEE_SALARY', 'academy_payroll_payout', inserted.id, inserted);
   return { row: inserted, created: true };

@@ -954,7 +954,11 @@ const lockStudentForChange = async (
          JOIN academy_groups academy_group ON academy_group.id = enrollment.group_id
          WHERE enrollment.student_id = $1
            AND enrollment.status IN ('active', 'suspended')
-           AND academy_group.teacher_id = $2
+           AND (
+             academy_group.teacher_id = $2
+             OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = academy_group.id AND l.teacher_id = $2)
+             OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = academy_group.id AND a.teacher_id = $2)
+           )
          LIMIT 1`,
         [id, teacherId],
       )

@@ -23,23 +23,30 @@ const present = (row: Row): StudentContract => ({
 });
 
 function assertStaff(actor: ActorContext) {
-  if (!actor.userId || !actor.modules.some(module => ["administration", "sales", "marketing"].includes(module))) {
+  if (!actor.userId || !actor.modules.some(module => ["administration", "sales", "marketing", "finance"].includes(module))) {
     fail("accessDenied", 403);
   }
 }
 async function authorizeLead(actor: ActorContext, leadId: number, mutate: boolean) {
   assertStaff(actor);
+  if (mutate && !actor.isLeadership && !actor.modules.some(module => ["administration", "sales"].includes(module))) {
+    fail("accessDenied", 403);
+  }
   const lead = await queryOne(`SELECT * FROM academy_leads WHERE id=$1${mutate ? " FOR UPDATE" : ""}`, [leadId]);
   if (!lead) fail("studentContractNotFound", 404);
-  if (!(mutate ? canActorMutateLead(actor, lead) : canActorViewLead(actor, lead))) fail("accessDenied", 403);
+  const canView = actor.isLeadership || actor.modules.includes("marketing") || actor.modules.includes("finance") || canActorViewLead(actor, lead);
+  if (!(mutate ? canActorMutateLead(actor, lead) : canView)) fail("accessDenied", 403);
   return lead!;
 }
 async function authorizeStudent(actor: ActorContext, studentId: number, mutate: boolean) {
   assertStaff(actor);
+  if (mutate && !actor.isLeadership && !actor.modules.some(module => ["administration", "sales"].includes(module))) {
+    fail("accessDenied", 403);
+  }
   const initial = await queryOne("SELECT * FROM academy_students WHERE id=$1", [studentId]);
   if (!initial) fail("studentContractNotFound", 404);
   if (initial!.leadId) await authorizeLead(actor, Number(initial!.leadId), mutate);
-  else if (!actor.isLeadership) fail("accessDenied", 403);
+  else if (!actor.isLeadership && !(actor.modules.includes("finance") && !mutate)) fail("accessDenied", 403);
   const current = mutate
     ? await queryOne("SELECT * FROM academy_students WHERE id=$1 FOR UPDATE", [studentId]) : initial;
   if (!current) fail("studentContractNotFound", 404);
@@ -84,7 +91,7 @@ export class StudentContractService {
 
   async list(actor: ActorContext, input: StudentContractListQuery): Promise<StudentContractList> {
     assertStaff(actor);
-    const unrestricted = actor.isLeadership || actor.modules.includes("marketing");
+    const unrestricted = actor.isLeadership || actor.modules.includes("marketing") || actor.modules.includes("finance");
     // Match canActorViewLead, including funnel visibility for unassigned leads.
     // Students without a linked lead remain visible only to leadership.
     const visibility = unrestricted
@@ -102,7 +109,7 @@ export class StudentContractService {
         JOIN academy_groups g ON g.id=membership.group_id
         WHERE membership.student_id=s.id AND membership.status='active'
       ) enrollment ON TRUE
-      WHERE (${visibility}) AND (c.id IS NOT NULL OR enrollment.groups IS NOT NULL)
+      WHERE (${visibility}) AND (c.id IS NOT NULL OR COALESCE(s.is_archived, false) = false)
         AND ($1='' OR position(lower($1) in
         lower(concat_ws(' ',c.number,s.student_name,s.contact_name,s.phone)))>0)`;
     const totals = await queryOne(`SELECT count(*)::int AS total,

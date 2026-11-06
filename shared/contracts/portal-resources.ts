@@ -105,3 +105,13 @@ export type PortalPaymentAllocationDto = {
 };
 export type PortalUnallocatedPaymentsDto = { items: { id:number;amountUzs:number;name:string|null }[];nextCursor:number|null };
 export type PortalUnallocatedPaymentsPageDto = PortalUnallocatedPaymentsDto & PortalResourcePageDto<PortalUnallocatedPaymentsDto['items'][number]>;
+export type PortalStudentContractDto = {
+  id: string;
+  number: string;
+  hasFile: boolean;
+  fileName: string | null;
+  fileSize: number | null;
+  downloadUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};

@@ -14,6 +14,9 @@ interface LeadForFunnel {
   reportingSourceIds?: number[];
   funnelId?: number | null;
   statusCode?: string | null;
+  reached?: boolean;
+  isQualified?: boolean;
+  demoBooked?: boolean;
   demoAttended?: boolean;
   hasPaidPayment?: boolean;
   createdAt?: string | null;

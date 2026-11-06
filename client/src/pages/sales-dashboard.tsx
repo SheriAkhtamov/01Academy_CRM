@@ -58,6 +58,7 @@ import { LeadDetailSheet } from '@/components/ux/LeadDetailSheet';
 import { LeadCallDialog } from '@/components/ux/lead/LeadCallDialog';
 import { LeadFiltersDialog } from '@/components/ux/LeadFiltersDialog';
 import { leadMatchesFilters } from '@/lib/leadFilters';
+import { PortalFinancePanel } from '@/features/portal-finance/PortalFinancePanel';
 import { submitOnEnter } from '@/lib/submitOnEnter';
 import { LeadMergeConflictDialog } from '@/components/ux/LeadMergeConflictDialog';
 import { StudentDetailDialog } from '@/components/ux/StudentDetailDialog';
@@ -929,6 +930,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
             funnelId={overviewFunnelId}
             onOpenLead={openLead}
           />
+          <PortalFinancePanel money={money} />
         </div>
       ) : null}
 

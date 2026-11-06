@@ -52,6 +52,14 @@ export class PostgresAcademyPortalAccessRepository implements AcademyPortalAcces
     return student;
   }
   private async authorizedAccount(sql: PoolClient, leadId: number, accountId: number) {
+    if (leadId < 0) {
+      const studentId = -leadId;
+      const own = await sql.query(`SELECT link.account_id FROM portal_student_links link
+        WHERE link.student_id=$1 AND link.account_id=$2 AND link.kind='self' AND link.status<>'revoked'`, [studentId, accountId]);
+      if (!own.rowCount) throw new PortalError('portalAccessDenied', 403);
+      await this.allowedStudent(sql, 0, studentId);
+      return this.account(sql, accountId);
+    }
     await this.lead(sql, leadId);
     const own = await sql.query(`SELECT account_id FROM portal_lead_accounts WHERE lead_id=$1 AND account_id=$2
       UNION ALL SELECT link.account_id FROM portal_student_links link JOIN academy_students student ON student.id=link.student_id

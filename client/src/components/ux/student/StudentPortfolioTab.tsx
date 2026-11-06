@@ -35,6 +35,7 @@ export function StudentPortfolioTab({
   requestAction,
   onDraftChange,
   dateTime,
+  context,
 }: {
   studentId: number;
   projects: StudentProject[];
@@ -44,6 +45,7 @@ export function StudentPortfolioTab({
   requestAction: (action: () => void) => void;
   onDraftChange: (dirty: boolean, pending: boolean) => void;
   dateTime: (value: string | null | undefined) => string;
+  context?: string;
 }) {
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
@@ -58,7 +60,9 @@ export function StudentPortfolioTab({
   const [percent, setPercent] = useState(0);
   const save = useMutation({
     mutationFn: (input: { title: string; url?: string; file?: File }) =>
-      studentsApi.addProject(studentId, input, setPercent),
+      context === "teacher"
+        ? studentsApi.addProject(studentId, input, setPercent, "teacher")
+        : studentsApi.addProject(studentId, input, setPercent),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["student-profile", studentId],

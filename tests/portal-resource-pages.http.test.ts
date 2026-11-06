@@ -128,3 +128,20 @@ it("keeps financial totals/state and notification unread counts with final-page 
     unreadCount: 7,
   });
 });
+it("returns student contract for portal subject", async () => {
+  const contract = {
+    id: "c-1",
+    number: "2026-0001",
+    hasFile: true,
+    fileName: "contract.pdf",
+    fileSize: 1024,
+    downloadUrl: "/api/portal/subjects/3/contract/download",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  };
+  (mocks as unknown as { studentContract: ReturnType<typeof vi.fn> }).studentContract = vi.fn().mockResolvedValue(contract);
+  const response = await request(app())
+    .get("/api/portal/subjects/3/contract")
+    .expect(200);
+  expect(response.body).toEqual(contract);
+});

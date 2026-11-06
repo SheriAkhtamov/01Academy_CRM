@@ -88,7 +88,15 @@ export async function requireStaffRun(
 ) {
   const row = await one<{ groupId: number }>(
     sql,
-    `SELECT run.group_id FROM lms_group_runs run WHERE run.id=$1 AND ($2::boolean OR ($5::boolean AND EXISTS(SELECT 1 FROM academy_groups g JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE g.id=run.group_id AND teacher.user_id=$3 AND teacher.status='active')) OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=$3 AND grant_row.permission=ANY($4::text[])))`,
+    `SELECT run.group_id FROM lms_group_runs run WHERE run.id=$1 AND ($2::boolean OR ($5::boolean AND EXISTS(
+      SELECT 1 FROM academy_groups g
+      JOIN academy_teachers teacher ON teacher.user_id=$3 AND teacher.status='active'
+      WHERE g.id=run.group_id AND (
+        teacher.id=g.teacher_id
+        OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id=g.id AND l.teacher_id=teacher.id)
+        OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id=l.id WHERE l.group_id=g.id AND a.teacher_id=teacher.id)
+      )
+    )) OR EXISTS(SELECT 1 FROM lms_staff_permissions grant_row WHERE grant_row.user_id=$3 AND grant_row.permission=ANY($4::text[])))`,
     [
       runId,
       hasImplicitStaffRunAccess(actor, permission),

@@ -807,12 +807,25 @@ export const academyOperatingExpenses = pgTable("academy_operating_expenses", {
   categoryCheck: check("academy_operating_expenses_category_check", sql`${table.category} IN ('rent', 'equipment', 'supplies', 'utilities', 'software', 'taxes', 'marketing', 'transport', 'maintenance', 'other')`),
 }));
 
+export const academyQuickReplies = pgTable("academy_quick_replies", {
+  id: serial("id").primaryKey(),
+  text: text("text").notNull(),
+  language: varchar("language", { length: 10 }).default("ru").notNull(),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("academy_quick_replies_language_idx").on(table.language),
+]);
+
 /** Versioned salary rates. A new rate closes the previous interval. */
 export const academySalaryRates = pgTable("academy_salary_rates", {
   id: serial("id").primaryKey(),
   employeeUserId: integer("employee_user_id").references(() => users.id, { onDelete: "set null" }),
   employeeName: varchar("employee_name", { length: 255 }).notNull(),
   amountUzs: integer("amount_uzs").notNull(),
+  lessonRateUzs: integer("lesson_rate_uzs").notNull().default(0),
+  assistantLessonRateUzs: integer("assistant_lesson_rate_uzs").notNull().default(0),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
   employmentEndedOn: date("employment_ended_on"),
@@ -823,7 +836,7 @@ export const academySalaryRates = pgTable("academy_salary_rates", {
 }, (table) => ({
   employeeIdx: index("academy_salary_rates_employee_idx").on(table.employeeUserId, table.effectiveFrom),
   employeeDateUnique: uniqueIndex("academy_salary_rates_employee_date_unique").on(table.employeeUserId, table.effectiveFrom),
-  amountCheck: check("academy_salary_rates_amount_check", sql`${table.amountUzs} > 0`),
+  amountCheck: check("academy_salary_rates_amount_check", sql`${table.amountUzs} >= 0 AND ${table.lessonRateUzs} >= 0 AND ${table.assistantLessonRateUzs} >= 0 AND (${table.amountUzs} > 0 OR ${table.lessonRateUzs} > 0 OR ${table.assistantLessonRateUzs} > 0)`),
   dateCheck: check("academy_salary_rates_date_check", sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} >= ${table.effectiveFrom}`),
 }));
 
@@ -836,6 +849,10 @@ export const academyPayrollPayouts = pgTable("academy_payroll_payouts", {
   position: varchar("position", { length: 255 }),
   salaryRateId: integer("salary_rate_id").references(() => academySalaryRates.id, { onDelete: "set null" }),
   baseSalaryUzs: integer("base_salary_uzs").notNull(),
+  conductedLessonsCount: integer("conducted_lessons_count").notNull().default(0),
+  lessonRateUzs: integer("lesson_rate_uzs").notNull().default(0),
+  conductedAssistantLessonsCount: integer("conducted_assistant_lessons_count").notNull().default(0),
+  assistantLessonRateUzs: integer("assistant_lesson_rate_uzs").notNull().default(0),
   bonusUzs: integer("bonus_uzs").notNull().default(0),
   deductionUzs: integer("deduction_uzs").notNull().default(0),
   amountUzs: integer("amount_uzs").notNull(),
@@ -850,7 +867,7 @@ export const academyPayrollPayouts = pgTable("academy_payroll_payouts", {
   periodIdx: index("academy_payroll_payouts_period_idx").on(table.period),
   employeeIdx: index("academy_payroll_payouts_employee_idx").on(table.employeeUserId),
   employeePeriodUnique: uniqueIndex("academy_payroll_payouts_employee_period_unique").on(table.employeeUserId, table.period),
-  amountCheck: check("academy_payroll_payouts_amount_check", sql`${table.baseSalaryUzs} >= 0 AND ${table.bonusUzs} >= 0 AND ${table.deductionUzs} >= 0 AND ${table.amountUzs} >= 0 AND ${table.amountUzs} = ${table.baseSalaryUzs} + ${table.bonusUzs} - ${table.deductionUzs}`),
+  amountCheck: check("academy_payroll_payouts_amount_check", sql`${table.baseSalaryUzs} >= 0 AND ${table.bonusUzs} >= 0 AND ${table.deductionUzs} >= 0 AND ${table.conductedLessonsCount} >= 0 AND ${table.lessonRateUzs} >= 0 AND ${table.conductedAssistantLessonsCount} >= 0 AND ${table.assistantLessonRateUzs} >= 0 AND ${table.amountUzs} >= 0 AND ${table.amountUzs} = ${table.baseSalaryUzs} + (${table.conductedLessonsCount} * ${table.lessonRateUzs}) + (${table.conductedAssistantLessonsCount} * ${table.assistantLessonRateUzs}) + ${table.bonusUzs} - ${table.deductionUzs}`),
   methodCheck: check("academy_payroll_payouts_method_check", sql`${table.method} IN ('cash', 'transfer', 'card')`),
   statusCheck: check("academy_payroll_payouts_status_check", sql`${table.status} = 'paid'`),
 }));
@@ -1257,6 +1274,12 @@ export const insertAcademyOperatingExpenseSchema = createInsertSchema(academyOpe
   updatedAt: true,
 });
 
+export const insertAcademyQuickReplySchema = createInsertSchema(academyQuickReplies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAcademySalaryRateSchema = createInsertSchema(academySalaryRates).omit({
   id: true,
   createdAt: true,
@@ -1371,6 +1394,8 @@ export type AcademyMarketingExpense = typeof academyMarketingExpenses.$inferSele
 export type InsertAcademyMarketingExpense = z.infer<typeof insertAcademyMarketingExpenseSchema>;
 export type AcademyOperatingExpense = typeof academyOperatingExpenses.$inferSelect;
 export type InsertAcademyOperatingExpense = z.infer<typeof insertAcademyOperatingExpenseSchema>;
+export type AcademyQuickReply = typeof academyQuickReplies.$inferSelect;
+export type InsertAcademyQuickReply = z.infer<typeof insertAcademyQuickReplySchema>;
 export type AcademySalaryRate = typeof academySalaryRates.$inferSelect;
 export type InsertAcademySalaryRate = z.infer<typeof insertAcademySalaryRateSchema>;
 export type AcademyPayrollPayout = typeof academyPayrollPayouts.$inferSelect;

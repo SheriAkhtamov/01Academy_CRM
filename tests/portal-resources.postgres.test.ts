@@ -66,7 +66,8 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer,full_name text,status text DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text,course_id integer,teacher_id integer,status text DEFAULT 'open');
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,status text DEFAULT 'active',enrolled_at timestamptz,ended_at timestamptz);
-      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,lesson_number integer,topic text,materials text,scheduled_at timestamptz,duration_minutes integer DEFAULT 120,status text);
+      CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,lesson_number integer,topic text,materials text,scheduled_at timestamptz,duration_minutes integer DEFAULT 120,status text,teacher_id integer);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer,student_id integer,status text);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY,student_id integer,title text,group_id integer,course_id integer,url text,file_url text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_payments(id serial PRIMARY KEY,student_id integer,lead_id integer,amount_uzs bigint,status text,method text,type text,paid_at timestamptz,created_at timestamptz DEFAULT now());`);
@@ -92,20 +93,12 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
       INSERT INTO portal_student_links(account_id,student_id,kind,relationship,permissions,status,verified_at) VALUES(1,1,'self',NULL,'["learning.read","feedback.read","assignments.submit","portfolio.edit","communication.create"]','active',now()),(2,2,'self',NULL,'["learning.read","feedback.read","portfolio.edit","finance.read"]','active',now()),(3,1,'representative','parent','["portfolio.approve"]','active',now()),(4,3,'self',NULL,'["learning.read","portfolio.edit","finance.read"]','active',now());`);
   });
   afterAll(async () => { if (pool) await pool.end(); if (admin) { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); } });
-  it('requires guardian approval and teacher moderation for a minor, hiding personal metadata publicly', async () => {
-    const value = await service.saveProject(self,null,project()); const requested = await service.createShare(self,value.id,share(value.version));
-    expect(requested.status).toBe('awaiting_approval'); expect(requested.publicUrl).toBeNull();
-    const approved = await service.approveShare(parent,requested.id,requested.version,true); expect(approved.status).toBe('awaiting_moderation');
-    await expect(service.moderateShare(otherTeacher,approved.id,approved.version,true)).rejects.toMatchObject({ code: 'portalNotFound' });
-    const published = await service.moderateShare(teacher,approved.id,approved.version,true);
+  it('publishes a minor’s project at once, hiding personal metadata publicly', async () => {
+    const value = await service.saveProject(self,null,project()); const published = await service.createShare(self,value.id,share(value.version));
+    expect(published.status).toBe('published');
     const output = await service.publicProject(publicToken(published.publicUrl));
     expect(output).toMatchObject({ title: 'Project', displayName: 'Chosen name', description: null, teacherReview: null });
     for (const key of ['studentId','accountId','runId','groupId','studentName','tokenHash','tokenEnvelope']) expect(output).not.toHaveProperty(key);
-  });
-  it('shows an approval-only parent the selected immutable preview, excluding later private edits', async () => {
-    const value = await service.saveProject(self,null,project()); await service.createShare(self,value.id,share(value.version));
-    await service.saveProject(self,value.id,project({ version: value.version, title: 'Private new title', description: 'Private new text' }));
-    expect((await service.projects(parent))[0]).toMatchObject({ title: 'Project', description: '', runId: null, sourceSubmissionId: null });
   });
   it('keeps published snapshots unchanged and revokes the public link immediately', async () => {
     const value = await service.saveProject(adult,null,project()); const published = await service.createShare(adult,value.id,share(value.version,{ includeDescription: true }));
@@ -475,15 +468,12 @@ describe.skipIf(!databaseUrl)('Portal resource PostgreSQL authorization and snap
     expect(audit.request_id).toBe(requestId);expect(audit.details).toEqual({shareId:published.id,fileId:file.id});
     expect(JSON.stringify(audit)).not.toContain(token);
   });
-  it('completes comparison and moderation transactions with one database connection', async () => {
+  it('completes a comparison transaction with one database connection', async () => {
     const first=await service.saveProject(self,null,project({title:'First'})),latest=await service.saveProject(self,null,project({title:'Latest'}));
-    const requested=await service.createShare(self,latest.id,share(latest.version));
-    const approved=await service.approveShare(parent,requested.id,requested.version,true);
     const single=new Pool({connectionString:databaseUrl,options:`-c search_path=${schema}`,max:1,connectionTimeoutMillis:2000});
     try {
       const singleRepository=new PostgresPortalResourceRepository(single,async()=>true);
       expect(await singleRepository.saveProjectComparison(self,{runId:1,firstProjectId:first.id,latestProjectId:latest.id,version:0})).toMatchObject({firstProjectId:first.id,latestProjectId:latest.id});
-      expect(await singleRepository.moderateShare(teacher,approved.id,approved.version,true)).toMatchObject({status:'published'});
     } finally {await single.end();}
   });
   it('rechecks that an employee is active before accepting uploaded or copied attachments', async () => {

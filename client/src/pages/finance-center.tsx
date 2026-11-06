@@ -77,6 +77,7 @@ import {
 import { useStickyState } from '@/hooks/useStickyState';
 import { ACADEMY_TIME_ZONE, academyToday } from '@/lib/localeFormat';
 import { payrollEntryKey, type ExpenseRegistryRow, type Row } from '@/lib/financeRows';
+import { calculatePayrollAmount } from '@shared/finance';
 import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface DashboardData {
@@ -174,8 +175,22 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   const [expenseForm, setExpenseForm] = useState(defaultExpenseForm);
   const [initialExpenseForm, setInitialExpenseForm] = useState(defaultExpenseForm);
 
-  const [salaryForm, setSalaryForm] = useState({ employeeUserId: '', amountUzs: '', effectiveMonth: period, note: '' });
-  const [initialSalaryForm, setInitialSalaryForm] = useState({ employeeUserId: '', amountUzs: '', effectiveMonth: period, note: '' });
+  const [salaryForm, setSalaryForm] = useState({
+    employeeUserId: '',
+    amountUzs: '',
+    lessonRateUzs: '',
+    assistantLessonRateUzs: '',
+    effectiveMonth: period,
+    note: '',
+  });
+  const [initialSalaryForm, setInitialSalaryForm] = useState({
+    employeeUserId: '',
+    amountUzs: '',
+    lessonRateUzs: '',
+    assistantLessonRateUzs: '',
+    effectiveMonth: period,
+    note: '',
+  });
 
   const [payoutForm, setPayoutForm] = useState({ bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' });
   const [initialPayoutForm, setInitialPayoutForm] = useState({ bonusUzs: '', deductionUzs: '', method: 'transfer', note: '' });
@@ -243,8 +258,12 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
   });
   const saveSalary = useMutation({
     mutationFn: () => apiRequest('POST', '/api/finance/salary-rates', {
-      employeeUserId: Number(salaryForm.employeeUserId), amountUzs: Number(salaryForm.amountUzs),
-      effectiveFrom: `${salaryForm.effectiveMonth}-01`, note: salaryForm.note,
+      employeeUserId: Number(salaryForm.employeeUserId),
+      amountUzs: Number(salaryForm.amountUzs || 0),
+      lessonRateUzs: Number(salaryForm.lessonRateUzs || 0),
+      assistantLessonRateUzs: Number(salaryForm.assistantLessonRateUzs || 0),
+      effectiveFrom: `${salaryForm.effectiveMonth}-01`,
+      note: salaryForm.note,
     }),
     onSuccess: () => { toast({ title: copy.saved }); setSalaryDialogOpen(false); setInitialSalaryForm(salaryForm); invalidateFinance(); },
     onError: (error: Error) => toast({ title: copy.error, description: error.message, variant: 'destructive' }),
@@ -300,7 +319,9 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
       ? preferred : salaryCandidates[0];
     const form = {
       employeeUserId: target ? String(target.employeeUserId) : '',
-      amountUzs: target?.baseSalaryUzs ? String(target.baseSalaryUzs) : '',
+      amountUzs: target?.baseSalaryUzs !== undefined && target?.baseSalaryUzs !== null ? String(target.baseSalaryUzs) : '',
+      lessonRateUzs: target?.lessonRateUzs ? String(target.lessonRateUzs) : '',
+      assistantLessonRateUzs: target?.assistantLessonRateUzs ? String(target.assistantLessonRateUzs) : '',
       effectiveMonth: period,
       note: '',
     };
@@ -315,8 +336,24 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
     setInitialPayoutForm(form);
   };
   const payoutTotal = payoutTarget
-    ? Math.max(0, Number(payoutTarget.baseSalaryUzs || 0) + Number(payoutForm.bonusUzs || 0) - Number(payoutForm.deductionUzs || 0))
+    ? calculatePayrollAmount(
+        payoutTarget.baseSalaryUzs || 0,
+        payoutForm.bonusUzs,
+        payoutForm.deductionUzs,
+        payoutTarget.conductedLessonsCount || 0,
+        payoutTarget.lessonRateUzs || 0,
+        payoutTarget.conductedAssistantLessonsCount || 0,
+        payoutTarget.assistantLessonRateUzs || 0,
+      )
     : 0;
+
+  const hasSalaryRateValue = Number(salaryForm.amountUzs || 0) > 0
+    || Number(salaryForm.lessonRateUzs || 0) > 0
+    || Number(salaryForm.assistantLessonRateUzs || 0) > 0;
+  const canSaveSalary = Boolean(salaryForm.employeeUserId)
+    && Boolean(salaryForm.effectiveMonth)
+    && hasSalaryRateValue
+    && !saveSalary.isPending;
 
   const canSaveExpense = Boolean(expenseForm.title.trim())
     && Number(expenseForm.amountUzs) > 0
@@ -634,7 +671,18 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                       key: 'baseSalaryUzs',
                       header: copy.salary,
                       accessor: (row: Row) => Number(row.baseSalaryUzs || 0),
-                      render: (row: Row) => money(row.baseSalaryUzs),
+                      render: (row: Row) => (
+                        <div className="flex flex-col items-end">
+                          <span>{money(row.baseSalaryUzs)}</span>
+                          {(row.conductedLessonsCount > 0 || row.conductedAssistantLessonsCount > 0) ? (
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                              {row.conductedLessonsCount > 0 ? `${row.conductedLessonsCount} ${copy.conductedMainLessons.toLowerCase()}` : ''}
+                              {row.conductedLessonsCount > 0 && row.conductedAssistantLessonsCount > 0 ? ' · ' : ''}
+                              {row.conductedAssistantLessonsCount > 0 ? `${row.conductedAssistantLessonsCount} ${copy.conductedAssistantLessons.toLowerCase()}` : ''}
+                            </span>
+                          ) : null}
+                        </div>
+                      ),
                       sortable: true,
                       cellClassName: 'whitespace-nowrap text-right tabular-nums',
                     },
@@ -657,8 +705,8 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                     {
                       key: 'amountUzs',
                       header: copy.payoutAmount,
-                      accessor: (row: Row) => Number(row.amountUzs ?? row.baseSalaryUzs ?? 0),
-                      render: (row: Row) => money(row.amountUzs ?? row.baseSalaryUzs),
+                      accessor: (row: Row) => Number(row.amountUzs ?? row.pendingAmountUzs ?? row.baseSalaryUzs ?? 0),
+                      render: (row: Row) => money(row.amountUzs ?? row.pendingAmountUzs ?? row.baseSalaryUzs),
                       sortable: true,
                       cellClassName: 'whitespace-nowrap text-right font-semibold tabular-nums',
                     },
@@ -703,14 +751,65 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
               <Card>
                 <CardHeader><CardTitle>{copy.employee}</CardTitle></CardHeader>
                 <CardContent>
-                  {selectedPayrollEntry ? <div className="flex flex-col gap-5"><div className="flex items-center gap-3"><EmployeeAvatar userId={selectedPayrollEntry.employeeUserId} name={selectedPayrollEntry.employeeName} className="size-12 text-sm" /><div><p className="font-semibold">{selectedPayrollEntry.employeeName}</p><p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p></div></div><div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4"><div><p className="text-xs text-muted-foreground">{copy.currentSalary}</p><p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p></div><div><p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p><p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p></div></div></div> : <p className="text-sm text-muted-foreground">{copy.noData}</p>}
+                  {selectedPayrollEntry ? (
+                    <div className="flex flex-col gap-5">
+                      <div className="flex items-center gap-3">
+                        <EmployeeAvatar userId={selectedPayrollEntry.employeeUserId} name={selectedPayrollEntry.employeeName} className="size-12 text-sm" />
+                        <div>
+                          <p className="font-semibold">{selectedPayrollEntry.employeeName}</p>
+                          <p className="text-sm text-muted-foreground">{selectedPayrollEntry.position || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground">{copy.currentSalary}</p>
+                          <p className="mt-1 text-2xl font-bold text-emerald-700 tabular-nums">{money(selectedPayrollEntry.baseSalaryUzs)}</p>
+                        </div>
+                        {selectedPayrollEntry.lessonRateUzs > 0 ? (
+                          <div>
+                            <p className="text-xs text-muted-foreground">{copy.lessonRate}</p>
+                            <p className="mt-1 text-base font-semibold tabular-nums">{money(selectedPayrollEntry.lessonRateUzs)}</p>
+                          </div>
+                        ) : null}
+                        {selectedPayrollEntry.assistantLessonRateUzs > 0 ? (
+                          <div>
+                            <p className="text-xs text-muted-foreground">{copy.assistantLessonRate}</p>
+                            <p className="mt-1 text-base font-semibold tabular-nums">{money(selectedPayrollEntry.assistantLessonRateUzs)}</p>
+                          </div>
+                        ) : null}
+                        <div>
+                          <p className="text-xs text-muted-foreground">{copy.effectiveFrom}</p>
+                          <p className="mt-1 text-sm font-medium">{date(selectedPayrollEntry.effectiveFrom)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : <p className="text-sm text-muted-foreground">{copy.noData}</p>}
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader><CardTitle>{copy.salaryHistory}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex flex-col gap-5">
-                    {selectedSalaryHistory.map((rate, index) => <div key={rate.id} className="relative flex gap-3"><div className="flex flex-col items-center"><span className={cn('mt-1 size-2.5 rounded-full', index === 0 ? 'bg-emerald-500' : 'bg-primary')} />{index < selectedSalaryHistory.length - 1 ? <span className="mt-1 h-full w-px bg-border" /> : null}</div><div className="min-w-0 pb-2"><p className="font-semibold tabular-nums">{money(rate.amountUzs)}</p><p className="mt-1 text-xs text-muted-foreground">{date(rate.effectiveFrom)}{rate.effectiveTo ? ` — ${date(rate.effectiveTo)}` : ''}</p>{rate.note ? <p className="mt-1 text-xs text-muted-foreground">{rate.note}</p> : null}</div></div>)}
+                    {selectedSalaryHistory.map((rate, index) => (
+                      <div key={rate.id} className="relative flex gap-3">
+                        <div className="flex flex-col items-center">
+                          <span className={cn('mt-1 size-2.5 rounded-full', index === 0 ? 'bg-emerald-500' : 'bg-primary')} />
+                          {index < selectedSalaryHistory.length - 1 ? <span className="mt-1 h-full w-px bg-border" /> : null}
+                        </div>
+                        <div className="min-w-0 pb-2">
+                          <p className="font-semibold tabular-nums">{money(rate.amountUzs)}</p>
+                          {(rate.lessonRateUzs > 0 || rate.assistantLessonRateUzs > 0) ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                              {rate.lessonRateUzs > 0 ? `${copy.lessonRate}: ${money(rate.lessonRateUzs)}` : ''}
+                              {rate.lessonRateUzs > 0 && rate.assistantLessonRateUzs > 0 ? ' · ' : ''}
+                              {rate.assistantLessonRateUzs > 0 ? `${copy.assistantLessonRate}: ${money(rate.assistantLessonRateUzs)}` : ''}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-muted-foreground">{date(rate.effectiveFrom)}{rate.effectiveTo ? ` — ${date(rate.effectiveTo)}` : ''}</p>
+                          {rate.note ? <p className="mt-1 text-xs text-muted-foreground">{rate.note}</p> : null}
+                        </div>
+                      </div>
+                    ))}
                     {!selectedSalaryHistory.length ? <p className="text-sm text-muted-foreground">{copy.noSalaryHistory}</p> : null}
                   </div>
                 </CardContent>
@@ -758,16 +857,52 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
           <div className="compact-modal-body flex-1 space-y-3 overflow-y-auto overscroll-contain">
             <CompactModalSection title={copy.salary} icon={UserRound} tone="teal" collapsible={false} disabled={saveSalary.isPending}>
               <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field className="sm:col-span-2"><FieldLabel>{copy.employee}</FieldLabel><Select value={salaryForm.employeeUserId} disabled={saveSalary.isPending} onValueChange={(employeeUserId) => { const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId); setSalaryForm((form) => ({ ...form, employeeUserId, amountUzs: entry?.baseSalaryUzs ? String(entry.baseSalaryUzs) : '' })); }}><SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger><SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}><EmployeeIdentity userId={entry.employeeUserId} name={entry.employeeName} /></SelectItem>)}</SelectGroup></SelectContent></Select></Field>
-                <Field><FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel><CurrencyInput id="salary-amount" value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} /></Field>
-                <Field><FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel><Input id="salary-month" type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} /></Field>
+                <Field className="sm:col-span-2">
+                  <FieldLabel>{copy.employee}</FieldLabel>
+                  <Select
+                    value={salaryForm.employeeUserId}
+                    disabled={saveSalary.isPending}
+                    onValueChange={(employeeUserId) => {
+                      const entry = payroll.data?.entries.find((item) => String(item.employeeUserId) === employeeUserId);
+                      setSalaryForm((form) => ({
+                        ...form,
+                        employeeUserId,
+                        amountUzs: entry?.baseSalaryUzs !== undefined && entry?.baseSalaryUzs !== null ? String(entry.baseSalaryUzs) : '',
+                        lessonRateUzs: entry?.lessonRateUzs ? String(entry.lessonRateUzs) : '',
+                        assistantLessonRateUzs: entry?.assistantLessonRateUzs ? String(entry.assistantLessonRateUzs) : '',
+                      }));
+                    }}
+                  >
+                    <SelectTrigger aria-label={copy.employee}><SelectValue placeholder={copy.employee} /></SelectTrigger>
+                    <SelectContent><SelectGroup>{salaryCandidates.map((entry) => <SelectItem key={entry.employeeUserId} value={String(entry.employeeUserId)}><EmployeeIdentity userId={entry.employeeUserId} name={entry.employeeName} /></SelectItem>)}</SelectGroup></SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="salary-amount">{copy.salary}</FieldLabel>
+                  <CurrencyInput id="salary-amount" disabled={saveSalary.isPending} value={salaryForm.amountUzs} onValueChange={(amountUzs) => setSalaryForm((form) => ({ ...form, amountUzs }))} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="salary-month">{copy.effectiveMonth}</FieldLabel>
+                  <Input id="salary-month" disabled={saveSalary.isPending} type="month" value={salaryForm.effectiveMonth} onChange={(event) => setSalaryForm((form) => ({ ...form, effectiveMonth: event.target.value }))} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="salary-lesson-rate">{copy.lessonRate}</FieldLabel>
+                  <CurrencyInput id="salary-lesson-rate" disabled={saveSalary.isPending} value={salaryForm.lessonRateUzs} onValueChange={(lessonRateUzs) => setSalaryForm((form) => ({ ...form, lessonRateUzs }))} />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="salary-assistant-rate">{copy.assistantLessonRate}</FieldLabel>
+                  <CurrencyInput id="salary-assistant-rate" disabled={saveSalary.isPending} value={salaryForm.assistantLessonRateUzs} onValueChange={(assistantLessonRateUzs) => setSalaryForm((form) => ({ ...form, assistantLessonRateUzs }))} />
+                </Field>
               </FieldGroup>
             </CompactModalSection>
             <CompactModalSection title={copy.note} tone="violet" summary={salaryForm.note} disabled={saveSalary.isPending}>
-              <Field><FieldLabel htmlFor="salary-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="salary-note" value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
+              <Field><FieldLabel htmlFor="salary-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="salary-note" disabled={saveSalary.isPending} value={salaryForm.note} onChange={(event) => setSalaryForm((form) => ({ ...form, note: event.target.value }))} /></Field>
             </CompactModalSection>
           </div>
-          <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={saveSalary.isPending} onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={!salaryForm.employeeUserId || !salaryForm.amountUzs || !salaryForm.effectiveMonth || saveSalary.isPending} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.saveSalary}</Button></DialogFooter>
+          <DialogFooter className="compact-modal-footer">
+            <Button variant="outline" disabled={saveSalary.isPending} onClick={() => salaryGuard.handleOpenChange(false)}>{copy.formCancel}</Button>
+            <Button disabled={!canSaveSalary} onClick={() => saveSalary.mutate()}>{saveSalary.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.saveSalary}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -780,15 +915,27 @@ export default function FinanceCenter({ section = 'overview' }: { section?: Fina
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field><FieldLabel htmlFor="payout-period">{copy.calculationMonth}</FieldLabel><Input id="payout-period" type="month" value={period} disabled /></Field>
                   <Field><FieldLabel htmlFor="payout-salary">{copy.salary}</FieldLabel><CurrencyInput id="payout-salary" value={payoutTarget?.baseSalaryUzs || 0} onValueChange={() => undefined} disabled /></Field>
-                  <Field><FieldLabel htmlFor="payout-bonus">{copy.bonus}</FieldLabel><CurrencyInput id="payout-bonus" value={payoutForm.bonusUzs} onValueChange={(bonusUzs) => setPayoutForm((form) => ({ ...form, bonusUzs }))} /></Field>
-                  <Field><FieldLabel htmlFor="payout-deduction">{copy.deduction}</FieldLabel><CurrencyInput id="payout-deduction" value={payoutForm.deductionUzs} onValueChange={(deductionUzs) => setPayoutForm((form) => ({ ...form, deductionUzs }))} /></Field>
+                  {((payoutTarget?.conductedLessonsCount ?? 0) > 0 || (payoutTarget?.lessonRateUzs ?? 0) > 0) ? (
+                    <Field>
+                      <FieldLabel htmlFor="payout-lessons">{copy.conductedMainLessons}</FieldLabel>
+                      <Input id="payout-lessons" value={`${payoutTarget?.conductedLessonsCount || 0} × ${money(payoutTarget?.lessonRateUzs || 0)} = ${money((payoutTarget?.conductedLessonsCount || 0) * (payoutTarget?.lessonRateUzs || 0))}`} disabled />
+                    </Field>
+                  ) : null}
+                  {((payoutTarget?.conductedAssistantLessonsCount ?? 0) > 0 || (payoutTarget?.assistantLessonRateUzs ?? 0) > 0) ? (
+                    <Field>
+                      <FieldLabel htmlFor="payout-assistant">{copy.conductedAssistantLessons}</FieldLabel>
+                      <Input id="payout-assistant" value={`${payoutTarget?.conductedAssistantLessonsCount || 0} × ${money(payoutTarget?.assistantLessonRateUzs || 0)} = ${money((payoutTarget?.conductedAssistantLessonsCount || 0) * (payoutTarget?.assistantLessonRateUzs || 0))}`} disabled />
+                    </Field>
+                  ) : null}
+                  <Field><FieldLabel htmlFor="payout-bonus">{copy.bonus}</FieldLabel><CurrencyInput id="payout-bonus" disabled={savePayout.isPending} value={payoutForm.bonusUzs} onValueChange={(bonusUzs) => setPayoutForm((form) => ({ ...form, bonusUzs }))} /></Field>
+                  <Field><FieldLabel htmlFor="payout-deduction">{copy.deduction}</FieldLabel><CurrencyInput id="payout-deduction" disabled={savePayout.isPending} value={payoutForm.deductionUzs} onValueChange={(deductionUzs) => setPayoutForm((form) => ({ ...form, deductionUzs }))} /></Field>
                 </div>
                 <dl className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-teal-500/25 bg-teal-500/5 px-3 py-2"><dt className="text-sm">{copy.payoutTotal}</dt><dd className="text-lg font-bold text-primary tabular-nums">{money(payoutTotal)}</dd></dl>
                 <Field><FieldLabel>{copy.paymentMethod}</FieldLabel><Select value={payoutForm.method} disabled={savePayout.isPending} onValueChange={(method) => setPayoutForm((form) => ({ ...form, method }))}><SelectTrigger aria-label={copy.paymentMethod}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{PAYMENT_METHODS.map((method) => <SelectItem key={method} value={method}>{methodLabel(method)}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
               </FieldGroup>
             </CompactModalSection>
             <CompactModalSection title={copy.note} tone="violet" summary={payoutForm.note} disabled={savePayout.isPending}>
-              <Field><FieldLabel htmlFor="payout-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="payout-note" value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
+              <Field><FieldLabel htmlFor="payout-note" className="sr-only">{copy.note}</FieldLabel><Textarea id="payout-note" disabled={savePayout.isPending} value={payoutForm.note} onChange={(event) => setPayoutForm((form) => ({ ...form, note: event.target.value }))} /></Field>
             </CompactModalSection>
           </div>
           <DialogFooter className="compact-modal-footer"><Button variant="outline" disabled={savePayout.isPending} onClick={() => payoutGuard.handleOpenChange(false)}>{copy.formCancel}</Button><Button disabled={payoutTotal <= 0 || savePayout.isPending} onClick={() => savePayout.mutate()}>{savePayout.isPending ? <OrbitSpinner className="" data-icon="inline-start" /> : null}{copy.confirmPayout}</Button></DialogFooter>

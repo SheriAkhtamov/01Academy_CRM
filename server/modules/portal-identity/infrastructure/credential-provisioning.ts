@@ -15,7 +15,7 @@ export async function credentialStudent(sql: PoolClient, studentId: number, lead
     COALESCE(identity.classification,'unverified') AS classification,
     ARRAY(SELECT group_id FROM academy_student_group_enrollments WHERE student_id=student.id) AS groups
     FROM academy_students student LEFT JOIN portal_student_identity identity ON identity.student_id=student.id
-    WHERE student.id=$1 AND student.lead_id IS NOT NULL AND ($2::integer IS NULL OR student.lead_id=$2) FOR UPDATE OF student`, [studentId, leadId ?? null])).rows[0];
+    WHERE student.id=$1 AND ($2::integer IS NULL OR $2::integer <= 0 OR student.lead_id=$2) FOR UPDATE OF student`, [studentId, leadId ?? null])).rows[0];
   if (!row) throw new PortalError('academyAccessLeadUnavailable', 404);
   return row;
 }

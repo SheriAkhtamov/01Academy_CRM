@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { enqueueMetaLeadQualifiedSafely } from '../../services/meta-marketing';
 import {
   demoLessonAttendanceSchema,
   demoLessonCancelSchema,
@@ -503,6 +504,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
             studentId: student.id,
             status: 'invited',
           });
+          if (student.leadId) {
+            await enqueueMetaLeadQualifiedSafely(Number(student.leadId));
+          }
         }
         await createAudit(
           req.actor!,
@@ -586,6 +590,9 @@ export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router
               studentId: student.id,
               status: 'invited',
             });
+            if (student.leadId) {
+              await enqueueMetaLeadQualifiedSafely(Number(student.leadId));
+            }
           }
         }
         await syncDemoLeadStatuses(req.actor!, id, leads.filter((lead) => (

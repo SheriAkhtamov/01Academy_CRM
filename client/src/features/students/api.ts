@@ -5,9 +5,9 @@ import type { StudentExpectedPaymentRequest } from '@shared/contracts/academy-le
 
 export const studentsApi = {
   profile: (studentId: number, context: 'sales' | 'teacher' = 'sales') => apiRequest('GET', `/api/academy/students/${studentId}/profile${context === 'teacher' ? '?context=teacher' : ''}`) as Promise<StudentProfile>,
-  addProject: (studentId: number, input: { title: string; url?: string; file?: File }, onProgress: (percent: number) => void) => input.file
-    ? uploadStudentProject(studentId, input.title, input.file, onProgress)
-    : apiRequest('POST', `/api/academy/students/${studentId}/projects`, { title: input.title, url: input.url }) as Promise<StudentProject>,
+  addProject: (studentId: number, input: { title: string; url?: string; file?: File }, onProgress: (percent: number) => void, context?: string) => input.file
+    ? uploadStudentProject(studentId, input.title, input.file, onProgress, context)
+    : apiRequest('POST', `/api/academy/students/${studentId}/projects${context === 'teacher' ? '?context=teacher' : ''}`, { title: input.title, url: input.url }) as Promise<StudentProject>,
   updateDetails: <T>(studentId: number, input: {
     studentName: string;
     studentAge: number | null;

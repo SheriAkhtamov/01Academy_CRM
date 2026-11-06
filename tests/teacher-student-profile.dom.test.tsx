@@ -54,7 +54,7 @@ describe('opening a student from a teacher group', () => {
     expect(screen.getByTestId('route-search').textContent).toContain('group=54');
     expect(screen.getByTestId('route-search').textContent).toContain('student=321');
     fireEvent.mouseDown(within(dialog).getByRole('tab', { name: translations.portfolio.en }));
-    expect(within(dialog).queryByRole('button', { name: translations.studentProjectAdd.en })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: translations.studentProjectAdd.en })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: translations.close.en }));
     expect(await screen.findByRole('button', { name: /Rayhan/ })).toBeTruthy();
     expect(screen.getByTestId('route-search').textContent).toBe('group=54');

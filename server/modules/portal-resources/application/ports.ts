@@ -48,6 +48,16 @@ export interface PortalResourceRepository {
   cleanupFiles(): Promise<ResourceFile[]>;
   fileStorageRemoved(fileId: number): Promise<void>;
   payments(actor: PortalActorContext,cursor?:number|null,limit?:number): Promise<PortalPaymentsDto>;
+  studentContract(studentId: number): Promise<{
+    id: string;
+    number: string;
+    fileName: string | null;
+    fileMime: string | null;
+    fileSize: number | null;
+    fileKey: string | null;
+    createdAt: string;
+    updatedAt: string;
+  } | null>;
   financeQuestions(actor: PortalActorContext,cursor?:number|null,limit?:number): Promise<PortalFinanceQuestionDto[]>;
   financeQuestion(actor: PortalActorContext, id: number): Promise<PortalFinanceQuestionDetailDto>;
   createFinanceQuestion(actor: PortalActorContext, input: PortalFinanceQuestionInput): Promise<PortalFinanceQuestionDetailDto>;

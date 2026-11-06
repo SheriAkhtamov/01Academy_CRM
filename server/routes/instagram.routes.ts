@@ -7,20 +7,35 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { logger } from '../lib/logger';
 import { sendHttpError } from '../lib/http-errors';
 import { canAccessAcademyModule, getAssignedModules, hasLeadershipAccess } from '@shared/academy';
+import { parseMessageUpload } from '../middleware/message-upload.middleware';
 import {
   buildInstagramAuthorizationUrl,
+  createQuickReply,
+  deleteQuickReply,
   disconnectInstagramAccount,
   exchangeInstagramAuthorizationCode,
   getInstagramIntegrationConfig,
   getInstagramConversationSyncStatus,
+  attachInstagramConversationToLead,
+  findInstagramConversationSuggestedLead,
+  getInstagramConversationForLinking,
   listInstagramAccounts,
   listInstagramConversations,
   listInstagramMessages,
+  listQuickReplies,
   markInstagramConversationRead,
+  sendInstagramMediaMessage,
   sendInstagramTextMessage,
   startInstagramConversationHistorySync,
 } from '../services/instagram';
 import { countUnreadInstagramMessages } from '../services/instagram-conversation-count';
+import { mergeLeadRecords } from '../modules/academy/academy-leads';
+import { queryOne } from '../modules/academy/academy-core';
+import { canActorMutateLead, canActorViewLead } from '../modules/leads/domain/access-policy';
+import { actorContextFromRequest } from '../modules/leads/http/actor-context';
+import { attachSalesWorkflow } from '../infrastructure/sales-kpi/sales-workflow-context';
+import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { getInstagramConversationAudienceUserIds } from '../services/instagram-audience';
 
 const router = Router();
 const messageSchema = z.object({
@@ -407,6 +422,132 @@ router.post('/conversations/:id/messages', async (req, res) => {
       error,
     });
     return sendHttpError(res, error, 'instagramSendFailed');
+  }
+});
+
+router.post('/conversations/:id/media', parseMessageUpload, async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  const conversationId = parseId(req.params.id);
+  if (!conversationId) return res.status(400).json({ error: 'invalidData' });
+  const files = (req.files as Express.Multer.File[]) || [];
+  if (files.length === 0) return res.status(400).json({ error: 'invalidData' });
+
+  try {
+    const file = files[0];
+    const message = await sendInstagramMediaMessage(
+      conversationId,
+      file,
+      {
+        id: req.user!.id,
+        module: req.user!.module,
+        modules: getAssignedModules(req.user),
+      },
+    );
+    res.status(201).json(message);
+  } catch (error: any) {
+    logger.error('Failed to send Instagram media message', {
+      conversationId,
+      userId: req.user?.id,
+      error,
+    });
+    return sendHttpError(res, error, 'instagramSendFailed');
+  }
+});
+
+const linkLeadSchema = z.object({
+  targetLeadId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+router.post('/conversations/:id/link-lead', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  const conversationId = parseId(req.params.id);
+  if (!conversationId) return res.status(400).json({ error: 'invalidData' });
+  const parsed = linkLeadSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalidData' });
+  const targetLeadId = parsed.data.targetLeadId;
+
+  try {
+    const user = { id: req.user!.id, module: req.user!.module, modules: getAssignedModules(req.user) };
+    const actor = await attachSalesWorkflow(actorContextFromRequest(req));
+    const conversation = await getInstagramConversationForLinking(conversationId, user);
+    const target = await queryOne(`SELECT * FROM academy_leads WHERE id = $1`, [targetLeadId]);
+    if (!target) return res.status(404).json({ error: 'resourceNotFound' });
+    if (!canActorMutateLead(actor, target)) return res.status(403).json({ error: 'leadMergeAccessDenied' });
+    if (conversation.leadId === targetLeadId) return res.json({ success: true, leadId: targetLeadId });
+    if (conversation.leadId) {
+      // The standard merge moves the conversation, phones, comments, calls,
+      // payments and pupils onto the chosen lead and archives the duplicate;
+      // it checks both leads and never deletes anything.
+      await mergeLeadRecords(actor, targetLeadId, conversation.leadId);
+    } else {
+      await attachInstagramConversationToLead(conversationId, targetLeadId);
+    }
+    publishRealtimeEvent({
+      type: 'INSTAGRAM_CONVERSATION_UPDATED',
+      data: { conversationId, leadId: targetLeadId },
+      audienceUserIds: await getInstagramConversationAudienceUserIds(
+        target.managerId ? Number(target.managerId) : null,
+        target.funnelId ? Number(target.funnelId) : null,
+      ),
+    });
+    res.json({ success: true, leadId: targetLeadId });
+  } catch (error: any) {
+    logger.error('Failed to link Instagram conversation to lead', { conversationId, targetLeadId, error });
+    return sendHttpError(res, error, 'failedToUpdateResource');
+  }
+});
+
+router.get('/conversations/:id/suggested-lead', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  const conversationId = parseId(req.params.id);
+  if (!conversationId) return res.status(400).json({ error: 'invalidData' });
+  try {
+    const user = { id: req.user!.id, module: req.user!.module, modules: getAssignedModules(req.user) };
+    const actor = await attachSalesWorkflow(actorContextFromRequest(req));
+    res.json(await findInstagramConversationSuggestedLead(conversationId, user, (lead) => canActorViewLead(actor, lead)));
+  } catch (error: any) {
+    logger.error('Failed to find a lead for an Instagram conversation', { conversationId, error });
+    return sendHttpError(res, error, 'failedToLoadData');
+  }
+});
+
+router.get('/quick-replies', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  try {
+    const language = typeof req.query.language === 'string' && req.query.language ? req.query.language : null;
+    res.json(await listQuickReplies(language));
+  } catch (error) {
+    logger.error('Failed to list quick replies', { error });
+    res.status(500).json({ error: 'failedToLoadData' });
+  }
+});
+
+const quickReplySchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+  language: z.enum(['ru', 'uz', 'all']).default('ru'),
+});
+
+router.post('/quick-replies', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  const parsed = quickReplySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalidData' });
+  try {
+    res.status(201).json(await createQuickReply(parsed.data.text, parsed.data.language, req.user!.id));
+  } catch (error) {
+    logger.error('Failed to create quick reply', { error });
+    res.status(500).json({ error: 'failedToSaveResource' });
+  }
+});
+
+router.delete('/quick-replies/:id', async (req, res) => {
+  if (!ensureMessagingAccess(req, res)) return;
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalidData' });
+  try {
+    res.json(await deleteQuickReply(id, { id: req.user!.id, module: req.user!.module, modules: getAssignedModules(req.user) }));
+  } catch (error: any) {
+    logger.error('Failed to delete quick reply', { error, id });
+    return sendHttpError(res, error, 'failedToDeleteResource');
   }
 });
 

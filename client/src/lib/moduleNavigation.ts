@@ -104,6 +104,7 @@ export const MODULE_NAVIGATION = {
       { id: 'income', labelKey: 'financeCenterIncome', href: '/finance/income', icon: ArrowDownToLine },
       { id: 'expenses', labelKey: 'expenses', href: '/finance/expenses', icon: ArrowUpFromLine },
       { id: 'payroll', labelKey: 'financeCenterPayroll', href: '/finance/payroll', icon: WalletCards },
+      { id: 'contracts', labelKey: 'studentContractsTitle', href: '/sales/contracts', icon: FileSignature },
       { id: 'transactions', labelKey: 'financeCenterTransactions', href: '/finance/transactions', icon: ReceiptText },
     ],
   },

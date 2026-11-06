@@ -6,6 +6,7 @@ import type { LeadQualificationRepository } from '../application/qualification-s
 import { canActorMutateLead, canActorViewLead } from '../domain/access-policy';
 import type { ActorContext } from '../domain/actor-context';
 import { queryOne, withTransaction, type Row } from '../../academy/academy-core';
+import { enqueueMetaLeadQualifiedSafely } from '../../../services/meta-marketing';
 
 /** The lead row holds the current qualification; audit facts keep its history. */
 const present = (lead: Row): LeadQualification => ({
@@ -51,6 +52,9 @@ export class LegacyLeadQualificationRepository implements LeadQualificationRepos
          WHERE id = $1 RETURNING *`,
         [leadId, qualify, qualify ? fact!.createdAt : null, qualify ? actor.userId : null],
       );
+      if (qualify) {
+        await enqueueMetaLeadQualifiedSafely(leadId, fact!.createdAt);
+      }
       return present(updated!);
     });
   }

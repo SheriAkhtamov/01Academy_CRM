@@ -1,4 +1,3 @@
-import { enqueueMetaLeadIntakeSafely } from '../services/meta-marketing';
 import { timingSafeEqual } from 'crypto';
 import { Router, type RequestHandler } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -138,7 +137,14 @@ export const findContactByPhone = async (
               false AS is_archived,
               student.updated_at
        FROM academy_students student
-       WHERE regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g') = $1
+       WHERE COALESCE(student.phone, '') ~ '^[+()0-9[:space:].-]+$'
+         AND CASE
+           WHEN left(regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g'), 2) = '00'
+             THEN substring(regexp_replace(student.phone, '\\D', '', 'g') FROM 3)
+           WHEN length(regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g')) = 9
+             THEN '998' || regexp_replace(student.phone, '\\D', '', 'g')
+           ELSE regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g')
+         END = $1
 
        UNION ALL
 
@@ -199,7 +205,6 @@ const ensureContactByPhone = async (
   const normalized = normalizeOnlinePbxPhone(phone)!;
   const digits = digitsOnly(normalized);
   const client = await pool.connect();
-  let committedIntakeId: number | null = null;
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`telephony-lead:${digits}`]);
@@ -272,7 +277,6 @@ const ensureContactByPhone = async (
       [lead.id, actorId, `Автоматически из ${directionLabel} звонка`],
     );
     await client.query('COMMIT');
-    committedIntakeId = Number(lead.id);
     return {
       type: 'lead',
       id: lead.id,
@@ -287,7 +291,6 @@ const ensureContactByPhone = async (
     throw error;
   } finally {
     client.release();
-    if (committedIntakeId) await enqueueMetaLeadIntakeSafely(committedIntakeId);
   }
 };
 
@@ -729,7 +732,7 @@ const createWebhookHandler = (observeRobotCall?: RobotCallObserver) => asyncRout
   if (contact.created) {
     publishRealtimeEvent({ type: 'ACADEMY_LEAD_CREATED', data: { id: contact.leadId } });
   }
-  if (direction === 'incoming' && status === 'connected' && ownerId) {
+  if (direction === 'incoming' && (status === 'connected' || (status === 'ended' && talkSeconds > 0)) && ownerId) {
     await claimUnassignedLeadForAnsweredCall(contact.leadId, ownerId);
   }
   const endedAt = ['ended', 'failed', 'declined', 'missed'].includes(status) ? new Date() : null;

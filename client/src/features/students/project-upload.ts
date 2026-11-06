@@ -1,14 +1,14 @@
 import { handleUnauthorized } from '@/lib/queryClient';
 import type { StudentProject } from '@shared/contracts/student-profile';
 
-export function uploadStudentProject(studentId: number, title: string, file: File, onProgress: (percent: number) => void): Promise<StudentProject> {
+export function uploadStudentProject(studentId: number, title: string, file: File, onProgress: (percent: number) => void, context?: string): Promise<StudentProject> {
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append('title', title);
     form.append('fileName', file.name);
     form.append('file', file);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/academy/students/${studentId}/projects`);
+    xhr.open('POST', `/api/academy/students/${studentId}/projects${context === 'teacher' ? '?context=teacher' : ''}`);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.withCredentials = true;
     xhr.timeout = 10 * 60 * 1000;

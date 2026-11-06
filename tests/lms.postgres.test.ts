@@ -137,6 +137,7 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text NOT NULL,course_id integer NOT NULL,teacher_id integer,school_id integer,room_id integer,status text NOT NULL DEFAULT 'open',end_date timestamptz,updated_at timestamptz DEFAULT now(),is_archived boolean NOT NULL DEFAULT false);
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer NOT NULL,group_id integer NOT NULL,status text NOT NULL DEFAULT 'active',enrolled_at timestamptz NOT NULL,ended_at timestamptz);
       CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer NOT NULL,lesson_number integer NOT NULL,topic text NOT NULL,materials text,scheduled_at timestamptz NOT NULL,duration_minutes integer NOT NULL DEFAULT 120,status text NOT NULL DEFAULT 'scheduled',teacher_id integer,school_id integer,room_id integer,updated_at timestamptz DEFAULT now());
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_lesson_reschedules(id serial PRIMARY KEY,lesson_id integer,previous_scheduled_at timestamptz,new_scheduled_at timestamptz,changed_by integer,changed_at timestamptz DEFAULT now(),reason text);
       CREATE TABLE academy_attendance(id serial PRIMARY KEY,lesson_id integer NOT NULL,student_id integer NOT NULL,status text NOT NULL,UNIQUE(lesson_id,student_id));`);
     await pool.query(
@@ -2060,7 +2061,8 @@ describe.skipIf(!databaseUrl)("LMS isolated PostgreSQL vertical slices", () => {
       { entity_type: "quiz", count: 1 },
       { entity_type: "report", count: 2 },
     ]);
-    await pool.query("UPDATE academy_groups SET teacher_id=2 WHERE id=1");
+    // Lessons a teacher conducts also open the group, so hand those over too.
+    await pool.query("UPDATE academy_groups SET teacher_id=2 WHERE id=1; UPDATE academy_lessons SET teacher_id=2 WHERE group_id=1");
     await expect(
       learning.createMaterial(teacher, materialInput),
     ).rejects.toMatchObject({ code: "lmsNotFound" });

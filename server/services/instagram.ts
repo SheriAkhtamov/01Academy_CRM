@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
 import type { PoolClient } from 'pg';
 import { pool } from '../db';
 import { appConfig } from '../config';
@@ -20,6 +21,7 @@ import {
   linkMetaAttributionToLead,
 } from './meta-marketing';
 import { publishRealtimeEvent } from '../realtime/realtime-hub';
+import { leadPhoneIdentity } from '@shared/lead-phone-owners';
 import { resolveLeadFunnelId } from './lead-funnels';
 import { getInstagramConversationAudienceUserIds } from './instagram-audience';
 import { unassignedLeadVisibleToSalesSql } from './lead-distribution-visibility';
@@ -2676,6 +2678,213 @@ export const sendInstagramTextMessage = async (
   }
 };
 
+export const sendInstagramMediaMessage = async (
+  conversationId: number,
+  file: Express.Multer.File,
+  user: InstagramUser,
+) => {
+  const conversation = await assertConversationAccess(conversationId, user);
+  if (conversation.lead_id && !conversation.manager_id && !hasLeadershipAccess(user)) {
+    throw Object.assign(new Error('leadAssignmentRequired'), { statusCode: 409 });
+  }
+  if (conversation.account_status !== 'connected' || !conversation.access_token_encrypted) {
+    throw Object.assign(new Error('instagramAccountDisconnected'), { statusCode: 409 });
+  }
+  if (!isWithinMessagingWindow(conversation.last_inbound_at)) {
+    throw Object.assign(new Error('instagramMessagingWindowExpired'), { statusCode: 409 });
+  }
+
+  const mimeType = file.mimetype;
+  let mediaType: 'image' | 'video' | 'audio' | 'file' = 'file';
+  if (mimeType.startsWith('image/')) mediaType = 'image';
+  else if (mimeType.startsWith('video/')) mediaType = 'video';
+  else if (mimeType.startsWith('audio/')) mediaType = 'audio';
+
+  const config = instagramConfig();
+  const accessToken = decryptInstagramToken(conversation.access_token_encrypted);
+  const url = `${config.graphApiUrl}/${config.apiVersion}/${conversation.ig_user_id}/messages`;
+
+  const fileBuffer = await fs.readFile(file.path);
+  const formData = new FormData();
+  formData.append('recipient', JSON.stringify({ id: conversation.participant_igsid }));
+  formData.append('message', JSON.stringify({
+    attachment: {
+      type: mediaType,
+      payload: { is_reusable: true },
+    },
+  }));
+  formData.append('filedata', new Blob([fileBuffer], { type: mimeType }), file.originalname);
+
+  const response = await fetchInstagramJson<{
+    recipient_id?: string;
+    message_id?: string;
+    attachment_id?: string;
+  }>(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const attachmentUrl = `/api/messages/attachments/${file.filename}`;
+    const attachments = [{
+      type: mediaType,
+      url: attachmentUrl,
+      name: file.originalname,
+      mimeType,
+      size: file.size,
+    }];
+    const inserted = await client.query(
+      `INSERT INTO instagram_messages
+        (conversation_id, external_message_id, direction, sender_igsid, recipient_igsid,
+         content, message_type, status, sent_by, attachments)
+       VALUES ($1,$2,'outbound',$3,$4,$5,$6,'sent',$7,$8)
+       ON CONFLICT (external_message_id) DO UPDATE SET
+         status = 'sent',
+         sent_by = COALESCE(instagram_messages.sent_by, EXCLUDED.sent_by),
+         updated_at = NOW()
+       RETURNING *`,
+      [
+        conversationId,
+        response.message_id ?? null,
+        conversation.ig_user_id,
+        conversation.participant_igsid,
+        file.originalname,
+        mediaType,
+        user.id,
+        JSON.stringify(attachments),
+      ],
+    );
+    await client.query(
+      `UPDATE instagram_conversations
+       SET last_message_at = NOW(), last_outbound_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [conversationId],
+    );
+    await client.query(
+      `INSERT INTO academy_communications
+        (lead_id, channel, result, comment, created_by)
+       VALUES ($1,'instagram','media_sent',$2,$3)`,
+      [conversation.lead_id ?? null, `[${mediaType}] ${file.originalname}`, user.id],
+    );
+    await client.query('COMMIT');
+    const message = camelize(inserted.rows[0]);
+    const audienceUserIds = await getInstagramConversationAudienceUserIds(
+      conversation.manager_id ? Number(conversation.manager_id) : null,
+      conversation.funnel_id ? Number(conversation.funnel_id) : null,
+    );
+    publishRealtimeEvent({
+      type: 'INSTAGRAM_CONVERSATION_UPDATED',
+      data: { conversationId, message },
+      audienceUserIds,
+    });
+    return message;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error('Instagram media message sent but local persistence failed', {
+      conversationId,
+      externalMessageId: response.message_id,
+      error,
+    });
+    return {
+      id: -Date.now(),
+      conversationId,
+      externalMessageId: response.message_id ?? null,
+      direction: 'outbound',
+      senderIgsid: conversation.ig_user_id,
+      recipientIgsid: conversation.participant_igsid,
+      content: file.originalname,
+      messageType: mediaType,
+      status: 'sent',
+      sentBy: user.id,
+      attachments: [{
+        type: mediaType,
+        url: `/api/messages/attachments/${file.filename}`,
+        name: file.originalname,
+        mimeType,
+        size: file.size,
+      }],
+      createdAt: new Date(),
+      persistencePending: true,
+    };
+  } finally {
+    client.release();
+  }
+};
+
+/** The conversation as the link and suggestion actions see it, with the access check. */
+export const getInstagramConversationForLinking = async (conversationId: number, user: InstagramUser) => {
+  const conversation = await assertConversationAccess(conversationId, user);
+  return { id: Number(conversation.id), leadId: conversation.lead_id ? Number(conversation.lead_id) : null };
+};
+
+/** Attaches a conversation without a lead to a lead; a conversation with a lead is merged instead. */
+export const attachInstagramConversationToLead = async (conversationId: number, targetLeadId: number) => {
+  const { rowCount } = await pool.query(
+    `UPDATE instagram_conversations SET lead_id = $1, updated_at = NOW() WHERE id = $2 AND lead_id IS NULL`,
+    [targetLeadId, conversationId],
+  );
+  if (!rowCount) throw Object.assign(new Error('instagramConversationChanged'), { statusCode: 409 });
+};
+
+// A Uzbek number in a message: +998 with nine more digits, or a local nine-digit mobile number.
+const messagePhonePattern = /(?:\+?998[\s-]*\d(?:[\s-]*\d){8}|\b(?:90|91|93|94|95|97|98|99|33|88|77)\d{7}\b)/g;
+
+/**
+ * An existing active lead whose phone a customer wrote in this conversation,
+ * newest message first. Only leads the employee may see are suggested, and
+ * the phones table is searched by its index, never every lead's phone.
+ */
+export const findInstagramConversationSuggestedLead = async (
+  conversationId: number,
+  user: InstagramUser,
+  canSeeLead: (lead: { managerId: number | null; funnelId: number | null; statusCode: string | null }) => boolean,
+) => {
+  const conversation = await getInstagramConversationForLinking(conversationId, user);
+  const { rows: messages } = await pool.query<{ content: string }>(
+    `SELECT content FROM instagram_messages
+     WHERE conversation_id = $1 AND direction = 'inbound' AND content IS NOT NULL
+     ORDER BY id DESC LIMIT 50`,
+    [conversationId],
+  );
+  const phones: string[] = [];
+  for (const message of messages) {
+    for (const match of message.content.matchAll(messagePhonePattern)) {
+      const identity = leadPhoneIdentity(match[0]);
+      if (/^\+998\d{9}$/.test(identity) && !phones.includes(identity)) phones.push(identity);
+    }
+  }
+  if (phones.length === 0) return null;
+  const { rows } = await pool.query<{
+    id: number; contact_name: string; phone: string; manager_id: number | null; funnel_id: number | null;
+    status_code: string | null; normalized_phone: string;
+  }>(
+    `SELECT DISTINCT ON (lead.id) lead.id, lead.contact_name, phone.phone, lead.manager_id, lead.funnel_id,
+            lead.status_code, phone.normalized_phone
+     FROM academy_lead_phones phone
+     JOIN academy_leads lead ON lead.id = phone.lead_id
+     WHERE phone.normalized_phone = ANY($1::text[])
+       AND NOT COALESCE(lead.is_archived, false)
+       AND lead.id <> COALESCE($2::int, 0)
+     ORDER BY lead.id`,
+    [phones, conversation.leadId],
+  );
+  const suggestion = rows
+    .filter((row) => canSeeLead({
+      managerId: row.manager_id === null ? null : Number(row.manager_id),
+      funnelId: row.funnel_id === null ? null : Number(row.funnel_id),
+      statusCode: row.status_code,
+    }))
+    .sort((left, right) => phones.indexOf(left.normalized_phone) - phones.indexOf(right.normalized_phone))[0];
+  return suggestion
+    ? { leadId: Number(suggestion.id), contactName: suggestion.contact_name, phone: suggestion.phone }
+    : null;
+};
+
 export const refreshExpiringInstagramTokens = async () => {
   const { rows } = await pool.query<InstagramAccountRow>(
     `SELECT * FROM instagram_accounts
@@ -2718,6 +2927,47 @@ export const refreshExpiringInstagramTokens = async () => {
     }
   }
   return refreshed;
+};
+
+export const listQuickReplies = async (language?: string | null) => {
+  const result = language
+    ? await pool.query(
+        `SELECT id, text, language, created_by AS "createdBy", created_at AS "createdAt"
+         FROM academy_quick_replies
+         WHERE language = $1 OR language = 'all'
+         ORDER BY id ASC`,
+        [language],
+      )
+    : await pool.query(
+        `SELECT id, text, language, created_by AS "createdBy", created_at AS "createdAt"
+         FROM academy_quick_replies
+         ORDER BY language ASC, id ASC`,
+      );
+  return result.rows;
+};
+
+export const createQuickReply = async (text: string, language: string, userId: number) => {
+  const result = await pool.query(
+    `INSERT INTO academy_quick_replies (text, language, created_by)
+     VALUES ($1, $2, $3)
+     RETURNING id, text, language, created_by AS "createdBy", created_at AS "createdAt"`,
+    [text, language, userId],
+  );
+  return result.rows[0];
+};
+
+export const deleteQuickReply = async (id: number, user: InstagramUser) => {
+  const { rows: [reply] } = await pool.query<{ created_by: number | null }>(
+    'SELECT created_by FROM academy_quick_replies WHERE id = $1',
+    [id],
+  );
+  if (!reply) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
+  // A shared template is removed by its author or by leadership.
+  if (!hasLeadershipAccess(user) && Number(reply.created_by) !== Number(user.id)) {
+    throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
+  }
+  await pool.query('DELETE FROM academy_quick_replies WHERE id = $1', [id]);
+  return { success: true };
 };
 
 const isWithinMessagingWindow = (lastInboundAt: Date | string | null | undefined) => {

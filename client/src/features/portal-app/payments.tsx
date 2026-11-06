@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FileText, Download } from "lucide-react";
 import type { PortalPaymentDto } from "@shared/contracts/portal-resources";
 import {
   Dialog,
@@ -73,6 +74,7 @@ export function PortalPayments() {
     <>
       <PortalTitle labelKey="portalPayments" />
       {query.error && <PortalError error={query.error} retry={() => void query.refetch()} />}
+      <PortalStudentContractCard />
       {summary && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
@@ -309,6 +311,58 @@ export function PortalPaymentSummary() {
         >
           {t("portalPaymentHistory")}
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PortalStudentContractCard() {
+  const { t } = useTranslation();
+  const contractQuery = useSubjectQuery(
+    "student-contract",
+    portalResourcesApi.studentContract,
+    [],
+    "finance.read",
+  );
+  if (contractQuery.isPending || !contractQuery.data) return null;
+  const contract = contractQuery.data;
+  const sizeText = contract.fileSize
+    ? contract.fileSize > 1024 * 1024
+      ? `${(contract.fileSize / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.round(contract.fileSize / 1024)} KB`
+    : null;
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <FileText className="size-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold">{t("portalStudentContract")}: № {contract.number}</p>
+              {!contract.hasFile && (
+                <Badge variant="secondary" className="text-xs">
+                  {t("portalContractNoFile")}
+                </Badge>
+              )}
+            </div>
+            {contract.hasFile && contract.fileName && (
+              <p className="text-xs text-muted-foreground">
+                {contract.fileName} {sizeText ? `(${sizeText})` : ""}
+              </p>
+            )}
+          </div>
+        </div>
+        {contract.hasFile && contract.downloadUrl ? (
+          <Button variant="outline" size="sm" asChild className="shrink-0">
+            <a href={contract.downloadUrl} download={contract.fileName || "contract"}>
+              <Download className="mr-1.5 size-4" />
+              {t("portalDownloadContract")}
+            </a>
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -33,6 +33,8 @@ describe.skipIf(!databaseUrl)('Teacher profile and project access follows curren
     await fixture.pool.query(`CREATE TABLE users(id int PRIMARY KEY,full_name text);
       CREATE TABLE academy_teachers(id int PRIMARY KEY,user_id int,status text);
       CREATE TABLE academy_groups(id int PRIMARY KEY,teacher_id int);
+      CREATE TABLE academy_lessons(id int PRIMARY KEY,group_id int,teacher_id int);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_student_group_enrollments(student_id int,group_id int,status text);
       CREATE TABLE academy_students(id int PRIMARY KEY,student_name text,contact_name text,manager_id int,lead_id int);
       INSERT INTO users VALUES(7,'Teacher'); INSERT INTO academy_teachers VALUES(11,7,'active');

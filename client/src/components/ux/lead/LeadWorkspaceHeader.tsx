@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ExternalLink, MessageSquare, Phone } from 'lucide-react';
+import { ExternalLink, MessageSquare, Phone, Send } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,6 +80,15 @@ export function LeadWorkspaceHeader({
                   className="truncate tabular-nums transition-colors hover:text-primary"
                 >
                   {phone}
+                </a>
+                <a
+                  href={`https://t.me/+${phone.replace(/\D/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={t('telegram')}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Send className="size-3" aria-hidden="true" />
                 </a>
                 <CopyButton
                   type="button"

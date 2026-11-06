@@ -317,13 +317,19 @@ export const getAcademyDataset = async (
     slice('lessons', () => (
       query(`SELECT l.*, g.name AS group_name, t.full_name AS teacher_name, t.user_id AS teacher_user_id, c.name AS course_name,
         sc.name AS school_name,
-        COALESCE(g.is_archived, false) AS group_is_archived, g.status AS group_status
+        COALESCE(g.is_archived, false) AS group_is_archived, g.status AS group_status,
+        COALESCE(assistants.teacher_ids, '[]'::json) AS assistant_teacher_ids
       FROM academy_lessons l
       LEFT JOIN academy_groups g ON g.id = l.group_id
       LEFT JOIN academy_teachers t ON t.id = l.teacher_id
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_schools sc ON sc.id = l.school_id
       LEFT JOIN academy_rooms r ON r.id = l.room_id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(la.teacher_id) AS teacher_ids
+        FROM academy_lesson_assistants la
+        WHERE la.lesson_id = l.id
+      ) assistants ON TRUE
       WHERE 1=1 ${isTeacherScoped ? `AND ${teacherLessonVisibilitySql('l')}` : ''}
       ORDER BY l.scheduled_at DESC`, isTeacherScoped ? [teacherId] : [])
     )),
@@ -653,12 +659,24 @@ export const buildAnalytics = async (
   // --- Operations metrics: progress, teacher hours, retention %. ---
   const byTeacher = data.teachers.map((teacher) => {
     const teacherLessons = periodLessons.filter((lesson) => Number(lesson.teacherId) === Number(teacher.id) && lesson.status === 'conducted');
+    const assistantLessons = periodLessons.filter((lesson) => {
+      const assistantIds = Array.isArray(lesson.assistantTeacherIds)
+        ? lesson.assistantTeacherIds.map(Number)
+        : [];
+      return assistantIds.includes(Number(teacher.id)) && lesson.status === 'conducted';
+    });
     const teacherLessonIds = new Set(teacherLessons.map((lesson) => Number(lesson.id)));
     const teacherAttendance = periodAttendance.filter((record) => teacherLessonIds.has(Number(record.lessonId)));
+    const mainHours = teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0);
+    const assistantHours = assistantLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0);
     return {
       teacherId: teacher.id,
       teacherName: teacher.fullName,
-      hours: teacherLessons.reduce((sum, lesson) => sum + Number(lesson.durationMinutes || 120) / 60, 0),
+      hours: mainHours,
+      mainHours,
+      assistantHours,
+      mainLessonsCount: teacherLessons.length,
+      assistantLessonsCount: assistantLessons.length,
       attendance: teacherAttendance.length > 0
         ? Math.round(
             (teacherAttendance.filter((record) => record.status === 'present').length / teacherAttendance.length) * 100,
@@ -1016,11 +1034,38 @@ export const getMarketingModuleDataset = async (reportingRange: ReportingRange |
     query(`WITH ${marketingReportingCohortSql}
       SELECT l.*, cohort.acquired_at, cohort.source_ids AS reporting_source_ids,
         c.name AS course_name, s.name AS source_name, s.channel AS source_channel,
-        payment.has_paid_payment, payment.first_paid_at
+        payment.has_paid_payment, payment.first_paid_at,
+        contact_reach.reached,
+        demo_booking.demo_booked,
+        demo_attendance.demo_attended
       FROM academy_leads l
       JOIN marketing_cohort cohort ON cohort.lead_id = l.id
       LEFT JOIN academy_courses c ON c.id = l.course_id
       LEFT JOIN academy_lead_sources s ON s.id = l.source_id
+      LEFT JOIN LATERAL (
+        SELECT (EXISTS(
+          SELECT 1 FROM telephony_calls call
+          WHERE (call.lead_id = l.id OR (l.phone IS NOT NULL AND call.phone = l.phone))
+            AND (call.talk_seconds > 0 OR call.status = 'connected')
+        ) OR EXISTS (
+          SELECT 1 FROM academy_communications comm
+          WHERE comm.lead_id = l.id
+        )) AS reached
+      ) contact_reach ON true
+      LEFT JOIN LATERAL (
+        SELECT EXISTS(
+          SELECT 1 FROM academy_demo_lesson_participants part
+          JOIN academy_students st ON st.id = part.student_id
+          WHERE st.lead_id = l.id AND part.status <> 'cancelled'
+        ) AS demo_booked
+      ) demo_booking ON true
+      LEFT JOIN LATERAL (
+        SELECT EXISTS(
+          SELECT 1 FROM academy_demo_lesson_participants part
+          JOIN academy_students st ON st.id = part.student_id
+          WHERE st.lead_id = l.id AND part.status = 'attended'
+        ) AS demo_attended
+      ) demo_attendance ON true
       LEFT JOIN LATERAL (
         SELECT COUNT(*) > 0 AS has_paid_payment, MIN(COALESCE(p.paid_at, p.created_at)) AS first_paid_at
         FROM academy_payments p

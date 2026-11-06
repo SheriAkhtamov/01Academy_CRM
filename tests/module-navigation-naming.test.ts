@@ -74,7 +74,7 @@ describe('module navigation naming', () => {
         'Атрибуция Meta',
         'Менеджер событий Meta',
       ],
-      finance: ['Обзор финансов', 'Доходы', 'Расходы', 'Зарплаты', 'Операции'],
+      finance: ['Обзор финансов', 'Доходы', 'Расходы', 'Зарплаты', 'Договоры', 'Операции'],
     });
     expect(localized(TASKS_NAVIGATION_ITEM.labelKey, 'ru')).toBe('Задачи');
     expect(SYSTEM_MANAGEMENT_NAVIGATION_ITEMS.map((item) => localized(item.labelKey, 'ru')))
@@ -86,7 +86,10 @@ describe('module navigation naming', () => {
       ...Object.values(MODULE_NAVIGATION).flatMap((definition) => definition.items.map((item) => item.href)),
       ...SYSTEM_MANAGEMENT_NAVIGATION_ITEMS.map((item) => item.href),
     ];
-    expect(new Set(hrefs).size).toBe(hrefs.length);
+    // Finance opens the same contracts registry as sales.
+    const sharedHrefs = new Set(['/sales/contracts']);
+    const ownHrefs = hrefs.filter((href) => !sharedHrefs.has(href));
+    expect(new Set(ownHrefs).size).toBe(ownHrefs.length);
     expect(hrefs).toContain('/sales/messages');
     expect(hrefs).toContain('/sales/contracts');
     expect(hrefs).toContain('/sales/future-groups');

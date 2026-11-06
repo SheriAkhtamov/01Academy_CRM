@@ -5,6 +5,7 @@ import type {
   PortalPublicProjectDto, PortalNotificationPreferencesDto, PortalPaymentAllocationInput,
   PortalFinanceQuestionInput,
   PortalProjectComparisonInput,PortalProjectComparisonDto,PortalComparisonProjectDto,
+  PortalStudentContractDto,
 } from '@shared/contracts/portal-resources';
 import type { PortalResourceRepository, ResourceFile, ResourceFileStore, ResourceTokenCodec, ShareRecord,ComparisonRecord,ComparisonSnapshot } from './ports';
 import { PortalResourceError, requireFinanceRead, requireResourcePermission, requireShareCreation, type ResourceStaffActor } from '../domain/policy';
@@ -16,7 +17,8 @@ export const presentPortalFile = (file: ResourceFile, linkId?: number, staff = f
 });
 export class PortalResourceService {
   constructor(private readonly repository: PortalResourceRepository, private readonly store: ResourceFileStore,
-    private readonly tokens: ResourceTokenCodec, private readonly options: { appUrl: string; publicPortfolioEnabled: (studentId?: number) => boolean | Promise<boolean> }) {}
+    private readonly tokens: ResourceTokenCodec, private readonly options: { appUrl: string; publicPortfolioEnabled: (studentId?: number) => boolean | Promise<boolean> },
+    private readonly contractStore: ResourceFileStore = store) {}
   private authorizeProjects(actor: PortalActorContext) {
     if (!actor.permissions.some((permission) => ['learning.read', 'portfolio.edit', 'portfolio.approve'].includes(permission))) throw new PortalResourceError('portalAccessDenied', 403);
   }
@@ -189,6 +191,38 @@ export class PortalResourceService {
     return { path: this.store.location(file.storageKey), file: presentPortalFile(file, undefined, true) };
   }
   async payments(actor: PortalActorContext,cursor:number|null=null,limit=100) { requireFinanceRead(actor); return this.repository.payments(actor,cursor,limit); }
+  async studentContract(actor: PortalActorContext): Promise<PortalStudentContractDto | null> {
+    if (!actor.permissions.some((p) => ['finance.read', 'learning.read'].includes(p))) {
+      throw new PortalResourceError('portalAccessDenied', 403);
+    }
+    const contract = await this.repository.studentContract(actor.studentId);
+    if (!contract) return null;
+    return {
+      id: contract.id,
+      number: contract.number,
+      hasFile: Boolean(contract.fileKey),
+      fileName: contract.fileName,
+      fileSize: contract.fileSize,
+      downloadUrl: contract.fileKey ? `/api/portal/subjects/${actor.linkId}/contract/download` : null,
+      createdAt: contract.createdAt,
+      updatedAt: contract.updatedAt,
+    };
+  }
+  async studentContractDownload(actor: PortalActorContext) {
+    if (!actor.permissions.some((p) => ['finance.read', 'learning.read'].includes(p))) {
+      throw new PortalResourceError('portalAccessDenied', 403);
+    }
+    const contract = await this.repository.studentContract(actor.studentId);
+    if (!contract || !contract.fileKey) throw new PortalResourceError('portalNotFound', 404);
+    return {
+      path: this.contractStore.location(contract.fileKey),
+      file: {
+        name: contract.fileName || 'contract.pdf',
+        mime: contract.fileMime || 'application/pdf',
+        size: contract.fileSize || 0,
+      },
+    };
+  }
   async financeQuestions(actor: PortalActorContext) { requireFinanceRead(actor); return this.repository.financeQuestions(actor); }
   async financeQuestionsPage(actor:PortalActorContext,cursor:number|null,limit:number) { requireFinanceRead(actor);const values=await this.repository.financeQuestions(actor,cursor,limit+1);return {items:values.slice(0,limit),nextCursor:values.length>limit?values[limit-1].id:null}; }
   async staffFinanceQuestionsPage(actor:ResourceStaffActor,cursor:number|null,limit:number) {const values=await this.repository.staffFinanceQuestions(actor,cursor,limit+1);return {items:values.slice(0,limit),nextCursor:values.length>limit?values[limit-1].id:null}; }

@@ -66,4 +66,15 @@ describe('telephony contact resolution', () => {
     expect(sql).toContain('NOT EXISTS');
     expect(sql).toContain('indexed_phone.lead_id = lead.id');
   });
+
+  it('normalizes student phone when searching contacts', async () => {
+    mocks.poolQuery.mockResolvedValue({ rows: [] });
+
+    await findContactByPhone('+998901260005');
+
+    const sql = String(mocks.poolQuery.mock.calls[0][0]);
+    expect(sql).toContain("FROM academy_students student");
+    expect(sql).toContain("COALESCE(student.phone, '') ~ '^[+()0-9[:space:].-]+$'");
+    expect(sql).toContain("THEN '998' || regexp_replace(student.phone");
+  });
 });

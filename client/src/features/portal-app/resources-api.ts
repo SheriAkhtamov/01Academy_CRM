@@ -14,6 +14,7 @@ import type {
   PortalPublicProjectDto,
   PortalShareDto,
   PortalShareInput,
+  PortalStudentContractDto,
 } from "@shared/contracts/portal-resources";
 import { portalResourcePageSchema } from "@shared/contracts/portal-resources";
 import { PortalApiError, portalRequest, notifyPortalAccessError } from "./api";
@@ -157,6 +158,9 @@ export const portalResourcesApi = {
     normalizeResourcePage<PortalPaymentsPageDto>(
       await portalRequest(`/subjects/${linkId}/payments`, { signal }),
     ),
+  studentContract: async (linkId: number, signal?: AbortSignal): Promise<PortalStudentContractDto | null> => {
+    return portalRequest<PortalStudentContractDto | null>(`/subjects/${linkId}/contract`, { signal });
+  },
   paymentsPage: async (
     linkId: number,
     signal?: AbortSignal,

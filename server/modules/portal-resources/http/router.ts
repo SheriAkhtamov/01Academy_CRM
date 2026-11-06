@@ -55,6 +55,16 @@ export function createPortalResourceRouter(service: PortalResourceService, resol
   router.post('/subjects/:linkId/shares/:id/approve', handler(async (request, response) => { const input = portalShareApprovalSchema.parse(request.body); response.json(await service.approveShare(await actor(request), id(request.params.id), input.version, input.approved)); }));
   router.post('/subjects/:linkId/shares/:id/revoke', handler(async (request, response) => { await service.revokeShare(await actor(request), id(request.params.id)); response.json({ success: true }); }));
   router.get('/subjects/:linkId/payments', handler(async(request,response)=>{const query=page(request);response.json(pageDto(await service.payments(await actor(request),query.cursor,query.limit)));}));
+  router.get('/subjects/:linkId/contract', handler(async (request, response) => response.json(await service.studentContract(await actor(request)))));
+  router.get('/subjects/:linkId/contract/download', handler(async (request, response) => {
+    const result = await service.studentContractDownload(await actor(request));
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    response.download(result.path, result.file.name, (error) => {
+      if (error && !response.headersSent) response.status(404).json({ code: 'portalNotFound' });
+    });
+  }));
   router.get('/subjects/:linkId/finance-questions',handler(async(request,response)=>{const query=page(request);sendPage(response,await service.financeQuestionsPage(await actor(request),query.cursor,query.limit));}));
   router.post('/subjects/:linkId/finance-questions',handler(async(request,response)=>response.status(201).json(await service.createFinanceQuestion(await actor(request),portalFinanceQuestionSchema.parse(request.body)))));
   router.get('/subjects/:linkId/finance-questions/:id/messages',handler(async(request,response)=>response.json(await service.financeQuestion(await actor(request),id(request.params.id)))));

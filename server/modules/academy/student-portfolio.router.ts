@@ -60,13 +60,22 @@ export function registerStudentPortfolioRoutes(router: Router) {
             [authorized.student.id],
           );
           if (!student) return null;
+          const isTeacher = Boolean(authorized.teacherId);
           if (
             !hasLeadershipAccess(req.user) &&
+            !isTeacher &&
             Number(student.managerId) !== req.user!.id
           ) {
             res.status(403).json({ error: "Student access required" });
             return null;
           }
+          const targetGroup = await queryOne(
+            `SELECT group_id, (SELECT course_id FROM academy_groups WHERE id = membership.group_id) AS course_id
+             FROM academy_student_group_enrollments membership
+             WHERE student_id = $1 AND status = 'active'
+             ORDER BY is_primary DESC, id DESC LIMIT 1`,
+            [student.id],
+          );
           const originalName = req.file
             ? path
                 .basename(
@@ -83,8 +92,8 @@ export function registerStudentPortfolioRoutes(router: Router) {
             : null;
           const created = await insertRow("academy_portfolio_projects", {
             studentId: student.id,
-            groupId: student.groupId ?? null,
-            courseId: student.courseId ?? null,
+            groupId: student.groupId ?? (targetGroup ? Number(targetGroup.groupId) : null),
+            courseId: student.courseId ?? (targetGroup?.courseId ? Number(targetGroup.courseId) : null),
             title: parsed.data.title,
             url: parsed.data.url ?? null,
             fileUrl,
@@ -138,8 +147,11 @@ export function registerStudentPortfolioRoutes(router: Router) {
       const project = await queryOne(
         `SELECT file_url FROM academy_portfolio_projects project
         WHERE student_id = $1 AND split_part(file_url, '?', 1) = $2
-        AND NOT COALESCE((to_jsonb(project)->>'portal_created')::boolean,false)
-        ${authorized.teacherId ? "AND group_id IN (SELECT id FROM academy_groups WHERE teacher_id = $3)" : ""} LIMIT 1`,
+        ${authorized.teacherId ? `AND (project.group_id IS NULL OR project.group_id IN (
+          SELECT id FROM academy_groups WHERE teacher_id = $3
+          OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = academy_groups.id AND l.teacher_id = $3)
+          OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = academy_groups.id AND a.teacher_id = $3)
+        ))` : ""} LIMIT 1`,
         [
           authorized.student.id,
           `/api/academy/students/${authorized.student.id}/projects/files/${req.params.fileId}`,

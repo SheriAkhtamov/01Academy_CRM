@@ -462,12 +462,38 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
     return Math.round((presentCount / periodAttendanceRecords.length) * 100);
   }, [periodAttendanceRecords]);
 
-  const teachingHours = useMemo(
-    () => conductedPeriodLessons.reduce(
+  const currentTeacherId = data?.teacher?.id ? Number(data.teacher.id) : null;
+  const mainConductedLessons = useMemo(
+    () => conductedPeriodLessons.filter((lesson) => (
+      currentTeacherId ? Number(lesson.teacherId) === currentTeacherId : true
+    )),
+    [conductedPeriodLessons, currentTeacherId],
+  );
+  const assistantConductedLessons = useMemo(
+    () => conductedPeriodLessons.filter((lesson) => {
+      if (!currentTeacherId) return false;
+      const assistantIds = Array.isArray((lesson as any).assistantTeacherIds)
+        ? (lesson as any).assistantTeacherIds.map(Number)
+        : [];
+      return assistantIds.includes(currentTeacherId) || Number(lesson.teacherId) !== currentTeacherId;
+    }),
+    [conductedPeriodLessons, currentTeacherId],
+  );
+
+  const mainTeachingHours = useMemo(
+    () => mainConductedLessons.reduce(
       (sum, lesson) => sum + Number(lesson.durationMinutes || 0) / 60,
       0,
     ),
-    [conductedPeriodLessons],
+    [mainConductedLessons],
+  );
+
+  const assistantTeachingHours = useMemo(
+    () => assistantConductedLessons.reduce(
+      (sum, lesson) => sum + Number(lesson.durationMinutes || 0) / 60,
+      0,
+    ),
+    [assistantConductedLessons],
   );
 
   const teacherTimeline = useMemo(() => {
@@ -962,7 +988,10 @@ export default function TeacherModule({ section = 'overview' }: { section?: Teac
               conductedLessons: conductedPeriodLessons.length,
               totalLessons: periodLessons.length,
               avgAttendance,
-              teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(teachingHours),
+              teachingHours: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(mainTeachingHours),
+              assistantHours: assistantTeachingHours > 0
+                ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(assistantTeachingHours)
+                : undefined,
             }}
           />
           <TeacherAnalyticsCharts

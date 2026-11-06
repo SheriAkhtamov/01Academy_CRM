@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { enqueueMetaLeadPurchaseSafely } from '../../services/meta-marketing';
 import { flattenCourseCurriculum } from '@shared/contracts/course-curriculum';
 import { assertCourseCurriculumUpdateAllowed, parseCourseCurriculum } from './course-curriculum';
 import { isShortCodeConflict, normalizeShortCode } from './short-code';
@@ -350,6 +351,14 @@ router.post('/payments', (req, res, next) => {
     });
 
     paymentCommitted = true;
+    if (result.payment?.status === 'paid' && result.payment?.leadId) {
+      await enqueueMetaLeadPurchaseSafely(
+        Number(result.payment.leadId),
+        Number(result.payment.id),
+        Number(result.payment.amountUzs),
+        result.payment.paidAt,
+      );
+    }
     res.status(201).json(result);
   } catch (error: any) {
     logger.error('Failed to create payment', { error });

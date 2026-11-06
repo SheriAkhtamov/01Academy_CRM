@@ -18,6 +18,8 @@ const nonLocalizedValueKeys = new Set([
   'cplColumn',
   'emailPlaceholder',
   'fromEmailPlaceholder',
+  'languageShortRu',
+  'languageShortUz',
   'ltvCacLabel',
   'ltvLabel',
   'npsTab',
@@ -26,6 +28,7 @@ const nonLocalizedValueKeys = new Set([
   'publicAttendanceBrand',
   'roasLabel',
   'sessionTimeoutPlaceholder',
+  'telegram',
   'uzbekLang',
 ]);
 const hardcodedTextAllowlist = new Set(['.csv', 'Ctrl+', 'Enter', 'K', 'x']);

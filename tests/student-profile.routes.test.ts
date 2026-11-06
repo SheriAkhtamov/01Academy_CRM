@@ -128,14 +128,15 @@ describe('student profiles in the teacher module', () => {
       expect(params).toEqual([321, 4]);
     }
   });
-  it('denies unrelated teachers, sales context and teacher mutations', async () => {
+  it('denies unrelated teachers and allows assigned teachers to add projects', async () => {
     teacherMembership = null;
     expect((await request(app(9, 'teacher')).get('/api/academy/students/321/profile?context=teacher')).status).toBe(403);
+    expect((await request(app(9, 'teacher')).post('/api/academy/students/321/projects?context=teacher').send({ title: 'Project', url: 'https://example.com' })).status).toBe(403);
     expect(mocks.query).not.toHaveBeenCalled();
     teacherMembership = { id: 4 };
     expect((await request(app(9, 'teacher')).get('/api/academy/students/321/profile')).status).toBe(403);
-    expect((await request(app(9, 'teacher')).post('/api/academy/students/321/projects?context=teacher').send({ title: 'Project', url: 'https://example.com' })).status).toBe(403);
-    expect(mocks.insertRow).not.toHaveBeenCalled();
+    expect((await request(app(9, 'teacher')).post('/api/academy/students/321/projects?context=teacher').send({ title: 'Project', url: 'https://example.com' })).status).toBe(201);
+    expect(mocks.insertRow).toHaveBeenCalled();
   });
   it('limits project file downloads to the teacher’s groups', async () => {
     const created = await request(app()).post('/api/academy/students/321/projects').field('title', 'Project').attach('file', Buffer.from('test'), 'project.zip');

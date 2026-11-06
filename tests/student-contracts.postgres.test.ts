@@ -63,7 +63,7 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
       CREATE TABLE users(id integer PRIMARY KEY);
       CREATE TABLE academy_leads(id integer PRIMARY KEY,manager_id integer,funnel_id integer,is_archived boolean DEFAULT false);
       CREATE TABLE academy_students(id integer PRIMARY KEY,lead_id integer REFERENCES academy_leads(id),
-        student_name text,contact_name text DEFAULT 'Contact',phone text,status text DEFAULT 'studying',updated_at timestamptz DEFAULT now());
+        student_name text,contact_name text DEFAULT 'Contact',phone text,status text DEFAULT 'studying',is_archived boolean DEFAULT false,updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_groups(id integer PRIMARY KEY,name text NOT NULL);
       CREATE TABLE academy_student_group_enrollments(student_id integer REFERENCES academy_students(id),
         group_id integer REFERENCES academy_groups(id),status text NOT NULL,is_primary boolean DEFAULT false);
@@ -102,7 +102,7 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     await service.create(administrator, { studentId: 24 });
     const historical = await service.changeNumber(manager, owned.id, owned.version, "А-07/01");
     await mocks.pool.query("UPDATE academy_students SET student_name='Марсель',phone='+998901234567' WHERE id=21");
-    const list = (actor = manager, q = "", page = 1, pageSize = 25) => service.list(actor, { q, status: "all", page, pageSize });
+    const list = (actor = manager, q = "", page = 1, pageSize = 25) => service.list(actor, { q, status: "created", page, pageSize });
     expect((await list()).items.map(row => row.contract?.id)).toEqual([owned.id]);
     const result = await list(manager, "а-07/01");
     expect(result.items).toMatchObject([{ contract: { id: historical.id, file: null }, student: { id: 21, studentName: "Марсель" } }]);
@@ -128,7 +128,7 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
       await mocks.pool.query("UPDATE academy_students SET student_name=NULL,phone=NULL WHERE id=21");
     }
   });
-  it("filters enrolled students without contracts, counts each student once and applies the same visibility to rows and counts", async () => {
+  it("lists every active pupil without a contract, counts each pupil once and applies the same visibility to rows and counts", async () => {
     await mocks.pool.query(`INSERT INTO academy_student_group_enrollments(student_id,group_id,status,is_primary) VALUES
       (21,31,'active',true),(22,31,'active',false),(22,32,'active',true),
       (23,31,'active',true),(24,31,'active',true),(25,31,'withdrawn',false),
@@ -137,23 +137,27 @@ describe.skipIf(!databaseUrl)("student contracts persistence", () => {
     await service.create(manager, { leadId: 11 });
     const list = (status: StudentContractListQuery["status"] = "all", actor = manager, q = "", page = 1, pageSize = 25) =>
       service.list(actor, { q, status, page, pageSize });
-    expect(await list()).toMatchObject({ total: 2, counts: { all: 2, created: 1, missing: 1 } });
+    expect(await list()).toMatchObject({ total: 4, counts: { all: 4, created: 1, missing: 3 } });
     expect((await list("created")).items).toMatchObject([{ student: { id: 21 }, contract: { id: existing.id, file: null } }]);
-    expect(await list("missing")).toMatchObject({ total: 1, items: [{ student: { id: 22 }, contract: null, groups: [
+    const missing = await list("missing");
+    expect(missing).toMatchObject({ total: 3, counts: { all: 4, created: 1, missing: 3 } });
+    expect(missing.items.map(row => row.student.id).sort()).toEqual([22, 25, 26]);
+    expect(missing.items.find(row => row.student.id === 22)).toMatchObject({ contract: null, groups: [
       { id: 32, name: "ONL-VC-GRP-26-0002" }, { id: 31, name: "CYP-VC-GRP-26-0001" },
-    ] }] });
-    expect(await list("missing", administrator)).toMatchObject({ total: 4, counts: { all: 5, created: 1, missing: 4 } });
-    expect(await list("missing", actorContextFrom({ id: 9, modules: ["marketing"] }))).toMatchObject({ total: 3, counts: { all: 4, created: 1, missing: 3 } });
-    expect(await list("missing", { ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).toMatchObject({ total: 2, counts: { all: 3, created: 1, missing: 2 } });
-    expect(await list("all", manager, "", 999, 1)).toMatchObject({ total: 2, page: 2, items: [{ student: { id: 22 }, contract: null }] });
+    ] });
+    expect(await list("missing", administrator)).toMatchObject({ total: 6, counts: { all: 7, created: 1, missing: 6 } });
+    expect(await list("missing", actorContextFrom({ id: 9, modules: ["marketing"] }))).toMatchObject({ total: 5, counts: { all: 6, created: 1, missing: 5 } });
+    expect(await list("missing", { ...manager, salesWorkflow: { assignedFunnelIds: [5] } })).toMatchObject({ total: 4, counts: { all: 5, created: 1, missing: 4 } });
+    expect(await list("all", manager, "", 999, 1)).toMatchObject({ total: 4, page: 4, items: [{ contract: null }] });
     expect(await list("missing", manager, existing.number)).toMatchObject({ total: 0, counts: { all: 1, created: 1, missing: 0 } });
     expect(await list("all", manager, "%")).toMatchObject({ total: 0, counts: { all: 0, created: 0, missing: 0 } });
     const created = await service.create(manager, { studentId: 22 });
-    expect(await list("missing")).toMatchObject({ total: 0, counts: { all: 2, created: 2, missing: 0 } });
+    expect(await list("missing")).toMatchObject({ total: 2, counts: { all: 4, created: 2, missing: 2 } });
     await service.cancel(manager, created.id, created.version);
-    expect(await list("missing")).toMatchObject({ total: 1, counts: { all: 2, created: 1, missing: 1 } });
+    expect(await list("missing")).toMatchObject({ total: 3, counts: { all: 4, created: 1, missing: 3 } });
+    // Leaving every group does not hide a pupil who is still active.
     await mocks.pool.query("UPDATE academy_student_group_enrollments SET status='withdrawn' WHERE student_id=22");
-    expect(await list("missing")).toMatchObject({ total: 0, counts: { all: 1, created: 1, missing: 0 } });
+    expect(await list("missing")).toMatchObject({ total: 3, counts: { all: 4, created: 1, missing: 3 } });
     await service.create(manager, { studentId: 25 });
     expect((await list("created")).items.map(row => row.student.id).sort()).toEqual([21, 25]);
   });

@@ -353,12 +353,37 @@ export default function MarketingModule({ section = 'overview' }: { section?: Ma
               </CardHeader>
               <CardContent className="space-y-4">
                 <ConversionBar
-                  label={t('navLeads')}
+                  label={t('marketingFunnelApplications')}
                   value={selectedFunnelLeads.length}
                   total={selectedFunnelLeads.length}
+                  color="#2563eb"
                 />
                 <ConversionBar
-                  label={t('paidCustomersForPeriod')}
+                  label={t('marketingFunnelReached')}
+                  value={selectedFunnelLeads.filter((lead: any) => Boolean(lead.reached)).length}
+                  total={selectedFunnelLeads.length}
+                  color="#0284c7"
+                />
+                <ConversionBar
+                  label={t('marketingFunnelQualified')}
+                  value={selectedFunnelLeads.filter((lead: any) => Boolean(lead.isQualified)).length}
+                  total={selectedFunnelLeads.length}
+                  color="#0d9488"
+                />
+                <ConversionBar
+                  label={t('marketingFunnelDemoBooked')}
+                  value={selectedFunnelLeads.filter((lead: any) => Boolean(lead.demoBooked)).length}
+                  total={selectedFunnelLeads.length}
+                  color="#f59e0b"
+                />
+                <ConversionBar
+                  label={t('marketingFunnelDemoAttended')}
+                  value={selectedFunnelLeads.filter((lead: any) => Boolean(lead.demoAttended)).length}
+                  total={selectedFunnelLeads.length}
+                  color="#8b5cf6"
+                />
+                <ConversionBar
+                  label={t('marketingFunnelPaid')}
                   value={selectedFunnelLeads.filter((lead: any) => lead.hasPaidPayment === true).length}
                   total={selectedFunnelLeads.length}
                   color="#16a34a"

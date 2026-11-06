@@ -27,6 +27,7 @@ export type TeacherOverviewKpiData = {
   totalLessons: number;
   avgAttendance: number | null;
   teachingHours: string;
+  assistantHours?: string;
 };
 
 /**
@@ -233,6 +234,7 @@ export function TeacherOverviewKpis({ data }: { data: TeacherOverviewKpiData }) 
                 <span className="text-sm font-semibold text-muted-foreground">{t('teachingHoursUnit')}</span>
               </span>
             )}
+            caption={data.assistantHours ? `${t('lessonRoleAssistant')}: ${data.assistantHours} ${t('teachingHoursUnit')}` : undefined}
           />
         </KpiShell>
       </StaggerItem>

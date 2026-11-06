@@ -54,6 +54,8 @@ describe.skipIf(!databaseUrl)(
       await fixture.pool
         .query(`CREATE TABLE academy_teachers(id integer PRIMARY KEY,user_id integer,status text);
       CREATE TABLE academy_groups(id integer PRIMARY KEY,teacher_id integer);
+      CREATE TABLE academy_lessons(id integer PRIMARY KEY,group_id integer,teacher_id integer);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_student_group_enrollments(student_id integer,group_id integer);
       CREATE TABLE lms_group_runs(id bigint PRIMARY KEY,group_id integer);
       CREATE TABLE lms_staff_permissions(user_id integer,permission text);

@@ -1233,6 +1233,20 @@
       "when": 1794139200000,
       "tag": "0175_academic_setup_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1794225600000,
+      "tag": "0176_payroll_lesson_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1794312000000,
+      "tag": "0177_quick_replies",
+      "breakpoints": true
     }
   ]
 }

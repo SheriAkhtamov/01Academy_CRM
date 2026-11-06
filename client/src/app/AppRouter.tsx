@@ -87,11 +87,12 @@ function ModuleGuard({
   module,
   children,
 }: {
-  module: AcademyModule;
+  module: AcademyModule | readonly AcademyModule[];
   children: ReactNode;
 }) {
   const { user } = useAuth();
-  if (!user || !canAccessAcademyModule(user, module)) {
+  const modules = Array.isArray(module) ? module : [module];
+  if (!user || !modules.some((m) => canAccessAcademyModule(user, m))) {
     return <AccessDenied />;
   }
   return <>{children}</>;
@@ -184,7 +185,7 @@ export function AppRouter() {
         } />
         <Route path="/sales/tasks" children={<Redirect to="/tasks" />} />
         <Route path="/sales/contracts" children={
-          <ModuleGuard module="sales"><ContractsPage /></ModuleGuard>
+          <ModuleGuard module={['sales', 'finance']}><ContractsPage /></ModuleGuard>
         } />
         <Route path="/sales/messages" children={
           <ModuleGuard module="sales">

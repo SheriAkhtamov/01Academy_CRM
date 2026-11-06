@@ -73,7 +73,11 @@ export async function loadLearningStudentPortfolio(
       WHERE project.student_id=$1 AND project.archived_at IS NULL AND COALESCE((to_jsonb(project)->>'portal_created')::boolean,false)
       AND (project_group.id IS NULL OR project_group.id=ANY($5::integer[]))
       AND ($3::boolean OR EXISTS(SELECT 1 FROM lms_staff_permissions permission WHERE permission.user_id=$2 AND permission.permission='results.manage')
-        OR ($4::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.id=project_group.teacher_id AND teacher.user_id=$2 AND teacher.status='active')))
+        OR ($4::boolean AND EXISTS(SELECT 1 FROM academy_teachers teacher WHERE teacher.user_id=$2 AND teacher.status='active' AND (
+          teacher.id=project_group.teacher_id
+          OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id=project_group.id AND l.teacher_id=teacher.id)
+          OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id=l.id WHERE l.group_id=project_group.id AND a.teacher_id=teacher.id)
+        ))))
       ORDER BY project.created_at DESC,project.id DESC`,
       [
         studentId,
@@ -122,10 +126,6 @@ export async function loadAuthorizedStudent(
     )
   )
     return null;
-  if (teaching && mutate) {
-    res.status(403).json({ error: "Student update access required" });
-    return null;
-  }
   const id = parseId(req.params.id);
   if (!id) {
     res.status(400).json({ error: "Invalid student id" });
@@ -134,10 +134,14 @@ export async function loadAuthorizedStudent(
   const teacher = teaching
     ? await queryOne(
         `SELECT teacher.id FROM academy_teachers teacher
-    JOIN academy_groups g ON g.teacher_id = teacher.id
+    JOIN academy_groups g ON (
+      g.teacher_id = teacher.id
+      OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = g.id AND l.teacher_id = teacher.id)
+      OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = g.id AND a.teacher_id = teacher.id)
+    )
     JOIN academy_student_group_enrollments membership ON membership.group_id = g.id
     WHERE teacher.user_id = $1 AND teacher.status = 'active'
-      AND membership.student_id = $2 AND membership.status = 'active' LIMIT 1`,
+      AND membership.student_id = $2 AND membership.status IN ('active', 'suspended') LIMIT 1`,
         [req.user!.id, id],
       )
     : null;
@@ -197,7 +201,7 @@ export async function loadStudentProfileData(
       LEFT JOIN academy_lessons lesson ON lesson.group_id = g.id AND lesson.status = 'conducted'
         AND lesson.scheduled_at >= membership.enrolled_at AND ${studentLessonCountsSql("$1")}
       LEFT JOIN academy_attendance mark ON mark.lesson_id = lesson.id AND mark.student_id = $1
-      WHERE membership.student_id = $1 AND membership.status = 'active' ${teacherId ? "AND g.teacher_id = $2" : ""}
+      WHERE membership.student_id = $1 AND membership.status = 'active' ${teacherId ? "AND (g.teacher_id = $2 OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = g.id AND l.teacher_id = $2) OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = g.id AND a.teacher_id = $2))" : ""}
       GROUP BY membership.id, g.id, course.id, school.id, teacher.id
       ORDER BY membership.is_primary DESC, g.name`,
       params,
@@ -216,7 +220,7 @@ export async function loadStudentProfileData(
             AND lesson.scheduled_at >= membership.enrolled_at
             AND (membership.ended_at IS NULL OR lesson.scheduled_at < membership.ended_at)
         ) AND ${studentWasStudyingSql("$1", "lesson.scheduled_at")})
-      ) ${teacherId ? "AND g.teacher_id = $2" : ""} ORDER BY lesson.scheduled_at DESC, lesson.id DESC`,
+      ) ${teacherId ? "AND (g.teacher_id = $2 OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = g.id AND l.teacher_id = $2) OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = g.id AND a.teacher_id = $2))" : ""} ORDER BY lesson.scheduled_at DESC, lesson.id DESC`,
       params,
     ),
     teacherId
@@ -228,9 +232,11 @@ export async function loadStudentProfileData(
           [studentId],
         ),
     query<StudentProject>(
-      `SELECT project.id,project.student_id,project.title,project.url,project.file_url,project.created_at FROM academy_portfolio_projects project
-      ${teacherId ? "JOIN academy_groups g ON g.id = project.group_id" : ""}
-      WHERE project.student_id = $1 AND NOT COALESCE((to_jsonb(project)->>'portal_created')::boolean,false) ${teacherId ? "AND g.teacher_id = $2" : ""} ORDER BY project.created_at DESC, project.id DESC`,
+      `SELECT project.id,project.student_id,project.title,COALESCE(project.url, project.links->>0) AS url,project.file_url,project.created_at FROM academy_portfolio_projects project
+      ${teacherId ? "LEFT JOIN academy_groups g ON g.id = project.group_id" : ""}
+      WHERE project.student_id = $1 AND project.archived_at IS NULL
+      ${teacherId ? "AND (g.id IS NULL OR g.teacher_id = $2 OR EXISTS (SELECT 1 FROM academy_lessons l WHERE l.group_id = g.id AND l.teacher_id = $2) OR EXISTS (SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id = l.id WHERE l.group_id = g.id AND a.teacher_id = $2))" : ""}
+      ORDER BY project.created_at DESC, project.id DESC`,
       params,
     ),
   ]);

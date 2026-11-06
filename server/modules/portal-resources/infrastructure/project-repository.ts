@@ -8,7 +8,7 @@ import { resourceRows, resourceOne, resourceTransaction, resourceAudit, resource
 type ProjectRow = Omit<PortalProjectDto, 'files' | 'shares'> & { fileIds: number[]; url: string | null;courseId:number|null };
 type ShareRow = ShareRecord & { projectId: number; runId: number | null };
 const projectColumns = `project.id,project.student_id,project.title,project.description,project.lms_run_id AS run_id,
-  course.name AS course_name,course.id AS course_id,project.source_submission_id,project.links,project.file_ids,project.cover_file_id,
+  course.name AS course_name,course.id AS course_id,project.source_submission_id,COALESCE(project.links, '[]'::jsonb) AS links,COALESCE(project.file_ids, '[]'::jsonb) AS file_ids,project.cover_file_id,
   project.teacher_review,project.portal_version AS version,project.created_at,project.updated_at,project.archived_at,project.url`;
 const projectJoins = `FROM academy_portfolio_projects project LEFT JOIN lms_group_runs run ON run.id=project.lms_run_id
   LEFT JOIN academy_groups g ON g.id=COALESCE(run.group_id,project.group_id) LEFT JOIN academy_courses course ON course.id=COALESCE(g.course_id,project.course_id)`;
@@ -48,8 +48,13 @@ const requireStaffProject = async (sql: ResourceSql, actor: ResourceStaffActor, 
   if (!actor.isLeadership && !actor.modules.includes('teacher') && !granted) throw new PortalResourceError('portalAccessDenied', 403);
   const project = await resourceOne<{ id: number; studentId: number }>(sql, `SELECT project.id,project.student_id FROM academy_portfolio_projects project
     WHERE project.id=$1 AND ($2 OR EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment
-    JOIN academy_groups g ON g.id=enrollment.group_id JOIN academy_teachers teacher ON teacher.id=g.teacher_id
-    WHERE enrollment.student_id=project.student_id AND teacher.user_id=$3 AND teacher.status='active' AND enrollment.status='active'
+    JOIN academy_groups g ON g.id=enrollment.group_id JOIN academy_teachers teacher ON teacher.user_id=$3 AND teacher.status='active'
+    WHERE enrollment.student_id=project.student_id AND enrollment.status='active'
+    AND (
+      teacher.id=g.teacher_id
+      OR EXISTS(SELECT 1 FROM academy_lessons l WHERE l.group_id=g.id AND l.teacher_id=teacher.id)
+      OR EXISTS(SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id=l.id WHERE l.group_id=g.id AND a.teacher_id=teacher.id)
+    )
     AND (project.lms_run_id IS NULL OR g.id=(SELECT group_id FROM lms_group_runs WHERE id=project.lms_run_id))
     AND (project.group_id IS NULL OR g.id=project.group_id)))`, [projectId, actor.isLeadership || Boolean(granted), actor.userId]);
   if (!project) throw new PortalResourceError('portalNotFound', 404);
@@ -98,7 +103,7 @@ export class ProjectRepository {
   private async comparisonStaffScope(actor:ResourceStaffActor,studentId:number,runId:number) {
     await this.requireEnabledRun(runId);
     const granted = await resourceOne(this.pool,"SELECT user_id FROM lms_staff_permissions WHERE user_id=$1 AND permission='results.manage'",[actor.userId]);
-    if (!await resourceOne(this.pool,`SELECT enrollment.id FROM academy_student_group_enrollments enrollment JOIN lms_group_runs run ON run.group_id=enrollment.group_id JOIN academy_groups g ON g.id=run.group_id LEFT JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE run.id=$1 AND enrollment.student_id=$2 AND ($3 OR (teacher.user_id=$4 AND teacher.status='active'))`,[runId,studentId,actor.isLeadership || Boolean(granted),actor.userId])) throw new PortalResourceError('portalNotFound',404);
+    if (!await resourceOne(this.pool,`SELECT enrollment.id FROM academy_student_group_enrollments enrollment JOIN lms_group_runs run ON run.group_id=enrollment.group_id JOIN academy_groups g ON g.id=run.group_id JOIN academy_teachers teacher ON teacher.user_id=$4 AND teacher.status='active' WHERE run.id=$1 AND enrollment.student_id=$2 AND ($3 OR (teacher.id=g.teacher_id OR EXISTS(SELECT 1 FROM academy_lessons l WHERE l.group_id=g.id AND l.teacher_id=teacher.id) OR EXISTS(SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id=l.id WHERE l.group_id=g.id AND a.teacher_id=teacher.id)))`,[runId,studentId,actor.isLeadership || Boolean(granted),actor.userId])) throw new PortalResourceError('portalNotFound',404);
   }
   async staffProjectComparison(actor:ResourceStaffActor,studentId:number,runId:number) { await this.comparisonStaffScope(actor,studentId,runId); return this.projectComparison(studentId,runId); }
   async staffProjects(actor:ResourceStaffActor,studentId:number,runId:number,verified=false) {
@@ -219,9 +224,8 @@ export class ProjectRepository {
       const snapshot: ShareRecord['snapshot'] = { title: project.title, displayName: input.displayName, description: input.includeDescription ? project.description : null,
         teacherReview: input.includeReview ? project.teacherReview : null, links: project.links, fileIds: input.fileIds,
         coverFileId: project.coverFileId && input.fileIds.includes(project.coverFileId) ? project.coverFileId : null };
-      const published = actor.studentClassification === 'adult';
       const share = await resourceOne<{ id: number }>(sql, `INSERT INTO lms_portfolio_shares(project_id,project_version,token_hash,token_envelope,status,snapshot,requested_by,expires_at,published_at,student_classification)
-        VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,CASE WHEN $9 THEN now() END,$10) RETURNING id`, [projectId, project.version, tokenHash, tokenEnvelope, published ? 'published' : 'awaiting_approval', JSON.stringify(snapshot), actor.portalAccountId, input.expiresAt, published, actor.studentClassification]);
+        VALUES($1,$2,$3,$4,'published',$5::jsonb,$6,$7,now(),$8) RETURNING id`, [projectId, project.version, tokenHash, tokenEnvelope, JSON.stringify(snapshot), actor.portalAccountId, input.expiresAt, actor.studentClassification]);
       await resourceAudit(sql, actor, 'portfolio.share_requested', 'share', share!.id, { projectVersion: project.version, ...receipt.changes });
       return share!.id;
     });
@@ -254,15 +258,11 @@ export class ProjectRepository {
   }
   async publicShare(tokenHash: string): Promise<ShareRecord | null> {
     const row = await resourceOne<ShareRow>(this.pool, `SELECT ${shareColumns} FROM lms_portfolio_shares share JOIN academy_portfolio_projects project ON project.id=share.project_id
-      JOIN portal_student_identity identity ON identity.student_id=project.student_id
       WHERE share.token_hash=$1 AND share.status='published' AND (share.expires_at IS NULL OR share.expires_at>now()) AND project.archived_at IS NULL
-      AND identity.classification=share.student_classification
+      -- A public link closes as soon as the pupil loses portal access.
       AND EXISTS(SELECT 1 FROM portal_student_links owner_link JOIN portal_accounts owner_account ON owner_account.id=owner_link.account_id
         WHERE owner_link.account_id=share.requested_by AND owner_link.student_id=project.student_id AND owner_link.kind='self' AND owner_link.status='active' AND owner_account.status='active'
-        AND (owner_link.expires_at IS NULL OR owner_link.expires_at>now()))
-      AND (share.student_classification='adult' OR EXISTS(SELECT 1 FROM portal_student_links guardian_link JOIN portal_accounts guardian_account ON guardian_account.id=guardian_link.account_id
-        WHERE guardian_link.account_id=share.approved_by AND guardian_link.student_id=project.student_id AND guardian_link.status='active' AND guardian_account.status='active'
-        AND guardian_link.permissions ? 'portfolio.approve' AND (guardian_link.expires_at IS NULL OR guardian_link.expires_at>now())))`, [tokenHash]);
+        AND (owner_link.expires_at IS NULL OR owner_link.expires_at>now()))`, [tokenHash]);
     return row && await this.runEnabled(row.runId) ? shareDto(row) : null;
   }
   async pendingShares(actor: ResourceStaffActor): Promise<(ShareRecord & { studentName: string })[]> {
@@ -271,7 +271,12 @@ export class ProjectRepository {
     const values = await resourceRows<ShareRow & { studentName: string }>(this.pool, `SELECT ${shareColumns},COALESCE(student.student_name,student.contact_name) AS student_name FROM lms_portfolio_shares share
       JOIN academy_portfolio_projects project ON project.id=share.project_id JOIN academy_students student ON student.id=project.student_id
       WHERE share.status='awaiting_moderation' AND ($1 OR EXISTS(SELECT 1 FROM academy_student_group_enrollments enrollment JOIN academy_groups g ON g.id=enrollment.group_id
-      JOIN academy_teachers teacher ON teacher.id=g.teacher_id WHERE enrollment.student_id=project.student_id AND enrollment.status='active' AND teacher.user_id=$2 AND teacher.status='active'
+      JOIN academy_teachers teacher ON teacher.user_id=$2 AND teacher.status='active' WHERE enrollment.student_id=project.student_id AND enrollment.status='active'
+      AND (
+        teacher.id=g.teacher_id
+        OR EXISTS(SELECT 1 FROM academy_lessons l WHERE l.group_id=g.id AND l.teacher_id=teacher.id)
+        OR EXISTS(SELECT 1 FROM academy_lessons l JOIN academy_lesson_assistants a ON a.lesson_id=l.id WHERE l.group_id=g.id AND a.teacher_id=teacher.id)
+      )
       AND (project.lms_run_id IS NULL OR g.id=(SELECT group_id FROM lms_group_runs WHERE id=project.lms_run_id)) AND (project.group_id IS NULL OR g.id=project.group_id))) ORDER BY share.created_at LIMIT 100`, [actor.isLeadership || Boolean(granted), actor.userId]);
     const allowed: (ShareRecord & { studentName: string })[] = [];
     for (const value of values) if (await this.runEnabled(value.runId)) allowed.push({ ...shareDto(value), studentName: value.studentName });

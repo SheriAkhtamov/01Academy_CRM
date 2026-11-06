@@ -893,7 +893,7 @@ const resolveMetaLeadIdentity = (row: MetaLeadIdentityRow) => {
     matchKey: 'leadgen_id',
     actionSource: 'system_generated',
     messagingChannel: null,
-    userData: { lead_id: userData.lead_id },
+    userData,
   };
 };
 
@@ -942,6 +942,95 @@ export const enqueueMetaLeadIntake = async (leadId: number) => {
 export const enqueueMetaLeadIntakeSafely = async (leadId: number) => {
   try { return await enqueueMetaLeadIntake(leadId); }
   catch (error) { logger.error('Failed to enqueue Meta lead intake', { leadId, error }); return null; }
+};
+
+export const enqueueMetaLeadQualified = async (leadId: number, eventTime: Date | string = new Date()) => {
+  if (!Number.isSafeInteger(leadId) || leadId <= 0) return null;
+  const { rows: [row] } = await pool.query<MetaLeadIdentityRow & { created_at: Date | string }>(
+    `SELECT lead.created_at, lead.phone, lead.contact_name, attribution.id AS attribution_id,
+      attribution.leadgen_id, attribution.ad_id, attribution.campaign_id, attribution.hook_name
+     FROM academy_leads lead
+     JOIN LATERAL (
+       SELECT id, leadgen_id, ad_id, campaign_id, hook_name FROM meta_lead_attributions
+       WHERE lead_id = lead.id AND leadgen_id IS NOT NULL
+       ORDER BY captured_at, id LIMIT 1
+     ) attribution ON true WHERE lead.id = $1`, [leadId],
+  );
+  if (!row) return null;
+  const identity = resolveMetaLeadIdentity(row);
+  if (!identity) return null;
+  const customData = buildMetaCrmCustomData(metaConfig().partnerAgent, {
+    ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
+    ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),
+    ...(row.hook_name ? { creative_hook: String(row.hook_name) } : {}),
+  });
+  const { rows } = await pool.query(
+    `INSERT INTO meta_conversion_events
+      (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
+       action_source, messaging_channel, match_key, user_data, custom_data, status, next_attempt_at)
+     VALUES ($1,$2,$3,'QualifiedLead',NULL,$4,$5,$6,$7,$8,$9,'pending',NOW())
+     ON CONFLICT (event_id) DO NOTHING RETURNING *`,
+    [leadId, row.attribution_id, `lead-qualified:${leadId}`, eventTime,
+      identity.actionSource, identity.messagingChannel, identity.matchKey,
+      JSON.stringify(identity.userData), JSON.stringify(customData)],
+  );
+  return rows[0] ?? null;
+};
+
+export const enqueueMetaLeadQualifiedSafely = async (leadId: number, eventTime?: Date | string) => {
+  try { return await enqueueMetaLeadQualified(leadId, eventTime); }
+  catch (error) { logger.error('Failed to enqueue Meta qualified lead event', { leadId, error }); return null; }
+};
+
+export const enqueueMetaLeadPurchase = async (
+  leadId: number,
+  paymentId: number,
+  amountUzs: number,
+  paidAt: Date | string = new Date(),
+) => {
+  if (!Number.isSafeInteger(leadId) || leadId <= 0) return null;
+  if (!Number.isSafeInteger(paymentId) || paymentId <= 0) return null;
+  const { rows: [row] } = await pool.query<MetaLeadIdentityRow & { created_at: Date | string }>(
+    `SELECT lead.created_at, lead.phone, lead.contact_name, attribution.id AS attribution_id,
+      attribution.leadgen_id, attribution.ad_id, attribution.campaign_id, attribution.hook_name
+     FROM academy_leads lead
+     JOIN LATERAL (
+       SELECT id, leadgen_id, ad_id, campaign_id, hook_name FROM meta_lead_attributions
+       WHERE lead_id = lead.id AND leadgen_id IS NOT NULL
+       ORDER BY captured_at, id LIMIT 1
+     ) attribution ON true WHERE lead.id = $1`, [leadId],
+  );
+  if (!row) return null;
+  const identity = resolveMetaLeadIdentity(row);
+  if (!identity) return null;
+  const customData = buildMetaCrmCustomData(metaConfig().partnerAgent, {
+    value: amountUzs,
+    currency: 'UZS',
+    ...(row.ad_id ? { source_ad_id: String(row.ad_id) } : {}),
+    ...(row.campaign_id ? { source_campaign_id: String(row.campaign_id) } : {}),
+    ...(row.hook_name ? { creative_hook: String(row.hook_name) } : {}),
+  });
+  const { rows } = await pool.query(
+    `INSERT INTO meta_conversion_events
+      (lead_id, attribution_id, event_id, event_name, crm_stage, event_time,
+       action_source, messaging_channel, match_key, user_data, custom_data, status, next_attempt_at)
+     VALUES ($1,$2,$3,'Purchase',NULL,$4,$5,$6,$7,$8,$9,'pending',NOW())
+     ON CONFLICT (event_id) DO NOTHING RETURNING *`,
+    [leadId, row.attribution_id, `lead-purchase:${paymentId}`, paidAt,
+      identity.actionSource, identity.messagingChannel, identity.matchKey,
+      JSON.stringify(identity.userData), JSON.stringify(customData)],
+  );
+  return rows[0] ?? null;
+};
+
+export const enqueueMetaLeadPurchaseSafely = async (
+  leadId: number,
+  paymentId: number,
+  amountUzs: number,
+  paidAt?: Date | string,
+) => {
+  try { return await enqueueMetaLeadPurchase(leadId, paymentId, amountUzs, paidAt); }
+  catch (error) { logger.error('Failed to enqueue Meta purchase event', { leadId, paymentId, error }); return null; }
 };
 
 /** Repairs an interrupted intake using creation facts, never editable stage history. */

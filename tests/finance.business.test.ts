@@ -31,6 +31,8 @@ describe('financial center business rules', () => {
     expect(calculatePayrollAmount(6_000_000, 800_000, 200_000)).toBe(6_600_000);
     expect(calculatePayrollAmount(4_000_000, 0, 5_000_000)).toBe(0);
     expect(calculatePayrollAmount('not-money', 100, 0)).toBe(100);
+    expect(calculatePayrollAmount(1_000_000, 100_000, 50_000, 10, 200_000, 2, 100_000)).toBe(3_250_000);
+    expect(calculatePayrollAmount(0, 0, 0, 15, 150_000, 5, 80_000)).toBe(2_650_000);
   });
 
   it('accrues assigned salaries and replaces the base with the actual payout snapshot', () => {

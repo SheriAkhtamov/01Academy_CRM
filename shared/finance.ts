@@ -53,7 +53,18 @@ export const calculatePayrollAmount = (
   baseSalaryUzs: unknown,
   bonusUzs: unknown = 0,
   deductionUzs: unknown = 0,
-) => Math.max(0, safeMoney(baseSalaryUzs) + safeMoney(bonusUzs) - safeMoney(deductionUzs));
+  conductedLessonsCount: unknown = 0,
+  lessonRateUzs: unknown = 0,
+  conductedAssistantLessonsCount: unknown = 0,
+  assistantLessonRateUzs: unknown = 0,
+) => Math.max(
+  0,
+  safeMoney(baseSalaryUzs)
+    + (safeMoney(conductedLessonsCount) * safeMoney(lessonRateUzs))
+    + (safeMoney(conductedAssistantLessonsCount) * safeMoney(assistantLessonRateUzs))
+    + safeMoney(bonusUzs)
+    - safeMoney(deductionUzs),
+);
 
 export const calculateFinanceSummary = ({
   revenue,

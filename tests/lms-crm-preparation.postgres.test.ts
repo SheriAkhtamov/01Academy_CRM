@@ -57,6 +57,7 @@ describe.skipIf(!databaseUrl)("Automatic CRM preparation against isolated Postgr
       CREATE TABLE academy_teachers(id serial PRIMARY KEY,user_id integer,full_name text,status text NOT NULL DEFAULT 'active');
       CREATE TABLE academy_groups(id serial PRIMARY KEY,name text NOT NULL,course_id integer,teacher_id integer,status text NOT NULL DEFAULT 'open',is_archived boolean NOT NULL DEFAULT false,end_date timestamptz,updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_lessons(id serial PRIMARY KEY,group_id integer,course_id integer,lesson_number integer,topic text NOT NULL,materials text,scheduled_at timestamptz NOT NULL DEFAULT '2026-10-13',status text NOT NULL DEFAULT 'scheduled',teacher_id integer);
+      CREATE TABLE academy_lesson_assistants(lesson_id integer,teacher_id integer);
       CREATE TABLE academy_student_group_enrollments(id serial PRIMARY KEY,student_id integer,group_id integer,status text NOT NULL DEFAULT 'active',enrolled_at timestamptz NOT NULL DEFAULT '2026-10-01',ended_at timestamptz);
       CREATE TABLE academy_payments(id serial PRIMARY KEY,amount_uzs integer);
       CREATE TABLE academy_portfolio_projects(id serial PRIMARY KEY);

@@ -37,9 +37,16 @@ export function registerChatGroupProfileRoutes(router: Router, storage: ChatGrou
   }, parseChatGroupPhotoUpload, async (req, res, next) => {
     if (!req.is('multipart/form-data') && req.body?.removePhoto === undefined) return next();
     let saved = false;
+    // An unsaved upload is removed before the response goes out, so the caller never sees a stray file.
+    const discardUnsaved = async () => {
+      if (!saved) await cleanupChatGroupPhoto(req).catch(error => logger.error('Failed to remove unsaved group photo', { error }));
+    };
     try {
       const input = updateChatGroupProfileSchema.safeParse(req.body);
-      if (!input.success || (req.file && input.data.removePhoto)) return res.status(400).json({ error: 'invalidData' });
+      if (!input.success || (req.file && input.data.removePhoto)) {
+        await discardUnsaved();
+        return res.status(400).json({ error: 'invalidData' });
+      }
       const avatarUrl = req.file ? `/api/chat-groups/${res.locals.groupId}/photos/${req.file.filename}` : input.data.removePhoto ? null : undefined;
       const result = await storage.updateProfile(res.locals.groupId, req.user!.id, hasLeadershipAccess(req.user), { name: input.data.name, avatarUrl });
       saved = true;
@@ -50,7 +57,9 @@ export function registerChatGroupProfileRoutes(router: Router, storage: ChatGrou
       }
       announce(res.locals.groupId, result.audienceUserIds);
       res.json({ success: true });
-    } catch (error) { failure(res, error); }
-    finally { if (!saved) await cleanupChatGroupPhoto(req).catch(error => logger.error('Failed to remove unsaved group photo', { error })); }
+    } catch (error) {
+      await discardUnsaved();
+      failure(res, error);
+    }
   });
 }

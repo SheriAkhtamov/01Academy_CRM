@@ -37,6 +37,7 @@ describe.skipIf(!url)('Meta form fields in PostgreSQL', () => {
         study_days text, study_time text, goal text, urgency text, source_id int, funnel_id int DEFAULT 1, advertising_campaign text,
         status_code text DEFAULT 'new', manager_id int, course_id int, comment text, first_contact_channel text,
         is_archived boolean DEFAULT false, archive_reason text, archived_at timestamptz, archived_by int,
+        is_won boolean DEFAULT false NOT NULL, won_at timestamptz, won_by int,
         first_viewed_at timestamptz, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());
       CREATE TABLE academy_lead_phones(id serial PRIMARY KEY, lead_id int REFERENCES academy_leads(id),
         phone text, normalized_phone text, is_primary boolean, UNIQUE(lead_id, normalized_phone));

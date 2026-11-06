@@ -184,4 +184,28 @@ describe('lead import normalization', () => {
     });
     expect(release).toHaveBeenCalledOnce();
   });
+
+  it('returns a won client to the board when a new request arrives', async () => {
+    const statements: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      statements.push(sql);
+      if (sql.includes('RETURNING id') && sql.includes('academy_lead_sources')) return { rows: [{ id: 1 }], rowCount: 1 };
+      if (sql.includes('FROM academy_integration_funnel_settings')) return { rows: [{ id: 3 }], rowCount: 1 };
+      // A won lead is closed like an archived one when matched by phone.
+      if (sql.includes('FROM academy_leads lead') && sql.includes('indexed_phone')) return { rows: [{ id: 42, isArchived: true }], rowCount: 1 };
+      if (sql.includes('WITH archived_lead AS')) return { rows: [{ from_status_code: 'paid', to_status_code: 'intake' }], rowCount: 1 };
+      if (sql.includes('FROM academy_leads WHERE id = $1')) return { rows: [{ contactName: 'Parent', phone: '+998901234567', languages: [] }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+    const pool = { connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }) } as any;
+    await importLeadRecords(pool, [{ externalId: 'meta-lead-2', phone: '+998901234567', name: 'Parent' }], {
+      provider: 'meta_lead_ads_live',
+      restoreArchivedMatches: true,
+    });
+    const match = statements.find((sql) => sql.includes('FROM academy_leads lead') && sql.includes('indexed_phone'))!;
+    expect(match).toContain('(COALESCE(lead.is_archived, false) OR COALESCE(lead.is_won, false)) AS "isArchived"');
+    const restore = statements.find((sql) => sql.includes('WITH archived_lead AS'))!;
+    expect(restore).toContain('WHERE id = $1 AND (is_archived = true OR is_won = true)');
+    expect(restore).toContain('is_won = false');
+  });
 });

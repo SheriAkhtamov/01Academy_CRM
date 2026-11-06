@@ -1,6 +1,5 @@
 import { hasLeadershipAccess } from '@shared/academy';
 import type { SalesActivityReport } from '@shared/contracts/sales-report';
-import { LEAD_QUALIFIED_ACTION, LEAD_QUALIFICATION_REVOKED_ACTION } from '@shared/contracts/lead-qualification';
 import { type DatasetActor, type Row, queryOne, ACADEMY_TIME_ZONE } from './academy-core';
 import type { ReportingRange } from './academy-scheduling';
 import { fillSalesReportDays } from './sales-report-series';
@@ -91,7 +90,7 @@ export const buildSalesDashboardMetrics = async (
        UNION ALL SELECT 'successfulStudents', paid_at FROM successful_students
      ),
      daily_metrics AS (
-       SELECT TO_CHAR(happened_at AT TIME ZONE 'UTC' AT TIME ZONE $7, 'YYYY-MM-DD') AS date,
+       SELECT TO_CHAR(happened_at AT TIME ZONE 'UTC' AT TIME ZONE $5, 'YYYY-MM-DD') AS date,
          COUNT(*) FILTER (WHERE metric = 'newLeads')::int AS new_leads,
          COUNT(*) FILTER (WHERE metric = 'processedLeads')::int AS processed_leads,
          COUNT(*) FILTER (WHERE metric = 'reachedLeads')::int AS reached_leads,
@@ -140,7 +139,7 @@ export const buildSalesDashboardMetrics = async (
        (SELECT COUNT(*)::int FROM closed_leads) AS closed_leads,
        COALESCE((SELECT JSON_AGG(reasons ORDER BY reasons.count DESC, reasons.reason)
          FROM (SELECT reason, COUNT(*)::int AS count FROM closed_leads GROUP BY reason) reasons), '[]'::json) AS closed_reasons`,
-    [range.start, range.end, managerId, funnelId, LEAD_QUALIFIED_ACTION, LEAD_QUALIFICATION_REVOKED_ACTION, ACADEMY_TIME_ZONE],
+    [range.start, range.end, managerId, funnelId, ACADEMY_TIME_ZONE],
   );
   const count = (value: unknown) => Math.max(0, Number(value) || 0);
   const contact = row?.contactBreakdown;

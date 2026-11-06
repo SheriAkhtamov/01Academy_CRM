@@ -134,7 +134,8 @@ try {
   assert.equal((await client.query('SELECT count(*)::int AS count FROM academy_lead_funnel_qualifications')).rows[0].count, 0,
     'Legacy profile completion or old stage codes cannot fabricate manual qualification');
   assert.equal((await client.query('SELECT manager_id FROM academy_students WHERE id=90001')).rows[0].manager_id, 90001);
-  assert.equal((await client.query('SELECT responsible_id FROM academy_tasks WHERE id=90001')).rows[0].responsible_id, 90001);
+  assert.equal((await client.query("SELECT to_regclass('public.academy_tasks') AS legacy")).rows[0].legacy, null,
+    'Legacy academy tasks are dropped; employee work lives on the shared task board');
   for (const fixture of ['demo-pipeline-protection.sql', 'demo-lead-workflow.sql']) {
     await client.query(workflowFixtureSql(await readFile(new URL(`../tests/sql/${fixture}`, import.meta.url), 'utf8')));
   }

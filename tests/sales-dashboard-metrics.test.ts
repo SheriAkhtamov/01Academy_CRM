@@ -53,7 +53,7 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     await admin.query(`CREATE SCHEMA ${schema}`);
     fixture.pool = new Pool({ connectionString: url, options: `-c search_path=${schema} -c timezone=UTC` });
     await fixture.pool.query(`
-      CREATE TABLE academy_leads(id int PRIMARY KEY,manager_id int,funnel_id int,contact_name text,student_name text,phone text,created_at timestamp,updated_at timestamp,status_code text,is_archived boolean DEFAULT false,archived_at timestamp,archive_reason text);
+      CREATE TABLE academy_leads(id int PRIMARY KEY,manager_id int,funnel_id int,contact_name text,student_name text,phone text,created_at timestamp,updated_at timestamp,status_code text,is_archived boolean DEFAULT false,archived_at timestamp,archive_reason text,is_qualified boolean NOT NULL DEFAULT false,qualified_at timestamp,qualified_by int,is_won boolean NOT NULL DEFAULT false,won_at timestamp,won_by int);
       CREATE TABLE academy_students(id int PRIMARY KEY,lead_id int,manager_id int,student_name text,contact_name text,phone text);
       CREATE TABLE telephony_calls(id serial PRIMARY KEY,lead_id int,contact_type text,contact_id int,started_at timestamp,direction text,talk_seconds int,metadata jsonb);
       CREATE TABLE academy_communications(id serial PRIMARY KEY,lead_id int,student_id int,created_at timestamp,created_by int);
@@ -205,9 +205,7 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
       (27,'2025-08-01','incoming',0),(27,'2099-09-02','outgoing',8),
       (1,'2025-09-01','outgoing',20);
       UPDATE academy_leads SET is_archived=true,archive_reason='no_budget',archived_at='2025-08-20' WHERE id IN (20,26);
-      INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
-      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',20,'[{"funnelId":1}]','2025-08-05'),
-      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',21,'[{"funnelId":1}]','2025-08-05');`);
+      UPDATE academy_leads SET is_qualified=true,qualified_at='2025-08-05' WHERE id IN (20,21);`);
     expect(await report(7, 1)).toMatchObject({
       newLeads: 9, reachedLeads: 6, processedLeads: 7, qualifiedLeads: 2, closedLeads: 2,
       contactBreakdown: {
@@ -285,10 +283,8 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     expect(students.flatMap(student => student.visits.map(visit => visit.demoId)).sort()).toEqual([2, 3]);
   });
   it('excludes later and future qualifications from an earlier reporting period', async () => {
-    await fixture.pool.query(`INSERT INTO audit_logs(action,entity_type,entity_id,new_values,created_at) VALUES
-      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',1,'[{"funnelId":1}]','2025-09-05'),
-      ('REVOKE_ACADEMY_LEAD_QUALIFICATION','academy_lead',1,'[{"funnelId":1}]','2099-09-05'),
-      ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',3,'[{"funnelId":1}]','2099-09-05');`);
+    await fixture.pool.query(`UPDATE academy_leads SET is_qualified=true,qualified_at='2025-09-05' WHERE id=1;
+      UPDATE academy_leads SET is_qualified=true,qualified_at='2099-09-05' WHERE id=3;`);
     expect(await report()).toMatchObject({ newLeads: 3, processedLeads: 0, qualifiedLeads: 0 });
     expect((await report(8)).qualifiedLeads).toBe(0);
   });
@@ -327,41 +323,31 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     const own = await buildSalesDashboardMetrics({ userId: 7, module: 'sales' }, range, 8, 1);
     expect(own.reachedLeads).toBe(1);
   });
-  it('recognizes qualification-stage entries without treating every exit from intake as qualification', async () => {
+  it('never treats stage names or codes as a qualification', async () => {
     await fixture.pool.query(`INSERT INTO academy_lead_stage_history(lead_id,to_funnel_id,to_status_code,to_status_name,entered_at) VALUES
       (1,1,'first_contact','Responsible assigned','2025-08-04'),
       (2,1,'qualified','Квалификация пройдена','2025-08-10'),
-      (2,1,'qualified','Квалификация пройдена','2025-08-11'),
       (3,1,'custom_qualified','Квалификация пройдена','2025-08-12'),
-      (4,2,'qualified_f2_s3','Renamed qualification','2025-08-13'),
-      (1,2,'qualified_f2_s3','Квалификация пройдена','2025-08-14');
+      (4,2,'qualified_f2_s3','Renamed qualification','2025-08-13');
+      UPDATE academy_leads SET status_code='qualified' WHERE id=2;
       INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES(2,'2025-08-15','outgoing',20);`);
     const result = await report(7, 1);
-    expect(result).toMatchObject({ qualifiedLeads: 1, processedLeads: 1, reachedLeads: 1,
-      contactBreakdown: { reachedQualifiedInWork: 1, reachedUnqualifiedInWork: 0 } });
-    expect(result.daily[9].qualifiedLeads).toBe(1);
-    expect(result.daily[10].qualifiedLeads).toBe(0);
-    expect((await report()).qualifiedLeads).toBe(3);
+    expect(result).toMatchObject({ qualifiedLeads: 0, reachedLeads: 1,
+      contactBreakdown: { reachedQualifiedInWork: 0, reachedUnqualifiedInWork: 1 } });
+    expect((await report()).qualifiedLeads).toBe(0);
   });
-  it('keeps earlier qualification in reached states without inventing qualification activity this month', async () => {
-    await fixture.pool.query(`INSERT INTO academy_lead_stage_history(lead_id,to_funnel_id,to_status_code,to_status_name,entered_at)
-      VALUES(2,1,'qualified','Квалификация пройдена','2025-07-20');
-      UPDATE academy_leads SET status_code='qualified' WHERE id=1;
+  it('keeps an earlier qualification in reached states without inventing qualification activity this month', async () => {
+    await fixture.pool.query(`UPDATE academy_leads SET is_qualified=true,qualified_at='2025-07-20' WHERE id IN (1,2);
       INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES
       (1,'2025-08-10','outgoing',20),(2,'2025-08-10','outgoing',30);`);
     expect(await report(7, 1)).toMatchObject({ qualifiedLeads: 0, reachedLeads: 2,
       contactBreakdown: { reachedQualifiedInWork: 2 } });
   });
-  it('lets an explicit correction revoke a stage qualification and a later qualification restore it', async () => {
-    await fixture.pool.query(`INSERT INTO academy_lead_stage_history(lead_id,to_funnel_id,to_status_code,to_status_name,entered_at)
-      VALUES(2,1,'qualified','Квалификация пройдена','2025-08-10');
-      UPDATE academy_leads SET status_code='qualified' WHERE id=2;
-      INSERT INTO audit_logs(user_id,action,entity_type,entity_id,new_values,created_at)
-      VALUES(7,'REVOKE_ACADEMY_LEAD_QUALIFICATION','academy_lead',2,'[{"funnelId":1}]','2025-08-11');
+  it('counts a revoked qualification as unqualified and a later qualification on its own date', async () => {
+    await fixture.pool.query(`UPDATE academy_leads SET status_code='qualified' WHERE id=2;
       INSERT INTO telephony_calls(lead_id,started_at,direction,talk_seconds) VALUES(2,'2025-08-12','outgoing',20);`);
     expect(await report(7, 1)).toMatchObject({ qualifiedLeads: 0, contactBreakdown: { reachedQualifiedInWork: 0 } });
-    await fixture.pool.query(`INSERT INTO audit_logs(user_id,action,entity_type,entity_id,new_values,created_at)
-      VALUES(7,'QUALIFY_ACADEMY_LEAD_BY_CRITERIA','academy_lead',2,'[{"funnelId":1}]','2025-08-13');`);
+    await fixture.pool.query(`UPDATE academy_leads SET is_qualified=true,qualified_at='2025-08-13' WHERE id=2;`);
     const result = await report(7, 1);
     expect(result).toMatchObject({ qualifiedLeads: 1, contactBreakdown: { reachedQualifiedInWork: 1 } });
     expect(result.daily[9].qualifiedLeads).toBe(0);
@@ -414,7 +400,7 @@ describe.skipIf(!url)('factual sales report on PostgreSQL', () => {
     expect(responses[0].body).toEqual(responses[1].body);
     expect((await fixture.pool.query('SELECT * FROM audit_logs')).rows).toHaveLength(1);
     expect((await fixture.pool.query('SELECT status_code FROM academy_leads WHERE id=1')).rows[0].status_code).toBe('intake');
-    await fixture.pool.query("UPDATE audit_logs SET created_at='2025-08-12'");
+    await fixture.pool.query("UPDATE audit_logs SET created_at='2025-08-12'; UPDATE academy_leads SET qualified_at='2025-08-12' WHERE id=1");
     expect((await report(7, 1)).qualifiedLeads).toBe(1);
     expect((await request(app).delete(path).send({ funnelId: 1, qualifiedAt: (await request(app).get(path)).body.qualifiedAt })).body.qualifiedAt).toBeNull();
     expect((await report(7, 1)).qualifiedLeads).toBe(0);

@@ -24,24 +24,17 @@ function fail(message: string, statusCode = 409): never {
   throw Object.assign(new Error(message), { statusCode });
 }
 
-/** Count each pupil once. A converted lead is represented by its student membership. */
+/** Only pupils created inside a lead take places in a group, each once. */
 const counts = `
   (SELECT COUNT(*)::int FROM academy_student_group_enrollments e
     WHERE e.group_id=g.id AND e.status='active') AS current_students,
-  (SELECT COUNT(*)::int FROM academy_lead_group_reservations r
-    JOIN academy_leads l ON l.id=r.lead_id
-    WHERE r.group_id=g.id AND NOT COALESCE(l.is_archived,false)
-      AND NOT EXISTS(SELECT 1 FROM academy_students s WHERE s.lead_id=l.id)) AS reserved_students,
+  0 AS reserved_students,
   (SELECT COALESCE(SUM(p.amount_uzs),0)::bigint FROM academy_payments p
     WHERE p.group_id=g.id AND p.status='paid') AS paid_amount_uzs,
-  (SELECT COUNT(DISTINCT COALESCE('s:'||p.student_id::text,'l:'||p.lead_id::text))::int
+  (SELECT COUNT(DISTINCT p.student_id)::int
     FROM academy_payments p WHERE p.group_id=g.id AND p.status='paid'
-      AND (EXISTS(SELECT 1 FROM academy_student_group_enrollments e
-          WHERE e.group_id=g.id AND e.student_id=p.student_id AND e.status='active')
-        OR (p.student_id IS NULL AND EXISTS(
-          SELECT 1 FROM academy_lead_group_reservations r JOIN academy_leads l ON l.id=r.lead_id
-          WHERE r.group_id=g.id AND r.lead_id=p.lead_id AND NOT COALESCE(l.is_archived,false)
-            AND NOT EXISTS(SELECT 1 FROM academy_students s WHERE s.lead_id=l.id))))) AS paid_members`;
+      AND EXISTS(SELECT 1 FROM academy_student_group_enrollments e
+        WHERE e.group_id=g.id AND e.student_id=p.student_id AND e.status='active')) AS paid_members`;
 
 export class FutureGroupsRepository {
   async list() {
@@ -169,14 +162,8 @@ export class FutureGroupsRepository {
     if (search.trim().length < 2) return [];
     const term = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
     return query(
-      `SELECT 'lead' AS kind,l.id,l.id AS lead_id,l.student_name,l.contact_name,
+      `SELECT 'student' AS kind,s.id,l.id AS lead_id,s.student_name,l.contact_name,
         u.full_name AS manager_name,0 AS paid_amount_uzs,true AS can_manage
-      FROM academy_leads l LEFT JOIN users u ON u.id=l.manager_id
-      WHERE NOT COALESCE(l.is_archived,false) AND ($2 OR l.manager_id=$3)
-        AND NOT EXISTS(SELECT 1 FROM academy_students s WHERE s.lead_id=l.id)
-        AND (l.contact_name ILIKE $1 OR l.student_name ILIKE $1 OR l.phone ILIKE $1)
-      UNION ALL
-      SELECT 'student',s.id,l.id,s.student_name,l.contact_name,u.full_name,0,true
       FROM academy_students s JOIN academy_leads l ON l.id=s.lead_id LEFT JOIN users u ON u.id=l.manager_id
       WHERE NOT COALESCE(l.is_archived,false) AND ($2 OR l.manager_id=$3)
         AND s.status IN ('trial','waiting_start','studying') AND NOT s.is_archived
@@ -191,18 +178,10 @@ export class FutureGroupsRepository {
     groupId: number,
   ): Promise<FutureGroupMember[]> {
     const rows = await query<FutureGroupMember & Row>(
-      `SELECT 'lead' AS kind,l.id,l.id AS lead_id,l.student_name,l.contact_name,
+      `SELECT 'student' AS kind,s.id,l.id AS lead_id,s.student_name,l.contact_name,
         l.manager_id,l.funnel_id,u.full_name AS manager_name,
-        COALESCE((SELECT SUM(p.amount_uzs) FROM academy_payments p WHERE p.lead_id=l.id
-          AND p.student_id IS NULL AND p.group_id=$1 AND p.status='paid'),0) AS paid_amount_uzs
-      FROM academy_lead_group_reservations r JOIN academy_leads l ON l.id=r.lead_id
-      LEFT JOIN users u ON u.id=l.manager_id
-      WHERE r.group_id=$1 AND NOT COALESCE(l.is_archived,false)
-        AND NOT EXISTS(SELECT 1 FROM academy_students s WHERE s.lead_id=l.id)
-      UNION ALL
-      SELECT 'student',s.id,l.id,s.student_name,l.contact_name,l.manager_id,l.funnel_id,u.full_name,
         COALESCE((SELECT SUM(p.amount_uzs) FROM academy_payments p WHERE p.student_id=s.id
-          AND p.group_id=$1 AND p.status='paid'),0)
+          AND p.group_id=$1 AND p.status='paid'),0) AS paid_amount_uzs
       FROM academy_student_group_enrollments e JOIN academy_students s ON s.id=e.student_id
       JOIN academy_leads l ON l.id=s.lead_id LEFT JOIN users u ON u.id=l.manager_id
       WHERE e.group_id=$1 AND e.status='active'
@@ -225,74 +204,23 @@ export class FutureGroupsRepository {
     remove: boolean,
   ) {
     return withTransaction(async () => {
-      // Match the existing reservation lock order: lead, student, then group.
-      const studentRef =
-        party.kind === "student"
-          ? await queryOne("SELECT lead_id FROM academy_students WHERE id=$1", [
-              party.id,
-            ])
-          : null;
-      const leadId =
-        party.kind === "lead" ? party.id : Number(studentRef?.leadId);
+      // Lock in the order used by enrollments and payments: lead, pupil, group.
+      const studentRef = await queryOne("SELECT lead_id FROM academy_students WHERE id=$1", [party.id]);
+      const leadId = Number(studentRef?.leadId);
       const lead = await queryOne(
         "SELECT * FROM academy_leads WHERE id=$1 FOR UPDATE",
         [leadId || 0],
       );
       if (!lead || !canMutateLeadRow(actor, lead)) fail("accessDenied", 403);
       if (lead.isArchived && !remove) fail("futureGroupArchivedLead");
-      const student =
-        party.kind === "student"
-          ? await queryOne(
-              "SELECT * FROM academy_students WHERE id=$1 FOR UPDATE",
-              [party.id],
-            )
-          : null;
+      const student = await queryOne(
+        "SELECT * FROM academy_students WHERE id=$1 FOR UPDATE",
+        [party.id],
+      );
       if (student && Number(student.leadId) !== leadId)
         fail("futureGroupChanged");
       const group = await this.locked(groupId);
-      if (party.kind === "lead") {
-        if (
-          await queryOne(
-            "SELECT id FROM academy_students WHERE lead_id=$1 LIMIT 1",
-            [leadId],
-          )
-        )
-          fail("studentSelectionRequired");
-        const existing = await queryOne(
-          "SELECT id FROM academy_lead_group_reservations WHERE lead_id=$1 AND group_id=$2",
-          [leadId, groupId],
-        );
-        if (remove) {
-          await query(
-            "DELETE FROM academy_lead_group_reservations WHERE lead_id=$1 AND group_id=$2",
-            [leadId, groupId],
-          );
-          if (Number(lead.enrolledGroupId) === groupId) {
-            const next = await queryOne(
-              "SELECT r.group_id,g.course_id,g.school_id FROM academy_lead_group_reservations r JOIN academy_groups g ON g.id=r.group_id WHERE r.lead_id=$1 ORDER BY r.id LIMIT 1",
-              [leadId],
-            );
-            await updateRow("academy_leads", leadId, {
-              enrolledGroupId: next?.groupId ?? null,
-              ...(next
-                ? { courseId: next.courseId, schoolId: next.schoolId }
-                : {}),
-            });
-          }
-        } else if (!existing) {
-          await ensureGroupCapacity(groupId, leadId);
-          await query(
-            "INSERT INTO academy_lead_group_reservations(lead_id,group_id,created_by) VALUES($1,$2,$3)",
-            [leadId, groupId, actor.userId],
-          );
-          if (!lead.enrolledGroupId)
-            await updateRow("academy_leads", leadId, {
-              enrolledGroupId: groupId,
-              courseId: group.courseId,
-              schoolId: group.schoolId,
-            });
-        }
-      } else {
+      {
         if (!student) fail("resourceNotFound", 404);
         const membership = await queryOne(
           "SELECT * FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2 AND status='active'",
@@ -337,7 +265,7 @@ export class FutureGroupsRepository {
           if (student.isArchived) fail("archivedStudentMustBeRestoredBeforeUpdate");
           if (!["trial", "waiting_start", "studying"].includes(student.status))
             fail("futureGroupStudentUnavailable");
-          await ensureGroupCapacity(groupId, null, party.id);
+          await ensureGroupCapacity(groupId, party.id);
           await query(
             `INSERT INTO academy_student_group_enrollments(student_id,group_id,status,is_primary,enrolled_at,created_by)
             VALUES($1,$2,'active',$3,NOW(),$4)`,

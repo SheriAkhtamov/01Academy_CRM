@@ -43,6 +43,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
   callActionDisabled,
   callActionLabel,
   onArchiveLead,
+  onWinLead,
+  canWinLead,
   onStatusChange,
   beforeLeadAction,
   isPending,
@@ -61,6 +63,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
   callActionDisabled?: boolean;
   callActionLabel?: string;
   onArchiveLead: (lead: TLead) => void;
+  onWinLead?: (lead: TLead) => void;
+  canWinLead?: (lead: TLead) => boolean;
   onStatusChange: (leadId: number, statusCode: string) => Promise<boolean>;
   beforeLeadAction?: (lead: TLead, proceed: () => void) => void;
   isPending: boolean;
@@ -103,6 +107,8 @@ export function SalesPipelineSection<TLead extends KanbanLead>({
           callActionDisabled={callActionDisabled}
           callActionLabel={callActionLabel}
           onArchiveLead={(lead) => onArchiveLead(lead as TLead)}
+          onWinLead={onWinLead ? (lead) => onWinLead(lead as TLead) : undefined}
+          canWinLead={canWinLead ? (lead) => canWinLead(lead as TLead) : undefined}
           onLeadClick={(lead) => onLeadClick(lead as TLead)}
           isPending={isPending}
           showPaymentAction

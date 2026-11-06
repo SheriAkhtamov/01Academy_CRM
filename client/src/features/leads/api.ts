@@ -64,6 +64,12 @@ export const leadsApi = {
   restore: <T>(leadId: LeadIdentifier, input: RestoreLeadRequest) => (
     apiRequest('POST', `/api/academy/leads/${leadId}/restore`, input) as Promise<T>
   ),
+  win: <T>(leadId: LeadIdentifier) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/win`, {}) as Promise<T>
+  ),
+  reopen: <T>(leadId: LeadIdentifier) => (
+    apiRequest('POST', `/api/academy/leads/${leadId}/reopen`, {}) as Promise<T>
+  ),
   merge: <T>(input: MergeLeadIds) => (
     apiRequest('POST', '/api/academy/leads/merge', input) as Promise<T>
   ),

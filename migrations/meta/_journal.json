@@ -1198,6 +1198,20 @@
       "when": 1793707200000,
       "tag": "0170_platform_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1793793600000,
+      "tag": "0171_platform_cleanup_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1793880000000,
+      "tag": "0172_lead_outcomes",
+      "breakpoints": true
     }
   ]
 }

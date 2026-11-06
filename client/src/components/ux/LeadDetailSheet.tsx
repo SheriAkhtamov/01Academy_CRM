@@ -36,6 +36,7 @@ import { LeadStudentsCard } from '@/components/ux/lead/LeadStudentsCard';
 import { LeadWorkspaceSection, type LeadWorkspaceSectionId } from '@/components/ux/lead/LeadWorkspaceSection';
 import { LeadPaymentDateField } from '@/components/ux/lead/LeadPaymentDateField';
 import { LeadPaymentSummary } from '@/components/ux/lead/LeadPaymentSummary';
+import { LeadWinAction } from '@/components/ux/lead/LeadWinAction';
 import { PaymentAttachmentLinks, PaymentFilesField, type PaymentReceiptAttachment } from '@/components/ux/lead/PaymentAttachments';
 import { PaymentRefundAction } from '@/components/ux/lead/PaymentRefundAction';
 import { usePaymentFiles } from '@/features/payments/usePaymentFiles';
@@ -151,6 +152,7 @@ interface LeadDetails {
   tags?: LeadTagView[];
   statusCode: string;
   isArchived?: boolean;
+  isWon?: boolean;
   managerId?: number | null;
   managerName?: string | null;
   comment?: string | null;
@@ -1077,14 +1079,25 @@ export function LeadDetailSheet({
                 />
               )}
               archiveAction={(
-                <LeadArchiveActions
-                  key={`${lead.id}-${Boolean(lead.isArchived)}`}
-                  lead={lead}
-                  statuses={funnelStatuses}
-                  canClaimUnassignedLead={canClaimUnassignedLead}
-                  leadStatusName={leadStatusName}
-                  onChanged={onChanged}
-                />
+                <>
+                  <LeadWinAction
+                    key={`win-${lead.id}-${Boolean(lead.isWon)}`}
+                    lead={lead}
+                    hasStudents={(lead.students?.length ?? 0) > 0}
+                    disabled={leadReadOnly}
+                    onChanged={onChanged}
+                  />
+                  {lead.isWon ? null : (
+                    <LeadArchiveActions
+                      key={`${lead.id}-${Boolean(lead.isArchived)}`}
+                      lead={lead}
+                      statuses={funnelStatuses}
+                      canClaimUnassignedLead={canClaimUnassignedLead}
+                      leadStatusName={leadStatusName}
+                      onChanged={onChanged}
+                    />
+                  )}
+                </>
               )}
               workflowActions={(
                 <>

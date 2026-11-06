@@ -310,6 +310,14 @@ export const academyLeads = pgTable("academy_leads", {
   archiveReason: varchar("archive_reason", { length: 80 }),
   archivedAt: timestamp("archived_at"),
   archivedBy: integer("archived_by").references(() => users.id, { onDelete: "set null" }),
+  // The only qualification fact: the criteria button in the lead card.
+  isQualified: boolean("is_qualified").notNull().default(false),
+  qualifiedAt: timestamp("qualified_at"),
+  qualifiedBy: integer("qualified_by").references(() => users.id, { onDelete: "set null" }),
+  // A won deal leaves the active board without being archived as lost.
+  isWon: boolean("is_won").notNull().default(false),
+  wonAt: timestamp("won_at"),
+  wonBy: integer("won_by").references(() => users.id, { onDelete: "set null" }),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   firstViewedAt: timestamp("first_viewed_at"), // NULL while the lead is new in its current assignment cycle.
   firstViewedBy: integer("first_viewed_by").references(() => users.id, { onDelete: "set null" }),
@@ -325,6 +333,8 @@ export const academyLeads = pgTable("academy_leads", {
   sourceIdx: index("academy_leads_source_idx").on(table.sourceId),
   funnelIdx: index("academy_leads_funnel_idx").on(table.funnelId),
   archiveIdx: index("academy_leads_archive_idx").on(table.isArchived, table.archivedAt),
+  qualifiedIdx: index("academy_leads_qualified_idx").on(table.qualifiedAt).where(sql`${table.isQualified}`),
+  wonIdx: index("academy_leads_won_idx").on(table.wonAt).where(sql`${table.isWon}`),
 }));
 
 export const academyLeadTagAssignments = pgTable("academy_lead_tag_assignments", {

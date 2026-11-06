@@ -19,16 +19,11 @@ export const marketingLeadFactsSql = `
     JOIN cohort lead ON lead.id = COALESCE(call.lead_id, CASE WHEN call.contact_type = 'lead' THEN call.contact_id END, contact.lead_id)
     WHERE call.started_at >= lead.acquired_at AND call.started_at <= $3
     GROUP BY lead.id
-  ), latest_qualification AS (
-    SELECT DISTINCT ON (fact.entity_id, fact.new_values->0->>'funnelId') fact.entity_id, fact.action
-    FROM audit_logs fact JOIN cohort lead ON lead.id = fact.entity_id
-    WHERE fact.entity_type = 'academy_lead'
-      AND fact.action IN ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA', 'REVOKE_ACADEMY_LEAD_QUALIFICATION')
-      AND fact.created_at <= $3
-    ORDER BY fact.entity_id, fact.new_values->0->>'funnelId', fact.created_at DESC, fact.id DESC
   ), qualification_facts AS (
-    SELECT entity_id AS lead_id, BOOL_OR(action = 'QUALIFY_ACADEMY_LEAD_BY_CRITERIA') AS qualified
-    FROM latest_qualification GROUP BY entity_id
+    -- The criteria button in the lead card is the only qualification fact.
+    SELECT lead.id AS lead_id, true AS qualified
+    FROM cohort lead
+    WHERE lead.is_qualified AND lead.qualified_at <= $3
   ), demo_facts AS (
     SELECT student.lead_id, ARRAY_AGG(DISTINCT student.id) AS booked,
       ARRAY_AGG(DISTINCT student.id) FILTER (WHERE participant.status = 'attended' AND demo.scheduled_at <= $3) AS attended,

@@ -12,7 +12,7 @@ import {
   vi,
 } from "vitest";
 import type { ActorContext } from "../server/modules/leads/domain/actor-context";
-import type { FutureGroupInput } from "../shared/contracts/future-groups";
+import { futureGroupPartySchema, type FutureGroupInput } from "../shared/contracts/future-groups";
 
 const fixture = vi.hoisted(() => ({
   pool: null as Pool | null,
@@ -242,46 +242,38 @@ describe.skipIf(!url)("Future groups persistence", () => {
     ).rejects.toMatchObject({ code: "23514" });
     expect(await repository.list()).toHaveLength(1);
   });
-  it("reserves the last seat once even when managers submit simultaneously", async () => {
+  it("gives the last seat once even when managers submit simultaneously", async () => {
     const group = await create();
+    await fixture.pool!.query(
+      "INSERT INTO academy_students VALUES(31,11,NULL,'Pupil A','trial',NULL,NULL,now()),(32,12,NULL,'Pupil B','trial',NULL,NULL,now())",
+    );
     const results = await Promise.allSettled(
-      [11, 12].map((id) =>
-        repository.changeMember(actor, group.id, { kind: "lead", id }, false),
+      [31, 32].map((id) =>
+        repository.changeMember(actor, group.id, { kind: "student", id }, false),
       ),
     );
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
     expect((await repository.list())[0]).toMatchObject({
-      reservedStudents: 1,
+      currentStudents: 1,
+      reservedStudents: 0,
       paidMembers: 0,
     });
   });
-  it("deduplicates a repeated booking and frees its place on cancellation", async () => {
+  it("deduplicates a repeated enrollment and frees its place on cancellation", async () => {
     const group = await create();
+    await fixture.pool!.query(
+      "INSERT INTO academy_students VALUES(31,11,NULL,'Pupil A','trial',NULL,NULL,now()),(32,12,NULL,'Pupil B','trial',NULL,NULL,now())",
+    );
     await Promise.all(
       [1, 2].map(() =>
-        repository.changeMember(
-          actor,
-          group.id,
-          { kind: "lead", id: 11 },
-          false,
-        ),
+        repository.changeMember(actor, group.id, { kind: "student", id: 31 }, false),
       ),
-    );
+    ).catch(() => undefined);
     expect(await repository.members(actor, group.id)).toHaveLength(1);
-    await repository.changeMember(
-      actor,
-      group.id,
-      { kind: "lead", id: 11 },
-      true,
-    );
-    await repository.changeMember(
-      actor,
-      group.id,
-      { kind: "lead", id: 12 },
-      false,
-    );
-    expect((await repository.members(actor, group.id))[0].id).toBe(12);
+    await repository.changeMember(actor, group.id, { kind: "student", id: 31 }, true);
+    await repository.changeMember(actor, group.id, { kind: "student", id: 32 }, false);
+    expect((await repository.members(actor, group.id))[0].id).toBe(32);
   });
   it("counts siblings separately and preserves the parent ownership boundary", async () => {
     const group = await repository.save(actor, { ...input, maxStudents: 2 });
@@ -312,15 +304,13 @@ describe.skipIf(!url)("Future groups persistence", () => {
       await repository.members({ ...actor, userId: 2 }, group.id),
     ).toHaveLength(0);
   });
-  it("rejects a stale edit and a capacity below current bookings", async () => {
+  it("rejects a stale edit and a capacity below current enrollments", async () => {
     const group = await repository.save(actor, { ...input, maxStudents: 2 });
-    for (const id of [11, 12])
-      await repository.changeMember(
-        actor,
-        group.id,
-        { kind: "lead", id },
-        false,
-      );
+    await fixture.pool!.query(
+      "INSERT INTO academy_students VALUES(31,11,NULL,'Pupil A','trial',NULL,NULL,now()),(32,12,NULL,'Pupil B','trial',NULL,NULL,now())",
+    );
+    for (const id of [31, 32])
+      await repository.changeMember(actor, group.id, { kind: "student", id }, false);
     await expect(
       repository.save(
         actor,
@@ -345,33 +335,23 @@ describe.skipIf(!url)("Future groups persistence", () => {
   });
   it("shows paid money for the selected group and excludes refunded payments", async () => {
     const group = await create();
-    await repository.changeMember(
-      actor,
-      group.id,
-      { kind: "lead", id: 11 },
-      false,
-    );
     await fixture.pool!.query(
-      "INSERT INTO academy_payments(group_id,lead_id,amount_uzs,status) VALUES($1,11,100000,'paid'),($1,11,50000,'refunded'),(999,11,900000,'paid')",
+      "INSERT INTO academy_students VALUES(31,11,NULL,'Pupil A','trial',NULL,NULL,now()),(32,12,NULL,'Pupil B','trial',NULL,NULL,now())",
+    );
+    await repository.changeMember(actor, group.id, { kind: "student", id: 31 }, false);
+    await fixture.pool!.query(
+      "INSERT INTO academy_payments(group_id,lead_id,student_id,amount_uzs,status) VALUES($1,11,31,100000,'paid'),($1,11,31,50000,'refunded'),(999,11,31,900000,'paid')",
       [group.id],
     );
-    expect((await repository.members(actor, group.id))[0].paidAmountUzs).toBe(
-      100000,
-    );
-    expect((await repository.list())[0]).toMatchObject({
-      paidMembers: 1,
-      paidAmountUzs: 100000,
-    });
-    await repository.changeMember(
-      actor,
-      group.id,
-      { kind: "lead", id: 11 },
-      true,
-    );
-    expect((await repository.list())[0]).toMatchObject({
-      paidMembers: 0,
-      paidAmountUzs: 100000,
-    });
+    expect((await repository.members(actor, group.id))[0].paidAmountUzs).toBe(100000);
+    expect((await repository.list())[0]).toMatchObject({ paidMembers: 1, paidAmountUzs: 100000 });
+    await repository.changeMember(actor, group.id, { kind: "student", id: 31 }, true);
+    expect((await repository.list())[0]).toMatchObject({ paidMembers: 0, paidAmountUzs: 100000 });
+  });
+
+  it("accepts only pupils created inside a lead, never the lead itself", () => {
+    expect(futureGroupPartySchema.safeParse({ kind: "lead", id: 11 }).success).toBe(false);
+    expect(futureGroupPartySchema.safeParse({ kind: "student", id: 31 }).success).toBe(true);
   });
   it("starts waiting students only after the group is actually launched", async () => {
     const group = await create();

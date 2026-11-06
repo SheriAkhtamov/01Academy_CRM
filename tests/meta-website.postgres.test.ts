@@ -39,7 +39,7 @@ describe.skipIf(!url)('Meta landing persisted acquisitions across all reporting 
     await pool.query(`
       CREATE TABLE academy_lead_sources(id int PRIMARY KEY, code text, name text);
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text);
-      CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp);
+      CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp, is_qualified boolean NOT NULL DEFAULT false, qualified_at timestamp);
       CREATE TABLE academy_students(id int PRIMARY KEY, lead_id int);
       CREATE TABLE academy_lead_import_records(id serial PRIMARY KEY, lead_id int, source_sheet text, payload jsonb, provider text, external_id text);
       CREATE TABLE telephony_calls(lead_id int, contact_type text, contact_id int, talk_seconds int, started_at timestamp);

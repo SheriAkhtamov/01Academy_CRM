@@ -26,7 +26,7 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
     await pool.query(`
       CREATE TABLE academy_lead_sources(id int PRIMARY KEY, code text);
       CREATE TABLE academy_courses(id int PRIMARY KEY, slug text);
-      CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp);
+      CREATE TABLE academy_leads(id int PRIMARY KEY, source_id int, course_id int, languages text[], language text, created_at timestamp, is_qualified boolean NOT NULL DEFAULT false, qualified_at timestamp);
       CREATE TABLE academy_lead_import_records(id serial PRIMARY KEY, lead_id int, source_sheet text, payload jsonb, provider text, external_id text);
       CREATE TABLE meta_lead_attributions(id serial PRIMARY KEY, lead_id int, ad_id text, leadgen_id text,
         provider text DEFAULT 'meta', channel text DEFAULT 'instant_form', referral_type text,
@@ -50,10 +50,7 @@ describe.skipIf(!url)('marketing bot persisted facts and password access', () =>
       INSERT INTO telephony_calls VALUES
         (1,'lead',1,0,'2026-10-03'),(NULL,'student',10,15,'2026-10-04'),
         (2,'lead',2,0,'2026-10-03'),(2,'lead',2,0,'2026-10-04');
-      INSERT INTO audit_logs(entity_type,entity_id,action,new_values,created_at) VALUES
-        ('academy_lead',1,'QUALIFY_ACADEMY_LEAD_BY_CRITERIA','[{"funnelId":1}]','2026-10-04'),
-        ('academy_lead',2,'QUALIFY_ACADEMY_LEAD_BY_CRITERIA','[{"funnelId":1}]','2026-10-04'),
-        ('academy_lead',2,'REVOKE_ACADEMY_LEAD_QUALIFICATION','[{"funnelId":1}]','2026-10-05');
+      UPDATE academy_leads SET is_qualified=true, qualified_at='2026-10-04' WHERE id=1;
       INSERT INTO academy_demo_lessons VALUES
         (1,'completed','2026-10-05'),(2,'scheduled','2026-10-08'),(3,'cancelled','2026-10-07'),
         (4,'scheduled','2026-11-01'),(5,'not_conducted','2026-10-09');

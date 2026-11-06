@@ -17,7 +17,7 @@ import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 interface LeadWorkspaceHeaderProps {
   actionsDisabled?: boolean;
   lead: {
-    contactName: string; statusCode: string; isArchived?: boolean;
+    contactName: string; statusCode: string; isArchived?: boolean; isWon?: boolean;
     managerId?: number | null; managerName?: string | null; sourceName?: string | null;
   };
   visiblePhoneNumbers: string[];
@@ -49,6 +49,9 @@ export function LeadWorkspaceHeader({
           <div className="min-w-0 flex-1 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
               <SheetTitle className="break-words text-xl font-semibold leading-tight tracking-tight">{lead.contactName}</SheetTitle>
+              {lead.isWon ? (
+                <Badge variant="success">{t('leadWonBadge')}</Badge>
+              ) : null}
               {lead.isArchived ? (
                 <Badge variant="outline">{t('leadInArchive')}</Badge>
               ) : null}

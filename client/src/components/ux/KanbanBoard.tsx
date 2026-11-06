@@ -29,6 +29,7 @@ import {
   Phone,
   Send,
   Archive,
+  Trophy,
   CalendarPlus2,
   Wallet,
   X,
@@ -111,6 +112,9 @@ interface KanbanBoardProps {
   callActionDisabled?: boolean;
   callActionLabel?: string;
   onArchiveLead?: (lead: KanbanLead) => void;
+  /** Closes the deal as won; offered only for leads that already have a pupil. */
+  onWinLead?: (lead: KanbanLead) => void;
+  canWinLead?: (lead: KanbanLead) => boolean;
   onLeadClick?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction?: boolean;
@@ -141,6 +145,8 @@ interface LeadCardContentProps {
   callActionDisabled?: boolean;
   callActionLabel?: string;
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
+  onWinLead?: KanbanBoardProps['onWinLead'];
+  canWinLead?: KanbanBoardProps['canWinLead'];
   onEnrollDemo?: (lead: KanbanLead) => void;
   isPending?: boolean;
   showPaymentAction: boolean;
@@ -159,6 +165,8 @@ function LeadCardContent({
   callActionDisabled,
   callActionLabel,
   onArchiveLead,
+  onWinLead,
+  canWinLead,
   onEnrollDemo,
   isPending,
   showPaymentAction,
@@ -257,13 +265,20 @@ function LeadCardContent({
                   {statuses.map((stage) => <DropdownMenuItem key={stage.code} disabled={isPending || stage.code === currentStatus.code} onSelect={() => onMove(lead.id, stage.code)}>{stage.name}</DropdownMenuItem>)}
                 </DropdownMenuSubContent>
               </DropdownMenuSub> : null}
-              {onArchiveLead ? (
+              {onArchiveLead || onWinLead ? (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    <DropdownMenuItem onClick={() => onArchiveLead(lead)} disabled={isPending}>
-                      <Archive /> {t('sendToArchive')}
-                    </DropdownMenuItem>
+                    {onWinLead ? (
+                      <DropdownMenuItem onClick={() => onWinLead(lead)} disabled={isPending || !canWinLead?.(lead)}>
+                        <Trophy /> {t('leadWin')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {onArchiveLead ? (
+                      <DropdownMenuItem onClick={() => onArchiveLead(lead)} disabled={isPending}>
+                        <Archive /> {t('sendToArchive')}
+                      </DropdownMenuItem>
+                    ) : null}
                   </DropdownMenuGroup>
                 </>
               ) : null}
@@ -421,6 +436,8 @@ interface KanbanColumnProps {
   callActionDisabled?: boolean;
   callActionLabel?: string;
   onArchiveLead?: KanbanBoardProps['onArchiveLead'];
+  onWinLead?: KanbanBoardProps['onWinLead'];
+  canWinLead?: KanbanBoardProps['canWinLead'];
   onEnrollDemo?: LeadCardContentProps['onEnrollDemo'];
   isPending?: boolean;
   showPaymentAction: boolean;
@@ -442,6 +459,8 @@ function KanbanColumn({
   callActionDisabled,
   callActionLabel,
   onArchiveLead,
+  onWinLead,
+  canWinLead,
   onEnrollDemo,
   isPending,
   showPaymentAction,
@@ -566,6 +585,8 @@ function KanbanColumn({
               callActionDisabled={callActionDisabled}
               callActionLabel={callActionLabel}
               onArchiveLead={onArchiveLead}
+              onWinLead={onWinLead}
+              canWinLead={canWinLead}
               onEnrollDemo={onEnrollDemo}
               isPending={isPending}
               dragDisabled={dragDisabled}
@@ -601,6 +622,8 @@ export function KanbanBoard({
   callActionDisabled,
   callActionLabel,
   onArchiveLead,
+  onWinLead,
+  canWinLead,
   onLeadClick,
   isPending,
   showPaymentAction = true,
@@ -761,6 +784,8 @@ export function KanbanBoard({
                 callActionDisabled={callActionDisabled}
                 callActionLabel={callActionLabel}
                 onArchiveLead={onArchiveLead ? lead => runLeadAction(lead, () => onArchiveLead(lead)) : undefined}
+                onWinLead={onWinLead ? lead => runLeadAction(lead, () => onWinLead(lead)) : undefined}
+                canWinLead={canWinLead}
                 onEnrollDemo={lead => runLeadAction(lead, () => setDemoEnrollmentLead(lead))}
                 isPending={isPending}
                 showPaymentAction={showPaymentAction}

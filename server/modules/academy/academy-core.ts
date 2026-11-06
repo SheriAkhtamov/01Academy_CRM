@@ -262,44 +262,6 @@ export const leadTagsSelect = (leadAlias = 'l') => `
     '[]'::json
   ) AS tags`;
 
-export const leadGroupReservationsSelect = (leadAlias = 'l') => `
-  COALESCE(
-    (
-      SELECT json_agg(
-        json_build_object(
-          'groupId', reservation.group_id,
-          'groupName', reserved_group.name,
-          'courseId', reserved_group.course_id,
-          'courseName', reserved_course.name,
-          'schoolId', reserved_group.school_id,
-          'isPrimary', reservation.group_id = ${leadAlias}.enrolled_group_id,
-          'enrolledAt', reservation.created_at
-        )
-        ORDER BY (reservation.group_id = ${leadAlias}.enrolled_group_id) DESC,
-                 reserved_group.name,
-                 reservation.group_id
-      )
-      FROM academy_lead_group_reservations reservation
-      JOIN academy_groups reserved_group ON reserved_group.id = reservation.group_id
-      LEFT JOIN academy_courses reserved_course ON reserved_course.id = reserved_group.course_id
-      WHERE reservation.lead_id = ${leadAlias}.id
-    ),
-    '[]'::json
-  ) AS lead_groups,
-  COALESCE(
-    (
-      SELECT array_agg(
-        reservation.group_id
-        ORDER BY (reservation.group_id = ${leadAlias}.enrolled_group_id) DESC,
-                 reserved_group.name
-      )
-      FROM academy_lead_group_reservations reservation
-      JOIN academy_groups reserved_group ON reserved_group.id = reservation.group_id
-      WHERE reservation.lead_id = ${leadAlias}.id
-    ),
-    ARRAY[]::integer[]
-  ) AS lead_group_ids`;
-
 export const studentGroupMembershipsSelect = (studentAlias = 'st') => `
   COALESCE(
     (

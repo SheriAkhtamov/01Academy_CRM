@@ -179,7 +179,6 @@ export const prepareGroupMutation = async (options: {
            SELECT 1 FROM academy_student_group_enrollments
            WHERE group_id = $1
          )
-         OR EXISTS (SELECT 1 FROM academy_lead_group_reservations WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
        ) AS has_enrollments`,
       [options.oldRow.id],
@@ -248,20 +247,12 @@ export const prepareGroupMutation = async (options: {
     const occupancy = await queryOne<{ currentStudents: number; reservedStudents: number }>(
       `SELECT
          COUNT(DISTINCT s.id)::int AS current_students,
-         COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
+         0::int AS reserved_students
        FROM academy_groups g
        LEFT JOIN academy_student_group_enrollments enrollment
          ON enrollment.group_id = g.id AND enrollment.status = 'active'
        LEFT JOIN academy_students s
          ON s.id = enrollment.student_id AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))
-       LEFT JOIN academy_lead_group_reservations reserved_membership
-         ON reserved_membership.group_id = g.id
-       LEFT JOIN academy_leads reserved
-         ON reserved.id = reserved_membership.lead_id
-        AND COALESCE(reserved.is_archived, false) = false
-        AND NOT EXISTS (
-          SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
-        )
        WHERE g.id = $1
        GROUP BY g.id`,
       [options.oldRow.id],
@@ -474,20 +465,12 @@ export const prepareGroupMetadataMutation = async (
   const occupancy = await queryOne<{ currentStudents: number; reservedStudents: number }>(
     `SELECT
        COUNT(DISTINCT s.id)::int AS current_students,
-       COUNT(DISTINCT CASE WHEN reserved.id IS NOT NULL THEN reserved.id END)::int AS reserved_students
+       0::int AS reserved_students
      FROM academy_groups g
      LEFT JOIN academy_student_group_enrollments enrollment
        ON enrollment.group_id = g.id AND enrollment.status = 'active'
      LEFT JOIN academy_students s
        ON s.id = enrollment.student_id AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))
-     LEFT JOIN academy_lead_group_reservations reserved_membership
-       ON reserved_membership.group_id = g.id
-     LEFT JOIN academy_leads reserved
-       ON reserved.id = reserved_membership.lead_id
-      AND COALESCE(reserved.is_archived, false) = false
-      AND NOT EXISTS (
-        SELECT 1 FROM academy_students existing_student WHERE existing_student.lead_id = reserved.id
-      )
      WHERE g.id = $1
      GROUP BY g.id`,
     [row.id],
@@ -520,7 +503,6 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
   const lifecycle = await queryOne<{
     hasLessons: boolean;
     hasScheduledLessons: boolean;
-    hasReservedLeads: boolean;
   }>(
     `SELECT
        EXISTS (
@@ -530,19 +512,7 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
        EXISTS (
          SELECT 1 FROM academy_lessons lesson
          WHERE lesson.group_id = $1 AND lesson.status = 'scheduled'
-       ) AS has_scheduled_lessons,
-       EXISTS (
-         SELECT 1
-         FROM academy_lead_group_reservations reservation
-         JOIN academy_leads reserved ON reserved.id = reservation.lead_id
-         WHERE reservation.group_id = $1
-           AND COALESCE(reserved.is_archived, false) = false
-           AND NOT EXISTS (
-             SELECT 1
-             FROM academy_students existing_student
-             WHERE existing_student.lead_id = reserved.id
-           )
-       ) AS has_reserved_leads`,
+       ) AS has_scheduled_lessons`,
     [options.id],
   );
 
@@ -552,9 +522,6 @@ export const assertGroupLifecycleUpdateAllowed = async (options: {
   if (!completesGroup) return;
   if (lifecycle?.hasScheduledLessons) {
     throw Object.assign(new Error('groupHasScheduledLessons'), { statusCode: 409 });
-  }
-  if (lifecycle?.hasReservedLeads) {
-    throw Object.assign(new Error('groupHasReservedLeads'), { statusCode: 409 });
   }
 };
 

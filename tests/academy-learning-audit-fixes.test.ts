@@ -47,7 +47,7 @@ describe('student status ownership and all memberships', () => {
     mocks.validateEnrollmentGroup.mockImplementation(async (id: number) => { if (id === 20) throw Object.assign(new Error('groupIsFull'), { statusCode: 409 }); return { id }; });
     const response = await request(app()).patch('/students/321/status').send({ status: 'studying' });
     expect(response.status).toBe(409); expect(response.body.error).toBe('groupIsFull');
-    expect(mocks.validateEnrollmentGroup.mock.calls).toEqual([[10, null, 321], [20, null, 321]]);
+    expect(mocks.validateEnrollmentGroup.mock.calls).toEqual([[10, 321], [20, 321]]);
     expect(mocks.updateRow).not.toHaveBeenCalled();
   });
   it.each(['groupNotOpen', 'groupHasInactiveResources'])('rejects invalid secondary membership: %s', async (error) => {
@@ -59,7 +59,7 @@ describe('student status ownership and all memberships', () => {
     memberships = [20, 10, 20];
     const response = await request(app()).patch('/students/321/status').send({ status: 'studying' });
     expect(response.status).toBe(200);
-    expect(mocks.validateEnrollmentGroup.mock.calls).toEqual([[10, null, 321], [20, null, 321]]);
+    expect(mocks.validateEnrollmentGroup.mock.calls).toEqual([[10, 321], [20, 321]]);
     const locks = mocks.queryOne.mock.calls.filter(([sql]) => sql.includes('SELECT id FROM academy_groups')).map(([, params]) => params[0]);
     expect(locks).toEqual([10, 20]);
     expect(mocks.recalculateStudentMetrics).toHaveBeenCalledWith(321);

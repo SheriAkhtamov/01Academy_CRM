@@ -24,6 +24,9 @@ import { useLeadClaimAction } from '@/features/sales/useLeadClaimAction';
 import { AssignLeadToSelfDialog } from '@/features/sales/ui/AssignLeadToSelfDialog';
 import { SalesBulkActionsButton, SalesPipelineSection } from '@/features/sales/ui/SalesSections';
 import { ArchiveTab } from '@/features/sales/ui/ArchiveTab';
+import { WonLeadsTab } from '@/features/sales/ui/WonLeadsTab';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useStickyState } from '@/hooks/useStickyState';
 import { studentsApi } from '@/features/students/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/lib/i18n';
@@ -124,6 +127,8 @@ interface Lead {
   archivedAt?: string | null;
   archivedBy?: number | null;
   archivedByName?: string | null;
+  isWon?: boolean;
+  wonAt?: string | null;
 }
 
 interface DuplicateClientHint {
@@ -402,11 +407,27 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     if (!data?.archivedLeads) return [];
     return data.archivedLeads;
   }, [data?.archivedLeads]);
+  // Won deals left the board; the archive shows them next to the refusals.
+  const wonLeads = useMemo<Lead[]>(
+    () => myLeads.filter((lead) => lead.isWon)
+      .sort((left, right) => String(right.wonAt ?? '').localeCompare(String(left.wonAt ?? ''))),
+    [myLeads],
+  );
+  const [archiveView, setArchiveView] = useStickyState<'lost' | 'won'>(
+    'sales.archive.view', 'lost', (stored) => (stored === 'won' ? 'won' : 'lost'),
+  );
 
   const myStudents = useMemo<Student[]>(() => {
     if (!data?.students) return [];
     return data.students;
   }, [data?.students]);
+
+  // A deal can be closed as won once the lead has a pupil.
+  const leadIdsWithPupils = useMemo(
+    () => new Set(myStudents.map((student) => Number(student.leadId)).filter((leadId) => leadId > 0)),
+    [myStudents],
+  );
+  const [winDialogLead, setWinDialogLead] = useState<Lead | null>(null);
 
   const myPayments = useMemo<any[]>(() => {
     if (!data?.payments) return [];
@@ -460,6 +481,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
   const pipelineLeads = useMemo(
     () => myLeads.filter((lead) => (
       !lead.isArchived
+      && !lead.isWon
       && activePipelineCodes.has(lead.statusCode)
       && Number(lead.funnelId) === selectedSalesFunnel?.id
     )),
@@ -556,6 +578,33 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       leadsApi.restore<Lead>(id, { statusCode }),
     onSuccess: () => {
       toast({ title: t('leadRestored') });
+      invalidate();
+    },
+    onError: (error: any) => toast({
+      title: t('leadRestoreFailed'),
+      description: localizeApiErrorMessage(error.message, error.status ?? 0),
+      variant: 'destructive',
+    }),
+  });
+
+  const winLead = useMutation({
+    mutationFn: (id: number) => leadsApi.win<Lead>(id),
+    onSuccess: () => {
+      setWinDialogLead(null);
+      toast({ title: t('leadWonToast') });
+      invalidate();
+    },
+    onError: (error: any) => toast({
+      title: t('updateFailed'),
+      description: localizeApiErrorMessage(error.message, error.status ?? 0),
+      variant: 'destructive',
+    }),
+  });
+
+  const reopenLead = useMutation({
+    mutationFn: (id: number) => leadsApi.reopen<Lead>(id),
+    onSuccess: () => {
+      toast({ title: t('leadReopenedToast') });
       invalidate();
     },
     onError: (error: any) => toast({
@@ -893,6 +942,8 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           callActionDisabled={isCallPending || isLineBusyWithReminder}
           callActionLabel={isLineBusyWithReminder ? callButtonLabel : undefined}
           onArchiveLead={openArchiveDialog}
+          onWinLead={setWinDialogLead}
+          canWinLead={(lead) => leadIdsWithPupils.has(lead.id)}
           onStatusChange={requestLeadStatusChange}
           beforeLeadAction={beforeLeadAction}
           isPending={updateLead.isPending}
@@ -906,18 +957,40 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
       ) : null}
 
       {section === 'archive' ? (
-        <ArchiveTab
-          t={t}
-          leads={archivedLeads}
-          funnels={salesFunnels}
-          activePipelineStatuses={data.statuses ?? []}
-          leadStatusName={leadStatusName}
-          archiveReasonName={archiveReasonName}
-          dateTime={dateTime}
-          onLeadClick={(lead) => openLead(lead.id)}
-          onRestore={(leadId, statusCode) => restoreLead.mutateAsync({ id: leadId, statusCode })}
-          isPending={restoreLead.isPending}
-        />
+        <Tabs
+          value={archiveView}
+          onValueChange={(value) => setArchiveView(value === 'won' ? 'won' : 'lost')}
+          className="flex h-full min-h-0 flex-col gap-2"
+        >
+          <TabsList className="self-start">
+            <TabsTrigger value="lost">{t('leadArchiveTabLost')}</TabsTrigger>
+            <TabsTrigger value="won">{t('leadArchiveTabWon')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="lost" className="mt-0 min-h-0 flex-1">
+            <ArchiveTab
+              t={t}
+              leads={archivedLeads}
+              funnels={salesFunnels}
+              activePipelineStatuses={data.statuses ?? []}
+              leadStatusName={leadStatusName}
+              archiveReasonName={archiveReasonName}
+              dateTime={dateTime}
+              onLeadClick={(lead) => openLead(lead.id)}
+              onRestore={(leadId, statusCode) => restoreLead.mutateAsync({ id: leadId, statusCode })}
+              isPending={restoreLead.isPending}
+            />
+          </TabsContent>
+          <TabsContent value="won" className="mt-0 min-h-0 flex-1">
+            <WonLeadsTab
+              t={t}
+              leads={wonLeads}
+              dateTime={dateTime}
+              onLeadClick={(lead) => openLead(lead.id)}
+              onReopen={(leadId) => reopenLead.mutateAsync(leadId)}
+              isPending={reopenLead.isPending}
+            />
+          </TabsContent>
+        </Tabs>
       ) : null}
 
       {section === 'schedule' ? (
@@ -933,6 +1006,20 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
 
       </ModulePageBody>
 
+      <ConfirmDialog
+        open={winDialogLead !== null}
+        onOpenChange={(open) => { if (!open && !winLead.isPending) setWinDialogLead(null); }}
+        title={t('leadWinTitle')}
+        description={t('leadWinDescription')}
+        target={winDialogLead?.contactName}
+        confirmationKey={winDialogLead?.id}
+        confirmLabel={t('leadWin')}
+        isPending={winLead.isPending}
+        keepOpenOnConfirm
+        onConfirm={() => {
+          if (winDialogLead) return winLead.mutateAsync(winDialogLead.id).catch(() => undefined);
+        }}
+      />
       <ArchiveLeadDialog
         lead={archiveDialogLead}
         reason={archiveReason}

@@ -18,14 +18,18 @@ const { registerAcademyLeadRoutes } = await import('../server/modules/academy/le
 const { registerAcademyDemoLessonRoutes } = await import('../server/modules/academy/demo-lessons.router');
 const { registerAcademyOperationsRoutes } = await import('../server/modules/academy/operations.router');
 const { createSalesKpiRouter } = await import('../server/modules/sales-kpi/http/kpi-router');
+const { createLeadQualificationRouter } = await import('../server/modules/leads/http/qualification.router');
+const { createLeadQualificationService } = await import('../server/modules/leads/application/qualification-service');
+const { LegacyLeadQualificationRepository } = await import('../server/modules/leads/infrastructure/qualification-repository');
 const { kpiMonth } = await import('../shared/sales-kpi-time');
 const { readKpiFacts } = await import('../server/infrastructure/sales-kpi/kpi-facts');
 const { calculateSalesKpi } = await import('../shared/sales-kpi-calculation');
 const { defaultKpiConfig } = await import('../shared/sales-kpi');
 
 try {
-  assert(await queryOne("SELECT to_regclass('academy_lead_funnel_qualifications') AS ledger").then((row) => row?.ledger),
-    'Apply all registered migrations, including 0128, before this verifier');
+  assert(await queryOne(`SELECT 1 AS present FROM information_schema.columns
+      WHERE table_name = 'academy_leads' AND column_name = 'is_qualified'`).then((row) => row?.present),
+    'Apply all registered migrations, including 0172, before this verifier');
   const legacyReset = await queryOne(`SELECT reset.lead_id, reset.occurred_at, tracked.hunter_id,
       (SELECT MAX(activity.occurred_at) FROM academy_sales_kpi_activity activity
         WHERE activity.lead_id=reset.lead_id AND activity.kind='cold' AND activity.occurred_at < reset.occurred_at) AS previous_cold_at
@@ -78,6 +82,7 @@ try {
     });
     const router = express.Router();
     registerAcademyLeadRoutes(router); registerAcademyDemoLessonRoutes(router); registerAcademyOperationsRoutes(router);
+    router.use(createLeadQualificationRouter(createLeadQualificationService(new LegacyLeadQualificationRepository())));
     router.use(createSalesKpiRouter()); app.use('/api/academy', router);
     return app;
   });
@@ -93,10 +98,12 @@ try {
     format: 'online', scheduledAt: new Date(Date.now() - 30 * 60_000), durationMinutes: 60 });
   const participant = await insertRow('academy_demo_lesson_participants', { demoLessonId: demo.id, studentId: student.id });
   const readLead = () => queryOne('SELECT * FROM academy_leads WHERE id=$1', [lead.id]);
-  const ledger = () => query('SELECT * FROM academy_lead_funnel_qualifications WHERE lead_id=$1 ORDER BY funnel_id', [lead.id]);
-  const qualificationSummary = async () => summarizeLeadQualifications((await ledger()).map((fact) => ({
-    leadId: Number(fact.leadId), funnelId: Number(fact.funnelId),
-  })));
+  // The criteria button is the only qualification fact; it lives on the lead row.
+  const qualification = () => queryOne('SELECT is_qualified, qualified_at, qualified_by, funnel_id FROM academy_leads WHERE id=$1', [lead.id]);
+  const qualificationSummary = async () => {
+    const current = await qualification();
+    return summarizeLeadQualifications(current?.isQualified ? [{ leadId: lead.id, funnelId: Number(current.funnelId) }] : []);
+  };
   const checkResponse = (response: { status: number; body: unknown }, status = 200) => assert.equal(response.status, status, JSON.stringify(response.body));
   const currentKpiFact = async () => (await readKpiFacts([employee.id], kpiMonth(), new Date().toISOString())).leads.find(fact => fact.id === lead.id);
   const assertActiveKpi = async () => {
@@ -124,14 +131,10 @@ try {
   const beforeRestorationPay = calculateSalesKpi('hunter', employee.id, kpiMonth(), defaultKpiConfig('hunter'), beforeRestorationFacts);
   assert.equal(beforeRestorationPay.payLines.find(line => line.key === 'reactivation')?.amountUzs, 0,
     'A demo and payment for an active lead earn no fictitious restoration bonus');
-  assert.equal((await ledger()).length, 0, 'Creation, demo and payment do not qualify');
+  assert.equal((await qualification())?.isQualified, false, 'Creation, demo and payment do not qualify');
   await patch(funnelA.nextStageCode);
-  const firstFact = await ledger();
-  assert.equal(firstFact.length, 1);
-  assert.deepEqual([firstFact[0].funnelId, firstFact[0].qualifiedBy, firstFact[0].fromStageCode, firstFact[0].toStageCode],
-    [funnelA.id, employee.id, funnelA.initialStageCode, funnelA.nextStageCode]);
   await patch(funnelA.nextStageCode); await patch(funnelA.initialStageCode); await patch(funnelA.nextStageCode);
-  assert.deepEqual(await ledger(), firstFact, 'Repeated manual moves keep one original fact per lead/funnel');
+  assert.equal((await qualification())?.isQualified, false, 'Manual stage moves never qualify');
   await assertActiveKpi();
   checkResponse(await request(apps[0]).post(`/api/academy/sales-kpi/leads/${lead.id}/handoff`).send({ targetFunnelId: funnelB.id }));
   assert.deepEqual([(await readLead())?.funnelId, (await readLead())?.statusCode, (await readLead())?.managerId],
@@ -139,17 +142,19 @@ try {
   await assertActiveKpi();
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/archive`).send({ reason: 'not_interested' }));
   assert.equal((await currentKpiFact())?.isCold, true, 'Actual archive still captures cold state');
-  assert.deepEqual(await ledger(), firstFact, 'Qualified in A, transferred to B then archived at intake: B is unqualified');
-  assert.deepEqual(await qualificationSummary(), { total: 1, byFunnel: { [String(funnelA.id)]: 1 } });
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/restore`).send({ statusCode: funnelB.initialStageCode }));
   assert.equal((await currentKpiFact())?.isCold, false, 'Explicit restoration still clears cold state');
   assert((await currentKpiFact())?.reactivatedAt, 'Explicit restoration still records its real time');
-  assert.deepEqual(await ledger(), firstFact, 'Restoration at the first stage does not qualify');
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/archive`).send({ reason: 'not_interested' }));
   checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/restore`).send({ statusCode: funnelB.nextStageCode }));
   await patch(funnelB.nextStageCode);
-  assert.deepEqual(await qualificationSummary(),
-    { total: 1, byFunnel: { [String(funnelA.id)]: 1, [String(funnelB.id)]: 1 } }, 'A and B count the lead once globally');
+  assert.equal((await qualification())?.isQualified, false, 'Archive, restoration and transfer never qualify');
+  checkResponse(await request(apps[0]).post(`/api/academy/leads/${lead.id}/qualification`)
+    .send({ funnelId: funnelB.id, locationFits: true, ageFits: true, budgetFits: true }));
+  const qualified = await qualification();
+  assert.deepEqual([qualified?.isQualified, qualified?.qualifiedBy], [true, employee.id], 'The criteria button qualifies the lead');
+  assert.deepEqual(await qualificationSummary(), { total: 1, byFunnel: { [String(funnelB.id)]: 1 } },
+    'A qualified lead counts once');
   const latestHistory = await queryOne('SELECT * FROM academy_lead_stage_history WHERE lead_id=$1 ORDER BY id DESC LIMIT 1', [lead.id]);
   assert.equal(latestHistory?.fromFunnelId, funnelB.id); assert.equal(latestHistory?.toFunnelId, funnelB.id);
   assert.equal(latestHistory?.toStatusName, 'Any label b');
@@ -185,13 +190,13 @@ try {
   checkResponse(await request(apps[3]).post(`/api/academy/sales-kpi/leads/${freeLead.id}/claim`), 403);
   const claims = await Promise.all(apps.slice(1,3).map((app) => request(app).post(`/api/academy/sales-kpi/leads/${freeLead.id}/claim`)));
   assert.deepEqual(claims.map((response) => response.status).sort(), [200,409], JSON.stringify(claims.map((response) => response.body)));
-  assert.equal((await query('SELECT * FROM academy_lead_funnel_qualifications WHERE lead_id=$1', [freeLead.id])).length, 0,
+  assert.equal((await queryOne('SELECT is_qualified FROM academy_leads WHERE id=$1', [freeLead.id]))?.isQualified, false,
     'Claiming an intake is ownership, not qualification');
   const winner = claims.findIndex(response => response.status === 200) + 1;
   checkResponse(await request(apps[winner]).patch(`/api/academy/leads/${freeLead.id}`).send({ statusCode: funnelB.nextStageCode }), 200);
   assert.equal((await queryOne('SELECT * FROM academy_leads WHERE id=$1', [freeLead.id]))?.statusCode, funnelB.nextStageCode,
     'The successful claimant can process the lead without trial or payment prerequisites');
-  console.log('PASS: actual manual-move, attendance, transfer, archive, sibling payment and claim HTTP handlers; qualification per funnel and global deduplication');
+  console.log('PASS: actual manual-move, attendance, transfer, archive, sibling payment and claim HTTP handlers; qualification only by the criteria button');
 } finally {
   await pool.end();
 }

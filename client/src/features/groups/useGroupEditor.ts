@@ -172,11 +172,9 @@ export function useGroupEditor({ open, group: editingGroup, configuration, onClo
           ? t('futureGroupInProgressRequiresConfirmation')
         : errorCode === 'groupHasScheduledLessons'
           ? t('groupHasScheduledLessons')
-          : errorCode === 'groupHasReservedLeads'
-            ? t('groupHasReservedLeads')
-            : errorCode === 'groupDateRangeTooShort' && formattedBackendMinimumEndDate
-              ? t('groupDateRangeTooShort').replace('{date}', formattedBackendMinimumEndDate)
-              : error.message;
+          : errorCode === 'groupDateRangeTooShort' && formattedBackendMinimumEndDate
+            ? t('groupDateRangeTooShort').replace('{date}', formattedBackendMinimumEndDate)
+            : error.message;
       toast({ title: t('error'), description, variant: 'destructive' });
     },
   });

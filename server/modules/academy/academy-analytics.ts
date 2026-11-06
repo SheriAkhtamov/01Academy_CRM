@@ -233,12 +233,7 @@ export const getAcademyDataset = async (
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
              AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))) AS current_students,
-          (SELECT COUNT(DISTINCT l.id)::int
-           FROM academy_lead_group_reservations reservation
-           JOIN academy_leads l ON l.id = reservation.lead_id
-           WHERE reservation.group_id = g.id
-             AND COALESCE(l.is_archived, false) = false
-             AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
+          0 AS reserved_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
@@ -256,12 +251,7 @@ export const getAcademyDataset = async (
            WHERE enrollment.group_id = g.id
              AND enrollment.status = 'active'
              AND (g.status = 'planned' OR s.status IN ('studying', 'waiting_start'))) AS current_students,
-          (SELECT COUNT(DISTINCT l.id)::int
-           FROM academy_lead_group_reservations reservation
-           JOIN academy_leads l ON l.id = reservation.lead_id
-           WHERE reservation.group_id = g.id
-             AND COALESCE(l.is_archived, false) = false
-             AND NOT EXISTS (SELECT 1 FROM academy_students st WHERE st.lead_id = l.id)) AS reserved_students
+          0 AS reserved_students
           FROM academy_groups g
           LEFT JOIN academy_courses c ON c.id = g.course_id
           LEFT JOIN academy_teachers t ON t.id = g.teacher_id
@@ -434,7 +424,7 @@ export const getAcademyDataset = async (
   const visibleLeadIds = [...new Set([...visibleLeads, ...visibleArchivedLeads].map((lead) => Number(lead.id)))];
   const qualificationFacts = actor?.scopeModule === 'sales' && visibleLeadIds.length > 0
     ? await query<LeadQualificationFact>(
-      `SELECT lead_id, funnel_id FROM academy_lead_funnel_qualifications WHERE lead_id = ANY($1::int[])`,
+      `SELECT id AS lead_id, funnel_id FROM academy_leads WHERE id = ANY($1::int[]) AND is_qualified`,
       [visibleLeadIds],
     ) : [];
   return {

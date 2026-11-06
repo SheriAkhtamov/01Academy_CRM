@@ -115,7 +115,6 @@ import {
   withTransaction,
 } from './academy-core';
 import {
-  createStudentFromLead,
   getActiveSalesManager,
   recalculateStudentMetrics,
   reassignLead,
@@ -196,6 +195,10 @@ router.post('/payments', (req, res, next) => {
       if (!studentId && leadStudents.length > 1) {
         throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
       }
+      // A payment is money received for a pupil created inside the lead.
+      if (!studentId && leadStudents.length === 0) {
+        throw Object.assign(new Error('studentRequiredForPayment'), { statusCode: 409 });
+      }
       let existingStudent = studentId
         ? await queryOne(`SELECT * FROM academy_students WHERE id = $1 FOR UPDATE`, [studentId])
         : leadStudents[0];
@@ -268,9 +271,10 @@ router.post('/payments', (req, res, next) => {
 
       if (requestedGroupId) {
         const targetGroup = await queryOne('SELECT * FROM academy_groups WHERE id=$1 FOR UPDATE', [requestedGroupId]);
-        const membership = existingStudent
-          ? await queryOne("SELECT id FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2 AND status='active'", [existingStudent.id,requestedGroupId])
-          : await queryOne('SELECT id FROM academy_lead_group_reservations WHERE lead_id=$1 AND group_id=$2', [leadId,requestedGroupId]);
+        const membership = await queryOne(
+          "SELECT id FROM academy_student_group_enrollments WHERE student_id=$1 AND group_id=$2 AND status='active'",
+          [existingStudent!.id, requestedGroupId],
+        );
         if (!targetGroup || targetGroup.isArchived || !membership) {
           throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 409 });
         }
@@ -306,7 +310,7 @@ router.post('/payments', (req, res, next) => {
       const paymentValues = {
         leadId: paymentLeadId,
         studentId: resolvedStudentId,
-        groupId: requestedGroupId ?? existingStudent?.groupId ?? lead?.enrolledGroupId ?? null,
+        groupId: requestedGroupId ?? existingStudent?.groupId ?? null,
         amountUzs,
         type: paymentType,
         method: paymentMethod,
@@ -332,12 +336,7 @@ router.post('/payments', (req, res, next) => {
         });
       }
 
-      // The first payment of a lead without a pupil creates the pupil and turns
-      // the lead's group reservations into memberships.
-      let student = existingStudent ?? null;
-      if (status === 'paid' && leadId) {
-        student = await createStudentFromLead(req.actor!, leadId, payment.id);
-      }
+      const student = existingStudent ?? null;
       await createAudit(
         req,
         pendingPayment ? 'CONFIRM_ACADEMY_PAYMENT' : 'CREATE_ACADEMY_PAYMENT',

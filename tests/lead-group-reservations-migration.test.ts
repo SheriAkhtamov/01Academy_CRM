@@ -31,10 +31,11 @@ describe('0050 lead group reservations migration', () => {
     expect(compactSql).toContain('ON CONFLICT ("lead_id", "group_id") DO NOTHING');
   });
 
-  it('moves every selected lead group into student memberships after payment', () => {
-    expect(routes).toContain('FROM UNNEST($5::int[]) AS selected_group_id');
-    expect(routes).toContain('selected_group_id = $2');
-    expect(routes).toContain('DELETE FROM academy_lead_group_reservations WHERE lead_id = $1');
+  it('is no longer used: only a pupil created inside a lead joins a group', () => {
+    // The table stays until its drop migration; no route books or converts lead groups any more.
+    expect(routes).not.toContain('academy_lead_group_reservations');
+    expect(routes).not.toContain('convert-to-student');
+    expect(routes).not.toContain('enrolled_group_id');
   });
 
   it('is registered once immediately after migration 0049', () => {

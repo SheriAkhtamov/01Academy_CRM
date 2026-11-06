@@ -585,7 +585,7 @@ router.post('/students/:id/transfer', async (req, res) => {
       if (Number(lockedStudent.groupId) === Number(toGroupId)) return lockedStudent;
 
       await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [toGroupId]);
-      const targetGroup = await validateEnrollmentGroup(toGroupId, null, studentId);
+      const targetGroup = await validateEnrollmentGroup(toGroupId, studentId);
       if (!targetGroup) {
         throw Object.assign(new Error('Group not found'), { statusCode: 404 });
       }
@@ -638,7 +638,6 @@ router.post('/students/:id/transfer', async (req, res) => {
 
       if (lockedStudent.leadId) {
         await updateRow('academy_leads', Number(lockedStudent.leadId), {
-          enrolledGroupId: toGroupId,
           courseId: Number(targetGroup.courseId),
           schoolId: Number(targetGroup.schoolId),
         });
@@ -692,7 +691,7 @@ router.post('/students/:id/groups', async (req, res) => {
         throw Object.assign(new Error('archivedStudentMustBeRestoredBeforeUpdate'), { statusCode: 409 });
       }
       await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
-      const group = await validateEnrollmentGroup(groupId, null, studentId);
+      const group = await validateEnrollmentGroup(groupId, studentId);
       if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
 
       const shouldMakePrimary = makePrimary || !lockedStudent.groupId;
@@ -731,7 +730,6 @@ router.post('/students/:id/groups', async (req, res) => {
         });
         if (lockedStudent.leadId) {
           const leadUpdates: Row = {
-            enrolledGroupId: groupId,
             courseId: Number(group.courseId),
             schoolId: Number(group.schoolId),
           };
@@ -847,7 +845,6 @@ router.delete('/students/:id/groups/:groupId', async (req, res) => {
       });
       if (lockedStudent.leadId) {
         await updateRow('academy_leads', Number(lockedStudent.leadId), {
-          enrolledGroupId: replacement?.groupId ?? null,
           courseId: replacement?.courseId ? Number(replacement.courseId) : null,
           schoolId: replacement?.schoolId ? Number(replacement.schoolId) : null,
         });
@@ -980,7 +977,7 @@ router.patch('/students/:id/status', async (req, res) => {
         ])].sort((left, right) => left - right);
         for (const groupId of groupIds) {
           await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
-          await validateEnrollmentGroup(groupId, null, id);
+          await validateEnrollmentGroup(groupId, id);
         }
       }
       const updatedStudent = await updateRow('academy_students', id, { status });
@@ -1092,7 +1089,7 @@ router.post('/students/:id/restore', async (req, res) => {
         const groupId = Number(membership.groupId);
         await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
         try {
-          const group = await validateEnrollmentGroup(groupId, null, id);
+          const group = await validateEnrollmentGroup(groupId, id);
           if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 });
           restored.push({
             groupId, isPrimary: membership.isPrimary, planned: group.status === 'planned',

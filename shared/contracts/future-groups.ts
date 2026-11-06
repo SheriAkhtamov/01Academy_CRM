@@ -53,9 +53,10 @@ export type FutureGroup = Omit<FutureGroupInput, "expectedUpdatedAt"> & {
   paidAmountUzs: number;
   isArchived: boolean;
 };
+// Only a pupil created inside a lead takes a place in a group.
 export const futureGroupPartySchema = z
   .object({
-    kind: z.enum(["lead", "student"]),
+    kind: z.literal("student"),
     id,
   })
   .strict();

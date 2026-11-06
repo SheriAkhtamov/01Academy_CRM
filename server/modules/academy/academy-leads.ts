@@ -2,7 +2,6 @@ import { ensureGroupCapacity } from './group-capacity';
 export { ensureGroupCapacity } from './group-capacity';
 import { loadStudentLearningMetrics } from "./student-learning-metrics";
 import { enqueueMetaLeadIntakeSafely } from '../../services/meta-marketing';
-import { qualifiesManualLeadStageMove } from '@shared/lead-qualification';
 import { assertSalesFunnelAssignment } from './sales-funnel-policy';
 import {
   LEAD_STATUSES,
@@ -26,7 +25,6 @@ import {
   createNotification,
   insertRow,
   leadChannelsSelect,
-  leadGroupReservationsSelect,
   leadPhoneNumbersSelect,
   leadTagsSelect,
   lockLeadContactIdentities,
@@ -363,7 +361,6 @@ export const mergeLeadRecords = async (
        (SELECT COUNT(*)::int FROM academy_lead_channels WHERE lead_id = $1) AS channels,
        (SELECT COUNT(*)::int FROM academy_lead_tag_assignments WHERE lead_id = $1) AS manual_tags,
        (SELECT COUNT(*)::int FROM telephony_calls WHERE lead_id = $1) AS calls,
-       (SELECT COUNT(*)::int FROM academy_lead_group_reservations WHERE lead_id = $1) AS group_reservations,
        (SELECT COUNT(*)::int FROM board_tasks WHERE lead_id = $1) AS tasks,
        (SELECT COUNT(*)::int FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
          AS escalation_events,
@@ -452,21 +449,15 @@ export const mergeLeadRecords = async (
        AND action IN ('QUALIFY_ACADEMY_LEAD_BY_CRITERIA', 'REVOKE_ACADEMY_LEAD_QUALIFICATION')`,
     [retainedLeadId, duplicateLeadId],
   );
+  // The merged lead keeps the earliest qualification of the two.
   await query(
-    `INSERT INTO academy_lead_funnel_qualifications
-       (lead_id, funnel_id, funnel_name, qualified_at, qualified_by, from_stage_code, to_stage_code)
-     SELECT $1, funnel_id, funnel_name, qualified_at, qualified_by, from_stage_code, to_stage_code
-     FROM academy_lead_funnel_qualifications WHERE lead_id = $2
-     ON CONFLICT (lead_id, funnel_id) DO UPDATE SET
-       funnel_name = EXCLUDED.funnel_name,
-       qualified_at = EXCLUDED.qualified_at,
-       qualified_by = EXCLUDED.qualified_by,
-       from_stage_code = EXCLUDED.from_stage_code,
-       to_stage_code = EXCLUDED.to_stage_code
-     WHERE EXCLUDED.qualified_at < academy_lead_funnel_qualifications.qualified_at`,
+    `UPDATE academy_leads retained
+     SET is_qualified = true, qualified_at = duplicate.qualified_at, qualified_by = duplicate.qualified_by
+     FROM academy_leads duplicate
+     WHERE retained.id = $1 AND duplicate.id = $2 AND duplicate.is_qualified
+       AND (NOT retained.is_qualified OR duplicate.qualified_at < retained.qualified_at)`,
     [retainedLeadId, duplicateLeadId],
   );
-  await query(`DELETE FROM academy_lead_funnel_qualifications WHERE lead_id = $1`, [duplicateLeadId]);
   await query(`UPDATE academy_lead_stage_history SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(`UPDATE academy_lead_comments SET lead_id = $1 WHERE lead_id = $2`, [retainedLeadId, duplicateLeadId]);
   await query(
@@ -477,42 +468,6 @@ export const mergeLeadRecords = async (
     `UPDATE academy_students SET lead_id = $1, updated_at = NOW() WHERE lead_id = $2`,
     [retainedLeadId, duplicateLeadId],
   );
-  await query(
-    `INSERT INTO academy_lead_group_reservations
-       (lead_id, group_id, created_by, created_at, updated_at)
-     SELECT $1, group_id, created_by, created_at, NOW()
-     FROM academy_lead_group_reservations
-     WHERE lead_id = $2
-     ON CONFLICT (lead_id, group_id) DO NOTHING`,
-    [retainedLeadId, duplicateLeadId],
-  );
-  await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [duplicateLeadId]);
-
-  const mergedStudents = await query(
-    `SELECT * FROM academy_students WHERE lead_id = $1 FOR UPDATE`,
-    [retainedLeadId],
-  );
-  // An archived pupil keeps no group places until restored from the archive.
-  if (mergedStudents.length === 1 && !mergedStudents[0].isArchived) {
-    const mergedStudent = mergedStudents[0];
-    await query(
-      `INSERT INTO academy_student_group_enrollments
-         (student_id, group_id, status, is_primary, enrolled_at, created_by)
-       SELECT $1,
-              reservation.group_id,
-              'active',
-              reservation.group_id = $2,
-              COALESCE($3, reservation.created_at, NOW()),
-              reservation.created_by
-       FROM academy_lead_group_reservations reservation
-       WHERE reservation.lead_id = $4
-       ON CONFLICT (student_id, group_id) WHERE status = 'active'
-       DO UPDATE SET ended_at = NULL, updated_at = NOW()`,
-      [mergedStudent.id, mergedStudent.groupId, mergedStudent.enrolledAt, retainedLeadId],
-    );
-    await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [retainedLeadId]);
-  }
-
   // Keep the retained lead's owner, filling an empty name from its duplicate.
   await query(
     `UPDATE academy_lead_phones retained_phone
@@ -634,7 +589,6 @@ export const mergeLeadRecords = async (
     offerPriceUzs: preferLeadValue(retainedLead.offerPriceUzs, duplicateLead.offerPriceUzs),
     offerDiscount: preferLeadValue(retainedLead.offerDiscount, duplicateLead.offerDiscount),
     offerAt: earliestLeadDate(retainedLead.offerAt, duplicateLead.offerAt),
-    enrolledGroupId: preferEnrollmentValue(retainedLead.enrolledGroupId, duplicateLead.enrolledGroupId),
     expectedPaymentUzs: preferLeadValue(retainedLead.expectedPaymentUzs, duplicateLead.expectedPaymentUzs),
     paymentMethod: preferLeadValue(retainedLead.paymentMethod, duplicateLead.paymentMethod),
     warmReason: preferLeadValue(retainedLead.warmReason, duplicateLead.warmReason),
@@ -658,8 +612,14 @@ export const mergeLeadRecords = async (
   await updateRow('academy_leads', duplicateLeadId, {
     phone: null,
     messenger: null,
-    enrolledGroupId: null,
     isArchived: true,
+    isWon: false,
+    wonAt: null,
+    wonBy: null,
+    // The retained lead carries the qualification; a duplicate must not count twice.
+    isQualified: false,
+    qualifiedAt: null,
+    qualifiedBy: null,
     archiveReason: 'duplicate_or_invalid',
     archivedAt: new Date(),
     archivedBy: actor.userId,
@@ -697,7 +657,6 @@ export const mergeLeadRecords = async (
        + (SELECT COUNT(*) FROM academy_lead_channels WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_lead_tag_assignments WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM telephony_calls WHERE lead_id = $1 OR (contact_type = 'lead' AND contact_id = $1))
-       + (SELECT COUNT(*) FROM academy_lead_group_reservations WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM board_tasks WHERE lead_id = $1)
        + (SELECT COUNT(*) FROM academy_escalation_events WHERE entity_type = 'lead' AND entity_id = $1)
        + (SELECT COUNT(*) FROM notifications WHERE related_entity_type = 'lead' AND related_entity_id = $1)
@@ -788,15 +747,6 @@ export const mergeLeadDraftIntoExisting = async (
   }
   const phoneValuesToSave = [...mergedPhones.values()];
 
-  const requestedGroupId = retainedLead.enrolledGroupId
-    ? null
-    : parseId(draft.enrolledGroupId);
-  let requestedGroup: Row | null = null;
-  if (requestedGroupId) {
-    await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [requestedGroupId]);
-    requestedGroup = await validateEnrollmentGroup(requestedGroupId, retainedLeadId);
-  }
-
   const requestedManagerId = retainedLead.managerId
     ? null
     : await resolveLeadManagerId(actor, draft.managerId, retainedLead.funnelRole, retainedLead.funnelId);
@@ -808,10 +758,7 @@ export const mergeLeadDraftIntoExisting = async (
   }
   const nextStudentName = preferLeadValue(retainedLead.studentName, nullableText(draft.studentName));
   const nextStudentAge = preferLeadValue(retainedLead.studentAge, toIntegerOrNull(draft.studentAge));
-  const nextCourseId = requestedGroup?.courseId
-    ? Number(requestedGroup.courseId)
-    : preferLeadValue(retainedLead.courseId, toIdOrNull(draft.courseId, 'courseId'));
-  const nextEnrolledGroupId = preferLeadValue(retainedLead.enrolledGroupId, requestedGroupId);
+  const nextCourseId = preferLeadValue(retainedLead.courseId, toIdOrNull(draft.courseId, 'courseId'));
   const retainedContactName = isGeneratedInstagramLeadName(retainedLead.contactName)
     && nullableText(draft.contactName)
     ? nullableText(draft.contactName)
@@ -824,16 +771,13 @@ export const mergeLeadDraftIntoExisting = async (
     studentName: nextStudentName,
     studentAge: nextStudentAge,
     courseId: nextCourseId,
-    schoolId: requestedGroup?.schoolId
-      ? Number(requestedGroup.schoolId)
-      : preferLeadValue(retainedLead.schoolId, toIdOrNull(draft.schoolId, 'schoolId')),
+    schoolId: preferLeadValue(retainedLead.schoolId, toIdOrNull(draft.schoolId, 'schoolId')),
     managerId: assignedManager?.id ?? retainedLead.managerId,
     comment: draftComment ?? retainedLead.comment,
     language: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
       draft.language ?? retainedLead.language)[0] ?? '',
     languages: selectedLeadLanguages(draft.languages ?? retainedLead.languages,
       draft.language ?? retainedLead.language),
-    enrolledGroupId: nextEnrolledGroupId,
   });
   if (!updatedLead) {
     throw Object.assign(new Error('leadMergeLeadNotFound'), { statusCode: 404 });
@@ -844,15 +788,6 @@ export const mergeLeadDraftIntoExisting = async (
       authorId: actor.userId,
       body: draftComment,
     });
-  }
-  if (nextEnrolledGroupId) {
-    await query(
-      `INSERT INTO academy_lead_group_reservations
-         (lead_id, group_id, created_by)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (lead_id, group_id) DO NOTHING`,
-      [retainedLeadId, nextEnrolledGroupId, actor.userId],
-    );
   }
   await syncLeadPhones(retainedLeadId, phoneValuesToSave);
   await syncLeadChannelInCurrentTransaction({
@@ -902,8 +837,7 @@ export const getLead = (id: number) =>
         archived_by_user.full_name AS archived_by_name,
         ${leadExpectedPaymentTotalSelect('l')}, ${leadPhoneNumbersSelect('l')},
         ${leadChannelsSelect('l')},
-        ${leadTagsSelect('l')},
-        ${leadGroupReservationsSelect('l')}
+        ${leadTagsSelect('l')}
      FROM academy_leads l
      LEFT JOIN academy_courses c ON c.id = l.course_id
      LEFT JOIN academy_lead_sources s ON s.id = l.source_id AND s.is_active = true
@@ -1100,7 +1034,6 @@ export const buildLeadStageDurations = (history: Row[]) => {
 
 export const validateEnrollmentGroup = async (
   groupId?: number | null,
-  excludeLeadId?: number | null,
   excludeStudentId?: number | null,
 ) => {
   if (!groupId) return null;
@@ -1126,34 +1059,8 @@ export const validateEnrollmentGroup = async (
   if (resources && resources.resourcesActive !== true) {
     throw Object.assign(new Error('groupHasInactiveResources'), { statusCode: 409 });
   }
-  await ensureGroupCapacity(groupId, excludeLeadId, excludeStudentId);
+  await ensureGroupCapacity(groupId, excludeStudentId);
   return group;
-};
-
-export const validateLeadSelectedGroups = async (
-  leadId: number,
-  primaryGroupId?: number | null,
-  excludeStudentId?: number | null,
-) => {
-  const reservations = await query(
-    `SELECT *
-     FROM academy_lead_group_reservations
-     WHERE lead_id = $1
-     ORDER BY group_id
-     FOR UPDATE`,
-    [leadId],
-  );
-  const groupIds = [...new Set([
-    ...(primaryGroupId ? [Number(primaryGroupId)] : []),
-    ...reservations.map((reservation) => Number(reservation.groupId)),
-  ])].filter((groupId) => Number.isInteger(groupId) && groupId > 0);
-  let primaryGroup: Row | null = null;
-  for (const groupId of [...groupIds].sort((left, right) => left - right)) {
-    await queryOne(`SELECT id FROM academy_groups WHERE id = $1 FOR UPDATE`, [groupId]);
-    const group = await validateEnrollmentGroup(groupId, leadId, excludeStudentId);
-    if (groupId === Number(primaryGroupId)) primaryGroup = group;
-  }
-  return { groupIds, primaryGroup };
 };
 
 export const recalculateStudentMetrics = async (studentId: number) => {
@@ -1166,147 +1073,9 @@ export const recalculateStudentMetrics = async (studentId: number) => {
   });
 };
 
-export const createStudentFromLead = async (source: ActorSource, leadId: number, paymentId?: number | null): Promise<Row> => {
-  const actor = actorContextFrom(source);
-  if (!transactionContext.getStore()) {
-    return withTransaction(() => createStudentFromLead(actor, leadId, paymentId));
-  }
-
-  await queryOne(`SELECT id FROM academy_leads WHERE id = $1 FOR UPDATE`, [leadId]);
-  const lead = await getLead(leadId);
-  if (!lead) {
-    throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
-  }
-
-  const sourcePayment = paymentId
-    ? await queryOne(`SELECT * FROM academy_payments WHERE id = $1 FOR UPDATE`, [paymentId])
-    : null;
-  if (paymentId && !sourcePayment) {
-    throw Object.assign(new Error('Payment not found'), { statusCode: 404 });
-  }
-  if (sourcePayment?.leadId && Number(sourcePayment.leadId) !== Number(leadId)) {
-    throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
-  }
-  const existingStudents = sourcePayment?.studentId
-    ? await query(
-        `SELECT * FROM academy_students WHERE id = $1 AND lead_id = $2 FOR UPDATE`,
-        [sourcePayment.studentId, leadId],
-      )
-    : await query(
-        `SELECT * FROM academy_students WHERE lead_id = $1 ORDER BY id FOR UPDATE`,
-        [leadId],
-      );
-  if (sourcePayment?.studentId && existingStudents.length === 0) {
-    throw Object.assign(new Error('paymentPartyMismatch'), { statusCode: 400 });
-  }
-  if (!sourcePayment?.studentId && existingStudents.length > 1) {
-    throw Object.assign(new Error('studentSelectionRequired'), { statusCode: 409 });
-  }
-  const existingStudent = existingStudents[0];
-  if (existingStudent) {
-    if (paymentId) {
-      await updateRow('academy_payments', paymentId, {
-        leadId,
-        studentId: existingStudent.id,
-        groupId: sourcePayment?.groupId ?? existingStudent.groupId ?? lead.enrolledGroupId ?? null,
-      });
-    }
-    return existingStudent;
-  }
-  const targetGroupId = sourcePayment?.groupId ?? lead.enrolledGroupId;
-  if (!targetGroupId) {
-    throw Object.assign(new Error('groupRequiredForEnrollment'), { statusCode: 409 });
-  }
-
-  const { groupIds: reservedGroupIds, primaryGroup: enrolledGroup } = await validateLeadSelectedGroups(
-    leadId,
-    Number(targetGroupId),
-  );
-  if (!enrolledGroup) {
-    throw Object.assign(new Error('Group not found'), { statusCode: 404 });
-  }
-
-  const course = lead.courseId
-    ? await queryOne(`SELECT * FROM academy_courses WHERE id = $1`, [lead.courseId])
-    : await resolveCourseByAge(lead.studentAge);
-
-  const student = await insertRow('academy_students', {
-    leadId: lead.id,
-    contactName: lead.contactName,
-    phone: lead.phone,
-    messenger: lead.messenger ?? null,
-    studentName: lead.studentName || lead.contactName,
-    studentAge: lead.studentAge ?? null,
-    expectedPaymentUzs: Number(lead.expectedPaymentUzs) >= 0 ? lead.expectedPaymentUzs ?? null : null,
-    courseId: enrolledGroup?.courseId ?? lead.courseId ?? course?.id ?? null,
-    schoolId: enrolledGroup?.schoolId ?? lead.schoolId ?? null,
-    groupId: targetGroupId,
-    managerId: lead.managerId ?? actor.userId,
-    status: enrolledGroup.status === 'planned' ? 'waiting_start' : 'studying',
-    enrolledAt: new Date(),
-    riskFlags: [] });
-
-  await query(
-    `INSERT INTO academy_student_group_enrollments
-       (student_id, group_id, status, is_primary, enrolled_at, created_by)
-     SELECT $1,
-            selected_group_id,
-            'active',
-            selected_group_id = $2,
-            COALESCE($3, NOW()),
-            $4
-     FROM UNNEST($5::int[]) AS selected_group_id
-     ON CONFLICT (student_id, group_id) WHERE status = 'active'
-     DO UPDATE SET
-       is_primary = EXCLUDED.is_primary,
-       ended_at = NULL,
-       updated_at = NOW()`,
-    [
-      student.id,
-      student.groupId,
-      student.enrolledAt ?? new Date(),
-      actor.userId,
-      reservedGroupIds,
-    ],
-  );
-  await query(`DELETE FROM academy_lead_group_reservations WHERE lead_id = $1`, [leadId]);
-
-  if (paymentId) {
-    await updateRow('academy_payments', paymentId, {
-      leadId,
-      studentId: student.id,
-      groupId: student.groupId,
-    });
-  }
-
-  await createAudit(actor, 'CREATE_ACADEMY_STUDENT_FROM_LEAD', 'academy_student', student.id, student);
-  return student;
-};
-
-/** Only intake has an automatic notification; subsequent stages are plain labels. */
 export const notifyLeadIntake = async (source: ActorSource, lead: Row) => {
   const actor = actorContextFrom(source);
   await createNotification(lead.managerId ?? actor.userId, 'Новая заявка 01 Academy', leadContactSummary(lead), 'lead', lead.id);
   await runAfterTransactionCommit(() => enqueueMetaLeadIntakeSafely(Number(lead.id)).then(() => undefined));
 };
 
-/** Called only by explicit manual stage moves, while the lead is locked. */
-export const recordManualLeadStageMove = async (source: ActorSource, previous: Row, updated: Row) => {
-  const actor = actorContextFrom(source);
-  if (actor.userId <= 0 || updated.isArchived
-    || Number(previous.funnelId) !== Number(updated.funnelId)
-    || previous.statusCode === updated.statusCode) return;
-  const funnel = await queryOne<{ initialStageCode: string }>(
-    `SELECT initial_stage_code FROM academy_sales_funnels WHERE id = $1`, [Number(updated.funnelId)],
-  );
-  if (!funnel || !qualifiesManualLeadStageMove(previous, updated, funnel.initialStageCode)) return;
-  await query(
-    `INSERT INTO academy_lead_funnel_qualifications
-      (lead_id, funnel_id, funnel_name, qualified_by, from_stage_code, to_stage_code)
-     SELECT $1, funnel.id, funnel.name, $2, $3::varchar(80), $4::varchar(80) FROM academy_sales_funnels funnel
-     JOIN academy_lead_statuses destination ON destination.code = $4::varchar(80) AND destination.funnel_id = funnel.id
-     WHERE funnel.id = $5 AND funnel.initial_stage_code = $3::varchar(80) AND destination.is_active AND destination.is_pipeline
-     ON CONFLICT (lead_id, funnel_id) DO NOTHING`,
-    [Number(updated.id), actor.userId, previous.statusCode, updated.statusCode, Number(updated.funnelId)],
-  );
-};

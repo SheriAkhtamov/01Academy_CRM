@@ -96,7 +96,8 @@ const findLeadByPhone = async (client: PoolClient, phone: string) => {
     id: number;
     isArchived: boolean;
   }>(
-    `SELECT lead.id, COALESCE(lead.is_archived, false) AS "isArchived"
+    // A won deal is closed like an archived one: a new request returns it to the board.
+    `SELECT lead.id, (COALESCE(lead.is_archived, false) OR COALESCE(lead.is_won, false)) AS "isArchived"
      FROM academy_leads lead
      WHERE EXISTS (
        SELECT 1
@@ -111,7 +112,7 @@ const findLeadByPhone = async (client: PoolClient, phone: string) => {
        WHERE student.lead_id = lead.id
          AND regexp_replace(COALESCE(student.phone, ''), '\\D', '', 'g') = $2
      )
-     ORDER BY COALESCE(lead.is_archived, false), lead.updated_at DESC NULLS LAST, lead.id DESC
+     ORDER BY (COALESCE(lead.is_archived, false) OR COALESCE(lead.is_won, false)), lead.updated_at DESC NULLS LAST, lead.id DESC
      LIMIT 1`,
     [phone, digits],
   );
@@ -127,7 +128,7 @@ const restoreArchivedLead = async (
     `WITH archived_lead AS (
        SELECT id, status_code
        FROM academy_leads
-       WHERE id = $1 AND is_archived = true
+       WHERE id = $1 AND (is_archived = true OR is_won = true)
        FOR UPDATE
      ), restored_lead AS (
        UPDATE academy_leads lead
@@ -136,6 +137,9 @@ const restoreArchivedLead = async (
            archive_reason = NULL,
            archived_at = NULL,
            archived_by = NULL,
+           is_won = false,
+           won_at = NULL,
+           won_by = NULL,
            first_viewed_at = NULL,
            updated_at = NOW()
        FROM archived_lead

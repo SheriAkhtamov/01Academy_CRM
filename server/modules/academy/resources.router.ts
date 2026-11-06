@@ -269,7 +269,6 @@ registerSimpleCrud('groups', 'academy_groups', [
            SELECT 1 FROM academy_student_group_enrollments
            WHERE group_id = $1
          )
-         OR EXISTS (SELECT 1 FROM academy_lead_group_reservations WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_lessons WHERE group_id = $1)
          OR EXISTS (SELECT 1 FROM academy_payments WHERE group_id = $1)
          OR EXISTS (

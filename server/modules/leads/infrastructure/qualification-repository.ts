@@ -7,18 +7,11 @@ import { canActorMutateLead, canActorViewLead } from '../domain/access-policy';
 import type { ActorContext } from '../domain/actor-context';
 import { queryOne, withTransaction, type Row } from '../../academy/academy-core';
 
-const readFact = (leadId: number, funnelId: number) => queryOne<Row>(
-  `SELECT id, action, created_at, user_id FROM audit_logs
-   WHERE entity_type = 'academy_lead' AND entity_id = $1
-     AND action IN ($2, $3) AND new_values->0->>'funnelId' = $4::text
-   ORDER BY created_at DESC, id DESC LIMIT 1`,
-  [leadId, LEAD_QUALIFIED_ACTION, LEAD_QUALIFICATION_REVOKED_ACTION, String(funnelId)],
-);
-
-const present = (funnelId: number, fact?: Row): LeadQualification => ({
-  funnelId,
-  qualifiedAt: fact?.action === LEAD_QUALIFIED_ACTION ? new Date(fact.createdAt).toISOString() : null,
-  qualifiedBy: fact?.action === LEAD_QUALIFIED_ACTION ? fact.userId : null,
+/** The lead row holds the current qualification; audit facts keep its history. */
+const present = (lead: Row): LeadQualification => ({
+  funnelId: Number(lead.funnelId),
+  qualifiedAt: lead.isQualified && lead.qualifiedAt ? new Date(lead.qualifiedAt).toISOString() : null,
+  qualifiedBy: lead.isQualified ? lead.qualifiedBy ?? null : null,
 });
 
 export class LegacyLeadQualificationRepository implements LeadQualificationRepository {
@@ -26,7 +19,7 @@ export class LegacyLeadQualificationRepository implements LeadQualificationRepos
     const lead = await queryOne<Row>('SELECT * FROM academy_leads WHERE id = $1', [leadId]);
     if (!lead) throw Object.assign(new Error('resourceNotFound'), { statusCode: 404 });
     if (!canActorViewLead(actor, lead)) throw Object.assign(new Error('accessDenied'), { statusCode: 403 });
-    return present(lead.funnelId, await readFact(leadId, lead.funnelId));
+    return present(lead);
   }
 
   async set(leadId: number, actor: ActorContext, input: LeadQualificationRequest | RevokeLeadQualificationRequest) {
@@ -37,26 +30,28 @@ export class LegacyLeadQualificationRepository implements LeadQualificationRepos
       if (lead.isArchived || Number(lead.funnelId) !== input.funnelId) {
         throw Object.assign(new Error('leadQualificationChanged'), { statusCode: 409 });
       }
-      const action = 'locationFits' in input ? LEAD_QUALIFIED_ACTION : LEAD_QUALIFICATION_REVOKED_ACTION;
-      const previous = await readFact(leadId, lead.funnelId);
-      if (previous?.action === action || (!previous && action === LEAD_QUALIFICATION_REVOKED_ACTION)) {
-        return present(lead.funnelId, previous);
-      }
-      if ('qualifiedAt' in input && previous?.action === LEAD_QUALIFIED_ACTION
-        && new Date(previous.createdAt).toISOString() !== input.qualifiedAt) {
+      const qualify = 'locationFits' in input;
+      if (Boolean(lead.isQualified) === qualify) return present(lead);
+      if (!qualify && present(lead).qualifiedAt !== input.qualifiedAt) {
         throw Object.assign(new Error('leadQualificationChanged'), { statusCode: 409 });
       }
       // This is a business fact, so persist it in the same transaction under the
       // lead lock, rather than using the best-effort after-commit audit helper.
       const fact = await queryOne<Row>(
         `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, new_values)
-         VALUES ($1, $2, 'academy_lead', $3, $4::jsonb) RETURNING *`,
-        [actor.userId, action, leadId, JSON.stringify([{
+         VALUES ($1, $2, 'academy_lead', $3, $4::jsonb) RETURNING id, created_at`,
+        [actor.userId, qualify ? LEAD_QUALIFIED_ACTION : LEAD_QUALIFICATION_REVOKED_ACTION, leadId, JSON.stringify([{
           ...input, managerId: lead.managerId ?? actor.userId,
-          ...(action === LEAD_QUALIFICATION_REVOKED_ACTION ? { revokedFactId: previous?.id } : {}),
         }])],
       );
-      return present(lead.funnelId, fact);
+      // The button records a fact; it does not edit the deal, so the card's version stays.
+      const updated = await queryOne<Row>(
+        `UPDATE academy_leads
+         SET is_qualified = $2, qualified_at = $3, qualified_by = $4
+         WHERE id = $1 RETURNING *`,
+        [leadId, qualify, qualify ? fact!.createdAt : null, qualify ? actor.userId : null],
+      );
+      return present(updated!);
     });
   }
 }

@@ -21,7 +21,6 @@ import {
 import {
   createStageHistory,
   getActiveSalesManager,
-  recordManualLeadStageMove,
   reassignLead,
 } from './academy-leads';
 
@@ -115,7 +114,7 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
                archived_at = NOW(),
                archived_by = $2,
                updated_at = NOW()
-           WHERE id = ANY($3::int[]) AND is_archived = false
+           WHERE id = ANY($3::int[]) AND is_archived = false AND is_won = false
            RETURNING *`,
           [archiveReason, req.user!.id, activeLeads.map((lead) => Number(lead.id))],
         );
@@ -227,7 +226,6 @@ export const registerAcademyBulkLeadActionRoutes = (router: Router) => {
             req.user!.id,
             'Массовый перенос в воронке',
           );
-          await recordManualLeadStageMove(req.actor!, lead, updatedById.get(Number(lead.id))!);
         }
         return changedLeads.map((previous) => ({
           previous,

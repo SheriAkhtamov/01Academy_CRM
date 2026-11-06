@@ -1,20 +1,3 @@
-export type LeadStagePosition = {
-  funnelId?: number | null;
-  statusCode?: string | null;
-  isArchived?: boolean | null;
-};
-
-/** Qualification records the first deliberate exit from this funnel's intake. */
-export const qualifiesManualLeadStageMove = (
-  previous: LeadStagePosition,
-  updated: LeadStagePosition,
-  initialStageCode: string,
-): boolean => Boolean(previous.funnelId && updated.funnelId
-  && Number(previous.funnelId) === Number(updated.funnelId)
-  && !updated.isArchived
-  && previous.statusCode === initialStageCode
-  && updated.statusCode && updated.statusCode !== initialStageCode);
-
 export type LeadQualificationFact = { leadId: number; funnelId: number };
 export type LeadQualificationSummary = { total: number; byFunnel: Record<string, number> };
 

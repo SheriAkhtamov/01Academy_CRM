@@ -46,7 +46,7 @@ export function FutureGroupPaymentDialog({
     mutationFn: () =>
       paymentsApi.create({
         leadId: member.leadId,
-        studentId: member.kind === "student" ? member.id : 0,
+        studentId: member.id,
         groupId,
         amountUzs: Number(amount),
         method,

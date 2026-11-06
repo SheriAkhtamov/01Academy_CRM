@@ -273,6 +273,8 @@ export const academyGroups = pgTable("academy_groups", {
   deliveryModeCheck: check("academy_groups_delivery_mode_check", sql`${table.deliveryMode} IN ('offline', 'online')`),
   branchRequiredOffline: check("academy_groups_branch_required_offline",
     sql`${table.deliveryMode} = 'online' OR ${table.schoolId} IS NOT NULL`),
+  onlineWithoutRoom: check("academy_groups_online_without_room",
+    sql`${table.deliveryMode} <> 'online' OR ${table.roomId} IS NULL`),
   capacityCheck: check("academy_groups_capacity_check", sql`${table.maxStudents} >= 1`),
 }));
 

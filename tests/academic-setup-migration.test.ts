@@ -5,14 +5,15 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 const compact = (sql: string) => sql.replace(/\s+/g, ' ');
 const contract = compact(read('migrations/0173_lead_outcomes_contract.sql'));
 const setup = compact(read('migrations/0174_academic_setup.sql'));
+const setupContract = compact(read('migrations/0175_academic_setup_contract.sql'));
 const schema = read('server/db/schema/index.ts');
 const journal = JSON.parse(read('migrations/meta/_journal.json')) as { entries: Array<{ idx: number; tag: string; when: number }> };
 
 describe('stage 3 migrations', () => {
   it('follow stage 2 in the journal with increasing timestamps', () => {
     const start = journal.entries.findIndex((entry) => entry.tag === '0173_lead_outcomes_contract');
-    expect(journal.entries.slice(start, start + 2).map((entry) => [entry.idx, entry.tag]))
-      .toEqual([[173, '0173_lead_outcomes_contract'], [174, '0174_academic_setup']]);
+    expect(journal.entries.slice(start, start + 3).map((entry) => [entry.idx, entry.tag]))
+      .toEqual([[173, '0173_lead_outcomes_contract'], [174, '0174_academic_setup'], [175, '0175_academic_setup_contract']]);
     const times = journal.entries.map((entry) => entry.when);
     expect([...times].sort((left, right) => left - right)).toEqual(times);
   });
@@ -53,5 +54,16 @@ describe('stage 3 migrations', () => {
     // Only a note every mark of a lesson carries becomes the lesson's note; the copies stay for a rollback.
     expect(setup).toContain(`HAVING bool_and(btrim(COALESCE(note, '')) <> '') AND count(DISTINCT btrim(note)) = 1`);
     expect(setup).not.toMatch(/UPDATE "academy_attendance"/);
+  });
+
+  it('then take rooms from online groups and lesson-note copies from the marks', () => {
+    // Only lessons still to come leave the room; conducted ones keep where they took place.
+    expect(setupContract).toContain(`AND academy_group.delivery_mode = 'online' AND lesson.status = 'scheduled'`);
+    expect(setupContract).toContain(`UPDATE "academy_groups" SET "room_id" = NULL WHERE "delivery_mode" = 'online'`);
+    expect(setupContract).toContain(`CHECK ("delivery_mode" <> 'online' OR "room_id" IS NULL)`);
+    expect(schema).toContain('academy_groups_online_without_room');
+    expect(setupContract).toContain('AND btrim(mark.note) = btrim(lesson.note)');
+    // No revision changes: an unchanged mark must not look like a new absence.
+    expect(setupContract).not.toContain('updated_at');
   });
 });

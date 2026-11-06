@@ -1226,6 +1226,13 @@
       "when": 1794052800000,
       "tag": "0174_academic_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1794139200000,
+      "tag": "0175_academic_setup_contract",
+      "breakpoints": true
     }
   ]
 }
